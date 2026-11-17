@@ -814,7 +814,7 @@ import type { Envelope, TopicName } from "../src/bus/index.js";
 import { MemoryBus } from "../src/bus/memory.js";
 import { busContract } from "./helpers/bus-contract.js";
 
-busContract("MemoryBus", async () => new MemoryBus(() => {}), { length: async (b, t) => (b as MemoryBus).length(t) });
+busContract("MemoryBus", async () => new MemoryBus({ warn: () => {} }), { length: async (b, t) => (b as MemoryBus).length(t) });
 
 const EPOCH = { boot: "b1", home: "h#1" };
 const env = <N extends TopicName>(topic: N, body: Record<string, unknown>, seq: number, node = "world"): Envelope<N> =>
@@ -823,7 +823,7 @@ const until = async (f: () => boolean, ms = 3000) => { const t0 = Date.now(); wh
 
 describe("MemoryBus", () => {
   it("닫은 뒤에는 예약된 배달이 돌지 않고, 발행·구독을 거절한다", async () => {
-    const bus = new MemoryBus(() => {});
+    const bus = new MemoryBus({ warn: () => {} });
     const got: number[] = [];
     const s = await bus.subscribe("/phone/pose", "world", async (m) => { got.push(m.body.observed_ms as number); return "ack"; });
     s.start();
@@ -836,7 +836,7 @@ describe("MemoryBus", () => {
   });
 
   it("받는 쪽이 거절(reject)해도 다시 주기로 처리하고 줄이 멈추지 않는다", async () => {
-    const bus = new MemoryBus(() => {});
+    const bus = new MemoryBus({ warn: () => {} });
     let calls = 0;
     const got: number[] = [];
     const s = await bus.subscribe("/world/changes", "act", async (m) => {
@@ -1131,23 +1131,36 @@ export const deadBody = (topic: TopicName, group: NodeName, raw: string, deliver
 ```
 
 ```ts
-// clock.ts — 노드 시계. 실제 시계는 Date.now·setInterval, 가상 시계(재생·시험)는 advanceTo로 시각을 당기며 그 사이 타이머를 시각 차례로 부른다.
+// clock.ts — 노드 시계. 실제 시계는 Date.now·setInterval·setTimeout, 가상 시계(재생·시험)는 advanceTo로 시각을 당기며 그 사이 타이머(되풀이·한 번)를 시각 차례로 부른다.
 // 타이머 하나를 부를 때마다 settle(재생 장벽)을 기다린 뒤 다음으로 간다: 비동기 타이머 일과 그 일이 낸 메시지가 끝나기 전에 시계가 넘어가지 않는다.
-export interface Clock { now(): number; every(ms: number, fn: () => void): () => void }
+export interface Clock {
+  now(): number;
+  every(ms: number, fn: () => void): () => void;
+  /** ms 뒤 한 번(통로의 다시 주기). */
+  after(ms: number, fn: () => void): () => void;
+}
 
 export const realClock: Clock = {
   now: () => Date.now(),
   every: (ms, fn) => { const h = setInterval(fn, ms); h.unref?.(); return () => clearInterval(h); },
+  after: (ms, fn) => { const h = setTimeout(fn, ms); return () => clearTimeout(h); },
 };
+
+type Timer = { ms: number; next: number; fn: () => void; once: boolean };
 
 export class VirtualClock implements Clock {
   #now: number;
-  readonly #timers = new Set<{ ms: number; next: number; fn: () => void }>();
+  readonly #timers = new Set<Timer>();
   constructor(start = 0) { this.#now = start; }
   now(): number { return this.#now; }
   set(ms: number): void { if (ms > this.#now) this.#now = ms; }
   every(ms: number, fn: () => void): () => void {
-    const t = { ms, next: this.#now + ms, fn };
+    return this.#add({ ms, next: this.#now + ms, fn, once: false });
+  }
+  after(ms: number, fn: () => void): () => void {
+    return this.#add({ ms, next: this.#now + ms, fn, once: true });
+  }
+  #add(t: Timer): () => void {
     this.#timers.add(t);
     return () => this.#timers.delete(t);
   }
@@ -1156,7 +1169,8 @@ export class VirtualClock implements Clock {
       const due = [...this.#timers].filter((t) => t.next <= ms).sort((a, b) => a.next - b.next)[0];
       if (!due) break;
       this.#now = due.next;
-      due.next += due.ms;
+      if (due.once) this.#timers.delete(due);
+      else due.next += due.ms;
       due.fn();
       await settle();
     }
@@ -1174,10 +1188,12 @@ export class VirtualClock implements Clock {
 // STATE: 열쇠마다 마지막 하나. 바뀐 열쇠만 표시해 두고 읽을 때 그 열쇠의 지금 값을 준다. 시작할 때 모든 열쇠를 먼저 준다.
 // RELIABLE: 토픽 기록 + 그룹마다 다음 차례·처리 중 하나·전달 횟수. 처리 중인 것이 ack되거나 dead가 될 때까지 뒤 메시지를 주지 않는다.
 // 배달은 늘 다음 차례(setImmediate, 다시 주기는 RETRY_MS 뒤)에 한다: publish 안에서 콜백을 부르지 않는다. quiet()는 예약된 배달이 없는지 본다.
-// 받는 쪽이 거절(reject)하면 "retry"로 본다. 다시 주기는 RETRY_MS가 지난 뒤에만 한다(그 사이 새 메시지가 와도 앞당기지 않는다).
+// 받는 쪽이 거절(reject)하면 "retry"로 본다. 다시 주기는 시계(clock, 기본 실제 시계)로 RETRY_MS가 지난 뒤에만 한다(그 사이 새 메시지가 와도 앞당기지 않는다).
+// 재생은 가상 시계를 넘겨 다시 주기도 가상 시각으로 돈다(장벽은 다시 주기를 기다리지 않고, 시계를 당길 때 돈다).
 // close() 뒤에는 발행·구독을 거절하고 예약된 배달도 돌리지 않는다.
 import { CLOSED, deadBody, gapCounter, MAX_DELIVERIES, RETRY_MS, type Bus, type Deliver, type Subscription } from "./bus.js";
 import { decode, encode, type Envelope } from "./header.js";
+import { realClock, type Clock } from "./clock.js";
 import { TOPICS, type NodeName, type TopicName } from "./topics.js";
 
 type Raw = { id: number; raw: string };
@@ -1192,13 +1208,18 @@ export class MemoryBus implements Bus {
   readonly #wake = new Map<string, Set<(key: string) => void>>();
   readonly #groups = new Map<string, Map<string, Group>>();
 
-  constructor(private readonly warn: (s: string) => void = (s) => console.error(s)) {}
+  readonly #warn: (s: string) => void;
+  readonly #clock: Clock;
 
-  #later(f: () => void, ms = 0): void {
+  constructor(o: { warn?: (s: string) => void; clock?: Clock } = {}) {
+    this.#warn = o.warn ?? ((s) => console.error(s));
+    this.#clock = o.clock ?? realClock;
+  }
+
+  /** 다음 차례에 배달한다(예약 수를 센다: quiet). */
+  #later(f: () => void): void {
     this.#scheduled++;
-    const go = () => { this.#scheduled--; if (!this.#closed) f(); };
-    if (ms > 0) setTimeout(go, ms);
-    else setImmediate(go);
+    setImmediate(() => { this.#scheduled--; if (!this.#closed) f(); });
   }
 
   /** 예약된 배달이 없다(재생·시험 장벽). 처리 중인 콜백은 노드 쪽(BusNode.busy)이 센다. */
@@ -1279,7 +1300,7 @@ export class MemoryBus implements Bus {
   }
 
   #pump(topic: TopicName, g: Group): void {
-    if (!g.started || g.busy || !g.deliver || Date.now() < g.retryAt) return;
+    if (!g.started || g.busy || !g.deliver || this.#clock.now() < g.retryAt) return;
     const item = g.pending ?? (this.#log.get(topic) ?? []).find((r) => r.id >= g.next);
     if (!item) return;
     if (g.pending !== item) g.tries = 0;
@@ -1293,8 +1314,8 @@ export class MemoryBus implements Bus {
         g.tries++;
         if (out === "retry" && g.tries < MAX_DELIVERIES) {   // RETRY_MS 뒤 같은 메시지를 다시 준다. 뒤 메시지는 기다린다
           g.busy = false;
-          g.retryAt = Date.now() + RETRY_MS;
-          this.#later(() => { g.retryAt = 0; this.#pump(topic, g); }, RETRY_MS);
+          g.retryAt = this.#clock.now() + RETRY_MS;
+          this.#clock.after(RETRY_MS, () => { if (this.#closed) return; g.retryAt = 0; this.#pump(topic, g); });
           return;
         }
         if (out === "retry") await this.#dead(topic, g.name, item.raw, g.tries);
@@ -1302,12 +1323,12 @@ export class MemoryBus implements Bus {
         g.busy = false;
         this.#trim(topic);
         this.#pump(topic, g);
-      }).catch((err: Error) => this.warn(`[통로] ${topic} 배달 마무리 실패(${g.name}): ${err.message}`));
+      }).catch((err: Error) => this.#warn(`[통로] ${topic} 배달 마무리 실패(${g.name}): ${err.message}`));
     });
   }
 
   async #dead(topic: TopicName, group: NodeName, raw: string, tries: number): Promise<void> {
-    if (topic === "/bus/dead") return this.warn(`[통로] /bus/dead 처리 실패(${group}, ${tries}번): 다시 보내지 않아요`);
+    if (topic === "/bus/dead") return this.#warn(`[통로] /bus/dead 처리 실패(${group}, ${tries}번): 다시 보내지 않아요`);
     const e = decode(topic, raw);
     await this.publish({ topic: "/bus/dead", key: topic, header: { ...e.header, node: group }, body: deadBody(topic, group, raw, tries) } as never);
   }
@@ -2209,6 +2230,24 @@ describe("기록 노드", () => {
     expect(db.list({ kinds: ["detection"] }).map((r) => r.text)).toEqual(["컵 cup_1 보임", "컵 cup_2 보임"]);
   });
 
+  it("/act/log의 사용자 답(feedback)을 기록 DB feedback 줄로 쓴다(반성 입력)", async () => {
+    const bus = new MemoryBus({ warn: () => {} });
+    const db = HistoryDb.open(":memory:");
+    const rec = await startRecorder({ bus, epoch: EPOCH, db });
+    rec.start();
+    const act = new BusNode({ name: "act", bus, epoch: EPOCH, log: () => {} });
+    await act.prepare();
+    act.start();
+    await act.publish("/act/log", { type: "feedback", at_ms: 1000, subject: "plan:pam-1", text: "완료 · 부탁: 식탁으로 가 주세요", data: { choice: "done", via: "button" } });
+    await act.publish("/act/log", { type: "execution", at_ms: 1001, plan_id: "plan:pam-1", state: "done", text: "완료" });
+    await tick(100);
+    await rec.idle();
+    expect(db.list({}).map((r) => [r.kind, r.text, r.subject])).toEqual([
+      ["feedback", "완료 · 부탁: 식탁으로 가 주세요", "plan:pam-1"],
+      ["execution", "완료", "plan:pam-1"],
+    ]);
+  });
+
   it("녹화에 사진 바이트(jpeg_b64)는 남기지 않는다", async () => {
     const path = join(mkdtempSync(join(tmpdir(), "bag-")), "bag.sqlite");
     const bus = new MemoryBus();
@@ -2232,7 +2271,7 @@ describe("기록 노드", () => {
 // 격리 재생: 실제 통로가 아닌 새 MemoryBus·가상 시계에서, 허용 목록의 바깥 입력만 도착 차례·도착 시각대로 흘리고,
 // 메시지마다 이어지는 발행이 다 끝날 때까지(처리 장벽) 기다린다.
 import { describe, expect, it } from "vitest";
-import { BusNode } from "../src/bus/index.js";
+import { BusNode, RETRY_MS } from "../src/bus/index.js";
 import { Bag, REPLAY_INPUTS, replay } from "../src/record/index.js";
 
 const EPOCH = { boot: "b1", home: "h#1" };
@@ -2262,6 +2301,37 @@ describe("격리 재생", () => {
     });
     expect(r.sent).toBe(2);
     expect(seen).toEqual([["f1", 2100], ["f2", 3050]]);
+  });
+
+  it("처리에 실패한 메시지의 다시 주기도 가상 시계로 RETRY_MS 뒤에 온다(실제 시간을 기다리지 않는다)", async () => {
+    const bag = Bag.open(":memory:");
+    bag.write({ topic: "/perception/analysis", key: "f1", header: h(1, 1000), body: { frame_id: "f1", observed_ms: 1000 } } as never, 1000);
+    bag.write({ topic: "/perception/analysis", key: "f2", header: h(2, 1500), body: { frame_id: "f2", observed_ms: 1500 } } as never, 1500);
+    const seen: [string, number][] = [];
+    let failed = false;
+    await replay({
+      bag, from: 0, to: 10_000,
+      launch: async (bus, clock) => {
+        const w = new BusNode({ name: "world", bus, epoch: EPOCH, clock, log: () => {} });
+        w.on("/perception/analysis", (b) => {
+          if (b.frame_id === "f1" && !failed) { failed = true; throw new Error("처음 한 번 실패"); }
+          seen.push([String(b.frame_id), clock.now()]);
+        });
+        return [w];
+      },
+    });
+    expect(seen).toEqual([["f1", 1000 + RETRY_MS], ["f2", 1500]]);
+  });
+
+  it("재생이 중간에 실패해도 노드를 끝내고 통로를 닫는다", async () => {
+    const bag = Bag.open(":memory:");
+    bag.write({ topic: "/perception/analysis", key: "f1", header: h(1, 1000), body: { frame_id: "f1", observed_ms: 1000 } } as never, 1000);
+    let stopped = false;
+    let seenBus: { publish: (e: never) => Promise<void> } | null = null;
+    const broken = { prepare: async () => {}, start: () => {}, busy: () => false, idle: () => Promise.reject(new Error("장벽 실패")), stop: async () => { stopped = true; } };
+    await expect(replay({ bag, from: 0, to: 10_000, launch: async (bus) => { seenBus = bus as never; return [broken as never]; } })).rejects.toThrow("장벽 실패");
+    expect(stopped).toBe(true);
+    await expect(seenBus!.publish({ topic: "/perception/analysis", key: "f9", header: h(9, 9), body: { frame_id: "f9", observed_ms: 9 } } as never)).rejects.toThrow(/닫힌 통로/);
   });
 
   it("장벽은 이어지는 발행(다섯 단계)이 다 끝난 뒤 다음 메시지로 간다", async () => {
@@ -2334,8 +2404,8 @@ export class Bag {
 // 메시지 하나의 기록 줄과 처리표(bus_seen, msgId)는 한 트랜잭션이다(db.once): 다시 온 메시지는 쓰지 않는다. 가전 지난 값(device_last)도 같은 트랜잭션이다.
 // 녹화는 같은 메시지를 다시 남기지 않는다. 다 쓰면 콜백이 끝나 실행기가 ack한다(실패하면 던져 다시 받는다).
 // 녹화하는 SENSOR(record: true)는 커서(mode "all")로 다 읽는다. 사진 토픽과 /bus/dead는 녹화하지 않는다.
-import type { BrainLog } from "../contract/events.js";
-import { deviceRecorder, recordBrainLog, type HistoryDb } from "../brain/index.js";
+import type { BrainLog, FeedbackLog } from "../contract/events.js";
+import { deviceRecorder, recordBrainLog, recordFeedback, type HistoryDb } from "../brain/index.js";
 import { TOPICS, msgId, type BusNode, type TopicName } from "../bus/index.js";
 import type { Bag } from "./bag.js";
 
@@ -2349,7 +2419,7 @@ export function historyRoutes(node: BusNode, db: HistoryDb, o: { bag?: Bag; now:
     "/world/changes": (b) => logs(b.changes),
     "/brain/decision": (b) => recordBrainLog(db, b as unknown as BrainLog),
     "/brain/link": (b) => recordBrainLog(db, b as unknown as BrainLog),
-    "/act/log": (b) => recordBrainLog(db, b as unknown as BrainLog),
+    "/act/log": (b) => (b.type === "feedback" ? recordFeedback(db, b as unknown as FeedbackLog) : recordBrainLog(db, b as unknown as BrainLog)),
     "/device/changes": (b) => device(b.state as never, b.note as never),
     "/bus/dead": (b) => { db.add("bus_gap", o.now(), `처리하지 못한 메시지: ${String(b.topic)}`, { data: b }); },
   };
@@ -2398,8 +2468,9 @@ export async function startRecorder(o: { bus: Bus; epoch: { boot: string; home: 
 ```ts
 // replay.ts — 격리 재생(rosbag2 재생처럼, 시뮬레이션 시계): 새 MemoryBus·가상 시계 위에 launch가 띄운 노드(가전은 dry-run)로,
 // 허용 목록의 바깥 입력 토픽만 녹화의 도착 차례대로 흘린다. 메시지마다 가상 시계를 그 도착 시각까지 당기며 타이머를 하나씩 돌리고
-// (타이머마다 장벽), 발행한 뒤 다시 장벽을 지난다. 실제 통로(Redis)에는 아무것도 보내지 않는다.
-import { MemoryBus, VirtualClock, type BusNode, type TopicName } from "../bus/index.js";
+// (타이머마다 장벽), 발행한 뒤 다시 장벽을 지난다. 통로의 다시 주기도 가상 시계로 돈다. 마지막 메시지 뒤에는 다시 주기가 다 끝나게 시계를 더 당긴다.
+// 실패해도 노드를 끝내고 통로를 닫는다. 실제 통로(Redis)에는 아무것도 보내지 않는다.
+import { MAX_DELIVERIES, MemoryBus, RETRY_MS, VirtualClock, type BusNode, type TopicName } from "../bus/index.js";
 import type { Bag } from "./bag.js";
 
 export const REPLAY_INPUTS: readonly TopicName[] = [
@@ -2418,21 +2489,26 @@ export async function settle(bus: MemoryBus, nodes: readonly BusNode[], maxRound
 
 export async function replay(o: { bag: Bag; from: number; to: number; launch: (bus: MemoryBus, clock: VirtualClock) => Promise<BusNode[]>; topics?: readonly TopicName[] }): Promise<{ sent: number }> {
   const rows = o.bag.range(o.from, o.to, { topics: o.topics ?? REPLAY_INPUTS });
-  const bus = new MemoryBus(() => {});
   const clock = new VirtualClock(rows[0]?.arrivalMs ?? o.from);
-  const nodes = await o.launch(bus, clock);
-  for (const n of nodes) await n.prepare();
-  for (const n of nodes) n.start();
-  const barrier = () => settle(bus, nodes);
-  for (const { e, arrivalMs } of rows) {
-    await clock.advanceTo(arrivalMs, barrier);
-    await barrier();
-    await bus.publish(e);
-    await barrier();
+  const bus = new MemoryBus({ warn: () => {}, clock });
+  let nodes: BusNode[] = [];
+  try {
+    nodes = await o.launch(bus, clock);
+    for (const n of nodes) await n.prepare();
+    for (const n of nodes) n.start();
+    const barrier = () => settle(bus, nodes);
+    for (const { e, arrivalMs } of rows) {
+      await clock.advanceTo(arrivalMs, barrier);
+      await barrier();
+      await bus.publish(e);
+      await barrier();
+    }
+    await clock.advanceTo(clock.now() + RETRY_MS * MAX_DELIVERIES, barrier);
+    return { sent: rows.length };
+  } finally {
+    for (const n of nodes) await n.stop().catch(() => {});
+    await bus.close();
   }
-  for (const n of nodes) await n.stop();
-  await bus.close();
-  return { sent: rows.length };
 }
 ```
 
@@ -2486,29 +2562,152 @@ Expected: 모두 PASS(이 묶음은 집 실행 묶음을 바꾸지 않는다).
 
 ## 묶음 2: 집 상태 노드 (입력 포함)
 
-**목표:** World State를 `world` 노드 하나만 바꾼다. 관찰 흐름은 인식 결과를 토픽으로 내고, 실행 추적이 직접 부르던 `world.guard`·`world.contentsAction`은 `/world/input`으로 간다.
+**구현 시점:** 이 단계 계획은 Codex 검토까지만 받는다. 구현은 「VLM 메인, YOLO 보조」 일(`docs/superpowers/plans/2026-11-18-vlm-objects.md`)이 domain-split에 합쳐진 뒤 다시 정한다(2026-11-18 조정자, 사용자 목표 「가로 영상 세 개가 끝까지 통과」에 Redis가 필요하지 않음).
 
-**바뀌는 자리:**
+**목표:** World State를 `world` 노드 하나만 바꾼다. 인식 노드(`perception`, 지금 관찰 흐름)는 World State에 넣던 것을 토픽으로 내고, 실행 추적이 직접 부르던 `world.guard`·`world.contentsAction`, 폰의 들은 말, 가전 상태도 토픽으로 간다. 읽는 쪽(판단·실행 추적·보기 담당·말풍선 카드·대시보드)은 `/world/state`·`/world/changes`를 받는 거울(`WorldMirror`)로 읽는다.
 
-| 지금 | 묶음 2 뒤 |
+**사용자 결정(2026-11-18):**
+- 트윈 성능(속도)을 최우선으로 제안한다. 그래서 이 묶음은 지연 예산·늘지 않게 하는 시험·줄일 수 있는 곳을 함께 정한다.
+- 「VLM을 메인으로, YOLO는 보조로」: 물건 알아보기는 VLM이 주로 하고, YOLO는 빠른 추적·사람 자세·마스크를 맡는다(실제 판에서 VLM은 「식탁 가운데 작은 컵」을 봤는데 YOLO가 못 잡아 물건이 생기지 않았다). 이 묶음은 그 자리에 맞게 인식 토픽을 VLM 갈래·YOLO 갈래로 나눈다. 집 상태 확정 규칙(무엇으로 물건이 생기고 사라지나)은 domain-split 변경을 합친 뒤 따로 계획한다. 이 묶음은 지금 규칙을 그대로 옮긴다.
+- 「사람이 물건을 쓰는 중이면 그 사람이 사라질 때까지 관찰만」: domain-split에서 만드는 규칙이다. 통로로 옮길 때 실행 추적 노드의 공통 지킴으로 간다(묶음 3).
+
+### 이 묶음에서 정한 것
+
+1. **인식 토픽은 두 갈래다(사용자 결정 「VLM 메인, YOLO 보조」의 자리):**
+   - `/perception/detections`(RELIABLE, 열쇠 `_`): YOLO 갈래. 지금 관찰 흐름이 `world.setEye`·`applyDetections`·`applyMissing`·`applyCloser`·`applyTop`을 부르던 자리에서 같은 차례로 낸다(갈래 `eye`·`frame`·`missing`·`closer`·`top`). 집 상태가 프레임마다 다 넣어야 하므로 토픽 표의 SENSOR를 RELIABLE로 바꾼다. 대시보드 물체 모양은 `/perception/seen`(SENSOR 가장 새 것, 녹화 없음)으로 따로 낸다.
+   - `/perception/scene`(RELIABLE, 열쇠 원본 프레임 id): VLM 갈래. 전체 사진 VLM 답(`scene`: 물건 상자·사실·요약), 가까이 본 VLM 답(`closer_scene`), VLM 답 없이 끝난 가까이 보기(`closer_end`). 다음 계획에서 VLM 물건 상자로 물건을 만드는 규칙이 이 토픽을 쓴다.
+   - 집 상태 노드는 두 토픽을 프레임 차례로 맞춘다: VLM 답은 같은 원본 프레임(가까이 보기는 같은 `look`)의 YOLO 입력을 넣은 뒤에 넣는다. 아직 안 왔으면 `ctx.defer()`로 기다리고, 2초가 지나면 지금처럼 빈 감지 번호 표로 넣는다(지금도 감지가 없던 프레임은 빈 표다).
+   - 토픽 표의 `/perception/analysis`는 쓰지 않는다(분석 기록 `logs`는 기록 노드로 옮기는 묶음 3에서 정한다).
+2. **사진은 싣지 않는다:** 프레임은 `id`·`captured_ms`·`width`·`height`·`view`·`eye`·`vlm`만(`FrameMeta`: `EngineFrame`에서 `jpeg`·`sha256`을 뺀 것), 잘라 본 장(`CloserPass`)도 JPEG 없이.
+3. **감지 번호 맞추기는 집 상태 노드가 갖는다:** 관찰 흐름의 `idsOf`(프레임 → 감지 번호 → 물건 id)와 가까이 보기 `pending`을 집 상태 노드가 갖는다.
+4. **가까이 보기의 물건 id는 답 토픽으로:** 가까이 보기 결과(`found`)는 합친 뒤의 물건 id가 필요하다. 인식 노드는 `closer`에 `look` id를 붙여 내고, 집 상태 노드는 합친 뒤 `/world/closer {look, ids}`(RELIABLE)로 답한다. 인식 노드는 `Pending`으로 `look`을 맞추고(기한 2초, 넘으면 `closerMiss("world_timeout")`) 그 표로 `found`를 채운다. VLM 호출(수 초)에 비하면 두 번 지나기는 작다.
+5. **읽기는 거울로:** `src/world/mirror.ts` `WorldMirror`가 `/world/state`(STATE)와 `/world/changes`(RELIABLE, `withState`)를 받아 `view()`(가장 새 상태)와 변화 콜백을 준다. 판단(`Decider`의 `world`는 `{ view(now) }`만 쓴다)·실행 추적·보기 담당·말풍선 카드·`/api/world`·대시보드 방송·인식 노드의 가까이 보기 대상 고르기·위에서 보기 쌍 찾기가 거울을 읽는다.
+6. **상태를 내는 때:** 입력 하나를 넣어 변화가 있으면 `rev`를 1 올리고 `/world/changes {rev, changes}`와 `/world/state {rev, view}`를 낸다. 시간이 지나야 바뀌는 칸(`closer_hold`·`person.near`·가전 남은 시간·`at_ms`)이 있으므로 250ms마다(지금 판단 타이머와 같은 간격) `world.tick`을 넣고 같은 `rev`로 `/world/state`를 다시 낸다. 거울의 `view()`는 지금보다 최대 250ms + 지나는 시간 늦다(지금도 판단·실행 추적·보기 담당은 250ms마다 본다).
+7. **대시보드 방송은 `rev`가 바뀔 때만:** 거울이 `rev`가 바뀐 상태만 대시보드로 보낸다(250ms 다시 냄은 보내지 않는다). 지금과 같은 횟수다. 대시보드 트윈이 더 자주 다시 그리지 않는다.
+8. **입력 토픽:** `/world/input`(RELIABLE, act): `{kind: "guard", id, on, at_ms}`·`{kind: "contents", id, on, at_ms}`. `/phone/heard`(RELIABLE, phone): `{text, observed_ms}` → `world.heard`. `/device/changes`(RELIABLE, devices): `{id, state, note}`. 첫 상태(`note.initial`)는 변화 없이 넣는다(지금 `startLoop`의 시작 가전 상태와 같음). 가전 목록(`signals.list()`)은 집 상태 노드가 허브에서 읽는다(지금과 같음).
+9. **기록 DB는 이 묶음에서 그대로 `attachRecorder`다:** 판단·실행·계획·운영 모드 기록이 아직 집 묶음 방송으로 온다. 집 상태 변화만 기록 노드로 옮기면 한 줄이 빠지거나 두 번 남는다. 기록 노드로 바꾸는 것은 모든 기록 줄이 토픽으로 오는 묶음 3 끝에 한 번에 한다. 이 묶음에서는 거울이 받은 변화의 `world_change` 기록을 지금 `emit`으로 넘긴다(같은 줄·같은 차례, 기록 DB 같음 시험이 본다).
+10. **통로 하나:** 서버(`src/server/start.ts`)가 켜질 때 `boot`(UUID)와 `openBus(env, {boot, log, onLost})`로 통로 하나를 열고 집을 바꿔도 같은 통로를 쓴다. 집 세대 `home`은 `<집 id>#<연 횟수>`. `onLost`는 「Redis가 다시 켜져…」를 남기고 서버를 끝낸다(끝 코드 1, compose `restart`가 새 기동으로). 집을 닫을 때는 새 일을 만드는 쪽(인식) → 집 상태 → 거울 차례로 `stop()`한다.
+11. **가까이 보기·위에서 보기 요청은 묶음 3:** 보기 담당(`src/act/look.ts`)이 관찰 흐름의 `closer()`·`topLook()`·`latest()`를 부르는 것은 이 묶음에서 그대로 둔다. 묶음 3에서 실행 추적 노드와 함께 `/perception/look_request`·`/perception/look_result`로 바꾼다(이 계획 12).
+12. **RedisBus 지나기를 먼저 줄인다(Task 1, 아래 지연 예산 근거):** 이 PC에서 RedisBus 한 번 지나기가 RELIABLE p50 8.3ms·STATE p50 6.5ms로 PING 왕복(1.5ms)의 4~6배다. 이대로면 프레임 → 집 상태 발행에 두 번 지나며 약 15ms가 더해져 한도를 넘는다. 묶음 2의 노드를 잇기 전에 줄인다.
+
+### 지연 예산(사용자 결정: 트윈 성능 최우선)
+
+재는 법: `tests/latency-world.test.ts`(Task 0), `scripts/bus-latency.ts`(통로 한 번 지나기·Redis 왕복, 500번씩 두 판). 이 PC(Windows 11, Node 22), 2026-11-18. 실제 Redis는 `compose.dev.yaml`의 `noonchi-redis`(Docker Desktop, WSL 거침). AWS EC2(리눅스, 같은 호스트)의 왕복은 이보다 훨씬 짧을 것이라 이 PC 값은 나쁜 쪽 값이다.
+
+| 구간 | 지금(통로 전) | 통로 한 번 지나기: MemoryBus / RedisBus(p50·p95) | 묶음 2 뒤 예상 p95 |
+|---|---|---|---|
+| 엔진 프레임 → 집 상태 발행(대시보드 world) | p50 7.9ms · p95 13.5ms(감지기 시간 뺌, 40장) | RELIABLE(`/world/changes` 113바이트) 0.47·0.79ms / 8.3·9.5ms. STATE(`/world/state` 18.4KB) 0.54·0.86ms / 6.5·7.6ms | MemoryBus 약 15ms(두 번 지남). RedisBus 지금 그대로면 약 31ms, Task 1 목표(한 번 지나기 RELIABLE·STATE p50 3ms 이하)면 약 20ms |
+| 집 상태 변화 → 판단 시작(PAM 요청), event 모드 | 47·123·191·235ms(4번): 250ms 판단 타이머 기다림이 거의 전부. 기본 periodic 모드는 5초 주기라 0~5초 | 변화 한 번 지나기(위 RELIABLE) | 타이머가 그대로면 지금 + 한 번 지나기(아래 「줄일 수 있는 곳」 2) |
+| 실제 감지(YOLO26s-seg) | DirectML 약 144ms · CPU 8스레드 약 218ms(구현명세서 4절) | — | 그대로 |
+| Redis PING 왕복 | — | p50 1.54ms · p95 1.89ms | — |
+| 봉투 만들기·읽기·검사(`/world/state` 18.4KB) | — | p50 0.27ms · p95 0.46ms | — |
+
+RedisBus가 PING보다 몇 배 느린 까닭(코드로 확인): RELIABLE은 콜백 뒤 `XACK` → `XINFO GROUPS` → 그룹마다 `XPENDING` → `XTRIM`을 메시지마다 차례로 기다려(왕복 4번 이상) 다음 `XREADGROUP`이 늦다(`src/bus/redis.ts` `handle`·`#trim`). STATE는 발행이 `INCR` 뒤 `MULTI`(왕복 2번)이고 받는 쪽이 알림마다 `HGET`(왕복 1번)을 더 한다.
+
+### 늘지 않게 하는 장치
+
+- `tests/latency-world.test.ts`: 폰 엔진 프레임을 150ms 간격으로 45장 보내(감지 실패 대본이라 프레임마다 변화 하나) 프레임 → 대시보드 world 지연을 잰다. 기준은 `tests/fixtures/latency/world.json`(묶음 2 전 이 PC: p50 7.9ms, p95 13.5ms). **p95가 기준 p95의 1.5배와 기준 + 10ms 가운데 큰 값(23.5ms)을 넘으면 같은 서버로 한 번 더 재고, 두 판 다 넘으면 실패**한다(이 PC에서 다른 일이 잠깐 몰리면 한 판이 p95 25.4ms까지 튀었고 바로 다음 판은 12.7ms였다). 묶음 2 끝 조건이고 묶음 3~6 끝 조건에도 남긴다. 다른 PC에서는 `LATENCY_BASELINE=write`로 그 PC의 기준을 먼저 잰다.
+- `scripts/bus-latency.ts`를 `REDIS_URL`과 함께 묶음 끝마다 돌려 위 표의 RedisBus 값을 고쳐 적는다(CI에는 Redis가 없어 MemoryBus만 시험이 막는다).
+
+### 줄일 수 있는 곳(근거와 함께)
+
+1. **RedisBus 한 번 지나기(이 묶음 Task 1에서 한다):** RELIABLE은 ack 뒤 자르기를 메시지마다 하지 않고 모아서(1초마다 또는 100번마다 한 번), `XACK`는 다음 `XREADGROUP`과 한 번에 보낸다(파이프라인). STATE는 `INCR`·`HSET`·`XADD`를 Lua 하나(왕복 1번)로, 알림에 값을 같이 실어 받는 쪽 `HGET`을 없앤다(알림 스트림 `MAXLEN ~64` × 18KB ≈ 1.2MB). 목표: 이 PC에서 RELIABLE·STATE p50 3ms 이하(지금 8.3·6.5ms), 통로 계약 시험 그대로 통과.
+2. **event 모드 판단을 변화가 올 때 바로 시작:** 지금 판단은 250ms 판단 타이머(`src/server/home/observe.ts` `startLoop`)가 `decide.tick()`을 부를 때만 시작한다. event 모드의 변화 → 판단 시작(47~235ms)은 거의 이 타이머 기다림이다. 판단 노드(묶음 4)가 `/world/changes`를 받을 때 계기를 바로 보면 평균 약 125ms 줄어든다. 기본 periodic 모드(5초 주기)는 주기가 정하므로 그대로다. 묶음 4 단계 계획에서 정한다.
+3. **인식이 World State·읽는 쪽을 기다리지 않는다(이 묶음에서 저절로 생김):** 지금 `ObservationPipeline.publish()`는 감지 대기열을 비우는 고리 안에서 `world.apply…` → `tracking.onWorld` → `decide.onChanges` → `world.view()`(18.4KB) → 대시보드 JSON까지 같이 돈다(`src/observe/pipeline.ts` `publish`). 통로 뒤에는 인식 노드가 토픽만 내고 다음 프레임 감지로 간다. 감지가 밀릴 때(실제 YOLO 144~218ms) 다음 감지 시작이 그만큼 앞당겨진다.
+4. **집 상태 보기(`view`)를 한 번만 만든다:** 지금은 판단·실행 추적·보기 담당·말풍선 카드가 250ms마다 저마다 `world.view(now)`를 부른다(초당 16번 이상, 한 번 18.4KB 객체). 통로 뒤에는 집 상태 노드가 `rev`마다·250ms마다 한 번 만들고 거울이 같은 객체를 나눠 준다.
+5. **대시보드가 밀리면 가장 새 것만:** 변화가 몰릴 때(가까이 보기 합치기 등) 중간 상태 방송을 건너뛰면 트윈 다시 그리기가 준다. 이 묶음은 지금 횟수보다 늘지 않게만 하고(정한 것 7), 건너뛰기는 대시보드 시험(`ui/tests/dashboard/steps.test.tsx`)과 함께 따로 제안한다.
+
+### 파일
+
+| 파일 | 맡는 일 |
 |---|---|
-| `ObservePipeline`이 `world.applyDetections`·`applyMissing`·`applyVlm…`을 부르고 `publish(changes)`로 방송(`src/observe/pipeline.ts:209-328`) | 인식은 `/perception/detections`(SENSOR)·`/perception/analysis`(RELIABLE, 분석 기록 `logs` 포함)·`/perception/look_result`(RELIABLE)만 내고, `world` 노드가 받아 넣는다 |
-| `onChanges: (c) => { tracking.onWorld(c); decide.onChanges(c); }`(`src/server/home/observe.ts`) | `world`가 `rev`를 붙여 `/world/state`·`/world/changes`를 낸다. 실행 추적·판단은 `withState`로 받는다(어댑터 노드 `act`·`brain`) |
-| `guardObject: (id, on) => world.guard(id, now(), on)`, `contentsAction: (id, on) => world.contentsAction(id, now(), on)` | `/world/input` `{ id, kind: "guard" \| "pour", on }` |
-| `topReady`(`src/act/track/contents.ts:205`)로 준비를 묻고 `topLook` | `/perception/look_request { req, kind: "top", target, since_ms, deadline_ms }` 하나. 인식 노드가 쌍이 모이면(또는 기한) 답한다. 실행 추적은 `Pending`으로 `req`를 맞춘다 |
-| `observed.onDevice(s)`, 시작 가전 상태 `world.applyDevice` | `/device/state`(STATE, 이 묶음에서는 허브 구독을 `devices` 어댑터가 낸다), `/device/changes`(기록) |
-| 대시보드 `broadcastWorld`, 물체 모양 `onSeen` | `phone` 어댑터가 `/world/state`·`/perception/detections`를 받아 방송 |
-| 기록 DB `attachRecorder`(집 묶음 방송을 받음) | 기록 노드(`historyRoutes`)가 토픽에서 쓴다 |
+| `src/bus/redis.ts` | Task 1: 모아서 자르기, ack 파이프라인, STATE Lua 발행·알림에 값 싣기 |
+| `src/bus/topics.ts` | `/perception/detections`(RELIABLE로)·`/perception/scene`·`/perception/seen`·`/world/closer`·`/world/input`·`/world/state`·`/world/changes`·`/phone/heard`·`/device/changes`의 실제 몸 모양(zod, `src/contract/`와 같음을 타입으로 묶음) |
+| `src/contract/world.ts` | `PerceptionInput`(YOLO 갈래), `SceneInput`(VLM 갈래), `FrameMeta`, `WorldInput`, `WorldStateMsg {rev, view}`, `WorldChangesMsg {rev, changes}` |
+| `src/world/accept.ts` | `accepts(d)`·`closerObject(d)`를 상태 없는 함수로 뺀다(지금 `core.accepts`·`closer.closerObject`와 같은 식) |
+| `src/world/node.ts` | `startWorldNode(o)`: 입력 토픽을 프레임 차례로 넣고 `rev`·상태·변화·`/world/closer`를 낸다. 250ms `tick` |
+| `src/world/mirror.ts` | `WorldMirror`: `/world/state`·`/world/changes`를 받아 `view()`·변화 콜백·대시보드 방송 |
+| `src/observe/pipeline.ts` | `world` 대신 `WorldPort`(`detections(i)`·`scene(i)`·`closerIds(look)`·`view()`). `idsOf`·`publish()` 삭제 |
+| `src/observe/node.ts` | `startPerceptionNode(o)`: `WorldPort`를 통로로 잇는다 |
+| `src/server/start.ts` | 통로 열기(`boot`·`onLost`) |
+| `src/server/home/observe.ts`·`act.ts`·`phone.ts`·`devices.ts`·`index.ts`·`say.ts`·`core.ts` | `core.world`(WorldState) 대신 `core.mirror`, 노드 띄우기·닫기 차례, `/world/input`·`/phone/heard`·`/device/changes` 내기 |
+| `src/brain/decide.ts` | `world: WorldState` → `world: { view(now: number): WorldView }` |
+| `tests/latency-world.test.ts`, `tests/fixtures/latency/world.json`, `scripts/bus-latency.ts` | Task 0(끝남) |
+| `tests/world-node.test.ts`, `tests/world-mirror.test.ts`, `tests/observe-node.test.ts`, `tests/world-accept.test.ts` | 새 시험 |
 
-**몸 모양:** `/perception/detections`, `/perception/analysis`, `/perception/look_request`, `/perception/look_result`, `/world/input`, `/world/state`, `/world/changes`, `/device/state`, `/device/changes`의 zod 모양을 `src/bus/topics.ts`에 실제 모양으로 넣는다(`src/contract/`의 타입과 같음을 `z.ZodType<Contract>` 타입 주석으로 묶는다).
+### Task 0: 지연 기준 재기(끝남)
 
-**시험:** `tests/world-node.test.ts`(인식 토픽만으로 World State가 같은 바뀜을 내는지, `/world/input` 지킴·따르기 창, 늦은 위에서 본 답은 `observed_ms`·`req`로 버림 — 292eb63 사례, 같은 원본 프레임의 잘라 본 답이 전체 답보다 앞섬 — d1ccae2 사례, 변화보다 상태가 늦게 와도 옛 상태로 판단하지 않음), 기존 `tests/world-*.test.ts`는 그대로 통과. 다시 들어오기 사례(1620be1)가 실행기 차례로 처리되는지 `tests/bus-node.test.ts`에 더한다.
+`tests/latency-world.test.ts`·`tests/fixtures/latency/world.json`·`scripts/bus-latency.ts`를 이 계획과 같이 커밋했다. 위 「지연 예산」 표의 지금 값이 이것으로 잰 값이다. `LATENCY_OUT=<파일>`이면 잰 값을 한 줄 JSON으로 남기고, `LATENCY_DECIDE=1`이면 변화 → 판단 시작도 잰다(재기만).
 
-**끝 조건:** 묶음 공통 + `grep -n "world\.\(guard\|contentsAction\|apply\)" src/server src/act src/observe`가 `src/world/node.ts` 밖에서 비어 있다 + **기록 DB 같음 시험**(`tests/history-golden.test.ts`).
+### Task 1: RedisBus 지나기 줄이기
+
+**Files:** Modify `src/bus/redis.ts`. Test: `tests/bus-redis.test.ts`(계약 그대로), `scripts/bus-latency.ts`(잼).
+
+- [ ] 실패 시험(Redis 전용): 「메시지 100개를 받는 동안 `XTRIM`을 메시지마다 부르지 않는다」(Redis `MONITOR` 대신 `INFO commandstats`의 `cmdstat_xtrim` 호출 수가 100보다 훨씬 작다), 「STATE 받는 쪽은 `HGET`을 부르지 않는다」(`cmdstat_hget` 0). 둘 다 지금 코드에서 실패한다.
+- [ ] 구현: RELIABLE은 ack 뒤 자르기를 1초 또는 100번마다 한 번, `XACK`를 다음 읽기와 파이프라인. STATE 발행은 Lua(`INCR`·`HSET`·`XADD` 값 포함), 받는 쪽은 알림의 값을 쓰고 건너뜀이면 `HGETALL` 스냅숏.
+- [ ] 통과 확인: 통로 계약 열세·Redis 전용 시험(Docker 규칙), `scripts/bus-latency.ts`로 RELIABLE·STATE p50 3ms 이하를 표에 적는다. 커밋·push.
+
+### Task 2: 인식·집 상태 토픽의 모양과 상태 없는 감지 거르기
+
+**Files:** Modify `src/contract/world.ts`, `src/bus/topics.ts`, `src/world/state/core.ts`·`closer.ts`(`accepts`·`closerObject`를 `src/world/accept.ts` 함수로), `src/world/index.ts`. Test: `tests/bus-topics.test.ts`, `tests/world-accept.test.ts`.
+
+- [ ] 실패 시험: `/perception/detections`는 갈래 다섯(`eye`·`frame`·`missing`·`closer`·`top`), `/perception/scene`은 셋(`scene`·`closer_scene`·`closer_end`)만 받고 `jpeg`·`jpeg_b64` 칸이 있으면 거절한다. `/world/state`는 `{rev, view}`, `/world/changes`는 `{rev, changes}`, `/world/input`은 `guard`·`contents`, `/world/closer`는 `{look, ids}`만 받는다. `accepts`·`closerObject` 함수가 지금 `WorldState` 메서드와 같은 답을 낸다(낱말 표 모든 종류 × 점수 경계).
+- [ ] 구현: 계약 타입과 zod 모양(`z.ZodType<…>` 주석으로 계약과 묶음), 상태 없는 함수로 빼고 `WorldState`는 그 함수를 부른다.
+- [ ] 통과 확인: `npm run heavy -- npx vitest run tests/bus-topics.test.ts tests/world-accept.test.ts tests/world-state.test.ts`. 커밋·push.
+
+### Task 3: 집 상태 노드
+
+**Files:** Create `src/world/node.ts`. Test: `tests/world-node.test.ts`.
+
+**Interfaces:** `startWorldNode(o: { bus: Bus; epoch; world: WorldState; clock?: Clock; tickMs?: number; log? }): Promise<BusNode>`(prepare까지). 받는 것: `/perception/detections`·`/perception/scene`·`/world/input`·`/phone/heard`·`/device/changes`. 내는 것: `/world/state`·`/world/changes`·`/world/closer`.
+
+- [ ] 실패 시험(`tests/world-node.test.ts`, MemoryBus·VirtualClock):
+  - 같은 입력 차례를 `WorldState`에 바로 넣은 것과 집 상태 노드에 토픽으로 넣은 것의 변화 줄·`view`가 같다(감지 → VLM 답, 가까이 보기 합치기 → `/world/closer` 답 → 그 VLM 답, 위에서 본 값, 분석 없음).
+  - VLM 답(`/perception/scene`)이 같은 프레임의 YOLO 입력보다 먼저 와도 YOLO 입력을 넣은 뒤에 넣는다. 2초 안에 YOLO 입력이 없으면 빈 감지 번호 표로 넣는다.
+  - 변화가 있을 때만 `rev`가 오르고 상태·변화를 같은 `rev`로 낸다. 변화 없는 입력은 `rev`를 올리지 않는다. 250ms마다 같은 `rev`로 상태를 다시 낸다(가상 시계).
+  - `/world/input` 지킴·따르기 창이 `world.guard`·`contentsAction`과 같다. 없는 물건이면 아무것도 하지 않는다.
+  - 가전 첫 상태(`note.initial`)는 변화를 내지 않는다.
+  - 1620be1 다시 들어오기: 변화를 받는 쪽이 같은 콜백 안에서 `/world/input`을 내도 그 입력은 지금 콜백이 끝난 뒤에 넣는다.
+- [ ] 구현: 입력마다 `world`에 넣고, 변화가 있으면 `rev++` → `publish("/world/changes")` → `publish("/world/state")`. `idsOf`·가까이 보기 `pending`을 노드 안 표로(30초 넘은 것은 지운다).
+- [ ] 통과 확인, 커밋·push.
+
+### Task 4: 거울
+
+**Files:** Create `src/world/mirror.ts`. Test: `tests/world-mirror.test.ts`.
+
+**Interfaces:** `startWorldMirror(o: { bus; epoch; name: NodeName; onChanges?(c: WorldChange[], view: WorldView): void; onView?(view: WorldView): void }): Promise<{ node: BusNode; view(): WorldView | null }>`.
+
+- [ ] 실패 시험: 변화는 그 `rev` 이상의 상태를 가진 뒤에 `onChanges`로 오고 그때 `view()`도 그 상태다(P2-7). `onView`는 `rev`가 바뀔 때만 부른다(250ms 다시 냄은 부르지 않음). 늦게 붙어도 가장 새 상태를 바로 받는다(STATE).
+- [ ] 구현, 통과 확인, 커밋·push.
+
+### Task 5: 관찰 흐름을 인식 노드로
+
+**Files:** Modify `src/observe/pipeline.ts`(`world` → `WorldPort`, `idsOf`·`publish()` 삭제), Create `src/observe/node.ts`. Test: `tests/observe-node.test.ts`, 기존 `tests/observe-*.test.ts`·가까이 보기·위에서 보기 시험(그 시험들은 `WorldState`를 바로 넘기던 것을 `WorldState`를 바로 부르는 시험 대역 `tests/helpers/world-port.ts`로 바꾼다. 대역은 같은 차례로 넣고 같은 `ids`를 돌려준다).
+
+- [ ] 실패 시험: 프레임 하나에 `/perception/detections`로 `eye` → `frame` 차례, VLM 답은 `/perception/scene`으로 내고 JPEG를 싣지 않는다. 가까이 보기는 `closer`를 내고 `/world/closer` 답으로 `found` id를 채운다. 답이 2초 안에 없으면 `world_timeout`. 감지 대기열 고리가 변화 콜백·`view()`를 부르지 않는다.
+- [ ] 구현, 통과 확인, 커밋·push.
+
+### Task 6: 집 묶음 잇기
+
+**Files:** Modify `src/server/start.ts`(통로), `src/server/home/core.ts`(`world` → `mirror`·노드), `observe.ts`(노드 띄우기, `startLoop`의 `observed.tick()`·가전 구독 빼기: 집 상태 노드가 맡음), `act.ts`(`guardObject`·`contentsAction` → `/world/input`, `world` → 거울), `phone.ts`(`heardSpeech` → `/phone/heard`), `devices.ts`(허브 구독 → `/device/changes`), `say.ts`·`index.ts`(`/api/world`·닫기 차례), `src/brain/decide.ts`(`world` 타입).
+
+- [ ] 실패 시험: `tests/observe-start.test.ts`에 「집을 닫으면 인식 → 집 상태 → 거울 차례로 끝나고 그 뒤 변화가 대시보드로 가지 않는다」, `tests/server.test.ts`에 「통로를 잃으면(가짜 통로의 onLost) 서버가 끝 코드 1로 끝난다」.
+- [ ] 구현: `grep -n "world\.\(guard\|contentsAction\|apply\|heard\|tick\|setEye\)" src/server src/act src/observe src/phone src/brain`이 `src/world/` 밖에서 빈다.
+- [ ] 통과 확인: 기존 `tests/world-*.test.ts`·`tests/act-track*.test.ts`·`tests/observe-*.test.ts`. 커밋·push.
+
+### Task 7: 묶음 2 끝 조건
+
+- [ ] 묶음 공통(데모 e2e 넷·영상 모드 셋·`ui/tests/phone-mode-parity.test.ts`·typecheck·lint).
+- [ ] 기록 DB 같음 시험: e2e 세 파일의 `afterEach` 정답이 그대로 통과한다(정답 파일을 고치지 않는다).
+- [ ] 지연: `tests/latency-world.test.ts`가 한도 안(MemoryBus). `REDIS_URL`을 주고 `scripts/bus-latency.ts`와 이 시험을 한 번씩 돌려 값을 「지연 예산」 표에 적는다(Docker 규칙).
+- [ ] `grep` 끝 조건(Task 6).
+- [ ] 해시를 조정자에게 보내고 묶음 3 단계 계획을 이 파일에 더한다(domain-split을 합친 뒤라면 「VLM 메인」 확정 규칙 계획과 「사람이 쓰는 중이면 관찰만」 공통 지킴을 함께 본다).
 
 ## 묶음 3: 실행 추적 ↔ 폰 (콜백 22개)
 
 **목표:** 실행 추적 노드(`act`)가 폰·대시보드와 토픽으로만 주고받는다. 폰 사용권 표가 흩어진 막기를 대신한다.
+
+**공통 지킴(사용자 결정 2026-11-18):** 「사람이 물건을 쓰는 중이면 그 사람이 사라질 때까지 관찰만」(domain-split에서 만드는 규칙)을 실행 추적 노드의 공통 지킴 하나로 옮긴다: 계획 시작·단계 명령·가까이 가서 보기 모두 이 지킴을 먼저 본다. 묶음 3 단계 계획에서 domain-split의 구현과 시험을 그대로 옮긴다.
 
 **콜백 → 토픽**(`src/server/home/act.ts:100-151`):
 
@@ -2528,7 +2727,7 @@ Expected: 모두 PASS(이 묶음은 집 실행 묶음을 바꾸지 않는다).
 | `phoneReady` | `/phone/link`(STATE) |
 | `sayAloud` | `/phone/say` + `/phone/claim` `safety` |
 | `stalled`, `lookContents`, `strayed` | `act` 안 보기 담당(`Looker`) |
-| `topReady` | 없앤다(위에서 보기 요청 하나, 묶음 2) |
+| `topReady`, 보기 담당의 `closer`·`topLook`·`latest` 직접 부르기 | 없앤다: `/perception/look_request`·`/perception/look_result`(위에서 보기는 쌍을 기다리는 요청 하나, 이 계획 12). 묶음 2에서 옮김 |
 | `guardObject`, `contentsAction` | `/world/input`(묶음 2) |
 | `approvalsWaiting`, `talking` | `/phone/owner`(사용권 표, claim id) |
 | `tasks` | `/act/status` 안 지금 도움 모드 행동 목록(설정) |

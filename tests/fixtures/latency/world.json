@@ -1,0 +1,10 @@
+{
+  "frame_to_world": {
+    "p50_ms": 7.9,
+    "p95_ms": 13.5,
+    "max_ms": 14.4,
+    "samples": 40,
+    "world_bytes": 18399
+  },
+  "measured": "2026-11-17"
+}
