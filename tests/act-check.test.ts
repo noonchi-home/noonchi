@@ -233,6 +233,13 @@ describe("찾을 자리(lostTarget): 대상이 안 보일 때 마지막으로 �
     expect(lostTarget({ world: w, cls: "cup", now: 10_000, freshMs: 10_000 })).toBeNull();
     expect(lostTarget({ world: w, cls: "cup", now: 10_000, freshMs: 3000 })).toEqual({ objectId: "cup_1", cls: "cup", position: [2, 0.75, 0], surface: "t", surface_label: "식탁", at_ms: 5_000 });
   });
+  // Codex(d2a34f4): 실행 전 검사는 판단 뒤 다시 못 본 컵을 낡음으로 막는데 찾을 자리는 3초 안이면 없다고 했다
+  it("판단 시각(seenAfter)을 주면 그 뒤에 다시 본 것만 신선하다(실행 전 검사의 낡음과 같은 조건)", () => {
+    const w = world([obj({ last_seen_ms: 9_000 })]);
+    expect(checkPlan(base({ decision: { ...base().decision, atMs: 9_500 }, world: w }))).toMatchObject({ reason: "stale", object: "cup_1" });
+    expect(lostTarget({ world: w, cls: "cup", now: 10_000, freshMs: 3000, objectId: "cup_1", seenAfter: 9_500 })).toMatchObject({ objectId: "cup_1", at_ms: 9_000 });
+    expect(lostTarget({ world: w, cls: "cup", now: 10_000, freshMs: 3000, objectId: "cup_1", seenAfter: 8_000 })).toBeNull();
+  });
   it("objectId를 주면 그 물건의 자리만 낸다(다른 컵 자리가 더 새도)", () => {
     const w = world([obj({ last_seen_ms: 4_000, status: "out_of_view" }), obj({ id: "cup_2", position: [3, 0, 1], last_seen_ms: 6_000, status: "out_of_view" })], [seen(7_000)]);
     expect(lostTarget({ world: w, cls: "cup", now: 10_000, freshMs: 3000, objectId: "cup_1" })).toMatchObject({ objectId: "cup_1", at_ms: 4_000 });

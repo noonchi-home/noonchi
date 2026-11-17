@@ -3,7 +3,7 @@
 // 차례: 가기(go, 폰 눈과 그 자리 수평 거리가 FIND.nearM 밖일 때만) → 비추기(aim, 「<면> 위를 비춰 주세요」) → 가까이 보기(look, 보기 담당의 같은 물건 건너뛰기 없이)
 //   → 사진 기다림(after) → 찾음(found) 또는 그만둠(over).
 // - 비추기는 가까이 보기와 같은 프레임 고르기가 그 자리를 비추기 뒤 사진으로만 고를 수 있을 때(spotReady) 끝난다.
-// - 찾음은 tick마다 본다: 그 자리 FIND.matchM 안에 그 종류의 있는 물건이 막은 검사의 신선도(freshMs) 안에 보였고 치운 것·손에 있음이 아니다.
+// - 찾음은 tick마다 본다: 그 자리 FIND.matchM 안에 그 종류의 있는 물건이 막은 검사의 신선도(freshMs, 실행 전은 판단 뒤에 본 것만) 안에 보였고 치운 것·손에 있음이 아니다.
 //   여럿이면 그 자리에 가장 가까운 것, 둘이 FIND.splitM 안으로 붙어 가를 수 없으면 아직 못 찾은 것이다. 사진 기다림 중에 찾았지만 낡았으면 새 사진으로 다시 비춘다.
 // - 그만둠: 명령 하나가 PEEK.stepMs 안에 안 끝남, 막힌 채 holdMs, 사진 기다림 settleMs가 지나도 못 찾음, 찾기 시작부터 FIND.totalMs. 그 자리는 FIND.retryMs 동안 다시 가지 않는다.
 // - 막힘(맞춘 눈·폰 판본·끄기 안내·승인 대기·폰 대화·계획의 질문)과 명령 되풀이는 내용물 보류와 같은 명령 줄 규칙이다(phone-line.ts).
@@ -36,6 +36,8 @@ const STALE_DEFAULT_MS = 3000;
  *  phase: 명령(cmd: go·aim) → 가까이 보기 부탁(look) → 보는 중(looking) → 사진 기다림(after) → 끝(done 찾음·over 그만둠). */
 export interface Find {
   objectId: string | null; cls: ObjClass; name: string; label: string; surfaceLabel: string | null; spotId: string; at: V3; freshMs: number;
+  /** 이 시각 뒤에 본 것만 신선하다(실행 전 찾기는 판단 시각, 계획 전 찾기는 없음). */
+  after: number;
   phase: "cmd" | "look" | "looking" | "after" | "done" | "over";
   part: "go" | "aim" | null; sent: PlannedCommand | null;
   /** 지금 명령을 보낸 때(명령 한도), 비추기를 보낸 때(spotReady since), 찾기를 시작한 때(전체 기한), 막히기 시작한 때(없으면 null),
@@ -68,7 +70,7 @@ export class Finder extends Part {
     if (!spot) return false;
     // 계획 밖 가까이 가서 보기와 함께 돌지 않는다(찾기가 먼저)
     core.contents.dropIdle();
-    const q: FindSlot = { id: `find:${++this.slotSeq}`, sent: null, spokeAt: now, visionAt: now, find: this.make(spot, PRECHECK_FRESH_MS, now), first: d, decision: d, text };
+    const q: FindSlot = { id: `find:${++this.slotSeq}`, sent: null, spokeAt: now, visionAt: now, find: this.make(spot, PRECHECK_FRESH_MS, Number.NEGATIVE_INFINITY, now), first: d, decision: d, text };
     core.finding = q;
     core.emit(planIdOf(d.id), "decided", EXEC_TEXT.finding(q.find.name));
     this.idle();
@@ -134,10 +136,11 @@ export class Finder extends Part {
     if (!f) {
       const cls = taskOf(r.decision.action)?.target;
       const spot = cls ? lostTarget({
-        world: this.o.world(), cls, placed: this.core.steps.placed(), away: this.core.steps.awayIds(), now, freshMs: this.staleMs(), objectId, resting: (s) => this.resting(s, now),
+        world: this.o.world(), cls, placed: this.core.steps.placed(), away: this.core.steps.awayIds(), now, freshMs: this.staleMs(), seenAfter: r.decision.atMs, objectId,
+        resting: (s) => this.resting(s, now),
       }) : null;
       if (!spot) return "none";
-      f = r.find = this.make(spot, this.staleMs(), now);
+      f = r.find = this.make(spot, this.staleMs(), r.decision.atMs, now);
     }
     const out = this.step(line, f, now, !!r.asking);
     if (out.kind === "over") return "over";
@@ -160,11 +163,11 @@ export class Finder extends Part {
     if (r.sent?.step.includes(":find:")) this.core.steps.clear(r);
   }
 
-  private make(spot: LostSpot, freshMs: number, now: number): Find {
+  private make(spot: LostSpot, freshMs: number, after: number, now: number): Find {
     const name = OBJECT_NAME[spot.cls] ?? spot.cls;
     const f: Find = {
       objectId: spot.objectId, cls: spot.cls, name, label: spot.surface_label ?? name, surfaceLabel: spot.surface_label, spotId: spot.objectId ?? `find_${spot.cls}`, at: [...spot.position],
-      freshMs, phase: "cmd", part: null, sent: null, since: now, aimAt: now, startedAt: now, blockedAt: null, lookTryAt: now, afterAt: now, guarded: false, end: new AbortController(),
+      freshMs, after, phase: "cmd", part: null, sent: null, since: now, aimAt: now, startedAt: now, blockedAt: null, lookTryAt: now, afterAt: now, guarded: false, end: new AbortController(),
     };
     if (f.objectId) {
       f.guarded = true;
@@ -271,7 +274,7 @@ export class Finder extends Part {
     const near = world.objects
       .filter((o) => o.cls === f.cls && o.status === "present" && o.position && !putAway(o, placed) && o.facts.place?.value !== "in_hand" && dist3(o.position, f.at) <= FIND.matchM)
       .sort((a, b) => dist3(a.position!, f.at) - dist3(b.position!, f.at));
-    const fresh = near.filter((o) => now - o.last_seen_ms <= f.freshMs);
+    const fresh = near.filter((o) => o.last_seen_ms > f.after && now - o.last_seen_ms <= f.freshMs);
     const pool = fresh.length ? fresh : near;
     if (!pool.length) return null;
     if (pool.length > 1 && dist3(pool[0]!.position!, pool[1]!.position!) <= FIND.splitM) return null;
