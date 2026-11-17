@@ -3638,15 +3638,13 @@ describe("실행 추적 + 실제 World State(기준점을 맞춘 카메라)", ()
     await decide({ ...decision, atMs: 0 });
     t.onAnswer("plan:pam-1", "plan:pam-1:1", "done");
     expect(last()).toMatchObject({ step: "plan:pam-1:2", vision: "컵 · 식탁 위" });
-    for (let i = 4; i <= 5; i++) {
-      clock.t = i * 1000;
-      see(i, moved, "in_hand");
-      t.onWorld();
-      expect(last()).toMatchObject({ step: "plan:pam-1:2" });
-    }
-    clock.t = 6000;
-    see(6, moved, "in_hand");
-    expect(ws.view(6000).objects.map((o) => [o.id, o.status, o.closer_hold, o.followed_by])).toEqual([["cup_1", "present", false, "cup_2"], ["cup_2", "present", false, null]]);
+    clock.t = 4000;
+    see(4, moved, "in_hand");
+    t.onWorld();
+    expect(last()).toMatchObject({ step: "plan:pam-1:2" });
+    clock.t = 5000;
+    see(5, moved, "in_hand");
+    expect(ws.view(5000).objects.map((o) => [o.id, o.status, o.closer_hold, o.followed_by])).toEqual([["cup_1", "present", false, "cup_2"], ["cup_2", "present", false, null]]);
     t.onWorld();
     expect(last()).toMatchObject({ step: "plan:pam-1:3", vision: "컵 · 손에 있음 · 싱크대까지 거리 모름" });
   });

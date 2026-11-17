@@ -148,7 +148,8 @@ export class WorldCore {
     this.fall = new FallWatch(this.fallCfg);
     this.identityM = o.identityM ?? 0.25;
     this.stepMs = o.evidenceStepMs ?? EVIDENCE_STEP_MS;
-    this.confirmer = new Confirmer((key) => (key === PERSON ? 2 : 3), this.stepMs);
+    // 등장은 사람·물건 모두 2장(2초), 사라짐은 사람 2장(4초)·물건 3장(6초). 물건 등장을 4초에서 2초로 줄였다(흔들려 짧게 잡힌 물건은 사라짐 셈이 정리한다)
+    this.confirmer = new Confirmer((key) => (key === PERSON ? 2 : 3), this.stepMs, () => 2);
   }
 
   /** 이 감지를 받는가: 낱말 표의 사람·물건·가전 설비 종류이고 그 종류의 최소 신뢰도 이상. 관찰 흐름은 받는 감지만 상자·YOLO 글·VLM 감지 목록에 싣는다. */

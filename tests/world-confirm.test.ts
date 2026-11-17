@@ -36,6 +36,12 @@ describe("등장·사라짐 확인", () => {
     expect(feed(new Confirmer(need), 500, 30_000, scene)).toEqual(want);
   });
 
+  it("등장 장 수를 따로 주면(appearNeed) 등장만 그 시간이고 사라짐은 need 그대로다: 물건 등장 2초·사라짐 6초", () => {
+    const c = new Confirmer(need, S, () => 2);
+    const scene = (t: number) => (t >= 2000 && t <= 12_000 ? ["cup_1"] : []);
+    expect(feed(c, 100, 30_000, scene)).toEqual([{ key: "cup_1", kind: "appeared", atMs: 4000 }, { key: "cup_1", kind: "gone", atMs: 18_000 }]);
+  });
+
   it("100ms 간격에서 3장만 보인 물건은 등장이 아니다(장 수가 아니라 시간)", () => {
     const c = new Confirmer(need);
     expect(feed(c, 100, 3900, () => ["cup_1"])).toEqual([]);

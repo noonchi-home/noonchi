@@ -44,22 +44,20 @@ describe("들은 말(실제 폰이 들은 한 마디)", () => {
 });
 
 describe("World State", () => {
-  it("3장 연속 컵이면 등장, 관계표로 식기세척기를 붙인다(맞추기 전 위치는 모름)", () => {
+  it("2장 연속(한 장어치 시간) 컵이면 등장, 관계표로 식기세척기를 붙인다(맞추기 전 위치는 모름)", () => {
     const w = ws();
-    let last;
-    for (let i = 1; i <= 3; i++) last = w.applyDetections(frame(i), [cup]);
-    expect(last!.changes.map((c) => c.kind)).toEqual(["appeared"]);
-    const o = w.view(3000).objects[0]!;
-    expect(o).toMatchObject({ cls: "cup", status: "present", position: null, devices: ["dishwasher_1"], first_seen_ms: 1000, last_seen_ms: 3000 });
+    expect(w.applyDetections(frame(1), [cup]).changes).toEqual([]);
+    expect(w.applyDetections(frame(2), [cup]).changes.map((c) => c.kind)).toEqual(["appeared"]);
+    const o = w.view(2000).objects[0]!;
+    expect(o).toMatchObject({ cls: "cup", status: "present", position: null, devices: ["dishwasher_1"], first_seen_ms: 1000, last_seen_ms: 2000 });
   });
   it("등장 확인 전 물체는 보이지 않고, 한 장 끊기면 잊는다", () => {
     const w = ws();
     w.applyDetections(frame(1), [cup]);
-    w.applyDetections(frame(2), [cup]);
-    expect(w.view(2000).objects).toEqual([]);
-    w.applyDetections(frame(3), []);
-    for (let i = 4; i <= 6; i++) w.applyDetections(frame(i), [cup]);
-    expect(w.view(6000).objects.map((o) => [o.id, o.first_seen_ms])).toEqual([["cup_2", 4000]]);
+    expect(w.view(1000).objects).toEqual([]);
+    w.applyDetections(frame(2), []);
+    for (let i = 3; i <= 4; i++) w.applyDetections(frame(i), [cup]);
+    expect(w.view(4000).objects.map((o) => [o.id, o.first_seen_ms])).toEqual([["cup_2", 3000]]);
   });
   // 안 내용(contents)은 이 규칙이 아니라 내용물 갱신기(3장·4초, tests/world-contents.test.ts)가 정한다
   it("VLM 사실을 면(facet)마다 두고, 두 번 연속이면 confirmed", () => {
@@ -111,9 +109,9 @@ describe("World State", () => {
   it("맞춘 뒤: 트윈 위치를 붙이고, 같은 자리 같은 종류는 같은 물체, 시야 밖이면 사라짐을 세지 않는다", () => {
     const w = new WorldState({ evidenceStepMs: 1000, surfaces: () => [{ id: "table_1", label: "식탁", center: [0.75, 0], top: 0.75, radius: 0.6 }], floorAt: () => 0, roomAt: () => ({ id: "kitchen", label: "주방" }), devices });
     const at = (i: number, view: CameraView) => ({ ...frame(i), view });
-    let last;
-    for (let i = 1; i <= 3; i++) last = w.applyDetections(at(i, look), [cup]);
-    expect(last!.changes).toEqual([expect.objectContaining({ kind: "appeared", text: "컵 cup_1 보임 · 식탁 위", meaningful: true })]);
+    const seen: ReturnType<WorldState["applyDetections"]>["changes"] = [];
+    for (let i = 1; i <= 3; i++) seen.push(...w.applyDetections(at(i, look), [cup]).changes);
+    expect(seen).toEqual([expect.objectContaining({ kind: "appeared", text: "컵 cup_1 보임 · 식탁 위", meaningful: true })]);
     expect(w.view(3000).objects).toEqual([expect.objectContaining({ id: "cup_1", surface: "table_1", room: "kitchen" })]);
     expect(w.view(3000).objects[0]!.position![1]).toBeCloseTo(0.75, 2);
     expect(w.applyDetections(at(4, away), []).changes).toEqual([expect.objectContaining({ kind: "out_of_view", text: "컵 cup_1 시야 밖", meaningful: false })]);
@@ -165,7 +163,7 @@ describe("World State", () => {
     let n = 0;
     const step = (dets: Detection[]) => { n++; out.push(...w.applyDetections({ ...frame(n), view: look }, dets).changes.map((c) => `${n}:${c.kind}`)); };
     for (const dets of [[cup], [cup], [cup], [], [], [], [cup], [], [], [], [cup], [], [], [], [cup]]) step(dets);
-    expect(out).toEqual(["3:appeared", "6:gone"]);
+    expect(out).toEqual(["2:appeared", "6:gone"]);
     expect(w.view(n * 1000).objects.map((o) => o.status)).toEqual(["gone"]);
   });
   it("사람은 2장으로 보임·안 보임, 가전 변화는 바뀐 시각과 이력", () => {
@@ -219,7 +217,7 @@ describe("World State: 프레임 간격과 상관없는 시간 규칙(기본 2�
       return { view: turned ? away : look, dets: [...(cupSeen ? [cup] : []), ...(t >= 2000 && t <= 6000 ? [person] : [])] };
     };
     const want = [
-      ["appeared", "cup_1", 4000], ["person_appeared", "person", 4000], ["person_gone", "person", 10_000], ["out_of_view", "cup_1", 10_000],
+      ["appeared", "cup_1", 2000], ["person_appeared", "person", 4000], ["person_gone", "person", 10_000], ["out_of_view", "cup_1", 10_000],
       ["back_in_view", "cup_1", 16_000], ["gone", "cup_1", 26_000],
     ];
     const kinds = (r: ReturnType<typeof run>) => r.out.filter(([k]) => k !== "person_room");
@@ -231,7 +229,7 @@ describe("World State: 프레임 간격과 상관없는 시간 규칙(기본 2�
     const kept = run(100, 4000, (t) => ({ dets: t === 1000 || t === 1100 ? [] : [cup] }));
     expect(kept.w.view(4000).objects.map((o) => [o.id, o.first_seen_ms])).toEqual([["cup_1", 0]]);
     const lost = run(100, 6000, (t) => ({ dets: t >= 1000 && t <= 1500 ? [] : [cup] }));
-    expect(lost.out).toEqual([["appeared", "cup_2", 5600]]);
+    expect(lost.out).toEqual([["appeared", "cup_2", 3600]]);
     expect(lost.w.view(6000).objects.map((o) => [o.id, o.first_seen_ms])).toEqual([["cup_2", 1600]]);
   });
 
@@ -291,21 +289,19 @@ describe("World State + 관절", () => {
   it("손목이 컵 상자 안이면 컵 손에 있음·사람 물건을 들고 있음·서 있음, 변화 글은 등장 다음에", () => {
     const w = ws();
     let changes: ReturnType<WorldState["applyDetections"]>["changes"] = [];
-    for (let i = 1; i <= 3; i++) changes = w.applyDetections(frame(i), [person, cup], [grip]).changes;
-    expect(changes.map((c) => [c.kind, c.text, c.meaningful])).toEqual([
-      ["appeared", "컵 cup_1 보임", true],
-    ]);
+    for (let i = 1; i <= 3; i++) changes.push(...w.applyDetections(frame(i), [person, cup], [grip]).changes);
+    const cupLines = changes.filter((c) => c.subject === "cup_1").map((c) => [c.kind, c.text, c.meaningful]);
+    expect(cupLines[0]).toEqual(["appeared", "컵 cup_1 보임", true]);
     const v = w.view(3000);
     expect(v.objects[0]!.facts.place).toMatchObject({ value: "in_hand", certainty: "confirmed" });
     expect(v.person.facts).toMatchObject({ holding: { value: "holding_object" }, posture: { value: "standing" } });
     // 사람은 2장째에 보임이 되고, 그때 사람 사실이 변화로 나간다
     const w2 = ws();
     w2.applyDetections(frame(1), [person, cup], [grip]);
-    expect(w2.applyDetections(frame(2), [person, cup], [grip]).changes.map((c) => c.text)).toEqual(["사람 보임"]);
+    expect(w2.applyDetections(frame(2), [person, cup], [grip]).changes.filter((c) => c.subject === "person").map((c) => c.text)).toEqual(["사람 보임"]);
     const w3 = ws();
     w3.applyDetections(frame(1), [person, cup], [apart]);
-    w3.applyDetections(frame(2), [person, cup], [apart]);
-    expect(w3.applyDetections(frame(3), [person, cup], [grip]).changes.map((c) => c.text)).toEqual(["컵 cup_1 보임", "컵 cup_1 손에 있음", "사람 물건을 들고 있음"]);
+    expect(w3.applyDetections(frame(2), [person, cup], [grip]).changes.filter((c) => c.subject === "cup_1").map((c) => c.text)).toEqual(["컵 cup_1 보임", "컵 cup_1 손에 있음"]);
   });
 
   it("같은 프레임 VLM 답이 식탁 위·앉아 있음이라 해도 관절 사실이 남고, 들고 있음도 지우지 않는다. 다음 프레임 VLM 답은 그대로 받는다", () => {
@@ -440,12 +436,12 @@ describe("후보 자리(sightings): 등장 확인 전에 끊긴 물건의 마지
   it("트윈 자리가 있는 컵 후보가 2초 보이다 끊기면 500ms 뒤 물건은 잊히고 종류·자리·면·마지막 본 때가 남는다", () => {
     expect(placeBox(look, onTable.box, size, surfaces(), () => 0).surface).toBe("table_1");
     const w = w0();
-    run(w, 0, 2000, [onTable]);
-    expect(w.view(2000).sightings).toBeUndefined();   // 아직 세는 중
-    run(w, 2500, 3000, []);
-    const v = w.view(3000);
+    run(w, 0, 1500, [onTable]);
+    expect(w.view(1500).sightings).toBeUndefined();   // 아직 세는 중
+    run(w, 2000, 2500, []);
+    const v = w.view(2500);
     expect(v.objects).toEqual([]);
-    expect(v.sightings).toEqual([{ cls: "cup", position: tableAt, surface: "table_1", surface_label: "식탁", at_ms: 2000, in_hand: false }]);
+    expect(v.sightings).toEqual([{ cls: "cup", position: tableAt, surface: "table_1", surface_label: "식탁", at_ms: 1500, in_hand: false }]);
   });
 
   it("2분이 지나면 사라지고, 종류마다 가장 새 4개까지다", () => {
@@ -477,15 +473,44 @@ describe("후보 자리(sightings): 등장 확인 전에 끊긴 물건의 마지
 
   it("관절로 든 채 끊긴 후보는 in_hand: true다. 손에 없던 자리가 있으면 그 자리를 손에 없음으로 남긴다", () => {
     const w = w0();
-    run(w, 0, 2000, [person, onTable], [grip(240)]);
-    run(w, 2500, 2500, []);
-    expect(w.view(2500).sightings).toEqual([expect.objectContaining({ cls: "cup", in_hand: true, at_ms: 2000 })]);
-    // 식탁 위 컵을 1초 본 뒤 사람이 들어 조금 옮기다 끊긴다
+    run(w, 0, 1500, [person, onTable], [grip(240)]);
+    run(w, 2000, 2000, []);
+    expect(w.view(2000).sightings).toEqual([expect.objectContaining({ cls: "cup", in_hand: true, at_ms: 1500 })]);
+    // 식탁 위 컵을 0.5초 본 뒤 사람이 들어 조금 옮기다 끊긴다
     const w2 = w0();
     const moved = det("cup", 0.9, [236, 88, 20, 10], 41);
-    run(w2, 0, 1000, [onTable]);
-    run(w2, 1500, 2500, [person, moved], [grip(246)]);
-    run(w2, 3000, 3000, []);
-    expect(w2.view(3000).sightings).toEqual([{ cls: "cup", position: tableAt, surface: "table_1", surface_label: "식탁", at_ms: 1000, in_hand: false }]);
+    run(w2, 0, 500, [onTable]);
+    run(w2, 1000, 1500, [person, moved], [grip(246)]);
+    run(w2, 2000, 2000, []);
+    expect(w2.view(2000).sightings).toEqual([{ cls: "cup", position: tableAt, surface: "table_1", surface_label: "식탁", at_ms: 500, in_hand: false }]);
+  });
+});
+
+describe("물건 등장 확인 2초(사람 등장 2초·사라짐 사람 4초·물건 6초는 그대로)", () => {
+  // 실제처럼 2초 간격 기준. 사진은 250ms마다, 카메라는 +x(식탁 쪽)를 본다
+  const w0 = () => new WorldState({ surfaces, floorAt: () => 0, roomAt: () => ({ id: "kitchen", label: "주방" }), devices });
+  const shot = (at: number): EngineFrame => ({ id: `q${at}`, capturedAtMs: at, latestAtMs: at, jpeg: Buffer.from(`q${at}`), sha256: sha256(Buffer.from(`q${at}`)), width: 480, height: 360, eye: null, view: look });
+  const onTable = det("cup", 0.9, [230, 88, 20, 10], 41);
+  const run = (w: WorldState, from: number, to: number, dets: (t: number) => Detection[]) => {
+    const out: string[] = [];
+    for (let t = from; t <= to; t += 250) out.push(...w.applyDetections(shot(t), dets(t)).changes.map((c) => `${c.kind}@${t}`));
+    return out;
+  };
+
+  it("물건은 처음 본 뒤 2초 이어 보이면 등장이다. 사람은 그대로 2초", () => {
+    const w = w0();
+    expect(run(w, 0, 3000, () => [onTable, person]).filter((c) => /^(appeared|person_appeared)@/.test(c)).sort()).toEqual(["appeared@2000", "person_appeared@2000"]);
+  });
+
+  it("흔들려 1.75초만 잡힌 물건은 등장하지 않고 잊는다. 2초 잡혔다 사라진 물건은 시야 안에서 6초 못 보면 사라짐으로 정리된다", () => {
+    const w = w0();
+    expect(run(w, 0, 1750, () => [onTable])).toEqual([]);
+    expect(run(w, 2000, 3000, () => [])).toEqual([]);
+    expect(w.view(3000).objects).toEqual([]);
+    const v = w0();
+    expect(run(v, 0, 2000, () => [onTable])).toEqual(["appeared@2000"]);
+    expect(run(v, 2250, 7750, () => [])).toEqual([]);
+    expect(run(v, 8000, 8000, () => [])).toEqual(["gone@8000"]);
+    expect(v.view(8000).objects).toEqual([expect.objectContaining({ cls: "cup", status: "gone" })]);
   });
 });

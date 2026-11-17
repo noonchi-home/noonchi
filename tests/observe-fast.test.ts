@@ -61,11 +61,11 @@ describe("빠른 프레임과 VLM 프레임", () => {
     expect(s.seen).toHaveLength(40);
     expect(s.seen[7]).toEqual({ type: "seen", at_ms: expect.any(Number), frame_id: "e8", captured_at_ms: 700, frame: { width: 480, height: 360 }, shapes: [{ label: "cup", score: 0.9, mask: CUP.mask }] });
     expect(s.p.status()).toMatchObject({ frames: 40, detected: 40, skipped: 0, queued: 0, vlm: { sent: 2 } });
-    // 빠른 프레임도 World State에 들어간다: 처음 본 뒤 4초인 41번째 장에 컵 등장
-    expect(s.world.view(3900).objects).toEqual([]);
+    // 빠른 프레임도 World State에 들어간다: 처음 본 뒤 2초인 21번째 장에 컵 등장
     s.send(40);
     await s.p.idle();
     expect(s.world.view(4000).objects.map((o) => [o.id, o.first_seen_ms, o.last_seen_ms])).toEqual([["cup_1", 0, 4000]]);
+    expect(s.logs.find((l) => l.type === "world_change" && l.kind === "appeared")).toMatchObject({ kind: "appeared", text: "컵 cup_1 보임" });
     expect(s.logs.filter((l) => l.type === "world_change" && l.kind !== "vlm").map((l) => l.type === "world_change" && l.kind)).toEqual(["appeared"]);
     await s.p.close();
   });
@@ -120,9 +120,9 @@ describe("빠른 프레임과 VLM 프레임", () => {
       const cup = s.world.view(10_000).objects.find((x) => x.cls === "cup")!;
       expect(cup.first_seen_ms).toBe(0);
       const appeared = s.logs.find((l) => l.type === "world_change" && l.kind === "appeared");
-      expect(appeared && appeared.type === "world_change" ? appeared.at_ms : null).toBeGreaterThanOrEqual(4000);
-      // 등장 줄 시각은 감지를 마친 때다: 4초 뒤 장이 대기열(빠른 프레임 2장)을 지나 감지되기까지 144ms × 3 + 엔진 간격 안
-      expect(appeared && appeared.type === "world_change" ? appeared.at_ms : null).toBeLessThanOrEqual(4000 + 3 * 144 + 100);
+      expect(appeared && appeared.type === "world_change" ? appeared.at_ms : null).toBeGreaterThanOrEqual(2000);
+      // 등장 줄 시각은 감지를 마친 때다: 2초 뒤 장이 대기열(빠른 프레임 2장)을 지나 감지되기까지 144ms × 3 + 엔진 간격 안
+      expect(appeared && appeared.type === "world_change" ? appeared.at_ms : null).toBeLessThanOrEqual(2000 + 3 * 144 + 100);
       await s.p.close();
     } finally {
       vi.useRealTimers();

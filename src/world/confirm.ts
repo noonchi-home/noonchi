@@ -1,6 +1,6 @@
 // 등장·사라짐 확인: 같은 쪽이 시간으로 이어질 때만 인정한다. 프레임 간격(2초든 100ms든)과 상관없이 같은 촬영 시각에 같은 사건이 난다.
 // need(key)는 2초 간격일 때의 장 수(사람 2장, 물건 3장. 출처는 docs/provenance.md)이고, 한 장은 EVIDENCE_STEP_MS(2초)어치다:
-// - 등장: 처음 본 뒤 (need − 1) × 2초 동안 이어 보임(사람 2초, 물건 4초).
+// - 등장: 처음 본 뒤 (appearNeed − 1) × 2초 동안 이어 보임. appearNeed를 주지 않으면 need다(World State는 사람·물건 모두 2장, 2초).
 // - 사라짐: 마지막으로 본 뒤 그 자리가 시야 안인데 못 본 시간이 need × 2초(사람 4초, 물건 6초). 시야 밖 프레임은 셈을 멈춘다(늘리지도 지우지도 않음).
 // - 프레임 한 장의 시간은 앞 프레임과의 간격이고 2초를 넘지 않는다(오래 비었다가 온 한 장이 바로 인정되지 않게).
 // - 끊김: 반대쪽 프레임이 왔을 때 셈하던 쪽을 마지막으로 본 지 EVIDENCE_GAP_MS(500ms) 이상이면 셈을 지운다. 그보다 짧으면(100ms 간격에서 한두 장 놓침)
@@ -27,8 +27,8 @@ export class Confirmer {
   private readonly streak = new Map<string, Streak>();
   /** 키마다 마지막으로 넣은 프레임의 촬영 시각(있다고 인정했거나 세는 중인 키만). */
   private readonly lastAt = new Map<string, number>();
-  /** stepMs: need 한 장의 시간이자 프레임 한 장이 내는 근거 시간의 상한(기본 EVIDENCE_STEP_MS). */
-  constructor(private readonly need: (key: string) => number, private readonly stepMs: number = EVIDENCE_STEP_MS) {}
+  /** stepMs: need 한 장의 시간이자 프레임 한 장이 내는 근거 시간의 상한(기본 EVIDENCE_STEP_MS). appearNeed: 등장 장 수(없으면 need). */
+  constructor(private readonly need: (key: string) => number, private readonly stepMs: number = EVIDENCE_STEP_MS, private readonly appearNeed: (key: string) => number = need) {}
 
   present(key: string): boolean {
     return this.on.has(key);
@@ -78,7 +78,7 @@ export class Confirmer {
       }
       // 등장은 처음 본 장부터, 사라짐은 마지막으로 본 장부터 잰다
       const next: Streak = s ? { total: s.total + w, agree: s.agree + w, lastAgreeAt: atMs } : { total: now ? 0 : w, agree: now ? 0 : w, lastAgreeAt: atMs };
-      const needMs = (now ? this.need(key) - 1 : this.need(key)) * this.stepMs;
+      const needMs = (now ? this.appearNeed(key) - 1 : this.need(key)) * this.stepMs;
       if (next.total < needMs || next.agree * 2 < next.total) {
         this.streak.set(key, next);
         this.lastAt.set(key, atMs);
