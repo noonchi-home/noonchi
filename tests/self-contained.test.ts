@@ -75,6 +75,16 @@ describe("한 저장소", () => {
     expect(hits).toEqual([]);
   });
 
+  it("문서에 옛 PAM 서비스 자리·예전 추론 모드·OpenRouter 길이 없고, src/brain/pam에 안내가 있다", () => {
+    for (const f of ["docs/reference.md", "docs/deploy.md", "docs/pam-interface.md", "README.md", "CLAUDE.md", "src/brain/pam/README.md"]) {
+      const text = readFileSync(join(ROOT, f), "utf8");
+      expect(text, f).not.toMatch(/services\/pam|\bPAM_URL\b|\bPAM_HOST_PORT\b|:8300|PAM_LLM_PROVIDER|OPENROUTER_API_KEY|qwen\/qwen3\.5-27b|INFERENCE_MODE=(mock|live)\b|`(mock|live)`\(/);
+    }
+    const guide = readFileSync(join(ROOT, "src/brain/pam/README.md"), "utf8");
+    for (const s of ["prompts/paper", "source_map.json", "scenario.json", "prompt.ts", "answer.ts", "decide.ts", "decision.ts", "history/reflect.ts", "habits.ts",
+      "src/world/text.ts", "src/act/tasks.ts", "npm test", "pam-golden", "-u", "OpenRouter 길은 2026-11-17에 뺐"]) expect(guide, s).toContain(s);
+  });
+
   it("규칙이 옆 저장소 경로만 잡는다", () => {
     for (const s of ["../ai/pam", "..\\twin-studio\\homes.json", "../twin-studio-3d", "noonchi-server", "C:/Users/x/Desktop/소웨공/ai",
       'const AI = join(ROOT, "..", "ai", "pam");', 'TWIN_STUDIO_DIR: resolve(ROOT, "..", "twin-studio")', "join(here, '..', '..', 'twin-studio-3d')", "    context: /srv/ai", "  build: ../ai",

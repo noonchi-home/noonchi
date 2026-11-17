@@ -41,7 +41,7 @@ src/                    도메인 폴더(구현명세서 구성 단위, 도메�
   world/                World State(state/: world.ts 겉 클래스, core.ts 안쪽 공유 객체 WorldCore, objects·people·facts·closer·devices)와 PAM 관찰 텍스트(vocab.ts 낱말 표)
   phone/                실제 폰 서버·눈, sync/(위치 맞추기)
   observe/              관찰 흐름(YOLO 감지·VLM)
-  brain/                PAM 서비스 연결, history/(기록·반성)
+  brain/                pam/(PAM 판단·반성, 논문 프롬프트), history/(기록·반성)
   agent/                도구 호출 루프(agent.ts), 도구(tools.ts), 기기 찾기, 승인 정책(policy.ts), 공급자(providers/), 계획 모드(planTools.ts, 단계 규칙 plan-rules.ts), mcp/(MCP stdio 서버·REST 백엔드)
   act/                  판단·검사·실행 추적(track/: tracker.ts 겉 클래스, core.ts 안쪽 공유 객체 TrackCore, start·steps·approval·safety·answers·coach)
   server/start.ts       시작 순서: twin 데이터 → 허브(대체 경로 포함) → 정책·에이전트 → HTTP/WS
@@ -94,21 +94,19 @@ HUB=memory npm run demo
 | `REFLECT_AT` | `23:30` | 매일 그날을 반성하는 시각(HH:MM, 기록 시간대). `off`면 끈다. 틀린 값이면 시작하지 않는다 |
 | `PHOTO_RETENTION_DAYS`, `DATASET_RETENTION_DAYS` | `7`, `7` | 폰 사진 찍기 사진·시험 자료 보관 일(0보다 큰 숫자). 지나면 파일과 표 줄을 지운다. 틀린 값이면 시작하지 않는다 |
 | `DATASET_COLLECT` | (끔) | `1`이면 엔진 프레임을 시험 자료로 `RUNTIME_DIR/dataset/<날짜>/`에 JPEG과 같은 이름의 `.json`(크기·자세·카메라)으로 쓴다 |
-| `INFERENCE_MODE` | `mock` | `mock`(GPU 없음, VLM은 OpenAI) · `live`(GPU 서버, VLM은 같은 서버 vLLM `http://vllm-vlm:8000/v1`, 모델 이름 `vlm`). 두 모드는 같은 코드 경로이고 주소·모델 이름만 다르다. 다른 값이면 시작하지 않는다 |
-| `VLM_BASE_URL`, `VLM_MODEL`, `VLM_API_KEY`, `VLM_EXTRA_BODY` | 모드 기본값 | 따로 주면 모드 기본값 대신 쓴다(OpenAI 호환 주소). mock 기본: `https://api.openai.com/v1`·`gpt-5.4-mini`·`OPENAI_API_KEY`·`{"reasoning_effort":"none"}`, live 기본: `http://vllm-vlm:8000/v1`·`vlm`·`VLLM_API_KEY`·`{}` |
+| `INFERENCE_MODE` | `openai` | `openai`(개발, VLM·PAM LLM 모두 OpenAI API) · `vllm`(GPU 서버, VLM은 같은 서버 vLLM `http://vllm-vlm:8000/v1`의 `vlm`, PAM LLM은 `http://vllm-pam:8000/v1`의 `pam`). 두 모드는 같은 코드 경로이고 주소·모델 이름·제공자 칸만 다르다. 다른 값(예전 이름 mock·live 포함)이면 시작하지 않는다 |
+| `VLM_BASE_URL`, `VLM_MODEL`, `VLM_API_KEY`, `VLM_EXTRA_BODY` | 모드 기본값 | 따로 주면 모드 기본값 대신 쓴다(OpenAI 호환 주소). openai 기본: `https://api.openai.com/v1`·`gpt-5.4-mini`·`OPENAI_API_KEY`·`{"reasoning_effort":"none"}`, vllm 기본: `http://vllm-vlm:8000/v1`·`vlm`·`VLLM_API_KEY`·`{}` |
 | `VLM_CLOSER_MODEL` | `VLM_MODEL`과 같음 | 가까이 보기 VLM 모델 이름. 같은 VLM 주소·키·요청 칸에 모델 이름만 바꿔 보낸다. 비용은 그 모델 가격으로 세고, 가격표(`src/infer/cost.ts`)에 없으면 모름 |
-| `THOUGHT_MODEL` | mock `gpt-5.4-nano`, live `vlm` | 대시보드 생각 말풍선 메시지(`src/brain/thought.ts`)를 쓰는 작은 모델 이름. 같은 VLM 주소·키·요청 칸에 모델 이름만 바꿔 보낸다 |
+| `THOUGHT_MODEL` | openai `gpt-5.4-nano`, vllm `vlm` | 대시보드 생각 말풍선 메시지(`src/brain/thought.ts`)를 쓰는 작은 모델 이름. 같은 VLM 주소·키·요청 칸에 모델 이름만 바꿔 보낸다 |
 | `VLM_TIMEOUT_MS` | `20000` | 사진 한 장 VLM 분석 제한 시간(1000 이상) |
-| `PAM_URL` | `http://127.0.0.1:8300` | PAM 서비스 주소(compose 안은 compose가 `http://pam:8300`으로 둔다) |
-| `PAM_LLM_BASE_URL`, `PAM_LLM_MODEL`, `PAM_LLM_API_KEY` | 모드 기본값 | PAM 서비스(`services/pam/`)가 부르는 PAM LLM(OpenAI 호환 주소). mock 기본: `https://openrouter.ai/api/v1`·`qwen/qwen3.5-27b`(provider alibaba 고정)·`OPENROUTER_API_KEY`, live 기본: `http://vllm-pam:8000/v1`·`pam`·`VLLM_API_KEY` |
-| `PAM_LLM_TIMEOUT_S`, `PAM_MAX_MODEL_LEN` | `120`, `32768` | PAM LLM 한 번 제한 시간(초), 문맥 길이(vLLM `--max-model-len`과 같은 값, 반성 출력 16384보다 커야 한다). 입력이 넘으면 PAM 서비스가 413 |
-| `PAM_HOST_PORT` | `8300` | compose가 호스트 127.0.0.1에 여는 PAM 서비스 포트 |
+| `PAM_LLM_BASE_URL`, `PAM_LLM_MODEL`, `PAM_LLM_API_KEY` | 모드 기본값 | 서버(`src/brain/pam/`)가 판단·반성에 부르는 PAM LLM(OpenAI 호환 주소). openai 기본: `https://api.openai.com/v1`·`gpt-5.4-mini`·`OPENAI_API_KEY`, vllm 기본: `http://vllm-pam:8000/v1`·`pam`·`VLLM_API_KEY` |
+| `PAM_LLM_TIMEOUT_S`, `PAM_MAX_MODEL_LEN` | `120`, `32768` | PAM LLM 한 번 제한 시간(초), 문맥 길이(vLLM `--max-model-len`과 같은 값, 반성 출력 16384보다 커야 한다). 입력이 넘으면 LLM에 보내지 않고 판단 실패(`PamBudgetError`) |
 | `PHONE_PORT`, `PHONE_HOST` | (끔), `0.0.0.0` | 폰 AR 서버(아래 "폰 AR") |
 | `PHONE_URL` | (없음) | 폰에서 열 주소. 대시보드 QR에 맨 앞 주소가 나온다. 없으면 `tailscale serve`가 폰 포트로 잇는 https 주소, 그다음 와이파이 주소 |
 | `PHONE_LAN_URLS` | `1` | `0`이면 폰 주소에 이 기계의 네트워크 주소(와이파이)를 넣지 않는다. compose는 `0`으로 둔다(컨테이너 안 주소는 밖에서 열 수 없다). 그때 폰 주소는 `PHONE_URL`뿐이다 |
 | `PHONE_PHOTO_DIR` | `RUNTIME_DIR/photos` | 사진 폴더 |
 | `PHONE_VIDEO_DIR` | 저장소 `runtime/videos`(컨테이너는 `/data/videos`) | 영상 모드 영상 폴더. `RUNTIME_DIR`(시연 폴더 포함)와 상관없이 이 폴더 하나에서 읽는다 |
-| `BRAIN` | (끔) | `1`이면 폰 엔진 프레임으로 관찰 흐름(아래 "관찰 흐름")을 돌린다. `PHONE_PORT`가 있어야 한다. VLM은 `INFERENCE_MODE`가 고른 주소로 부른다(mock은 `OPENAI_API_KEY`) |
+| `BRAIN` | (끔) | `1`이면 폰 엔진 프레임으로 관찰 흐름(아래 "관찰 흐름")을 돌린다. `PHONE_PORT`가 있어야 한다. VLM·PAM LLM은 `INFERENCE_MODE`가 고른 주소로 부른다(openai는 `OPENAI_API_KEY`) |
 | `ENGINE_FRAME_MS` | `100` | 엔진 프레임 간격(50 이상). 폰 서버가 상태 메시지로 폰에 알린다. 모든 엔진 프레임에 YOLO를 돌린다 |
 | `VLM_FRAME_MS` | `2000` | VLM 프레임 간격(`ENGINE_FRAME_MS` 이상). 앞 VLM 프레임보다 이만큼 뒤에 찍힌 엔진 프레임 한 장만 VLM·기록·가까이 보기에 쓴다(2초면 VLM 시간당 약 1,800번). 안 주고 `ENGINE_FRAME_MS`만 2초보다 길게 주면 그 값을 따른다. `ENGINE_FRAME_MS=2000 VLM_FRAME_MS=2000`이면 프레임마다 VLM을 부르던 옛 동작이다 |
 | `VLM_WINDOW_FRAMES` | `5` | VLM 한 번에 보내는 최근 VLM 프레임 수(1~10, 그 프레임 포함). 오래된 것부터 보내고 장마다 촬영 시각(「t-8s」 … 「t-0s (latest)」)을 붙인다. 창 시간은 이 수 × `VLM_FRAME_MS`(기본 10초)이고 그보다 앞선 프레임은 넣지 않는다. 틀린 값이면 시작하지 않는다 |
@@ -122,7 +120,7 @@ HUB=memory npm run demo
 | `FALL_TORSO_DEG` | `60` | 쓰러짐 의심의 누운 자세: 몸통이 중력 방향에서 이 각도(°, 0~90 사이) 넘게 기운다 |
 | `FALL_THIGH_DEG` | `45` | 쓰러짐 의심의 누운 자세: 무릎이 보이면 허벅지도 이 각도(°, 0~90 사이) 넘게 기운다(허리 숙이기를 거른다) |
 | `FALL_VIEW_DEG` | `15` | 쓰러짐 의심: 엉덩이 광선이 수직에서 이 각도(°, 0~90 사이) 안이면(거의 바로 아래를 봄) 기울기를 재지 않고 보류한다 |
-| `PAM_TIMEOUT_MS` | `30000` | 판단 한 번 제한 시간. 판단은 늘 PAM 서비스(`PAM_URL`, 계약 `docs/pam-interface.md`)다 |
+| `PAM_TIMEOUT_MS` | `30000` | 판단 한 번 제한 시간(`PAM_LLM_TIMEOUT_S`보다 길면 짧은 쪽). 판단은 늘 서버 안 PAM(`src/brain/pam/`, 계약 `docs/pam-interface.md`)이다 |
 | `PAM_TRIGGER` | `periodic` | 판단 호출 시점: `periodic`(폰 엔진 프레임이 오는 동안 `PAM_PERIOD_MS`마다 그때 World State로 부른다. 계기·행동은 PAM의 FSM이 정한다. 사람 없음·등장 사라짐 없음이 이어지면 멈춤) · `event`(World State에 의미 있는 변화가 있을 때). 다른 값이면 시작하지 않는다 |
 | `PAM_PERIOD_MS`, `PAM_LIVE_MS`, `PAM_IDLE_STOP_MS`, `PAM_MIN_GAP_MS`, `PAM_MAX_INFLIGHT` | `5000`, `10000`, `1800000`, `3000`, `1` | periodic 주기, periodic이 마지막 엔진 프레임 뒤 부르는 시간(넘으면 폰 없음으로 보고 부르지 않는다), periodic 멈춤까지 시간, event 최소 간격, 동시에 나가 있는 판단 상한(앞 판단이 끝나야 다음을 부른다) |
 | `STALE_MS` | `3000` | 실행 전 검사: 대상을 마지막으로 본 뒤 이만큼 지나면 낡은 근거로 보고 실행하지 않는다. 0 이하·숫자가 아니면 시작하지 않는다 |
@@ -189,7 +187,7 @@ twin-home 서버: http://127.0.0.1:8200  (허브 matter/network, 에이전트 op
 
 | 메서드·경로 | 본문 | 응답 |
 |---|---|---|
-| `GET /api/health` | | `{ ok, devices, hub, transport, provider, model, twin, eye, home: { id, name }, phone_urls, tz_minutes, brain, mode, ready }`(`tz_minutes`: 기록 시간대 분, 기록 DB가 없으면 없음)(`mode`: `test` 시험 · `live` 실제). `ready`: `{ ok, inference_mode, vlm: { base_url, model, key, reachable }, pam: { url, reachable, llm: { base_url, model, reachable } | null }, db }`. 모델은 부르지 않고 VLM `GET {base}/models`(30초 캐시)·PAM `GET {url}/health`만 본다. 답하지 않아도 200이고 `ready.ok`가 false다 |
+| `GET /api/health` | | `{ ok, devices, hub, transport, provider, model, twin, eye, home: { id, name }, phone_urls, tz_minutes, brain, mode, ready }`(`tz_minutes`: 기록 시간대 분, 기록 DB가 없으면 없음)(`mode`: `test` 시험 · `live` 실제). `ready`: `{ ok, inference_mode, vlm: { base_url, model, key, reachable }, pam: { base_url, model, key, reachable }, db }`. 모델은 부르지 않고 VLM `GET {base}/models`(30초 캐시)·PAM `GET {url}/health`만 본다. 답하지 않아도 200이고 `ready.ok`가 false다 |
 | `GET /api/homes` | | `{ current, homes: [{ id, name }] }` (twin-studio `homes.json`) |
 | `GET /api/setup` | | 설정 상태 `{ ok, persist, done, switching, error, home, homes, rooms, devices: [{ ..., source, pairable }], position, mode, thinq: { ready }, pairs }` (아래 "설정 흐름", 형은 `src/contract/setup.ts`) |
 | `POST /api/setup/home` | `{ home }` | 다른 집이면 허브·에이전트·폰 서버를 새 집으로 다시 띄운다. 없는 집 400, 바꾸는 중 409 |
@@ -440,7 +438,7 @@ npm start
 
 ## 관찰 흐름 (src/observe, src/world)
 
-한 흐름: 폰 엔진 프레임 → YOLO 감지·관절·VLM → World State → 관찰 텍스트 → PAM 서비스(`pam-predict/2`) → 클로이드 계획 → 실행 전 검사 → 실제 폰 단계 명령(소리) → 폰 위치·World State로 단계 확인 → 기록 DB(`noonchi.db`) → 하루 끝 반성(`pam-reflect/2`) → 다음 날 기억. 사진은 PAM에 가지 않는다. `tests/noonchi-e2e.test.ts`가 가짜 OpenAI 호환 서버와 시험용 PAM 자리로 이 흐름 전체를 돌린다.
+한 흐름: 폰 엔진 프레임 → YOLO 감지·관절·VLM → World State → 관찰 텍스트 → PAM(`src/brain/pam/`, `pam-predict/2`) → 클로이드 계획 → 실행 전 검사 → 실제 폰 단계 명령(소리) → 폰 위치·World State로 단계 확인 → 기록 DB(`noonchi.db`) → 하루 끝 반성(`pam-reflect/2`) → 다음 날 기억. 사진은 PAM에 가지 않는다. `tests/noonchi-e2e.test.ts`가 가짜 OpenAI 호환 서버와 시험용 PAM 자리로 이 흐름 전체를 돌린다.
 
 | 단계 | 코드 | 나가는 것 |
 |---|---|---|
@@ -467,7 +465,7 @@ npm start
   - 글: 변화 줄 「주방·식당 냉장고 문 열림 · 카메라로 봄」, `[지속]` 줄 끝 「카메라로 봄, 마지막 확인 21:04:08」, 기록 DB `device` 줄도 같은 글. 대시보드 말풍선 줄 끝에 「카메라로 봄」(말풍선은 판단에서 확인한 기기에만).
   - 시야 여유(0.25)·각 기준(25°·8°)·연속 수(2번·4초)는 실제 프레임으로 아직 맞추지 않았다.
 - **기록:** 프레임마다 `{type:"brain", event:{type:"observe"}}`(YOLO 글 또는 `yolo_missing`, VLM 요약 또는 `vlm_missing`)가 반드시 나가고(YOLO 결과에는 상자 `boxes`(엔진 프레임 픽셀 `[x, y, w, h]`, 감지 없음이면 `[]`)와 프레임 크기 `frame`), World State가 바뀌면 `world_change`와 `{type:"world"}`가 나간다. 상태는 `GET /api/brain`(감지기 `detector`·관절 모델 `pose`, 평균 `detect_ms`·`pose_ms`, 관절을 돌린 프레임 수 `posed`), World State는 `GET /api/world`.
-- **판단 호출:** 기본(`PAM_TRIGGER=periodic`)은 5초(`PAM_PERIOD_MS`)마다 그때 World State로 PAM 서비스(`PAM_URL`)를 부른다. 언제 무엇을 할지는 PAM의 FSM(계기·행동)이 정하므로 변화를 기다리지 않는다. 사람이 떠난 뒤에도 부르므로 컵이 남은 때를 판단한다. 마지막 엔진 프레임 뒤 `PAM_LIVE_MS`(10초)가 지나면 부르지 않고(폰이 없으면 호출·비용 없음, 프레임이 다시 오면 바로 다시), 사람 없음·등장 사라짐 없음이 `PAM_IDLE_STOP_MS`(30분) 이어지면 멈췄다가 등장·사라짐이 생기면 다시 부른다. 나가 있는 판단은 `PAM_MAX_INFLIGHT`(1)까지라 판단이 5초보다 오래 걸리면 끝난 뒤 바로 다음을 부른다. `event`는 World State에 의미 있는 변화(사람·물건 등장·사라짐, 물건·가전 설비 상태 변화, 사람 방, 가전 사건)가 있을 때 부른다(최소 간격 `PAM_MIN_GAP_MS`). 넘기는 것은 관찰 텍스트(최근 60초 변화 줄, 이어진 같은 줄은 「처음~마지막 글 N번」, `[지속]` 물건·가전 설비·사람(수·방·가까이·자세·하는 일)·가전(켜짐류·관련 가전·10분 안에 바뀐 것, 남은 시간), `[때]` 날짜·요일·하루 때, `[눈]` 눈이 있는 방 이름) + 기억(그날 처음 정한 기억 판본, 아래 "기록과 반성") + 행동 목록이다. 판단마다 `{type:"brain", event:{type:"decision"}}`(번호 seq, 보낸 관찰 텍스트, PAM 답, World State 요약)이 나가고, PAM 연결 끊김·연결됨(`link`)과 판단 멈춤(「폰 사진이 오지 않아 판단을 멈춤」·「사람이 없어 판단을 멈춤」)·다시 시작(`trigger`)은 바뀔 때 한 번씩 나간다.
+- **판단 호출:** 기본(`PAM_TRIGGER=periodic`)은 5초(`PAM_PERIOD_MS`)마다 그때 World State로 PAM(`src/brain/pam/`)을 부른다. 언제 무엇을 할지는 PAM의 FSM(계기·행동)이 정하므로 변화를 기다리지 않는다. 사람이 떠난 뒤에도 부르므로 컵이 남은 때를 판단한다. 마지막 엔진 프레임 뒤 `PAM_LIVE_MS`(10초)가 지나면 부르지 않고(폰이 없으면 호출·비용 없음, 프레임이 다시 오면 바로 다시), 사람 없음·등장 사라짐 없음이 `PAM_IDLE_STOP_MS`(30분) 이어지면 멈췄다가 등장·사라짐이 생기면 다시 부른다. 나가 있는 판단은 `PAM_MAX_INFLIGHT`(1)까지라 판단이 5초보다 오래 걸리면 끝난 뒤 바로 다음을 부른다. `event`는 World State에 의미 있는 변화(사람·물건 등장·사라짐, 물건·가전 설비 상태 변화, 사람 방, 가전 사건)가 있을 때 부른다(최소 간격 `PAM_MIN_GAP_MS`). 넘기는 것은 관찰 텍스트(최근 60초 변화 줄, 이어진 같은 줄은 「처음~마지막 글 N번」, `[지속]` 물건·가전 설비·사람(수·방·가까이·자세·하는 일)·가전(켜짐류·관련 가전·10분 안에 바뀐 것, 남은 시간), `[때]` 날짜·요일·하루 때, `[눈]` 눈이 있는 방 이름) + 기억(그날 처음 정한 기억 판본, 아래 "기록과 반성") + 행동 목록이다. 판단마다 `{type:"brain", event:{type:"decision"}}`(번호 seq, 보낸 관찰 텍스트, PAM 답, World State 요약)이 나가고, PAM 연결 끊김·연결됨(`link`)과 판단 멈춤(「폰 사진이 오지 않아 판단을 멈춤」·「사람이 없어 판단을 멈춤」)·다시 시작(`trigger`)은 바뀔 때 한 번씩 나간다.
 - **계획·검사·실행(src/act):** 고른 행동은 에이전트 계획 모드(`src/agent/planner.ts`)가 클로이드 계획으로 만든다. 행동 목록(`src/act/tasks.ts`)은 행동마다 설명과 쓸 수 있는 단계만 정한다. 모델은 `submit_plan` 한 번으로 계획 전체(단계 배열)를 내고(OpenAI는 그 함수를 지정하고 병렬 호출을 끈다, Anthropic은 생각이 늘 켜져 지정 대신 auto에 병렬 호출만 끈다), 낼 때마다 전체를 새로 검사해 틀리면 첫 틀린 단계와 까닭을 돌려받아 고친 전체를 다시 낸다(모델 차례 3번, 계획 하나 45초). 사람 단계(go·pick·place·do)에서 모델은 동작(act)·대상·물건(item)만 고르고, 단계 이름·폰 명령·안전 문구와 손 조작(켜기·끄기·열기·닫기)의 끝 조건은 서버가 만든다(`src/act/labels.ts` STEP_TEXT, 가전마다 할 수 있는 동작은 `src/agent/planTools.ts` DEVICE_ACTS). 알림(say) 글과 기다리기(wait) 이름은 열쇠(notice, `src/act/labels.ts` NOTICES)로, 질문(ask)의 답 단추·답 말은 답 묶음(`src/act/prompts.ts` ASK_CHOICES)으로 고르고, 모델이 쓰는 글은 질문 한 줄뿐이다(「?」로 끝남, 「주세요」·위험 가전 이름 없이). 말 요청 에이전트의 답은 위험 가전 이름 표(`src/agent/policy.ts` RISKY_ON_NAMES: 별명·흔한 오타·영어, 세 글자 이상은 띄어 써도)로만 보고 이름이 나오면 고정 글로 바꾼다. 이름 없이 조작만 말하는 답(예: 「전원 버튼을 눌러 주세요」)은 막지 못한다. 실제 `gpt-5.4-mini`로 컵 치우기 계획 한 번이 호출 1번 3~7초다(2026-11-11, 단계마다 부르던 때는 6번 12~19초). 컵 치우기는 World State의 컵(사라지지 않고 가장 최근에 본 것)을 집기 대상으로 하는 식탁·싱크대 네 단계, 물어보기는 폰 질문 한 단계다. 지시문은 물건을 놓는 단계(place)의 끝 조건을 「그 물건 자리 사실 또는 트윈 자리 조건(놓을 자리에 있고 손에 없음)」의 `any`와 사람이 그 물건을 들고 있지 않음(`not person_holding`)을 `all`로 묶어(물건 조건은 모두 `follow`) 쓰게 한다. 놓을 자리는 위에 놓기면 놓을 면(그 단계 target) 위, 안에 넣기(싱크대)면 그 면의 싱크볼 안(`part: "basin"`)이고, 싱크볼이 없는 자리에 넣기는 트윈 자리 조건 없이 자리 사실과 `not person_holding`만 쓴다. 계획 입력의 평면도 줄에 싱크볼 점이, World State 줄에 「싱크볼 안」이 붙는다. VLM이 자리 사실을 놓쳐도 트윈 자리로 넘어가고, 손에 든 채 지나가면 넘기지 않는다. 사람이 그 물건을 들고 있다고 보이면 자리 사실이 와도 넘기지 않는다. `person_holding`은 10초 안에 분석한 프레임에 사람이 안 보이면 거짓이고, 그 안에 분석한 프레임이 없으면 모름이라 단계가 넘어가지 않는다. 실행 추적이 옮긴 물건을 새 id로 이으면 조건은 그 id만 보고 사라진 원래 id는 보지 않는다. 실행 추적은 놓기 단계를 끝낸 물건과 그 계획의 넣은 곳(끝낸 때 그 면의 싱크볼 안이었으면 `part: "basin"`)을 남기고(`placed`), 계획 전·실행 전 검사와 대상 고르기(판단 전 가까이 보기 포함)는 그 물건을 VLM 자리 사실과 상관없이 이미 치운 것으로 본다. 놓은 물건이 사라진 뒤 같은 종류 하나가 사라진 무렵(마지막으로 본 때 2초 앞) 뒤 그 넣은 곳(싱크볼이었으면 싱크볼)에 새 id로 처음 보이면 그 물건으로 이어 간다. 원래 있던 옆 물건이나 후보가 둘 이상이면 잇지 않고, 사라진 때부터 30초가 지나면 잊는다. 지금 싱크볼 안에 있고 손에 있음이 확인되지 않은 물건은 넣은 기억이 없어도(서버를 다시 띄운 뒤, 새 id) 치운 것으로 더한다(치우기 계획 놓기 끝 자리와 같다). 계획 입력의 World State 물건 줄에는 상태 뒤에 「이미 치움」이 붙고, 제출 검사는 그 물건을 집거나 놓는 계획을 버린다. PAM 관찰 텍스트는 싱크볼 안 물건을 「<싱크대> 안 · 치움」으로 쓰고 그 물건의 VLM 자리 답(손에 있음 말고)은 [지속] 줄과 변화 줄에 쓰지 않는다. 그 뒤 손에 있음이 확인되거나(다시 집음) 트윈 자리가 그 영역을 벗어나면(다른 면, 싱크볼이면 같은 면이어도 싱크볼 밖) 지운다. 트윈 자리를 모르는 채 본 것으로는 지우지 않는다. 실행 전 검사(`src/act/check.ts`): 아는 행동, 대상 물건이 있고 이미 치운 것이 아니고 판단 뒤에 찍힌 프레임으로 다시 봤고 `STALE_MS`(기본 3초) 안, 사람이 들고 있거나 쓰는 중 아님, 이동 단계면 경로 있음, 시험 모드면 짝지은 실제 가전 단계 없음. 검사는 통과할 때까지 250ms마다 다시 보고 3초가 지나도 안 되면 그 이유로 실패한다. 검사를 막은 대상 물건의 손에 있음이 들고 감 보호(World State 물건 `carried`)에서만 왔으면(쓰는 중·사람이 그 물건을 들고 있음이 아님) 보호가 풀릴 때까지 3초를 세지 않는다. 행동 조건(`src/act/tasks.ts` `want`): 컵 그대로 두기는 내용물 있음, 물 채우기·콜라는 비어 있음이 확인돼야 한다(조건 값은 확인됨만, 계획 끝 조건의 내용물도 확인됨만 참). 계획 전 검사는 맞는 컵이 하나라도 있으면 통과하고 다 확인된 반대 값이면 막는다(모르는 컵이 있으면 계획으로 넘기고, 계획 없는 그대로 두기는 모르면 막는다). 실행 전 검사는 들고 있음 뒤에 계획이 따르는 컵 전부를 보고, 반대 값이면 막고, 모르면 내용물 보류(`src/act/track/contents.ts`)가 계획을 붙잡는다: 그 컵을 관찰 모드 없이 가까이 보고(불투명 컵·자리를 모르는 컵은 건너뜀) 4초 사진을 기다린다. 그래도 모르거나 불투명한 컵이면 폰을 든 사람에게 가까이 가서 보게 한다(컵이 비었는지는 사용자에게 묻지 않는다): 지금 명령 줄에 단추 없는 사람 단계 명령 「컵 가까이 가 주세요」(go, `near_m` 0.5, 맞춘 폰 눈과 컵 바닥 가운데가 수평 0.5m 안이면 끝)를 보내고, 이어 「컵 안이 보이게 위에서 비춰 주세요」(do, `view: "above"`)를 보낸다. 위에서 비추기는 관찰 흐름이 그 컵 안을 내려다본 VLM 프레임 쌍(`topReady`: 카메라가 테두리보다 높고 먼 쪽 안벽 바닥 모서리가 가까운 테두리 위로 보이며 컵이 화면 가운데 절반 안, 컵 모양은 잰 크기로 안 반지름 0.85×min(폭, 높이)/2·깊이 높이−1cm, 모르면 반지름 3cm·깊이 15cm, 쌍은 `TOP_CONFIRM`)을 찾으면 끝나고, 명령을 거둔 뒤 그 쌍으로 위에서 보기(`topLook`)를 한다: 장마다 컵 자리를 가운데로 잘라 YOLO로 보고 그 컵 하나만 d1(잰 크기 원기둥 상자)로 VLM에 보내, 옮겨짐·답 없음·d1 가림·내용물 값이 하나로 모이지 않음(안이 안 보임 섞임 포함)·그 자리에 그릇 감지 없음·같은 종류 0.1m 안을 거른 답만 World State에 넣는다(YOLO 감지로 물건을 만들지 않는다). 위에서 비추기를 보낼 때 그 컵에 보기 지킴을 걸고 그 차례가 끝나면 푼다. 대화·끄기 안내·승인 대기·질문 중이거나 위치 맞춤이 지금 것이 아니거나(추정 눈·2초 넘게 안 옴) 컵이 사라졌거나 옮김 표시가 남았으면 명령을 거두고 풀리면 새 번호로 다시 보낸다(막힌 채 30초면 그만둠). 컵이 0.1m 넘게 옮겨지면 처음부터 하고, 명령마다 30초 한도다. 검사가 다른 까닭(들고 있음·없음)으로 막아도 명령·지킴을 거두고 30초 기다린다. 위에서 본 뒤 4초에도 모르면 「대상 물건 안을 몰라 실행하지 않아요」로 닫고 같은 컵·세대는 60초 동안 다시 가지 않는다. 확인됐지만 컵을 다시 못 봐 낡았으면 30초 기다린다. 보류에서 풀린 첫 명령은 폰 대화·승인 대기가 없을 때 보내고, 30초 넘게 막히면 「폰을 쓰는 중이라 실행하지 않아요」로 닫는다. 이번 보류에서 본 컵 내용물은 「가까이 본 뒤 다시 판단」에서 빼고 행동 조건으로 다시 검사한다. 계획이 없을 때도 판단 전 보기가 잘라 본 뒤 4초에도 모르거나 불투명한 컵은 같은 순서로 계획 밖 명령(명령 id `peek:<번호>`)을 보낸다: 행동 목록에 내용물 행동이 있고, 열린·만드는 계획·끄기 안내·승인 대기·폰 대화가 없고, 지금 맞춘 눈이 있고, 사람이 보일 때 시작하며, 가까이 가기 중에는 사람이 보여야 하고 위에서 비추기·보기 중에는 안 보여도 잇는다. 새 계획을 받으면 그 계획이 명령을 쓰기 전에 거두고, 「그만」이면 어느 차례에서든 그만두고 60초 쉰다. 모르면 보기 기록만 남는다. 따르기 단계(끝 조건이 그 컵 내용물)는 그 단계 동안 그 컵의 내용물 창을 연다(따라가는 컵 id가 바뀌면 창도 옮긴다). 통과하면 계획 단계마다 실제 폰에 명령 하나를 보내고 소리로 읽는다(`{type:"command"}`, 위 "실제 폰 명령"). 컵 치우기 명령과 넘어가는 때: 「식탁으로 가 주세요」(비전 상태 「식탁까지 2.4m」, 폰 눈이 식탁에서 1.2m 안), 「컵을 들어 주세요」(「컵 · 식탁 위」, World State 컵 자리가 손에 있음이거나 사람이 물건을 들고 있음), 「싱크대로 가 주세요」(「컵 · 손에 있음 · 싱크대까지 3.1m」, 폰 눈이 싱크대에서 1.2m 안), 「컵을 싱크대에 넣어 주세요」(「컵 · 손에 있음」, 컵 자리가 싱크대 안이거나 컵이 싱크볼 안이고 손에 없고, 사람이 그 컵을 들고 있지 않으면 명령을 지우고 완료). 거리는 맞춘 폰 눈 자리에서 평면도의 식탁·싱크대 자리까지이고, 맞추기 전에는 「거리 모름」이다. 한 번 볼 때(250ms tick·World State 변화·답) 한 단계만 넘긴다. 「완료」 단추나 말 「완료」「다 했어」는 지금 단계 하나를 넘기고, 말 「그만」은 계획을 취소한다(실행 기록은 「사용자가 그만둠」). 비전 상태는 바뀔 때만 0.5초에 한 번까지 보낸다. 한 단계가 30초마다 명령을 다시 읽고 2분 안에 안 끝나면 실패로 닫는다(폰을 닫고 나가도 이렇게 끝난다). 물어보기는 같은 자리에 질문과 답 단추를 띄우고 답을 받으면 완료. 대시보드 계획의 단계 상태(진행 중·완료)가 지금 단계를 따라간다. 단계마다 `{type:"brain", event:{type:"execution", plan_id, state, text}}`(판단·계획·실행 중·완료·실패)가 나간다. 진행 중 계획과 행동·대상이 같은 판단은 「같은 행동을 진행 중」, 지금 계획보다 seq가 작은 늦은 답은 「앞선 판단이라 쓰지 않음」으로 기록만 하고, 다른 행동을 고른 판단은 진행 중 계획을 바꾼다(앞 계획은 취소, 새 계획에 `supersedes`, 실제 폰의 앞 명령은 지운다).
 - **화면:** 대시보드 판단 기록의 「클로이드 · 관찰과 판단」 카드에 World State 변화·연결·판단 시점 줄과 지금 YOLO·VLM 한 줄씩. 판단 줄(고른 행동·대기·판단 실패와 이유)이 카드를 닫고, 그 판단의 실행 줄은 같은 카드에 쌓인다(알약은 실행 단계). 판단 줄을 누르면 「판단 근거」가 펼쳐진다: 보낸 관찰 텍스트, 판단할 때 World State(물건마다 면, 사실별 확인됨·추정, 위치 오차, 사람·분석 없음 수), 참조한 기억 판본. 반성·연결·판단 시점은 줄 하나씩이다. 트윈 식탁 말풍선 메모는 마지막 YOLO 글이고, 열린 판단 계획의 집기 대상 물건·가전도 확인 목록에 든다.
 
@@ -479,7 +477,7 @@ HUB=memory HOME_ID=mokryeon_180b PHONE_PORT=8210 BRAIN=1 npm start
 tailscale serve --bg 8210   # 이미 켜져 있으면 생략. 폰: https://<이 PC 이름>.<tailnet>.ts.net/phone/
 ```
 
-- VLM은 `INFERENCE_MODE`가 고른 OpenAI 호환 주소로 부른다(`src/infer/vlm.ts`, chat completions + JSON Schema). mock은 OpenAI `gpt-5.4-mini`(키 `OPENAI_API_KEY`), live는 같은 서버 vLLM `vlm`. 2초 간격(기본)이면 시간당 약 1,800번이다. 비용은 호출마다 답의 사용량으로 세고(`src/infer/cost.ts`, `GET /api/brain`의 `vlm.costUsd`), 사진 수에 거의 비례한다.
+- VLM은 `INFERENCE_MODE`가 고른 OpenAI 호환 주소로 부른다(`src/infer/vlm.ts`, chat completions + JSON Schema). openai는 OpenAI `gpt-5.4-mini`(키 `OPENAI_API_KEY`), vllm은 같은 서버 vLLM `vlm`. 2초 간격(기본)이면 시간당 약 1,800번이다. 비용은 호출마다 답의 사용량으로 세고(`src/infer/cost.ts`, `GET /api/brain`의 `vlm.costUsd`), 사진 수에 거의 비례한다.
 - 키 없이 돌려 보기: `npx tsx scripts/fake-openai.ts --port 8500`을 띄우고 `VLM_BASE_URL=http://127.0.0.1:8500/v1`로 시작한다.
 
 ## 기록과 반성 (src/brain/history)
@@ -501,27 +499,21 @@ tailscale serve --bg 8210   # 이미 켜져 있으면 생략. 폰: https://<이 
   - 크기 한도를 주면 관찰 텍스트 70%·행동 요약 30%로 나누고(한쪽이 덜 쓰면 다른 쪽이 씀), 넘으면 오래된 줄부터 빼고 첫 줄에 「앞선 기록 N줄 생략」을 둔다.
 - **기억 판본(`memories` 표):** 판단은 그날 처음 정한 판본을 하루 내내 쓴다(`meta` `memory_day:<날짜>`). 판본이 없으면 컵 FSM 기억을 1판으로 저장한다. 가장 새 판본이 반성·합성 판본인 DB에는 이미 배운 기억에도 넣어야 하는 seed 바뀜(`src/brain/decision.ts` `SEED_PATCHES`, 지금은 컵을 두고 떠나면 치우는 습관: left_cup 규칙만 바꿈)을 한 번 넣는다: 그 바뀜을 처음 본 때의 가장 새 판본까지(`meta` `seed_patch:<id>`)만, 판본마다 한 번(`seed_patch:<id>:<판본>`) 고친 새 판본(같은 출처·적용일)을 저장한다. 그날 쓰는 판본을 먼저, 가장 새 판본을 나중에 고치고 그날 쓰던 판본을 고쳤으면 그날을 다시 고정한다. 옛 그날 판본을 고친 것이 가장 높은 판본이 됐는데 가장 새 판본은 고칠 것이 없으면(이미 습관이 있음·경계 뒤 판본) 가장 새 판본을 같은 내용으로 다시 저장해 앞서게 한다. 그 뒤 반성이 배운 판본은 바꾸지 않고, 지난날 반성은 그날 판본을 그대로 읽는다. 합성 일주일(`scripts/seed-history.ts`)은 습관을 배우기 전 기록이라 left_cup이 그때 규칙(비면 치우기·남으면 두기·안 보이면 묻기)이고, 만드는 동안에는 넣지 않는다. 합성 기록을 지우면 그 판본에 넣은 표시도 지운다.
 - **반성:** 매일 `REFLECT_AT`(기본 23:30)이나 `POST /api/reflection/run`으로 돈다. 한 번에 하나만 돈다.
-  - PAM 서비스 `GET /health`의 `reflect_input_bytes`에서 기억 JSON·피드백 크기를 빼고, 그 안으로 하루 요약을 줄여 `pam-reflect/2`로 보낸다. 칸 상한(관찰 100,000·행동 50,000·피드백 8,000자)도 넘지 않게 하고, 피드백은 최근 것부터 담는다.
+  - `PamClient.limits()`의 `reflect_input_bytes`(`PAM_MAX_MODEL_LEN`에서 센다)에서 기억 JSON·피드백 크기를 빼고, 그 안으로 하루 요약을 줄여 `pam-reflect/2`로 보낸다. 칸 상한(관찰 100,000·행동 50,000·피드백 8,000자)도 넘지 않게 하고, 피드백은 최근 것부터 담는다.
   - 새 기억은 다음 날부터 쓴다. 다음 날 판단이 이미 다른 판본으로 시작했으면 그다음 날부터다.
   - 결과는 기록 DB(`reflection`)와 대시보드 판단 기록(`{type:"brain", event:{type:"reflection"}}`)에 남는다. 그날 기록이 없으면 PAM을 부르지 않고 실패로 남긴다.
 - **사진 보관(`photos` 표):** 디스크에는 폰 사진 찍기 사진(`photos/`, 기록 `photo`)과 `DATASET_COLLECT=1`일 때의 시험 자료(`dataset/`)만 쓴다. 시작 때와 1시간마다 보관 기간(`PHOTO_RETENTION_DAYS`·`DATASET_RETENTION_DAYS`, 기본 7일)이 지난 파일과 같은 이름의 `.json`을 지운다.
 
-## PAM 서비스 (services/pam)
+## PAM (src/brain/pam)
 
-판단·반성을 HTTP로 내준다: `POST /predict`(`pam-predict/2`), `POST /reflect`(`pam-reflect/2`), `GET /health`(`llm`, `limits`). 계약은 `docs/pam-interface.md`. 논문 PAM 코드·프롬프트(`pam/`, `prompts/`, `config/`)를 옮겨 왔고 출처는 `services/pam/PROVENANCE.md`·`THIRD_PARTY.md`다.
+판단·반성은 서버 안 함수 `PamClient`다(`predict`·`reflect`·`limits`, 계약 `docs/pam-interface.md`). 띄울 서비스가 없다. 논문 프롬프트·해시표·출처 문서(`PROVENANCE.md`·`THIRD_PARTY.md`)가 같은 폴더에 있고, 고칠 곳 안내는 `src/brain/pam/README.md`다.
 
-```bash
-py -3.13 -m venv services/pam/.venv                                   # 한 번만
-services/pam/.venv/Scripts/python.exe -m pip install --require-hashes -r services/pam/requirements-test.lock
-cd services/pam && .venv/Scripts/python.exe -m uvicorn noonchi_pam.app:create_app --factory --port 8300
-```
-
-- 의존성은 판과 sha256을 고정한 `requirements.lock`(이미지)·`requirements-test.lock`(시험)으로 깐다. `pyproject.toml`의 판을 바꾸면 두 파일 머리의 `uv pip compile` 명령으로 다시 만든다.
-- 직접 띄우면 셸 환경 변수만 읽는다(`.env`는 compose가 넘긴다). mock은 `OPENROUTER_API_KEY`가 있어야 판단·반성이 된다.
-- OpenRouter 대신 OpenAI로 판단하려면 `PAM_LLM_PROVIDER=openai`와 `OPENAI_API_KEY`를 준다. 모델은 `gpt-5.4-mini`, 생각은 `reasoning_effort`(판단 none, 반성 medium)이고 생각을 켤 때는 temperature를 보내지 않는다.
-- 가짜 서버로 띄우기: `INFERENCE_MODE=live PAM_LLM_BASE_URL=http://127.0.0.1:8500/v1`(가짜 서버를 먼저 띄운다).
-- 답: 계약에 맞지 않으면 400, 문맥 길이를 넘으면 413, PAM LLM 오류·잘린 답은 502.
-- 시험: `npm run heavy -- services\pam\.venv\Scripts\python.exe -m pytest services/pam -q`(가짜 OpenAI 호환 서버를 띄워 쓴다).
+- PAM LLM: `INFERENCE_MODE`가 고른다(openai: OpenAI `gpt-5.4-mini`, 생각은 `reasoning_effort` 판단 none·반성 medium이고 생각을 켤 때는 temperature를 보내지 않는다 / vllm: 같은 서버 vLLM `pam`, 생각은 `chat_template_kwargs.enable_thinking`).
+- 전송 값: `src/brain/pam/config/transport.json`(max_tokens 판단 2048·반성 16384, 시간 제한 120초). 다시 보내지 않고, 잘린 답은 실패다.
+- 오류: 입력이 계약에 안 맞으면 `PamRequestError`, 문맥 길이를 넘으면 `PamBudgetError`(둘 다 LLM에 보내지 않는다), 답이 틀리면 `PamAnswerError`, LLM 오류·시간 초과·잘린 답은 `PamLinkError`(PAM 연결 끊김).
+- 사용량: 판단·반성 기록에 `usage`(모델·토큰·비용)를 남긴다.
+- 가짜 서버로 띄우기: `npx tsx scripts/fake-openai.ts --port 8500` 뒤 `PAM_LLM_BASE_URL=http://127.0.0.1:8500/v1`.
+- 시험: `tests/pam-*.test.ts`, `tests/brain-pam.test.ts`(옮기기 전 Python 결과와 바이트까지 같은지는 `tests/pam-golden.test.ts`).
 
 ## 설정 흐름 (집 → 가전 → 운영 모드 → 위치 동기화 → 대시보드)
 

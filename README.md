@@ -98,7 +98,7 @@ noonchi-home | 26-2 소프트웨어공학
         ↓
 서버 (src/server)             — Node.js 22
 ├── 관찰 (src/brain · src/observe · src/world) — YOLO26s 감지·YOLO26n-pose 관절(onnxruntime) · VLM · World State → 관찰 글
-├── 판단 (services/pam)       — PAM(Python): 관찰 글만 받아 행동을 고른다
+├── 판단 (src/brain/pam)      — PAM: 관찰 글만 받아 행동을 고른다
 ├── 계획·실행 (src/act) — 어떤 계획이든 단계마다 폰 명령·가전·기다리기, World State 조건과 폰 위치로 다음 단계
 ├── 에이전트 (src/agent)      — 말로 시킨 가전 명령, PAM 행동의 계획 모드(OpenAI · Anthropic 도구) · 승인 규칙
 ├── 장면 (src/layout) — scene.json + 도면 설비 · 배치 보정
@@ -133,12 +133,12 @@ Node.js 22.15가 필요하다. 집 자산(뷰어, 집, 카탈로그, 구운 3D)�
 ```bash
 npm install
 npm --prefix ui install   # 대시보드·설정·폰 화면(React)
-cp .env.example .env      # OPENAI_API_KEY(에이전트·VLM, PAM_LLM_PROVIDER=openai면 PAM도). OpenRouter로 PAM을 돌리면 OPENROUTER_API_KEY
+cp .env.example .env      # OPENAI_API_KEY(에이전트·VLM·PAM LLM, INFERENCE_MODE=openai)
 npm start                 # 화면을 빌드하고 http://127.0.0.1:8200
 ```
 
-- 관찰·판단까지 돌리기: PAM 서비스(`services/pam`, [reference](docs/reference.md#pam-서비스-servicespam))를 띄우고 `BRAIN=1 PHONE_PORT=8210 npm start`. 폰은 설정 창의 QR로 연다. PAM은 셸 환경 변수만 읽으므로 `.env` 값을 넘겨서 띄운다.
-- 비용을 줄인 모델: `.env`에 `VLM_MODEL=gpt-5.4-nano`, `PAM_LLM_PROVIDER=openai`, `PAM_LLM_MODEL=gpt-5.4-nano`, `OPENAI_MODEL=gpt-5.4-mini`. VLM은 2초마다 최근 5장을 보내 1시간에 약 0.9달러가 든다(2026-11-10 실측).
+- 관찰·판단까지 돌리기: `BRAIN=1 PHONE_PORT=8210 npm start`. 판단·반성(PAM)은 서버 안에서 돈다([reference](docs/reference.md#pam-srcbrainpam)). 폰은 설정 창의 QR로 연다.
+- 비용을 줄인 모델: `.env`에 `VLM_MODEL=gpt-5.4-nano`, `PAM_LLM_MODEL=gpt-5.4-nano`, `OPENAI_MODEL=gpt-5.4-mini`. VLM은 2초마다 최근 5장을 보내 1시간에 약 0.9달러가 든다(2026-11-10 실측).
 - 가까이 보기만 다른 VLM 모델: `.env`의 `VLM_CLOSER_MODEL`에 모델 이름을 넣으면 가까이 보기 VLM만 같은 주소에 그 모델로 보낸다. 비우면 `VLM_MODEL`과 같다.
 - 지난 기록이 있는 PAM 시험: `npx tsx scripts/seed-history.ts`가 한양목련 7일 합성 기록을 넣는다(모든 줄에 합성 표시). 지우기는 `--clear`.
 - 영상으로 시험하기: 시작 자리를 저장하고(설정 4단계) 영상을 `runtime/videos/`에 둔 뒤 `npm run heavy -- npx tsx scripts/video-check.ts --clip <파일> --done-after 3`. 헤드리스 크롬이 폰 페이지 영상 모드로 끝까지 틀고, 영상 시각 기준 시각표(사람 등장·사라짐, PAM 판단, 계획, 명령, 끝)와 판정을 `runtime/videos/`에 남긴다. 판마다 서버를 새로 띄운다. `--step go:table:go-table.mp4 …`을 주면 단추를 누르지 않고 단계 영상으로 단계가 넘어가는지, 트윈 눈·컵이 따라 바뀌는지 표와 대시보드 사진으로 남긴다. 모델 없이 도구만 보려면 `--fake`.

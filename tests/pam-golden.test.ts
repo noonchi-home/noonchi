@@ -19,25 +19,24 @@ async function sameFile(name: string, text: string) {
 }
 
 describe("Python과 같은 결과", () => {
-  it("판단 메시지·토큰 추정", async () => {
+  it("판단·반성 메시지와 토큰 추정", async () => {
+    const tokens: Record<string, number> = {};
     for (const c of inputs.predict) {
       const built = buildPredictMessages(predictRequest(c.request));
       await sameFile(`${c.id}.messages.json`, pretty(built));
-      expect(estimateTokens(built.messages), c.id).toBe(out("tokens.json")[c.id]);
+      tokens[c.id] = estimateTokens(built.messages);
     }
-  });
-
-  it("반성 메시지·토큰 추정", async () => {
     for (const c of inputs.reflect) {
       const built = buildReflectMessages(reflectRequest(c.request));
       await sameFile(`${c.id}.messages.json`, pretty(built));
-      expect(estimateTokens(built.messages), c.id).toBe(out("tokens.json")[c.id]);
+      tokens[c.id] = estimateTokens(built.messages);
     }
+    await sameFile("tokens.json", pretty(tokens));
   });
 
-  it("노닌치 바꾸기 적용 결과", () => {
-    const want = out("adaptation.json") as Record<string, unknown>;
-    for (const id of Object.keys(want)) expect(adaptation(id as never), id).toEqual(want[id]);
+  it("노닌치 바꾸기 적용 결과", async () => {
+    const ids = ["predictor_fsm", "predictor_list", "reflector_fsm_update", "reflector_list_update"] as const;
+    await sameFile("adaptation.json", pretty(Object.fromEntries(ids.map((id) => [id, adaptation(id)]))));
   });
 
   it("판단 답 검사(parse_prediction)", () => {
