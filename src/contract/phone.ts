@@ -36,6 +36,10 @@ export interface PhoneCommand {
   speak: boolean;
   /** 사람 단계 명령의 단계 종류. 질문·승인·알림에는 없다. 영상 모드가 단계 영상을 고를 때 쓴다. */
   kind?: PhoneStepKind;
+  /** go 명령이 끝나는 폰-대상 수평 거리(m, 가까이 가서 보기의 「컵 가까이 가 주세요」). 영상 모드는 그 안까지 걷는다. 없으면 보통 go. */
+  near_m?: number;
+  /** above: 대상을 위에서 내려다보는 do 명령(「컵 안이 보이게 위에서 비춰 주세요」). 영상 모드는 폰을 대상 위로 옮긴다. */
+  view?: "above";
   /** 소리 등급(실행 추적이 붙인다, src/act/talk-grade.ts). 보통 명령이면 없다. */
   grade?: TalkGrade;
 }

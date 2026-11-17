@@ -82,6 +82,12 @@ export const CHECK_TEXT = {
   contents_mismatch: "대상 물건 안이 맞지 않아 실행하지 않아요",
 } as const;
 
+/** 가까이 가서 보기(src/act/track/contents.ts): 컵 안을 모를 때 폰을 든 사람에게 하는 명령(「주세요」로 끝남). 사용자에게 묻지 않는다. */
+export const PEEK_TEXT = {
+  go: (item: string) => `${item} 가까이 가 주세요`,
+  above: (item: string) => `${item} 안이 보이게 위에서 비춰 주세요`,
+} as const;
+
 /** 승인(src/act/track/approval.ts): 처음 하는 계획을 실제 폰에 묻는 글, 「거절」을 받은 계획의 실행 기록. */
 export const APPROVAL_TEXT = {
   ask: (task: string) => `${josa(task, "을/를")} 할까요?`,
@@ -188,6 +194,8 @@ export const EXEC_TEXT = {
   phoneOld: "폰 화면 새로 고침 전이라 새 일을 미룸",
   phoneGone: "폰이 없어 물을 수 없어 그만둠",
   staleAnswer: "늦은 답이라 쓰지 않음",
+  /** 내용물 보류에서 풀렸지만 폰 대화·승인 대기로 첫 명령을 holdMs 넘게 미뤄 닫음. */
+  phoneBusy: "폰을 쓰는 중이라 실행하지 않아요",
 } as const;
 
 /** 관찰 모드 기록 글(src/act/look.ts, 기록 종류 look). 가까이 본 결과, 못 본 까닭, 사람 부탁, 기다리기. capped·failed는 모델 대신 쓰는 까닭 글이다. */

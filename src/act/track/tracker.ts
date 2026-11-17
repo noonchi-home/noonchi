@@ -59,7 +59,7 @@
 // 계획 전·실행 전 검사·계획 입력·제출 검사와 대상 고르기가 이미 치운 것으로 본다. 다시 집거나(손에 있음 확인됨) 그 영역 밖(다른 면, 싱크볼이면 싱크볼 밖)에서 보이면 지운다.
 // 파일 나눔(src/act/track/): tracker.ts 겉 클래스·공개 메서드·tick, core.ts 안쪽 공유 객체 TrackCore(상태·기록·실제 폰 길)와 Run, start.ts 판단 받기·계획 시작,
 // steps.ts 단계 진행·치운 물건, approval.ts 승인 질문, safety.ts 켠 위험 가전 추적·끄기 안내(SafetyTracker, 추적 상태는 # 칸), answers.ts 폰 명령 줄·답·말·보내기,
-// coach.ts 다시 알리기·다른 행동·사람 부탁·조용한 단계, contents.ts 내용물 보류(실행 전 검사가 컵 안을 몰라 막은 계획: 가까이 보기 → 사진 기다리기 → 기다림, 사용자에게 묻지 않음).
+// coach.ts 다시 알리기·다른 행동·사람 부탁·조용한 단계, contents.ts 내용물 보류(실행 전 검사가 컵 안을 몰라 막은 계획: 잘라 보기 → 사진 기다리기 → 가까이 가서 위에서 보기, 사용자에게 묻지 않음).
 // 다른 도메인은 src/act/index.ts로 가져온다.
 import type { BrainLog, ExecState, DecisionRecord } from "../../contract/events.js";
 import type { HeardAt, PlannedCommandMessage } from "../../contract/phone.js";
@@ -159,9 +159,14 @@ export interface TrackerOptions {
   stalled?: (s: Stall) => boolean;
   /** 내용물 보류의 가까이 보기(src/act/look.ts contents). 받았으면 true(끝나면 h.done). 없으면 가까이 보지 않고 사진만 기다린다. */
   lookContents?: (h: ContentsLook) => boolean;
-  /** 실제 폰에 승인 대기(가전·외부 연락)가 떠 있는가. 없으면 없다고 본다. */
+  /** 위에서 비추기가 끝났는가(src/observe/pipeline.ts topReady): sinceMs 뒤 그 컵 안을 내려다본 VLM 프레임 쌍이 있다. 없으면 위에서 비추기가 끝나지 않는다. */
+  topReady?: (objectId: string, sinceMs: number) => boolean;
+  /** 보기 지킴(src/world/state/world.ts guard): 위에서 비추는 동안 그 컵을 사라짐으로 세지 않게 걸고(true) 그 차례가 끝나면 푼다(false). */
+  guardObject?: (objectId: string, on: boolean) => void;
+  /** 실제 폰에 승인 대기(가전·외부 연락)가 떠 있는가. 그동안 가까이 가서 보라고 하지 않고 보류에서 풀린 첫 명령도 미룬다. 없으면 없다고 본다. */
   approvalsWaiting?: () => boolean;
-  /** 실제 폰 대화를 쓰는 중인가(에이전트가 들은 말을 처리하는 중이거나 끝난 지 얼마 안 됨). 없으면 아니라고 본다. */
+  /** 실제 폰 대화를 쓰는 중인가(에이전트가 들은 말을 처리하는 중이거나 끝난 지 얼마 안 됨). 그동안 가까이 가서 보라고 하지 않고 보류에서 풀린 첫 명령도 미룬다.
+   *  없으면 아니라고 본다. */
   talking?: () => boolean;
   /** 이번 판단에 보내는 행동 목록(src/act/tasks.ts tasksFor). 없으면 빈 목록으로 본다. */
   tasks?: () => readonly string[];

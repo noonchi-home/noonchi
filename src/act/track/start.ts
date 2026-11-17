@@ -1,6 +1,7 @@
 // 실행 추적의 판단 받기·계획 시작(Starter): 판단 하나마다 한 번만 정하고(늦은 답·실패·대기·같은 행동·잠시 뒤는 기록만), 계획 전 검사를 통과하면
 // 에이전트 계획 모드를 한 번 부른다. 받은 계획은 실행 전 검사·승인·끄기 안내·폰 판본을 거쳐 첫 단계를 시작한다(tryStart).
 // 계획 없는 행동(그대로 두기)의 기록과 같은 행동 다시 계획 간격도 여기서 센다.
+import { CONTENTS_HOLD } from "./contents.js";
 import type { DecisionRecord } from "../../contract/events.js";
 import { needsPhone, objectNames, type PlanResult } from "../../agent/index.js";
 import { APPROVAL_TEXT, EXEC_TEXT } from "../labels.js";
@@ -138,7 +139,7 @@ export class Starter extends Part {
       asking: null, askAt: now, watch: null, others, alias: new Map([...ids].map((id) => [id, id])), carried: new Set(), placeAt: (id) => (id ? this.o.floor().objects.get(id)?.position ?? null : null), deadline: now, again: false, device: "idle", gen: 0,
       looks: 0, lookAt: Number.NEGATIVE_INFINITY, stepEnd: null, gapAt: job.at, onAt: new Map(), ends: new Map(), offAsked: -1, deferred: false, phoneWait: false, phone: false,
       strays: 0, strayAt: Number.NEGATIVE_INFINITY, strayNear: null, told: null, helped: false,
-      quiet: taskOf(r.plan.task)?.coach ? quietLabels(this.o.lessons?.get(r.plan.task) ?? null) : new Set(), quietOn: false, outcomes: [], hold: null, window: null,
+      quiet: taskOf(r.plan.task)?.coach ? quietLabels(this.o.lessons?.get(r.plan.task) ?? null) : new Set(), quietOn: false, outcomes: [], hold: null, window: null, held: false, busyAt: null,
     };
     core.run = run;
     this.o.plans.onDecision(r.plan.view);
@@ -164,7 +165,7 @@ export class Starter extends Part {
       // 내용물을 몰라 막혔으면 보류가 붙잡는 동안 다시 보기 기한을 세지 않는다(src/act/track/contents.ts). 보류 중 컵이 낡아도 보류를 이어 간다
       const held = r.hold;
       if ((c.reason === "unknown_contents" && c.object && this.core.contents.keep(r, c.object))
-        || (c.reason === "stale" && held && this.core.contents.holding(r) && this.core.contents.keep(r, held.objectId))) {
+        || (c.reason === "stale" && held && this.core.contents.holding(r) && this.core.contents.keep(r, held.objectId, "stale"))) {
         r.since = this.clock.now();
         return;
       }
@@ -172,6 +173,16 @@ export class Starter extends Part {
       return;
     }
     this.core.contents.release(r);
+    // 보류에서 풀린 계획은 폰 대화·승인 대기가 없을 때만 첫 명령을 보낸다(다른 대화를 덮지 않는다). 미룬 지 holdMs가 지나면 닫는다
+    if (r.held && ((this.o.talking?.() ?? false) || (this.o.approvalsWaiting?.() ?? false))) {
+      const now = this.clock.now();
+      this.core.contents.clearPeek(r);
+      r.busyAt ??= now;
+      if (now - r.busyAt > CONTENTS_HOLD.holdMs) return steps.finish(r, "failed", EXEC_TEXT.phoneBusy);
+      r.since = now;
+      return;
+    }
+    r.busyAt = null;
     const why = this.core.approval.need(r);
     r.phone = needsPhone(r.plan, why, this.o.handDevices?.() ?? []);
     // 끄기 안내가 남아 있으면 폰이 필요한 계획은 첫 명령(승인 질문 포함)을 미룬다(한 번 기록): 안내가 다 풀리면 nextReminder가 다시 부른다.

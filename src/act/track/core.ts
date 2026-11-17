@@ -57,6 +57,8 @@ export interface Run {
   outcomes: StepOutcome[];
   /** 내용물 보류(실행 전 검사가 컵 안을 몰라 막음, src/act/track/contents.ts). 없으면 null. */
   hold: Hold | null;
+  /** 내용물 보류로 붙잡은 적이 있다(보류에서 풀려 첫 명령을 보낼 때 폰 대화·승인 대기를 본다). busyAt: 그 때문에 첫 명령을 미루기 시작한 시각. */
+  held: boolean; busyAt: number | null;
   /** 따르기 창을 연 물건(World State id, src/act/track/steps.ts window). 없으면 null. */
   window: string | null;
 }
@@ -102,7 +104,7 @@ export class TrackCore {
   /** 실제 폰에 명령·질문을 띄운 계획: 진행 중이거나 승인 답을 기다리는 중. */
   shown(): (Run & { sent: PlannedCommand }) | null {
     const r = this.run;
-    return !this.stopped && r && r.sent && (r.state === "running" || (r.state === "planned" && r.asking)) ? (r as Run & { sent: PlannedCommand }) : null;
+    return !this.stopped && r && r.sent && (r.state === "running" || (r.state === "planned" && (r.asking || r.hold?.peek?.sent))) ? (r as Run & { sent: PlannedCommand }) : null;
   }
 
   /** 행동 중 기다리기·기기 단계인가: 그동안 판단(PAM)을 멈추고 다른 행동으로 바꾸지 않는다(src/brain/decide.ts hold). */

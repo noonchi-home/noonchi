@@ -136,6 +136,9 @@ export function startAct(core: HomeCore): (event: BrainLog) => void {
     stalled: (s) => core.looker?.stalled(s) ?? false,
     // 내용물 보류(src/act/track/contents.ts): 가까이 보기는 보기 담당이 한 번에 하나
     lookContents: (h) => core.looker?.contents(h) ?? false,
+    // 가까이 가서 보기: 위에서 비추기가 끝났는가(관찰 흐름), 위에서 비추는 동안 그 컵의 보기 지킴(World State)
+    topReady: (id, sinceMs) => core.pipeline?.topReady(id, sinceMs) ?? false,
+    guardObject: (id, on) => world.guard(id, now(), on),
     // 따르기 단계 동안 그 컵의 창(그 뒤 사진만, 다 이어진 값이 확인 값을 바꿈)
     contentsAction: (id, on) => { world.contentsAction(id, now(), on); },
     // 실제 폰의 승인 대기와 폰 대화 사용(실행 추적이 그동안 사람을 움직이게 하지 않는다)

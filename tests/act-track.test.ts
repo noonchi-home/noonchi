@@ -18,7 +18,9 @@ import type { BrainLog, DecisionRecord } from "../src/contract/events.js";
 import type { HeardAt, PlannedCommand, PlannedCommandMessage } from "../src/contract/phone.js";
 import type { WorldChange, WorldObject, WorldView } from "../src/contract/world.js";
 import { PlanHub } from "../src/act/hub.js";
-import { APPROVAL_TEXT, CAUTION_TEXT, CHECK_TEXT, EXEC_TEXT, CAUTION_LINE, STEP_COMMAND, STEP_LABEL, type TellMode } from "../src/act/labels.js";
+import { APPROVAL_TEXT, CAUTION_TEXT, CHECK_TEXT, EXEC_TEXT, CAUTION_LINE, PEEK_TEXT, STEP_COMMAND, STEP_LABEL, type TellMode } from "../src/act/labels.js";
+import { CONTENTS_HOLD, PEEK } from "../src/act/track/contents.js";
+import { PHONE_PROTOCOL } from "../src/phone/protocol.js";
 /** 인덕션 켜기 전 질문(서버 글). */
 const ASK_ON = "냄비와 상판이 뜨거워져요. 인덕션을 켤까요?";
 import { WorldState, type CloserPass } from "../src/world/state/world.js";
@@ -586,14 +588,15 @@ describe("실행 추적: 그 자리에서 하는 일(do, 채워 주기)", () => 
     function holdSetup(over: Parameters<typeof setup>[0] = {}) {
       let facts: WorldObject["facts"] = inferred("empty");
       let seen = 9_000;
-      const w = () => world([{ ...cup("present", undefined, seen), facts, contents_gen: 3 }]);
+      let pos: [number, number, number] | null = null;
+      const w = () => world([{ ...cup("present", undefined, seen), ...(pos ? { position: pos } : {}), facts, contents_gen: 3 }]);
       const looks: ContentsLook[] = [];
       const s = fillSetup({
         w, lookContents: (h) => { looks.push(h); return true; },
         check: () => checkPlan({ decision: fillDecision, tasks: [WATER], plan: s.plans.current()!, world: w(), nowMs: s.clock.t, staleMs: 3_000, mode: "test" }),
         ...over,
       });
-      return { ...s, looks, set: (f: WorldObject["facts"]) => { facts = f; }, see: (at: number) => { seen = at; } };
+      return { ...s, looks, set: (f: WorldObject["facts"]) => { facts = f; }, see: (at: number) => { seen = at; }, move: (p: [number, number, number]) => { pos = p; } };
     }
 
     it("모르면 실패로 닫지 않고 그 컵을 가까이 본 뒤 4초 사진을 기다린다. 그사이 확인되면 첫 명령을 보낸다", async () => {
@@ -655,13 +658,180 @@ describe("실행 추적: 그 자리에서 하는 일(do, 채워 주기)", () => 
       expect(s.exec().at(-1)).toMatchObject({ state: "failed", text: CHECK_TEXT.unknown_contents });
     });
 
-    it("가까이 봐도 모르면 사용자에게 묻지 않는다: 위치를 맞췄어도 명령을 보내지 않고 30초 뒤 「안을 몰라」로 닫는다", async () => {
+    it("가까이 봐도 모르면 사용자에게 묻지 않는다: 가까이 가서 보라는 명령만 보내고(「주세요」, 「?」 없음) 끝나지 않으면 「안을 몰라」로 닫는다", async () => {
       const s = holdSetup({ lookContents: (h) => { h.done(); return true; } });
       s.t.onEye([0, 0]);
       await s.decide(fillDecision);
-      for (let i = 0; i < 140; i++) { s.clock.t += 250; s.see(s.clock.t); s.t.tick(); }
-      expect(s.commands()).toEqual([]);
+      for (let i = 0; i < 200; i++) { s.clock.t += 250; s.see(s.clock.t); s.t.tick(); }
+      expect(s.commands().length).toBeGreaterThan(0);
+      expect(s.commands().every((c) => c.text.endsWith("주세요") && !c.text.endsWith("?"))).toBe(true);
       expect(s.exec().at(-1)).toMatchObject({ state: "failed", text: CHECK_TEXT.unknown_contents });
+    });
+
+    describe("가까이 가서 보기(peek)", () => {
+      const OPAQUE = () => ({ ...inferred("contents_unknown"), body: { value: "opaque", at_ms: 9_000, since_ms: 9_000, certainty: "confirmed" as const } });
+      const isPeek = (c: { step: string }) => c.step.includes(":peek:");
+      /** 불투명 컵 물 채우기를 붙잡은 실행 추적. 폰 눈은 컵 [2, 1]에서 eye만큼(기본 1m). tick은 컵을 그때 보고(fresh) 250ms 간다. */
+      async function peeking(o: { eye?: [number, number]; over?: Parameters<typeof setup>[0] } = {}) {
+        let ready = false;
+        let talk = false;
+        let approvals = false;
+        const guards: [string, boolean][] = [];
+        const s = holdSetup({
+          topReady: () => ready, guardObject: (id, on) => guards.push([id, on]), talking: () => talk, approvalsWaiting: () => approvals, ...o.over,
+        });
+        s.set(OPAQUE());
+        s.t.onEye(o.eye ?? [3, 1]);
+        await s.decide(fillDecision);
+        let fresh = true;
+        const tick = (ms = 250) => { s.clock.t += ms; if (fresh) s.see(s.clock.t); s.t.tick(); };
+        const run = (ms: number) => { for (let t = 0; t < ms; t += 250) tick(); };
+        tick();
+        return {
+          ...s, guards, tick, run,
+          ready: (v: boolean) => { ready = v; }, talk: (v: boolean) => { talk = v; }, approvals: (v: boolean) => { approvals = v; }, fresh: (v: boolean) => { fresh = v; },
+        };
+      }
+
+      it("불투명 컵: 「컵 가까이 가 주세요」(go, near_m 0.5, 단추 없음) → 0.5m 안이면 「컵 안이 보이게 위에서 비춰 주세요」(do, view above) → 위에서 본 사진이 모이면 명령을 거두고 위에서 보기 → 확인되면 첫 명령", async () => {
+        const s = await peeking();
+        expect(s.last()).toEqual({
+          type: "command", id: "plan:pam-1", step: "plan:pam-1:peek:cup_1:3:go:1", text: PEEK_TEXT.go("컵"), vision: "컵까지 1.0m", choices: [],
+          target: { id: "cup_1", label: "컵", position: [2, 0.75, 1] }, speak: true, kind: "go", near_m: PEEK.nearM,
+        });
+        s.t.onEye([2.6, 1]);
+        s.run(1000);
+        expect(s.last()).toMatchObject({ step: "plan:pam-1:peek:cup_1:3:go:1" });
+        s.t.onEye([2.4, 1]);
+        s.tick();
+        const aboveAt = s.clock.t;
+        expect(s.last()).toEqual({
+          type: "command", id: "plan:pam-1", step: "plan:pam-1:peek:cup_1:3:above:2", text: PEEK_TEXT.above("컵"), vision: "컵 · 안이 안 보임", choices: [],
+          target: { id: "cup_1", label: "컵", position: [2, 0.75, 1] }, speak: true, kind: "do", view: "above",
+        });
+        expect(s.guards).toEqual([["cup_1", true]]);
+        s.run(1000);
+        expect(s.looks).toEqual([]);
+        s.ready(true);
+        s.tick();
+        expect(s.phone.at(-1)).toEqual({ type: "command_clear", id: "plan:pam-1" });
+        expect(s.looks).toEqual([expect.objectContaining({ planId: "plan:pam-1", objectId: "cup_1", top: { sinceMs: aboveAt } })]);
+        s.looks[0]!.done();
+        s.set(confirmed("empty"));
+        s.tick();
+        expect(s.spoken().at(-1)).toBe("냉장고로 가 주세요");
+        expect(s.guards).toEqual([["cup_1", true], ["cup_1", false]]);
+        expect(s.commands().every((c) => c.text.endsWith("주세요"))).toBe(true);
+        expect(PHONE_PROTOCOL).toBe(4);
+      });
+
+      it("처음부터 0.5m 안이면 go 없이 위에서 비춰 달라고 한다", async () => {
+        const s = await peeking({ eye: [2.3, 1] });
+        expect(s.commands().filter(isPeek).map((c) => c.kind)).toEqual(["do"]);
+        expect(s.last()).toMatchObject({ text: PEEK_TEXT.above("컵"), view: "above" });
+      });
+
+      it("위에서 본 뒤에도 모르면 묻지 않고 「안을 몰라」로 닫는다. 같은 컵·세대의 새 계획은 60초 안에 다시 가까이 가지 않는다", async () => {
+        const s = await peeking({ eye: [2.3, 1] });
+        s.ready(true);
+        s.tick();
+        s.looks[0]!.done();
+        s.run(CONTENTS_HOLD.settleMs + 4000);
+        expect(s.exec().at(-1)).toMatchObject({ state: "failed", text: CHECK_TEXT.unknown_contents });
+        expect(s.guards.at(-1)).toEqual(["cup_1", false]);
+        expect(s.commands().some((c) => c.text.endsWith("?"))).toBe(false);
+        const n = s.commands().length;
+        await s.decide({ ...fillDecision, id: "pam-2", seq: 2 });
+        s.run(8000);
+        expect(s.commands().slice(n).filter(isPeek)).toEqual([]);
+        expect(s.exec().at(-1)).toMatchObject({ plan_id: "plan:pam-2", state: "failed", text: CHECK_TEXT.unknown_contents });
+      });
+
+      it("폰 대화가 시작되면 떠 있는 명령을 거두고(보기 지킴도 풂), 끝나면 새 번호로 다시 보낸다. 승인 대기 중에는 보내지 않는다", async () => {
+        const s = await peeking({ eye: [2.3, 1] });
+        expect(s.last()).toMatchObject({ step: "plan:pam-1:peek:cup_1:3:above:1" });
+        s.talk(true);
+        s.tick();
+        expect(s.phone.at(-1)).toEqual({ type: "command_clear", id: "plan:pam-1" });
+        expect(s.guards).toEqual([["cup_1", true], ["cup_1", false]]);
+        s.run(2000);
+        expect(s.phone.at(-1)).toEqual({ type: "command_clear", id: "plan:pam-1" });
+        s.talk(false);
+        s.tick();
+        expect(s.last()).toMatchObject({ step: "plan:pam-1:peek:cup_1:3:above:2", speak: true });
+        const w = await peeking({ over: { approvalsWaiting: () => true } });
+        w.run(2000);
+        expect(w.commands().filter(isPeek)).toEqual([]);
+      });
+
+      it("명령이 30초 안에 끝나지 않으면 거두고 「안을 몰라」로 닫는다(보기 지킴도 풂)", async () => {
+        const s = await peeking({ eye: [2.3, 1] });
+        s.run(PEEK.stepMs + 4000);
+        expect(s.exec().at(-1)).toMatchObject({ state: "failed", text: CHECK_TEXT.unknown_contents });
+        expect(s.guards).toEqual([["cup_1", true], ["cup_1", false]]);
+        expect(s.phone.some((m) => m.type === "command_clear")).toBe(true);
+      });
+
+      it("위에서 비춰 달라고 한 뒤 컵이 0.2m 옮겨지면 명령을 거두고(보기 지킴 풂) go부터 다시 한다", async () => {
+        const s = await peeking({ eye: [2.4, 1] });
+        expect(s.last()).toMatchObject({ kind: "do", view: "above" });
+        s.move([1.8, 0.75, 1]);
+        s.tick();
+        expect(s.guards).toEqual([["cup_1", true], ["cup_1", false]]);
+        expect(s.last()).toMatchObject({ text: PEEK_TEXT.go("컵"), kind: "go", step: "plan:pam-1:peek:cup_1:3:go:2", target: { position: [1.8, 0.75, 1] } });
+        expect(s.phone.filter((m) => m.type === "command_clear")).toHaveLength(1);
+      });
+
+      it("「그만」이면 계획을 그만두고 보기 지킴을 푼다", async () => {
+        const s = await peeking({ eye: [2.3, 1] });
+        expect(s.heard("그만해")?.id).toBe("stop");
+        expect(s.guards).toEqual([["cup_1", true], ["cup_1", false]]);
+        expect(s.exec().at(-1)).toMatchObject({ state: "failed", text: EXEC_TEXT.stopped });
+      });
+
+      it("위에서 본 뒤 확인됐지만 컵을 다시 못 봐 낡았으면 30초 기다린다: 다시 보이면 첫 명령, 아니면 낡음으로 닫는다", async () => {
+        for (const back of [true, false]) {
+          const s = await peeking({ eye: [2.3, 1] });
+          s.ready(true);
+          s.tick();
+          s.fresh(false);
+          s.run(4000);
+          s.looks[0]!.done();
+          s.set(confirmed("empty"));
+          s.run(10_000);
+          expect(s.spoken()).not.toContain("냉장고로 가 주세요");
+          expect(s.exec().map((e) => e.state)).not.toContain("failed");
+          if (back) {
+            s.fresh(true);
+            s.tick();
+            expect(s.spoken().at(-1)).toBe("냉장고로 가 주세요");
+          } else {
+            s.run(CONTENTS_HOLD.holdMs + 4000);
+            expect(s.exec().at(-1)).toMatchObject({ state: "failed", text: CHECK_TEXT.stale });
+          }
+        }
+      });
+
+      it("보류에서 풀려도 폰 대화 중이면 첫 명령을 미룬다: 끝나면 보내고, 30초 넘게 막히면 「폰을 쓰는 중이라 실행하지 않아요」로 닫는다", async () => {
+        for (const ends of [true, false]) {
+          const s = await peeking({ eye: [2.3, 1] });
+          s.ready(true);
+          s.tick();
+          s.looks[0]!.done();
+          s.talk(true);
+          s.set(confirmed("empty"));
+          s.run(5000);
+          expect(s.spoken()).not.toContain("냉장고로 가 주세요");
+          if (ends) {
+            s.talk(false);
+            s.tick();
+            expect(s.spoken().at(-1)).toBe("냉장고로 가 주세요");
+          } else {
+            s.run(CONTENTS_HOLD.holdMs + 1000);
+            expect(s.exec().at(-1)).toMatchObject({ state: "failed", text: EXEC_TEXT.phoneBusy });
+          }
+        }
+      });
     });
   });
 });

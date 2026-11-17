@@ -3,4 +3,5 @@
 // 폰 페이지는 열리자마자 hello로 판본을 알리고, 서버는 hello가 없거나 판본이 다른 탭(옛 탭)에는 새로 고침 안내만 보낸다(src/phone/server.ts).
 // 2: 말(say)에 at(말할 때 떠 있던 명령·보인 승인 대기 token)을 싣는다.
 // 3: 명령·reply에 소리 등급(grade)을 싣고, 폰은 안전·질문 말을 자르거나 건너뛰지 않는다.
-export type PhoneProtocol = 3;
+// 4: 명령에 near_m(가까이 가기 go가 끝나는 거리)·view(above: 위에서 비추기 do)를 싣는다. 영상 모드가 그 자세를 흉내 낸다.
+export type PhoneProtocol = 4;
