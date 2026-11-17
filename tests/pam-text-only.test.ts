@@ -1,11 +1,11 @@
-// PAM에는 사진을 넘기지 않는다: 계약 타입에 사진 칸이 없고, 사진 칸이 든 본문은 보내기 전에 막힌다.
+// PAM에는 사진을 넘기지 않는다: 계약 타입에 사진 칸이 없고, 사진 칸이 든 요청은 LLM에 보내기 전에 막힌다(PamRequestError).
 import { afterEach, describe, expect, it } from "vitest";
 import { CUP_FSM_MEMORY, CUP_TASKS } from "../src/brain/decision.js";
-import { assertTextOnly, PamClient } from "../src/brain/pam.js";
+import { assertTextOnly, PamRequestError } from "../src/brain/pam/index.js";
 import type { PamPredictRequest, PamReflectRequest } from "../src/contract/pam.js";
-import { startFakePam, type FakePam } from "./helpers/pam.js";
+import { pamClientFor, startFakePamLlm, type FakePamLlm } from "./helpers/pam.js";
 
-let pam: FakePam | undefined;
+let pam: FakePamLlm | undefined;
 afterEach(async () => { await pam?.close(); pam = undefined; });
 
 describe("사진 없는 PAM", () => {
@@ -26,19 +26,22 @@ describe("사진 없는 PAM", () => {
     expect(() => assertTextOnly({ observation_text: "컵이 식탁 위" })).not.toThrow();
   });
 
-  it("사진 칸이 든 본문은 PAM으로 나가지 않는다", async () => {
-    pam = await startFakePam();
-    const client = new PamClient({ url: pam.url });
+  it("사진 칸이 든 요청은 LLM으로 나가지 않는다", async () => {
+    pam = await startFakePamLlm();
+    const client = pamClientFor(pam);
     const bad = { final_time: "2026-11-07T21:00:08.000+09:00", observation_text: "x", memory_kind: "fsm" as const, memory: CUP_FSM_MEMORY, tasks: [...CUP_TASKS], frames: [] };
     await expect(client.predict(bad)).rejects.toThrow(/사진/);
-    expect(pam.bodies).toHaveLength(0);
+    await expect(client.predict(bad)).rejects.toBeInstanceOf(PamRequestError);
+    expect(pam.requests).toHaveLength(0);
   });
 
-  it("PAM으로 실제로 나간 본문에 사진이 없다", async () => {
-    pam = await startFakePam({ predict: () => ({ observation: "o", reasoning: "r", task_index: 0 }) });
-    const p = await new PamClient({ url: pam.url }).predict({ final_time: "2026-11-07T21:00:08.000+09:00", observation_text: "21:00:00 사람 보임", memory_kind: "fsm", memory: CUP_FSM_MEMORY, tasks: [...CUP_TASKS] });
+  it("PAM LLM으로 실제로 나간 본문에 사진이 없고 관찰 텍스트가 든다", async () => {
+    pam = await startFakePamLlm({ predict: () => ({ observation: "o", reasoning: "r", task_index: 0 }) });
+    const p = await pamClientFor(pam).predict({ final_time: "2026-11-07T21:00:08.000+09:00", observation_text: "21:00:00 사람 보임", memory_kind: "fsm", memory: CUP_FSM_MEMORY, tasks: [...CUP_TASKS] });
     expect(p.task_index).toBe(0);
-    expect(JSON.stringify(pam.bodies.at(-1))).not.toMatch(/image|base64|frames/);
-    expect(pam.bodies.at(-1)).toMatchObject({ contract: "pam-predict/2", observation_text: "21:00:00 사람 보임" });
+    const sent = JSON.stringify(pam.requests.at(-1));
+    expect(sent).not.toMatch(/data:image|base64|"image_url"|"type":"image/);
+    expect(sent).toContain("21:00:00 사람 보임");
+    expect(pam.bodies.at(-1)).toMatchObject({ role: "predict", observation_text: "21:00:00 사람 보임" });
   });
 });

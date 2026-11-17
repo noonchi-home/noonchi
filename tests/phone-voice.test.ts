@@ -13,7 +13,7 @@ import { startServer, type RunningServer } from "../src/server/start.js";
 import { ScriptedDetector, det } from "./helpers/detectors.js";
 import { HOME_SCRIPT, startFakeLlm, type FakeLlm } from "./helpers/llm.js";
 import { CUP_SCRIPTS, planCalls } from "./helpers/planner.js";
-import { startFakePam, type FakePam } from "./helpers/pam.js";
+import { startFakePamLlm, type FakePamLlm, pamLlmEnv } from "./helpers/pam.js";
 import { BOX_START, BOX_WALLS } from "./helpers/align.js";
 import { heardAtOf, openPhone, openWebSocket } from "./helpers/ws.js";
 
@@ -95,7 +95,7 @@ describe("말과 선택지 맞추기", () => {
 describe("startServer(BRAIN=1): 클로이드 질문을 폰 말로 답한다", () => {
   let srv: RunningServer | undefined;
   let fake: FakeServer | undefined;
-  let pam: FakePam | undefined;
+  let pam: FakePamLlm | undefined;
   let llm: FakeLlm | undefined;
   afterEach(async () => {
     await srv?.close();
@@ -111,10 +111,10 @@ describe("startServer(BRAIN=1): 클로이드 질문을 폰 말로 답한다", ()
   it("질문이 소리로 오고, 말한 답은 에이전트로 가지 않고 실행을 끝내며 반성 피드백으로 남는다. 답이 아닌 말은 피드백으로 남기지 않는다", async () => {
     fake = await startFakeOpenAI();
     llm = await startFakeLlm({ "TV 소리 좀 줄여 봐": ["알겠어요"] });
-    pam = await startFakePam({ predict: () => ({ observation: "컵이 식탁에 있음", reasoning: "치울지 묻는다", task_index: 1 }) });
+    pam = await startFakePamLlm({ predict: () => ({ observation: "컵이 식탁에 있음", reasoning: "치울지 묻는다", task_index: 1 }) });
     srv = await startServer({
       env: { HUB: "memory", PORT: "0", RUNTIME_DIR: mkdtempSync(join(tmpdir(), "rt-")), PHONE_PORT: "0", PHONE_HOST: "127.0.0.1",
-        BRAIN: "1", VLM_BASE_URL: `${fake.url}/v1`, PAM_URL: pam.url, ...llm.env },
+        BRAIN: "1", VLM_BASE_URL: `${fake.url}/v1`, ...pamLlmEnv(pam), ...llm.env },
       brain: { detector: new ScriptedDetector(() => [det("cup", 0.9, [1, 1, 2, 1], 41)]) }, log: () => {},
     });
     const phoneUrl = new URL(srv.phoneUrls[0]!);
@@ -156,7 +156,7 @@ describe("startServer(BRAIN=1): 클로이드 질문을 폰 말로 답한다", ()
 describe("startServer(BRAIN=1): 말 답은 말할 때 떠 있던 명령에만", () => {
   let srv: RunningServer | undefined;
   let fake: FakeServer | undefined;
-  let pam: FakePam | undefined;
+  let pam: FakePamLlm | undefined;
   let llm: FakeLlm | undefined;
   afterEach(async () => {
     await srv?.close();
@@ -172,10 +172,10 @@ describe("startServer(BRAIN=1): 말 답은 말할 때 떠 있던 명령에만", 
   it("판본 없는 폰 탭은 실행을 막고 새로 고침을 안내한다: 그 탭에는 「화면을 새로 고쳐 주세요」가 가고 계획 명령은 가지 않으며 그 탭의 「완료」·confirm은 받지 않는다. 그 탭만 붙어 있으면 폰이 필요한 계획은 시작하지 않고 실행 기록에 남는다. 맞는 판본 탭이 붙으면 시작해 명령이 그 탭에 간다", async () => {
     fake = await startFakeOpenAI();
     llm = await startFakeLlm({});
-    pam = await startFakePam({ predict: () => ({ observation: "컵이 식탁에 있음", reasoning: "치울지 묻는다", task_index: 1 }) });
+    pam = await startFakePamLlm({ predict: () => ({ observation: "컵이 식탁에 있음", reasoning: "치울지 묻는다", task_index: 1 }) });
     srv = await startServer({
       env: { HUB: "memory", PORT: "0", RUNTIME_DIR: mkdtempSync(join(tmpdir(), "rt-")), PHONE_PORT: "0", PHONE_HOST: "127.0.0.1",
-        BRAIN: "1", VLM_BASE_URL: `${fake.url}/v1`, PAM_URL: pam.url, ...llm.env },
+        BRAIN: "1", VLM_BASE_URL: `${fake.url}/v1`, ...pamLlmEnv(pam), ...llm.env },
       brain: { detector: new ScriptedDetector(() => [det("cup", 0.9, [1, 1, 2, 1], 41)]) }, log: () => {},
     });
     const phoneUrl = new URL(srv.phoneUrls[0]!);
@@ -210,10 +210,10 @@ describe("startServer(BRAIN=1): 말 답은 말할 때 떠 있던 명령에만", 
   it("말하는 사이 명령이 바뀌어 at이 다른 답 말은 버린다: 질문이 넘어가지 않고 에이전트로도 가지 않으며 들은 말로 남고 실행 기록에 「늦은 답이라 쓰지 않음」. at이 그 질문이면 받는다", async () => {
     fake = await startFakeOpenAI();
     llm = await startFakeLlm({});
-    pam = await startFakePam({ predict: () => ({ observation: "컵이 식탁에 있음", reasoning: "치울지 묻는다", task_index: 1 }) });
+    pam = await startFakePamLlm({ predict: () => ({ observation: "컵이 식탁에 있음", reasoning: "치울지 묻는다", task_index: 1 }) });
     srv = await startServer({
       env: { HUB: "memory", PORT: "0", RUNTIME_DIR: mkdtempSync(join(tmpdir(), "rt-")), PHONE_PORT: "0", PHONE_HOST: "127.0.0.1",
-        BRAIN: "1", VLM_BASE_URL: `${fake.url}/v1`, PAM_URL: pam.url, ...llm.env },
+        BRAIN: "1", VLM_BASE_URL: `${fake.url}/v1`, ...pamLlmEnv(pam), ...llm.env },
       brain: { detector: new ScriptedDetector(() => [det("cup", 0.9, [1, 1, 2, 1], 41)]) }, log: () => {},
     });
     const phoneUrl = new URL(srv.phoneUrls[0]!);
@@ -248,7 +248,7 @@ describe("startServer(BRAIN=1): 말 답은 말할 때 떠 있던 명령에만", 
 describe("startServer(BRAIN=1): 말로 하는 승인은 at의 승인 token에만", () => {
   let srv: RunningServer | undefined;
   let fake: FakeServer | undefined;
-  let pam: FakePam | undefined;
+  let pam: FakePamLlm | undefined;
   let llm: FakeLlm | undefined;
   afterEach(async () => {
     ws?.close();
@@ -266,10 +266,10 @@ describe("startServer(BRAIN=1): 말로 하는 승인은 at의 승인 token에만
   it("현관문 승인 대기가 보이는 동안 「승인」이라고 하면 at에 계획 승인 질문이 같이 실려 와도 현관문만 확정되고, 계획 승인 질문·에어컨은 그대로다", async () => {
     fake = await startFakeOpenAI();
     llm = await startFakeLlm({ ...HOME_SCRIPT }, { ...CUP_SCRIPTS, "에어컨 켜기": () => [planCalls([{ kind: "device", label: "거실 에어컨 켜기", target: "ac_living", tool: "turn_on", timeout_s: 60 }])] });
-    pam = await startFakePam({ predict: () => ({ observation: "더움", reasoning: "에어컨을 켠다", task_index: 3 }) });
+    pam = await startFakePamLlm({ predict: () => ({ observation: "더움", reasoning: "에어컨을 켠다", task_index: 3 }) });
     const rt = mkdtempSync(join(tmpdir(), "rt-"));
     srv = await startServer({
-      env: { HUB: "memory", PORT: "0", RUNTIME_DIR: rt, PHONE_PORT: "0", PHONE_HOST: "127.0.0.1", BRAIN: "1", VLM_BASE_URL: `${fake.url}/v1`, PAM_URL: pam.url, ...llm.env },
+      env: { HUB: "memory", PORT: "0", RUNTIME_DIR: rt, PHONE_PORT: "0", PHONE_HOST: "127.0.0.1", BRAIN: "1", VLM_BASE_URL: `${fake.url}/v1`, ...pamLlmEnv(pam), ...llm.env },
       brain: { detector: new ScriptedDetector(() => [det("cup", 0.9, [1, 1, 2, 1], 41)]) }, log: () => {},
     });
     const phoneUrl = new URL(srv.phoneUrls[0]!);

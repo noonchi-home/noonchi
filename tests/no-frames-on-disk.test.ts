@@ -38,7 +38,7 @@ async function sendFrames(env: Record<string, string>) {
   fake = await startFakeOpenAI();
   const runtime = mkdtempSync(join(tmpdir(), "rt-"));
   srv = await startServer({
-    env: { HUB: "memory", PORT: "0", RUNTIME_DIR: runtime, PHONE_PORT: "0", PHONE_HOST: "127.0.0.1", BRAIN: "1", VLM_BASE_URL: `${fake.url}/v1`, PAM_URL: "http://127.0.0.1:9", ...env },
+    env: { HUB: "memory", PORT: "0", RUNTIME_DIR: runtime, PHONE_PORT: "0", PHONE_HOST: "127.0.0.1", BRAIN: "1", VLM_BASE_URL: `${fake.url}/v1`, PAM_LLM_BASE_URL: "http://127.0.0.1:9/v1", ...env },
     brain: { detector: new ScriptedDetector(() => []) }, log: () => {},
   });
   const phoneUrl = new URL(srv.phoneUrls[0]!);

@@ -149,7 +149,7 @@ export const CUP_MEMORY: ListMemory = {
   rules: [{ trigger: "사용자가 컵을 식탁 등에 두고 자리를 비웠고, 아무도 컵을 들거나 만지지 않는다.", action: "컵 치우기" }],
 };
 
-/** 컵 시나리오의 FSM 기억(임시, seed). PAM fsm 기억 모양(services/pam/pam/contracts.py validate_memory)을 따른다.
+/** 컵 시나리오의 FSM 기억(임시, seed). PAM fsm 기억 모양(validateMemory)을 따른다.
  *  실제 기억은 PAM 반성기(reflector)가 만든다. 규칙의 행동 이름은 행동 목록(src/act/tasks.ts TASK_NAMES)에 있는 것이다.
  *  컵 갈래(2026-11-13)는 여기 글로 정한다: 물은 「먹는 중」, 콜라는 「TV 보는 중」, 컵을 두고 자리를 비우면 내용물과 상관없이 치운다(습관).
  *  이 글을 바꾸면 기록 DB의 seed 판본이 새로 올라간다(src/brain/history/reflect.ts memoryForDay). 상태 id를 더하면 화면 이름표(src/world/labels.ts FSM_STATE_TEXT)도 더한다. */

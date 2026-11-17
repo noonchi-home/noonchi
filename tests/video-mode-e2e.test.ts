@@ -14,14 +14,14 @@ import type { Vec3 } from "../src/shared/geometry.js";
 import { encodeFramePacket } from "../src/phone/packet.js";
 import { startServer, type RunningServer } from "../src/server/start.js";
 import { ScriptedDetector, det } from "./helpers/detectors.js";
-import { startFakePam, type FakePam } from "./helpers/pam.js";
+import { startFakePamLlm, type FakePamLlm, pamLlmEnv } from "./helpers/pam.js";
 import { CUP_SCRIPTS, plannerRespond } from "./helpers/planner.js";
 import { openPhone, openWebSocket } from "./helpers/ws.js";
 
 type Msg = Record<string, any>;
 let srv: RunningServer | undefined;
 let fake: FakeServer | undefined;
-let pam: FakePam | undefined;
+let pam: FakePamLlm | undefined;
 let pumping = false;
 const sockets: WebSocket[] = [];
 afterEach(async () => {
@@ -63,7 +63,7 @@ describe("영상 모드 처음부터 끝까지", () => {
       respond: plannerRespond(CUP_SCRIPTS),
     });
     // 실제 PAM처럼 사람이 떠난 뒤 컵이 남았을 때 컵 치우기를 고른다. 사람이 보이면 대기
-    pam = await startFakePam({ predict: (b) => {
+    pam = await startFakePamLlm({ predict: (b) => {
       const text = String(b.observation_text);
       return /컵 cup_\d/.test(text) && /^\[지속\] 사람 안 보임/m.test(text)
         ? { observation: "사람이 떠나고 빈 컵이 식탁에 남음", reasoning: "컵을 치운다", task_index: 0 }
@@ -75,7 +75,7 @@ describe("영상 모드 처음부터 끝까지", () => {
     let calls = 0;
     srv = await startServer({
       env: { HUB: "memory", PORT: "0", HOME_ID: "mokryeon_180b", RUNTIME_DIR: runtimeDir, PHONE_PORT: "0", PHONE_HOST: "127.0.0.1",
-        BRAIN: "1", VLM_BASE_URL: `${fake.url}/v1`, PAM_URL: pam.url, OPENAI_API_KEY: "fake-key", OPENAI_BASE_URL: `${fake.url}/v1`,
+        BRAIN: "1", VLM_BASE_URL: `${fake.url}/v1`, ...pamLlmEnv(pam), OPENAI_API_KEY: "fake-key", OPENAI_BASE_URL: `${fake.url}/v1`,
         PAM_PERIOD_MS: "500", PAM_MIN_GAP_MS: "0" },
       brain: { detector: new ScriptedDetector((): Detection[] => (++calls <= 12 ? [CUP, PERSON] : [CUP])) }, // 250ms 간격 12장(약 3초): 사람 등장은 처음 본 뒤 2초
       log: () => {},

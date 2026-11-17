@@ -10,13 +10,13 @@ import { encodeFramePacket } from "../src/phone/packet.js";
 import { startServer, type RunningServer } from "../src/server/start.js";
 import { alignOnServer } from "./helpers/align.js";
 import { ScriptedDetector, det } from "./helpers/detectors.js";
-import { startFakePam, type FakePam } from "./helpers/pam.js";
+import { startFakePamLlm, type FakePamLlm, pamLlmEnv } from "./helpers/pam.js";
 import { openPhone, openWebSocket } from "./helpers/ws.js";
 
 type Msg = Record<string, any>;
 let srv: RunningServer | undefined;
 let fake: FakeServer | undefined;
-let pam: FakePam | undefined;
+let pam: FakePamLlm | undefined;
 const sockets: WebSocket[] = [];
 afterEach(async () => {
   for (const s of sockets.splice(0)) s.close();
@@ -51,10 +51,10 @@ describe("카메라로 가전 상태 맞추기, 한양목련 끝까지", () => {
         return JSON.stringify({ scene: "kitchen", observations: dets.map((d) => ({ object_id: d.id, state: "open" })), summary: "냉장고 문이 열려 있다" });
       },
     });
-    pam = await startFakePam();
+    pam = await startFakePamLlm();
     srv = await startServer({
       env: { HUB: "memory", PORT: "0", HOME_ID: "mokryeon_180b", RUNTIME_DIR: mkdtempSync(join(tmpdir(), "rt-")), PHONE_PORT: "0", PHONE_HOST: "127.0.0.1",
-        BRAIN: "1", VLM_BASE_URL: `${fake.url}/v1`, PAM_URL: pam.url, PAM_PERIOD_MS: "1000" },
+        BRAIN: "1", VLM_BASE_URL: `${fake.url}/v1`, ...pamLlmEnv(pam), PAM_PERIOD_MS: "1000" },
       brain: { detector: new ScriptedDetector(() => [det("refrigerator", 0.9, [180, 120, 120, 120], 72)]) }, log: () => {},
     });
     const dash: Msg[] = [];

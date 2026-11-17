@@ -1,5 +1,5 @@
 // 추론 모드(INFERENCE_MODE=mock|live)는 미리 정한 VLM 주소·모델 이름만 고른다. 코드 경로는 두 모드가 같다.
-// VLM_BASE_URL·VLM_MODEL·VLM_API_KEY·VLM_EXTRA_BODY·PAM_URL을 따로 주면 그 값을 쓴다(시험의 가짜 서버도 이 자리에 붙는다).
+// VLM_BASE_URL·VLM_MODEL·VLM_API_KEY·VLM_EXTRA_BODY·PAM_LLM_BASE_URL을 따로 주면 그 값을 쓴다(시험의 가짜 서버도 이 자리에 붙는다).
 // VLM_CLOSER_MODEL은 가까이 보기 VLM 모델 이름만 바꾼다(같은 주소·키·요청 칸, 비우면 VLM 모델과 같음).
 // THOUGHT_MODEL은 생각 말풍선 두 줄(src/brain/thought.ts)을 쓰는 작은 모델 이름만 바꾼다(같은 주소·키·요청 칸, 비우면 모드의 thoughtModel).
 // PAM LLM 주소·모델·키·제공자 칸도 여기서 고른다(PAM_LLM_PROVIDER·PAM_LLM_BASE_URL·PAM_LLM_MODEL·PAM_LLM_API_KEY). 전송 값은 src/brain/pam/settings.ts.
@@ -7,7 +7,7 @@ export type InferenceMode = "mock" | "live";
 export interface ModelEndpoint { baseUrl: string; model: string; apiKey: string; extraBody: Record<string, unknown> }
 /** VLM 주소. closerModel은 가까이 보기 VLM 모델 이름, thoughtModel은 생각 말풍선 두 줄 모델 이름이고 주소·키·요청 칸은 같다. */
 export interface VlmEndpoint extends ModelEndpoint { closerModel: string; thoughtModel: string }
-export interface Endpoints { mode: InferenceMode; vlm: VlmEndpoint; pam: PamEndpoint; pamUrl: string }
+export interface Endpoints { mode: InferenceMode; vlm: VlmEndpoint; pam: PamEndpoint }
 type Env = Record<string, string | undefined>;
 
 // live 모델 이름 vlm은 compose vllm-vlm의 --served-model-name이다(Hugging Face 모델은 compose VLM_LIVE_MODEL). 생각 말풍선 모델도 live는 같은 vLLM이다.
@@ -31,9 +31,6 @@ export const PAM_PRESETS: Record<InferenceMode, PamPreset> = {
 export const PAM_PROVIDERS: Record<string, PamPreset> = {
   openai: { baseUrl: "https://api.openai.com/v1", model: "gpt-5.4-mini", keyEnv: "OPENAI_API_KEY", thinking: "openai", extraBody: {} },
 };
-
-/** PAM 서비스 기본 주소(이 PC). compose 안에서는 PAM_URL=http://pam:8300. */
-export const DEFAULT_PAM_URL = "http://127.0.0.1:8300";
 
 /** VLM 한 장 분석 제한 시간(VLM_TIMEOUT_MS, 기본 20000). 동시 요청 풀과 OpenAI 호환 호출이 같은 값을 쓴다. */
 export function vlmTimeoutMs(env: Env): number {
@@ -76,6 +73,5 @@ export function loadEndpoints(env: Env): Endpoints {
       baseUrl: (v("PAM_LLM_BASE_URL") ?? pp.baseUrl).replace(/\/+$/, ""), model: v("PAM_LLM_MODEL") ?? pp.model,
       apiKey: v("PAM_LLM_API_KEY") ?? v(pp.keyEnv) ?? "", thinking: pp.thinking, extraBody: structuredClone(pp.extraBody),
     },
-    pamUrl: (v("PAM_URL") ?? DEFAULT_PAM_URL).replace(/\/+$/, ""),
   };
 }

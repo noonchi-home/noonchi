@@ -16,7 +16,6 @@ import { isSelfStop } from "../src/devices/kinds.js";
 import { Policy } from "../src/agent/policy.js";
 import { deviceViews } from "../src/agent/tools.js";
 import { CUP_FSM_MEMORY, CUP_TASKS } from "../src/brain/decision.js";
-import { PamClient } from "../src/brain/pam.js";
 import type { BrainLog, DecisionRecord } from "../src/contract/events.js";
 import type { PlannedCommandMessage } from "../src/contract/phone.js";
 import type { WorldDevice, WorldObject, WorldView } from "../src/contract/world.js";
@@ -34,7 +33,7 @@ import { Trigger } from "../src/world/trigger.js";
 import { DEVICE_STATES } from "../src/world/vocab.js";
 import { cupPlan } from "./helpers/cup-plan.js";
 import { smallFloor } from "./helpers/floor.js";
-import { startFakePam } from "./helpers/pam.js";
+import { startFakePamLlm, pamClientFor } from "./helpers/pam.js";
 import { CUP_SCRIPTS, FILL_SCRIPTS, microwaveScripts, microwaveSteps, ramenScripts, ramenSteps, cupSteps, fillSteps, idsFrom, planCalls, planContext, startFakePlanner, testPlanner, type FakePlanner, type PlanScript } from "./helpers/planner.js";
 import { heardAtOf } from "./helpers/ws.js";
 
@@ -608,12 +607,12 @@ describe("계획 모드: 행동 중 기다리기", () => {
   });
 
   it("행동 중 기다리는 동안 판단 호출은 PAM을 부르지 않고 한 번 기록한다", async () => {
-    const pam = await startFakePam();
+    const pam = await startFakePamLlm();
     try {
       const logs: BrainLog[] = [];
       let hold = true;
       const d = new Decider({
-        pam: new PamClient({ url: pam.url }), world: new WorldState({ surfaces: () => [], floorAt: () => 0, roomAt: () => null, devices: () => [] }),
+        pam: pamClientFor(pam), world: new WorldState({ surfaces: () => [], floorAt: () => 0, roomAt: () => null, devices: () => [] }),
         trigger: new Trigger({ mode: "event", minGapMs: 0, periodMs: 1000, idleStopMs: 1e9, liveMs: 10_000, maxInflight: 1 }, 0),
         tasks: () => [...CUP_TASKS], memory: () => ({ memory: CUP_FSM_MEMORY, kind: "fsm" as const, version: 0 }), emit: (l) => logs.push(l), offsetMinutes: 540,
         clock: { now: () => 10_000 }, hold: () => hold,

@@ -7,7 +7,7 @@ if (!runtime) throw new Error("런타임 폴더가 필요해요");
 const srv = await startServer({
   env: {
     HUB: "memory", PORT: "0", RUNTIME_DIR: runtime, REFLECT_AT: "off",
-    VLM_BASE_URL: "http://127.0.0.1:9/v1", PAM_URL: "http://127.0.0.1:9", OPENAI_BASE_URL: "http://127.0.0.1:9/v1",
+    VLM_BASE_URL: "http://127.0.0.1:9/v1", PAM_LLM_BASE_URL: "http://127.0.0.1:9/v1", OPENAI_BASE_URL: "http://127.0.0.1:9/v1",
   },
   log: () => {},
 });

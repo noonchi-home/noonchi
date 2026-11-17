@@ -12,13 +12,13 @@ import { fetchRetry } from "../src/shared/net.js";
 import { startServer, type RunningServer } from "../src/server/start.js";
 import { isThought } from "./helpers/thought.js";
 import { ScriptedDetector, det } from "./helpers/detectors.js";
-import { startFakePam, type FakePam } from "./helpers/pam.js";
+import { startFakePamLlm, type FakePamLlm, pamLlmEnv } from "./helpers/pam.js";
 import { openPhone, openWebSocket } from "./helpers/ws.js";
 
 type Msg = Record<string, any>;
 let srv: RunningServer | undefined;
 let fake: FakeServer | undefined;
-let pam: FakePam | undefined;
+let pam: FakePamLlm | undefined;
 afterEach(async () => {
   await srv?.close();
   srv = undefined;
@@ -56,9 +56,9 @@ describe("startServer(BRAIN=1) + 관찰 흐름", () => {
 
   it("엔진 프레임마다 YOLO·VLM 기록이 대시보드로 가고 World State가 바뀌면 보내고, 프레임이 오는 동안 PAM을 5초마다 부른다. 표시 프레임은 관찰 흐름에 들어가지 않는다", async () => {
     fake = await startFakeOpenAI();
-    pam = await startFakePam();
+    pam = await startFakePamLlm();
     srv = await startServer({
-      env: env({ PHONE_PORT: "0", PHONE_HOST: "127.0.0.1", BRAIN: "1", VLM_BASE_URL: `${fake.url}/v1`, VLM_MODEL: "fake-vlm", ENGINE_FRAME_MS: "500", PAM_URL: pam.url }),
+      env: env({ PHONE_PORT: "0", PHONE_HOST: "127.0.0.1", BRAIN: "1", VLM_BASE_URL: `${fake.url}/v1`, VLM_MODEL: "fake-vlm", ENGINE_FRAME_MS: "500", ...pamLlmEnv(pam) }),
       log: () => {}, brain: { detector: new ScriptedDetector(() => [cup]) },
     });
     const phoneUrl = new URL(srv.phoneUrls[0]!);

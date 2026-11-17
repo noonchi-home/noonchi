@@ -66,7 +66,7 @@ describe("시연용으로 더하는 가전(added_devices.json)", () => {
     const runtime = mkdtempSync(join(tmpdir(), "rt-added-"));
     const srv = await startServer({ env: {
       HUB: "memory", PORT: "0", HOME_ID: "mokryeon_180b", RUNTIME_DIR: runtime, REFLECT_AT: "off",
-      VLM_BASE_URL: "http://127.0.0.1:9/v1", PAM_URL: "http://127.0.0.1:9", OPENAI_BASE_URL: "http://127.0.0.1:9/v1",
+      VLM_BASE_URL: "http://127.0.0.1:9/v1", PAM_LLM_BASE_URL: "http://127.0.0.1:9/v1", OPENAI_BASE_URL: "http://127.0.0.1:9/v1",
     }, log: () => {} });
     const box: Record<string, any>[] = [];
     try {
@@ -220,7 +220,7 @@ describe("습관 시연용 커튼·조명: Matter 가상 가전·에이전트 �
     for (const p of ["matter", "rt"]) temps.push(mkdtempSync(join(tmpdir(), `added-demo-${p}-`)));
     srv = await startServer({ env: {
       PORT: "0", ...llm.env, HOME_ID: "mokryeon_180b", MATTER_TRANSPORT: "local", MATTER_STORAGE_DIR: temps[0]!, RUNTIME_DIR: temps[1]!, REFLECT_AT: "off",
-      VLM_BASE_URL: "http://127.0.0.1:9/v1", PAM_URL: "http://127.0.0.1:9",
+      VLM_BASE_URL: "http://127.0.0.1:9/v1", PAM_LLM_BASE_URL: "http://127.0.0.1:9/v1",
     }, log: () => {} });
   }, 120_000);
   afterAll(async () => {

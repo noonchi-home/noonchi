@@ -9,14 +9,14 @@ import type { DetectResult, Detector } from "../src/observe/detector.js";
 import { encodeFramePacket } from "../src/phone/packet.js";
 import { fetchRetry } from "../src/shared/net.js";
 import { startServer, type RunningServer } from "../src/server/start.js";
-import { startFakePam, type FakePam } from "./helpers/pam.js";
+import { startFakePamLlm, type FakePamLlm, pamLlmEnv } from "./helpers/pam.js";
 import { look, perspective } from "./helpers/sync-sim.js";
 import { openPhone } from "./helpers/ws.js";
 
 type Msg = Record<string, any>;
 let srv: RunningServer | undefined;
 let fake: FakeServer | undefined;
-let pam: FakePam | undefined;
+let pam: FakePamLlm | undefined;
 const dirs: string[] = [];
 afterEach(async () => {
   await srv?.close();
@@ -110,14 +110,14 @@ describe("시작 위치 REST와 폰", () => {
 
   it("엔진 프레임 YOLO의 기준점 상자가 그 프레임 자세와 함께 위치 맞추기로 간다(관찰 흐름 BRAIN=1)", async () => {
     fake = await startFakeOpenAI();
-    pam = await startFakePam();
+    pam = await startFakePamLlm();
     // 소파(COCO 57) 상자 하나를 내는 감지기
     const sofa: Detector = {
       name: "landmark-only", pose: null, provider: "test",
       detect: async (): Promise<DetectResult> => ({ detections: [], ms: 0, width: 360, height: 640, landmarks: [{ cls: 57, score: 0.9, box: [130, 300, 100, 160] }] }),
     };
     srv = await startServer({
-      env: env({ BRAIN: "1", VLM_BASE_URL: `${fake.url}/v1`, VLM_MODEL: "fake-vlm", ENGINE_FRAME_MS: "500", PAM_URL: pam.url }),
+      env: env({ BRAIN: "1", VLM_BASE_URL: `${fake.url}/v1`, VLM_MODEL: "fake-vlm", ENGINE_FRAME_MS: "500", ...pamLlmEnv(pam) }),
       log: () => {}, brain: { detector: sofa },
     });
     await json("/api/phone/start-pose", { position: [8.3, 10.6], yaw_deg: 180 });

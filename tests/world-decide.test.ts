@@ -1,14 +1,14 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { TASK_NAMES } from "../src/act/tasks.js";
 import { CUP_FSM_MEMORY, CUP_TASKS } from "../src/brain/decision.js";
-import { PamClient } from "../src/brain/pam.js";
+import { PamClient } from "../src/brain/pam/index.js";
 import type { BrainLog, DecisionRecord } from "../src/contract/events.js";
 import { Decider } from "../src/brain/decide.js";
 import { WorldState } from "../src/world/state/world.js";
 import { Trigger } from "../src/world/trigger.js";
-import { startFakePam, type FakePam } from "./helpers/pam.js";
+import { startFakePamLlm, type FakePamLlm, pamClientFor } from "./helpers/pam.js";
 
-let pam: FakePam | undefined;
+let pam: FakePamLlm | undefined;
 afterEach(async () => { await pam?.close(); pam = undefined; });
 const emptyWorld = () => new WorldState({ surfaces: () => [], floorAt: () => 0, roomAt: () => null, devices: () => [] });
 const memory = () => ({ memory: CUP_FSM_MEMORY, kind: "fsm" as const, version: 0 });
@@ -16,11 +16,11 @@ const event = () => new Trigger({ mode: "event", minGapMs: 0, periodMs: 1000, id
 
 describe("판단 호출", () => {
   it("의미 있는 변화에 PAM을 부르고, 보낸 관찰 텍스트·World State 요약·결과를 기록한다", async () => {
-    pam = await startFakePam();
+    pam = await startFakePamLlm();
     const records: DecisionRecord[] = [];
     const logs: BrainLog[] = [];
     const now = 10_000;
-    const d = new Decider({ pam: new PamClient({ url: pam.url }), world: emptyWorld(), trigger: event(),
+    const d = new Decider({ pam: pamClientFor(pam), world: emptyWorld(), trigger: event(),
       tasks: () => [...CUP_TASKS], memory, emit: (l) => logs.push(l), onDecision: (r) => records.push(r), offsetMinutes: 540, clock: { now: () => now } });
     d.tick();
     expect(pam.bodies).toEqual([]);   // 변화가 없으면 부르지 않는다
@@ -32,7 +32,7 @@ describe("판단 호출", () => {
     const sent = pam.bodies[0] as { observation_text: string; final_time: string; memory_kind: string; tasks: string[] };
     expect(sent.observation_text).toContain("사람 안 보임");
     expect(sent.observation_text).toContain("VLM: 식탁에 컵 하나");   // 바뀐 VLM 요약도 관찰 텍스트에 든다
-    expect(sent).toMatchObject({ final_time: "1970-01-01T09:00:10.000+09:00", memory_kind: "fsm", tasks: [...CUP_TASKS] });
+    expect(sent).toMatchObject({ final_time: "1970-01-01T09:00:10+09:00", memory_kind: "fsm", tasks: [...CUP_TASKS] });
     expect(records[0]!.textSent).toBe(sent.observation_text);
     expect(logs.filter((l) => l.type === "decision")).toEqual([expect.objectContaining({ id: "pam-1", seq: 1, text_sent: sent.observation_text, status: "valid" })]);
     d.tick();
@@ -42,13 +42,13 @@ describe("판단 호출", () => {
 
   describe("들은 말", () => {
     const SAID = "라면 끓이는 법 알려 줘";
-    const setup = async (over: { keepHeard?: boolean; predict?: Parameters<typeof startFakePam>[0] } = {}) => {
-      pam = await startFakePam(over.predict ?? {});
+    const setup = async (over: { keepHeard?: boolean; predict?: Parameters<typeof startFakePamLlm>[0] } = {}) => {
+      pam = await startFakePamLlm(over.predict ?? {});
       const logs: BrainLog[] = [];
       const records: DecisionRecord[] = [];
       const clock = { t: Date.parse("2026-11-13T03:00:00Z"), now() { return this.t; } };
       const world = emptyWorld();
-      const d = new Decider({ pam: new PamClient({ url: pam.url }), world, trigger: event(), tasks: () => [...CUP_TASKS], memory,
+      const d = new Decider({ pam: pamClientFor(pam), world, trigger: event(), tasks: () => [...CUP_TASKS], memory,
         emit: (l) => logs.push(l), onDecision: (r) => records.push(r), offsetMinutes: 540, clock, ...(over.keepHeard ? { keepHeard: () => true } : {}) });
       const sent = () => (pam!.bodies.at(-1) as { observation_text: string }).observation_text;
       const decisions = () => logs.flatMap((l) => (l.type === "decision" ? [l] : []));
@@ -64,9 +64,9 @@ describe("판단 호출", () => {
       await s.d.idle();
       expect(pam!.bodies).toHaveLength(1);
       expect(s.sent().split("\n")).toContain("12:00:00 사람이 말함: 「라면 끓이는 법 알려 줘」");
-      // PAM 본문은 글뿐이다(사진 칸 없음, 칸 여섯)
-      expect(Object.keys(pam!.bodies[0]!).sort()).toEqual(["contract", "final_time", "memory", "memory_kind", "observation_text", "tasks"]);
-      expect(JSON.stringify(pam!.bodies[0])).not.toMatch(/data:image|base64|"frames"|"image"/);
+      // PAM 요청은 글뿐이다(사진 칸 없음). 실제 LLM 본문에도 사진이 없다
+      expect(Object.keys(pam!.bodies[0]!).sort()).toEqual(["final_time", "memory", "memory_kind", "observation_text", "role", "tasks"]);
+      expect(JSON.stringify(pam!.requests[0])).not.toMatch(/data:image|base64|"image_url"|"type":"image/);
       s.clock.t += 59_000;
       s.d.onChanges([{ kind: "appeared", at_ms: s.clock.t, subject: "cup_1", text: "컵 cup_1 보임", meaningful: true }]);
       s.d.tick();
@@ -131,11 +131,11 @@ describe("판단 호출", () => {
 
   it("판단 기록에 고른 행동의 FSM 상태와 트리거를 붙인다. 대기·실패면 null이다", async () => {
     let index = 0;
-    pam = await startFakePam({ predict: () => ({ observation: "o", reasoning: "r", task_index: index }) });
+    pam = await startFakePamLlm({ predict: () => ({ observation: "o", reasoning: "r", task_index: index }) });
     const logs: BrainLog[] = [];
     const records: DecisionRecord[] = [];
     let now = 10_000;
-    const d = new Decider({ pam: new PamClient({ url: pam.url }), world: emptyWorld(), trigger: event(),
+    const d = new Decider({ pam: pamClientFor(pam), world: emptyWorld(), trigger: event(),
       tasks: () => [...CUP_TASKS], memory, emit: (l) => logs.push(l), onDecision: (r) => records.push(r), offsetMinutes: 540, clock: { now: () => now } });
     const poke = async () => { d.onChanges([{ kind: "appeared", at_ms: now, subject: "cup_1", text: "컵 cup_1 보임", meaningful: true }]); d.tick(); await d.idle(); now += 1000; };
     await poke();
@@ -149,10 +149,10 @@ describe("판단 호출", () => {
   it("판단 사건에 고른 행동의 종류를 붙인다: 라면 끓이기 알려 주기는 coach, 에어컨 켜기는 noonchi, 대기·실패는 null", async () => {
     const tasks = [...TASK_NAMES];
     let index = tasks.indexOf("라면 끓이기 알려 주기");
-    pam = await startFakePam({ predict: () => ({ observation: "o", reasoning: "r", task_index: index }) });
+    pam = await startFakePamLlm({ predict: () => ({ observation: "o", reasoning: "r", task_index: index }) });
     const logs: BrainLog[] = [];
     let now = 10_000;
-    const d = new Decider({ pam: new PamClient({ url: pam.url }), world: emptyWorld(), trigger: event(),
+    const d = new Decider({ pam: pamClientFor(pam), world: emptyWorld(), trigger: event(),
       tasks: () => tasks, memory, emit: (l) => logs.push(l), offsetMinutes: 540, clock: { now: () => now } });
     const poke = async () => { d.onChanges([{ kind: "appeared", at_ms: now, subject: "cup_1", text: "컵 cup_1 보임", meaningful: true }]); d.tick(); await d.idle(); now += 1000; };
     await poke();
@@ -169,25 +169,25 @@ describe("판단 호출", () => {
     const logs: BrainLog[] = [];
     const records: DecisionRecord[] = [];
     let url = "http://127.0.0.1:9";
-    const client = { predict: (r: Parameters<PamClient["predict"]>[0]) => new PamClient({ url }).predict(r) } as unknown as PamClient;
+    const client = { predict: (r: Parameters<PamClient["predict"]>[0]) => pamClientFor({ url }).predict(r) } as unknown as PamClient;
     let now = 10_000;
     const d = new Decider({ pam: client, world: emptyWorld(), trigger: event(), tasks: () => [...CUP_TASKS], memory,
       emit: (l) => logs.push(l), onDecision: (r) => records.push(r), offsetMinutes: 540, clock: { now: () => now } });
     const poke = async () => { d.onChanges([{ kind: "appeared", at_ms: now, subject: "cup_1", text: "컵 cup_1 보임", meaningful: true }]); d.tick(); await d.idle(); now += 1000; };
     await poke(); await poke();
-    pam = await startFakePam();
+    pam = await startFakePamLlm();
     url = pam.url;
     await poke();
     expect(logs.filter((l) => l.type === "link").map((l) => l.type === "link" && [l.up, l.text])).toEqual([[false, "PAM 연결 끊김"], [true, "PAM 연결됨"]]);
     expect(records.map((r) => r.status)).toEqual(["failed", "failed", "valid"]);
-    expect(records[0]!.error).toMatch(/PAM 연결 실패/);
+    expect(records[0]!.error).toMatch(/PAM LLM 연결 실패/);
   }, 20_000);
 
   it("주기 판단은 엔진 프레임이 와야 부르고, 멈춤(프레임 없음·사람 없음)과 다시 시작은 바뀔 때 한 번씩 기록한다", async () => {
-    pam = await startFakePam();
+    pam = await startFakePamLlm();
     const logs: BrainLog[] = [];
     let now = 0;
-    const d = new Decider({ pam: new PamClient({ url: pam.url }), world: emptyWorld(),
+    const d = new Decider({ pam: pamClientFor(pam), world: emptyWorld(),
       trigger: new Trigger({ mode: "periodic", minGapMs: 0, periodMs: 1000, idleStopMs: 5000, liveMs: 3000, maxInflight: 1 }, 0),
       tasks: () => [...CUP_TASKS], memory, emit: (l) => logs.push(l), offsetMinutes: 540, clock: { now: () => now } });
     d.tick(); d.tick();
@@ -211,9 +211,9 @@ describe("판단 호출", () => {
   });
 
   it("멈추면 늦게 온 답을 기록하지 않는다", async () => {
-    pam = await startFakePam();
+    pam = await startFakePamLlm();
     const logs: BrainLog[] = [];
-    const d = new Decider({ pam: new PamClient({ url: pam.url }), world: emptyWorld(), trigger: event(), tasks: () => [...CUP_TASKS], memory,
+    const d = new Decider({ pam: pamClientFor(pam), world: emptyWorld(), trigger: event(), tasks: () => [...CUP_TASKS], memory,
       emit: (l) => logs.push(l), offsetMinutes: 540, clock: { now: () => 10_000 } });
     d.onChanges([{ kind: "appeared", at_ms: 9000, subject: "cup_1", text: "컵 cup_1 보임", meaningful: true }]);
     d.tick();

@@ -14,7 +14,7 @@ import { REFLECT_TEXT } from "../brain/index.js";
 import { attachRecorder, topic, type DeviceNote } from "../brain/index.js";
 import { loadReflectAt, runReflection, scheduleReflection, type ReflectResult } from "../brain/index.js";
 import { loadRetention, sweep } from "../brain/index.js";
-import { PamClient } from "../brain/index.js";
+import { PamClient, pamSettings } from "../brain/index.js";
 import type { DeviceHub, DeviceState } from "../contract/devices.js";
 import { loadEndpoints } from "../infer/endpoints.js";
 import type { LayoutEditor } from "../layout/index.js";
@@ -53,7 +53,7 @@ const msListOf = (raw: string | undefined, fallback: number[]) => {
 export interface StartServerOptions {
   /** 기본 process.env. HUB, MATTER_*, AGENT_PROVIDER, TWIN_STUDIO_DIR, HOME_ID(저장한 집이 없을 때 띄울 집, 기본 집), PORT(0이면 빈 포트), HOST,
    *  ALLOWED_ORIGINS(이 PC 말고 대시보드를 여는 출처, 쉼표로 여러 개), PLAN_TOKEN(다른 주소에서 POST /api/plan을 받을 토큰),
-   *  추론 모드(mock 기본·live)·VLM_BASE_URL·VLM_MODEL·VLM_CLOSER_MODEL·THOUGHT_MODEL·VLM_API_KEY·VLM_EXTRA_BODY·PAM_URL(src/infer/endpoints.ts),
+   *  추론 모드(mock 기본·live)·VLM_BASE_URL·VLM_MODEL·VLM_CLOSER_MODEL·THOUGHT_MODEL·VLM_API_KEY·VLM_EXTRA_BODY·PAM_LLM_*(src/infer/endpoints.ts),
    *  기록 DB는 RUNTIME_DIR/noonchi.db, HISTORY_TZ_MINUTES(기록 날짜의 시간대 분, 기본 540), REFLECT_AT(매일 반성 시각 HH:MM, 기본 23:30, off면 끔),
    *  PHOTO_RETENTION_DAYS·DATASET_RETENTION_DAYS(사진 찍기 사진·시험 자료 보관 일, 기본 7), DATASET_COLLECT(1이면 엔진 프레임을 시험 자료로 저장),
    *  PHONE_PORT(있으면 폰 AR 서버), PHONE_HOST(기본 0.0.0.0),
@@ -157,7 +157,7 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
     db.close();
   };
   // 반성: 한 번에 하나. 결과는 지금 집의 대시보드 판단 기록으로 보낸다(기록 DB에는 runReflection이 적는다)
-  const pam = new PamClient({ url: endpoints.pamUrl });
+  const pam = new PamClient({ settings: pamSettings(env) });
   let reflecting = false;
   const reflect = async (day: string): Promise<ReflectResult> => {
     if (reflecting) throw new HttpError(409, REFLECT_TEXT.running);

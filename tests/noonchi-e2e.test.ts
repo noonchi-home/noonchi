@@ -14,7 +14,7 @@ import { CHECK_TEXT } from "../src/act/labels.js";
 import { fetchRetry } from "../src/shared/net.js";
 import { startServer, type RunningServer } from "../src/server/start.js";
 import { ScriptedDetector, det } from "./helpers/detectors.js";
-import { startFakePam, type FakePam } from "./helpers/pam.js";
+import { startFakePamLlm, type FakePamLlm, pamLlmEnv } from "./helpers/pam.js";
 import { CUP_SCRIPTS, plannerRespond } from "./helpers/planner.js";
 import { CUP_MESSAGES, thoughtReplies } from "./helpers/thought.js";
 import { heardAtOf, openPhone, openWebSocket } from "./helpers/ws.js";
@@ -22,7 +22,7 @@ import { heardAtOf, openPhone, openWebSocket } from "./helpers/ws.js";
 type Msg = Record<string, any>;
 let srv: RunningServer | undefined;
 let fake: FakeServer | undefined;
-let pam: FakePam | undefined;
+let pam: FakePamLlm | undefined;
 const sockets: WebSocket[] = [];
 afterEach(async () => {
   for (const s of sockets.splice(0)) s.close();
@@ -56,7 +56,7 @@ describe("NOONCHI 처음부터 끝까지", () => {
       respond: plannerRespond(CUP_SCRIPTS),
     });
     // PAM은 기본 주기(5초)로 불린다. 관찰 텍스트에 컵이 있으면 컵 치우기를 고르고(끝난 뒤에도: 싱크대 안 컵으로는 새 명령을 보내지 않아야 한다), 없으면 대기
-    pam = await startFakePam({ predict: (b) => (/컵 cup_\d/.test(String(b.observation_text))
+    pam = await startFakePamLlm({ predict: (b) => (/컵 cup_\d/.test(String(b.observation_text))
       ? { observation: "빈 컵이 식탁에 남음", reasoning: "자리를 비워 컵을 치운다", task_index: 0 } : { observation: "컵 없음", reasoning: "할 일 없음", task_index: -1 }) });
     // 컵 치우기는 전에 승인을 받은 일: 승인을 묻지 않고 첫 명령부터(기본 집 apartment). 승인 답 흐름은 tests/act-track.test.ts가 본다
     const runtimeDir = mkdtempSync(join(tmpdir(), "rt-"));
@@ -64,7 +64,7 @@ describe("NOONCHI 처음부터 끝까지", () => {
     writeFileSync(join(runtimeDir, "homes", "apartment", "approvals.json"), JSON.stringify({ always: { "task:컵 치우기": "2026-11-09T00:00:00.000Z" }, never: {} }));
     srv = await startServer({
       env: { HUB: "memory", PORT: "0", RUNTIME_DIR: runtimeDir, PHONE_PORT: "0", PHONE_HOST: "127.0.0.1",
-        BRAIN: "1", VLM_BASE_URL: `${fake.url}/v1`, PAM_URL: pam.url, OPENAI_API_KEY: "fake-key", OPENAI_BASE_URL: `${fake.url}/v1` },
+        BRAIN: "1", VLM_BASE_URL: `${fake.url}/v1`, ...pamLlmEnv(pam), OPENAI_API_KEY: "fake-key", OPENAI_BASE_URL: `${fake.url}/v1` },
       brain: { detector: new ScriptedDetector(() => [det("cup", 0.9, [220, 160, 40, 20], 41)]) }, log: () => {},
     });
     const dash: Msg[] = [];
@@ -193,14 +193,14 @@ describe("NOONCHI 처음부터 끝까지", () => {
       },
       respond: plannerRespond(CUP_SCRIPTS),
     });
-    pam = await startFakePam({ predict: (b) => (/컵 cup_\d/.test(String(b.observation_text))
+    pam = await startFakePamLlm({ predict: (b) => (/컵 cup_\d/.test(String(b.observation_text))
       ? { observation: "빈 컵이 식탁에 남음", reasoning: "자리를 비워 컵을 치운다", task_index: 0 } : { observation: "컵 없음", reasoning: "할 일 없음", task_index: -1 }) });
     const runtimeDir = mkdtempSync(join(tmpdir(), "rt-"));
     mkdirSync(join(runtimeDir, "homes", "apartment"), { recursive: true });
     writeFileSync(join(runtimeDir, "homes", "apartment", "approvals.json"), JSON.stringify({ always: { "task:컵 치우기": "2026-11-09T00:00:00.000Z" }, never: {} }));
     srv = await startServer({
       env: { HUB: "memory", PORT: "0", RUNTIME_DIR: runtimeDir, PHONE_PORT: "0", PHONE_HOST: "127.0.0.1",
-        BRAIN: "1", VLM_BASE_URL: `${fake.url}/v1`, PAM_URL: pam.url, OPENAI_API_KEY: "fake-key", OPENAI_BASE_URL: `${fake.url}/v1` },
+        BRAIN: "1", VLM_BASE_URL: `${fake.url}/v1`, ...pamLlmEnv(pam), OPENAI_API_KEY: "fake-key", OPENAI_BASE_URL: `${fake.url}/v1` },
       brain: { detector: new ScriptedDetector(() => [det("cup", 0.9, [220, 160, 40, 20], 41), det("cup", 0.9, [300, 160, 40, 20], 41)]) }, log: () => {},
     });
     const dash: Msg[] = [];

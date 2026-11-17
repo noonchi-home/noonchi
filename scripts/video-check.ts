@@ -474,7 +474,7 @@ const PERSON: Detection = det("person", 0.9, [100, 60, 160, 420], 0);
 interface Fake { api: string; phone: string; logs: string[]; personUntil(): number | null; close(): Promise<void> }
 
 async function startFake(clip: string, steps: string[]): Promise<Fake> {
-  const [{ startFakeOpenAI }, { startFakePam }, { ScriptedDetector }, { CUP_SCRIPTS, plannerRespond }, { startServer }] = await Promise.all([
+  const [{ startFakeOpenAI }, { startFakePamLlm, pamLlmEnv }, { ScriptedDetector }, { CUP_SCRIPTS, plannerRespond }, { startServer }] = await Promise.all([
     import("./fake-openai.js"), import("../tests/helpers/pam.js"), import("../tests/helpers/detectors.js"), import("../tests/helpers/planner.js"), import("../src/server/start.js"),
   ]);
   const names = [...new Set([clip, ...steps.map((s) => s.split(":")[2]!)])];
@@ -503,7 +503,7 @@ async function startFake(clip: string, steps: string[]): Promise<Fake> {
     });
     closers.push(() => fake.close());
     // 실제 PAM처럼 사람이 떠난 뒤 컵이 남았을 때 컵 치우기를 고른다(tests/video-mode-e2e.test.ts와 같은 조건). 사람이 보이면 대기
-    const pam = await startFakePam({ predict: (b) => {
+    const pam = await startFakePamLlm({ predict: (b) => {
       const text = String(b.observation_text);
       const i = (b.tasks as string[]).indexOf("컵 치우기");
       return i >= 0 && /컵 cup_\d/.test(text) && /^\[지속\] 사람 안 보임/m.test(text)
@@ -515,7 +515,7 @@ async function startFake(clip: string, steps: string[]): Promise<Fake> {
     const srv = await startServer({
       env: {
         HUB: "memory", PORT: "0", HOST: "127.0.0.1", HOME_ID: HOME, RUNTIME_DIR: runtimeDir, PHONE_PORT: "0", PHONE_HOST: "127.0.0.1",
-        BRAIN: "1", VLM_BASE_URL: `${fake.url}/v1`, OPENAI_BASE_URL: `${fake.url}/v1`, OPENAI_API_KEY: "fake-key", PAM_URL: pam.url,
+        BRAIN: "1", VLM_BASE_URL: `${fake.url}/v1`, OPENAI_BASE_URL: `${fake.url}/v1`, OPENAI_API_KEY: "fake-key", ...pamLlmEnv(pam),
         PAM_PERIOD_MS: "1000", PAM_MIN_GAP_MS: "0",
       },
       // 첫 엔진 프레임부터 30초는 사람+컵, 그 뒤 컵만

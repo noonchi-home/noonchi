@@ -34,7 +34,7 @@ afterEach(async () => {
 const start = async (runtime: string, extra: Record<string, string> = {}) => {
   const srv = await startServer({ env: {
     HUB: "memory", PORT: "0", RUNTIME_DIR: runtime, REFLECT_AT: "off",
-    VLM_BASE_URL: "http://127.0.0.1:9/v1", PAM_URL: "http://127.0.0.1:9", OPENAI_BASE_URL: "http://127.0.0.1:9/v1", ...extra,
+    VLM_BASE_URL: "http://127.0.0.1:9/v1", PAM_LLM_BASE_URL: "http://127.0.0.1:9/v1", OPENAI_BASE_URL: "http://127.0.0.1:9/v1", ...extra,
   }, log: () => {} });
   servers.push(srv);
   return srv;

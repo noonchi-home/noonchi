@@ -17,14 +17,14 @@ import { startServer, type RunningServer } from "../src/server/start.js";
 import { ScriptedDetector, det } from "./helpers/detectors.js";
 import { turnOf } from "./helpers/llm.js";
 import { isObserving, observerRespond } from "./helpers/observer.js";
-import { coachPredict, startFakePam, type FakePam } from "./helpers/pam.js";
+import { coachPredict, startFakePamLlm, type FakePamLlm, type PredictView, pamLlmEnv } from "./helpers/pam.js";
 import { plannerRespond, ramenScripts } from "./helpers/planner.js";
 import { heardAtOf, openPhone, openWebSocket } from "./helpers/ws.js";
 
 type Msg = Record<string, any>;
 let srv: RunningServer | undefined;
 let fake: FakeServer | undefined;
-let pam: FakePam | undefined;
+let pam: FakePamLlm | undefined;
 const sockets: WebSocket[] = [];
 afterEach(async () => {
   for (const s of sockets.splice(0)) s.close();
@@ -76,13 +76,13 @@ async function start(o: { assist: "coach" | "noonchi"; scene?: Scene } = { assis
       return t.round === 0 ? { calls: [{ name: "leave_it", args: { reason: "가전 요청이 아니라서" } }] } : { text: "네." };
     },
   });
-  pam = await startFakePam({ predict: coachPredict });
+  pam = await startFakePamLlm({ predict: coachPredict });
   const runtimeDir = mkdtempSync(join(tmpdir(), "rt-"));
   mkdirSync(join(runtimeDir, "homes", "mokryeon_180b"), { recursive: true });
   writeFileSync(join(runtimeDir, "homes", "mokryeon_180b", "approvals.json"), JSON.stringify({ always: { [`task:${RAMEN}`]: "2026-11-13T00:00:00.000Z" } }));
   srv = await startServer({
     env: { HUB: "memory", PORT: "0", HOME_ID: "mokryeon_180b", RUNTIME_DIR: runtimeDir, PHONE_PORT: "0", PHONE_HOST: "127.0.0.1", PAM_PERIOD_MS: "1500", PAM_MIN_GAP_MS: "1000",
-      BRAIN: "1", VLM_BASE_URL: `${fake.url}/v1`, PAM_URL: pam.url, OPENAI_API_KEY: "fake-key", OPENAI_BASE_URL: `${fake.url}/v1` },
+      BRAIN: "1", VLM_BASE_URL: `${fake.url}/v1`, ...pamLlmEnv(pam), OPENAI_API_KEY: "fake-key", OPENAI_BASE_URL: `${fake.url}/v1` },
     brain: { detector: new ScriptedDetector(() => scene.dets) }, log: () => {},
   });
   const post = async (path: string, body: unknown) => (await fetchRetry(`${srv!.url}${path}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) })).json() as Promise<Msg>;
@@ -116,7 +116,7 @@ async function start(o: { assist: "coach" | "noonchi"; scene?: Scene } = { assis
   const replies = () => phone.filter((m) => m.type === "reply");
   const agentBodies = () => fake!.requests.filter((r) => r.method === "POST" && r.path.endsWith("/responses") && !isObserving(r.body) && !planning(r.body)).map((r) => r.body);
   const observerBodies = () => fake!.requests.filter((r) => r.method === "POST" && r.path.endsWith("/responses") && isObserving(r.body)).map((r) => r.body);
-  const predicts = () => pam!.paths.filter((p) => p === "POST /predict").length;
+  const predicts = () => pam!.calls.filter((c) => c === "predict").length;
   return { scene, runtimeDir, cooktop, light, dash, phone, pump, history, commands, spoken, said, last, answer, say, replies, agentBodies, observerBodies, predicts };
 }
 
@@ -144,10 +144,10 @@ describe("코치 모드: 라면 끓이기 알려 주기", () => {
     const first = s.said("수납장으로 가 주세요")!;
     const planId = first.id as string;
     expect(first).toMatchObject({ step: `${planId}:1`, kind: "go", choices: [{ id: "done", label: "완료" }] });
-    const chosen = pam!.bodies.find((b) => String(b.observation_text).includes(`사람이 말함: 「${ASK_RAMEN}」`))!;
+    const chosen = pam!.bodies.find((b) => String(b.observation_text).includes(`사람이 말함: 「${ASK_RAMEN}」`))! as PredictView;
     expect(chosen.tasks).toEqual(tasksFor("coach"));
     expect(chosen.tasks).toEqual(["사용자에게 물어보기", RAMEN, "전자레인지로 데우기 알려 주기"]);
-    expect(Object.keys(chosen).sort()).toEqual(["contract", "final_time", "memory", "memory_kind", "observation_text", "tasks"]);
+    expect(Object.keys(chosen).sort()).toEqual(["final_time", "memory", "memory_kind", "observation_text", "role", "tasks"]);
     const during = s.predicts();
 
     // 2 「완료」·VLM 답(사람이 물건을 들고 있음)·말 「다 했어」로 단계를 넘긴다
@@ -281,7 +281,7 @@ describe("코치 모드: 라면 끓이기 알려 주기", () => {
     const s = await start({ assist: "noonchi" });
     s.say(ASK_RAMEN);
     await s.pump(() => pam!.bodies.some((b) => String(b.observation_text).includes(`사람이 말함: 「${ASK_RAMEN}」`)), "들은 말이 든 PAM 요청");
-    const body = pam!.bodies.find((b) => String(b.observation_text).includes("사람이 말함"))!;
+    const body = pam!.bodies.find((b) => String(b.observation_text).includes("사람이 말함"))! as PredictView;
     expect(body.tasks).toEqual(tasksFor("noonchi"));
     expect(body.tasks).not.toContain(RAMEN);
     await new Promise((r) => setTimeout(r, 1500));

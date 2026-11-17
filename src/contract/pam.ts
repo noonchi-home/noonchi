@@ -1,4 +1,4 @@
-// noonchi ↔ PAM 서비스(services/pam/) 계약 타입(타입만). 사진 칸이 없다. 형식 설명은 docs/pam-interface.md.
+// PamClient(src/brain/pam/) 입력 모양(pam-predict/2·pam-reflect/2, 타입만). 사진 칸이 없다. 형식 설명은 docs/pam-interface.md.
 export type PamPredictContract = "pam-predict/2";
 export type PamReflectContract = "pam-reflect/2";
 
@@ -13,14 +13,6 @@ export interface PamPredictRequest {
   tasks: string[];
 }
 
-export interface PamPredictResponse {
-  status: "valid" | "invalid";
-  raw_response: string;
-  prediction: { observation: string; reasoning: string; task_index: number } | null;
-  selected_action: string | null;
-  errors: string[];
-}
-
 export interface PamReflectRequest {
   contract: PamReflectContract;
   /** 반성하는 날(YYYY-MM-DD). */
@@ -32,13 +24,6 @@ export interface PamReflectRequest {
   /** 하루 행동 요약. */
   action_summary: string;
   feedback: string | null;
-}
-
-export interface PamReflectResponse {
-  status: "valid" | "invalid";
-  raw_response: string;
-  memory: unknown | null;
-  errors: string[];
 }
 
 export interface Prediction { observation: string; reasoning: string; task_index: number }

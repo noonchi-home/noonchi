@@ -15,7 +15,6 @@ import { riskyNames } from "../src/agent/policy.js";
 import type { Detection } from "../src/contract/observe.js";
 import { CUP_FSM_MEMORY, type FsmMemory } from "../src/brain/decision.js";
 import type { HistoryRow } from "../src/contract/history.js";
-import { PAM_PREDICT, PAM_REFLECT } from "../src/brain/pam.js";
 import { encodeFramePacket } from "../src/phone/packet.js";
 import { fetchRetry, listenRetry } from "../src/shared/net.js";
 import { startServer, type RunningServer } from "../src/server/start.js";
@@ -23,14 +22,14 @@ import { alignOnServer } from "./helpers/align.js";
 import { ScriptedDetector, det } from "./helpers/detectors.js";
 import { turnOf } from "./helpers/llm.js";
 import { isObserving, observerRespond } from "./helpers/observer.js";
-import { DEMO_AIRCON_RULE, DEMO_RAMEN_HABIT, demoPredict, demoReflect, startFakePam, type FakePam } from "./helpers/pam.js";
+import { DEMO_AIRCON_RULE, DEMO_RAMEN_HABIT, demoPredict, demoReflect, startFakePamLlm, type FakePamLlm, pamLlmEnv } from "./helpers/pam.js";
 import { CUP_SCRIPTS, microwaveScripts, planCalls, plannerRespond, ramenScripts } from "./helpers/planner.js";
 import { heardAtOf, openPhone, openWebSocket } from "./helpers/ws.js";
 
 type Msg = Record<string, any>;
 let srv: RunningServer | undefined;
 let fake: FakeServer | undefined;
-let pam: FakePam | undefined;
+let pam: FakePamLlm | undefined;
 const sockets: WebSocket[] = [];
 afterEach(async () => {
   for (const s of sockets.splice(0)) s.close();
@@ -107,10 +106,10 @@ async function start(o: { scene: Scene; kind?: "day1" | "week"; view?: View }) {
       return t.round === 0 ? { calls: [{ name: "leave_it", args: { reason: "시킨 말이 아니라서" } }] } : { text: "" };
     },
   });
-  pam = await startFakePam({ predict: demoPredict, reflect: demoReflect });
+  pam = await startFakePamLlm({ predict: demoPredict, reflect: demoReflect });
   srv = await startServer({
     env: { HUB: "memory", PORT: "0", HOME_ID: "mokryeon_180b", RUNTIME_DIR: dir, PHONE_PORT: "0", PHONE_HOST: "127.0.0.1", PAM_PERIOD_MS: "1500", PAM_MIN_GAP_MS: "1000",
-      BRAIN: "1", VLM_BASE_URL: `${fake.url}/v1`, PAM_URL: pam.url, OPENAI_API_KEY: "fake-key", OPENAI_BASE_URL: `${fake.url}/v1`, ...TZ },
+      BRAIN: "1", VLM_BASE_URL: `${fake.url}/v1`, ...pamLlmEnv(pam), OPENAI_API_KEY: "fake-key", OPENAI_BASE_URL: `${fake.url}/v1`, ...TZ },
     // 시연 서버처럼 설정 파일(시연 준비가 쓴 setup.json: 집·자동 모드)을 읽는다
     brain: { detector: new ScriptedDetector(() => scene.dets) }, log: () => {}, persistSetup: true,
   });
@@ -154,15 +153,15 @@ async function start(o: { scene: Scene; kind?: "day1" | "week"; view?: View }) {
   const say = (text: string) => ws.send(JSON.stringify({ type: "say", text, at: heardAtOf(phone) }));
   const history = async (kinds: string) => ((await (await fetchRetry(`${server.url}/api/history?limit=5000&kinds=${kinds}`)).json()) as { rows: HistoryRow[] }).rows;
   const done = async (planId: string) => (await history("execution")).some((r) => r.subject === planId && r.text === "완료");
-  /** PAM 요청에는 사진 칸이 없고 계약 판본이 경로마다 맞다. */
+  /** PAM 요청에는 사진 칸이 없고, 실제로 나간 LLM 본문에도 사진이 없다. 판단·반성 갈래는 요청 값과 같다. */
   const pamChecked = () => {
-    const posts = pam!.paths.filter((p) => p.startsWith("POST "));
-    expect(posts.length).toBe(pam!.bodies.length);
+    expect(pam!.calls.length).toBe(pam!.bodies.length);
+    expect(pam!.requests.length).toBe(pam!.bodies.length);
     pam!.bodies.forEach((b, i) => {
       const keys = Object.keys(b);
-      expect(keys.filter((k) => /image|photo|jpeg|frame|picture/i.test(k)), posts[i]).toEqual([]);
-      expect(JSON.stringify(b)).not.toContain("data:image");
-      expect(b.contract, posts[i]).toBe(posts[i] === "POST /predict" ? PAM_PREDICT : PAM_REFLECT);
+      expect(keys.filter((k) => /image|photo|jpeg|frame|picture/i.test(k)), pam!.calls[i]).toEqual([]);
+      expect(JSON.stringify(pam!.requests[i])).not.toMatch(/data:image|base64|"image_url"|"type":"image/);
+      expect(b.role, pam!.calls[i]).toBe(pam!.calls[i]);
     });
   };
   return { server, dir, scene, dash, phone, ws, wait, pump, commands, command, answer, say, decisions, history, done, pamChecked };

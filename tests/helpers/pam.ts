@@ -1,17 +1,82 @@
-// 시험용 PAM 서비스 자리: pam-predict/2·pam-reflect/2를 받아 본문을 기록하고 정해진 답을 낸다. /health는 입력 한도를 알린다.
-import { createServer } from "node:http";
+// 시험용 PAM LLM 자리(OpenAI 호환 /v1/chat/completions, GET /v1/models): 서버 안 PamClient(src/brain/pam/)가 보낸 판단·반성 메시지를 되읽어
+// 요청 값(관찰 텍스트·기억·행동 목록 등)으로 기록하고, 정해진 답 글을 낸다. 서버에는 PAM_LLM_BASE_URL=url(pamLlmEnv)로 붙인다.
+import { createServer, type ServerResponse } from "node:http";
+import { adaptedTemplate, PamClient, pamSettings, PREDICT_LOG, PREDICT_TIME, REFLECT_FEEDBACK, REFLECT_LOG, REFLECT_MEMORY, REFLECT_SUMMARY } from "../../src/brain/pam/index.js";
 import { listenRetry } from "../../src/shared/net.js";
 
-export interface FakePam { url: string; bodies: Record<string, unknown>[]; paths: string[]; close(): Promise<void> }
 type Pred = { observation: string; reasoning: string; task_index: number };
-export interface FakePamOptions {
-  /** 판단 답(기본 대기 -1). 문자열이면 원문(raw_response)으로 그대로 쓴다. */
-  predict?: (body: Record<string, unknown>) => Pred | string;
-  /** 반성 답(기본은 받은 기억 그대로). */
-  reflect?: (body: Record<string, unknown>) => unknown;
-  /** 경로별로 HTTP 상태를 바꾼다(예: { "/predict": 500 }). */
-  status?: Record<string, number>;
-  limits?: Record<string, number> | null;
+/** 판단 요청 값(메시지에서 되읽음). final_time은 메시지에 쓴 Python isoformat 꼴이다. */
+export type PredictView = { role: "predict"; final_time: string; observation_text: string; memory_kind: "list" | "fsm"; memory: unknown; tasks: string[] };
+/** 반성 요청 값(메시지에서 되읽음). */
+export type ReflectView = { role: "reflect"; memory_kind: "list" | "fsm"; memory: unknown; observation_text: string; action_summary: string; feedback: string | null };
+export type PamView = PredictView | ReflectView;
+export interface FakePamLlm {
+  /** 서버의 PAM_LLM_BASE_URL(…/v1). */
+  url: string;
+  /** 받은 판단·반성 요청 값(차례대로). */
+  bodies: PamView[];
+  /** 받은 갈래(predict·reflect) 차례. */
+  calls: PamView["role"][];
+  /** 실제로 받은 LLM 요청 본문. */
+  requests: Record<string, unknown>[];
+  close(): Promise<void>;
+}
+export interface FakePamLlmOptions {
+  /** 판단 답(기본 대기 -1). 문자열이면 답 글 그대로. */
+  predict?: (v: PredictView) => Pred | string;
+  /** 반성 답(기본은 받은 기억 그대로). 문자열이면 답 글 그대로. */
+  reflect?: (v: ReflectView) => unknown;
+  /** 갈래별 HTTP 상태(예: { predict: 500 }). */
+  status?: Partial<Record<PamView["role"], number>>;
+}
+
+/** 서버에 넘길 PAM LLM 환경(가짜 서버 주소, 실제 키 대신 가짜 키). */
+export const pamLlmEnv = (pam: Pick<FakePamLlm, "url">) => ({ PAM_LLM_BASE_URL: pam.url, PAM_LLM_API_KEY: "fake-key" });
+
+/** 가짜 PAM LLM에 붙은 PamClient(live 모드 표, 문맥 길이 등은 env로 바꾼다). */
+export const pamClientFor = (pam: Pick<FakePamLlm, "url">, o: { env?: Record<string, string>; timeoutMs?: number; fetchImpl?: typeof fetch } = {}) =>
+  new PamClient({ settings: pamSettings({ INFERENCE_MODE: "live", ...pamLlmEnv(pam), ...o.env }), timeoutMs: o.timeoutMs, fetchImpl: o.fetchImpl });
+
+const WAIT: Pred = { observation: "o", reasoning: "r", task_index: -1 };
+const PLACE = /\{(window|tasks_block|n_tasks_minus_one|rules_block|fsm_block)\}/;
+
+/** 끼워 넣은 프롬프트에서 자리 값을 되읽는다(render의 거꾸로). 맞지 않으면 null. */
+function unrender(template: string, text: string): Record<string, string> | null {
+  const parts = template.split(new RegExp(PLACE.source, "g"));
+  if (!text.startsWith(parts[0]!)) return null;
+  let at = parts[0]!.length;
+  const out: Record<string, string> = {};
+  for (let k = 1; k < parts.length; k += 2) {
+    const next = parts[k + 1]!;
+    const end = k + 2 >= parts.length ? (text.endsWith(next) ? text.length - next.length : -1) : text.indexOf(next, at);
+    if (end < at) return null;
+    out[parts[k]!] = text.substring(at, end);
+    at = end + next.length;
+  }
+  return out;
+}
+
+/** LLM 요청 본문 → 판단·반성 요청 값. */
+export function pamView(body: { messages: { content: string | { text: string }[] }[] }): PamView {
+  const system = body.messages[0]!.content as string;
+  const parts = (body.messages[1]!.content as { text: string }[]).map((p) => p.text);
+  for (const kind of ["fsm", "list"] as const) {
+    const v = unrender(adaptedTemplate(`predictor_${kind}`), system);
+    if (v) {
+      return { role: "predict", memory_kind: kind, memory: JSON.parse(v[kind === "fsm" ? "fsm_block" : "rules_block"]!),
+        tasks: v.tasks_block!.split("\n").map((l, i) => l.substring(`${i}: `.length)),
+        final_time: parts[0]!.substring(PREDICT_TIME.length), observation_text: parts[1]!.substring(PREDICT_LOG.length) };
+    }
+    if (system === adaptedTemplate(`reflector_${kind}_update`)) {
+      const t = parts[1]!;
+      const s = t.indexOf(REFLECT_SUMMARY);
+      const rest = t.substring(s + REFLECT_SUMMARY.length);
+      const f = rest.indexOf(REFLECT_FEEDBACK);
+      return { role: "reflect", memory_kind: kind, memory: JSON.parse(t.substring(REFLECT_MEMORY.length, s)), observation_text: parts[0]!.substring(REFLECT_LOG.length),
+        action_summary: f < 0 ? rest : rest.substring(0, f), feedback: f < 0 ? null : rest.substring(f + REFLECT_FEEDBACK.length) };
+    }
+  }
+  throw new Error("PAM 판단·반성 메시지가 아닙니다");
 }
 
 /** 관찰 텍스트 [지속] 물건 줄(면 줄 하나 + 사실마다 한 줄)을 컵마다 한 글로 묶어, 싱크대 안이 아닌 첫 컵의 글(없으면 빈 글). */
@@ -97,40 +162,33 @@ export function demoReflect(body: Record<string, unknown>): unknown {
   return memory;
 }
 
-export async function startFakePam(o: FakePamOptions = {}): Promise<FakePam> {
-  const bodies: Record<string, unknown>[] = [];
-  const paths: string[] = [];
+export async function startFakePamLlm(o: FakePamLlmOptions = {}): Promise<FakePamLlm> {
+  const bodies: PamView[] = [];
+  const calls: PamView["role"][] = [];
+  const requests: Record<string, unknown>[] = [];
+  const send = (res: ServerResponse, status: number, b: unknown) => {
+    res.writeHead(status, { "content-type": "application/json" });
+    res.end(JSON.stringify(b));
+  };
   const server = createServer(async (req, res) => {
+    if (req.method === "GET" && req.url === "/v1/models") return send(res, 200, { object: "list", data: [] });
     let raw = "";
     for await (const c of req) raw += c;
-    const path = new URL(req.url ?? "/", "http://x").pathname;
-    paths.push(`${req.method} ${path}`);
-    const send = (status: number, v: unknown) => { res.writeHead(status, { "content-type": "application/json" }); res.end(JSON.stringify(v)); };
-    if (o.status?.[path]) return send(o.status[path]!, { error: "시험 오류" });
-    if (req.method === "GET" && path === "/health") {
-      return send(200, { ok: true, llm: { base_url: "http://fake/v1", model: "q", reachable: true },
-        ...(o.limits === null ? {} : { limits: o.limits ?? { max_model_len: 32768, predict_input_bytes: 80_000, reflect_input_bytes: 40_000 } }) });
-    }
-    const body = JSON.parse(raw) as Record<string, unknown>;
-    bodies.push(body);
-    if (path === "/predict") {
-      const answer = o.predict?.(body) ?? { observation: "o", reasoning: "r", task_index: -1 };
-      const rawResponse = typeof answer === "string" ? answer : JSON.stringify(answer);
-      let pred: Pred | null = null;
-      try { pred = JSON.parse(rawResponse) as Pred; } catch { /* 원문이 JSON이 아님 */ }
-      const tasks = body.tasks as string[];
-      if (!pred || typeof pred.task_index !== "number") return send(200, { status: "invalid", raw_response: rawResponse, prediction: null, selected_action: null, errors: ["bad"] });
-      return send(200, { status: "valid", raw_response: rawResponse, prediction: pred, selected_action: pred.task_index === -1 ? null : tasks[pred.task_index], errors: [] });
-    }
-    if (path === "/reflect") {
-      const memory = o.reflect?.(body) ?? body.memory;
-      return send(200, { status: "valid", raw_response: JSON.stringify(memory), memory, errors: [] });
-    }
-    send(404, { error: "없는 경로" });
+    const body = JSON.parse(raw) as Record<string, unknown> & { messages: { content: string | { text: string }[] }[]; model: string };
+    requests.push(body);
+    const v = pamView(body);
+    bodies.push(v);
+    calls.push(v.role);
+    const status = o.status?.[v.role];
+    if (status && status !== 200) return send(res, status, { error: { message: "시험 오류" } });
+    const answer = v.role === "predict" ? (o.predict?.(v) ?? WAIT) : (o.reflect?.(v) ?? v.memory);
+    const content = typeof answer === "string" ? answer : JSON.stringify(answer);
+    send(res, 200, { id: "fake", object: "chat.completion", created: 0, model: body.model,
+      choices: [{ index: 0, message: { role: "assistant", content }, finish_reason: "stop" }], usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 } });
   });
   const { port } = await listenRetry(server, 0, "127.0.0.1");
   return {
-    url: `http://127.0.0.1:${port}`, bodies, paths,
+    url: `http://127.0.0.1:${port}/v1`, bodies, calls, requests,
     close: () => new Promise((ok) => { server.closeAllConnections(); server.close(() => ok()); }),
   };
 }

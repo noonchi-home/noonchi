@@ -5,7 +5,7 @@ import type { BrainLog, DecisionWorld, DecisionRecord } from "../contract/events
 import type { WorldChange, WorldView } from "../contract/world.js";
 import { taskOf } from "../act/tasks.js";
 import { checkInput, fsmRuleOf, isoWithOffset, type PamMemory } from "./decision.js";
-import { PamLinkError, type PamClient } from "./pam.js";
+import { PamLinkError, type PamClient } from "./pam/index.js";
 import { LINK_TEXT, TRIGGER_TEXT, redactHeard, redactSaid, saidIn } from "../world/labels.js";
 import type { WorldState } from "../world/index.js";
 import { textFromWorld } from "../world/index.js";

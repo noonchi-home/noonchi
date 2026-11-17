@@ -56,7 +56,7 @@ describe("도면 설비를 서버 장면에 넣기", () => {
     const runtime = mkdtempSync(join(tmpdir(), "rt-scene-"));
     const srv = await startServer({ env: {
       HUB: "memory", PORT: "0", HOME_ID: "mokryeon_180b", RUNTIME_DIR: runtime, REFLECT_AT: "off",
-      VLM_BASE_URL: "http://127.0.0.1:9/v1", PAM_URL: "http://127.0.0.1:9", OPENAI_BASE_URL: "http://127.0.0.1:9/v1",
+      VLM_BASE_URL: "http://127.0.0.1:9/v1", PAM_LLM_BASE_URL: "http://127.0.0.1:9/v1", OPENAI_BASE_URL: "http://127.0.0.1:9/v1",
     }, log: () => {} });
     try {
       expect(srv.mode).toBe("test");

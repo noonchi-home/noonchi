@@ -1,4 +1,4 @@
-// PAM(판단·반성): 예전 services/pam(Python)을 옮긴 서버 안 함수. 다른 파일은 이 입구로 가져온다. 안내는 README.md.
+// PAM(판단·반성): 예전 Python PAM 서비스를 옮긴 서버 안 함수(출처 PROVENANCE.md). 다른 파일은 이 입구로 가져온다. 안내는 README.md.
 export { adaptation, adaptedTemplate, buildPredictMessages, buildReflectMessages, PREDICT_LOG, PREDICT_TIME, REFLECT_FEEDBACK, REFLECT_LOG, REFLECT_MEMORY, REFLECT_SUMMARY, type Generation, type PamMessage } from "./prompt.js";
 export { parseMemory, parsePrediction, type ParsedMemory, type ParsedPrediction } from "./answer.js";
 export { checkBudget, estimateTokens, pamLimits, type PamLimits } from "./budget.js";

@@ -3,10 +3,9 @@
 import { ExecutionTracker, LessonStore, Looker, PlanHub, checkDecision, checkPlan, deviceRunner, lessonsPath, loadActConfig } from "../../act/index.js";
 import { lookTargets, taskOf, tasksFor } from "../../act/tasks.js";
 import { deviceViews, placesOf, type PlaceInfo } from "../../agent/index.js";
-import { Decider, PamClient, ThoughtWriter, lastStoredThoughts, memoryForDay, storeThought, thoughtFeed } from "../../brain/index.js";
+import { Decider, PamClient, ThoughtWriter, lastStoredThoughts, memoryForDay, pamSettings, storeThought, thoughtFeed } from "../../brain/index.js";
 import type { BrainLog } from "../../contract/events.js";
 import type { PlanView } from "../../contract/plan.js";
-import { loadEndpoints } from "../../infer/endpoints.js";
 import { createInference } from "../../infer/inference.js";
 import { floorPlanFrom, loadScene, type LayoutEditor, type PlaceNames } from "../../layout/index.js";
 import { Trigger, loadTriggerConfig, type PlaneSurface } from "../../world/index.js";
@@ -76,11 +75,11 @@ export function startAct(core: HomeCore): (event: BrainLog) => void {
     history.brain(event);
     if (event.type === "decision") feed.decision(event);
   };
-  // 판단 호출(src/brain/decide.ts): World State 관찰 텍스트 + 기억 + 행동 목록으로 PAM 서비스를 부른다.
+  // 판단 호출(src/brain/decide.ts): World State 관찰 텍스트 + 기억 + 행동 목록으로 PAM(src/brain/pam/)을 부른다.
   // 기억은 그날 처음 정한 판본(src/brain/history/reflect.ts). 관찰 텍스트 시각은 기록 DB와 같은 시간대
   const pamTimeout = Number(env.PAM_TIMEOUT_MS);
   const decide = new Decider({
-    pam: new PamClient({ url: loadEndpoints(env).pamUrl, timeoutMs: Number.isFinite(pamTimeout) && pamTimeout > 0 ? pamTimeout : undefined }),
+    pam: new PamClient({ settings: pamSettings(env), timeoutMs: Number.isFinite(pamTimeout) && pamTimeout > 0 ? pamTimeout : undefined }),
     world, trigger: new Trigger(loadTriggerConfig(env), now()), tasks: () => tasksFor(core.assist()),
     memory: () => memoryForDay(history.db, history.db.dayOf(now())), emit, offsetMinutes: history.db.offsetMinutes, clock: ctx.brain?.clock,
     // 행동 중 기다리기·기기 단계 동안은 PAM을 부르지 않는다(실행 추적이 조건을 본다)

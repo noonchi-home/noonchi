@@ -44,7 +44,7 @@ export function buildPamText(o: { lines: TimedLine[]; facts: string[]; time?: st
   ].join("\n");
 }
 
-/** PAM 판단 관찰 텍스트 상한(글자 수, PAM 서비스 pam-predict/2와 같다). textFromWorld는 이 안으로 만든다. 판단 보내기 전 검사(brain)도 이 값을 쓴다. */
+/** PAM 판단 관찰 텍스트 상한(글자 수, pam-predict/2(src/brain/pam/request.ts)와 같다). textFromWorld는 이 안으로 만든다. 판단 보내기 전 검사(brain)도 이 값을 쓴다. */
 export const PAM_TEXT_MAX = 20_000;
 
 /** 오래 이어진 시간: 1분 아래는 초째, 그 위는 분째. */

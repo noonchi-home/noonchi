@@ -13,7 +13,7 @@ import { fileURLToPath } from "node:url";
 import type WebSocket from "ws";
 import { alignOnServer } from "../../tests/helpers/align.js";
 import { ScriptedDetector, det } from "../../tests/helpers/detectors.js";
-import { startFakePam, type FakePam } from "../../tests/helpers/pam.js";
+import { startFakePamLlm, type FakePamLlm, pamLlmEnv } from "../../tests/helpers/pam.js";
 import { openWebSocket } from "../../tests/helpers/ws.js";
 import { encodeFramePacket } from "../../src/phone/packet.js";
 import { APPROVAL_TEXT, SAY_TEXT, STEP_LABEL } from "../../src/act/labels.js";
@@ -71,7 +71,7 @@ writeFileSync(logPath, "");
 const errors: string[] = [];
 const results: { moment: string; file: string; seen: Omit<Seen, "text">; failed: string[] }[] = [];
 let fake: FakeServer | undefined;
-let pam: FakePam | undefined;
+let pam: FakePamLlm | undefined;
 let srv: RunningServer | undefined;
 let phone: WebSocket | undefined;
 let chrome: Chrome | undefined;
@@ -91,7 +91,7 @@ try {
       return JSON.stringify({ scene: "kitchen", observations: dets.map((d) => ({ object_id: d.id, state: cupPlace })), summary: "컵" });
     },
   });
-  pam = await startFakePam({
+  pam = await startFakePamLlm({
     predict: () => (decide
       ? { observation: "빈 컵이 식탁에 남음", reasoning: "자리를 비워 컵을 치운다", task_index: 0 }
       : { observation: "컵이 식탁에 있음", reasoning: "지켜본다", task_index: -1 }),
@@ -99,7 +99,7 @@ try {
   srv = await startServer({
     env: {
       HUB: "memory", PORT: String(PORT), HOST: "127.0.0.1", HOME_ID: HOME, RUNTIME_DIR: runtimeDir, PHONE_PORT: "0", PHONE_HOST: "127.0.0.1",
-      BRAIN: "1", VLM_BASE_URL: `${fake.url}/v1`, OPENAI_BASE_URL: `${fake.url}/v1`, OPENAI_API_KEY: "fake-key", PAM_URL: pam.url,
+      BRAIN: "1", VLM_BASE_URL: `${fake.url}/v1`, OPENAI_BASE_URL: `${fake.url}/v1`, OPENAI_API_KEY: "fake-key", ...pamLlmEnv(pam),
       PAM_TRIGGER: "periodic", PAM_PERIOD_MS: "1000", PAM_MIN_GAP_MS: "0",
     },
     brain: { detector: new ScriptedDetector(() => [det("cup", 0.9, CUP_BOX, 41)]) },

@@ -26,11 +26,10 @@ describe("추론 모드", () => {
     expect(loadEndpoints({}).pam).toMatchObject({ baseUrl: "https://openrouter.ai/api/v1", model: "qwen/qwen3.5-27b", apiKey: "", thinking: "openrouter" });
     expect(loadEndpoints({ PAM_LLM_PROVIDER: "openai", OPENAI_API_KEY: "k" }).pam).toMatchObject({ baseUrl: "https://api.openai.com/v1", model: "gpt-5.4-mini", apiKey: "k", thinking: "openai" });
   });
-  it("따로 준 주소·모델·PAM_URL이 앞선다", () => {
-    const e = loadEndpoints({ INFERENCE_MODE: "live", VLM_BASE_URL: "http://127.0.0.1:8500/v1/", VLM_MODEL: "m", PAM_URL: "http://pam:8300/" });
+  it("따로 준 VLM 주소·모델이 앞선다", () => {
+    const e = loadEndpoints({ INFERENCE_MODE: "live", VLM_BASE_URL: "http://127.0.0.1:8500/v1/", VLM_MODEL: "m" });
     expect(e.vlm.baseUrl).toBe("http://127.0.0.1:8500/v1");
     expect(e.vlm.model).toBe("m");
-    expect(e.pamUrl).toBe("http://pam:8300");
   });
   it("VLM_CLOSER_MODEL은 가까이 보기 VLM 모델 이름만 바꾼다. 비우면 VLM 모델과 같고, 주소·키·요청 칸은 같다", () => {
     expect(loadEndpoints({}).vlm.closerModel).toBe(VLM_PRESETS.mock.model);
@@ -52,9 +51,6 @@ describe("추론 모드", () => {
     const { thought } = createInference({ VLM_BASE_URL: "http://127.0.0.1:9/v1", OPENAI_API_KEY: "k" });
     expect(thought.model).toBe("gpt-5.4-nano");
     expect(thought.endpoint).toEqual({ baseUrl: "http://127.0.0.1:9/v1", model: "gpt-5.4-nano", apiKey: "k", extraBody: { reasoning_effort: "none" } });
-  });
-  it("PAM_URL이 없으면 이 PC의 PAM 서비스 주소", () => {
-    expect(loadEndpoints({}).pamUrl).toBe("http://127.0.0.1:8300");
   });
   it("VLM_EXTRA_BODY는 JSON으로 읽고, 깨진 JSON은 시작을 막는다", () => {
     expect(loadEndpoints({ VLM_EXTRA_BODY: '{"temperature":0}' }).vlm.extraBody).toEqual({ temperature: 0 });

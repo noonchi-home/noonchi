@@ -15,14 +15,14 @@ import { encodeFramePacket } from "../src/phone/packet.js";
 import { fetchRetry } from "../src/shared/net.js";
 import { startServer, type RunningServer } from "../src/server/start.js";
 import { ScriptedDetector, det } from "./helpers/detectors.js";
-import { cupBranchPredict, startFakePam, type FakePam } from "./helpers/pam.js";
+import { cupBranchPredict, startFakePamLlm, type FakePamLlm, type PredictView, pamLlmEnv } from "./helpers/pam.js";
 import { CUP_SCRIPTS, FILL_SCRIPTS, plannerRespond } from "./helpers/planner.js";
 import { openPhone, openWebSocket } from "./helpers/ws.js";
 
 type Msg = Record<string, any>;
 let srv: RunningServer | undefined;
 let fake: FakeServer | undefined;
-let pam: FakePam | undefined;
+let pam: FakePamLlm | undefined;
 const sockets: WebSocket[] = [];
 afterEach(async () => {
   for (const s of sockets.splice(0)) s.close();
@@ -55,13 +55,13 @@ async function start(scene: Scene, approved: string[]) {
     },
     respond: plannerRespond({ ...CUP_SCRIPTS, ...FILL_SCRIPTS }),
   });
-  pam = await startFakePam({ predict: cupBranchPredict });
+  pam = await startFakePamLlm({ predict: cupBranchPredict });
   const runtimeDir = mkdtempSync(join(tmpdir(), "rt-"));
   mkdirSync(join(runtimeDir, "homes", "apartment"), { recursive: true });
   writeFileSync(join(runtimeDir, "homes", "apartment", "approvals.json"), JSON.stringify({ always: Object.fromEntries(approved.map((a) => [`task:${a}`, "2026-11-13T00:00:00.000Z"])), never: {} }));
   srv = await startServer({
     env: { HUB: "memory", PORT: "0", RUNTIME_DIR: runtimeDir, PHONE_PORT: "0", PHONE_HOST: "127.0.0.1", PAM_PERIOD_MS: "2000", PAM_MIN_GAP_MS: "1000",
-      BRAIN: "1", VLM_BASE_URL: `${fake.url}/v1`, PAM_URL: pam.url, OPENAI_API_KEY: "fake-key", OPENAI_BASE_URL: `${fake.url}/v1` },
+      BRAIN: "1", VLM_BASE_URL: `${fake.url}/v1`, ...pamLlmEnv(pam), OPENAI_API_KEY: "fake-key", OPENAI_BASE_URL: `${fake.url}/v1` },
     brain: { detector: new ScriptedDetector(() => scene.dets) }, log: () => {},
   });
   const dash: Msg[] = [];
@@ -101,7 +101,7 @@ describe("컵 장면 갈래", () => {
     await s.pump(() => s.spoken().length > 0);
     expect(s.spoken()[0]).toMatchObject({ text: "식탁으로 가 주세요", kind: "go" });
     expect((await s.history("decision")).map((r) => r.text)).toContain("컵 치우기");
-    expect(pam!.bodies.at(-1)!.tasks).toEqual(tasksFor("noonchi"));
+    expect((pam!.bodies.at(-1) as PredictView).tasks).toEqual(tasksFor("noonchi"));
   }, 60_000);
 
   it("물이 남은 컵 + 사람 없음 → 컵 치우기(컵을 두고 떠나면 치우는 습관, 내용물과 상관없음): 실제 폰 첫 명령은 「식탁으로 가 주세요」이고 그대로 두기는 고르지 않는다", async () => {
@@ -157,13 +157,13 @@ describe("컵 장면 갈래", () => {
     expect(s.dash.find((m) => m.type === "brain" && m.event.type === "decision" && `plan:${m.event.id}` === planId)!.event).toMatchObject({ action: "컵에 물 채워 주기", fsm: { state: "drinking" } });
     const says = s.dash.filter((m) => m.type === "say").map((m) => m.text as string);
     expect(says).toEqual(expect.arrayContaining(["냉장고로 가기를 부탁했어요.", "물병 꺼내기를 부탁했어요.", "컵에 물 따르기를 부탁했어요.", "컵에 물 채워 주기를 마쳤어요."]));
-    // PAM 계약 그대로: pam-predict/2, 칸 여섯, 사진 칸·사진 글 없음
+    // PAM 판단 요청 그대로: 칸 여섯, 사진 칸 없음, 실제로 나간 LLM 본문에도 사진 없음
     expect(pam!.bodies.length).toBeGreaterThan(0);
+    for (const r of pam!.requests) expect(JSON.stringify(r)).not.toMatch(/data:image|base64|"image_url"|"type":"image/);
     for (const b of pam!.bodies) {
-      expect(Object.keys(b).sort()).toEqual(["contract", "final_time", "memory", "memory_kind", "observation_text", "tasks"]);
-      expect(b.contract).toBe("pam-predict/2");
-      expect(JSON.stringify(b)).not.toMatch(/data:image|base64|"frames"|"image"/);
-      expect(b.tasks).toEqual(tasksFor("noonchi"));
+      expect(Object.keys(b).sort()).toEqual(["final_time", "memory", "memory_kind", "observation_text", "role", "tasks"]);
+      expect(b.role).toBe("predict");
+      expect((b as PredictView).tasks).toEqual(tasksFor("noonchi"));
     }
     expect(pam!.bodies.some((b) => /\[지속\] 사람 먹는 중/.test(String(b.observation_text)) && /컵 cup_1 .*비어 있음/.test(String(b.observation_text)))).toBe(true);
     // 기억은 새 seed(상태 넷)다

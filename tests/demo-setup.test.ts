@@ -197,7 +197,7 @@ describe("서버가 꺼졌는지(--fresh·--scripted)", () => {
     const starts: Promise<RunningServer>[] = [];
     const tryStart = () => startServer({ env: {
       HUB: "memory", PORT: "0", RUNTIME_DIR: dir, REFLECT_AT: "off",
-      VLM_BASE_URL: "http://127.0.0.1:9/v1", PAM_URL: "http://127.0.0.1:9", OPENAI_BASE_URL: "http://127.0.0.1:9/v1",
+      VLM_BASE_URL: "http://127.0.0.1:9/v1", PAM_LLM_BASE_URL: "http://127.0.0.1:9/v1", OPENAI_BASE_URL: "http://127.0.0.1:9/v1",
     }, log: () => {} });
     try {
       await demoSetup(["week", "--dir", dir, "--fresh", "--api", CLOSED], { env, now: () => NOW, log: () => {
@@ -310,7 +310,7 @@ describe("서버가 꺼졌는지(--fresh·--scripted)", () => {
     expect(lockFree(dir)).toBe(true);
     await expect(startServer({ env: {
       HUB: "memory", PORT: "0", RUNTIME_DIR: dir, REFLECT_AT: "off",
-      VLM_BASE_URL: "http://127.0.0.1:9/v1", PAM_URL: "http://127.0.0.1:9", OPENAI_BASE_URL: "http://127.0.0.1:9/v1",
+      VLM_BASE_URL: "http://127.0.0.1:9/v1", PAM_LLM_BASE_URL: "http://127.0.0.1:9/v1", OPENAI_BASE_URL: "http://127.0.0.1:9/v1",
     }, log: () => {} })).rejects.toThrow(/--fresh 복구가 덜 끝났어요/);
     await expect(run(["week", "--dir", dir, "--fresh", "--api", CLOSED])).rejects.toThrow(/--fresh 복구가 덜 끝났어요/);
     await expect(run(["reflect", "--scripted", "--dir", dir, "--api", CLOSED])).rejects.toThrow(/--fresh 복구가 덜 끝났어요/);
