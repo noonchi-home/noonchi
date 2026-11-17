@@ -7,7 +7,10 @@ import type { SceneObservation } from "../../contract/observe.js";
 import { CHANGE_TEXT, OBJECT_NAME, fixtureName } from "../labels.js";
 import { FACT_FRESH_MS, NOW_FACETS, POSE_HOLD, STATES, VLM_ONLY, type ClassKey, type StateKey, type StateOf, type Target } from "../vocab.js";
 import { PERSON, Part, fits, type Facts, type Obj } from "./core.js";
-import { surfacePlace } from "../place.js";
+import { inBasin, surfacePlace } from "../place.js";
+
+/** 트윈 면·싱크볼로 놓인 곳을 덮을 때 빼는 투영 오차 여유(m). */
+const TWIN_MARGIN_M = 0.15;
 
 /** 트윈 면으로 알 수 없어 VLM 말을 그대로 쓰는 놓인 곳. */
 const KEEP_VLM_PLACE: ReadonlySet<string> = new Set(["in_hand", "in_sink", "in_dish_rack", "in_fridge"]);
@@ -90,11 +93,13 @@ export class SceneFacts extends Part {
     if (value === "in_hand" || !obj.surface) return value;
     const s = this.o.surfaces().find((x) => x.id === obj.surface);
     if (!s) return value;
-    // 싱크볼 안은 「싱크대 안」이다: VLM이 다른 면 위(조리대 위 등)로 답해도 트윈 싱크볼 안이면 싱크대 안으로 넣는다(가로 머그 r4). 2장 규칙은 그대로다
-    if (obj.part === "basin") return KEEP_VLM_PLACE.has(value) ? value : "in_sink";
-    if (KEEP_VLM_PLACE.has(value)) return value;
-    // 면 안쪽(가운데에서 반지름 0.8배 안)이고 투영 오차가 작을 때만 트윈 면으로 덮는다(Codex 40407aa 2: 외접원 가장자리 밖 컵의 바닥 답을 덮지 않는다)
-    const inside = !!obj.position && Math.hypot(obj.position[0] - s.center[0], obj.position[2] - s.center[1]) <= s.radius * 0.8 && (obj.errorM ?? 0) <= 0.15;
+    if (KEEP_VLM_PLACE.has(value) || !obj.position) return value;
+    // 투영 오차 여유(TWIN_MARGIN_M, 그 물건 오차가 더 크면 그 오차)를 빼고도 안쪽일 때만 트윈으로 덮는다(Codex 4e682c8 2·3: 옆 조리대 컵·긴 식탁 바깥 컵)
+    const at: [number, number] = [obj.position[0], obj.position[2]];
+    const margin = Math.max(TWIN_MARGIN_M, obj.errorM ?? 0);
+    // 싱크볼 안은 「싱크대 안」이다: VLM이 다른 면 위(조리대 위 등)로 답해도 싱크볼 안쪽이면 싱크대 안으로 넣는다(가로 머그 r4). 2장 규칙은 그대로다
+    if (obj.part === "basin") return s.basin && inBasin(s.basin, at, margin) ? "in_sink" : value;
+    const inside = s.rect ? inBasin(s.rect, at, margin) : Math.hypot(at[0] - s.center[0], at[1] - s.center[1]) <= s.radius * 0.8 && (obj.errorM ?? 0) <= TWIN_MARGIN_M;
     return inside ? surfacePlace(s) ?? value : value;
   }
 
@@ -146,6 +151,8 @@ export class SceneFacts extends Part {
       if (placed === null) continue;
       if (target.kind === "object" && facet === "place" && !this.steady(core.objects.get(id)!, placed, frameId, capturedAtMs)) continue;
       if (!this.answer(frameId, id, target.facts, facet, placed, capturedAtMs, false, NOW_FACETS[target.kind].includes(facet), turn)) continue;
+      // 손에 있음으로 보인 적이 있는 물건(내려놓기 때 옮긴 컵이라는 근거, WorldState.mergeAtPlace)
+      if (target.kind === "object" && facet === "place" && placed === POSE_HOLD.object) core.objects.get(id)!.heldSeen = true;
       if (target.kind === "person") {
         if (core.person.visible) changes.push({ kind: "person_state", at_ms: capturedAtMs, subject: PERSON, meaningful: false, text: CHANGE_TEXT.state(OBJECT_NAME.person!, value) });
       } else if (target.kind === "fixture") {

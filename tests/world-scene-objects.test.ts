@@ -255,3 +255,15 @@ describe("걷는 동안 찍힌 VLM 상자로는 새 물건을 확정하지 않�
     expect(blind.view(3000).objects).toEqual([]);
   });
 });
+
+// Codex(4e682c8 4): 눈 모름 사진이 오면 다음 사진에서 검사 없이 확정됐다
+it("장면 VLM 후보: 폰 눈을 모르는 사진은 확인 장수에서 빼고, 다음 정상 사진부터 다시 센다", () => {
+  const w = ws();
+  w.applyScene("e1000", 1000, scene(), new Map(), { ...look, eye: [0, 0] });
+  w.applyScene("e2000", 2000, scene(), new Map(), { view: LOOK_VIEW, ...LOOK_SIZE });
+  w.applyScene("e3000", 3000, scene(), new Map(), { ...look, eye: [0.8, 0] });
+  full(w, "e3500", 3500, []);
+  expect(w.view(3500).objects).toEqual([]);
+  w.applyScene("e4000", 4000, scene(), new Map(), { ...look, eye: [0.85, 0] });
+  expect(objs(w, 4000)).toEqual([["cup_1", "cup", "present"]]);
+});

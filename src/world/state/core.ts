@@ -104,6 +104,8 @@ export interface Obj {
   vlmFrames: string[];
   /** 장면 VLM이 말한 다른 놓인 곳(place) 하나: 다음 원본 프레임의 더 새 촬영이 같은 값을 말하면 바꾼다(SceneFacts.steady). */
   placeVote: { value: string; frame: string; at: number } | null;
+  /** VLM이 손에 있음으로 답한 적이 있다(옮긴 컵이라는 근거). */
+  heldSeen: boolean;
   /** 장면 VLM 후보를 처음 본 사진의 폰 눈(두 장의 폰 눈이 가까워야 확정한다). YOLO 후보는 null. */
   vlmEye: [number, number] | null;
   /** 자리를 장면 VLM 상자로 정했다(YOLO가 자리를 고치면 false): YOLO 감지는 VLM_MATCH_M 안이면 이 물건으로 잇는다(투영 차이로 두 id가 되지 않게). */
@@ -209,7 +211,7 @@ export class WorldCore {
     const obj: Obj = {
       id: `${cls}_${n}`, cls, position: null, surface: null, surfaceLabel: null, part: null, room: null, errorM: null, confirmed: false, status: "present",
       firstSeen: atMs, lastSeen: atMs, lastInView: atMs, goneAt: null, facts: {}, answered: null, closerAt: null, peekGuard: null, sizes: [], posFrom: null,
-      posAt: Number.NEGATIVE_INFINITY, posCloser: false, judgedAt: atMs, judgedFrame: frameId, judgedCloser: false, followed: null, closerRev: {}, clsVote: null, clsAt: Number.NEGATIVE_INFINITY, clsFrame: null, vlmSeen: null, vlmFrames: [], placeVote: null, posVote: null, vlmPlaced: false, vlmEye: null,
+      posAt: Number.NEGATIVE_INFINITY, posCloser: false, judgedAt: atMs, judgedFrame: frameId, judgedCloser: false, followed: null, closerRev: {}, clsVote: null, clsAt: Number.NEGATIVE_INFINITY, clsFrame: null, vlmSeen: null, vlmFrames: [], placeVote: null, posVote: null, vlmPlaced: false, vlmEye: null, heldSeen: false,
       movedAt: atMs, trail: [], carried: false, contents: null, free: null,
     };
     this.objects.set(obj.id, obj);

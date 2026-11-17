@@ -144,8 +144,9 @@ export class SceneObjects extends Part {
       changes.push({ kind: "appeared", at_ms: at, subject: obj.id, meaningful: true, text: CHANGE_TEXT.appeared(core.name(obj), obj.surfaceLabel ? onSurface(obj.surfaceLabel) : null) });
     };
     if (!obj.confirmed) {
-      // 걷는 중(두 장의 폰 눈이 VLM_STILL_M 넘게 떨어짐)이거나 폰 눈을 모르는 사진은 확정에 세지 않고 그 장부터 다시 센다(가로 키 큰 컵 r1: 걷는 동안 유령 컵)
-      if (obj.vlmEye && (!eye || Math.hypot(eye[0] - obj.vlmEye[0], eye[1] - obj.vlmEye[1]) > VLM_STILL_M)) {
+      // 폰 눈을 모르는 사진은 확인 장수에서 뺀다(Codex 4e682c8 4). 걷는 중(두 장의 폰 눈이 VLM_STILL_M 넘게 떨어짐)이면 그 장부터 다시 센다(가로 키 큰 컵 r1: 유령 컵)
+      if (!eye) return;
+      if (!obj.vlmEye || Math.hypot(eye[0] - obj.vlmEye[0], eye[1] - obj.vlmEye[1]) > VLM_STILL_M) {
         obj.vlmFrames = [frameId];
         obj.vlmEye = eye;
         return;

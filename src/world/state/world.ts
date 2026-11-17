@@ -161,8 +161,9 @@ export class WorldState {
     const core = this.core;
     const t = core.objects.get(id);
     if (!t || !spot || core.focusFrom === null) return;
+    // 옮긴 컵이라는 근거(손에 있음으로 보인 적 있음)가 있는 것만: 싱크대에 원래 있던 컵은 대상이 아니다(Codex 4e682c8 1)
     const dups = [...core.objects.values()].filter((o) => o !== t && o.confirmed && o.status !== "gone" && sameDrinkware(o.cls, t.cls) && o.firstSeen > core.focusFrom!
-      && o.position && Math.hypot(o.position[0] - spot[0], o.position[2] - spot[1]) <= NEAR_M);
+      && o.heldSeen && o.position && Math.hypot(o.position[0] - spot[0], o.position[2] - spot[1]) <= NEAR_M);
     if (dups.length !== 1) return;
     const d = dups[0]!;
     if (d.posAt >= t.posAt) Object.assign(t, { position: d.position, surface: d.surface, surfaceLabel: d.surfaceLabel, part: d.part, room: d.room, errorM: d.errorM, posAt: d.posAt, posCloser: d.posCloser });

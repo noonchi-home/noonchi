@@ -3587,6 +3587,31 @@ describe("실행 추적 + 실제 World State(기준점을 맞춘 카메라)", ()
     expect(ws.view(7000).objects[0]!.facts.place?.value).toBe("in_hand");
   });
 
+  // Codex(4e682c8 2·3): 외접원·싱크볼 경계만 보면 옆 조리대 컵·긴 식탁 바깥 컵을 덮는다. 실제 면 사각형과 투영 오차 여유(0.15m)를 빼고도 안일 때만 바꾼다
+  it("트윈 면·싱크볼 보정은 회전한 실제 사각형 안쪽(투영 오차 0.15m 여유를 뺀 안)일 때만 한다", () => {
+    const probe = new WorldState({ evidenceStepMs: 1000, surfaces: () => [{ id: "table_1", label: "식탁", center: [0.75, 0], top: 0.75, radius: 0.6 }], floorAt: () => 0, roomAt: () => null, devices: () => [] });
+    for (let i = 1; i <= 3; i++) probe.applyDetections(frame(i), [onTable]);
+    const p = probe.view(3000).objects[0]!.position!;
+    const run = (rect: { center: [number, number]; size: [number, number]; facing_deg: number }, basin: boolean) => {
+      const s = { id: basin ? "sink_1" : "table_1", label: "면", center: [0.75, 0] as [number, number], top: 0.75, radius: 0.6, rect, ...(basin ? { basin: rect } : {}) };
+      const ws = new WorldState({ evidenceStepMs: 1000, surfaces: () => [s], floorAt: () => 0, roomAt: () => null, devices: () => [] });
+      const see = (i: number, state: "on_floor" | "on_counter") => {
+        const { ids } = ws.applyDetections(frame(i), [onTable]);
+        ws.applyScene(`e${i}`, i * 1000, { scene: "k", observations: [{ object_id: "d1", state }], summary: "s" }, ids);
+      };
+      for (let i = 1; i <= 3; i++) see(i, basin ? "on_counter" : "on_floor");
+      return ws.view(3000).objects[0]!.facts.place?.value;
+    };
+    // 사각형 가장자리 0.05m 안(여유 0.15m보다 얕다): 덮지 않는다
+    const edge = { center: [p[0] + 0.2, p[2]] as [number, number], size: [0.5, 0.5] as [number, number], facing_deg: 0 };
+    expect(run(edge, false)).toBe("on_floor");
+    expect(run(edge, true)).toBe("on_counter");
+    // 사각형 한가운데: 덮는다
+    const mid = { center: [p[0], p[2]] as [number, number], size: [0.8, 0.8] as [number, number], facing_deg: 0 };
+    expect(run(mid, false)).toBe("on_table");
+    expect(run(mid, true)).toBe("in_sink");
+  });
+
   // 가로 머그 실제 판 r4(2026-11-18): 싱크볼 안 컵이 「조리대 위」였다. Codex(40407aa 2·3): 면 가장자리 밖 컵의 바닥 답을 덮지 않고, 변화 줄도 바꾼 값으로
   it("싱크볼 안 물건은 VLM이 조리대 위라 해도 싱크대 안으로 넣는다. 면 가운데에서 먼(반지름 0.8배 밖) 물건은 트윈 면으로 덮지 않는다. 변화 줄은 넣은 값으로 쓴다", () => {
     const sink = { id: "sink_1", label: "싱크대", center: [0.75, 0] as [number, number], top: 0.75, radius: 0.6, basin: { center: [0.75, 0] as [number, number], size: [0.9, 0.9] as [number, number], facing_deg: 0 } };

@@ -34,14 +34,19 @@ describe("집기·내려놓기 대상(focus)", () => {
     const eyeAt = xz(w, atSink);
     for (let t = 2500; t <= 9000; t += 500) w.applyDetections({ ...engineFrame(`c${t}`, t, { view: LOOK_VIEW }), eye: { position: eyeAt, height_m: 1.4, yaw_deg: 0, pitch_deg: 0 } as never }, t < 5000 ? [] : [atSink]);
     expect(ids(w, 9000)).toEqual([["cup_1", "present"]]);
-    // 둘째 id가 이미 생긴 뒤 내려놓기
-    const v = ws();
-    for (let t = 0; t <= 2000; t += 500) full(v, `e${t}`, t, [cupIn]);
-    v.focus("cup_1", { step: "carry", spot: null });
-    for (let t = 2500; t <= 5000; t += 500) full(v, `e${t}`, t, [cupIn, atSink]);
-    expect(v.view(5000).objects.map((o) => o.id)).toEqual(["cup_1", "cup_2"]);
-    v.focus("cup_1", { step: "place", spot: eyeAt });
-    expect(v.view(5000).objects.find((o) => o.id === "cup_2")).toMatchObject({ status: "gone", followed_by: "cup_1" });
+    // 둘째 id가 이미 생긴 뒤 내려놓기: 그 둘째가 손에 있음으로 보인 적이 있어야(옮긴 컵이라는 근거) 합친다. Codex(4e682c8 1): 싱크대에 원래 있던 컵은 대상이 아니다
+    const make = (held: boolean) => {
+      const v = ws();
+      for (let t = 0; t <= 2000; t += 500) full(v, `e${t}`, t, [cupIn]);
+      v.focus("cup_1", { step: "carry", spot: null });
+      for (let t = 2500; t <= 5000; t += 500) full(v, `e${t}`, t, [cupIn, atSink]);
+      if (held) for (const at of [4000, 4500]) v.applyScene(`h${at}`, at, { scene: "k", summary: "s", observations: [{ object_id: "d1", state: "in_hand" }] }, new Map([["d1", "cup_2"]]));
+      expect(v.view(5000).objects.map((o) => o.id)).toEqual(["cup_1", "cup_2"]);
+      v.focus("cup_1", { step: "place", spot: eyeAt });
+      return v.view(5000).objects.find((o) => o.id === "cup_2");
+    };
+    expect(make(true)).toMatchObject({ status: "gone", followed_by: "cup_1" });
+    expect(make(false)).toMatchObject({ status: "present", followed_by: null });
   });
 
   // 가로 키 큰 컵 실제 판 r1(2026-11-18): 사람이 들고 있던 cup_4를 식탁에 내려놓고 나가자 같은 자리에 새 cup_6이 생겨 한 컵이 두 id였다
