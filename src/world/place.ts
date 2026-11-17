@@ -169,12 +169,13 @@ export function cupInside(size: { height: number; width: number } | null | undef
 /** 이 카메라가 point(컵 바닥 가운데)에 놓인 cup 모양 컵의 안을 보는가.
  *  수평 거리 d, 카메라의 컵 바닥 위 높이 H, 안 반지름 r, 깊이 h일 때: 테두리보다 높고(H > h), 입구 바로 위(d ≤ r)이거나
  *  먼 쪽 안벽 바닥 모서리로 가는 선이 가까운 테두리 위로 지난다(H·2r ≥ h·(d + r)). 그리고 컵 자리가 화면 가운데(TOP_VIEW)다. 카메라 뒤면 false.
- *  먼 쪽 안벽 바닥 모서리가 보이면 조금만 담겨도 그 모서리를 수면이 덮으므로 빈 컵과 갈린다. */
-export function topView(view: CameraView, point: V3, cup: CupInside): boolean {
+ *  먼 쪽 안벽 바닥 모서리가 보이면 조금만 담겨도 그 모서리를 수면이 덮으므로 빈 컵과 갈린다.
+ *  edge: point가 가운데가 아니라 가까운 바닥 가장자리다(World State 자리, 가운데를 모를 때). 가운데가 어느 쪽인지 몰라 d에 r을 더해 본다. */
+export function topView(view: CameraView, point: V3, cup: CupInside, edge = false): boolean {
   const n = ndc(view, point);
   if (!n || Math.abs(n[0]) > TOP_VIEW.center || Math.abs(n[1]) > TOP_VIEW.center) return false;
   const o = view.origin;
-  const d = Math.hypot(o[0] - point[0], o[2] - point[2]);
+  const d = Math.hypot(o[0] - point[0], o[2] - point[2]) + (edge ? cup.radius : 0);
   const H = o[1] - point[1];
   const { radius: r, depth: h } = cup;
   return H > h && (d <= r || H * 2 * r >= h * (d + r));
@@ -198,6 +199,20 @@ export function topBox(view: CameraView, point: V3, size: { width: number; heigh
 
 /** 크기를 잴 상자가 사진 가장자리에서 이만큼(픽셀) 안이면 잘렸을 수 있어 재지 않는다. */
 const SIZE_EDGE_PX = 2;
+/** 사진 세로(아래)가 중력과 이만큼(도) 넘게 어긋나면(폰을 옆으로 돌림) 상자 좌우·윗변이 물건 폭·높이가 아니라 재지 않는다. */
+export const SIZE_ROLL_DEG = 15;
+/** 그 사진 점에서 중력이 사진 아래와 SIZE_ROLL_DEG 안으로 맞는가: 광선 2m 앞 점과 그보다 0.1m 아래 점을 다시 비춘 방향을 본다.
+ *  광선이 수직에서 30° 안이면(거의 바로 아래·위, 높이를 잴 수 없다) false. */
+function upright(view: CameraView, px: [number, number], frame: { width: number; height: number }): boolean {
+  const d = rayDir(view, [(px[0] / frame.width) * 2 - 1, 1 - (px[1] / frame.height) * 2]);
+  if (Math.abs(d[1]) >= Math.cos(Math.PI / 6)) return false;
+  const o = view.origin;
+  const near: V3 = [o[0] + d[0] * 2, o[1] + d[1] * 2, o[2] + d[2] * 2];
+  const a = pixelOf(view, near, frame), b = pixelOf(view, [near[0], near[1] - 0.1, near[2]], frame);
+  if (!a || !b) return false;
+  const vx = b[0] - a[0], vy = b[1] - a[1];
+  return vy > 0 && (Math.atan2(Math.abs(vx), vy) * 180) / Math.PI <= SIZE_ROLL_DEG;
+}
 /** 광선이 수평 법선 nrm(단위)·점 base를 지나는 세로 평면과 만나는 점. 평면과 나란하거나 카메라 뒤면 null. */
 function onPlane(o: V3, dir: V3, base: V3, nrm: [number, number]): V3 | null {
   const den = dir[0] * nrm[0] + dir[2] * nrm[1];
@@ -206,13 +221,15 @@ function onPlane(o: V3, dir: V3, base: V3, nrm: [number, number]): V3 | null {
   return t > 0 ? [o[0] + dir[0] * t, o[1] + dir[1] * t, o[2] + dir[2] * t] : null;
 }
 
-/** 감지 상자 하나로 그 물건 크기(높이·폭 m)를 잰다. at은 그 물건 자리(마스크 바닥 점이라 카메라에 가까운 바닥 가장자리)다.
+/** 감지 상자 하나로 그 물건 크기(높이·폭 m)와 바닥 가운데를 잰다. at은 그 물건 자리(마스크 바닥 점이라 카메라에 가까운 바닥 가장자리)다.
  *  폭: 상자 왼쪽·오른쪽 변 가운데 광선이 그 물건 가운데 깊이(at에서 반 폭 더 먼)의 세로 평면에서 벌어진 거리(한 번 고쳐 잰다).
  *  높이: 상자 윗변 가운데 광선이 먼 테두리 깊이(at에서 폭만큼 더 먼)의 세로 평면과 만나는 점의 at 위 높이. 위에서 내려다본 원기둥의 상자 윗변은 먼 테두리다.
- *  상자가 사진 가장자리에 닿았거나(잘렸을 수 있음) 광선이 그 평면에 닿지 않으면 null. */
-export function sizeOf(view: CameraView, box: [number, number, number, number], frame: { width: number; height: number }, at: V3): { height: number; width: number } | null {
+ *  가운데: at에서 카메라 반대쪽(수평)으로 반 폭 옮긴 점(높이는 at).
+ *  상자가 사진 가장자리에 닿았거나(잘렸을 수 있음), 사진 세로가 중력과 어긋났거나(upright, 폰을 옆으로 돌림), 광선이 그 평면에 닿지 않으면 null. */
+export function sizeOf(view: CameraView, box: [number, number, number, number], frame: { width: number; height: number }, at: V3): { height: number; width: number; center: V3 } | null {
   const [x, y, w, h] = box;
   if (x <= SIZE_EDGE_PX || y <= SIZE_EDGE_PX || x + w >= frame.width - SIZE_EDGE_PX || y + h >= frame.height - SIZE_EDGE_PX) return null;
+  if (!upright(view, [x + w / 2, y + h / 2], frame)) return null;
   const o = view.origin;
   const flat = Math.hypot(at[0] - o[0], at[2] - o[2]);
   if (flat < 1e-6) return null;
@@ -229,7 +246,7 @@ export function sizeOf(view: CameraView, box: [number, number, number, number], 
   if (width === null) return null;
   const top = onPlane(o, ray(x + w / 2, y), ahead(width), nrm);
   if (!top || top[1] <= at[1]) return null;
-  return { height: top[1] - at[1], width };
+  return { height: top[1] - at[1], width, center: ahead(width / 2) };
 }
 
 const SURFACE_TYPE = /table|desk|counter|sink/;

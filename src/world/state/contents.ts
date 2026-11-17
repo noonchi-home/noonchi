@@ -145,14 +145,16 @@ export class ContentsBook extends Part {
     if (complete(run)) {
       // 다 이어진 묶음이 모두 위에서 본 사진이면 위에서 본 확인이다
       const allTop = run.frames.every((f) => s.photos.find((p) => p.frame === f)?.rank === 2);
-      if (!s.sure || (s.sure.value !== run.value && s.window)) confirm(run.value, run.first, run.last, run.frames, allTop);
+      // 바꿀 때는 지금 확인보다 새 사진이어야 한다(옛 사진이 새 확인을 다시 덮지 않는다)
+      if (!s.sure || (s.sure.value !== run.value && s.window && run.last > s.sure.sinceMs)) confirm(run.value, run.first, run.last, run.frames, allTop);
       else if (s.sure.value === run.value) extend(run.last, run.frames, allTop);
     }
-    // 위에서 본 쌍: 확인 값이 없거나 옆 사진으로 정한 반대 값이면(창과 상관없이) 대신한다. 위에서 정한 반대 값은 창 안에서만 바꾼다
+    // 위에서 본 쌍: 확인 값이 없거나 옆 사진으로 정한 반대 값이면(창과 상관없이) 대신한다. 위에서 정한 반대 값은 창 안에서만 바꾼다.
+    // 바꿀 때는 그 쌍의 마지막 장이 지금 확인이 시작된 사진보다 새야 한다(창에서 더 새 옆 사진이 정한 값을 옛 쌍이 다시 덮지 않는다)
     const tr = topRun(s.photos);
     if (tr) {
       const [first, last] = tr.pair;
-      if (!s.sure || (s.sure.value !== tr.value && (!s.sure.top || s.window))) confirm(tr.value, first.at, last.at, tr.frames, true);
+      if (!s.sure || (s.sure.value !== tr.value && (!s.sure.top || s.window) && last.at > s.sure.sinceMs)) confirm(tr.value, first.at, last.at, tr.frames, true);
       else if (s.sure.value === tr.value) extend(last.at, tr.frames, true);
     }
     if (s.sure) {

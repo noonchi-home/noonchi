@@ -78,11 +78,12 @@ export interface WorldStateOptions {
   rests?: () => RestSpot[];
 }
 
-/** 잰 크기들의 가운데값(높이·폭 따로, cm 아래 셋째 자리까지). */
-function medianSize(xs: readonly { height: number; width: number }[]): { height: number; width: number } {
+/** 잰 크기들의 가운데값(높이·폭 따로, mm까지)과 바닥 가운데(지금 자리에서 가장 새로 잰 때의 가운데 쪽으로 옮긴 점). */
+function sizeView(xs: readonly { height: number; width: number; offset: [number, number] }[], at: [number, number, number]): { height: number; width: number; center: [number, number, number] } {
   const mid = (v: number[]) => { const a = [...v].sort((x, y) => x - y); const n = a.length; return n % 2 ? a[(n - 1) / 2]! : (a[n / 2 - 1]! + a[n / 2]!) / 2; };
   const r = (v: number) => Math.round(v * 1000) / 1000;
-  return { height: r(mid(xs.map((x) => x.height))), width: r(mid(xs.map((x) => x.width))) };
+  const off = xs.at(-1)!.offset;
+  return { height: r(mid(xs.map((x) => x.height))), width: r(mid(xs.map((x) => x.width))), center: [r(at[0] + off[0]), at[1], r(at[2] + off[1])] };
 }
 
 export class WorldState {
@@ -204,7 +205,7 @@ export class WorldState {
       first_seen_ms: x.firstSeen, last_seen_ms: x.lastSeen, last_in_view_ms: x.lastInView, facts: { ...x.facts }, answered_ms: x.answered, devices: relatedDeviceIds(x.cls, devices),
       closer_hold: core.held(x, nowMs), followed_by: x.followed?.id ?? null, ...(Object.keys(x.closerRev).length ? { closer_rev: { ...x.closerRev } } : {}),
       ...(x.carried ? { carried: true as const } : {}),
-      ...(x.sizes.length ? { size_m: medianSize(x.sizes) } : {}),
+      ...(x.sizes.length && x.position ? { size_m: sizeView(x.sizes, x.position) } : {}),
       ...(x.contents ? { contents_gen: x.contents.gen, ...(x.contents.past.length ? { contents_past: x.contents.past.map((p) => ({ value: p.value, at_ms: p.atMs })) } : {}) } : {}),
     }));
     const fixtures: WorldFixture[] = [...core.fixtures.values()].map((f) => ({

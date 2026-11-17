@@ -2,10 +2,10 @@
 // 카메라가 컵 안을 보는가(테두리 위로 먼 쪽 안벽 바닥 모서리가 보이고 컵이 화면 가운데), 잰 크기로 컵 안 모양, 위에서 본 쌍의 시간 조건, 보기 지킴.
 import { describe, expect, it } from "vitest";
 import type { CameraView, Detection } from "../src/contract/observe.js";
-import { cupInside, ndc, pixelOf, sizeOf, topBox, topView, TOP_CUP_FALLBACK } from "../src/world/place.js";
+import { cupInside, ndc, sizeOf, topBox, topView, TOP_CUP_FALLBACK } from "../src/world/place.js";
 import { topPairOf } from "../src/world/state/contents.js";
 import { WorldState } from "../src/world/state/world.js";
-import { engineFrame, LOOK_SIZE, viewLooking } from "./helpers/camera.js";
+import { cylinderBox, engineFrame, LOOK_SIZE, rolled, viewLooking } from "./helpers/camera.js";
 import { det } from "./helpers/detectors.js";
 
 type V3 = [number, number, number];
@@ -30,6 +30,14 @@ describe("컵 안이 보임(topView)", () => {
     expect(topView(from(0.15, 0.4), CUP, DEEP)).toBe(false);
     expect(topView(from(0.02, 0.4), CUP, DEEP)).toBe(true);
   });
+  it("자리가 가까운 바닥 가장자리면(가운데를 모름, edge) 수평 거리에 반지름을 더해 본다", () => {
+    // 가운데까지 수평 23cm·위 35cm는 안 된다(21cm 안이어야). 가까운 가장자리(19.5cm)로 재면 통과해 버리므로 edge로 본다
+    const view = from(0.23, 0.35);
+    const edge: V3 = [CUP[0] - 0.035, CUP[1], CUP[2]];
+    expect(topView(view, CUP, MUG)).toBe(false);
+    expect(topView(view, edge, MUG)).toBe(true);
+    expect(topView(view, edge, MUG, true)).toBe(false);
+  });
   it("컵이 화면 가운데 절반 밖이거나 카메라 뒤면 거짓이다", () => {
     const side = viewLooking([CUP[0] - 0.02, CUP[1] + 0.4, CUP[2]], [CUP[0], CUP[1], CUP[2] + 0.35]);
     expect(Math.max(...ndc(side, CUP)!.map(Math.abs))).toBeGreaterThan(0.5);
@@ -50,25 +58,22 @@ describe("컵 안 모양(cupInside)", () => {
   });
 });
 
-/** 컵 원기둥(바닥 가운데 c, 반지름 r, 높이 h)을 그 카메라로 찍은 상자. */
-function cylinderBox(view: CameraView, c: V3, r: number, h: number, size = LOOK_SIZE): [number, number, number, number] {
-  const pts: [number, number][] = [];
-  for (let k = 0; k < 32; k++) {
-    const a = (k / 32) * Math.PI * 2;
-    for (const y of [0, h]) pts.push(pixelOf(view, [c[0] + r * Math.cos(a), c[1] + y, c[2] + r * Math.sin(a)], size)!);
-  }
-  const xs = pts.map((p) => p[0]), ys = pts.map((p) => p[1]);
-  return [Math.min(...xs), Math.min(...ys), Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys)];
-}
-
 describe("크기 재기(sizeOf)", () => {
   // 1.4m 높이 카메라가 0.6m 앞 식탁(0.75m) 위 높이 10cm·폭 8cm 원기둥을 본다. 자리는 마스크 바닥 점이라 가까운 바닥 가장자리다
   const c: V3 = [0.6, 0.75, 0];
   const view = viewLooking([0, 1.4, 0], [0.6, 0.8, 0]);
-  it("감지 상자에서 높이·폭이 1cm 안이다", () => {
+  it("감지 상자에서 높이·폭과 바닥 가운데가 1cm 안이다(자리는 가까운 바닥 가장자리)", () => {
     const s = sizeOf(view, cylinderBox(view, c, 0.04, 0.1), LOOK_SIZE, [0.56, 0.75, 0])!;
     expect(Math.abs(s.height - 0.1)).toBeLessThan(0.01);
     expect(Math.abs(s.width - 0.08)).toBeLessThan(0.01);
+    expect(Math.hypot(s.center[0] - c[0], s.center[2] - c[2])).toBeLessThan(0.01);
+    expect(s.center[1]).toBe(0.75);
+  });
+  it("폰을 옆으로 돌려 사진 세로가 중력과 15° 넘게 어긋나면 재지 않는다", () => {
+    for (const deg of [30, 90]) {
+      const r = rolled(view, deg);
+      expect(sizeOf(r, cylinderBox(r, c, 0.04, 0.1), LOOK_SIZE, [0.56, 0.75, 0])).toBeNull();
+    }
   });
   it("사진 가장자리에 닿은 상자는 재지 않는다", () => {
     expect(sizeOf(view, [0, 100, 40, 40], LOOK_SIZE, [0.56, 0.75, 0])).toBeNull();
@@ -111,6 +116,8 @@ describe("World State: 컵 크기와 보기 지킴", () => {
     expect(o.size_m).toBeDefined();
     expect(Math.abs(o.size_m!.height - 0.1)).toBeLessThan(0.01);
     expect(Math.abs(o.size_m!.width - 0.08)).toBeLessThan(0.01);
+    // 바닥 가운데: 자리(가까운 가장자리)에서 카메라 반대쪽으로 반 폭
+    expect(Math.hypot(o.size_m!.center[0] - 0.6, o.size_m!.center[2])).toBeLessThan(0.01);
     // 사람 같은 물건 아닌 것·그릇 아닌 물건은 재지 않는다
     expect(w.view(5000).objects.filter((x) => x.cls !== "cup").every((x) => x.size_m === undefined)).toBe(true);
   });

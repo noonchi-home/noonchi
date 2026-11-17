@@ -56,8 +56,8 @@ export interface Obj {
   closerAt: number | null;
   /** 보기 지킴을 건 시각(가까이 가서 위에서 비추는 동안, closerAt과 다른 칸). 풀면 null. */
   peekGuard: number | null;
-  /** 전체 사진 감지 상자로 잰 크기(높이·폭 m, 최근 SIZE_SAMPLES장). 그릇 종류만 잰다. */
-  sizes: { height: number; width: number }[];
+  /** 전체 사진 감지 상자로 잰 크기(높이·폭 m)와 그때 자리에서 바닥 가운데까지(수평 [dx, dz], 최근 SIZE_SAMPLES장). 그릇 종류만 잰다. */
+  sizes: { height: number; width: number; offset: [number, number] }[];
   /** 자리를 마지막으로 고친 촬영 시각과 그것이 가까이 보기였는가(같은 촬영이면 잘라 본 자리가 앞선다). */
   posAt: number;
   /** 마지막으로 움직인 촬영 시각(최근 본 자리에서 트윈 자리 MOVE_M, 자리를 모르면 사진 가운데 점 MOVE_IMAGE 넘게 떨어짐)과 최근 SETTLE_MS 동안 본 자리. */

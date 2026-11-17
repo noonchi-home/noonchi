@@ -214,6 +214,26 @@ describe("위에서 본 사진(2장·1.5초 이상·공백 6초 이하)", () => 
     s.top(5, "empty");
     expect(s.cupNow().facts.contents).toMatchObject({ value: "empty", certainty: "confirmed" });
   });
+  it("따르기 창: 위 두 장이 확인한 뒤 더 새 옆 사진 3장·4초가 반대를 확인하면 바뀌고, 옛 위 쌍이 다시 덮지 않는다(줄·세대가 되풀이되지 않음)", () => {
+    const s = scene();
+    s.w.contentsAction("cup_1", 500, true);
+    s.top(1, "empty"); s.top(3, "empty");
+    expect(s.cupNow().facts.contents).toMatchObject({ value: "empty", certainty: "confirmed" });
+    s.say(5, "has_contents"); s.say(7, "has_contents");
+    expect(s.lines(s.say(9, "has_contents"))).toEqual([["컵 cup_1 내용물 있음", true]]);
+    expect(s.cupNow().facts.contents).toMatchObject({ value: "has_contents", certainty: "confirmed" });
+    const gen = s.cupNow().contents_gen;
+    expect(s.lines(s.say(10, "has_contents"))).toEqual([]);
+    expect(s.cupNow()).toMatchObject({ contents_gen: gen, facts: { contents: { value: "has_contents", certainty: "confirmed" } } });
+  });
+  it("늦게 온 위 사진 답은 그보다 새로 본 기록이 있으면 보임·지킴을 바꾸지 않는다(내용물은 넣는다)", () => {
+    const s = scene();
+    s.top(20, "empty");
+    s.w.applyDetections(frame(30), [cup]);
+    s.top(25, "empty");
+    expect(s.cupNow().facts.contents).toMatchObject({ value: "empty", certainty: "confirmed" });
+    expect(s.w.view(51_000).objects[0]!.closer_hold).toBe(false);
+  });
   it("위에서 본 답은 마지막 본 때를 올리고 closer 지킴을 건다. 없거나 사라진 물건이면 빈 목록", () => {
     const s = scene();
     s.top(20, "empty");

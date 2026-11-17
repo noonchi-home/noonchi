@@ -63,7 +63,7 @@ export class Detections extends Part {
       // 그릇은 크기를 잰다(위에서 컵 안을 보는 판정이 쓴다, src/world/place.ts cupInside)
       if (view && placed?.position && (CLASSES[cls].facets as readonly string[]).includes("contents")) {
         const size = sizeOf(view, d.box, { width: frame.width, height: frame.height }, placed.position);
-        if (size) obj.sizes = [...obj.sizes, size].slice(-SIZE_SAMPLES);
+        if (size) obj.sizes = [...obj.sizes, { height: size.height, width: size.width, offset: [size.center[0] - placed.position[0], size.center[2] - placed.position[2]] as [number, number] }].slice(-SIZE_SAMPLES);
       }
       obj.lastSeen = Math.max(obj.lastSeen, at);
       obj.lastInView = Math.max(obj.lastInView, at);

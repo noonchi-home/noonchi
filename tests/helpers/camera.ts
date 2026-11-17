@@ -3,6 +3,7 @@
 import jpeg from "jpeg-js";
 import type { CameraView, EngineFrame } from "../../src/contract/observe.js";
 import { sha256 } from "../../src/observe/ring.js";
+import { pixelOf } from "../../src/world/place.js";
 
 type Box = [number, number, number, number];
 const P = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, -1.0002, -1, 0, 0, -0.020002, 0];
@@ -20,6 +21,21 @@ export function viewLooking(origin: [number, number, number], target: [number, n
   const pitch = Math.atan2(dy, Math.hypot(dx, dz));
   const q = mul([0, Math.sin(yaw / 2), 0, Math.cos(yaw / 2)], [Math.sin(pitch / 2), 0, 0, Math.cos(pitch / 2)]) as [number, number, number, number];
   return { origin, orientation: q, theta: 0, projection: P };
+}
+/** 그 카메라를 보는 방향 축으로 deg만큼 돌린 카메라(폰을 옆으로 돌림). */
+export function rolled(view: CameraView, deg: number): CameraView {
+  const a = (deg * Math.PI) / 180;
+  return { ...view, orientation: mul(view.orientation, [0, 0, Math.sin(a / 2), Math.cos(a / 2)]) as [number, number, number, number] };
+}
+/** 컵 원기둥(바닥 가운데 c, 반지름 r, 높이 h)을 그 카메라로 찍은 상자 [x, y, w, h](LOOK_SIZE 픽셀). */
+export function cylinderBox(view: CameraView, c: [number, number, number], r: number, h: number, size = LOOK_SIZE): [number, number, number, number] {
+  const pts: [number, number][] = [];
+  for (let k = 0; k < 32; k++) {
+    const a = (k / 32) * Math.PI * 2;
+    for (const y of [0, h]) pts.push(pixelOf(view, [c[0] + r * Math.cos(a), c[1] + y, c[2] + r * Math.sin(a)], size)!);
+  }
+  const xs = pts.map((p) => p[0]), ys = pts.map((p) => p[1]);
+  return [Math.min(...xs), Math.min(...ys), Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys)];
 }
 /** +x를 보는 카메라: 그림 가운데 광선이 바닥 (1.5, 0, 0)과 높이 0.9의 (0.6, 0.9, 0)을 지난다. */
 export const LOOK_VIEW = cameraAt(-Math.PI / 2);

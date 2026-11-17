@@ -219,12 +219,12 @@ export class CloserLook extends Part {
     this.core.confirmer.mark(obj.id);
   }
 
-  /** 위에서 본 장(src/observe/pipeline.ts topLook이 대상 확인을 거친 장)의 내용물 값 하나: 그 물건을 그 촬영에 본 것으로 두고(본 시각·보임 판단·지킴)
-   *  내용물 갱신기에 위에서 본 답으로 넣는다. 자리·다른 면은 바꾸지 않는다. 물건이 없거나 사라졌으면 빈 목록. */
+  /** 위에서 본 장(src/observe/pipeline.ts topLook이 대상 확인을 거친 장)의 내용물 값 하나: 그 촬영이 보임을 바꿀 수 있으면(newerCloser, 늦게 온 답이 아니면)
+   *  그 물건을 그 촬영에 본 것으로 두고(본 시각·보임 판단·지킴) 내용물 갱신기에 위에서 본 답으로 넣는다. 자리·다른 면은 바꾸지 않는다. 물건이 없거나 사라졌으면 빈 목록. */
   applyTop(objectId: string, sourceFrameId: string, capturedAtMs: number, value: "empty" | "has_contents"): WorldChange[] {
     const obj = this.core.objects.get(objectId);
     if (!obj || obj.status === "gone") return [];
-    this.seenCloser(obj, capturedAtMs, sourceFrameId);
+    if (this.newerCloser(obj, capturedAtMs, sourceFrameId)) this.seenCloser(obj, capturedAtMs, sourceFrameId);
     const r = this.core.contents.see(obj, sourceFrameId, capturedAtMs, value, 2);
     if (r.changed) {
       obj.closerRev.contents = (obj.closerRev.contents ?? 0) + 1;
