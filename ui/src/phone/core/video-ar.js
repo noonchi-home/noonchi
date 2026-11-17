@@ -34,7 +34,7 @@ import { createFramePipeline, createSendStats, frameWidth } from "./pipeline.js"
 import { focusMarks, toEdge } from "./project.js";
 import { floorRayPoint } from "./aim.js";
 import { newEpoch } from "./ar.js";
-import { aboveGoal, coverMap, lookAt, pitchQuat, projectionFromFov, viewMatrix, walkGoal, yawPitchQuat } from "./video-math.js";
+import { aboveGoal, coverMap, lookAt, pitchQuat, projectionFromFov, viewMatrix, walkGoal, yawOf, yawPitchQuat } from "./video-math.js";
 
 const SEND_MS = 100;
 const FRAME_LONG = 780;
@@ -367,6 +367,7 @@ export function createVideoAr({ link, params, hooks, deps }) {
     // 명령 세대: 새 단계 영상 명령·지우기마다 오른다. 예약 타이머와 재생을 기다리는 바꾸기는 세대가 다르면 버린다
     let cmdGen = 0;
     let lastCmdId = null;
+    let lastKey = null; // 마지막으로 받은 명령 id:단계(같은 명령이 다시 오면 비전 상태만 바뀐 것)
     let stepClip = null; // 지금 도는 단계 영상 이름(첫 영상이면 null)
     let holdMs = 0; // 마지막 장면을 붙잡은 시간(타이머 칸을 센다): 붙잡는 동안에도 영상 시각이 흐른다
     let holdTimer = null;
@@ -428,13 +429,12 @@ export function createVideoAr({ link, params, hooks, deps }) {
       const look = lookAt(position, target);
       if (look) setPose(position, yawPitchQuat(look.yaw, look.pitchDeg));
     };
-    /** 걷기를 멈추고 폰을 target 바로 위로 옮겨 내려다본다(위에서 비추기). 방향을 못 정하면(이미 바로 위) 그 자리에서 바라본다. */
+    /** 걷기를 멈추고 폰을 target 바로 위로 옮겨 내려다본다(위에서 비추기). 이미 바로 위면 지금 보는 쪽을 써서 물러난다. */
     // 영상 모드: 자세 흉내
     const holdAbove = (target) => {
       walk = null;
-      const a = aboveGoal(position, target, ABOVE.backM, ABOVE.upM);
+      const a = aboveGoal(position, target, ABOVE.backM, ABOVE.upM, yawOf(orientation));
       if (a) setPose(a.goal, yawPitchQuat(a.yaw, a.pitchDeg));
-      else face(target);
     };
 
     const sendPose = () => {
@@ -577,7 +577,7 @@ export function createVideoAr({ link, params, hooks, deps }) {
 
     /** 단계 영상으로 바꾼다: 새 영상을 앞 영상 밑에 깔고 튼 뒤 앞 영상을 닫는다. 마지막에 건 바꾸기만 쓴다.
      *  pose: 새 영상으로 바꿀 때 함께 바꿀 자세(go 걷기·집기·놓기 바라보기). 열지 못하거나 더 새 바꾸기가 있으면 부르지 않는다. */
-    async function swap(url, pose, gen = cmdGen) {
+    async function swap(url, pose, gen = cmdGen, done) {
       const turn = ++swapTurn;
       const next = d.createVideo(url);
       if (next.element) doc.body.prepend(next.element);
@@ -605,6 +605,7 @@ export function createVideoAr({ link, params, hooks, deps }) {
       }
       // 앞 영상 프레임 고리는 멈췄다: 새 영상 첫 프레임부터 새 자세가 실린다
       pose?.();
+      done?.();
       record.ended = false;
       const ms = timeline();
       stepClip = clipNameOf(url);
@@ -620,20 +621,30 @@ export function createVideoAr({ link, params, hooks, deps }) {
       videoTime: timeline,
       /** 사람 단계 명령: 맞는 step 칸이 있으면 그 id·step에 한 번, reactMs 뒤 단계 영상으로 바꾸고, 바뀌면 go는 걷고 집기·놓기·그 자리에서 하는 일(do)은 대상을 바라본다. */
       command(cmd) {
+        const key = `${cmd.id}:${cmd.step}`;
+        // 새 명령(다른 id·단계, 단계 영상이 없는 질문·승인도): 앞 명령의 예약된 바꾸기·재생을 기다리는 바꾸기·걷기를 먼저 멈춘다.
+        // 같은 명령이 다시 오면(비전 상태만 바뀜) 그대로 둔다
+        if (key !== lastKey) {
+          lastKey = key;
+          cmdGen++;
+          for (const timer of reactTimers) clearTimeout(timer);
+          reactTimers.clear();
+          walk = null;
+        }
         const id = cmd.target?.id;
         const first = typeof id === "string" ? steps.find((s) => s.kind === cmd.kind && id.includes(s.word)) : undefined;
         if (!first) return;
-        const key = `${cmd.id}:${cmd.step}`;
         if (handled.has(key)) return;
         handled.add(key);
-        // 같은 종류·낱말 칸이 여럿이면 새 명령마다 다음 칸(다 떨어지면 지금 영상을 둔다), 하나면 늘 그 칸
+        // 같은 종류·낱말 칸이 여럿이면 새 명령마다 다음 칸(다 떨어지면 지금 영상을 둔다), 하나면 늘 그 칸.
+        // 칸은 바꾸기가 끝났을 때만 쓴 것으로 센다(지워진 바꾸기는 칸을 쓰지 않는다)
         const group = steps.filter((s) => s.kind === first.kind && s.word === first.word);
-        const n = used.get(`${first.kind}:${first.word}`) ?? 0;
+        const slot = `${first.kind}:${first.word}`;
+        const n = used.get(slot) ?? 0;
         if (group.length > 1 && n >= group.length) return;
-        used.set(`${first.kind}:${first.word}`, n + 1);
         const entry = group.length > 1 ? group[n] : first;
         const target = Array.isArray(cmd.target.ar) ? cmd.target.ar : null;
-        const gen = ++cmdGen;
+        const gen = cmdGen;
         lastCmdId = cmd.id;
         // go는 걷기(near_m이 있으면 그 거리 안까지), view above면 위에서 비추기, 그 밖은 그 자리에서 바라보기
         const stopM = typeof cmd.near_m === "number" ? Math.min(WALK_STOP_M, cmd.near_m * NEAR_WALK) : WALK_STOP_M;
@@ -641,7 +652,7 @@ export function createVideoAr({ link, params, hooks, deps }) {
         const timer = setTimeout(() => {
           reactTimers.delete(timer);
           if (run !== current || gen !== cmdGen) return;
-          void swap(entry.clipUrl, pose, gen);
+          void swap(entry.clipUrl, pose, gen, () => used.set(slot, Math.max(used.get(slot) ?? 0, n + 1)));
         }, reactMs);
         reactTimers.add(timer);
       },
@@ -649,6 +660,7 @@ export function createVideoAr({ link, params, hooks, deps }) {
       commandClear(id) {
         if (id !== undefined && id !== lastCmdId) return;
         cmdGen++;
+        lastKey = null;
         for (const timer of reactTimers) clearTimeout(timer);
         reactTimers.clear();
         walk = null;

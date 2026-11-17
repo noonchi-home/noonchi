@@ -63,15 +63,25 @@ export function lookAt(from, target) {
 }
 
 /** 위에서 비추기 자세(가까이 가서 보기 do view above): target에서 from 쪽으로 수평 backM, 높이 target + upM에 서서 target을 내려다보는
- *  자리(goal)와 yaw·숙인 각(lookAt). from이 target 바로 위(수평 1cm 안)라 방향을 못 정하면 null. */
-export function aboveGoal(from, target, backM, upM) {
+ *  자리(goal)와 yaw·숙인 각(lookAt). from이 target 바로 위(수평 1cm 안)라 방향을 못 정하면 지금 보는 쪽(yaw)의 반대로 물러나 앞의 target을 내려다본다.
+ *  수가 아닌 값이면 null. */
+export function aboveGoal(from, target, backM, upM, yaw = 0) {
   const dx = from[0] - target[0];
   const dz = from[2] - target[2];
   const flat = Math.hypot(dx, dz);
-  if (!(flat >= LOOK_MIN_M)) return null;
-  const goal = [target[0] + (dx / flat) * backM, target[1] + upM, target[2] + (dz / flat) * backM];
+  // 물러날 방향(target → 서는 자리, 수평 단위): from 쪽, 바로 위면 지금 보는 쪽(−z를 yaw만큼 돌린 쪽)의 반대
+  const [ux, uz] = flat >= LOOK_MIN_M ? [dx / flat, dz / flat] : [Math.sin(yaw), Math.cos(yaw)];
+  const goal = [target[0] + ux * backM, target[1] + upM, target[2] + uz * backM];
   const look = lookAt(goal, target);
   return look ? { goal, yaw: look.yaw, pitchDeg: look.pitchDeg } : null;
+}
+
+/** 자세가 보는 쪽(−z)의 yaw(yawPitchQuat과 같은 규칙). */
+export function yawOf([x, y, z, w]) {
+  // −z를 돌린 방향의 수평 성분
+  const fx = -(2 * (x * z + y * w));
+  const fz = -(1 - 2 * (x * x + y * y));
+  return Math.atan2(-fx, -fz);
 }
 
 /** 카메라 자리·자세 → view 행렬(세계 → 카메라, XRView.transform.inverse.matrix와 같은 뜻). */
