@@ -29,10 +29,21 @@ export function chromePath(): string {
   return found;
 }
 
-/** 크롬을 띄운다: 임시 프로필, 빈 디버그 포트, 창 크기. gpu가 아니면 headless(SwiftShader). */
-export function launchChrome(o: { path: string; size: [number, number]; gpu?: boolean }): Chrome {
+/** 크롬 그리기 방식: swiftshader 화면 없이 소프트웨어 GL(기본), headless-gpu 화면 없이 그래픽 카드(ANGLE D3D11), window 화면에 창을 띄워 그래픽 카드. */
+export type ChromeGpu = "swiftshader" | "headless-gpu" | "window";
+export const CHROME_GPU: readonly ChromeGpu[] = ["swiftshader", "headless-gpu", "window"];
+
+/** 그리기 방식마다 크롬 플래그. */
+export function chromeFlags(mode: ChromeGpu): string[] {
+  if (mode === "window") return [];
+  if (mode === "headless-gpu") return ["--headless=new", "--use-angle=d3d11", "--enable-gpu", "--ignore-gpu-blocklist", "--enable-gpu-rasterization"];
+  return ["--headless=new", "--enable-unsafe-swiftshader", "--ignore-gpu-blocklist"];
+}
+
+/** 크롬을 띄운다: 임시 프로필, 빈 디버그 포트, 창 크기. gpu가 true면 창(window), 문자열이면 그 그리기 방식, 없으면 headless(SwiftShader). */
+export function launchChrome(o: { path: string; size: [number, number]; gpu?: boolean | ChromeGpu }): Chrome {
   const profile = mkdtempSync(join(tmpdir(), "twin3d-chrome-"));
-  const flags = o.gpu ? [] : ["--headless=new", "--enable-unsafe-swiftshader", "--ignore-gpu-blocklist"];
+  const flags = chromeFlags(o.gpu === true ? "window" : o.gpu === false || o.gpu === undefined ? "swiftshader" : o.gpu);
   const proc = spawn(o.path, [...flags, "--remote-debugging-port=0", `--user-data-dir=${profile}`, `--window-size=${o.size[0]},${o.size[1]}`, "--no-first-run", "--no-default-browser-check", "about:blank"], { stdio: "ignore" });
   return { proc, profile };
 }
