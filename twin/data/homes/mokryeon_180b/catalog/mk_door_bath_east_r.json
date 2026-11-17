@@ -1,16 +1,16 @@
 {
-  "type": "mk_door_bath_west_r",
-  "label": "door_bath_west (도면 기준)",
+  "type": "mk_door_bath_east_r",
+  "label": "door_bath_east (도면 기준)",
   "family": "openings",
   "category": "fixtures",
   "node_type": "fixture",
   "mount": "opening",
   "footprint": [
-    0.646875,
+    0.703125,
     0.15
   ],
   "height": 2.05,
-  "model": "assets/fixtures/mk_door_bath_west_r.glb",
+  "model": "assets/fixtures/mk_door_bath_east_r.glb",
   "blocks_walk": false,
   "blocks_view": true,
   "attrs": {

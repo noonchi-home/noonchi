@@ -1,0 +1,25 @@
+{
+  "type": "shoe_cabinet",
+  "label": "현관 신발장",
+  "family": "bath_utility",
+  "category": "furniture",
+  "node_type": "furniture",
+  "mount": "floor",
+  "footprint": [
+    1.681,
+    0.46
+  ],
+  "height": 2.2,
+  "model": "assets/furniture/shoe_cabinet.glb",
+  "blocks_walk": true,
+  "blocks_view": true,
+  "anchors": {
+    "front": [
+      0.0,
+      0.62
+    ]
+  },
+  "notes": "손잡이 없는 키 큰 문 넷(셋째는 전신 거울), 아래 0.25 m 트인 칸과 따뜻한 LED 줄(상태 없음, 늘 켜진 모습).",
+  "builder": "shoe_cabinet",
+  "generated_by": "import-labels"
+}

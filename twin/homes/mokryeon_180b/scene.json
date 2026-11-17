@@ -2576,13 +2576,13 @@
     "width": 0.7875,
     "height": 2.05,
     "kind": "swing",
-    "asset": "mk_door_main_l",
+    "asset": "mk_door_main_r",
     "connects": [
      "vestibule",
      "outside"
     ],
     "swing_into": "outside",
-    "hinge": "left",
+    "hinge": "right",
     "facing_deg": 180.0,
     "elevation": -0.1,
     "z": [
@@ -2600,13 +2600,13 @@
     "width": 0.815625,
     "height": 2.05,
     "kind": "swing",
-    "asset": "mk_door_entry_r",
+    "asset": "mk_door_entry_l",
     "connects": [
      "entrance",
      "vestibule"
     ],
     "swing_into": "vestibule",
-    "hinge": "right",
+    "hinge": "left",
     "facing_deg": 270.0,
     "elevation": -0.1,
     "z": [
@@ -2648,13 +2648,13 @@
     "width": 0.646875,
     "height": 2.05,
     "kind": "swing",
-    "asset": "mk_door_bath_west_r",
+    "asset": "mk_door_bath_west_l",
     "connects": [
      "bath_west",
      "alpha"
     ],
     "swing_into": "bath_west",
-    "hinge": "right",
+    "hinge": "left",
     "facing_deg": 270.0,
     "elevation": 0.0,
     "z": [
@@ -2696,13 +2696,13 @@
     "width": 0.703125,
     "height": 2.05,
     "kind": "swing",
-    "asset": "mk_door_bath_center_l",
+    "asset": "mk_door_bath_center_r",
     "connects": [
      "bath_center",
      "living"
     ],
     "swing_into": "bath_center",
-    "hinge": "left",
+    "hinge": "right",
     "facing_deg": 270.0,
     "elevation": 0.0,
     "z": [
@@ -2720,13 +2720,13 @@
     "width": 0.703125,
     "height": 2.05,
     "kind": "swing",
-    "asset": "mk_door_bath_east_l",
+    "asset": "mk_door_bath_east_r",
     "connects": [
      "bath_east",
      "bed_se"
     ],
     "swing_into": "bath_east",
-    "hinge": "left",
+    "hinge": "right",
     "facing_deg": 270.0,
     "elevation": 0.0,
     "z": [
@@ -2792,13 +2792,13 @@
     "width": 0.759375,
     "height": 2.05,
     "kind": "swing",
-    "asset": "mk_door_bed_ne_l",
+    "asset": "mk_door_bed_ne_r",
     "connects": [
      "bed_ne",
      "living"
     ],
     "swing_into": "bed_ne",
-    "hinge": "left",
+    "hinge": "right",
     "facing_deg": 270.0,
     "elevation": 0.0,
     "z": [
@@ -2821,9 +2821,9 @@
      "kitchen",
      "balcony_north"
     ],
-    "swing_into": "kitchen",
+    "swing_into": "balcony_north",
     "hinge": "left",
-    "facing_deg": 180.0,
+    "facing_deg": 0.0,
     "elevation": 0.0,
     "z": [
      -0.112,
@@ -5066,6 +5066,54 @@
    }
   },
   {
+   "id": "shoe_cabinet_c7d9244e",
+   "name": "현관 신발장",
+   "type": "shoe_cabinet",
+   "asset": "assets/furniture/shoe_cabinet.glb",
+   "category": "furniture",
+   "node_type": "furniture",
+   "mount": "floor",
+   "room": "entrance",
+   "plan": {
+    "position": [
+     5.1211,
+     5.1081
+    ],
+    "facing_deg": 180.0,
+    "elevation": -0.1,
+    "on": null,
+    "surface": null,
+    "wall": null
+   },
+   "position": [
+    5.1211,
+    -0.1,
+    5.1081
+   ],
+   "rotation": [
+    0.0,
+    -1.570796,
+    0.0
+   ],
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "interactive": true,
+   "attrs": {},
+   "states": {},
+   "state": {},
+   "provenance": {
+    "origin": "label",
+    "size": "label",
+    "facing": "inferred",
+    "height": "catalog",
+    "model": "builder",
+    "builder": "shoe_cabinet"
+   }
+  },
+  {
    "id": "storage_cabinet_141e4df4",
    "name": "전실 수납장",
    "type": "storage_cabinet_2",
@@ -5111,6 +5159,198 @@
     "height": "catalog",
     "model": "substitute",
     "builder": "wardrobe"
+   }
+  },
+  {
+   "id": "dining_chair_e6fb32fb",
+   "name": "거실·복도 식탁 의자 1",
+   "type": "dining_chair",
+   "asset": "assets/furniture/dining_chair.glb",
+   "category": "furniture",
+   "node_type": "furniture",
+   "mount": "floor",
+   "room": "living",
+   "plan": {
+    "position": [
+     9.2994,
+     3.5613
+    ],
+    "facing_deg": 0.0,
+    "elevation": 0.0,
+    "on": null,
+    "surface": null,
+    "wall": null
+   },
+   "position": [
+    9.2994,
+    0.0,
+    3.5613
+   ],
+   "rotation": [
+    0.0,
+    1.570796,
+    0.0
+   ],
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "interactive": true,
+   "attrs": {},
+   "states": {},
+   "state": {},
+   "provenance": {
+    "origin": "label",
+    "size": "model",
+    "facing": "inferred",
+    "height": "catalog",
+    "model": "builder",
+    "builder": "dining_chair"
+   }
+  },
+  {
+   "id": "dining_chair_78d2a498",
+   "name": "거실·복도 식탁 의자 2",
+   "type": "dining_chair",
+   "asset": "assets/furniture/dining_chair.glb",
+   "category": "furniture",
+   "node_type": "furniture",
+   "mount": "floor",
+   "room": "living",
+   "plan": {
+    "position": [
+     9.2342,
+     4.2631
+    ],
+    "facing_deg": 0.0,
+    "elevation": 0.0,
+    "on": null,
+    "surface": null,
+    "wall": null
+   },
+   "position": [
+    9.2342,
+    0.0,
+    4.2631
+   ],
+   "rotation": [
+    0.0,
+    1.570796,
+    0.0
+   ],
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "interactive": true,
+   "attrs": {},
+   "states": {},
+   "state": {},
+   "provenance": {
+    "origin": "label",
+    "size": "model",
+    "facing": "inferred",
+    "height": "catalog",
+    "model": "builder",
+    "builder": "dining_chair"
+   }
+  },
+  {
+   "id": "dining_chair_a2480df6",
+   "name": "거실·복도 식탁 의자 3",
+   "type": "dining_chair",
+   "asset": "assets/furniture/dining_chair.glb",
+   "category": "furniture",
+   "node_type": "furniture",
+   "mount": "floor",
+   "room": "living",
+   "plan": {
+    "position": [
+     10.703,
+     4.2938
+    ],
+    "facing_deg": 180.0,
+    "elevation": 0.0,
+    "on": null,
+    "surface": null,
+    "wall": null
+   },
+   "position": [
+    10.703,
+    0.0,
+    4.2938
+   ],
+   "rotation": [
+    0.0,
+    -1.570796,
+    0.0
+   ],
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "interactive": true,
+   "attrs": {},
+   "states": {},
+   "state": {},
+   "provenance": {
+    "origin": "label",
+    "size": "model",
+    "facing": "inferred",
+    "height": "catalog",
+    "model": "builder",
+    "builder": "dining_chair"
+   }
+  },
+  {
+   "id": "dining_chair_0c88369b",
+   "name": "거실·복도 식탁 의자 4",
+   "type": "dining_chair",
+   "asset": "assets/furniture/dining_chair.glb",
+   "category": "furniture",
+   "node_type": "furniture",
+   "mount": "floor",
+   "room": "living",
+   "plan": {
+    "position": [
+     10.6954,
+     3.5384
+    ],
+    "facing_deg": 180.0,
+    "elevation": 0.0,
+    "on": null,
+    "surface": null,
+    "wall": null
+   },
+   "position": [
+    10.6954,
+    0.0,
+    3.5384
+   ],
+   "rotation": [
+    0.0,
+    -1.570796,
+    0.0
+   ],
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "interactive": true,
+   "attrs": {},
+   "states": {},
+   "state": {},
+   "provenance": {
+    "origin": "label",
+    "size": "model",
+    "facing": "inferred",
+    "height": "catalog",
+    "model": "builder",
+    "builder": "dining_chair"
    }
   },
   {
@@ -5258,6 +5498,54 @@
    }
   },
   {
+   "id": "storage_cabinet_21cbd674",
+   "name": "침실 3 수납장 3",
+   "type": "storage_cabinet_5",
+   "asset": "assets/furniture/storage_cabinet_5.glb",
+   "category": "furniture",
+   "node_type": "furniture",
+   "mount": "floor",
+   "room": "bed_ne",
+   "plan": {
+    "position": [
+     14.4191,
+     2.6344
+    ],
+    "facing_deg": 90.0,
+    "elevation": 0.0,
+    "on": null,
+    "surface": null,
+    "wall": null
+   },
+   "position": [
+    14.4191,
+    0.0,
+    2.6344
+   ],
+   "rotation": [
+    0.0,
+    0.0,
+    0.0
+   ],
+   "scale": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "interactive": true,
+   "attrs": {},
+   "states": {},
+   "state": {},
+   "provenance": {
+    "origin": "label",
+    "size": "label",
+    "facing": "inferred",
+    "height": "catalog",
+    "model": "substitute",
+    "builder": "wardrobe"
+   }
+  },
+  {
    "id": "tv_62442cb3",
    "name": "거실·복도 TV",
    "type": "tv",
@@ -5349,8 +5637,8 @@
   {
    "id": "door_main",
    "name": "door_main (도면 기준)",
-   "type": "mk_door_main_l",
-   "asset": "assets/fixtures/mk_door_main_l.glb",
+   "type": "mk_door_main_r",
+   "asset": "assets/fixtures/mk_door_main_r.glb",
    "category": "fixtures",
    "node_type": "fixture",
    "mount": "opening",
@@ -5415,7 +5703,7 @@
         "part": "leaf",
         "rotate": [
          0,
-         -95,
+         95,
          0
         ]
        },
@@ -5502,14 +5790,14 @@
     "facing": "plan",
     "height": "catalog",
     "model": "builder",
-    "builder": "door_main"
+    "builder": "door_main_r"
    }
   },
   {
    "id": "door_entry",
    "name": "door_entry (도면 기준)",
-   "type": "mk_door_entry_r",
-   "asset": "assets/fixtures/mk_door_entry_r.glb",
+   "type": "mk_door_entry_l",
+   "asset": "assets/fixtures/mk_door_entry_l.glb",
    "category": "fixtures",
    "node_type": "fixture",
    "mount": "opening",
@@ -5566,7 +5854,7 @@
         "part": "leaf",
         "rotate": [
          0,
-         95,
+         -95,
          0
         ]
        }
@@ -5583,7 +5871,7 @@
     "facing": "plan",
     "height": "catalog",
     "model": "builder",
-    "builder": "door_room_r"
+    "builder": "door_room_l"
    }
   },
   {
@@ -5670,8 +5958,8 @@
   {
    "id": "door_bath_west",
    "name": "door_bath_west (도면 기준)",
-   "type": "mk_door_bath_west_r",
-   "asset": "assets/fixtures/mk_door_bath_west_r.glb",
+   "type": "mk_door_bath_west_l",
+   "asset": "assets/fixtures/mk_door_bath_west_l.glb",
    "category": "fixtures",
    "node_type": "fixture",
    "mount": "opening",
@@ -5728,7 +6016,7 @@
         "part": "leaf",
         "rotate": [
          0,
-         95,
+         -95,
          0
         ]
        }
@@ -5745,7 +6033,7 @@
     "facing": "plan",
     "height": "catalog",
     "model": "builder",
-    "builder": "door_bath_r"
+    "builder": "door_bath_l"
    }
   },
   {
@@ -5832,8 +6120,8 @@
   {
    "id": "door_bath_center",
    "name": "door_bath_center (도면 기준)",
-   "type": "mk_door_bath_center_l",
-   "asset": "assets/fixtures/mk_door_bath_center_l.glb",
+   "type": "mk_door_bath_center_r",
+   "asset": "assets/fixtures/mk_door_bath_center_r.glb",
    "category": "fixtures",
    "node_type": "fixture",
    "mount": "opening",
@@ -5890,7 +6178,7 @@
         "part": "leaf",
         "rotate": [
          0,
-         -95,
+         95,
          0
         ]
        }
@@ -5907,14 +6195,14 @@
     "facing": "plan",
     "height": "catalog",
     "model": "builder",
-    "builder": "door_bath_l"
+    "builder": "door_bath_r"
    }
   },
   {
    "id": "door_bath_east",
    "name": "door_bath_east (도면 기준)",
-   "type": "mk_door_bath_east_l",
-   "asset": "assets/fixtures/mk_door_bath_east_l.glb",
+   "type": "mk_door_bath_east_r",
+   "asset": "assets/fixtures/mk_door_bath_east_r.glb",
    "category": "fixtures",
    "node_type": "fixture",
    "mount": "opening",
@@ -5971,7 +6259,7 @@
         "part": "leaf",
         "rotate": [
          0,
-         -95,
+         95,
          0
         ]
        }
@@ -5988,7 +6276,7 @@
     "facing": "plan",
     "height": "catalog",
     "model": "builder",
-    "builder": "door_bath_l"
+    "builder": "door_bath_r"
    }
   },
   {
@@ -6156,8 +6444,8 @@
   {
    "id": "door_bed_ne",
    "name": "door_bed_ne (도면 기준)",
-   "type": "mk_door_bed_ne_l",
-   "asset": "assets/fixtures/mk_door_bed_ne_l.glb",
+   "type": "mk_door_bed_ne_r",
+   "asset": "assets/fixtures/mk_door_bed_ne_r.glb",
    "category": "fixtures",
    "node_type": "fixture",
    "mount": "opening",
@@ -6214,7 +6502,7 @@
         "part": "leaf",
         "rotate": [
          0,
-         -95,
+         95,
          0
         ]
        }
@@ -6231,7 +6519,7 @@
     "facing": "plan",
     "height": "catalog",
     "model": "builder",
-    "builder": "door_room_l"
+    "builder": "door_room_r"
    }
   },
   {
@@ -6242,13 +6530,13 @@
    "category": "fixtures",
    "node_type": "fixture",
    "mount": "opening",
-   "room": "kitchen",
+   "room": "balcony_north",
    "plan": {
     "position": [
      8.465625,
      1.4625
     ],
-    "facing_deg": 180.0,
+    "facing_deg": 0.0,
     "elevation": 0.0,
     "on": null,
     "surface": null,
@@ -6261,7 +6549,7 @@
    ],
    "rotation": [
     0.0,
-    -1.570796,
+    1.570796,
     0.0
    ],
    "scale": [

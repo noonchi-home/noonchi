@@ -1,0 +1,25 @@
+{
+  "type": "storage_cabinet_5",
+  "label": "수납장",
+  "family": "bedroom",
+  "category": "furniture",
+  "node_type": "furniture",
+  "mount": "floor",
+  "footprint": [
+    2.109,
+    0.671
+  ],
+  "height": 2.1,
+  "model": "assets/furniture/storage_cabinet_5.glb",
+  "blocks_walk": true,
+  "blocks_view": true,
+  "anchors": {
+    "front": [
+      0.0,
+      0.935
+    ]
+  },
+  "notes": "흰 몸통, 오크 세로결 문(폭에 따라 한 짝 0.6 m 이하, 1.2 m는 둘: 경첩 회전축 hinge_l·hinge_r 아래 문·손잡이, 그 밖은 hinge_1…n), 검은 막대 손잡이(깊이에 포함), 들어간 걸레받이.",
+  "builder": "wardrobe",
+  "generated_by": "import-labels"
+}

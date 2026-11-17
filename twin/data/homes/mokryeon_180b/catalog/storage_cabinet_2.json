@@ -19,7 +19,7 @@
       0.869
     ]
   },
-  "notes": "흰 몸통, 오크 세로결 문 둘(경첩 회전축 hinge_l·hinge_r 아래 문·손잡이), 검은 막대 손잡이(깊이에 포함), 들어간 걸레받이.",
+  "notes": "흰 몸통, 오크 세로결 문(폭에 따라 한 짝 0.6 m 이하, 1.2 m는 둘: 경첩 회전축 hinge_l·hinge_r 아래 문·손잡이, 그 밖은 hinge_1…n), 검은 막대 손잡이(깊이에 포함), 들어간 걸레받이.",
   "builder": "wardrobe",
   "generated_by": "import-labels"
 }

@@ -1,0 +1,18 @@
+{
+  "type": "dining_chair",
+  "label": "식탁 의자",
+  "family": "kitchen",
+  "category": "furniture",
+  "node_type": "furniture",
+  "mount": "floor",
+  "footprint": [
+    0.45,
+    0.5
+  ],
+  "height": 0.85,
+  "model": "assets/furniture/dining_chair.glb",
+  "blocks_walk": true,
+  "blocks_view": true,
+  "builder": "dining_chair",
+  "generated_by": "import-labels"
+}

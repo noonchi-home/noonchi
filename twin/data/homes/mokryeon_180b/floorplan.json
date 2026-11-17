@@ -999,9 +999,9 @@
       "width": 0.7875,
       "height": 2.05,
       "kind": "swing",
-      "asset": "mk_door_main_l",
+      "asset": "mk_door_main_r",
       "swing_into": "outside",
-      "hinge": "left"
+      "hinge": "right"
     },
     {
       "id": "door_entry",
@@ -1017,9 +1017,9 @@
       "width": 0.815625,
       "height": 2.05,
       "kind": "swing",
-      "asset": "mk_door_entry_r",
+      "asset": "mk_door_entry_l",
       "swing_into": "vestibule",
-      "hinge": "right"
+      "hinge": "left"
     },
     {
       "id": "door_alpha",
@@ -1053,9 +1053,9 @@
       "width": 0.646875,
       "height": 2.05,
       "kind": "swing",
-      "asset": "mk_door_bath_west_r",
+      "asset": "mk_door_bath_west_l",
       "swing_into": "bath_west",
-      "hinge": "right"
+      "hinge": "left"
     },
     {
       "id": "door_closet",
@@ -1087,9 +1087,9 @@
       "width": 0.703125,
       "height": 2.05,
       "kind": "swing",
-      "asset": "mk_door_bath_center_l",
+      "asset": "mk_door_bath_center_r",
       "swing_into": "bath_center",
-      "hinge": "left"
+      "hinge": "right"
     },
     {
       "id": "door_bath_east",
@@ -1105,9 +1105,9 @@
       "width": 0.703125,
       "height": 2.05,
       "kind": "swing",
-      "asset": "mk_door_bath_east_l",
+      "asset": "mk_door_bath_east_r",
       "swing_into": "bath_east",
-      "hinge": "left"
+      "hinge": "right"
     },
     {
       "id": "door_bed_sw",
@@ -1159,9 +1159,9 @@
       "width": 0.759375,
       "height": 2.05,
       "kind": "swing",
-      "asset": "mk_door_bed_ne_l",
+      "asset": "mk_door_bed_ne_r",
       "swing_into": "bed_ne",
-      "hinge": "left"
+      "hinge": "right"
     },
     {
       "id": "door_balcony_north",
@@ -1178,7 +1178,7 @@
       "height": 2.05,
       "kind": "swing",
       "asset": "mk_door_balcony_north_l",
-      "swing_into": "kitchen",
+      "swing_into": "balcony_north",
       "hinge": "left"
     },
     {

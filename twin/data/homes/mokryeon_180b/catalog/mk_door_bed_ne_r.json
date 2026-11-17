@@ -1,5 +1,5 @@
 {
-  "type": "mk_door_bed_ne_l",
+  "type": "mk_door_bed_ne_r",
   "label": "door_bed_ne (도면 기준)",
   "family": "openings",
   "category": "fixtures",
@@ -10,7 +10,7 @@
     0.15
   ],
   "height": 2.05,
-  "model": "assets/fixtures/mk_door_bed_ne_l.glb",
+  "model": "assets/fixtures/mk_door_bed_ne_r.glb",
   "blocks_walk": false,
   "blocks_view": true,
   "attrs": {
@@ -38,7 +38,7 @@
             "part": "leaf",
             "rotate": [
               0,
-              -95,
+              95,
               0
             ]
           }
@@ -56,11 +56,11 @@
       -0.6
     ],
     "handle": [
-      0.35,
+      -0.35,
       0.0,
       0.98
     ]
   },
-  "notes": "정면(-y) = 문이 열리는 쪽(swing_into). 정면에서 볼 때 경첩이 왼쪽(-x). 열림 = 문짝 회전축 leaf를 세로축 -95°(정면 쪽으로 선다). 문틀이 개구부(폭 × 2.1 × 벽 0.12)를 채우고 양면 몰딩(0.06 × 0.012)은 크기 계산에서 뺀다.",
-  "builder": "door_room_l"
+  "notes": "정면(-y) = 문이 열리는 쪽(swing_into). 정면에서 볼 때 경첩이 오른쪽(+x). 열림 = 문짝 회전축 leaf를 세로축 +95°(정면 쪽으로 선다). 문틀이 개구부(폭 × 2.1 × 벽 0.12)를 채우고 양면 몰딩(0.06 × 0.012)은 크기 계산에서 뺀다.",
+  "builder": "door_room_r"
 }
