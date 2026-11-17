@@ -123,3 +123,27 @@ describe("자른 키 큰 가구 뚜껑", () => {
     expect(mat.color.getHex()).toBe(white.color.clone().multiplyScalar(0.9).getHex());
   });
 });
+
+describe("자른 키 큰 가구 뚜껑이 가구를 따라간다", () => {
+  // 편집기에서 수납장을 현관(바닥 -0.1 m)에서 방(0 m)으로 옮기거나 노드가 기울어도 뚜껑은 세계 좌표 자르기 높이에 수평으로 남는다
+  const lidOf = (wardrobe: THREE.Object3D) => wardrobe.children.find((c): c is THREE.Mesh => c instanceof THREE.Mesh && c.userData.isLid === true)!;
+  it("가구를 옮기고 돌리고 기울여도 뚜껑은 자르기 높이에 수평이고 바닥 자리를 따라간다", () => {
+    const { wardrobe } = lowered();
+    const lid = lidOf(wardrobe);
+    const { geometry, material } = lid;
+    wardrobe.position.set(4, -0.1, 2.5);
+    wardrobe.rotation.set(0.08, 0, 0.05); // 기운 노드(돌림 y는 0으로 바뀜)
+    wardrobe.updateMatrixWorld(true);
+    const box = new THREE.Box3().setFromObject(lid);
+    expect(box.min.y).toBeCloseTo(1.052, 4);
+    expect(box.max.y).toBeCloseTo(1.052, 4);
+    // 돌림 y 0: 폭 1.8 m가 x, 깊이 0.62 m가 z. 가운데는 가구 자리(문 두께만큼 앞으로 0.01 m)
+    expect(box.max.x - box.min.x).toBeCloseTo(1.8, 2);
+    expect(box.max.z - box.min.z).toBeCloseTo(0.62, 2);
+    expect((box.min.x + box.max.x) / 2).toBeCloseTo(4, 2);
+    expect((box.min.z + box.max.z) / 2).toBeCloseTo(2.49, 2);
+    // 따라가며 새 지오메트리·재질을 만들지 않는다
+    expect(lid.geometry).toBe(geometry);
+    expect(lid.material).toBe(material);
+  });
+});

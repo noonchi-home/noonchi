@@ -36,6 +36,36 @@ export interface SceneEntry {
   state?: Record<string, unknown>;
 }
 
+const LID_POS = new THREE.Vector3();
+const LID_ROT = new THREE.Quaternion();
+const LID_SCALE = new THREE.Vector3();
+const LID_YAW = new THREE.Euler();
+const UP = new THREE.Vector3(0, 1, 0);
+const ONE = new THREE.Vector3(1, 1, 1);
+
+/**
+ * 뚜껑의 세계 행렬을 부모(가구) 자리·방위(y 돌림)만 따르고 높이는 세계 y = 높이, 늘 수평으로 둔다.
+ * 편집기로 가구를 옮기거나(바닥 높이가 다른 방으로) 노드가 기울어도 자른 면과 맞는다. 행렬만 다시 쓰고 새 객체를 만들지 않는다.
+ */
+function levelLid(lid: THREE.Object3D, height: number): void {
+  const fit = () => {
+    const parent = lid.parent;
+    if (!parent) return;
+    parent.matrixWorld.decompose(LID_POS, LID_ROT, LID_SCALE);
+    LID_YAW.setFromQuaternion(LID_ROT, "YXZ");
+    LID_ROT.setFromAxisAngle(UP, LID_YAW.y);
+    LID_POS.y = height;
+    lid.matrixWorld.compose(LID_POS, LID_ROT, ONE);
+    lid.matrixWorldNeedsUpdate = false;
+  };
+  lid.matrixAutoUpdate = false;
+  lid.updateMatrixWorld = () => { fit(); };
+  lid.updateWorldMatrix = (updateParents: boolean) => {
+    if (updateParents) lid.parent?.updateWorldMatrix(true, false);
+    fit();
+  };
+}
+
 /** 구운 보기 카메라의 수평 방향(평면도 x, y = three x, z). */
 export function viewHeading(v: OrthoCamera): [number, number] {
   const cam = new THREE.OrthographicCamera();
@@ -174,12 +204,13 @@ export function applyDefaultView(o: {
       const mat = new THREE.MeshBasicMaterial({ name: `${own.name}_lid`, map: own.map ?? null });
       if (own.color) mat.color.copy(own.color);
       mat.color.multiplyScalar(LID);
-      const y = new THREE.Vector3(0, cut + LID_LIFT, 0).applyMatrix4(inv).y;
       const size = box.getSize(new THREE.Vector3());
-      const geo = new THREE.PlaneGeometry(size.x, size.z).rotateX(-Math.PI / 2).translate((box.min.x + box.max.x) / 2, y, (box.min.z + box.max.z) / 2);
+      // 판은 가구 로컬 바닥 자리(가운데 포함)에 두고 높이는 0: 세계 행렬을 그릴 때마다 levelLid가 자르기 높이에 맞춘다
+      const geo = new THREE.PlaneGeometry(size.x, size.z).rotateX(-Math.PI / 2).translate((box.min.x + box.max.x) / 2, 0, (box.min.z + box.max.z) / 2);
       const lid = new THREE.Mesh(geo, mat);
       lid.userData.isLid = true;
       lid.name = `${node.name}_lid`;
+      levelLid(lid, cut + LID_LIFT);
       node.add(lid);
       lids.set(node, lid);
     }
