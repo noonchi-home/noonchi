@@ -6,6 +6,7 @@ import type { AssistMode } from "../contract/setup.js";
 import type { Facet, ObjClass, WorldObject, WorldView } from "../contract/world.js";
 import type { DeviceKind } from "../devices/kinds.js";
 import type { ActionChoice } from "./prompts.js";
+import { UNKNOWN_STATES, type StateKey } from "../world/vocab.js";
 
 type Kind = "go" | "pick" | "place" | "do" | "device" | "ask" | "say" | "wait";
 /** 이 행동의 계획에 쓸 수 있는 단계: 단계 종류(src/agent/planTools.ts AgentStepKind), 꼭 있어야 하는 단계 종류(need), 기기 단계의 가전 종류·도구. 승인한 일의 범위다. */
@@ -15,6 +16,8 @@ export interface TaskAllow { kinds: readonly Kind[]; need: readonly Kind[]; devi
  *  판단 전에 더 잘 볼 대상 물건의 면(look: 모르면 관찰 모드 B가 가까이 볼지 고른다, src/act/look.ts). */
 export interface TaskSpec {
   name: string; description: string; allow: TaskAllow; target?: ObjClass; look?: readonly Facet[];
+  /** 행동 조건: 대상 물건의 그 면이 이 값으로 확인돼야 한다(계획 전 검사는 확인된 반대 값이면 막고, 실행 전 검사는 모르면 보류, src/act/check.ts). 면은 look 안이다. */
+  want?: Partial<Record<Facet, StateKey>>;
   /** false면 계획을 만들지 않는 행동이다. 판단 기록과 생각 말풍선에만 보인다. */
   plan?: false;
   /** 집는 물건 종류. 없으면 target이다. */
@@ -47,15 +50,15 @@ export const TASKS: Record<string, TaskSpec> = {
   },
   // 컵 갈래(2026-11-13): 끝에 더해 앞 넷의 task_index를 지킨다. 물·콜라를 가르는 사실(먹는 중·TV 보는 중)은 FSM 기억(src/brain/decision.ts CUP_FSM_MEMORY)에 있다
   "컵 그대로 두기": {
-    name: "컵 그대로 두기", description: "사람이 자리를 비웠지만 컵에 음료가 남아 있어 치우지 않고 그대로 둔다.", target: "cup", look: ["contents"], plan: false,
+    name: "컵 그대로 두기", description: "사람이 자리를 비웠지만 컵에 음료가 남아 있어 치우지 않고 그대로 둔다.", target: "cup", look: ["contents"], want: { contents: "has_contents" }, plan: false,
     allow: { kinds: [], need: [] },
   },
   "컵에 물 채워 주기": {
-    name: "컵에 물 채워 주기", description: "사람이 식사 중인데 컵이 비어 있으면 사람이 냉장고에서 물병을 꺼내 와 컵에 물을 따르게 한다.", target: "cup", look: ["contents"],
+    name: "컵에 물 채워 주기", description: "사람이 식사 중인데 컵이 비어 있으면 사람이 냉장고에서 물병을 꺼내 와 컵에 물을 따르게 한다.", target: "cup", look: ["contents"], want: { contents: "empty" },
     carry: "bottle", carryUnseen: true, allow: FILL,
   },
   "컵에 콜라 따라 주기": {
-    name: "컵에 콜라 따라 주기", description: "사람이 TV를 보는 중인데 컵이 비어 있으면 사람이 냉장고에서 콜라를 꺼내 와 컵에 따르게 한다.", target: "cup", look: ["contents"],
+    name: "컵에 콜라 따라 주기", description: "사람이 TV를 보는 중인데 컵이 비어 있으면 사람이 냉장고에서 콜라를 꺼내 와 컵에 따르게 한다.", target: "cup", look: ["contents"], want: { contents: "empty" },
     carry: "bottle", carryUnseen: true, allow: FILL,
   },
   // 코치 행동(2026-11-13): 단계 목록은 에이전트 계획 모드가 만든다. 여기에는 설명과 쓸 수 있는 단계만 둔다(device 없음)
@@ -103,6 +106,25 @@ export function lookTargets(): { cls: ObjClass; facets: readonly Facet[] }[] {
 /** 실행 추적이 놓기 단계를 끝낸 물건(src/act/track/steps.ts placed): World State id → 그 계획의 넣은 곳(평면도 id), 끝낸 때 그 면의 싱크볼 안이었으면 part basin, 끝낸 시각.
  *  계획을 만들지 않는다. 이미 치운 것을 아는 근거로만 쓴다. */
 export type Placed = ReadonlyMap<string, { target: string; part?: "basin"; atMs: number }>;
+
+/** 확인된 값: 사실이 확인됨이고 「모름」 값이 아니면 그 값, 아니면 null(모름). 내용물은 World State가 확인 규칙(사진 3장·4초, 사람 답)을 지킨 값만 확인됨으로 둔다. */
+export function sureValue(o: WorldObject, facet: Facet): StateKey | null {
+  const f = o.facts[facet];
+  return f && f.certainty === "confirmed" && !UNKNOWN_STATES.includes(f.value as StateKey) ? (f.value as StateKey) : null;
+}
+
+/** 행동 조건(want)을 그 물건에 견준다: 다 맞음(ok), 확인된 반대 값(mismatch, 묻지 않는다), 모름(unknown: 짐작·모름 값·없음). */
+export function wantOf(spec: Pick<TaskSpec, "want">, o: WorldObject): { ok: true } | { ok: false; why: "mismatch" | "unknown"; facet: Facet } {
+  for (const [facet, want] of Object.entries(spec.want ?? {}) as [Facet, StateKey][]) {
+    const sure = sureValue(o, facet);
+    if (sure === null) return { ok: false, why: "unknown", facet };
+    if (sure !== want) return { ok: false, why: "mismatch", facet };
+  }
+  return { ok: true };
+}
+
+/** 불투명이 확인된 물건: 옆에서 안이 안 보여 가까이 봐도 내용물을 모른다(사람에게 묻는다). */
+export const opaqueBody = (o: WorldObject): boolean => o.facts.body?.value === "opaque" && o.facts.body.certainty === "confirmed";
 
 /** 이미 치운 물건: World State 자리가 싱크대 안이거나, 실행 추적이 놓기 단계를 끝낸 물건(placed). */
 export const putAway = (o: WorldObject, placed?: Placed) => o.facts.place?.value === "in_sink" || !!placed?.has(o.id);

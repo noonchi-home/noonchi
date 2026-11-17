@@ -1,7 +1,8 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import type { WorldObject, WorldView } from "../src/contract/world.js";
-import { holdsTarget, lookTargets, planTargetId, putAway, targetOf, TASK_NAMES, TASKS, taskOf, tasksFor } from "../src/act/tasks.js";
+import { holdsTarget, lookTargets, opaqueBody, planTargetId, putAway, sureValue, targetOf, TASK_NAMES, TASKS, taskOf, tasksFor, wantOf } from "../src/act/tasks.js";
+import type { WorldFact } from "../src/contract/world.js";
 import { smallFloor } from "./helpers/floor.js";
 import { cupPlan } from "./helpers/cup-plan.js";
 
@@ -22,7 +23,7 @@ describe("행동 목록", () => {
       const t = TASKS[name]!;
       expect(t.name).toBe(name);
       expect(t.description.length).toBeGreaterThan(5);
-      const more = [...(t.coach ? ["coach"] : []), ...(t.maxSteps ? ["maxSteps"] : []), ...(t.target ? ["target"] : []), ...(t.look ? ["look"] : []), ...(t.plan === false ? ["plan"] : []), ...(t.carry ? ["carry"] : []), ...(t.carryUnseen ? ["carryUnseen"] : [])];
+      const more = [...(t.coach ? ["coach"] : []), ...(t.maxSteps ? ["maxSteps"] : []), ...(t.target ? ["target"] : []), ...(t.look ? ["look"] : []), ...(t.want ? ["want"] : []), ...(t.plan === false ? ["plan"] : []), ...(t.carry ? ["carry"] : []), ...(t.carryUnseen ? ["carryUnseen"] : [])];
       expect(Object.keys(t).sort()).toEqual(["allow", "description", "name", ...more].sort());
       if (t.plan !== false) expect(t.allow.kinds.length).toBeGreaterThan(0);
     }
@@ -114,6 +115,35 @@ describe("행동 목록", () => {
   it("계획이 다루는 물건은 첫 act 단계의 대상", () => {
     expect(planTargetId(cupPlan(smallFloor(), "p", "t", { id: "cup_1", position: [7, 0.75, 3] })!)).toBe("cup_1");
     expect(planTargetId(cupPlan(smallFloor(), "p", "t")!)).toBe("table_1");
+  });
+});
+
+describe("행동 조건(want)", () => {
+  const f = (value: string, certainty: "confirmed" | "inferred"): WorldFact => ({ value, at_ms: 1, since_ms: 1, certainty });
+  const cupWith = (contents?: WorldFact) => cupAt({ facts: contents ? { contents } : {} });
+  it("내용물을 보는 행동은 조건 값을 둔다(그대로 두기 = 내용물 있음, 채우기·콜라 = 비어 있음). 조건 면은 볼 면 안이다", () => {
+    expect(TASKS["컵 그대로 두기"]!.want).toEqual({ contents: "has_contents" });
+    expect(TASKS["컵에 물 채워 주기"]!.want).toEqual({ contents: "empty" });
+    expect(TASKS["컵에 콜라 따라 주기"]!.want).toEqual({ contents: "empty" });
+    expect(TASKS["컵 치우기"]!.want).toBeUndefined();
+    for (const t of Object.values(TASKS)) for (const k of Object.keys(t.want ?? {})) expect(t.look).toContain(k);
+  });
+  it("wantOf: 확인된 같은 값 ok, 확인된 반대 값 mismatch, 짐작·안이 안 보임·없음 unknown", () => {
+    const fill = TASKS["컵에 물 채워 주기"]!;
+    expect(wantOf(fill, cupWith(f("empty", "confirmed")))).toEqual({ ok: true });
+    expect(wantOf(fill, cupWith(f("has_contents", "confirmed")))).toEqual({ ok: false, why: "mismatch", facet: "contents" });
+    expect(wantOf(fill, cupWith(f("empty", "inferred")))).toEqual({ ok: false, why: "unknown", facet: "contents" });
+    expect(wantOf(fill, cupWith(f("contents_unknown", "confirmed")))).toEqual({ ok: false, why: "unknown", facet: "contents" });
+    expect(wantOf(fill, cupWith())).toEqual({ ok: false, why: "unknown", facet: "contents" });
+    expect(wantOf(TASKS["컵 치우기"]!, cupWith())).toEqual({ ok: true });
+  });
+  it("sureValue는 확인된 값(「모름」 값 말고)만, opaqueBody는 불투명이 확인됐을 때만", () => {
+    expect(sureValue(cupWith(f("empty", "confirmed")), "contents")).toBe("empty");
+    expect(sureValue(cupWith(f("empty", "inferred")), "contents")).toBeNull();
+    expect(sureValue(cupWith(f("contents_unknown", "confirmed")), "contents")).toBeNull();
+    expect(opaqueBody(cupAt({ facts: { body: f("opaque", "confirmed") } }))).toBe(true);
+    expect(opaqueBody(cupAt({ facts: { body: f("opaque", "inferred") } }))).toBe(false);
+    expect(opaqueBody(cupAt({ facts: { body: f("see_through", "confirmed") } }))).toBe(false);
   });
 });
 

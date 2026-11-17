@@ -5,7 +5,8 @@
 //   vlm aborted 포함) 실행한 관찰로 기록한다(지난 단계 세대의 settle은 아무것도 하지 않는다).
 //   가까이 보기가 자원 사정(CloserWait: 새 사진 모자람·VLM 자리 없음)으로 못 보거나, 감지는 합쳤지만 VLM 답이 왔을 때 사진이 끊겨 넣지 않았으면(vlm no_fresh_frames)
 //   Stall.settle(false)로 시도에서 빼고, 그 밖(wait·ask_person 포함)은 settle(true).
-// B 판단 전 보기(판단 타이머 tick): 행동 대상 종류 물건이 사진 안에 있는데 볼 면(TaskSpec.look)을 모름 → look_closer·wait. PAM 판단을 막지 않는다.
+// B 판단 전 보기(판단 타이머 tick): 행동 대상 종류 물건이 사진 안에 있는데 볼 면(TaskSpec.look)이 확인되지 않음(없음·짐작·모름 값) → look_closer·wait.
+//   불투명이 확인된 컵의 내용물은 가까이 봐도 모르므로 보지 않는다(사람에게 묻는다). PAM 판단을 막지 않는다.
 //   물건마다 objectGapMs, B 전체로 gapMs에 한 번. 이미 싱크대 안·시야 밖 물건, frameFreshMs 넘게 낡은 프레임, 카메라 없는 프레임은 보지 않는다.
 // C 코치 계획의 다른 행동(실행 추적 strayed, src/act/track/coach.ts Stray): 사람이 지금 단계와 다른 일을 하는 것 같다 → tell_person·wait.
 //   다른 일(A·B·C)이 도는 중이면 받지 않는다. 그 단계 신호로 끊긴다(끊기면 기록 없음). tell_person이면 실행 추적의 tell을 부른다.
@@ -23,8 +24,8 @@ import type { LatestFrame } from "../observe/index.js";
 import { LOOK_TEXT, type TellMode } from "./labels.js";
 import { OBJECT_NAME, redactSaid } from "../world/labels.js";
 import { inView } from "../world/index.js";
-import { CLASSES, UNKNOWN_STATES, type ClassKey, type StateKey } from "../world/vocab.js";
-import { putAway, type Placed } from "./tasks.js";
+import { CLASSES, type ClassKey } from "../world/vocab.js";
+import { opaqueBody, putAway, sureValue, type Placed } from "./tasks.js";
 import type { Stall, Stray } from "./track/tracker.js";
 import { headWithin } from "../shared/cut.js";
 
@@ -149,7 +150,7 @@ export class Looker {
       const want = wants.find((t) => t.cls === o.cls);
       if (!want || o.status !== "present" || !o.position || putAway(o, placed)) continue;
       if (now - (this.lookedAt.get(o.id) ?? Number.NEGATIVE_INFINITY) < this.cfg.objectGapMs) continue;
-      const facet = want.facets.find((f) => unknown(o.facts[f]?.value));
+      const facet = want.facets.find((f) => sureValue(o, f) === null && !(f === "contents" && opaqueBody(o)));
       if (!facet) continue;
       const spot: LookSpot = { id: o.id, label: OBJECT_NAME[o.cls] ?? o.cls, position: o.position };
       if (!inView(latest.view, spot.position, LOOK_MARGIN)) continue;
@@ -285,9 +286,6 @@ export class Looker {
     });
   }
 }
-
-/** 볼 면을 모른다: 사실이 없거나 모름 값(안이 안 보임). */
-const unknown = (v: string | undefined) => !v || UNKNOWN_STATES.includes(v as StateKey);
 
 /** 가까이 본 결과 한 마디: 찾은 물건 이름(사람·가전 설비는 빼고), 못 봤으면 까닭, VLM 답이 없으면 덧붙인다. */
 function closerText(r: CloserResult): string {

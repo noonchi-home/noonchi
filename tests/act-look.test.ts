@@ -101,6 +101,21 @@ describe("보기 담당: 판단 전 보기(B)", () => {
     expect(t.looker.status()).toEqual({ calls: 3, costUsd: expect.any(Number), looks: 0, asks: 0, waits: 3, tells: 0 });
   });
 
+  it("B: 볼 면이 짐작이면 부르고, 확인됨이면 부르지 않는다. 불투명이 확인된 컵은 내용물을 가까이 보지 않는다", async () => {
+    const cases: { objects: WorldObject[]; calls: number }[] = [
+      { objects: [cupAt({ facts: { contents: { ...fact("empty"), certainty: "inferred" } } })], calls: 1 },
+      { objects: [cupAt({ facts: { contents: fact("empty") } })], calls: 0 },
+      { objects: [cupAt({ facts: { contents: fact("contents_unknown"), body: fact("opaque") } })], calls: 0 },
+      { objects: [cupAt({ facts: { contents: fact("contents_unknown"), body: { ...fact("opaque"), certainty: "inferred" } } })], calls: 1 },
+    ];
+    for (const c of cases) {
+      const t = await setup({ script: () => [["wait", { reason: "다음 사진을 보려고" }]], objects: c.objects });
+      t.looker.tick();
+      await t.looker.idle();
+      expect(t.llm.bodies()).toHaveLength(c.calls);
+    }
+  });
+
   it("볼 면이 안이 안 보임이면 부르고, 비어 있음·시야 밖·싱크대 안·실행 추적이 치운 것·대상 종류 아님·10초 넘게 낡은 프레임·카메라 없음이면 부르지 않는다", async () => {
     const cases: { objects?: WorldObject[]; frame?: (now: number) => LatestFrame | null; options?: Partial<LookerOptions>; calls: number }[] = [
       { objects: [cupAt({ facts: { contents: fact("contents_unknown") } })], calls: 1 },
