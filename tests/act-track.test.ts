@@ -3658,6 +3658,22 @@ describe("실행 추적: 계획 밖 가까이 가서 보기(판단 전 보기 B 
     };
   }
 
+  // 636c2c4(관찰 모드의 폰 부탁 없앰) 뒤에도: 내용물을 모르면 폰을 가까이 보내 직접 보는 길은 계획 밖에서 그대로이고, 막는 것은 계획 단계가 도는 동안뿐이다
+  it("계획 밖에서는 「컵 가까이 가 주세요」를 보내고, 계획 단계가 도는 동안은 폰 명령이 그 단계 명령뿐이며, 계획이 끝나면 다시 가까이 가서 본다", async () => {
+    const s = idleSetup();
+    s.tick();
+    expect(s.last()).toMatchObject({ id: "peek:1", text: PEEK_TEXT.go("컵") });
+    await s.decide(decision);
+    const from = s.phone.length;
+    for (let i = 0; i < 20; i++) s.tick();
+    expect(s.phone.slice(from).filter((m) => m.type === "command").every((m) => String(m.id).startsWith("plan:"))).toBe(true);
+    expect(s.t.openCommand()).toMatchObject({ planId: "plan:pam-1", text: "식탁으로 가 주세요" });
+    s.heard("그만");
+    for (let i = 0; i < 4; i++) s.tick();
+    expect(s.commands().at(-1)).toMatchObject({ text: PEEK_TEXT.go("컵") });
+    expect(String(s.commands().at(-1)!.id)).toMatch(/^peek:/);
+  });
+
   it("계획이 없고 불투명 컵이면 지금 명령 줄에 「컵 가까이 가 주세요」(id peek:1)를 보내고, 0.5m 안이면 위에서 비춰 달라고 한 뒤 위에서 보기를 부탁한다(계획 id 없음)", () => {
     const s = idleSetup();
     s.tick();
