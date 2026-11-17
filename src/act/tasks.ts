@@ -1,5 +1,5 @@
 // 행동 목록(PAM에 보내는 작업 목록과 그 설명). PAM이 고른 행동(task_index → 행동 이름)은 에이전트가 계획 모드로 계획을 만든다(src/agent/planner.ts).
-// 목록은 services/pam/scenarios/noonchi/tasks.json과 같다(tests/agent-planner.test.ts). 최종 목록은 FSM 담당(박석준·김준형)이 정한다.
+// 목록은 src/brain/pam/scenarios/noonchi/tasks.json과 같다(tests/agent-planner.test.ts). 최종 목록은 FSM 담당(박석준·김준형)이 정한다.
 // 여기에는 계획 모양이 없다: 무엇을 어떤 순서로 할지는 에이전트가 정한다. target은 계획 전 검사(LLM을 부르기 전)에만 쓴다.
 import type { PlanView } from "../contract/plan.js";
 import type { AssistMode } from "../contract/setup.js";

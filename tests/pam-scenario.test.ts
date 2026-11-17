@@ -1,10 +1,10 @@
-// PAM 반성 지시문 바꾸기(services/pam/scenarios/noonchi/scenario.json)의 행동 이름 줄은 우리 행동 목록(src/act/tasks.ts)과 같아야 한다.
+// PAM 반성 지시문 바꾸기(src/brain/pam/scenarios/noonchi/scenario.json)의 행동 이름 줄은 우리 행동 목록(src/act/tasks.ts)과 같아야 한다.
 // 반성이 낸 규칙의 행동은 이 이름 그대로여야 판단이 고를 수 있고, 코치 행동은 반성이 손대지 않게 따로 적는다.
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { TASK_NAMES, TASKS } from "../src/act/tasks.js";
 
-const scenario = JSON.parse(readFileSync("services/pam/scenarios/noonchi/scenario.json", "utf8")) as { prompt_replacements: { old: string; new: string }[] };
+const scenario = JSON.parse(readFileSync("src/brain/pam/scenarios/noonchi/scenario.json", "utf8")) as { prompt_replacements: { old: string; new: string }[] };
 const ACTION = "- action: exactly one of these task names, copied character for character: ";
 const COACH = "- Coaching tasks (";
 const lineOf = (head: string) => scenario.prompt_replacements.flatMap((c) => c.new.split("\n")).find((l) => l.startsWith(head));

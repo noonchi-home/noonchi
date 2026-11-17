@@ -15,8 +15,8 @@ const world = (objects: WorldObject[] = [cupAt()]): WorldView => ({
 });
 
 describe("행동 목록", () => {
-  it("PAM에 보내는 행동 목록은 services/pam/scenarios/noonchi/tasks.json과 같고, 행동마다 설명과 쓸 수 있는 단계가 있다. 계획 모양은 없다", () => {
-    const json = JSON.parse(readFileSync(new URL("../services/pam/scenarios/noonchi/tasks.json", import.meta.url), "utf8")) as string[];
+  it("PAM에 보내는 행동 목록은 src/brain/pam/scenarios/noonchi/tasks.json과 같고, 행동마다 설명과 쓸 수 있는 단계가 있다. 계획 모양은 없다", () => {
+    const json = JSON.parse(readFileSync(new URL("../src/brain/pam/scenarios/noonchi/tasks.json", import.meta.url), "utf8")) as string[];
     expect(TASK_NAMES).toEqual(json);
     expect(TASK_NAMES.slice(0, 2)).toEqual(["컵 치우기", "사용자에게 물어보기"]);
     for (const name of TASK_NAMES) {

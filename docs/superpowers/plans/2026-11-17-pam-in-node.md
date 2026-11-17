@@ -174,7 +174,7 @@ const inputs = {
   ].map(([id, over]) => ({ id, request: { ...R, ...(over as object) } })),
   parse: Object.entries({
     "valid-0": ok(0), "valid-wait": ok(-1), "valid-1": ok(1), "minus-zero": ok("-0"), "spaces": ` \n${ok(0)}\t\r\n`,
-    "fenced": "```json\n" + ok(0) + "\n```", "prose": "답: " + ok(0), "trailing": ok(0) + " x", "empty": "", "bom": "﻿" + ok(0),
+    "fenced": "```json\n" + ok(0) + "\n```", "prose": "답: " + ok(0), "trailing": ok(0) + " x", "empty": "", "bom": "\ufeff" + ok(0),
     "dup-top": `{"observation":"o","reasoning":"r","task_index":0,"task_index":-1}`,
     "dup-nested-first": `{"observation":"o","observation":{"x":1,"x":2},"reasoning":"r","task_index":0}`,
     "dup-quote": `{"it's":1,"it's":2}`, "dup-korean": `{"관찰":1,"관찰":2}`,
@@ -542,7 +542,7 @@ Expected: FAIL(`src/brain/pam/paper.js`가 없다)
 ```ts
 // Python과 같은 글 다루기: repr(str), 문자열 목록 repr, str.strip()이 비우는 글, 코드 포인트 순 정렬(sorted).
 // 검사 글을 Python PAM과 바이트까지 같게 두어 옮기기 전후 기록을 대조한다.
-const PY_SPACE = /^[\t\n\v\f\r\x1c-\x1f \x85\xa0  -     　]*$/;
+const PY_SPACE = /^[\t\n\v\f\r\x1c-\x1f \x85\xa0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]*$/;
 const NOT_PRINTABLE = /[\p{Cc}\p{Cf}\p{Cs}\p{Co}\p{Cn}\p{Zl}\p{Zp}\p{Zs}]/u;
 const hex = (n: number, w: number) => n.toString(16).padStart(w, "0");
 
@@ -727,7 +727,7 @@ export function readStrictJson(path: string, o: { keepFloats?: boolean } = {}): 
   } catch (e) {
     throw new ContractError(`Cannot read JSON ${path}: ${(e as Error).message}`);
   }
-  if (text.startsWith("﻿")) text = text.slice(1);
+  if (text.startsWith("\ufeff")) text = text.slice(1);
   try {
     const v = readPyJson(text);
     return o.keepFloats ? v : unwrapFloats(v);
@@ -1053,8 +1053,8 @@ const MEMORY = { initial_state: "active", states: [
 describe("행동 목록·기억", () => {
   it("행동 목록은 비지 않은 배열이고 글은 Python strip() 기준으로 비지 않는다", () => {
     expect(validateTasks(T)).toEqual(T);
-    for (const bad of [[], [""], [" "], ["　"], ["\x1f"], [1], "a"]) expect(() => validateTasks(bad)).toThrow();
-    expect(validateTasks(["﻿"])).toEqual(["﻿"]);
+    for (const bad of [[], [""], [" "], ["\u3000"], ["\x1f"], [1], "a"]) expect(() => validateTasks(bad)).toThrow();
+    expect(validateTasks(["\ufeff"])).toEqual(["\ufeff"]);
   });
 
   it("기억: 빈 규칙·끝 상태를 받고, 받은 것을 바꾸지 않는다", () => {

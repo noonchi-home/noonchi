@@ -7,3 +7,5 @@ services/pam/** -text
 services/pam/prompts/paper/*.txt text eol=lf
 models/*.onnx binary
 tests/fixtures/pam-golden/** -text
+src/brain/pam/prompts/** -text
+src/brain/pam/prompts/paper/*.txt text eol=lf
