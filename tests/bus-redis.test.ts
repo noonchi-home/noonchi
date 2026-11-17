@@ -202,7 +202,7 @@ describe.skipIf(!url)("RedisBus", () => {
     }
   }, 60_000);
 
-  it("RELIABLE: 그룹이 없어져 XACK가 0을 돌려주면 기동을 잃었다고 바로 알리고, 그 묶음의 남은 메시지를 주지 않는다", async () => {
+  it("RELIABLE: 그룹이 없어져 XACK가 0을 돌려주면 그룹 확인이 끝날 때까지 다음 메시지를 주지 않고, 기동을 잃었다고 알린 뒤 더 주지 않는다", async () => {
     const b = boot();
     let lost: Error | null = null;
     const bus = await RedisBus.connect(url!, { boot: b, keepOthers: true, log: () => {}, onLost: (e) => { lost ??= e; } });
@@ -210,15 +210,14 @@ describe.skipIf(!url)("RedisBus", () => {
     const s = await bus.subscribe("/world/changes", "act", async (m) => {
       got.push(m.body.rev as number);
       if (m.body.rev === 1) await admin(["XGROUP", "DESTROY", `noonchi:${b}:/world/changes`, "act"]);
-      await new Promise((r) => setTimeout(r, 50));
       return "ack";
     });
-    for (let i = 1; i <= 3; i++) await bus.publish({ topic: "/world/changes", key: "_", header: { stamp: i, node: "world", inst: "i1", seq: i, boot: b, home: "h#1" }, body: { rev: i, changes: [] } } as never);
+    for (let i = 1; i <= 5; i++) await bus.publish({ topic: "/world/changes", key: "_", header: { stamp: i, node: "world", inst: "i1", seq: i, boot: b, home: "h#1" }, body: { rev: i, changes: [] } } as never);
     s.start();
     await until(() => lost !== null, 3000);
     await new Promise((r) => setTimeout(r, 300));
     expect((lost as Error | null)?.message).toMatch(/잃었어요/);
-    expect(got).not.toContain(3);
+    expect(got).toEqual([1]);
     await bus.close();
   });
 
@@ -229,27 +228,27 @@ describe.skipIf(!url)("RedisBus", () => {
     const bus = await RedisBus.connect(url!, { boot: b, keepOthers: true, log: (s) => logs.push(s), onLost: failOnLost });
     const got: number[] = [];
     let broke = false;
-    let logsAtTwo: string[] | null = null;
+    let logsAtAgain: string[] | null = null;
     const s = await bus.subscribe("/world/changes", "act", async (m) => {
       got.push(m.body.rev as number);
+      if (m.body.rev === 1 && broke) logsAtAgain ??= [...logs];
       if (m.body.rev === 1 && !broke) {
         broke = true;   // 스트림을 잠시 치우고 같은 열쇠에 글을 둔다: 그 XACK는 WRONGTYPE으로 실패한다
         await admin(["RENAME", key, `${key}:away`]);
         await admin(["SET", key, "막음"]);
       }
-      await new Promise((r) => setTimeout(r, 50));
-      if (m.body.rev === 2) logsAtTwo ??= [...logs];
       return "ack";
     });
     for (let i = 1; i <= 3; i++) await bus.publish({ topic: "/world/changes", key: "_", header: { stamp: i, node: "world", inst: "i1", seq: i, boot: b, home: "h#1" }, body: { rev: i, changes: [] } } as never);
     s.start();
-    await until(() => logsAtTwo !== null, 3000);
+    await until(() => logs.some((l) => l.includes("ack 실패")), 3000);
     await new Promise((r) => setTimeout(r, 300));
+    expect(got).toEqual([1]);
     await admin(["DEL", key]);
     await admin(["RENAME", `${key}:away`, key]);
-    await until(() => got.filter((x) => x === 3).length === 1, 5000);
-    expect(logsAtTwo!.some((l) => l.includes("ack 실패"))).toBe(true);
-    expect(got).toEqual([1, 2, 1, 2, 3]);
+    await until(() => got.includes(3), 5000);
+    expect(logsAtAgain!.some((l) => l.includes("ack 실패"))).toBe(true);
+    expect(got).toEqual([1, 1, 2, 3]);
     await bus.close();
   });
 

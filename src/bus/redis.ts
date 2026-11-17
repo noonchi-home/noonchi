@@ -9,10 +9,12 @@
 //   받는 쪽은 알림에 실린 값을 쓰고(HGET 없음), 밀린 알림은 열쇠마다 마지막 값만 준다. n이 건너뛰면 HGETALL 스냅숏으로 다시 읽는다.
 // RELIABLE: XADD(자르지 않음), 그룹 = 노드 이름 = 소비자 이름(준비 때 $부터). 먼저 내 몫으로 남은 것(id 0)을 차례대로, 다 비면 새것(>)을 읽는다.
 //   한 메시지를 "ack"까지 다시 준다(RETRY_MS 간격, 그동안 뒤 메시지를 읽지 않는다). 이 구독에서 MAX_DELIVERIES번 실패하면 /bus/dead에 남기고 XACK.
-//   /bus/dead 자체의 실패는 다시 보내지 않고 log만 남긴다. XACK는 구독 연결에서 답을 기다리지 않고 보내 다음 XREADGROUP과 한 번에 간다(파이프라인).
+//   /bus/dead 자체의 실패는 다시 보내지 않고 log만 남긴다. 묶음 안에서는 XACK 답을 받은 뒤 다음 메시지를 주고, 마지막 메시지의 XACK만
+//   답을 기다리지 않고 보내 다음 XREADGROUP과 한 번에 간다(파이프라인, 평소 한 번에 하나라 지나기에 왕복을 더하지 않는다).
 //   ack 뒤 모든 그룹이 넘긴 앞부분을 XTRIM MINID로 자르되, 메시지마다 하지 않고 모아서(TRIM_EVERY번 또는 TRIM_MS마다 한 번) 읽기 줄 밖에서 한다.
 //   읽기·XACK가 실패하면 내 몫(id 0)부터 다시 읽는다(같은 메시지를 다시 받을 수 있다: 받는 쪽은 한 번만 쓰기로 막는다).
-//   XACK 실패는 답이 오는 대로 남기고 그 묶음의 남은 메시지를 주지 않는다. XACK가 0이고 그룹이 없으면(Redis는 오류 대신 0을 준다) NOGROUP처럼 기동을 잃은 것이다.
+//   XACK 실패는 답이 오는 대로 남기고 남은 메시지를 주지 않는다. XACK가 0이면 그룹 확인이 끝날 때까지 다음 메시지를 주지 않고,
+//   그룹이 없으면(Redis는 오류 대신 0을 준다) NOGROUP처럼 기동을 잃은 것이다.
 // 연결마다 error 리스너를 단다(프로세스가 죽지 않는다). 막고 읽기(BLOCK)는 구독마다 따로 연결(duplicate)을 쓴다.
 import { createClient, type RedisClientType } from "redis";
 import { CLOSED, deadBody, gapCounter, MAX_DELIVERIES, RETRY_MS, type Bus, type Deliver, type Subscription } from "./bus.js";
@@ -155,25 +157,21 @@ export class RedisBus implements Bus {
       try { await this.client.xGroupCreate(k, node, "$", { MKSTREAM: true }); } catch (e) { if (!String(e).includes("BUSYGROUP")) throw e; }
       /** 이 구독에서 메시지마다 실패한 횟수. dead 발행·XACK가 실패해 같은 메시지를 다시 읽어도 처음부터 세지 않는다(다 쓴 메시지는 dead만 다시 보낸다). */
       const failed = new Map<string, number>();
-      /** 보냈지만 답을 아직 기다리지 않은 XACK. 다음 읽기와 함께 기다린다(실패하면 그 읽기 실패로 내 몫부터 다시 읽는다). */
+      /** 묶음의 마지막 메시지 XACK: 답을 기다리지 않고 보내 다음 읽기와 같이 기다린다. */
       let acks: Promise<void>[] = [];
-      /** 이 묶음에서 실패한 XACK. 있으면 묶음의 남은 메시지를 주지 않고 내 몫부터 다시 읽는다. */
+      /** 실패한 XACK. 있으면 남은 메시지를 주지 않고 내 몫부터 다시 읽는다. */
       let ackError: Error | null = null;
-      const ack = (id: string) => {
-        const p = conn.xAck(k, node, id).then(async (n) => {
-          // Redis는 그룹·스트림이 없어도 XACK에 오류 대신 0을 준다: 방금 받은 내 몫이 0이면 그룹이 남아 있는지 본다
-          if (n === 0 && !(await this.#hasGroup(k, node))) throw new Error(`NOGROUP ${topic} 그룹(${node})이 없어요`);
-          failed.delete(id);
-          this.#acked(topic);
-        });
-        // 답이 오는 대로 바로 남긴다(그 거절은 다음 읽기도 기다린다). NOGROUP이면 기동을 잃은 것이다
-        p.catch((e: Error) => {
-          ackError ??= e;
-          if (String(e).includes("NOGROUP")) this.#lose();
-          else this.log(`[통로] ${topic} ack 실패, 내 몫부터 다시 읽어요: ${e.message}`);
-        });
-        acks.push(p);
-      };
+      /** XACK 하나: 답(0이면 그룹 확인까지)이 끝나야 풀린다. 실패는 바로 남기고 ackError에 둔다(거절하지 않는다). NOGROUP이면 기동을 잃은 것이다. */
+      const ack = (id: string): Promise<void> => conn.xAck(k, node, id).then(async (n) => {
+        // Redis는 그룹·스트림이 없어도 XACK에 오류 대신 0을 준다: 방금 받은 내 몫이 0이면 그룹이 남아 있는지 본다
+        if (n === 0 && !(await this.#hasGroup(k, node))) throw new Error(`NOGROUP ${topic} 그룹(${node})이 없어요`);
+        failed.delete(id);
+        this.#acked(topic);
+      }).catch((e: Error) => {
+        ackError ??= e;
+        if (String(e).includes("NOGROUP")) this.#lose();
+        else this.log(`[통로] ${topic} ack 실패, 내 몫부터 다시 읽어요: ${e.message}`);
+      });
       /** 한 메시지를 ack나 dead까지. 끊긴 구독이거나 기동을 잃었으면 false(ack하지 않고 둔다). */
       const handle = async (id: string, raw: string): Promise<boolean> => {
         for (;;) {
@@ -189,7 +187,6 @@ export class RedisBus implements Bus {
             if (!on) return false;
           }
         }
-        ack(id);
         return true;
       };
       let mineDone = false;
@@ -197,11 +194,16 @@ export class RedisBus implements Bus {
         const sent = acks;
         acks = [];
         const [r] = await Promise.all([conn.xReadGroup(node, node, { key: k, id: mineDone ? ">" : "0" }, { COUNT: 16, ...(mineDone ? { BLOCK: BLOCK_MS } : {}) }), ...sent]);
+        if (ackError) throw ackError;
         const ms = (r ?? []).flatMap((s) => s.messages).filter((m) => m?.message?.m);
         if (!mineDone && !ms.length) { mineDone = true; return; }
-        for (const m of ms) {
-          if (ackError) throw ackError;
+        for (const [i, m] of ms.entries()) {
           if (!(await handle(m.id, m.message.m!))) return false;
+          // 묶음 안에서는 ack 답(0이면 그룹 확인까지)을 받은 뒤 다음 메시지를 준다: 사라진 그룹의 뒤 메시지(가전 명령 등)를 처리하지 않는다.
+          // 마지막 메시지의 ack만 기다리지 않고 다음 읽기와 같이 보낸다(평소 한 번에 하나라 지나기에 왕복을 더하지 않는다)
+          if (i < ms.length - 1) await ack(m.id);
+          else acks.push(ack(m.id));
+          if (ackError) throw ackError;
         }
       }, () => { mineDone = false; acks = []; ackError = null; });
     } else if (q.kind === "state") {
