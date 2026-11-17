@@ -3825,6 +3825,19 @@ describe("실행 추적: 계획 밖 가까이 가서 보기(판단 전 보기 B 
     expect(s.commands().slice(n)).toEqual([]);
   });
 
+  it("계획을 만드는 중(다음 tick 전)에 「그만」이 오면 계획 만들기와 함께 계획 밖 가까이 가서 보기도 거두고 60초 쉰다", async () => {
+    const s = idleSetup();
+    s.tick();
+    expect(s.last()).toMatchObject({ id: "peek:1" });
+    s.t.onDecision(decision);
+    expect(s.heard("그만해")?.id).toBe("stop");
+    await s.t.idle();
+    expect(s.phone.some((m) => m.type === "command_clear" && m.id === "peek:1")).toBe(true);
+    const n = s.commands().length;
+    for (let i = 0; i < 200; i++) s.tick();
+    expect(s.commands().slice(n)).toEqual([]);
+  });
+
   it("가까이 가기(go) 도중 사람이 안 보이면 거둔다. 위에서 비추는 동안은 안 보여도 잇는다", () => {
     const s = idleSetup();
     s.tick();
