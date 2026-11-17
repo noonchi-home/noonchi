@@ -4,7 +4,7 @@
 // 검사 메시지는 PAM 원문(영어)과 같게 두어 두 쪽 기록을 대조하기 쉽게 한다.
 
 import type { Prediction, FsmRuleAt } from "../contract/pam.js";
-import { PAM_TEXT_MAX } from "../world/index.js";
+import { PAM_TEXT_MAX } from "../world/browser.js";
 import { byCodePoint, isPyBlank, pyList, pyRepr } from "./pam/py.js";
 
 export class ContractError extends Error {}
