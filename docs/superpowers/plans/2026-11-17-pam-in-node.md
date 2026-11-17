@@ -270,8 +270,10 @@ def write(path: Path, text: str) -> None:
     path.write_text(text, encoding="utf-8", newline="\n")
 
 
-def dump(path: Path, value) -> None:
-    write(path, json.dumps(value, ensure_ascii=False, indent=2) + "\n")
+def dump(path: Path, value, ascii: bool = False) -> None:
+    """메시지 파일은 글자 그대로(TS toMatchFileSnapshot과 바이트 비교). 검사 결과(parse·memory)는 단독 대리 문자(\\ud800)가 들어
+    UTF-8로 쓸 수 없으므로 ascii=True로 이스케이프한다(TS는 JSON.parse한 값으로 비교한다)."""
+    write(path, json.dumps(value, ensure_ascii=ascii, indent=2) + "\n")
 
 
 def wire(env: dict, built: dict, role: str) -> str:
@@ -323,7 +325,7 @@ def main() -> None:
         if is_json_error(c["raw"]):
             r["errors"] = [JSON_ERR]
         parse.append({"id": c["id"], "result": r})
-    dump(OUT / "parse.json", parse)
+    dump(OUT / "parse.json", parse, ascii=True)
 
     memory = []
     for c in inputs["memory"]:
@@ -332,7 +334,7 @@ def main() -> None:
         except ValueError as e:
             decode = isinstance(e, json.JSONDecodeError) or isinstance(e.__cause__, json.JSONDecodeError)
             memory.append({"id": c["id"], "ok": False, "error": JSON_ERR if decode else str(e)})
-    dump(OUT / "memory.json", memory)
+    dump(OUT / "memory.json", memory, ascii=True)
 
     requests = []
     for c in inputs["requests"]:
@@ -703,12 +705,13 @@ export function unwrapFloats(v: unknown): unknown {
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { isAbsolute, join, relative, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { repoPath } from "../../shared/paths.js";
 import { ContractError } from "../decision.js";
 import { byCodePoint, pyList } from "./py.js";
 import { PyFloat, PyJsonFail, readPyJson, unwrapFloats } from "./pyjson.js";
 
-export const PAM_DIR = fileURLToPath(new URL(".", import.meta.url));
+/** 이 폴더(프롬프트·설정·시나리오). 파일 자리(import.meta.url)는 src/shared/paths.ts만 쓴다(도메인 검사). */
+export const PAM_DIR = repoPath("src/brain/pam/");
 export const PROMPT_IDS = ["predictor_no_memory", "predictor_list", "predictor_fsm", "reflector_list_build", "reflector_list_update", "reflector_fsm_build", "reflector_fsm_update"] as const;
 export type PromptId = (typeof PROMPT_IDS)[number];
 export const PLACEHOLDER = /\{(window|tasks_block|n_tasks_minus_one|rules_block|fsm_block)\}/g;
@@ -851,8 +854,8 @@ export function adaptPrompt(template: string, s: Pick<Scenario, "prompt_replacem
 
 - [ ] **Step 8: 통과를 확인한다**
 
-Run: `npm run heavy -- npx vitest run tests/pam-prompts.test.ts tests/pam-scenario.test.ts tests/act-tasks.test.ts`
-Expected: PASS
+Run: `npm run heavy -- npx vitest run tests/pam-prompts.test.ts tests/pam-scenario.test.ts tests/act-tasks.test.ts tests/domain-boundaries.test.ts`
+Expected: PASS(`import.meta.url`은 `src/shared/paths.ts`만 쓴다)
 
 - [ ] **Step 9: 커밋·push**
 
@@ -1622,6 +1625,19 @@ describe("PAM LLM 전송", () => {
     expect(hits).toBe(1);
   });
 
+  it("응답 머리 뒤 본문이 멈춰도 제한 시간에 끊는다(전체 제한)", async () => {
+    const srv = createServer((_req, res) => {
+      res.writeHead(200, { "content-type": "application/json" });
+      res.write('{"choices":[');
+    });
+    const { port } = await listenRetry(srv, 0, "127.0.0.1");
+    close = () => { srv.closeAllConnections(); srv.close(); };
+    const s = pamSettings({ INFERENCE_MODE: "live", PAM_LLM_BASE_URL: `http://127.0.0.1:${port}/v1` });
+    const t0 = Date.now();
+    await expect(new PamLlm(s).complete(X, OFF, "predictor", 300)).rejects.toBeInstanceOf(PamLinkError);
+    expect(Date.now() - t0).toBeLessThan(3000);
+  });
+
   it("닿지 않음·시간 초과는 PamLinkError", async () => {
     const down = pamSettings({ INFERENCE_MODE: "live", PAM_LLM_BASE_URL: "http://127.0.0.1:9/v1" });
     await expect(new PamLlm(down).complete(X, OFF, "predictor", 5000)).rejects.toBeInstanceOf(PamLinkError);
@@ -1762,8 +1778,10 @@ export class PamLlm {
     const body = this.body(messages, g, role);
     checkBudget(messages, this.s.maxTokens[role], this.s.maxModelLen);
     let reply: unknown;
+    // SDK timeout은 응답 머리를 받으면 풀린다. 본문 읽기까지 이어지는 전체 제한은 따로 끊는 신호로 건다(본문이 멈춰도 끊긴다).
+    const limit = AbortSignal.timeout(timeoutMs);
     try {
-      reply = await this.client.chat.completions.create(body as never, { timeout: timeoutMs });
+      reply = await this.client.chat.completions.create(body as never, { timeout: timeoutMs, signal: limit });
     } catch (e) {
       if (e instanceof PamLinkError) throw e;
       if (e instanceof APIError && typeof e.status === "number") throw new PamLinkError(`PAM LLM HTTP ${e.status}`);
@@ -2390,6 +2408,7 @@ Expected: 아무것도 없음(옛 계획 문서 `docs/superpowers/`는 기록이
 | SDK가 다시 묻거나 넘겨주기를 따라간다 | `maxRetries: 0`, `redirect: "manual"`, 시험 「HTTP 오류는 다시 보내지 않고」·「넘겨주기(3xx)는 따라가지 않는다」 |
 | SDK가 빈 키 대신 `OPENAI_API_KEY`를 읽어 vLLM에 보낸다 | 키를 늘 넘기고(`no-key`), 키가 없으면 `fetch` 감싸개가 authorization을 지운다. 시험 「두 모드가 같은 칸」의 live `auth: null` |
 | `PAM_LLM_TIMEOUT_S` 뜻이 소켓 단계별 → 전체로 바뀐다 | 판단은 `PAM_TIMEOUT_MS`(30초)가 먼저 끊는다. 반성 120초는 논문 측정(약 1분)보다 길다. SSOT 3에 적는다 |
+| SDK `timeout`은 응답 머리를 받으면 풀려, 본문이 멈추면 끝없이 기다린다 | 호출마다 `AbortSignal.timeout`을 `signal`로 넘겨 본문 읽기까지 끊는다. 시험 「응답 머리 뒤 본문이 멈춰도 제한 시간에 끊는다」 |
 | pydantic이 받던 이상한 시각 꼴을 TS가 거절한다 | Node는 `isoWithOffset` 꼴만 보낸다. 정답 파일의 시각 일곱 꼴이 같다 |
 | 정답 파일이 Windows 줄끝으로 바뀐다 | `.gitattributes` `tests/fixtures/pam-golden/** -text` |
 | 시험이 기본 주소(openrouter.ai)를 부른다 | `tests/setup/no-real-ai.ts`가 막고, 서버 자식 환경(`server-child.ts`)·dev 스크립트가 닫힌 주소를 준다 |
