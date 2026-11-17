@@ -94,6 +94,9 @@ describe("실행 전 검사", () => {
     expect(checkPlan(base({ world: { ...base().world, objects: [obj({ cls: "bottle" })] } }))).toEqual({ ok: true });
     expect(planObjectsOf(base().plan!, { ...base().world, objects: [obj({ cls: "bottle" })] }, "cup")).toEqual(["cup_1"]);
     expect(checkPlan(base({ world: { ...base().world, objects: [obj({ cls: "bowl" })] } }))).toMatchObject({ reason: "no_target" });
+    // Codex(38b5c83 4): 따르기 원료 bottle_1이 컵으로 바뀌어도 목적지 컵 목록에 들지 않는다(계획이 정한 역할은 id 꼴로 지킨다)
+    const pour = { ...base().plan!, steps: [...base().plan!.steps, { id: "s3", kind: "act" as const, label: "l", target: { objectId: "bottle_1" }, status: "pending" as const }] };
+    expect(planObjectsOf(pour, { ...base().world, objects: [obj(), obj({ id: "bottle_1", cls: "cup" })] }, "cup")).toEqual(["cup_1"]);
   });
   it("대상 물건이 World State에 없거나 사라짐: 막은 물건 id를 싣는다", () => {
     expect(checkPlan(base({ world: { ...base().world, objects: [] } }))).toEqual({ ok: false, reason: "no_target", text: CHECK_TEXT.no_target, object: "cup_1" });

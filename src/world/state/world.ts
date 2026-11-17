@@ -49,6 +49,7 @@ import { Detections } from "./objects.js";
 import { People } from "./people.js";
 import { SceneFacts } from "./facts.js";
 import { CloserLook, type CloserDetection, type CloserLookAt, type CloserPass, type CloserPending } from "./closer.js";
+import { SceneObjects, type SceneLook } from "./sceneobjects.js";
 import { DeviceSight } from "./devices.js";
 import { ContentsBook } from "./contents.js";
 
@@ -96,6 +97,7 @@ export class WorldState {
   constructor(o: WorldStateOptions) {
     const core = new WorldCore(o);
     core.merge = new Detections(core);
+    core.scene = new SceneObjects(core);
     core.people = new People(core);
     core.vlm = new SceneFacts(core);
     core.closer = new CloserLook(core);
@@ -116,8 +118,10 @@ export class WorldState {
   }
 
   /** 전체 사진의 VLM 답(facts.ts). */
-  applyScene(frameId: string, capturedAtMs: number, scene: SceneObservation, ids: Map<string, string>): WorldChange[] {
-    return this.core.vlm.applyScene(frameId, capturedAtMs, scene, ids);
+  /** 장면 VLM 답: 물건 목록(sceneobjects.ts, VLM 무조건 우선)을 먼저 넣어 답 번호를 물건 id에 잇고, 사실을 넣는다(facts.ts). look: 그 사진의 카메라·크기. */
+  applyScene(frameId: string, capturedAtMs: number, scene: SceneObservation, ids: Map<string, string>, look?: SceneLook): WorldChange[] {
+    const linked = this.core.scene.link(frameId, capturedAtMs, scene, ids, look, this.eye ? this.eye.position : null);
+    return [...linked, ...this.core.vlm.applyScene(frameId, capturedAtMs, scene, ids)];
   }
 
   /** 가까이 보기 합치기(closer.ts applyCloser). */

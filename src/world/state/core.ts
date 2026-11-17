@@ -7,13 +7,14 @@ import { Confirmer, EVIDENCE_STEP_MS } from "../confirm.js";
 import { objectName } from "../labels.js";
 import { FALL_DEFAULTS, FallWatch, type FallConfig } from "../fall.js";
 import type { SightLink } from "../sight.js";
-import { CLASSES, STATES, type ClassKey, type StateKey, type Target } from "../vocab.js";
+import { CLASSES, sameDrinkware, STATES, type ClassKey, type StateKey, type Target } from "../vocab.js";
 import type { CloserLook } from "./closer.js";
 import type { ContentsBook, ContentsState } from "./contents.js";
 import type { DeviceSight } from "./devices.js";
 import type { SceneFacts } from "./facts.js";
 import type { Detections } from "./objects.js";
 import type { People } from "./people.js";
+import type { SceneObjects } from "./sceneobjects.js";
 import type { WorldStateOptions } from "./world.js";
 
 export type V3 = [number, number, number];
@@ -92,8 +93,15 @@ export interface Obj {
   followed: { id: string; at: number; frame: string } | null;
   /** 면마다 가까이 보기 VLM 답이 값을 새로 넣거나 바꾼 횟수(지금 값의 출처와 따로 남는다). */
   closerRev: Partial<Record<Facet, number>>;
-  /** VLM이 이 물건을 다른 종류(마시는 그릇 무리 안)로 이어 답한 수: 서로 다른 답 CLASS_SWITCH_ANSWERS번 이으면 그 종류로 바꾼다(src/world/state/closer.ts). */
+  /** VLM이 이 물건을 다른 종류(마시는 그릇 무리 안)로 이어 답한 수: 서로 다른 원본 프레임의 더 새 촬영 CLASS_SWITCH_ANSWERS번이면 그 종류로 바꾼다(WorldCore.voteClass). */
   clsVote: { cls: ObjClass; n: number } | null;
+  /** 종류 셈에 마지막으로 넣은 VLM 답의 촬영 시각·원본 프레임(같은 사진 재시도·늦게 온 옛 답은 세지 않는다). */
+  clsAt: number;
+  clsFrame: string | null;
+  /** 장면·가까이 보기 VLM이 이 물건을 본 마지막 촬영 시각(VLM_SEEN_HOLD_MS 동안 YOLO가 놓쳐도 사라짐을 세지 않는다). */
+  vlmSeen: number | null;
+  /** 확인 전 후보를 본 VLM 답의 원본 프레임(VLM_CONFIRM_FRAMES장이면 확정). */
+  vlmFrames: string[];
   /** 내용물 갱신기의 상태(src/world/state/contents.ts). 내용물을 쌓은 적 없으면 null. */
   contents: ContentsState | null;
   /** 관절의 손에 없을 때 전체 사진으로 본 마지막 자리(확인 전 후보만 쓴다: 잊을 때 후보 자리로 남긴다). */
@@ -107,6 +115,15 @@ export interface Fix {
 }
 
 export const dist = (a: V3, b: V3) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
+
+/** 물건 종류는 VLM이 서로 다른 원본 프레임의 더 새 촬영에서 이만큼 이어 다른 종류(마시는 그릇 무리 안)로 답해야 바뀐다. 흔들린 답(컵 → 병 → 컵)으로는 바뀌지 않는다. */
+export const CLASS_SWITCH_ANSWERS = 2;
+/** VLM이 본 물건은 그 촬영부터 이만큼(ms) YOLO가 놓쳐도 사라짐을 세지 않는다(VLM 무조건 우선: VLM 간격 2초 + 답 약 2초 + 여유). */
+export const VLM_SEEN_HOLD_MS = 6000;
+/** 장면 VLM 답 후보는 이만큼(ms) 다시 안 보이면 잊는다(VLM 두 장 사이 + 1초). */
+export const VLM_CANDIDATE_MS = 5000;
+/** 장면 VLM 답 후보는 서로 다른 원본 프레임 이만큼에서 보이면 확정한다. */
+export const VLM_CONFIRM_FRAMES = 2;
 
 /** 이 값이 그 종류·대상에 붙는가. */
 export function fits(value: StateKey, cls: ClassKey, target: Target): boolean {
@@ -139,6 +156,7 @@ export class WorldCore {
   /** 사람 감지가 둘 넘게 보인 마지막 촬영 시각(VLM 자리 사실은 사람을 하나로 합치므로 그동안의 답은 누구의 것인지 모른다). */
   crowdAt = Number.NEGATIVE_INFINITY;
   merge!: Detections;
+  scene!: SceneObjects;
   people!: People;
   vlm!: SceneFacts;
   closer!: CloserLook;
@@ -171,7 +189,7 @@ export class WorldCore {
     const obj: Obj = {
       id: `${cls}_${n}`, cls, position: null, surface: null, surfaceLabel: null, part: null, room: null, errorM: null, confirmed: false, status: "present",
       firstSeen: atMs, lastSeen: atMs, lastInView: atMs, goneAt: null, facts: {}, answered: null, closerAt: null, peekGuard: null, sizes: [], posFrom: null,
-      posAt: Number.NEGATIVE_INFINITY, posCloser: false, judgedAt: atMs, judgedFrame: frameId, judgedCloser: false, followed: null, closerRev: {}, clsVote: null,
+      posAt: Number.NEGATIVE_INFINITY, posCloser: false, judgedAt: atMs, judgedFrame: frameId, judgedCloser: false, followed: null, closerRev: {}, clsVote: null, clsAt: Number.NEGATIVE_INFINITY, clsFrame: null, vlmSeen: null, vlmFrames: [],
       movedAt: atMs, trail: [], carried: false, contents: null, free: null,
     };
     this.objects.set(obj.id, obj);
@@ -179,6 +197,43 @@ export class WorldCore {
   }
 
   /** 가까이 보기 지킴 중인가(atMs 기준 CLOSER_HOLD_MS 안). 지킴보다 앞서 찍힌 사진도 지킴으로 본다. */
+  /** 같은 물건 찾기(전체 사진 YOLO·가까이 보기·장면 VLM이 같이 쓴다): 같은 종류 중 그 종류 거리 안의 가장 가까운 것이 먼저다(사라진 것·세는 중인 것도).
+   *  없으면 마시는 그릇 무리의 다른 종류가 그 거리 안에 하나뿐일 때만 잇는다(둘 이상이면 모호해 잇지 않는다). 물건 식별은 자리로 하고 종류는 voteClass가 따로 바꾼다. */
+  matchAt(cls: ObjClass, position: V3, used: ReadonlySet<string>): Obj | null {
+    const near = (CLASSES[cls] as { identityM?: number }).identityM ?? this.identityM;
+    const pick = (ok: (x: Obj) => boolean) => [...this.objects.values()]
+      .filter((x) => ok(x) && !used.has(x.id) && x.position && dist(x.position, position) <= near)
+      .sort((a, b) => dist(a.position!, position) - dist(b.position!, position));
+    const same = pick((x) => x.cls === cls);
+    if (same.length) return same[0]!;
+    const kin = pick((x) => x.cls !== cls && sameDrinkware(x.cls, cls));
+    return kin.length === 1 ? kin[0]! : null;
+  }
+
+  /** VLM이 이 물건의 종류를 답했다(at 촬영, 원본 프레임 frameId). 같은 원본 프레임·마지막으로 센 촬영보다 옛 답은 세지 않는다.
+   *  같은 종류면 셈을 지우고, 마시는 그릇 무리 안 다른 종류면 CLASS_SWITCH_ANSWERS번 이을 때 그 종류로 바꾼다(id는 그대로). */
+  voteClass(obj: Obj, cls: ObjClass, at: number, frameId: string): void {
+    if (obj.clsFrame === frameId || at <= obj.clsAt) return;
+    obj.clsAt = at;
+    obj.clsFrame = frameId;
+    if (cls === obj.cls || !sameDrinkware(cls, obj.cls)) {
+      obj.clsVote = null;
+      return;
+    }
+    const n = obj.clsVote?.cls === cls ? obj.clsVote.n + 1 : 1;
+    if (n < CLASS_SWITCH_ANSWERS) {
+      obj.clsVote = { cls, n };
+      return;
+    }
+    obj.cls = cls;
+    obj.clsVote = null;
+  }
+
+  /** VLM이 이 물건을 VLM_SEEN_HOLD_MS 안에 봤다: YOLO가 놓쳐도 사라짐을 세지 않는다(VLM 무조건 우선). */
+  vlmHold(obj: Obj, atMs: number): boolean {
+    return obj.vlmSeen !== null && atMs - obj.vlmSeen <= VLM_SEEN_HOLD_MS;
+  }
+
   held(obj: Obj, atMs: number): boolean {
     return obj.closerAt !== null && atMs - obj.closerAt < CLOSER_HOLD_MS;
   }

@@ -8,7 +8,8 @@ import { EVIDENCE_GAP_MS } from "../confirm.js";
 import { CHANGE_TEXT, onSurface } from "../labels.js";
 import { inView, placePoint, sizeOf } from "../place.js";
 import { CLASSES, NOW_FACETS, POSE_HOLD } from "../vocab.js";
-import { KEYS, OBJ_CLASSES, PERSON, Part, SIZE_SAMPLES, dist, fromCamera, type Obj, type TrailSample, type V3 } from "./core.js";
+import { sameDrinkware } from "../vocab.js";
+import { KEYS, OBJ_CLASSES, PERSON, Part, SIZE_SAMPLES, VLM_CANDIDATE_MS, fromCamera, type Obj, type TrailSample, type V3 } from "./core.js";
 
 const FIXTURE_CLASSES: ReadonlySet<string> = new Set(KEYS.filter((k) => CLASSES[k].role === "fixture"));
 /** 사라진 물체를 이만큼 두었다가 잊는다(같은 자리에 다시 보이면 같은 id로 돌아온다). */
@@ -70,7 +71,7 @@ export class Detections extends Part {
       core.judge(obj, at, frame.id, false);
       core.closer.sawAgain(obj, at, frame.id);
       this.track(obj, [{ at, frame: frame.id, position: placed?.position ?? null, center: [(d.box[0] + d.box[2] / 2) / frame.width, (d.box[1] + d.box[3] / 2) / frame.height] }]);
-      // 가까이 보기가 더 새 촬영(같은 촬영이면 잘라 본 자리)으로 고친 자리를 되돌리지 않는다
+      // 가까이 보기가 더 새 촬영(같은 촬영이면 잘라 본 자리)으로 고친 자리를 되돌리지 않는다. 손에 든 물건도 자리를 따라간다(내려놓으면 그 자리로 이어 맞춘다)
       if (placed?.position && core.newerPlace(obj, at, false)) {
         obj.position = placed.position;
         obj.surface = placed.surface;
@@ -101,7 +102,7 @@ export class Detections extends Part {
     const events = core.confirmer.observe(at, seen, candidates, (key) => {
       if (key === PERSON) return true;
       const obj = core.objects.get(key)!;
-      return !core.held(obj, at) && !core.guarded(obj, at) && this.visible(obj, view) === true;
+      return !core.held(obj, at) && !core.guarded(obj, at) && !core.vlmHold(obj, at) && this.visible(obj, view) === true;
     }, stale);
     const changes: WorldChange[] = [];
     const fresh: { obj: Obj; at: number; frame: string }[] = [];
@@ -143,7 +144,9 @@ export class Detections extends Part {
     core.closer.liftHolds(fresh, seen);
     for (const obj of core.objects.values()) {
       if (!obj.confirmed) {
-        if (!seen.has(obj.id) && at - obj.lastSeen >= EVIDENCE_GAP_MS) core.loseCandidate(obj, at);   // 세는 중에 500ms 넘게 못 보면 잊고 마지막 자리를 후보 자리로 남긴다(한두 장 놓친 것은 둔다)
+        // 세는 중에 500ms 넘게 못 보면 잊고 마지막 자리를 후보 자리로 남긴다(한두 장 놓친 것은 둔다). 장면 VLM 답 후보는 VLM_CANDIDATE_MS 둔다
+        const keep = obj.vlmFrames.length ? VLM_CANDIDATE_MS : EVIDENCE_GAP_MS;
+        if (!seen.has(obj.id) && at - obj.lastSeen >= keep) core.loseCandidate(obj, at);
         continue;
       }
       if (obj.status === "gone") {
@@ -191,18 +194,15 @@ export class Detections extends Part {
     return at < obj.judgedAt || (at === obj.judgedAt && obj.judgedCloser && obj.judgedFrame === frameId);
   }
 
-  /** 같은 물체 찾기. 위치가 있으면 같은 종류 중 그 종류 거리 안의 가장 가까운 것(사라진 것도), 없으면 사라지지 않은 같은 종류를 처음 본 순서로. */
+  /** 같은 물체 찾기. 위치가 있으면 장면 VLM·가까이 보기와 같은 식별 규칙(core.matchAt: 같은 종류 먼저, 마시는 그릇 무리는 하나뿐일 때만). 맞는 것이 없으면
+   *  VLM이 손에 있음으로 답한 같은 무리 물건이 하나뿐일 때 그것(들린 컵은 상자 아랫변이 놓인 자리가 아니다), 그다음 자리를 모르는 같은 종류. 위치가 없으면 사라지지 않은 같은 종류를 처음 본 순서로. */
   private match(cls: ObjClass, position: V3 | null, used: ReadonlySet<string>): Obj | null {
     const pool = [...this.core.objects.values()].filter((x) => x.cls === cls && !used.has(x.id));
-    const near = (CLASSES[cls] as { identityM?: number }).identityM ?? this.core.identityM;
     if (position) {
-      let best: { obj: Obj; d: number } | null = null;
-      for (const x of pool) {
-        if (!x.position) continue;
-        const d = dist(x.position, position);
-        if (d <= near && (!best || d < best.d)) best = { obj: x, d };
-      }
-      if (best) return best.obj;
+      const hit = this.core.matchAt(cls, position, used);
+      if (hit) return hit;
+      const held = [...this.core.objects.values()].filter((x) => x.confirmed && !used.has(x.id) && sameDrinkware(x.cls, cls) && x.facts.place?.value === POSE_HOLD.object);
+      if (held.length === 1) return held[0]!;
       return pool.find((x) => x.status !== "gone" && !x.position) ?? null;
     }
     return pool.filter((x) => x.status !== "gone").sort((a, b) => Number(b.confirmed) - Number(a.confirmed) || a.firstSeen - b.firstSeen)[0] ?? null;

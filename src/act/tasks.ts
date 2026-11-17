@@ -227,9 +227,9 @@ export function planObjectsOf(plan: PlanView, world: WorldView, cls: ObjClass): 
     const id = s.target?.objectId;
     if (!id || out.includes(id)) continue;
     const o = world.objects.find((x) => x.id === id);
-    // 같은 물건의 종류는 마시는 그릇 무리 안에서 VLM 답으로 바뀔 수 있고 id는 그대로다(cup_1이 병이 됨): 계획은 그 id를 따른다.
-    // 처음부터 다른 종류인 물건(따르기의 bottle_1)은 그 종류 대상이 아니다
-    if (o ? o.cls === cls || (shaped.test(id) && sameDrinkware(o.cls, cls)) : shaped.test(id)) out.push(id);
+    // 계획이 정한 역할은 id 꼴(cls_n)로 지킨다: 같은 물건의 종류는 마시는 그릇 무리 안에서 VLM 답으로 바뀌어도 id는 그대로다(cup_1이 병이 돼도 컵 대상,
+    // 따르기 원료 bottle_1이 컵이 돼도 컵 대상이 아니다)
+    if (shaped.test(id) && (!o || sameDrinkware(o.cls, cls))) out.push(id);
   }
   return out;
 }

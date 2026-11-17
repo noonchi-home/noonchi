@@ -14,8 +14,7 @@ import { OBJ_CLASSES, Part, dist, fits, fromCamera, type Obj, type V3 } from "./
 /** 가까이 보기로 VLM 확인 없이 새 물건을 만들려면 같은 자리로 보인 서로 다른 원본 프레임이 이만큼 있어야 한다(물건 등장 확인 장수와 같다).
  *  이보다 적으면 같은 가까이 보기의 VLM이 그 감지에 사실을 답해야 만든다(CloserPending). */
 export const CLOSER_NEW_FRAMES = 3;
-/** 물건 종류는 VLM이 서로 다른 답에서 이만큼 이어 다른 종류(마시는 그릇 무리 안)로 답해야 바뀐다. 한 번 흔들린 답(컵 → 병 → 컵)으로는 바뀌지 않는다. */
-export const CLASS_SWITCH_ANSWERS = 2;
+export { CLASS_SWITCH_ANSWERS } from "./core.js";
 
 /** 가까이 본 한 장의 감지: 상자는 엔진 프레임 픽셀, edge는 잘라 본 상자 경계에 닿음(src/observe/crop.ts onCropEdge). */
 export interface CloserDetection extends Detection { edge: boolean }
@@ -80,17 +79,9 @@ export class CloserLook extends Part {
     return at > obj.judgedAt || (at === obj.judgedAt && !obj.judgedCloser && obj.judgedFrame === frameId);
   }
 
-  /** 트윈 자리로 맞추기만(가까이 보기): 같은 종류(마시는 그릇 무리는 무리 안 다른 종류도) 중 그 종류 거리 안의 가장 가까운 것(사라진 것·세는 중인 것도).
-   *  같은 종류가 먼저다. 물건 식별은 자리로 하고 종류는 따로 바꾼다(vote). */
+  /** 트윈 자리로 맞추기만(가까이 보기): 전체 사진·장면 VLM과 같은 식별 규칙(core.matchAt). */
   private nearest(cls: ObjClass, position: V3, used: ReadonlySet<string>): Obj | null {
-    const near = (CLASSES[cls] as { identityM?: number }).identityM ?? this.core.identityM;
-    let best: { obj: Obj; d: number } | null = null;
-    for (const x of this.core.objects.values()) {
-      if (!sameDrinkware(x.cls, cls) || used.has(x.id) || !x.position) continue;
-      const d = dist(x.position, position);
-      if (d <= near && (!best || d < best.d)) best = { obj: x, d };
-    }
-    return best?.obj ?? null;
+    return this.core.matchAt(cls, position, used);
   }
 
   /** 가까이 보기 합치기: 잘라 본 몇 장(원본 프레임마다 그 프레임 카메라)을 한 번에 넣는다. 보통 프레임의 등장·사라짐 셈은 건드리지 않는다.
@@ -152,21 +143,6 @@ export class CloserLook extends Part {
     return { changes, ids };
   }
 
-  /** VLM이 이 물건의 종류를 답했다: 같은 종류면 셈을 지우고, 다른 종류(마시는 그릇 무리 안)면 서로 다른 답 CLASS_SWITCH_ANSWERS번 이을 때 그 종류로 바꾼다(id는 그대로). */
-  private voteClass(obj: Obj, cls: ObjClass): void {
-    if (cls === obj.cls) {
-      obj.clsVote = null;
-      return;
-    }
-    const n = obj.clsVote?.cls === cls ? obj.clsVote.n + 1 : 1;
-    if (n < CLASS_SWITCH_ANSWERS) {
-      obj.clsVote = { cls, n };
-      return;
-    }
-    obj.cls = cls;
-    obj.clsVote = null;
-  }
-
   /** 가까이 본 묶음 하나를 넣는다: 맞는 확인된 물건이 있으면 그것을 고치고, 없으면 make일 때만 확인된 물건 하나를 만든다(세는 중인 같은 자리 물건이 있으면
    *  그것을 확인하고 created에 더한다). 넣은 물건은 used에 더해 돌려주고, 넣지 않았으면 null. */
   private closeGroup(g: CloserGroup, make: boolean, used: Set<string>, surfaces: PlaneSurface[], changes: WorldChange[], created: Fresh[]): Obj | null {
@@ -177,7 +153,8 @@ export class CloserLook extends Part {
     let obj: Obj | null = null;
     if (match?.confirmed) {
       obj = match;
-      if (g.said) this.voteClass(obj, g.cls);
+      if (g.said) core.voteClass(obj, g.cls, at, last.pass.frameId);
+      if (g.said) obj.vlmSeen = Math.max(obj.vlmSeen ?? at, at);
       this.placeCloser(obj, last, surfaces);
       // 보임은 마지막 보임 판단보다 새 촬영일 때만 고친다(전체 사진이 더 새 촬영으로 본 사라짐·시야 밖을 되돌리지 않는다).
       // 같은 원본 프레임의 전체 사진 판단이면 잘라 본 양성이 앞선다

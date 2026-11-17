@@ -212,7 +212,9 @@ export class ObservationPipeline {
         if (this.closed) return;
         const ids = this.idsOf.get(r.frameId) ?? new Map<string, string>();
         this.idsOf.delete(r.frameId);
-        const changes = r.scene ? o.world.applyScene(r.frameId, r.capturedAtMs, r.scene, ids) : o.world.applyMissing(r.frameId, r.capturedAtMs, { vlm: r.missing! });
+        const f = this.ring.get(r.frameId);
+        const look = f?.view ? { view: f.view, width: f.width, height: f.height } : undefined;
+        const changes = r.scene ? o.world.applyScene(r.frameId, r.capturedAtMs, r.scene, ids, look) : o.world.applyMissing(r.frameId, r.capturedAtMs, { vlm: r.missing! });
         o.emit({ type: "observe", at_ms: this.clock.now(), frame_id: r.frameId, captured_at_ms: r.capturedAtMs, yolo: null, vlm: r.scene?.summary ?? null, ...(r.missing ? { vlm_missing: r.missing } : {}) });
         this.publish(changes);
       },
