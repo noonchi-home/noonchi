@@ -12,6 +12,7 @@
 //   /bus/dead 자체의 실패는 다시 보내지 않고 log만 남긴다. XACK는 구독 연결에서 답을 기다리지 않고 보내 다음 XREADGROUP과 한 번에 간다(파이프라인).
 //   ack 뒤 모든 그룹이 넘긴 앞부분을 XTRIM MINID로 자르되, 메시지마다 하지 않고 모아서(TRIM_EVERY번 또는 TRIM_MS마다 한 번) 읽기 줄 밖에서 한다.
 //   읽기·XACK가 실패하면 내 몫(id 0)부터 다시 읽는다(같은 메시지를 다시 받을 수 있다: 받는 쪽은 한 번만 쓰기로 막는다).
+//   XACK 실패는 답이 오는 대로 남기고 그 묶음의 남은 메시지를 주지 않는다. XACK가 0이고 그룹이 없으면(Redis는 오류 대신 0을 준다) NOGROUP처럼 기동을 잃은 것이다.
 // 연결마다 error 리스너를 단다(프로세스가 죽지 않는다). 막고 읽기(BLOCK)는 구독마다 따로 연결(duplicate)을 쓴다.
 import { createClient, type RedisClientType } from "redis";
 import { CLOSED, deadBody, gapCounter, MAX_DELIVERIES, RETRY_MS, type Bus, type Deliver, type Subscription } from "./bus.js";
@@ -156,14 +157,27 @@ export class RedisBus implements Bus {
       const failed = new Map<string, number>();
       /** 보냈지만 답을 아직 기다리지 않은 XACK. 다음 읽기와 함께 기다린다(실패하면 그 읽기 실패로 내 몫부터 다시 읽는다). */
       let acks: Promise<void>[] = [];
+      /** 이 묶음에서 실패한 XACK. 있으면 묶음의 남은 메시지를 주지 않고 내 몫부터 다시 읽는다. */
+      let ackError: Error | null = null;
       const ack = (id: string) => {
-        const p = conn.xAck(k, node, id).then(() => { failed.delete(id); this.#acked(topic); });
-        p.catch(() => {});   // 다음 읽기 전에 실패해도 처리되지 않은 거절로 남지 않게(기다리는 곳은 다음 읽기)
+        const p = conn.xAck(k, node, id).then(async (n) => {
+          // Redis는 그룹·스트림이 없어도 XACK에 오류 대신 0을 준다: 방금 받은 내 몫이 0이면 그룹이 남아 있는지 본다
+          if (n === 0 && !(await this.#hasGroup(k, node))) throw new Error(`NOGROUP ${topic} 그룹(${node})이 없어요`);
+          failed.delete(id);
+          this.#acked(topic);
+        });
+        // 답이 오는 대로 바로 남긴다(그 거절은 다음 읽기도 기다린다). NOGROUP이면 기동을 잃은 것이다
+        p.catch((e: Error) => {
+          ackError ??= e;
+          if (String(e).includes("NOGROUP")) this.#lose();
+          else this.log(`[통로] ${topic} ack 실패, 내 몫부터 다시 읽어요: ${e.message}`);
+        });
         acks.push(p);
       };
-      /** 한 메시지를 ack나 dead까지. 끊긴 구독이면 false(ack하지 않고 둔다). */
+      /** 한 메시지를 ack나 dead까지. 끊긴 구독이거나 기동을 잃었으면 false(ack하지 않고 둔다). */
       const handle = async (id: string, raw: string): Promise<boolean> => {
         for (;;) {
+          if (!on || this.#lost) return false;
           const n = failed.get(id) ?? 0;
           if (n >= MAX_DELIVERIES) { await this.#dead(topic, node, raw, n); break; }
           const out = await deliver(decode(topic, raw)).catch(() => "retry" as const);
@@ -185,8 +199,11 @@ export class RedisBus implements Bus {
         const [r] = await Promise.all([conn.xReadGroup(node, node, { key: k, id: mineDone ? ">" : "0" }, { COUNT: 16, ...(mineDone ? { BLOCK: BLOCK_MS } : {}) }), ...sent]);
         const ms = (r ?? []).flatMap((s) => s.messages).filter((m) => m?.message?.m);
         if (!mineDone && !ms.length) { mineDone = true; return; }
-        for (const m of ms) if (!(await handle(m.id, m.message.m!))) return false;
-      }, () => { mineDone = false; acks = []; });
+        for (const m of ms) {
+          if (ackError) throw ackError;
+          if (!(await handle(m.id, m.message.m!))) return false;
+        }
+      }, () => { mineDone = false; acks = []; ackError = null; });
     } else if (q.kind === "state") {
       let lastN = 0;
       let last = tail;
@@ -275,6 +292,16 @@ export class RedisBus implements Bus {
       if (String(e).includes("NOGROUP")) this.#lose();
       else this.log(`[통로] ${topic} 자르기 실패: ${e.message}`);
     });
+  }
+
+  /** 그 스트림에 그룹이 있는가(스트림이 없으면 false). 연결 오류는 그대로 던진다. */
+  async #hasGroup(k: string, group: string): Promise<boolean> {
+    try {
+      return (await this.client.xInfoGroups(k)).some((g) => g.name === group);
+    } catch (e) {
+      if (String(e).includes("no such key")) return false;
+      throw e;
+    }
   }
 
   /** 모든 그룹이 넘긴(처리 중 없음) 앞부분을 자른다. */

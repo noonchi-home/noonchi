@@ -29,6 +29,7 @@ async function hop(bus: Bus, b: string, topic: "/world/changes" | "/world/state"
   pub.start();
   sub.start();
   const out: number[] = [];
+  await new Promise((r) => setTimeout(r, 50));   // STATE 시작 스냅숏(앞 판의 값)이 첫 잼에 끼지 않게
   for (let i = 1; i <= n + 20; i++) {
     const got = new Promise<void>((r) => { resolve = r; });
     const t0 = performance.now();
@@ -169,17 +170,88 @@ describe.skipIf(!url)("RedisBus", () => {
     await bus.close();
   });
 
-  it("RELIABLE·STATE 한 번 지나기 p50은 같은 크기 Redis 맨 전달 p50보다 1ms 넘게 늘지 않는다(묶음 2 지연 예산: 왕복을 더하지 않는다)", async () => {
+  it("RELIABLE·STATE 한 번 지나기 p50은 같은 크기 Redis 맨 전달 p50보다 왕복 하나만큼 늘지 않는다(묶음 2 지연 예산: 한도 1ms와 PING 왕복의 0.8배 가운데 큰 값, 번갈아 잰 다섯 판의 중앙값)", async () => {
     const b = boot();
     const change = (rev: number) => ({ rev, changes: [{ kind: "appeared", at_ms: rev, subject: "cup_1", text: "컵 cup_1 보임", meaningful: true }] });
     const state = (rev: number) => ({ rev, view: { at_ms: rev, objects: [], pad: "x".repeat(18_340) } });
     const size = (body: Record<string, unknown>) => Buffer.byteLength(JSON.stringify({ key: "_", header: { stamp: 1, node: "world", inst: "i1", seq: 1, boot: b, home: "h#1" }, body }));
-    const floor = { reliable: await bare(b, size(change(1)), 200), state: await bare(b, size(state(1)), 200) };
     const bus = await RedisBus.connect(url!, { boot: b, keepOthers: true, log: () => {}, onLost: failOnLost });
-    const got = { reliable: p50(await hop(bus, b, "/world/changes", change, 200)), state: p50(await hop(bus, b, "/world/state", state, 200)) };
+    const c = createClient({ url: url! });
+    await c.connect();
+    const ping: number[] = [];
+    const runs = { reliable: { floor: [] as number[], hop: [] as number[] }, state: { floor: [] as number[], hop: [] as number[] } };
+    for (let r = 0; r < 5; r++) {
+      const pings: number[] = [];
+      for (let i = 0; i < 60; i++) { const t0 = performance.now(); await c.ping(); pings.push(performance.now() - t0); }
+      ping.push(p50(pings));
+      // 판마다 rev를 새로 올린다: STATE 스냅숏으로 받은 앞 판의 값보다 새 값이어야 낡은 것으로 버려지지 않는다
+      runs.reliable.floor.push(await bare(b, size(change(1)), 60));
+      runs.reliable.hop.push(p50(await hop(bus, b, "/world/changes", (i) => change(r * 1000 + i), 60)));
+      runs.state.floor.push(await bare(b, size(state(1)), 60));
+      runs.state.hop.push(p50(await hop(bus, b, "/world/state", (i) => state(r * 1000 + i), 60)));
+    }
+    await c.close();
     await bus.close();
-    for (const k of ["reliable", "state"] as const) expect(got[k], `${k} p50 ${got[k].toFixed(2)}ms, 맨 전달 ${floor[k].toFixed(2)}ms`).toBeLessThanOrEqual(floor[k] + 1);
+    // 왕복을 하나 더하면 PING 하나만큼 는다. 바쁜 PC에서는 18KB JSON 처리 몫도 커지므로 한도를 PING에 맞춘다(AWS처럼 PING이 짧으면 1ms)
+    const margin = Math.max(1, 0.8 * p50(ping));
+    const each = (xs: number[]) => xs.map((x) => x.toFixed(2)).join(" ");
+    for (const k of ["reliable", "state"] as const) {
+      const got = p50(runs[k].hop);
+      const floor = p50(runs[k].floor);
+      expect(got, `${k} p50 ${got.toFixed(2)}ms(판마다 ${each(runs[k].hop)}), 맨 전달 ${floor.toFixed(2)}ms(판마다 ${each(runs[k].floor)}), PING ${each(ping)}`).toBeLessThanOrEqual(floor + margin);
+    }
   }, 60_000);
+
+  it("RELIABLE: 그룹이 없어져 XACK가 0을 돌려주면 기동을 잃었다고 바로 알리고, 그 묶음의 남은 메시지를 주지 않는다", async () => {
+    const b = boot();
+    let lost: Error | null = null;
+    const bus = await RedisBus.connect(url!, { boot: b, keepOthers: true, log: () => {}, onLost: (e) => { lost ??= e; } });
+    const got: number[] = [];
+    const s = await bus.subscribe("/world/changes", "act", async (m) => {
+      got.push(m.body.rev as number);
+      if (m.body.rev === 1) await admin(["XGROUP", "DESTROY", `noonchi:${b}:/world/changes`, "act"]);
+      await new Promise((r) => setTimeout(r, 50));
+      return "ack";
+    });
+    for (let i = 1; i <= 3; i++) await bus.publish({ topic: "/world/changes", key: "_", header: { stamp: i, node: "world", inst: "i1", seq: i, boot: b, home: "h#1" }, body: { rev: i } } as never);
+    s.start();
+    await until(() => lost !== null, 3000);
+    await new Promise((r) => setTimeout(r, 300));
+    expect((lost as Error | null)?.message).toMatch(/잃었어요/);
+    expect(got).not.toContain(3);
+    await bus.close();
+  });
+
+  it("RELIABLE: XACK가 실패하면 바로 남기고 그 묶음의 남은 메시지를 주지 않으며, 내 몫부터 차례대로 다시 받는다", async () => {
+    const b = boot();
+    const key = `noonchi:${b}:/world/changes`;
+    const logs: string[] = [];
+    const bus = await RedisBus.connect(url!, { boot: b, keepOthers: true, log: (s) => logs.push(s), onLost: failOnLost });
+    const got: number[] = [];
+    let broke = false;
+    let logsAtTwo: string[] | null = null;
+    const s = await bus.subscribe("/world/changes", "act", async (m) => {
+      got.push(m.body.rev as number);
+      if (m.body.rev === 1 && !broke) {
+        broke = true;   // 스트림을 잠시 치우고 같은 열쇠에 글을 둔다: 그 XACK는 WRONGTYPE으로 실패한다
+        await admin(["RENAME", key, `${key}:away`]);
+        await admin(["SET", key, "막음"]);
+      }
+      await new Promise((r) => setTimeout(r, 50));
+      if (m.body.rev === 2) logsAtTwo ??= [...logs];
+      return "ack";
+    });
+    for (let i = 1; i <= 3; i++) await bus.publish({ topic: "/world/changes", key: "_", header: { stamp: i, node: "world", inst: "i1", seq: i, boot: b, home: "h#1" }, body: { rev: i } } as never);
+    s.start();
+    await until(() => logsAtTwo !== null, 3000);
+    await new Promise((r) => setTimeout(r, 300));
+    await admin(["DEL", key]);
+    await admin(["RENAME", `${key}:away`, key]);
+    await until(() => got.filter((x) => x === 3).length === 1, 5000);
+    expect(logsAtTwo!.some((l) => l.includes("ack 실패"))).toBe(true);
+    expect(got).toEqual([1, 2, 1, 2, 3]);
+    await bus.close();
+  });
 
   it("Redis가 답하지 않아도 close()는 끝난다", async () => {
     const bus = await RedisBus.connect(url!, { boot: boot(), keepOthers: true, log: () => {}, onLost: () => {} });
