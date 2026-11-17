@@ -11,8 +11,6 @@ export type { DeviceStateKey, Facet, FixtureClass, ObjClass };
  *  다른 값이 들어오면 없어진다. 판단 뒤에 가까이 보기가 바꾼 면인지는 이것이 아니라 물건의 closer_rev로 본다(전체 사진이 값을 바꾸면 이것은 없어진다). */
 export interface WorldFact {
   value: string; at_ms: number; since_ms: number; certainty: "confirmed" | "inferred"; closer_ms?: number;
-  /** person: 사람이 말로 답한 값(src/world/state/contents.ts). 칸이 없으면 VLM·관절. */
-  by?: "person";
 }
 
 export interface WorldObject {
@@ -50,10 +48,10 @@ export interface WorldObject {
    *  실행 추적이 판단 기록의 횟수(DecisionWorld closer_rev)와 견줘 판단 뒤에 가까이 보기가 바꾼 면인지 본다(src/act/track/start.ts closerNewer). */
   closer_rev?: Partial<Record<Facet, number>>;
   /** 내용물 세대(src/world/state/contents.ts): 확인 값이 정해지거나 바뀌거나 거둬지거나 다시 열릴 때 오른다. 내용물을 쌓은 적 없으면 칸이 없다(0으로 본다).
-   *  내용물 질문과 사람 답이 이 세대에 묶인다(늦은 답은 버린다). 내용물(facts.contents)은 확인됨일 때만 믿는 값이다: 3장·4초 이어진 사진이나 사람 답. */
+   *  내용물(facts.contents)은 확인됨일 때만 믿는 값이다: 3장·4초 이어진 사진. */
   contents_gen?: number;
   /** 보관한 이전 확인 값(최근 것부터 3개). 다시 열리거나 바뀔 때 남긴다. */
-  contents_past?: { value: "empty" | "has_contents"; by: "vlm" | "person"; at_ms: number }[];
+  contents_past?: { value: "empty" | "has_contents"; at_ms: number }[];
   /** 들고 감 보호 중: 사람이 안 보이게 될 때 관절이 붙인 「손에 있음」 물건이 아직 움직이고 있어, 3초 동안 움직임이 없을 때까지 그 손에 있음을 두고
    *  VLM·가까이 보기의 다른 자리 답이 덮지 않는다(src/world/state/objects.ts track). 실행 추적은 이 동안 실행 전 다시 보기 기한을 세지 않는다. 아니면 칸이 없다. */
   carried?: true;

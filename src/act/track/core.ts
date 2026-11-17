@@ -11,7 +11,7 @@ import type { ConditionWatch } from "../../world/index.js";
 import { HUMAN_KINDS, type AgentPlan, type AgentStep } from "../../agent/index.js";
 import { DEVICE_UNKNOWN, EXEC_TEXT } from "../labels.js";
 import type { StepOutcome } from "../lessons.js";
-import { AGAIN, APPROVE, CONTENTS_CHOICES, STEP_DONE, type ActionChoice } from "../prompts.js";
+import { AGAIN, APPROVE, STEP_DONE, type ActionChoice } from "../prompts.js";
 import type { Answers } from "./answers.js";
 import type { Approvals, Asking } from "./approval.js";
 import type { Coach } from "./coach.js";
@@ -77,8 +77,6 @@ export interface TrackConfig {
 export class TrackCore {
   run: Run | null = null;
   planning: Job | null = null;
-  /** 계획 밖 내용물 질문(판단 전 보기 B 끝, src/act/track/contents.ts idle): 명령 id ask:<번호>, 그 컵·세대, 보낸 명령, 물은·읽은 시각. 없으면 null. */
-  idleAsk: { id: string; objectId: string; gen: number; sent: PlannedCommand; askAt: number; spokeAt: number } | null = null;
   /** 마지막으로 기다리기·기기 단계가 시작된 시각. 그 전에 보낸 다른 행동 판단은 쓰지 않는다. */
   quietFrom = -Infinity;
   stopped = false;
@@ -158,10 +156,9 @@ export abstract class Part {
   }
 }
 
-/** 승인 질문은 승인·거절, 다시 묻기는 계속·그만, 내용물 질문은 그 말 답(폰에 단추로 보내지 않는다), 사람 단계는 「완료」 하나, 질문은 그 답들, 알림·기다리기·기기는 없음. */
+/** 승인 질문은 승인·거절, 다시 묻기는 계속·그만, 사람 단계는 「완료」 하나, 질문은 그 답들, 알림·기다리기·기기는 없음. */
 export function choicesOf(r: Run, step: AgentStep | undefined): ActionChoice[] {
   if (r.asking?.why === "again") return AGAIN;
-  if (r.asking?.why === "contents") return [...CONTENTS_CHOICES];
   if (r.asking) return APPROVE;
   if (!step) return [];
   if (step.kind === "ask") return step.prompt?.choices ?? [];

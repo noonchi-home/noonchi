@@ -109,7 +109,7 @@ export async function startPhone(core: HomeCore): Promise<void> {
       const at = core.tracker?.coachStep() ?? null;
       const looker = core.looker;
       if (at && looker && (await looker.heard(at.planId, at.stepId, text, at)) !== "passed") return { reply: "", pending: [] };
-      // 대화를 쓰는 동안(끝난 뒤 TALK_QUIET_MS까지) 내용물 질문이 끼어들지 않는다(실행 추적 talking)
+      // 대화를 쓰는 동안(끝난 뒤 TALK_QUIET_MS까지) 실행 추적이 끼어들지 않는다(talking)
       core.talk.inflight++;
       try {
         const r = await agent.chat(PHONE_SESSION, text, { heard: true });

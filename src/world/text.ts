@@ -1,6 +1,6 @@
 // PAM 관찰 텍스트: 시각이 붙은 줄(오래된 것부터) + [지속] 오래 이어진 사실 + [때] 날짜·요일·하루 때 + [눈] 클로이드 눈이 있는 방 이름. 사진은 넣지 않는다.
 import type { Facet, WorldChange, WorldFact, WorldView } from "../contract/world.js";
-import { ANSWERED, CHANGE_TEXT, EYE_TEXT, GUESS, OBJECT_NAME, OUT_OF_VIEW_NOW, PLACE_UNKNOWN, ROOM_UNKNOWN, STATE_TEXT, dayText, fixtureName, inBasin, objectName, onSurface } from "./labels.js";
+import { CHANGE_TEXT, EYE_TEXT, GUESS, OBJECT_NAME, OUT_OF_VIEW_NOW, PLACE_UNKNOWN, ROOM_UNKNOWN, STATE_TEXT, dayText, fixtureName, inBasin, objectName, onSurface } from "./labels.js";
 import { RELATED_KINDS } from "./relations.js";
 import { FACT_FRESH_MS, NOW_FACETS, STATES, type StateKey, type Target } from "./vocab.js";
 import { headWithin } from "../shared/cut.js";
@@ -87,7 +87,7 @@ export function textFromWorld(world: WorldView, recent: readonly WorldChange[], 
       if (!current("object", k, f, o.nowMs)) continue;
       if (basin && k === "place" && f!.value !== "in_hand") continue;
       // 사람이 말로 답한 값은 꼬리를 붙인다(내용물, src/world/state/contents.ts)
-      lines.push(`${name} ${STATE_TEXT[f!.value] ?? f!.value}${f!.certainty === "inferred" ? `(${GUESS})` : ""}: ${at(f!.since_ms)}부터 ${lasting(o.nowMs - f!.since_ms)}${f!.by === "person" ? `, ${ANSWERED}` : ""}`);
+      lines.push(`${name} ${STATE_TEXT[f!.value] ?? f!.value}${f!.certainty === "inferred" ? `(${GUESS})` : ""}: ${at(f!.since_ms)}부터 ${lasting(o.nowMs - f!.since_ms)}`);
     }
     // 손에 든 물건(손에 있음 사실이거나 사람이 들고 있음)은 넘쳐도 덜어 내지 않는다
     const held = ob.facts.place?.value === "in_hand" || world.person.holding.includes(ob.id);

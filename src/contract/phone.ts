@@ -30,7 +30,7 @@ export interface PhoneCommand {
   /** 아래 엄지 자리 답 단추 바로 위 한 줄: 비전이 보는 지금 상태(「식탁까지 2.4m」·「컵 · 손에 있음」). 질문이면 null. */
   vision: string | null;
   choices: PhoneChoice[];
-  /** 명령 대상(식탁·컵·싱크대). 질문이거나, 기준점을 맞추기 전이거나, 자리를 모르면 null(내용물 질문은 묻는 그 컵). 맞추면 같은 명령이 대상과 함께 다시 온다. */
+  /** 명령 대상(식탁·컵·싱크대). 질문이거나, 기준점을 맞추기 전이거나, 자리를 모르면 null. 맞추면 같은 명령이 대상과 함께 다시 온다. */
   target: PhoneTarget | null;
   /** true면 text를 소리로 읽는다: 새 명령, 한 단계가 오래 걸려 다시 읽을 때. 비전 상태·대상만 바뀌면 false. */
   speak: boolean;

@@ -30,13 +30,6 @@ describe("말풍선 카드 글: 반성 뒤", () => {
   });
 });
 
-describe("말풍선 카드 글: 내용물 질문", () => {
-  it("내용물 질문이 떠 있으면(열린 계획의 질문이든 계획 밖 질문이든) 폰으로 물어봤다고 한다", () => {
-    expect(say({ plan: plan("planned"), command: cmd("plan:d1:contents:cup_1:3:1", []) })).toBe("폰으로 물어봤어요.");
-    expect(say({ command: { ...cmd("ask:2:contents:cup_1:0:2", []), id: "ask:2" } })).toBe("폰으로 물어봤어요.");
-  });
-});
-
 describe("말풍선 카드 글", () => {
   it("계획이 없으면 지켜보거나 본 면을 말한다", () => {
     expect(say({})).toBe("지켜보고 있어요.");

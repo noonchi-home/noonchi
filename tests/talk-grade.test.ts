@@ -16,8 +16,4 @@ describe("talkGrade", () => {
     expect(talkGrade({ step: "plan:pam-1:4", choices: [] }, false)).toBeUndefined();
     expect(talkGrade({ step: "plan:pam-1:1", choices: DONE }, false)).toBeUndefined();
   });
-  it("내용물 질문(단추 없음, 말로만 답함)은 question이다(계획 안 질문·계획 밖 질문 모두)", () => {
-    expect(talkGrade({ step: "plan:pam-1:contents:cup_1:3:1", choices: [] }, false)).toBe("question");
-    expect(talkGrade({ step: "ask:2:contents:cup_1:0:2", choices: [] }, false)).toBe("question");
-  });
 });

@@ -150,8 +150,6 @@ export class Starter extends Part {
    *  「가까이 본 뒤 다시 판단」으로 닫는다(다음 판단이 새 사실로 다시 고른다). 첫 명령을 보낸 뒤에는 보지 않는다. */
   tryStart(r: Run, last: boolean): void {
     const { safety, steps } = this.core;
-    // 내용물 질문이 떠 있는 동안은 tick의 질문 갈래가 본다(답·지남·시간 초과)
-    if (r.asking) return;
     if (this.closerNewer(r.decision)) {
       this.ungap(r.decision, r.gapAt);
       return steps.finish(r, "failed", EXEC_TEXT.closerNewer, "cancelled");

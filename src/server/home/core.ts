@@ -18,7 +18,7 @@ import type { HomeContext } from "./index.js";
 
 /** 폰에서 말한 것은 "phone" 세션 하나로 이어진다(대시보드 대화와 따로 기억). */
 export const PHONE_SESSION = "phone";
-/** 폰 대화(말 요청 에이전트)가 끝난 뒤 이만큼(ms) 내용물 질문을 하지 않는다(에이전트 답을 읽는 동안). */
+/** 폰 대화(말 요청 에이전트)가 끝난 뒤 이만큼(ms) 실행 추적이 사람을 움직이게 하지 않는다(에이전트 답을 읽는 동안). */
 export const TALK_QUIET_MS = 10_000;
 
 /** 집 하나를 띄우는 동안의 공유 상태. */
@@ -69,7 +69,7 @@ export class HomeCore {
   decider: Decider | null = null;
   tracker: ExecutionTracker | null = null;
   looker: Looker | null = null;
-  /** 실제 폰 대화(말 요청 에이전트) 사용: 처리 중인 말 수와 마지막으로 끝난 시각. 내용물 질문이 끼어들지 않게 본다(act.ts talking). */
+  /** 실제 폰 대화(말 요청 에이전트) 사용: 처리 중인 말 수와 마지막으로 끝난 시각. 실행 추적이 끼어들지 않게 본다(act.ts talking). */
   talk = { inflight: 0, at: Number.NEGATIVE_INFINITY };
   // 관찰 흐름·World State(observe.ts)
   surfaces!: () => PlaneSurface[];

@@ -3,7 +3,7 @@
 import type { HeardAt, PlannedCommandMessage } from "../../contract/phone.js";
 import type { ApprovalAnswer } from "../../agent/index.js";
 import { EXEC_TEXT } from "../labels.js";
-import { CONTENTS_CHOICES, STEP_DONE, STOP, contentsAnswer, type ActionChoice } from "../prompts.js";
+import { STEP_DONE, STOP, type ActionChoice } from "../prompts.js";
 import { matchChoice } from "../tasks.js";
 import { talkGrade } from "../talk-grade.js";
 import { Part, choicesOf } from "./core.js";
@@ -20,11 +20,7 @@ export class Answers extends Part {
     const off = core.safety.shownOff();
     if (off && !core.stopped) return { planId: off.sent.id, stepId: off.sent.step, kind: "command", text: off.sent.text, choices: off.note.ask ? [] : [STEP_DONE] };
     const r = core.shown();
-    if (!r) {
-      // 계획 밖 내용물 질문(src/act/track/contents.ts idle)
-      const q = core.idleAsk;
-      return q && !core.stopped ? { planId: q.id, stepId: q.sent.step, kind: "ask", text: q.sent.text, choices: [...CONTENTS_CHOICES] } : null;
-    }
+    if (!r) return null;
     const ask = r.asking !== null || core.stepOf(r)?.kind === "ask";
     return { planId: r.plan.view.id, stepId: r.sent.step, kind: ask ? "ask" : "command", text: r.sent.text, choices: choicesOf(r, core.stepOf(r)) };
   }
@@ -40,14 +36,6 @@ export class Answers extends Part {
       if (!safety.releaseIfOff(off.note.deviceId)) safety.askToShow(off.note.deviceId);
       return true;
     }
-    // 계획 밖 내용물 질문의 답(계획 명령이 떠 있지 않을 때만)
-    const q = core.idleAsk;
-    if (!core.stopped && q && !core.shown() && q.id === planId && q.sent.step === stepId) {
-      const pick = CONTENTS_CHOICES.find((c) => c.id === choice);
-      if (!pick) return false;
-      core.contents.idleAnswered(pick);
-      return true;
-    }
     const r = core.shown();
     if (!r || r.plan.view.id !== planId || r.sent.step !== stepId) return false;
     const step = core.stepOf(r);
@@ -57,7 +45,6 @@ export class Answers extends Part {
     // 기한이 지난 답은 받지 않는다(시간 초과가 먼저다)
     const now = this.clock.now();
     if (a && now - r.askAt > this.cfg.askMs) {
-      core.contents.noAnswer(r);
       steps.finish(r, "failed", EXEC_TEXT.noAnswer);
       return false;
     }
@@ -68,7 +55,6 @@ export class Answers extends Part {
     if (a?.why === "plan") approval.approvedPlan(r, picked.id as ApprovalAnswer);
     else if (a?.why === "device") approval.approvedDevice(r, a.token, picked.id as ApprovalAnswer);
     else if (a?.why === "hand") approval.approvedHand(r, picked.id as ApprovalAnswer);
-    else if (a?.why === "contents") core.contents.answered(r, picked);
     else if (a?.why === "again") {
       if (picked.id === "continue") steps.resume(r);
       else steps.finish(r, "failed", EXEC_TEXT.stopped, "cancelled");
@@ -100,19 +86,6 @@ export class Answers extends Part {
       if (!picked) return null;
       if (at?.kind !== "command" || at.id !== r.plan.view.id || at.step !== r.sent.step) return { kind: "stale" };
       this.onAnswer(r.plan.view.id, r.sent.step, picked.id);
-      return { kind: "answer", choice: picked };
-    }
-    // 계획 밖 내용물 질문: 「그만」은 질문을 지우고, 답 말은 말할 때 그 질문이 떠 있었을 때만 받는다
-    const q = off ? null : core.idleAsk;
-    if (q) {
-      if (matchChoice(text, [STOP])) {
-        core.contents.dropIdle(true);
-        return { kind: "answer", choice: STOP };
-      }
-      const picked = contentsAnswer(text);
-      if (!picked) return null;
-      if (at?.kind !== "command" || at.id !== q.id || at.step !== q.sent.step) return { kind: "stale" };
-      this.onAnswer(q.id, q.sent.step, picked.id);
       return { kind: "answer", choice: picked };
     }
     if (matchChoice(text, [STEP_DONE]) && (off || at?.kind === "command")) return { kind: "stale" };

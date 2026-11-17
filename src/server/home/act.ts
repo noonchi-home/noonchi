@@ -136,18 +136,12 @@ export function startAct(core: HomeCore): (event: BrainLog) => void {
     stalled: (s) => core.looker?.stalled(s) ?? false,
     // 내용물 보류(src/act/track/contents.ts): 가까이 보기는 보기 담당이 한 번에 하나
     lookContents: (h) => core.looker?.contents(h) ?? false,
-    // 사람이 말로 답한 내용물: 그 컵·세대일 때만 World State에 넣는다. 방송은 이 호출이 끝난 뒤(실행 추적 안에서 다시 들어가지 않게)
-    answerContents: (id, value, gen) => {
-      const changes = world.answerContents(id, value, now(), gen);
-      if (changes) queueMicrotask(() => core.pipeline?.publish(changes));
-      return changes !== null;
-    },
     // 따르기 단계 동안 그 컵의 창(그 뒤 사진만, 다 이어진 값이 확인 값을 바꿈)
     contentsAction: (id, on) => { world.contentsAction(id, now(), on); },
-    // 실제 폰에 승인 대기가 떠 있거나 폰 대화를 쓰는 중이면 내용물 질문을 미룬다(승인 질문·대화를 덮지 않는다)
+    // 실제 폰의 승인 대기와 폰 대화 사용(실행 추적이 그동안 사람을 움직이게 하지 않는다)
     approvalsWaiting: () => core.agent.pending(PHONE_SESSION).length > 0,
     talking: () => core.talk.inflight > 0 || now() - core.talk.at < TALK_QUIET_MS,
-    // 이번 판단에 보내는 행동 목록: 내용물 행동이 있을 때만 계획 밖 내용물 질문(판단 전 보기 B 끝)을 한다
+    // 이번 판단에 보내는 행동 목록
     tasks: () => tasksFor(core.assist()),
     // 코치 계획 중 다른 행동을 본 것 같으면 보기 담당(관찰 모드 계기 off_track)에 알린다
     strayed: (s) => core.looker?.strayed(s) ?? false,
@@ -165,8 +159,6 @@ export function startLooker(core: HomeCore, emit: (event: BrainLog) => void): vo
   core.looker = new Looker({
     observer, closer: (spot, signal) => observed.closer(spot, signal), frame: () => observed.latest(), world: () => world.view(now()),
     askPerson: (planId, stepId, spot) => tracking.askCloser(planId, stepId, spot), tell: (planId, stepId, mode) => tracking.tell(planId, stepId, mode), emit, targets: lookTargets, placed: () => tracking.placed(), clock: ctx.brain?.clock,
-    // B가 가까이 본 컵: 실행 추적이 계획 밖으로 물을지 본다
-    looked: (id) => tracking.lookedIdle(id),
     onLook: (spot) => {
       core.lookSay = { place: spot.label, atMs: Date.now() };
       core.speak();

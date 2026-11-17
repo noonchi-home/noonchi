@@ -93,7 +93,7 @@ describe("PAM 관찰 텍스트", () => {
     ]);
   });
 
-  it("사람이 말로 답한 내용물 줄은 꼬리 「사람이 답함」, 불투명 컵은 「안이 안 보임」(짐작 아님)과 「불투명」 줄", () => {
+  it("불투명 컵은 「안이 안 보임」(짐작 아님)과 「불투명」 줄", () => {
     const cupWith = (facts: WorldView["objects"][number]["facts"]): WorldView => ({
       at_ms: T(21, 0, 9),
       objects: [{ id: "cup_1", cls: "cup", position: null, surface: null, surface_label: null, room: null, error_m: null, status: "present",
@@ -102,8 +102,6 @@ describe("PAM 관찰 텍스트", () => {
       fixtures: [], devices: [], eye: null, frame_ms: null, vlm_missing: 0, yolo_missing: 0,
     });
     const cupLines = (v: WorldView) => textFromWorld(v, [], { nowMs: T(21, 0, 9), offsetMinutes: 540 }).split("\n").filter((l) => l.startsWith("[지속] 컵"));
-    expect(cupLines(cupWith({ contents: { value: "empty", at_ms: T(21, 0, 5), since_ms: T(21, 0, 5), certainty: "confirmed", by: "person" } })))
-      .toContain("[지속] 컵 cup_1 비어 있음: 21:00:05부터 4초째, 사람이 답함");
     const opaque = cupLines(cupWith({
       body: { value: "opaque", at_ms: T(21, 0, 5), since_ms: T(21, 0, 4), certainty: "confirmed" },
       contents: { value: "contents_unknown", at_ms: T(21, 0, 5), since_ms: T(21, 0, 4), certainty: "confirmed" },

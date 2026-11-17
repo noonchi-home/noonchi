@@ -6,8 +6,7 @@ import { APPROVAL_TEXT, EXEC_TEXT } from "../labels.js";
 import { Part, choicesOf, type Run } from "./core.js";
 
 /** 실제 폰에 띄운 질문: 첫 단계 전 승인, 위험 목록 가전 승인(토큰), 시간 초과로 다시 묻기. */
-/** contents: 내용물 보류의 말 질문(src/act/track/contents.ts), 그 컵과 물은 세대. */
-export type Asking = { why: "plan" } | { why: "device"; token: string } | { why: "again" } | { why: "hand" } | { why: "contents"; objectId: string; gen: number };
+export type Asking = { why: "plan" } | { why: "device"; token: string } | { why: "again" } | { why: "hand" };
 
 /** 승인 질문: 묻기, 답 받기(계획·기기·손으로 켜기), 묻는 계획인지. */
 export class Approvals extends Part {

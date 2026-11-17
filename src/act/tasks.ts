@@ -107,7 +107,7 @@ export function lookTargets(): { cls: ObjClass; facets: readonly Facet[] }[] {
  *  계획을 만들지 않는다. 이미 치운 것을 아는 근거로만 쓴다. */
 export type Placed = ReadonlyMap<string, { target: string; part?: "basin"; atMs: number }>;
 
-/** 확인된 값: 사실이 확인됨이고 「모름」 값이 아니면 그 값, 아니면 null(모름). 내용물은 World State가 확인 규칙(사진 3장·4초, 사람 답)을 지킨 값만 확인됨으로 둔다. */
+/** 확인된 값: 사실이 확인됨이고 「모름」 값이 아니면 그 값, 아니면 null(모름). 내용물은 World State가 확인 규칙(사진 3장·4초)을 지킨 값만 확인됨으로 둔다. */
 export function sureValue(o: WorldObject, facet: Facet): StateKey | null {
   const f = o.facts[facet];
   return f && f.certainty === "confirmed" && !UNKNOWN_STATES.includes(f.value as StateKey) ? (f.value as StateKey) : null;

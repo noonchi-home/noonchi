@@ -131,12 +131,6 @@ export class WorldState {
     return this.core.closer.applyCloserScene(sourceFrameId, capturedAtMs, scene, ids, pending);
   }
 
-  /** 사람이 말로 답한 내용물(contents.ts answer). 물건이 없거나 세대가 지금과 다르면(늦은 답) null. */
-  answerContents(id: string, value: "empty" | "has_contents", atMs: number, gen: number): WorldChange[] | null {
-    const obj = this.core.objects.get(id);
-    return obj ? this.core.contents.answer(obj, value, atMs, gen) : null;
-  }
-
   /** 계획의 따르기 단계 창(contents.ts window): on이면 확인 값을 보관하고 다시 열어(그 뒤 사진만) 다 이어진 값이 확인 값을 바꾸게 한다. off면 닫는다(값은 둔다).
    *  물건이 없으면 false. */
   contentsAction(id: string, atMs: number, on: boolean): boolean {
@@ -191,7 +185,7 @@ export class WorldState {
       first_seen_ms: x.firstSeen, last_seen_ms: x.lastSeen, last_in_view_ms: x.lastInView, facts: { ...x.facts }, answered_ms: x.answered, devices: relatedDeviceIds(x.cls, devices),
       closer_hold: core.held(x, nowMs), followed_by: x.followed?.id ?? null, ...(Object.keys(x.closerRev).length ? { closer_rev: { ...x.closerRev } } : {}),
       ...(x.carried ? { carried: true as const } : {}),
-      ...(x.contents ? { contents_gen: x.contents.gen, ...(x.contents.past.length ? { contents_past: x.contents.past.map((p) => ({ value: p.value, by: p.by, at_ms: p.atMs })) } : {}) } : {}),
+      ...(x.contents ? { contents_gen: x.contents.gen, ...(x.contents.past.length ? { contents_past: x.contents.past.map((p) => ({ value: p.value, at_ms: p.atMs })) } : {}) } : {}),
     }));
     const fixtures: WorldFixture[] = [...core.fixtures.values()].map((f) => ({
       id: f.id, cls: f.cls, room: f.room, room_label: f.roomLabel, first_seen_ms: f.firstSeen, last_seen_ms: f.lastSeen, facts: { ...f.facts }, answered_ms: f.answered,

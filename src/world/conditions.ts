@@ -177,7 +177,7 @@ function factIs(f: WorldFact | undefined, value: StateKey, target: Target, answe
   const since = now ? Math.max(x.sinceMs, x.nowMs - FACT_FRESH_MS) : x.sinceMs;
   if (f) {
     if (f.at_ms < since) return null;
-    // 안 내용은 World State 갱신기(src/world/state/contents.ts)가 확인 규칙(사진 3장·4초, 사람 답)을 지킨 값만 확인됨으로 둔다.
+    // 안 내용은 World State 갱신기(src/world/state/contents.ts)가 확인 규칙(사진 3장·4초)을 지킨 값만 확인됨으로 둔다.
     // 짐작은 모름이다(따르기 끝 조건이 사진 한 장으로 넘어가지 않게)
     if (STATES[value].facet === "contents" && f.certainty !== "confirmed") return null;
     if (f.value === value) return true;

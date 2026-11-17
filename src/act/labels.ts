@@ -82,9 +82,6 @@ export const CHECK_TEXT = {
   contents_mismatch: "대상 물건 안이 맞지 않아 실행하지 않아요",
 } as const;
 
-/** 내용물 질문(src/act/track/contents.ts): 폰이 소리로 묻고 말로만 받는다(단추 없음). */
-export const CONTENTS_TEXT = { ask: (item: string) => `${item} 비었어요?` };
-
 /** 승인(src/act/track/approval.ts): 처음 하는 계획을 실제 폰에 묻는 글, 「거절」을 받은 계획의 실행 기록. */
 export const APPROVAL_TEXT = {
   ask: (task: string) => `${josa(task, "을/를")} 할까요?`,
@@ -191,8 +188,6 @@ export const EXEC_TEXT = {
   phoneOld: "폰 화면 새로 고침 전이라 새 일을 미룸",
   phoneGone: "폰이 없어 물을 수 없어 그만둠",
   staleAnswer: "늦은 답이라 쓰지 않음",
-  /** 내용물 보류에서 폰으로 물음. */
-  contentsAsked: "안을 몰라 폰으로 물어봄",
 } as const;
 
 /** 관찰 모드 기록 글(src/act/look.ts, 기록 종류 look). 가까이 본 결과, 못 본 까닭, 사람 부탁, 기다리기. capped·failed는 모델 대신 쓰는 까닭 글이다. */

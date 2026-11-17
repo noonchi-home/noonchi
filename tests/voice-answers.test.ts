@@ -9,8 +9,8 @@ describe("실제 폰 질문은 말로 답할 수 있다", () => {
   it.each(Object.entries(QUESTION_CHOICES))("%s: 답마다 그 글자로 말하면 그 답이다", (_, choices) => {
     for (const c of choices) expect(matchChoice(c.label, choices)?.id, c.label).toBe(c.id);
   });
-  it("묶음에는 지금 쓰는 질문 답이 다 있다(물어보기 답 묶음·승인·다시 묻기·내용물)", () => {
-    expect(Object.keys(QUESTION_CHOICES).sort()).toEqual(["again", "approve", "clear_keep", "contents", "yes_no"]);
+  it("묶음에는 지금 쓰는 질문 답이 다 있다(물어보기 답 묶음·승인·다시 묻기)", () => {
+    expect(Object.keys(QUESTION_CHOICES).sort()).toEqual(["again", "approve", "clear_keep", "yes_no"]);
     expect(QUESTION_CHOICES.yes_no).toBe(ASK_CHOICES.yes_no);
   });
   it("「응」「네」만으로는 승인이 아니다(승인 말에 없음)", () => {

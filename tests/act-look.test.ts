@@ -68,20 +68,6 @@ async function setup(o: { script: ObserveScript; gate?: (input: string) => Promi
 }
 
 describe("보기 담당: 판단 전 보기(B)", () => {
-  it("B가 가까이 보기를 마치면 looked(그 물건 id)를 부른다(실행 추적이 계획 밖으로 물을지 본다). 새 사진이 모자라 못 본 것은 부르지 않는다", async () => {
-    const looked: string[] = [];
-    const unknown = [cupAt({ facts: { contents: fact("contents_unknown") } })];
-    const t = await setup({ script: () => [["look_closer", { target: "cup_1", reason: "안을 보려고" }]], objects: unknown, options: { looked: (id) => looked.push(id) } });
-    t.looker.tick();
-    await t.looker.idle();
-    expect(looked).toEqual(["cup_1"]);
-    const busy = testCloser({ ok: false, why: "no_fresh_frames" });
-    const w = await setup({ script: () => [["look_closer", { target: "cup_1", reason: "안을 보려고" }]], objects: unknown, closer: busy, options: { looked: (id) => looked.push(id) } });
-    w.looker.tick();
-    await w.looker.idle();
-    expect(looked).toEqual(["cup_1"]);
-  });
-
   it("행동 대상 종류 물건이 사진 안인데 볼 면을 모르면 관찰 모드를 한 번 부르고 look 기록을 남긴다. 같은 물건은 30초, 다른 물건이어도 10초 안에는 다시 부르지 않는다", async () => {
     const t = await setup({ script: () => [["wait", { reason: "다음 사진을 보려고" }]] });
     t.looker.tick();

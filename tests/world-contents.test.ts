@@ -142,31 +142,13 @@ describe("내용물 확인", () => {
   });
 });
 
-describe("사람 답", () => {
-  it("지금 세대의 답은 확인 값(출처 사람)이고 판단 계기다. 그 뒤 VLM 답은 받지 않는다. 늦은 세대의 답은 버린다", () => {
-    const s = scene();
-    s.say(1, "has_contents");
-    const gen = s.cupNow().contents_gen ?? 0;
-    expect(s.w.answerContents("cup_1", "empty", 6000, gen + 1)).toBeNull();
-    expect(s.w.answerContents("cup_9", "empty", 6000, gen)).toBeNull();
-    expect(s.w.answerContents("cup_1", "empty", 6000, gen)).toEqual([expect.objectContaining({ kind: "state", subject: "cup_1", text: "컵 cup_1 비어 있음 · 사람이 답함", meaningful: true })]);
-    expect(s.cupNow().facts.contents).toMatchObject({ value: "empty", certainty: "confirmed", by: "person", since_ms: 6000 });
-    for (const i of [7, 9, 11, 13]) s.say(i, "has_contents");
-    s.say(5, "has_contents"); // 답 앞에 찍힌 늦은 사진
-    expect(s.cupNow().facts.contents).toMatchObject({ value: "empty", by: "person", certainty: "confirmed" });
-    expect(s.w.answerContents("cup_1", "has_contents", 14_000, gen)).toBeNull(); // 같은 질문의 두 번째 답
-  });
-});
-
 describe("불투명 컵", () => {
-  it("불투명이 확인되면 VLM 내용물 답을 쓰지 않고 「안이 안 보임」(확인됨)이다. 사람 답은 받는다", () => {
+  it("불투명이 확인되면 VLM 내용물 답을 쓰지 않고 「안이 안 보임」(확인됨)이다", () => {
     const s = scene();
     s.say(1, "opaque", "has_contents"); s.say(2, "opaque");
     expect(s.cupNow().facts.contents).toMatchObject({ value: "contents_unknown", certainty: "confirmed" });
     for (const i of [3, 5, 7]) s.say(i, "empty");
     expect(s.cupNow().facts.contents).toMatchObject({ value: "contents_unknown", certainty: "confirmed" });
-    s.w.answerContents("cup_1", "empty", 8000, s.cupNow().contents_gen ?? 0);
-    expect(s.cupNow().facts.contents).toMatchObject({ value: "empty", certainty: "confirmed", by: "person" });
   });
   it("내용물 답이 없어도 불투명이 확인되면 「안이 안 보임」(확인됨)이다", () => {
     const s = scene();
@@ -185,7 +167,7 @@ describe("따르기 창(계획의 따르기 단계)", () => {
     const s = scene();
     for (const i of [1, 3, 5]) s.say(i, "empty");
     expect(s.w.contentsAction("cup_1", 6000, true)).toBe(true);
-    expect(s.cupNow()).toMatchObject({ contents_gen: 2, contents_past: [{ value: "empty", by: "vlm", at_ms: 5000 }] });
+    expect(s.cupNow()).toMatchObject({ contents_gen: 2, contents_past: [{ value: "empty", at_ms: 5000 }] });
     expect(s.cupNow().facts.contents).toMatchObject({ value: "empty", certainty: "inferred" });
     s.say(5, "has_contents"); // 연 앞에 찍힘: 버림
     for (const i of [7, 9]) s.say(i, "empty");
@@ -277,19 +259,5 @@ describe("마시기·따르기 사건", () => {
     for (const i of [1, 3, 5]) n.say(i, "empty");
     const none = n.w.applyDetections(frame(6), [someone, cupT, bottle], [hand]).changes;
     expect(none.filter((c) => c.text.includes("내용물 다시 확인"))).toEqual([]);
-  });
-  it("사람 답보다 먼저 찍힌 관절 사건(감지 대기열에서 늦게 나온 프레임)은 사람 답을 지우지 않고 세대도 올리지 않는다", () => {
-    const s = scene();
-    s.w.answerContents("cup_1", "empty", 6000, 0);
-    const gen = s.cupNow().contents_gen;
-    s.w.applyDetections(frame(5), [someone, cup], [standing({ ...AT_MOUTH })]);
-    expect(s.cupNow()).toMatchObject({ contents_gen: gen, facts: { contents: { value: "empty", certainty: "confirmed", by: "person" } } });
-  });
-  it("사람이 답한 값도 사건이 다시 연다", () => {
-    const s = scene();
-    s.w.answerContents("cup_1", "has_contents", 4000, 0);
-    s.w.applyDetections(frame(6), [someone, cup], [standing({ ...AT_MOUTH })]);
-    expect(s.cupNow().facts.contents).toMatchObject({ value: "has_contents", certainty: "inferred" });
-    expect(s.cupNow().facts.contents?.by).toBeUndefined();
   });
 });

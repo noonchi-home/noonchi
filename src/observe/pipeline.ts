@@ -215,8 +215,7 @@ export class ObservationPipeline {
     return r;
   }
 
-  /** 바뀐 World State를 방송한다(기록·판단 계기·실행 추적·대시보드). 관찰 흐름 밖에서 바꾼 변화(사람 답, src/server/home/act.ts)도 이 길로 보낸다. */
-  publish(changes: WorldChange[]): void {
+  private publish(changes: WorldChange[]): void {
     if (this.closed || !changes.length) return;
     for (const c of changes) if (!PER_FRAME.has(c.kind)) this.o.emit({ type: "world_change", at_ms: this.clock.now(), kind: c.kind, text: c.text });
     this.o.onChanges?.(changes);

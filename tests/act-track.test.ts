@@ -6,7 +6,7 @@ import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import type { ActionChoice, ContentsChoice } from "../src/act/prompts.js";
+import type { ActionChoice } from "../src/act/prompts.js";
 import { ExecutionTracker, TRACK_DEFAULTS, type ContentsLook, type Stall, type Stray, type TrackerOptions } from "../src/act/track/tracker.js";
 import type { TrackCore } from "../src/act/track/core.js";
 import { ApprovalStore, type ApprovalAnswer } from "../src/agent/approval.js";
@@ -559,7 +559,7 @@ describe("실행 추적: 그 자리에서 하는 일(do, 채워 주기)", () => 
     expect(calls).toEqual([["cup_1", true], ["cup_1", false], ["cup_2", true]]);
   });
 
-  it("불투명 컵(실제 World State): 물 채우기를 붙잡고 폰이 「컵 비었어요?」를 묻고, 말 「비었어」를 넣은 뒤(출처 사람) 첫 명령을 보낸다", async () => {
+  it("불투명 컵(실제 World State): 물 채우기를 붙잡아도 사용자에게 묻지 않고, 몰라 30초 뒤 「안을 몰라」로 닫는다", async () => {
     const ws = new WorldState({ evidenceStepMs: 1000, surfaces: () => [], floorAt: () => 0, roomAt: () => ({ id: "kitchen", label: "주방" }), devices: () => [] });
     const frame = (i: number): EngineFrame => ({ id: `e${i}`, capturedAtMs: i * 1000, latestAtMs: i * 1000, jpeg: Buffer.from(`${i}`), sha256: sha256(Buffer.from(`${i}`)), width: 480, height: 360, eye: null, view: null });
     for (let i = 1; i <= 3; i++) {
@@ -569,15 +569,13 @@ describe("실행 추적: 그 자리에서 하는 일(do, 채워 주기)", () => 
     const s = fillSetup({
       w: () => ws.view(s.clock.t),
       check: () => checkPlan({ decision: { ...water, atMs: 0 }, tasks: [WATER], plan: s.plans.current()!, world: ws.view(s.clock.t), nowMs: s.clock.t, staleMs: 600_000, mode: "test" }),
-      answerContents: (id, v, g) => ws.answerContents(id, v, s.clock.t, g) !== null, lookContents: (h) => { h.done(); return true; },
+      lookContents: (h) => { h.done(); return true; },
     });
     s.t.onEye([0, 0]);
     await s.decide({ ...water, tasks: [WATER], atMs: 0 });
-    for (let i = 0; i < 20 && !s.commands().length; i++) { s.clock.t += 250; s.t.tick(); }
-    expect(s.last()).toMatchObject({ text: "컵 비었어요?", choices: [], grade: "question" });
-    s.heard("비었어");
-    expect(ws.view(s.clock.t).objects[0]!.facts.contents).toMatchObject({ value: "empty", certainty: "confirmed", by: "person" });
-    expect(s.spoken().at(-1)).toBe("냉장고로 가 주세요");
+    for (let i = 0; i < 140; i++) { s.clock.t += 250; s.t.tick(); }
+    expect(s.commands().filter((c) => c.text.endsWith("?"))).toEqual([]);
+    expect(s.exec().at(-1)).toMatchObject({ state: "failed", text: CHECK_TEXT.unknown_contents });
   });
 
   describe("내용물 보류(실행 전 검사가 컵 안을 몰라 막은 계획)", () => {
@@ -648,92 +646,13 @@ describe("실행 추적: 그 자리에서 하는 일(do, 채워 주기)", () => 
       expect(t2.looks[0]!.signal.aborted).toBe(true);
     });
 
-    describe("말 질문", () => {
-      /** 보류가 묻는 차례까지 간 실행 추적: 위치를 맞췄고 가까이 보기는 받자마자 끝난다. answered는 World State에 넣은 답, bump은 세대를 올린다(사건). */
-      async function asking(over: Parameters<typeof setup>[0] = {}) {
-        const answered: [string, string, number][] = [];
-        let gen = 3;
-        const s = holdSetup({
-          lookContents: (h) => { h.done(); return true; },
-          answerContents: (id, v, g) => {
-            if (g !== gen) return false;
-            answered.push([id, v, g]);
-            gen++;
-            s.set(confirmed(v));
-            return true;
-          },
-          ...over,
-        });
-        s.t.onEye([0, 0]);
-        await s.decide(fillDecision);
-        for (let i = 0; i < 20 && !s.commands().length; i++) { s.clock.t += 250; s.see(s.clock.t); s.t.tick(); }
-        return { ...s, answered, bump: () => { gen++; } };
-      }
-
-      it("가까이 봐도 모르면 지금 명령 줄에 「컵 비었어요?」를 단추 없이 소리로 묻는다(등급 question, 그 컵 고리)", async () => {
-        const s = await asking();
-        expect(s.last()).toEqual({ type: "command", id: "plan:pam-1", step: "plan:pam-1:contents:cup_1:3:1", text: "컵 비었어요?", vision: null, choices: [], target: expect.objectContaining({ id: "cup_1" }), speak: true, grade: "question" });
-        expect(s.t.openCommand()).toMatchObject({ kind: "ask", text: "컵 비었어요?" });
-        expect(s.exec().at(-1)).toMatchObject({ state: "planned", text: EXEC_TEXT.contentsAsked });
-      });
-
-      it("말 「다 마셨어」는 그 컵·세대로 World State에 넣고 질문을 지운 뒤 바로 다시 검사해 첫 명령을 보낸다", async () => {
-        const s = await asking();
-        expect((s.heard("다 마셨어") as ContentsChoice | null)?.value).toBe("empty");
-        expect(s.answered).toEqual([["cup_1", "empty", 3]]);
-        expect(s.spoken().at(-1)).toBe("냉장고로 가 주세요");
-      });
-
-      it("말 「아직 있어」(확인된 반대 값)면 다시 묻지 않고 「안이 맞지 않아」로 닫는다", async () => {
-        const s = await asking();
-        s.heard("아직 있어");
-        s.clock.t += 3_100; s.see(s.clock.t); s.t.tick();
-        expect(s.exec().at(-1)).toMatchObject({ state: "failed", text: CHECK_TEXT.contents_mismatch });
-        expect(s.commands().filter((m) => /:contents:/.test(m.step))).toHaveLength(1);
-      });
-
-      it("다른 명령에 온 말·질문과 상관없는 말은 답이 아니다. 세대가 바뀐 뒤의 답(늦은 답)은 넣지 않는다", async () => {
-        const s = await asking();
-        expect(s.t.onHeard("비었어", { kind: "command", id: "plan:pam-1", step: "plan:pam-1:2", pending: [] })).toEqual({ kind: "stale" });
-        expect(s.heard("TV 켜 줘")).toBeNull();
-        expect(s.heard("시간 없어")).toBeNull();
-        s.bump();
-        s.heard("비었어");
-        expect(s.answered).toEqual([]);
-      });
-
-      it("컵이 확인되면 떠 있는 질문을 지우고(command_clear) 첫 명령을 보낸다", async () => {
-        const s = await asking();
-        s.set(confirmed("empty"));
-        s.clock.t += 250; s.see(s.clock.t); s.t.tick();
-        expect(s.phone.some((m) => m.type === "command_clear")).toBe(true);
-        expect(s.spoken().at(-1)).toBe("냉장고로 가 주세요");
-      });
-
-      it("2분 안에 답이 없으면 「답을 받지 못함」으로 닫고, 같은 컵은 60초 안에 다시 묻지 않는다", async () => {
-        const s = await asking();
-        s.clock.t += 121_000; s.see(s.clock.t); s.t.tick();
-        expect(s.exec().at(-1)).toMatchObject({ state: "failed", text: EXEC_TEXT.noAnswer });
-        const n = s.commands().length;
-        await s.decide({ ...fillDecision, id: "pam-2", seq: 2 });
-        for (let i = 0; i < 40; i++) { s.clock.t += 250; s.see(s.clock.t); s.t.tick(); }
-        expect(s.commands().slice(n).filter((m) => /:contents:/.test(m.step))).toEqual([]);
-      });
-
-      it("묻지 않는 때: 위치를 맞추기 전, 승인 대기가 있을 때, 폰 대화를 쓰는 중, 컵을 손에 들었을 때", async () => {
-        const noEye = holdSetup({ lookContents: (h) => { h.done(); return true; } });
-        await noEye.decide(fillDecision);
-        for (let i = 0; i < 40; i++) { noEye.clock.t += 250; noEye.see(noEye.clock.t); noEye.t.tick(); }
-        expect(noEye.commands()).toEqual([]);
-        expect((await asking({ approvalsWaiting: () => true })).commands()).toEqual([]);
-        expect((await asking({ talking: () => true })).commands()).toEqual([]);
-      });
-
-      it("「그만」이면 질문을 지우고 취소로 닫는다", async () => {
-        const s = await asking();
-        expect(s.heard("그만해")?.id).toBe("stop");
-        expect(s.phone.at(-1)).toEqual({ type: "command_clear", id: "plan:pam-1" });
-      });
+    it("가까이 봐도 모르면 사용자에게 묻지 않는다: 위치를 맞췄어도 명령을 보내지 않고 30초 뒤 「안을 몰라」로 닫는다", async () => {
+      const s = holdSetup({ lookContents: (h) => { h.done(); return true; } });
+      s.t.onEye([0, 0]);
+      await s.decide(fillDecision);
+      for (let i = 0; i < 140; i++) { s.clock.t += 250; s.see(s.clock.t); s.t.tick(); }
+      expect(s.commands()).toEqual([]);
+      expect(s.exec().at(-1)).toMatchObject({ state: "failed", text: CHECK_TEXT.unknown_contents });
     });
   });
 });
@@ -3476,111 +3395,5 @@ describe("실행 추적 + 실제 World State(기준점을 맞춘 카메라)", ()
     grab(5, [235, 170]); // 손목이 컵 상자 안
     expect(ws.view(5000).objects[0]!.facts.place?.value).toBe("in_hand");
     expect(last()).toMatchObject({ step: "plan:pam-1:3", text: STEP_COMMAND.goSink, vision: "컵 · 손에 있음 · 싱크대까지 거리 모름" });
-  });
-});
-
-describe("실행 추적: 계획 밖 내용물 질문(판단 전 보기 B 끝)", () => {
-  const fact = (value: string) => ({ value, at_ms: 9_000, since_ms: 9_000, certainty: "confirmed" as const });
-  const OPAQUE: WorldObject["facts"] = { body: fact("opaque"), contents: fact("contents_unknown") };
-  const GUESS: WorldObject["facts"] = { contents: { ...fact("empty"), certainty: "inferred" } };
-  const NOONCHI = ["컵 치우기", "사용자에게 물어보기", "세탁물 건조기로 옮기기", "에어컨 켜기", "컵 그대로 두기", "컵에 물 채워 주기", "컵에 콜라 따라 주기"];
-  /** 사람이 보이고(먹는 중) 식탁에 컵 하나가 있는 집. 위치는 맞췄다(eye false면 아님). answered는 World State에 넣은 답. */
-  function idleSetup(o: { facts?: WorldObject["facts"]; tasks?: string[]; eye?: boolean; person?: boolean; over?: Parameters<typeof setup>[0] } = {}) {
-    let facts = o.facts ?? OPAQUE;
-    const answered: [string, string, number][] = [];
-    const s = setup({
-      w: () => world([{ ...cup("present", "on_table", 9_000), facts: { ...facts, place: fact("on_table") }, contents_gen: 2 }], o.person === false ? undefined : "eating", 9_000),
-      tasks: () => o.tasks ?? NOONCHI,
-      answerContents: (id, v, g) => { answered.push([id, v, g]); facts = { ...facts, contents: { ...fact(v), by: "person" as const } }; return true; },
-      ...o.over,
-    });
-    if (o.eye !== false) s.t.onEye([0, 0]);
-    const tick = (ms = 250) => { s.clock.t += ms; s.t.tick(); };
-    return { ...s, answered, tick, set: (f: WorldObject["facts"]) => { facts = f; } };
-  }
-
-  it("계획이 없고 불투명 컵이면 B를 기다리지 않고 지금 명령 줄에 「컵 비었어요?」를 단추 없이 묻고, 말 「비었어」를 그 컵·세대로 넣은 뒤 질문을 지운다", () => {
-    const s = idleSetup();
-    s.tick();
-    expect(s.last()).toEqual({ type: "command", id: "ask:1", step: "ask:1:contents:cup_1:2:1", text: "컵 비었어요?", vision: null, choices: [], target: expect.objectContaining({ id: "cup_1" }), speak: true, grade: "question" });
-    expect(s.t.openCommand()).toMatchObject({ planId: "ask:1", kind: "ask", text: "컵 비었어요?" });
-    expect((s.heard("비었어") as ContentsChoice | null)?.value).toBe("empty");
-    expect(s.answered).toEqual([["cup_1", "empty", 2]]);
-    expect(s.last()).toEqual({ type: "command_clear", id: "ask:1" });
-    expect(s.t.openCommand()).toBeNull();
-  });
-
-  it("불투명이 아니면 B가 그 세대에 가까이 본 뒤 4초가 지나야 묻는다", () => {
-    const s = idleSetup({ facts: GUESS });
-    s.tick();
-    expect(s.commands()).toEqual([]);
-    s.t.lookedIdle("cup_1");
-    s.tick(3_500);
-    expect(s.commands()).toEqual([]);
-    s.tick(600);
-    expect(s.last()).toMatchObject({ text: "컵 비었어요?" });
-  });
-
-  it("묻지 않는 때: 위치를 맞추기 전, 사람이 안 보임, 목록에 내용물 행동이 없음(코치 모드), 승인 대기, 폰 대화 중, 이미 확인된 컵", () => {
-    const cases: Parameters<typeof idleSetup>[0][] = [
-      { eye: false }, { person: false }, { tasks: ["라면 끓이기 알려 주기", "사용자에게 물어보기"] },
-      { over: { approvalsWaiting: () => true } }, { over: { talking: () => true } }, { facts: { contents: fact("empty") } },
-    ];
-    for (const o of cases) {
-      const s = idleSetup(o);
-      s.tick();
-      expect(s.commands()).toEqual([]);
-    }
-  });
-
-  it("폰 대화가 시작되면(에이전트가 「아 덥다」를 처리) 떠 있는 질문을 지우고, 대화가 끝난 뒤 새 번호로 다시 묻는다. 앞 질문에 온 답은 늦은 답이다", () => {
-    let talking = false;
-    const s = idleSetup({ over: { talking: () => talking } });
-    s.tick();
-    expect(s.last()).toMatchObject({ id: "ask:1" });
-    talking = true;
-    s.tick();
-    expect(s.last()).toEqual({ type: "command_clear", id: "ask:1" });
-    expect(s.t.onHeard("비었어", { kind: "command", id: "ask:1", step: "ask:1:contents:cup_1:2:1", pending: [] })).toBeNull();
-    talking = false;
-    s.tick();
-    expect(s.last()).toMatchObject({ id: "ask:2", step: "ask:2:contents:cup_1:2:2" });
-    expect(s.t.onHeard("비었어", { kind: "command", id: "ask:1", step: "ask:1:contents:cup_1:2:1", pending: [] })).toEqual({ kind: "stale" });
-    expect(s.answered).toEqual([]);
-  });
-
-  it("계획이 열려 있으면 묻지 않고, 떠 있는 질문은 계획이 시작되면 지운다(계획 명령이 그 자리를 덮어 지우기는 보내지 않는다)", async () => {
-    const s = idleSetup();
-    s.tick();
-    expect(s.last()).toMatchObject({ id: "ask:1" });
-    await s.decide(decision);
-    s.tick();
-    expect(s.t.openCommand()).toMatchObject({ planId: "plan:pam-1", text: "식탁으로 가 주세요" });
-    expect(s.phone.some((m) => m.type === "command_clear" && m.id === "ask:1")).toBe(false);
-    s.tick();
-    expect(s.commands().filter((m) => m.id.startsWith("ask:"))).toHaveLength(1);
-  });
-
-  it("「그만」은 질문을 지운다(답으로 세지 않는다)", () => {
-    const s = idleSetup();
-    s.tick();
-    expect(s.heard("그만해")?.id).toBe("stop");
-    expect(s.last()).toEqual({ type: "command_clear", id: "ask:1" });
-    expect(s.answered).toEqual([]);
-  });
-
-  it("2분 안에 답이 없으면 지우고(물어봄으로 세지 않음) 그 컵은 60초 동안 다시 묻지 않는다. 답한 컵·세대는 다시 묻지 않는다", () => {
-    const s = idleSetup();
-    s.tick();
-    s.tick(120_100);
-    expect(s.last()).toEqual({ type: "command_clear", id: "ask:1" });
-    s.tick(30_000);
-    expect(s.commands().filter((m) => m.speak && m.text === "컵 비었어요?")).toHaveLength(1);
-    s.tick(31_000);
-    expect(s.last()).toMatchObject({ id: "ask:2", text: "컵 비었어요?" });
-    s.heard("아직 있어");
-    s.set(OPAQUE); // 같은 세대로 다시 모름이 되어도
-    s.tick(1_000);
-    expect(s.last()).toEqual({ type: "command_clear", id: "ask:2" });
   });
 });

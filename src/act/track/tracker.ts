@@ -59,7 +59,7 @@
 // 계획 전·실행 전 검사·계획 입력·제출 검사와 대상 고르기가 이미 치운 것으로 본다. 다시 집거나(손에 있음 확인됨) 그 영역 밖(다른 면, 싱크볼이면 싱크볼 밖)에서 보이면 지운다.
 // 파일 나눔(src/act/track/): tracker.ts 겉 클래스·공개 메서드·tick, core.ts 안쪽 공유 객체 TrackCore(상태·기록·실제 폰 길)와 Run, start.ts 판단 받기·계획 시작,
 // steps.ts 단계 진행·치운 물건, approval.ts 승인 질문, safety.ts 켠 위험 가전 추적·끄기 안내(SafetyTracker, 추적 상태는 # 칸), answers.ts 폰 명령 줄·답·말·보내기,
-// coach.ts 다시 알리기·다른 행동·사람 부탁·조용한 단계, contents.ts 내용물 보류(실행 전 검사가 컵 안을 몰라 막은 계획: 가까이 보기 → 사진 기다리기 → 말로 묻기).
+// coach.ts 다시 알리기·다른 행동·사람 부탁·조용한 단계, contents.ts 내용물 보류(실행 전 검사가 컵 안을 몰라 막은 계획: 가까이 보기 → 사진 기다리기 → 기다림, 사용자에게 묻지 않음).
 // 다른 도메인은 src/act/index.ts로 가져온다.
 import type { BrainLog, ExecState, DecisionRecord } from "../../contract/events.js";
 import type { HeardAt, PlannedCommandMessage } from "../../contract/phone.js";
@@ -159,13 +159,11 @@ export interface TrackerOptions {
   stalled?: (s: Stall) => boolean;
   /** 내용물 보류의 가까이 보기(src/act/look.ts contents). 받았으면 true(끝나면 h.done). 없으면 가까이 보지 않고 사진만 기다린다. */
   lookContents?: (h: ContentsLook) => boolean;
-  /** 사람이 말로 답한 내용물을 World State에 넣는다(src/world/state/world.ts answerContents). 세대가 지났으면 false. 없으면 답을 넣지 못한다. */
-  answerContents?: (objectId: string, value: "empty" | "has_contents", gen: number) => boolean;
-  /** 실제 폰에 승인 대기(가전·외부 연락)가 떠 있는가. 있으면 내용물 질문을 미룬다(승인 질문을 덮지 않는다). */
+  /** 실제 폰에 승인 대기(가전·외부 연락)가 떠 있는가. 없으면 없다고 본다. */
   approvalsWaiting?: () => boolean;
-  /** 실제 폰 대화를 쓰는 중인가(에이전트가 들은 말을 처리하는 중이거나 끝난 지 얼마 안 됨). 그동안 내용물 질문을 하지 않는다. */
+  /** 실제 폰 대화를 쓰는 중인가(에이전트가 들은 말을 처리하는 중이거나 끝난 지 얼마 안 됨). 없으면 아니라고 본다. */
   talking?: () => boolean;
-  /** 이번 판단에 보내는 행동 목록(src/act/tasks.ts tasksFor). 내용물 행동(want)이 있을 때만 계획 밖 내용물 질문을 한다. 없으면 묻지 않는다. */
+  /** 이번 판단에 보내는 행동 목록(src/act/tasks.ts tasksFor). 없으면 빈 목록으로 본다. */
   tasks?: () => readonly string[];
   /** 그 자리에서 하는 일 단계가 물건 안을 바꾸는 단계(끝 조건에 그 물건 내용물)일 때 창을 연다·닫는다(src/world/state/world.ts contentsAction). */
   contentsAction?: (objectId: string, on: boolean) => void;
@@ -290,21 +288,10 @@ export class ExecutionTracker {
     const { steps, safety } = core;
     const r = core.run;
     if (!core.stopped) safety.reminderTick();
-    // 계획 밖 내용물 질문(판단 전 보기 B 끝): 계획이 없을 때만 묻고, 막는 것이 생기면 지운다
-    if (!core.stopped) core.contents.idle();
     if (core.stopped || !r || !OPEN.has(r.state)) return;
     const now = core.clock.now();
     if (r.state === "planned" && !r.asking) return core.start.tryStart(r, now - r.since >= core.cfg.recheckMs);
     if (r.asking) {
-      if (r.asking.why === "contents") {
-        // 떠 있는 내용물 질문: 지났으면(컵이 없음·세대가 바뀜·이제 확인됨) 지우고 다시 검사, 기한이 지나면 답을 받지 못함으로 닫는다
-        if (core.contents.lapsed(r)) return core.start.tryStart(r, false);
-        if (now - r.askAt > core.cfg.askMs) {
-          core.contents.noAnswer(r);
-          return steps.finish(r, "failed", EXEC_TEXT.noAnswer);
-        }
-        return steps.repeat(r, now);
-      }
       if (r.asking.why === "again" && steps.look(r)) return;
       if (now - r.askAt > core.cfg.askMs) return steps.finish(r, "failed", EXEC_TEXT.noAnswer);
       return steps.repeat(r, now);
@@ -332,15 +319,9 @@ export class ExecutionTracker {
     if (HUMAN_KINDS.includes(step.kind) || step.kind === "ask") steps.repeat(r, now);
   }
 
-  /** 판단 전 보기 B가 그 컵을 가까이 봤다(src/act/look.ts looked): 계획 밖 내용물 질문을 할지 본다. */
-  lookedIdle(objectId: string): void {
-    this.core.contents.lookedIdle(objectId);
-  }
-
   /** 멈추면 더 기록하지 않고 폰에도 보내지 않는다. 만들던 계획과 멈춘 단계 알림은 끊는다. */
   stop(): void {
     const core = this.core;
-    core.contents.dropIdle(false);
     core.planning?.abort.abort();
     core.planning = null;
     core.run?.stepEnd?.abort();
