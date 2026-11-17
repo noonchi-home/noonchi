@@ -1,0 +1,17 @@
+# 컵이 둘이면 놓기를 끝낸 컵(VLM이 「식탁 위」로 봐도)은 다음 계획 입력에 「이미 치움」으로 가고, 다음 계획은 다른 컵으로 실행 전 검사를 지나 첫 명령을 보낸다
+decision 대기 valid
+decision 컵 치우기 valid
+detection 컵 cup_1 보임
+detection 컵 cup_2 보임
+execution 계획
+execution 대기
+execution 방금 계획한 일이라 잠시 뒤 다시 봄
+execution 실행 중
+execution 완료
+execution 판단
+feedback 완료 · 부탁: 식탁으로 가 주세요
+feedback 완료 · 부탁: 싱크대로 가 주세요
+feedback 완료 · 부탁: 컵을 들어 주세요
+feedback 완료 · 부탁: 컵을 싱크대에 넣어 주세요
+vlm 있음
+world VLM: 컵 둘

@@ -1,0 +1,6 @@
+# 3 같은 장면에서 말이 없으면 에어컨을 켜지 않는다(대조)
+decision 대기 valid
+detection 사람 보임
+execution 대기
+vlm 있음
+world VLM: 집

@@ -8,6 +8,7 @@ import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { expectHistoryGolden, reflectionRows } from "./helpers/history-golden.js";
 import type WebSocket from "ws";
 import { DEMO_APPROVALS, demoSetup } from "../scripts/demo-setup.js";
 import { startFakeOpenAI, type FakeServer } from "../scripts/fake-openai.js";
@@ -31,7 +32,9 @@ let srv: RunningServer | undefined;
 let fake: FakeServer | undefined;
 let pam: FakePamLlm | undefined;
 const sockets: WebSocket[] = [];
-afterEach(async () => {
+afterEach(async (ctx) => {
+  // 기록 DB 같음 시험: 서버를 닫기 전에 반성용 줄 모양을 뽑아 두고, 다 닫은 뒤 정답과 견준다(시험이 실패했으면 견주지 않음)
+  const golden = srv && ctx.task.result?.state !== "fail" ? reflectionRows(srv.history) : null;
   for (const s of sockets.splice(0)) s.close();
   await srv?.close();
   srv = undefined;
@@ -39,6 +42,7 @@ afterEach(async () => {
   fake = undefined;
   await pam?.close();
   pam = undefined;
+  if (golden) await expectHistoryGolden("demo-e2e", ctx.task.name, golden);
 });
 
 const TZ = { HISTORY_TZ_MINUTES: "540" };

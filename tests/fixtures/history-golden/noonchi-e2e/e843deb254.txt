@@ -1,0 +1,17 @@
+# 관찰부터 단계 명령·실행 결과까지 한 흐름으로 돌고 기록·대시보드에 남는다
+decision 대기 valid
+decision 컵 치우기 valid
+detection 컵 cup_1 보임
+execution 계획
+execution 대기
+execution 대상 물건이 이미 싱크대 안이라 실행하지 않아요
+execution 실행 중
+execution 완료
+execution 판단
+feedback 다 했어 · 부탁: 싱크대로 가 주세요
+feedback 완료 · 부탁: 식탁으로 가 주세요
+vlm 있음
+world VLM: 컵
+world 컵 cup_1 손에 있음
+world 컵 cup_1 식탁 위
+world 컵 cup_1 싱크대 안

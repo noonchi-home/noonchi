@@ -360,6 +360,18 @@ describe("낡은 메시지", () => {
     expect(f.check(e("/world/state", { rev: 4, view: {} }, { stamp: 9999, seq: 9 }))).toBe(false);
     expect(f.check(e("/world/state", { rev: 6, view: {} }))).toBe(true);
   });
+
+  it("같은 근거 시각에서 A 인스턴스 → B 인스턴스를 처리한 뒤 A의 이미 처리한 메시지가 다시 와도 버린다(인스턴스마다 처리한 seq를 기억)", () => {
+    const f = new Freshness(() => EPOCH);
+    const at = (inst: string, seq: number) => e("/perception/analysis", { frame_id: "f1", observed_ms: 1000 }, { inst, seq }, "f1");
+    f.commit(at("A", 5));
+    expect(f.check(at("B", 1))).toBe(true);
+    f.commit(at("B", 1));
+    expect(f.check(at("A", 5))).toBe(false);
+    expect(f.check(at("A", 4))).toBe(false);
+    expect(f.check(at("B", 1))).toBe(false);
+    expect(f.check(at("A", 6))).toBe(true);
+  });
 });
 
 describe("요청 id", () => {
@@ -482,37 +494,47 @@ export const frameBytes = (body: { jpeg_b64: string }): Buffer => Buffer.from(bo
 
 ```ts
 // fresh.ts — 낡은 메시지 보기(받는 쪽 한곳): 지금 기동·집이 아니면 버린다. 순서 기준(토픽 표 order)이 있으면 (토픽, 열쇠)마다
-// 확정한 마지막 값보다 옛것(근거 시각·판본이 작음, 같으면 같은 노드 인스턴스의 이미 본 seq)을 버린다. 확정(commit)은 처리가 성공한 뒤에만 한다.
+// 확정한 가장 큰 근거 값(근거 시각·판본·발행 시각)보다 옛것을 버린다. 같은 근거 값이면 보낸 노드 인스턴스마다 확정한 seq를 기억해
+// 그 인스턴스의 이미 처리한 seq를 버린다(다른 인스턴스를 처리한 뒤에도). 더 큰 근거 값을 확정하면 인스턴스 기억은 새로 시작한다.
+// 확정(commit)은 처리가 성공한 뒤에만 한다.
 import type { Envelope } from "./header.js";
 import { TOPICS, type TopicName } from "./topics.js";
 
-type Mark = { at: number; node: string; inst: string; seq: number };
+/** (토픽, 열쇠)마다: 확정한 가장 큰 근거 값과, 그 값에서 인스턴스마다 확정한 가장 큰 seq. */
+type Mark = { at: number; seqs: Map<string, number> };
 const SEP = "|";
 
 export class Freshness {
   readonly #last = new Map<string, Mark>();
   constructor(private readonly epoch: () => { boot: string; home: string }) {}
 
-  #mark(e: Envelope<TopicName>): Mark | null {
+  #at(e: Envelope<TopicName>): number | null {
     const order = TOPICS[e.topic].order;
     if (order === null) return null;
-    const b = e.body as Record<string, unknown>;
-    const at = order === "stamp" ? e.header.stamp : Number(b[order]);
-    return { at, node: e.header.node, inst: e.header.inst, seq: e.header.seq };
+    return order === "stamp" ? e.header.stamp : Number((e.body as Record<string, unknown>)[order]);
   }
 
   check(e: Envelope<TopicName>): boolean {
     const now = this.epoch();
     if (e.header.boot !== now.boot || e.header.home !== now.home) return false;
-    const m = this.#mark(e);
-    const p = m && this.#last.get(e.topic + SEP + e.key);
-    if (!m || !p) return true;
-    return m.at > p.at || (m.at === p.at && !(m.node === p.node && m.inst === p.inst && m.seq <= p.seq));
+    const at = this.#at(e);
+    const p = at === null ? undefined : this.#last.get(e.topic + SEP + e.key);
+    if (at === null || !p) return true;
+    if (at !== p.at) return at > p.at;
+    const seen = p.seqs.get(e.header.node + SEP + e.header.inst);
+    return seen === undefined || e.header.seq > seen;
   }
 
   commit(e: Envelope<TopicName>): void {
-    const m = this.#mark(e);
-    if (m) this.#last.set(e.topic + SEP + e.key, m);
+    const at = this.#at(e);
+    if (at === null) return;
+    const k = e.topic + SEP + e.key;
+    const p = this.#last.get(k);
+    if (p && at < p.at) return;
+    const mark = p && at === p.at ? p : { at, seqs: new Map<string, number>() };
+    const who = e.header.node + SEP + e.header.inst;
+    mark.seqs.set(who, Math.max(mark.seqs.get(who) ?? 0, e.header.seq));
+    this.#last.set(k, mark);
   }
 }
 ```
@@ -560,7 +582,7 @@ git push
 ### Task 2: 실행기 `BusNode` · `MemoryBus` · 통로 계약 시험
 
 **Files:**
-- Create: `src/bus/bus.ts`, `src/bus/memory.ts`, `src/bus/node.ts`, `src/bus/clock.ts`, `src/bus/open.ts`
+- Create: `src/bus/bus.ts`, `src/bus/memory.ts`, `src/bus/node.ts`, `src/bus/clock.ts`(`src/bus/open.ts`는 `redis.ts`를 가져오므로 Task 3에서 만든다)
 - Create: `tests/helpers/bus-contract.ts`
 - Test: `tests/bus-memory.test.ts`, `tests/bus-node.test.ts`
 
@@ -766,7 +788,7 @@ export function busContract(name: string, make: () => Promise<Bus>, opts: { leng
 import { MemoryBus } from "../src/bus/memory.js";
 import { busContract } from "./helpers/bus-contract.js";
 
-busContract("MemoryBus", async () => new MemoryBus(), { length: async (b, t) => (b as MemoryBus).length(t) });
+busContract("MemoryBus", async () => new MemoryBus(() => {}), { length: async (b, t) => (b as MemoryBus).length(t) });
 ```
 
 `tests/bus-node.test.ts`:
@@ -1454,7 +1476,7 @@ export async function openBus(env: Record<string, string | undefined>, o: { boot
 }
 ```
 
-`index.ts`에 `MAX_DELIVERIES`, `RETRY_MS`, `type Bus`, `type Outcome`, `type Subscription`, `BusNode`, `MemoryBus`, `VirtualClock`, `realClock`, `type Clock`, `openBus`를 더한다.
+`index.ts`에 `MAX_DELIVERIES`, `RETRY_MS`, `type Bus`, `type Outcome`, `type Subscription`, `BusNode`, `MemoryBus`, `VirtualClock`, `realClock`, `type Clock`를 더한다(`openBus`는 Task 3).
 
 - [ ] **Step 6: 통과를 확인한다**
 
@@ -1472,8 +1494,8 @@ git push
 ### Task 3: `RedisBus` · 디스크 저장 끔 · 개발용·AWS Redis 컨테이너
 
 **Files:**
-- Create: `src/bus/redis.ts`, `compose.dev.yaml`, `tests/bus-redis.test.ts`, `tests/bus-persistence.test.ts`
-- Modify: `package.json`·`package-lock.json`(`redis` 6.3.1 정확히), `compose.yaml`(`redis` 서비스, noonchi `REDIS_URL`·`depends_on`), `.env.example`(`REDIS_URL`), `tests/deploy-files.test.ts`
+- Create: `src/bus/redis.ts`, `src/bus/open.ts`(Task 2의 `open.ts` 코드, `index.ts`에 `openBus`), `compose.dev.yaml`, `tests/bus-redis.test.ts`, `tests/bus-persistence.test.ts`
+- Modify: `package.json`·`package-lock.json`(`redis` 6.3.1 정확히), `compose.yaml`(`redis` 서비스, noonchi `REDIS_URL`·`depends_on`), `.env.example`·`docs/reference.md`(`REDIS_URL`), `tests/deploy-files.test.ts`
 
 **Interfaces:**
 - Consumes: Task 2 `Bus`, `Deliver`, `Subscription`, `MAX_DELIVERIES`, `RETRY_MS`, `gapCounter`, `deadBody`, 계약 시험.
@@ -1668,6 +1690,11 @@ export class RedisBus implements Bus {
 
   #k(topic: string): string { return `${this.prefix}${topic}`; }
 
+  /** 스트림의 가장 새 항목(없으면 undefined). */
+  async #newest(k: string) {
+    return ((await this.client.xRevRange(k, "+", "-", { COUNT: 1 })) ?? [])[0];
+  }
+
   #open(): void {
     if (this.#lost) throw new Error(LOST);
   }
@@ -1695,7 +1722,7 @@ export class RedisBus implements Bus {
     let on = true;
     let started = false;
     let loop: Promise<void> = Promise.resolve();
-    const tailEntry = (await this.client.xRevRange(k, "+", "-", { COUNT: 1 }))[0];
+    const tailEntry = (await this.#newest(k));
     const tail = tailEntry?.id ?? "0-0";
     const all = q.kind === "sensor" && o.mode === "all";
     const gaps = gapCounter(all && tailEntry?.message.m ? decode(topic, tailEntry.message.m) : undefined);
@@ -1743,7 +1770,7 @@ export class RedisBus implements Bus {
       /** 스냅숏: 카운터·알림 위치를 먼저 잡고 모든 열쇠의 지금 값을 준다. 그 뒤 알림을 이어 읽는다. */
       const snapshot = async () => {
         lastN = Number((await this.client.get(`${k}:n`)) ?? 0);
-        last = (await this.client.xRevRange(k, "+", "-", { COUNT: 1 }))[0]?.id ?? "0-0";
+        last = (await this.#newest(k))?.id ?? "0-0";
         for (const raw of Object.values(await this.client.hGetAll(`${k}:state`))) if (on) await deliver(decode(topic, raw));
         synced = true;
       };
@@ -1776,7 +1803,7 @@ export class RedisBus implements Bus {
           }
           return;
         }
-        const newest = (await this.client.xRevRange(k, "+", "-", { COUNT: 1 }))[0];
+        const newest = (await this.#newest(k));
         if (!newest || cmpId(newest.id, last) <= 0) return;
         last = newest.id;
         if (on) await deliver(decode(topic, newest.message.m!));
@@ -1809,7 +1836,7 @@ export class RedisBus implements Bus {
     const keep: string[] = [];
     for (const g of groups) {
       const p = await this.client.xPending(k, g.name);
-      keep.push(p.pending > 0 && p.firstId ? p.firstId : nextId(g.lastDeliveredId));
+      keep.push(p.pending > 0 && p.firstId ? p.firstId : nextId(g["last-delivered-id"]));
     }
     await this.client.xTrim(k, "MINID", keep.sort(cmpId)[0]!);
   }
@@ -2262,7 +2289,7 @@ Expected: 모두 PASS(이 묶음은 집 실행 묶음을 바꾸지 않는다).
 
 - [ ] **Step 2: 기록 DB 같음 시험의 정답을 잡는다(묶음 2·3이 쓴다)**
 
-지금 방식으로 `demo-e2e`·`noonchi-e2e`·`cup-branches-e2e` 시나리오를 돌린 기록 DB에서 반성용 줄(`DAY_KINDS`·`HABIT_KINDS`의 `kind`·`text`·`subject`·`data`, 시각 대신 시나리오 안 차례)을 뽑아 `tests/fixtures/history-golden/<시나리오>.json`에 남긴다. 뽑는 함수 `reflectionRows(db, day)`는 `tests/helpers/history-golden.ts`에 둔다. 묶음 2부터 같은 시나리오를 통로 방식으로 돌려 `reflectionRows`가 정답과 같은지 `tests/history-golden.test.ts`가 본다.
+`tests/helpers/history-golden.ts` `reflectionRows(db)`가 반성이 읽는 종류(detection·world·device·decision·execution·feedback)의 서로 다른 줄을 가나다 차례로 뽑는다(시각·줄 수·계획 id를 빼고, VLM·YOLO는 있는지만. 판단 주기·프레임 수는 시간에 따라 달라서). `demo-e2e`·`noonchi-e2e`·`cup-branches-e2e`의 `afterEach`가 서버를 닫기 전에 뽑아 `expectHistoryGolden`으로 `tests/fixtures/history-golden/<파일>/<시험 이름 해시>.txt`(첫 줄이 시험 이름)와 견준다. 지금 방식으로 두 번 돌려 같은지 보고 정답을 커밋한다. 묶음 2부터 같은 e2e가 통로 방식으로 같은 줄을 남겨야 한다(기록 DB 같음 시험).
 
 - [ ] **Step 3:** 묶음 1 해시를 조정자에게 보내고 묶음 2 단계 계획을 이 파일에 더해 Codex 검토를 받는다.
 

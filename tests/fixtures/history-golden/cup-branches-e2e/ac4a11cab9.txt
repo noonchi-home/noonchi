@@ -1,0 +1,20 @@
+# 사람이 먹는 중 + 빈 컵 → 컵에 물 채워 주기: 네 명령이 차례로 오고, 병 집기는 병이 손에 있음으로 보일 때, 따르기는 컵이 내용물 있음일 때 「완료」 없이 넘어가 계획이 끝난다. PAM에는 사진이 가지 않는다
+decision 대기 valid
+decision 컵에 물 채워 주기 valid
+detection 병 bottle_1 보임
+detection 사람 보임
+detection 컵 cup_1 보임
+execution 같은 행동을 진행 중
+execution 계획
+execution 대기
+execution 실행 중
+execution 완료
+execution 판단
+feedback 완료 · 부탁: 냉장고로 가 주세요
+feedback 완료 · 부탁: 식탁으로 가 주세요
+vlm 있음
+world VLM: 식탁
+world 병 bottle_1 식탁 위
+world 사람 물건을 들고 있음
+world 컵 cup_1 내용물 있음
+world 컵 cup_1 비어 있음
