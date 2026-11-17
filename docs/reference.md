@@ -147,6 +147,7 @@ HUB=memory npm run demo
 | `THINQ_POLL_MS`, `THINQ_READBACK_MS`, `THINQ_TIMEOUT_MS` | `15000`, `1000,2000,4000`, `10000` | 짝지은 기기 읽기 간격(`0`이면 처음 한 번), 명령 뒤 다시 읽기 전 기다림, 요청 제한 시간 |
 | `THINQ_BASE_URL` | (지역 주소) | ThinQ 주소를 바꾼다(시험의 가짜 서버) |
 | `CALL_SERVICE_URL` | (없음) | 외부 연락(AS센터 전화·보호자 연락)을 받는 전화 서비스 주소(http(s)). 사용자가 실제 폰에서 승인하면 연락 하나를 JSON으로 POST한다(아래 「외부 연락」). 비우면 부르지 않고 「전화 서비스가 아직 연결되지 않았어요.」. http(s) 주소가 아니면 시작하지 않는다 |
+| `REDIS_URL` | (없음) | 노드 통로 Redis 주소. 비우면 메모리 통로. 이 PC 개발용은 `compose.dev.yaml`의 `noonchi-redis`(`redis://127.0.0.1:6379`), compose 안에서는 `redis://redis:6379`. Redis 디스크 저장이 켜져 있으면(`appendonly`·`save`) 통로를 열지 않는다. 계획: `docs/superpowers/plans/2026-11-17-stage-queue.md` |
 
 선택 값은 `.env.example`에서 주석으로 두었다. 빈 값(`MATTER_X=`)으로 두면 matter.js가 자기 설정으로 읽을 수 있어서다.
 

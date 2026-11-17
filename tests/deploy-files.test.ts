@@ -124,6 +124,26 @@ describe("배포 파일", () => {
     expect(missing, "compose.yaml noonchi environment에 더하세요").toEqual([]);
   });
 
+  it("compose: redis는 판을 고정한 공식 이미지, 디스크 저장 끔, 볼륨·호스트 포트 없음, noonchi가 REDIS_URL로 붙는다", () => {
+    const c = parse(read("compose.yaml"), { merge: true }) as { services: Record<string, any> };
+    const r = c.services.redis;
+    expect(r.image).toBe("redis:8.10.2-alpine@sha256:9f8d2d789b9a1d1e3f283f979aa9cbf393373806472e1ccd460e2f9c869b833b");
+    expect(r.command).toEqual(["redis-server", "--appendonly", "no", "--save", "", "--maxmemory", "512mb", "--maxmemory-policy", "noeviction"]);
+    expect(r.volumes).toBeUndefined();
+    expect(r.ports).toBeUndefined();
+    expect(c.services.noonchi.environment.REDIS_URL).toBe("redis://redis:6379");
+    expect(c.services.noonchi.depends_on.redis).toEqual({ condition: "service_healthy" });
+  });
+
+  it("개발용 compose: noonchi-redis가 같은 이미지·같은 디스크 저장 끔으로 127.0.0.1:6379만 연다", () => {
+    const d = parse(read("compose.dev.yaml")) as { services: Record<string, any> };
+    const c = parse(read("compose.yaml"), { merge: true }) as { services: Record<string, any> };
+    expect(d.services.redis.image).toBe(c.services.redis.image);
+    expect(d.services.redis.container_name).toBe("noonchi-redis");
+    expect(d.services.redis.ports).toEqual(["127.0.0.1:6379:6379"]);
+    expect(d.services.redis.command.slice(0, 5)).toEqual(["redis-server", "--appendonly", "no", "--save", ""]);
+  });
+
   it("저장소·CI에 Python PAM이 없다(services/pam, pytest, PAM 이미지)", () => {
     expect(existsSync("services/pam")).toBe(false);
     expect(read(".github/workflows/ci.yml")).not.toMatch(/pytest|services\/pam|noonchi-pam|setup-python/);

@@ -1,0 +1,8 @@
+# 이 PC 개발·시험용 Redis(노드 통로). 실제 Redis 시험 때만 켠다: docker compose -f compose.dev.yaml up -d redis
+# 시험·개발 서버는 REDIS_URL=redis://127.0.0.1:6379. 이미지·판·디스크 저장 끔은 compose.yaml redis와 같다.
+services:
+  redis:
+    image: redis:8.10.2-alpine@sha256:9f8d2d789b9a1d1e3f283f979aa9cbf393373806472e1ccd460e2f9c869b833b
+    container_name: noonchi-redis
+    command: ["redis-server", "--appendonly", "no", "--save", "", "--maxmemory", "256mb", "--maxmemory-policy", "noeviction"]
+    ports: ["127.0.0.1:6379:6379"]
