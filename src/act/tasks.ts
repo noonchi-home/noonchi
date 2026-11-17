@@ -154,6 +154,16 @@ export function planTargetId(plan: PlanView): string | null {
   return plan.steps.find((s) => s.kind === "act" && s.target?.objectId)?.target?.objectId ?? null;
 }
 
+/** 계획 단계 대상(objectId) 가운데 World State에서 그 종류인 물건 id 전부(단계 차례, 겹치지 않게). */
+export function planObjectsOf(plan: PlanView, world: WorldView, cls: ObjClass): string[] {
+  const out: string[] = [];
+  for (const s of plan.steps) {
+    const id = s.target?.objectId;
+    if (id && !out.includes(id) && world.objects.some((o) => o.id === id && o.cls === cls)) out.push(id);
+  }
+  return out;
+}
+
 /** 계획 단계 대상(objectId) 가운데 World State에서 그 종류인 첫 물건 id. 없으면 null. */
 export function planObjectOf(plan: PlanView, world: WorldView, cls: ObjClass): string | null {
   for (const s of plan.steps) {

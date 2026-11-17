@@ -49,6 +49,23 @@ describe("행동 조건(내용물)", () => {
     expect(checkPlan(fill({ value: "empty", certainty: "inferred" }, { last_seen_ms: 1_000 }))).toMatchObject({ reason: "stale" });
     expect(checkPlan(fill({ value: "empty", certainty: "inferred" }, { facts: { place: { value: "in_hand", at_ms: 9_000, since_ms: 9_000, certainty: "confirmed" } } }))).toMatchObject({ reason: "in_hand" });
   });
+  const cupOf = (id: string, value: string, certainty: "confirmed" | "inferred" = "confirmed", seen = 9_000) =>
+    obj({ id, last_seen_ms: seen, facts: { contents: { value, at_ms: 9_000, since_ms: 9_000, certainty } } });
+  it("계획 전 검사: 컵이 여럿이면 조건에 맞는 컵이 하나라도 있으면 통과, 다 확인된 반대 값일 때만 막는다(가장 최근 컵 하나로 정하지 않는다)", () => {
+    const two = (a: WorldObject, b: WorldObject) => ({ ...fill(), world: { ...base().world, objects: [a, b] } });
+    // 가장 최근에 본 찬 컵(cup_2)과 빈 컵(cup_1): 채울 수 있다
+    expect(pre(two(cupOf("cup_1", "empty", "confirmed", 8_500), cupOf("cup_2", "has_contents", "confirmed", 9_500)))).toEqual({ ok: true });
+    expect(pre(two(cupOf("cup_1", "has_contents", "confirmed", 8_500), cupOf("cup_2", "has_contents", "confirmed", 9_500)))).toMatchObject({ reason: "contents_mismatch" });
+    // 모르는 컵이 있으면 계획으로 넘긴다(실행 전 검사가 붙잡는다)
+    expect(pre(two(cupOf("cup_1", "empty", "inferred", 8_500), cupOf("cup_2", "has_contents", "confirmed", 9_500)))).toEqual({ ok: true });
+  });
+  it("실행 전 검사: 계획이 따르는 컵 전부를 본다(빈 컵 A 뒤 찬 컵 B에도 따르면 B로 막고, B를 모르면 B를 붙잡는다)", () => {
+    const steps = [...fill().plan!.steps, { id: "s3", kind: "act" as const, label: "l", target: { objectId: "cup_2" }, status: "pending" as const }];
+    const both = (b: WorldObject) => ({ ...fill(), plan: { ...fill().plan!, steps }, world: { ...base().world, objects: [cupOf("cup_1", "empty"), b] } });
+    expect(checkPlan(both(cupOf("cup_2", "has_contents")))).toMatchObject({ reason: "contents_mismatch" });
+    expect(checkPlan(both(cupOf("cup_2", "empty", "inferred")))).toEqual({ ok: false, reason: "contents_unknown", text: CHECK_TEXT.contents_unknown, object: "cup_2" });
+    expect(checkPlan(both(cupOf("cup_2", "empty")))).toEqual({ ok: true });
+  });
 });
 
 describe("실행 전 검사", () => {

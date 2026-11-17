@@ -252,6 +252,14 @@ describe("마시기·따르기 사건", () => {
     s.say(12, "empty");
     expect(s.cupNow().facts.contents).toMatchObject({ value: "empty", certainty: "confirmed" });
   });
+  it("따름: 중력이 사진 축에서 20° 넘게 기울면(상자로는 병 방향을 모름) 보류한다: 45°로 든 폰에서 세운 병도 기운 병도 따르기로 보지 않는다", () => {
+    const D45: [number, number] = [Math.SQRT1_2, Math.SQRT1_2];
+    // 세운 25×70 병을 45° 돌린 사진 상자(약 67×67): 중력 위쪽으로 컵 바로 위에 있다(상자로만 보면 기운 병으로 보인다)
+    const p = describePose(standing({ 10: [210, 90, 0.9] }));
+    expect(pouringInto([p], [180, 60, 67, 67], CUP_BOX, D45)).toBe(false);
+    expect(pouringInto([pourer], BOTTLE_TILT, CUP_BOX, [Math.sin(0.3), Math.cos(0.3)])).toBe(true); // 17°: 본다
+  });
+
   it("기운 병을 컵 위에서 들면 그 컵이 「따르는 모습」으로 열린다(카메라 자세가 있을 때만)", () => {
     const s = scene(LOOK_VIEW);
     for (const i of [1, 3, 5]) s.say(i, "empty");

@@ -13,7 +13,7 @@ import type { ControlMode } from "../contract/setup.js";
 import type { WorldView } from "../contract/world.js";
 import { CHECK_TEXT } from "./labels.js";
 import type { DecisionRecord } from "../contract/events.js";
-import { holdsTarget, planObjectOf, putAway, targetOf, taskOf, wantOf, type Placed } from "./tasks.js";
+import { holdsTarget, planObjectOf, planObjectsOf, putAway, taskOf, wantOf, type Placed } from "./tasks.js";
 
 export type CheckFail = keyof typeof CHECK_TEXT;
 /** carried: in_hand가 대상 물건의 들고 감 보호(World State 물건 carried)에서만 왔다. 실행 추적은 이때 보호가 풀릴 때까지 다시 보기 기한을 세지 않는다. */
@@ -50,9 +50,13 @@ export function checkDecision(i: Pick<CheckInput, "decision" | "tasks" | "world"
     return fail(i.world.objects.some((x) => x.cls === spec.target && x.status !== "gone" && putAway(x, i.placed)) ? "in_sink" : "no_target");
   }
   if (spec.want) {
-    const o = targetOf(spec, i.world, i.placed);
-    const w = o ? wantOf(spec, o) : null;
-    if (w && !w.ok && (w.why === "mismatch" || spec.plan === false)) return fail(w.why === "mismatch" ? "contents_mismatch" : "contents_unknown");
+    // 대상이 정해지기 전이라 후보 전부를 본다: 맞는 컵이 하나라도 있으면 통과, 모르는 컵이 있으면 계획으로 넘기고(계획 없는 행동은 막음), 다 반대 값이면 막는다
+    const ws = i.world.objects.filter((o) => o.cls === spec.target && o.status !== "gone" && !putAway(o, i.placed)).map((o) => wantOf(spec, o));
+    if (ws.length && !ws.some((w) => w.ok)) {
+      const unknown = ws.some((w) => !w.ok && w.why === "unknown");
+      if (!unknown) return fail("contents_mismatch");
+      if (spec.plan === false) return fail("contents_unknown");
+    }
   }
   return { ok: true };
 }
@@ -74,8 +78,12 @@ export function checkPlan(i: CheckInput): CheckResult {
       return o.carried === true && o.facts.place?.value === "in_hand" && !inUse && !holds ? { ok: false, reason: "in_hand", text: CHECK_TEXT.in_hand, carried: true } : fail("in_hand");
     }
     if (spec.want) {
-      const w = wantOf(spec, o);
-      if (!w.ok) return w.why === "mismatch" ? fail("contents_mismatch") : { ok: false, reason: "contents_unknown", text: CHECK_TEXT.contents_unknown, object: o.id };
+      // 계획이 다루는 그 종류 물건 전부(따르기 단계 대상이 여럿일 수 있다): 하나라도 반대 값이면 막고, 모르면 그 물건을 붙잡는다
+      const all = planObjectsOf(i.plan, i.world, spec.target).map((id) => i.world.objects.find((x) => x.id === id)!).filter((x) => x.status !== "gone");
+      const ws = all.map((x) => ({ x, w: wantOf(spec, x) }));
+      if (ws.some(({ w }) => !w.ok && w.why === "mismatch")) return fail("contents_mismatch");
+      const unknown = ws.find(({ w }) => !w.ok);
+      if (unknown) return { ok: false, reason: "contents_unknown", text: CHECK_TEXT.contents_unknown, object: unknown.x.id };
     }
   }
   // 손 자리를 모르면(맞추기 전) 길 없이 「완료」로 넘긴다. 자리를 아는데 길이 없을 때만 막는다
