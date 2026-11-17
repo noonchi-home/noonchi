@@ -120,7 +120,7 @@ export class WorldState {
   /** 전체 사진의 VLM 답(facts.ts). */
   /** 장면 VLM 답: 물건 목록(sceneobjects.ts, VLM 무조건 우선)을 먼저 넣어 답 번호를 물건 id에 잇고, 사실을 넣는다(facts.ts). look: 그 사진의 카메라·크기. */
   applyScene(frameId: string, capturedAtMs: number, scene: SceneObservation, ids: Map<string, string>, look?: SceneLook): WorldChange[] {
-    const linked = this.core.scene.link(frameId, capturedAtMs, scene, ids, look, this.eye ? this.eye.position : null);
+    const linked = this.core.scene.link(frameId, capturedAtMs, scene, ids, look);
     return [...linked, ...this.core.vlm.applyScene(frameId, capturedAtMs, scene, ids)];
   }
 

@@ -17,7 +17,9 @@ const cupIn = det("cup", CUP);
 const lifted = det("cup", [60, 300, 40, 20]);
 const frac = (b: [number, number, number, number]) => ({ x: b[0] / 480, y: b[1] / 360, w: b[2] / 480, h: b[3] / 360 });
 const look = { view: LOOK_VIEW, ...LOOK_SIZE };
-const full = (w: WorldState, id: string, atMs: number, dets: Detection[]) => w.applyDetections(engineFrame(id, atMs, { view: LOOK_VIEW }), dets);
+/** 전체 사진 YOLO 한 장. eye: 그 사진을 찍은 폰 눈 수평 자리(없으면 모름). */
+const full = (w: WorldState, id: string, atMs: number, dets: Detection[], eye?: [number, number]) =>
+  w.applyDetections({ ...engineFrame(id, atMs, { view: LOOK_VIEW }), eye: eye ? { position: eye, height_m: 1.4, yaw_deg: 0, pitch_deg: 0 } as never : null }, dets);
 /** 장면 VLM 답: 물건 하나(종류·상자·det)와 그 사실. */
 const scene = (o: { cls?: string; box?: [number, number, number, number]; det?: string | null; facts?: SceneState[] } = {}): SceneObservation => ({
   scene: "k", summary: "s",
@@ -67,13 +69,19 @@ describe("든 컵 잇기(1인칭 집기)", () => {
   it("식탁 컵 가까이(폰 눈 1.5m 안)에서 들린 컵을 YOLO가 다른 자리 새 후보로 잡아도, 장면 VLM이 손에 있음으로 답하면 그 컵(cup_1)으로 잇고 손에 있음을 넣는다. 새 id가 생기지 않는다", () => {
     const w = ws();
     for (let t = 0; t <= 2000; t += 500) full(w, `e${t}`, t, [cupIn]);
-    w.setEye({ position: [1, 0], height_m: 1.4, yaw_deg: 0, pitch_deg: 0 }, 2000);
-    full(w, "e2500", 2500, [lifted]);
-    const r = full(w, "e3000", 3000, [lifted]);
-    w.applyScene("e3000", 3000, scene({ box: [60, 300, 40, 20], det: "d1", facts: ["in_hand"] }), r.ids, look);
+    // 그 사진을 찍은 때의 폰 눈(Codex 25ddddd 6: 답이 온 때의 눈이 아니다)
+    const near = { ...look, eye: [1, 0] as [number, number] };
+    w.setEye({ position: [9, 9], height_m: 1.4, yaw_deg: 0, pitch_deg: 0 }, 2000);
+    full(w, "e2500", 2500, [lifted], [1, 0]);
+    const r = full(w, "e3000", 3000, [lifted], [1, 0]);
+    w.applyScene("e3000", 3000, scene({ box: [60, 300, 40, 20], det: "d1", facts: ["in_hand"] }), r.ids, near);
     expect(r.ids.get("d1")).toBe("cup_1");
-    expect(w.view(3000).objects.find((o) => o.id === "cup_1")!.facts.place?.value).toBe("in_hand");
-    for (let t = 3500; t <= 8000; t += 500) full(w, `e${t}`, t, [lifted]);
+    // 손에 있음은 VLM 사진 2장 이어서일 때만 켠다(가로 유리컵 r4: 손이 없는 장면 한 장의 손에 있음 오탐)
+    expect(w.view(3000).objects.find((o) => o.id === "cup_1")!.facts.place?.value).not.toBe("in_hand");
+    const r2 = full(w, "e4000", 4000, [lifted], [1, 0]);
+    w.applyScene("e4000", 4000, scene({ box: [60, 300, 40, 20], det: "d1", facts: ["in_hand"] }), r2.ids, near);
+    expect(w.view(4000).objects.find((o) => o.id === "cup_1")!.facts.place?.value).toBe("in_hand");
+    for (let t = 4500; t <= 8000; t += 500) full(w, `e${t}`, t, [lifted], [1, 0]);
     expect(objs(w, 8000)).toEqual([["cup_1", "cup", "present"]]);
   });
 });
@@ -112,5 +120,107 @@ describe("물건 식별과 종류(Codex 75104d7·38b5c83)", () => {
     w.applyScene("e5000", 5000, scene({ cls: "bottle" }), new Map(), look);
     for (let t = 5500; t <= 9000; t += 500) full(w, `e${t}`, t, [cupIn]);
     expect(w.view(9000).objects.map((o) => o.id)).toEqual(["cup_1"]);
+  });
+});
+
+// 가로 유리컵 실제 판 r4(2026-11-18): 컵의 놓인 곳이 VLM 답마다 식탁 위 → 선반 위 → 식탁 위 → 책상 위 → 조리대 위로 바뀌었고, 계획이 「맞지 않아 버림」으로 끝났다.
+// 손이 없는 장면에서 손에 있음이 한 장 켜졌고, 상자 투영이 흔들려 같은 자리에 bottle_5가 새로 생겼다
+describe("VLM 동기화 흔들림 막기", () => {
+  const confirmed = () => {
+    const w = ws();
+    for (let t = 0; t <= 2000; t += 500) full(w, `e${t}`, t, [cupIn]);
+    w.applyScene("e2000", 2000, scene({ facts: ["on_table"] }), new Map(), look);
+    return w;
+  };
+  const place = (w: WorldState, at: number) => w.view(at).objects[0]!.facts.place?.value;
+
+  it("확인된 물건의 놓인 곳은 VLM 사진 2장이 이어서 같은 새 값을 말할 때만 바뀐다. 한 장씩 흔들리는 값은 버린다", () => {
+    const w = confirmed();
+    expect(place(w, 2000)).toBe("on_table");
+    const said: [number, SceneState][] = [[4000, "on_shelf"], [6000, "on_table"], [8000, "on_desk"], [10_000, "on_counter"], [12_000, "on_table"], [14_000, "on_shelf"]];
+    for (const [at, s] of said) {
+      w.applyScene(`e${at}`, at, scene({ facts: [s] }), new Map(), look);
+      expect(place(w, at)).toBe("on_table");
+    }
+    // 같은 원본 프레임 두 답은 2장이 아니다
+    w.applyScene("e14000", 14_000, scene({ facts: ["on_shelf"] }), new Map(), look);
+    expect(place(w, 14_000)).toBe("on_table");
+    w.applyScene("e16000", 16_000, scene({ facts: ["on_shelf"] }), new Map(), look);
+    expect(place(w, 16_000)).toBe("on_shelf");
+  });
+
+  it("손에 있음은 VLM 사진 2장 이어서일 때만 켠다", () => {
+    const w = confirmed();
+    w.applyScene("e4000", 4000, scene({ facts: ["in_hand"] }), new Map(), look);
+    w.applyScene("e6000", 6000, scene({ facts: ["on_table"] }), new Map(), look);
+    expect(place(w, 6000)).toBe("on_table");
+    w.applyScene("e8000", 8000, scene({ facts: ["in_hand"] }), new Map(), look);
+    w.applyScene("e10000", 10_000, scene({ facts: ["in_hand"] }), new Map(), look);
+    expect(place(w, 10_000)).toBe("in_hand");
+  });
+
+  it("VLM 상자 투영의 작은 흔들림(0.3m 안)은 자리를 바꾸지 않고, 0.5m 안 흔들림에도 새 id가 생기지 않는다(종류가 병으로 흔들려도)", () => {
+    const w = confirmed();
+    const at0 = w.view(2000).objects[0]!.position!;
+    const jitter: [number, number, number, number][] = [[226, 168, 20, 10], [236, 173, 20, 10], [224, 166, 20, 10], [238, 175, 20, 10]];
+    jitter.forEach((b, i) => {
+      const at = 4000 + i * 2000;
+      w.applyScene(`e${at}`, at, scene({ cls: i === 2 ? "bottle" : "cup", box: b }), new Map(), look);
+      full(w, `y${at}`, at + 100, []);
+    });
+    full(w, "y12000", 12_000, []);
+    full(w, "y14000", 14_000, []);
+    expect(w.view(14_000).objects.map((o) => [o.id, o.cls])).toEqual([["cup_1", "cup"]]);
+    expect(w.view(14_000).objects[0]!.position).toEqual(at0);
+  });
+});
+
+describe("Codex 25ddddd: VLM 확정과 사라짐 판정기·가림·모호한 든 컵", () => {
+  it("VLM만으로 확정한 컵도 VLM 보호(6초)가 끝난 뒤 시야 안에서 안 보이면 사라짐을 센다", () => {
+    const w = ws();
+    w.applyScene("e1000", 1000, scene(), new Map(), look);
+    w.applyScene("e3000", 3000, scene(), new Map(), look);
+    expect(objs(w, 3000)).toEqual([["cup_1", "cup", "present"]]);
+    for (let t = 3500; t <= 16_000; t += 500) full(w, `e${t}`, t, []);
+    expect(objs(w, 16_000)).toEqual([["cup_1", "cup", "gone"]]);
+  });
+
+  it("가림(not_visible) 답은 있다는 근거가 아니다: 두 장이어도 확정하지 않고, 사라짐 셈을 막지 않는다", () => {
+    const w = ws();
+    w.applyScene("e1000", 1000, scene({ facts: ["not_visible"] }), new Map(), look);
+    w.applyScene("e3000", 3000, scene({ facts: ["not_visible"] }), new Map(), look);
+    full(w, "e3500", 3500, []);
+    expect(w.view(3500).objects).toEqual([]);
+    const y = ws();
+    for (let t = 0; t <= 2000; t += 500) full(y, `e${t}`, t, [cupIn]);
+    for (let t = 2500; t <= 10_000; t += 500) {
+      full(y, `e${t}`, t, []);
+      if (t % 2000 === 0) y.applyScene(`e${t}`, t, scene({ facts: ["not_visible"] }), new Map(), look);
+    }
+    expect(objs(y, 10_000)).toEqual([["cup_1", "cup", "gone"]]);
+  });
+
+  it("손에 있음 VLM 물건을 이을 컵이 폰 눈 가까이에 둘이면 모호해 잇지 않는다. YOLO 감지 번호로 이은 확정 물건은 다른 든 컵으로 덮지 않는다", () => {
+    const w = ws();
+    const cupB = det("cup", [260, 175, 20, 10]);
+    for (let t = 0; t <= 2000; t += 500) full(w, `e${t}`, t, [cupIn, cupB]);
+    expect(w.view(2000).objects.map((o) => o.id)).toEqual(["cup_1", "cup_2"]);
+    const ids = new Map<string, string>();
+    w.applyScene("e3000", 3000, scene({ box: [60, 300, 40, 20], facts: ["in_hand"] }), ids, { ...look, eye: [1, 0] });
+    expect(ids.get("v1")).toBeUndefined();
+    const linked = new Map([["d1", "cup_2"]]);
+    w.applyScene("e4000", 4000, scene({ box: [60, 300, 40, 20], det: "d1", facts: ["in_hand"] }), linked, { ...look, eye: [1, 0] });
+    expect(linked.get("d1")).toBe("cup_2");
+    expect(linked.get("v1")).toBe("cup_2");
+  });
+
+  it("YOLO는 손에 든 컵이 그 사진의 폰 눈 1.5m 밖이면 먼 감지를 그 컵에 잇지 않는다", () => {
+    const w = ws();
+    for (let t = 0; t <= 2000; t += 500) full(w, `e${t}`, t, [cupIn]);
+    w.applyScene("e2000", 2000, scene({ det: "d1", facts: ["in_hand"] }), new Map([["d1", "cup_1"]]), look);
+    w.applyScene("e2500", 2500, scene({ det: "d1", facts: ["in_hand"] }), new Map([["d1", "cup_1"]]), look);
+    expect(w.view(2500).objects[0]!.facts.place?.value).toBe("in_hand");
+    const r = full(w, "e3000", 3000, [lifted], [9, 9]);
+    expect(r.ids.get("d1")).not.toBe("cup_1");
   });
 });

@@ -8,7 +8,7 @@ import { EVIDENCE_GAP_MS } from "../confirm.js";
 import { CHANGE_TEXT, onSurface } from "../labels.js";
 import { inView, placePoint, sizeOf } from "../place.js";
 import { CLASSES, NOW_FACETS, POSE_HOLD } from "../vocab.js";
-import { sameDrinkware } from "../vocab.js";
+import { NEAR_M as REACH_M, sameDrinkware } from "../vocab.js";
 import { KEYS, OBJ_CLASSES, PERSON, Part, SIZE_SAMPLES, VLM_CANDIDATE_MS, fromCamera, type Obj, type TrailSample, type V3 } from "./core.js";
 
 const FIXTURE_CLASSES: ReadonlySet<string> = new Set(KEYS.filter((k) => CLASSES[k].role === "fixture"));
@@ -56,7 +56,7 @@ export class Detections extends Part {
       if (!OBJ_CLASSES.has(d.label)) return;
       const cls = d.label as ObjClass;
       const placed = view ? placePoint(view, d.foot, { width: frame.width, height: frame.height }, surfaces, this.o.floorAt) : null;
-      const obj = this.match(cls, placed?.position ?? null, used) ?? core.create(cls, at, frame.id);
+      const obj = this.match(cls, placed?.position ?? null, used, frame.eye ? frame.eye.position : null) ?? core.create(cls, at, frame.id);
       used.add(obj.id);
       ids.set(tmp, obj.id);
       seen.add(obj.id);
@@ -196,13 +196,15 @@ export class Detections extends Part {
 
   /** 같은 물체 찾기. 위치가 있으면 장면 VLM·가까이 보기와 같은 식별 규칙(core.matchAt: 같은 종류 먼저, 마시는 그릇 무리는 하나뿐일 때만). 맞는 것이 없으면
    *  VLM이 손에 있음으로 답한 같은 무리 물건이 하나뿐일 때 그것(들린 컵은 상자 아랫변이 놓인 자리가 아니다), 그다음 자리를 모르는 같은 종류. 위치가 없으면 사라지지 않은 같은 종류를 처음 본 순서로. */
-  private match(cls: ObjClass, position: V3 | null, used: ReadonlySet<string>): Obj | null {
+  private match(cls: ObjClass, position: V3 | null, used: ReadonlySet<string>, eye: [number, number] | null): Obj | null {
     const pool = [...this.core.objects.values()].filter((x) => x.cls === cls && !used.has(x.id));
     if (position) {
       const hit = this.core.matchAt(cls, position, used);
       if (hit) return hit;
+      // 손에 든 컵은 그 사진의 폰 눈 REACH_M 안일 때만 먼 감지를 잇는다(폰을 든 사람의 손). 둘 이상이면 모호해 잇지 않는다
       const held = [...this.core.objects.values()].filter((x) => x.confirmed && !used.has(x.id) && sameDrinkware(x.cls, cls) && x.facts.place?.value === POSE_HOLD.object);
-      if (held.length === 1) return held[0]!;
+      const reach = eye && held.length === 1 && held[0]!.position && Math.hypot(held[0]!.position[0] - eye[0], held[0]!.position[2] - eye[1]) <= REACH_M;
+      if (reach) return held[0]!;
       return pool.find((x) => x.status !== "gone" && !x.position) ?? null;
     }
     return pool.filter((x) => x.status !== "gone").sort((a, b) => Number(b.confirmed) - Number(a.confirmed) || a.firstSeen - b.firstSeen)[0] ?? null;

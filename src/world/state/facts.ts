@@ -5,7 +5,7 @@
 import type { Facet, WorldChange } from "../../contract/world.js";
 import type { SceneObservation } from "../../contract/observe.js";
 import { CHANGE_TEXT, OBJECT_NAME, fixtureName } from "../labels.js";
-import { FACT_FRESH_MS, NOW_FACETS, STATES, VLM_ONLY, type ClassKey, type StateKey, type StateOf, type Target } from "../vocab.js";
+import { FACT_FRESH_MS, NOW_FACETS, POSE_HOLD, STATES, VLM_ONLY, type ClassKey, type StateKey, type StateOf, type Target } from "../vocab.js";
 import { PERSON, Part, fits, type Facts, type Obj } from "./core.js";
 
 /** VLM 답을 원본 프레임·대상·면마다 한 번만 세려고 기억하는 수(넣은 순서, 최근 것). */
@@ -62,6 +62,23 @@ export class SceneFacts extends Part {
     return this.setFact(facts, facet, value, atMs, now);
   }
 
+  /** 장면 VLM이 물건의 놓인 곳을 말했다: 지금 값과 같으면 넣는다. 처음 값(손에 있음은 빼고)도 넣는다. 다른 값(손에 있음 포함)은 다른 원본 프레임의 더 새 촬영이
+   *  같은 값을 이어 말할 때만 넣는다(가로 유리컵 r4: 한 장씩 식탁 위 → 선반 위 → 책상 위로 흔들렸고, 손이 없는 장면 한 장이 손에 있음을 켰다). 잘라 본 답은 이 규칙을 거치지 않는다. */
+  private steady(obj: Obj, value: string, frameId: string, at: number): boolean {
+    const prev = obj.facts.place;
+    if (prev?.value === value || (!prev && value !== POSE_HOLD.object)) {
+      obj.placeVote = null;
+      return true;
+    }
+    const v = obj.placeVote;
+    if (v && v.value === value && v.frame !== frameId && at > v.at) {
+      obj.placeVote = null;
+      return true;
+    }
+    if (!v || v.value !== value || (v.frame !== frameId && at > v.at)) obj.placeVote = { value, frame: frameId, at };
+    return false;
+  }
+
   /** VLM 대상: 사람·물건·가전 설비와 그 사실, 종류. */
   private targetOf(id: string): { kind: Target; facts: Facts; cls: ClassKey } | null {
     if (id === PERSON) return { kind: "person", facts: this.core.person.facts, cls: "person" };
@@ -105,6 +122,7 @@ export class SceneFacts extends Part {
       }
       if (target.kind === "object" && facet === "body") bodies.add(id);
       if (core.people.poseHolds(target.facts[facet], capturedAtMs) || core.merge.carriedPlace(id, facet) || core.people.fallHeld(id, facet)) continue;
+      if (target.kind === "object" && facet === "place" && !this.steady(core.objects.get(id)!, value, frameId, capturedAtMs)) continue;
       if (!this.answer(frameId, id, target.facts, facet, value, capturedAtMs, false, NOW_FACETS[target.kind].includes(facet), turn)) continue;
       if (target.kind === "person") {
         if (core.person.visible) changes.push({ kind: "person_state", at_ms: capturedAtMs, subject: PERSON, meaningful: false, text: CHANGE_TEXT.state(OBJECT_NAME.person!, value) });

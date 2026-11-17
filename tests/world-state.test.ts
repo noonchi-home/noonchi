@@ -315,7 +315,9 @@ describe("World State + 관절", () => {
     // 관절이 없는 프레임(사람 상자만): VLM 답이 그대로 들어간다
     ids = w.applyDetections(frame(4), [person, cup]).ids;
     w.applyScene("e4", 4000, { scene: "k", observations: [{ object_id: "d2", state: "on_table" }, { object_id: "d1", state: "sitting" }], summary: "s" }, ids);
-    v = w.view(4000);
+    // 물건의 다른 놓인 곳은 다른 원본 프레임 2장이 이어 말할 때만 바뀐다(SceneFacts.steady)
+    w.applyScene("e45", 4500, { scene: "k", observations: [{ object_id: "d2", state: "on_table" }, { object_id: "d1", state: "sitting" }], summary: "s" }, ids);
+    v = w.view(4500);
     expect(v.objects[0]!.facts.place?.value).toBe("on_table");
     expect(v.person.facts.posture?.value).toBe("sitting");
     expect(v.person.facts.holding).toBeUndefined();
@@ -331,6 +333,7 @@ describe("World State + 관절", () => {
     expect(v.person.facts.holding).toBeUndefined();
     ids = w.applyDetections(frame(5), [person, cup], [apart]).ids;
     w.applyScene("e5", 5000, { scene: "k", observations: [{ object_id: "d2", state: "in_hand" }], summary: "s" }, ids);
+    w.applyScene("e55", 5500, { scene: "k", observations: [{ object_id: "d2", state: "in_hand" }], summary: "s" }, ids);   // 손에 있음은 2장 이어서
     w.applyDetections(frame(6), [person, cup], [apart]);
     expect(w.view(6000).objects[0]!.facts.place?.value).toBe("in_hand"); // VLM 사실은 관절이 지우지 않는다
     w.applyDetections(frame(7), [person, cup], [grip]);

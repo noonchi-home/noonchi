@@ -213,7 +213,8 @@ export class ObservationPipeline {
         const ids = this.idsOf.get(r.frameId) ?? new Map<string, string>();
         this.idsOf.delete(r.frameId);
         const f = this.ring.get(r.frameId);
-        const look = f?.view ? { view: f.view, width: f.width, height: f.height } : undefined;
+        // 그 사진을 찍은 때의 카메라·폰 눈(답이 온 때가 아니다)
+        const look = f?.view ? { view: f.view, width: f.width, height: f.height, eye: f.eye ? f.eye.position : null } : undefined;
         const changes = r.scene ? o.world.applyScene(r.frameId, r.capturedAtMs, r.scene, ids, look) : o.world.applyMissing(r.frameId, r.capturedAtMs, { vlm: r.missing! });
         o.emit({ type: "observe", at_ms: this.clock.now(), frame_id: r.frameId, captured_at_ms: r.capturedAtMs, yolo: null, vlm: r.scene?.summary ?? null, ...(r.missing ? { vlm_missing: r.missing } : {}) });
         this.publish(changes);

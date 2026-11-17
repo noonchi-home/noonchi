@@ -3558,7 +3558,9 @@ describe("실행 추적 + 실제 World State(기준점을 맞춘 카메라)", ()
     t.onWorld();
     expect(last()).toMatchObject({ step: "plan:pam-1:3", vision: "컵 · 손에 있음 · 싱크대까지 거리 모름" });
     t.onAnswer("plan:pam-1", "plan:pam-1:3", "done");
+    // 물건의 다른 놓인 곳은 VLM 사진 2장이 이어 말할 때 바뀐다(SceneFacts.steady)
     see(7, moved, "in_sink");
+    see(8, moved, "in_sink");
     t.onWorld();
     expect(last()).toEqual({ type: "command_clear", id: "plan:pam-1" });
   });
@@ -3587,27 +3589,29 @@ describe("실행 추적 + 실제 World State(기준점을 맞춘 카메라)", ()
     expect(last()).toMatchObject({ step: "plan:pam-1:3" });
     t.onAnswer("plan:pam-1", "plan:pam-1:3", "done");
     expect(steps()).toEqual(["done", "done", "done", "active"]);
-    // 싱크볼 옆 조리대에 내려놓음: VLM이 손에 있다고 본 cup_2가 다른 자리에 보이면 같은 컵이다(든 컵은 거리 밖이어도 잇는다). 같은 싱크대 면이고 손에 없지만 싱크볼 안이 아니라 넘기지 않는다
+    // 싱크볼 옆 조리대에 새 컵(cup_3): 같은 싱크대 면이고 손에 없지만 싱크볼 안이 아니라 넘기지 않는다.
+    // 폰 눈을 모르는 사진이라 손에 든 cup_2에 먼 감지를 잇지 않는다(든 컵 잇기는 그 사진의 폰 눈 1.5m 안일 때만)
     for (let i = 7; i <= 9; i++) see(i, beside, "on_table");
     expect(ws.view(9000).objects.map((o) => [o.id, o.status, o.surface, o.surface_part, o.facts.place?.value])).toEqual([
-      ["cup_1", "gone", null, undefined, undefined], ["cup_2", "present", "sink_1", undefined, "on_table"],
+      ["cup_1", "gone", null, undefined, undefined], ["cup_2", "gone", null, undefined, "in_hand"], ["cup_3", "present", "sink_1", undefined, "on_table"],
     ]);
     expect(steps()).toEqual(["done", "done", "done", "active"]);
-    // 싱크볼 안에 새 컵(cup_3)이 생겼지만 VLM은 아직 손에 있다고 본다: 넘기지 않는다
+    // 싱크볼 안에 새 컵(cup_4)이 생겼지만 VLM은 아직 손에 있다고 본다: 넘기지 않는다
     for (let i = 10; i <= 12; i++) see(i, inSink, "in_hand");
     expect(ws.view(12_000).objects.filter((o) => o.status === "present").map((o) => [o.id, o.surface, o.surface_part, o.facts.place?.value])).toEqual([
-      ["cup_3", "sink_1", "basin", "in_hand"],
+      ["cup_4", "sink_1", "basin", "in_hand"],
     ]);
     expect(steps()).toEqual(["done", "done", "done", "active"]);
     expect(plans.current()).toMatchObject({ status: "running" });
     // VLM이 싱크대 안 대신 「식탁 위」라 답해도 컵이 싱크볼 안이고 손에 없으니 끝난다(「완료」를 누르지 않음)
     see(13, inSink, "on_table");
-    expect(ws.view(13_000).objects.at(-1)).toMatchObject({ id: "cup_3", surface: "sink_1", surface_part: "basin", facts: { place: { value: "on_table" } } });
+    see(14, inSink, "on_table");   // 다른 놓인 곳은 VLM 사진 2장 이어서
+    expect(ws.view(14_000).objects.at(-1)).toMatchObject({ id: "cup_4", surface: "sink_1", surface_part: "basin", facts: { place: { value: "on_table" } } });
     expect(last()).toEqual({ type: "command_clear", id: "plan:pam-1" });
     expect(plans.current()).toMatchObject({ id: "plan:pam-1", status: "done" });
     expect(exec().at(-1)).toMatchObject({ plan_id: "plan:pam-1", state: "done" });
     // 놓기를 끝낸 컵은 지금 따라가는 World State id로 남는다(이미 치운 것)
-    expect([...t.placed()]).toEqual([["cup_3", { target: "sink_1", part: "basin", atMs: 13_000 }]]);
+    expect([...t.placed()]).toEqual([["cup_4", { target: "sink_1", part: "basin", atMs: 14_000 }]]);
   });
 
   it("놓기: VLM이 「싱크대 안」이라 답해도 사람이 그 컵을 들고 있다고 보이면 안 끝난다. 사람이 안 보이는 프레임(10초 안)이 오면 끝난다", async () => {
@@ -3627,13 +3631,17 @@ describe("실행 추적 + 실제 World State(기준점을 맞춘 카메라)", ()
       const { ids } = ws.applyDetections(frame(i), dets);
       ws.applyScene(`e${i}`, i * 1000, { scene: "k", observations: said.map(([object_id, state]) => ({ object_id, state })), summary: "s" }, ids);
       t.onWorld();
+      return ids;
     };
     // 사람이 컵을 들고 보인다(VLM 들고 있음, 관절 없음이라 든 것을 모름)
     for (let i = 4; i <= 5; i++) see(i, [person, onTable], [["d1", "holding_object"], ["d2", "in_hand"]]);
     expect(ws.view(5000).person).toMatchObject({ visible: true, facts: { holding: { value: "holding_object" } } });
     // VLM이 컵을 「싱크대 안」이라 답해도 사람이 들고 있으니 넘기지 않는다
-    see(6, [person, onTable], [["d1", "holding_object"], ["d2", "in_sink"]]);
-    expect(ws.view(6000)).toMatchObject({ frame_ms: 6000, person: { visible: true }, objects: [{ id: "cup_1", facts: { place: { value: "in_sink" } } }] });
+    const ids6 = see(6, [person, onTable], [["d1", "holding_object"], ["d2", "in_sink"]]);
+    // 다른 놓인 곳은 VLM 사진 2장 이어서(같은 사진 묶음의 다음 VLM 답)
+    ws.applyScene("e6b", 6100, { scene: "k", observations: [{ object_id: "d1", state: "holding_object" }, { object_id: "d2", state: "in_sink" }], summary: "s" }, ids6);
+    t.onWorld();
+    expect(ws.view(6100)).toMatchObject({ frame_ms: 6000, person: { visible: true }, objects: [{ id: "cup_1", facts: { place: { value: "in_sink" } } }] });
     expect(last()).toMatchObject({ step: "plan:pam-1:4" });
     expect(plans.current()).toMatchObject({ status: "running" });
     // 사람이 화면에서 나간다: 사라짐이 확인되기 전(한 장)에는 아직 들고 있는 사람이 있어 넘기지 않는다

@@ -419,6 +419,8 @@ describe("가까이 본 사진의 VLM 답(applyCloserScene)", () => {
     expect(place(3000)).toEqual({ value: "in_sink", at_ms: 3000, since_ms: 3000, certainty: "inferred", closer_ms: 3000 });
     w.applyScene("e4", 4000, said("in_sink"), full(w, "e4", 4000, [cupIn, person]).ids);
     expect(place(4000)).toEqual({ value: "in_sink", at_ms: 4000, since_ms: 3000, certainty: "confirmed", closer_ms: 3000 });
+    // 전체 사진 답의 다른 놓인 곳은 다른 원본 프레임 2장이 이어 말할 때만 바뀐다(SceneFacts.steady)
+    w.applyScene("e45", 4500, said("on_counter"), ids);
     w.applyScene("e5", 5000, said("on_counter"), full(w, "e5", 5000, [cupIn, person]).ids);
     expect(place(5000)).toEqual({ value: "on_counter", at_ms: 5000, since_ms: 5000, certainty: "inferred" });
     w.applyCloserScene("e6", 6000, said("on_counter"), ids);
@@ -435,6 +437,7 @@ describe("가까이 본 사진의 VLM 답(applyCloserScene)", () => {
     expect(cup(3000).closer_rev).toBeUndefined();
     w.applyCloserScene("e3", 3000, said("in_sink"), ids);
     expect(cup(3000).closer_rev).toEqual({ place: 1 });
+    w.applyScene("e45", 4500, said("on_counter"), ids);
     w.applyScene("e5", 5000, said("on_counter"), full(w, "e5", 5000, [cupIn, person]).ids);
     expect(cup(5000).facts.place).toEqual({ value: "on_counter", at_ms: 5000, since_ms: 5000, certainty: "inferred" });
     expect(cup(5000).closer_rev).toEqual({ place: 1 });

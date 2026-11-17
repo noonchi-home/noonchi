@@ -102,6 +102,10 @@ export interface Obj {
   vlmSeen: number | null;
   /** 확인 전 후보를 본 VLM 답의 원본 프레임(VLM_CONFIRM_FRAMES장이면 확정). */
   vlmFrames: string[];
+  /** 장면 VLM이 말한 다른 놓인 곳(place) 하나: 다음 원본 프레임의 더 새 촬영이 같은 값을 말하면 바꾼다(SceneFacts.steady). */
+  placeVote: { value: string; frame: string; at: number } | null;
+  /** 장면 VLM 상자로 낸 VLM_MOVE_M 넘게 떨어진 새 자리 하나: 다음 원본 프레임의 더 새 촬영이 그 근처를 말하면 옮긴다(sceneobjects.ts). */
+  posVote: { position: V3; frame: string; at: number } | null;
   /** 내용물 갱신기의 상태(src/world/state/contents.ts). 내용물을 쌓은 적 없으면 null. */
   contents: ContentsState | null;
   /** 관절의 손에 없을 때 전체 사진으로 본 마지막 자리(확인 전 후보만 쓴다: 잊을 때 후보 자리로 남긴다). */
@@ -124,6 +128,10 @@ export const VLM_SEEN_HOLD_MS = 6000;
 export const VLM_CANDIDATE_MS = 5000;
 /** 장면 VLM 답 후보는 서로 다른 원본 프레임 이만큼에서 보이면 확정한다. */
 export const VLM_CONFIRM_FRAMES = 2;
+/** 장면 VLM 상자 투영은 흔들린다: 확인된 물건 자리는 이만큼(m) 넘게, 사진 2장 이어서 옮겼다고 할 때만 옮긴다. */
+export const VLM_MOVE_M = 0.3;
+/** 장면 VLM 상자로 같은 물건을 잇는 거리(m): 상자 투영 흔들림이 YOLO보다 커서 종류 거리보다 넓게 본다. */
+export const VLM_MATCH_M = 0.5;
 
 /** 이 값이 그 종류·대상에 붙는가. */
 export function fits(value: StateKey, cls: ClassKey, target: Target): boolean {
@@ -189,7 +197,7 @@ export class WorldCore {
     const obj: Obj = {
       id: `${cls}_${n}`, cls, position: null, surface: null, surfaceLabel: null, part: null, room: null, errorM: null, confirmed: false, status: "present",
       firstSeen: atMs, lastSeen: atMs, lastInView: atMs, goneAt: null, facts: {}, answered: null, closerAt: null, peekGuard: null, sizes: [], posFrom: null,
-      posAt: Number.NEGATIVE_INFINITY, posCloser: false, judgedAt: atMs, judgedFrame: frameId, judgedCloser: false, followed: null, closerRev: {}, clsVote: null, clsAt: Number.NEGATIVE_INFINITY, clsFrame: null, vlmSeen: null, vlmFrames: [],
+      posAt: Number.NEGATIVE_INFINITY, posCloser: false, judgedAt: atMs, judgedFrame: frameId, judgedCloser: false, followed: null, closerRev: {}, clsVote: null, clsAt: Number.NEGATIVE_INFINITY, clsFrame: null, vlmSeen: null, vlmFrames: [], placeVote: null, posVote: null,
       movedAt: atMs, trail: [], carried: false, contents: null, free: null,
     };
     this.objects.set(obj.id, obj);
@@ -199,8 +207,8 @@ export class WorldCore {
   /** 가까이 보기 지킴 중인가(atMs 기준 CLOSER_HOLD_MS 안). 지킴보다 앞서 찍힌 사진도 지킴으로 본다. */
   /** 같은 물건 찾기(전체 사진 YOLO·가까이 보기·장면 VLM이 같이 쓴다): 같은 종류 중 그 종류 거리 안의 가장 가까운 것이 먼저다(사라진 것·세는 중인 것도).
    *  없으면 마시는 그릇 무리의 다른 종류가 그 거리 안에 하나뿐일 때만 잇는다(둘 이상이면 모호해 잇지 않는다). 물건 식별은 자리로 하고 종류는 voteClass가 따로 바꾼다. */
-  matchAt(cls: ObjClass, position: V3, used: ReadonlySet<string>): Obj | null {
-    const near = (CLASSES[cls] as { identityM?: number }).identityM ?? this.identityM;
+  matchAt(cls: ObjClass, position: V3, used: ReadonlySet<string>, nearMin = 0): Obj | null {
+    const near = Math.max((CLASSES[cls] as { identityM?: number }).identityM ?? this.identityM, nearMin);
     const pick = (ok: (x: Obj) => boolean) => [...this.objects.values()]
       .filter((x) => ok(x) && !used.has(x.id) && x.position && dist(x.position, position) <= near)
       .sort((a, b) => dist(a.position!, position) - dist(b.position!, position));
