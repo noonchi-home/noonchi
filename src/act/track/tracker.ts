@@ -59,7 +59,8 @@
 // 계획 전·실행 전 검사·계획 입력·제출 검사와 대상 고르기가 이미 치운 것으로 본다. 다시 집거나(손에 있음 확인됨) 그 영역 밖(다른 면, 싱크볼이면 싱크볼 밖)에서 보이면 지운다.
 // 파일 나눔(src/act/track/): tracker.ts 겉 클래스·공개 메서드·tick, core.ts 안쪽 공유 객체 TrackCore(상태·기록·실제 폰 길)와 Run, start.ts 판단 받기·계획 시작,
 // steps.ts 단계 진행·치운 물건, approval.ts 승인 질문, safety.ts 켠 위험 가전 추적·끄기 안내(SafetyTracker, 추적 상태는 # 칸), answers.ts 폰 명령 줄·답·말·보내기,
-// coach.ts 다시 알리기·다른 행동·사람 부탁·조용한 단계. 다른 도메인은 src/act/index.ts로 가져온다.
+// coach.ts 다시 알리기·다른 행동·사람 부탁·조용한 단계, contents.ts 내용물 보류(실행 전 검사가 컵 안을 몰라 막은 계획: 가까이 보기 → 사진 기다리기 → 말로 묻기).
+// 다른 도메인은 src/act/index.ts로 가져온다.
 import type { BrainLog, ExecState, DecisionRecord } from "../../contract/events.js";
 import type { HeardAt, PlannedCommandMessage } from "../../contract/phone.js";
 import type { OffTrack, PlanView, XZ } from "../../contract/plan.js";
@@ -76,12 +77,14 @@ import { taskOf, type Placed } from "../tasks.js";
 import { Answers, type HeardResult } from "./answers.js";
 import { Approvals } from "./approval.js";
 import { Coach, type Stray } from "./coach.js";
+import { ContentsHold, type ContentsLook } from "./contents.js";
 import { OPEN, TrackCore, type TrackConfig } from "./core.js";
 import { SafetyTracker, type Cycle, type CycleEnd } from "./safety.js";
 import { Starter } from "./start.js";
 
 export type { HeardResult } from "./answers.js";
 export type { Stray } from "./coach.js";
+export type { ContentsLook } from "./contents.js";
 export type { Cycle, CycleEnd } from "./safety.js";
 export type { Stall } from "./steps.js";
 
@@ -154,6 +157,8 @@ export interface TrackerOptions {
   sayAloud?: (text: string) => void;
   /** 멈춘 집기·놓기 단계 알림(관찰 모드 A, src/act/look.ts). 받았으면 true(그때만 센다). 받은 부름은 끝날 때 s.settle(counted)를 부른다. 없으면 부르지 않는다. */
   stalled?: (s: Stall) => boolean;
+  /** 내용물 보류의 가까이 보기(src/act/look.ts contents). 받았으면 true(끝나면 h.done). 없으면 가까이 보지 않고 사진만 기다린다. */
+  lookContents?: (h: ContentsLook) => boolean;
   /** 집기·놓기 단계가 이만큼(ms) 안 끝나면 stalled를 부른다(단계 시작 뒤, 받은 부름 뒤). */
   stallMs?: number;
   /** 단계마다 stalled를 받아 센 횟수 상한(settle(false)로 돌려받은 부름은 넣지 않는다). */
@@ -186,6 +191,7 @@ export class ExecutionTracker {
     core.safety = new SafetyTracker(core);
     core.answers = new Answers(core);
     core.coach = new Coach(core);
+    core.contents = new ContentsHold(core);
     this.core = core;
   }
 

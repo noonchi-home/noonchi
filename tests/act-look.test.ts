@@ -139,6 +139,37 @@ describe("보기 담당: 판단 전 보기(B)", () => {
   });
 });
 
+describe("보기 담당: 내용물 보류의 가까이 보기(contents)", () => {
+  it("다른 일이 없으면 관찰 모드 없이 그 컵을 가까이 보고 look 기록(계기 unknown_fact, 그 계획 id, 단계 id 없음)과 done 한 번. 30초 안에 본 컵은 보지 않고 done만", async () => {
+    const t = await setup({ script: () => [["wait", { reason: "x" }]] });
+    let done = 0;
+    const h = { planId: "plan:pam-1", objectId: "cup_1", spot: CUP, signal: new AbortController().signal, done: () => { done++; } };
+    expect(t.looker.contents(h)).toBe(true);
+    await t.looker.idle();
+    expect(t.llm.bodies()).toHaveLength(0);
+    expect(t.looked).toEqual([CUP]);
+    expect(t.looks()).toEqual([expect.objectContaining({ trigger: "unknown_fact", tool: "look_closer", target: "cup_1", plan_id: "plan:pam-1" })]);
+    expect(t.looks()[0]).not.toHaveProperty("step_id");
+    expect(done).toBe(1);
+    expect(t.looker.contents(h)).toBe(true);
+    await t.looker.idle();
+    expect(t.looked).toHaveLength(1);
+    expect(done).toBe(2);
+  });
+  it("A가 도는 동안은 받지 않는다(false, done 없음)", async () => {
+    let releaseA!: () => void;
+    const heldA = new Promise<void>((ok) => { releaseA = ok; });
+    const t = await setup({ script: () => [["wait", { reason: "x" }]], gate: () => heldA });
+    expect(t.looker.stalled(stall().s)).toBe(true);
+    await vi.waitFor(() => expect(t.llm.bodies()).toHaveLength(1));
+    let done = 0;
+    expect(t.looker.contents({ planId: "plan:pam-1", objectId: "cup_1", spot: CUP, signal: new AbortController().signal, done: () => { done++; } })).toBe(false);
+    releaseA();
+    await t.looker.idle();
+    expect(done).toBe(0);
+  });
+});
+
 describe("보기 담당: 멈춘 단계(A)가 먼저", () => {
   it("B가 관찰 모드를 부르는 중이면 끊고(B 기록 없음) A를 받는다. A가 고른 사람 부탁을 실행 추적에 넘기고 기록·settle(true)을 남긴다", async () => {
     let releaseB!: () => void;

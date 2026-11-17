@@ -15,6 +15,7 @@ import { AGAIN, APPROVE, STEP_DONE, type ActionChoice } from "../prompts.js";
 import type { Answers } from "./answers.js";
 import type { Approvals, Asking } from "./approval.js";
 import type { Coach } from "./coach.js";
+import type { ContentsHold, Hold } from "./contents.js";
 import type { Cycle, CycleEnd, SafetyTracker } from "./safety.js";
 import type { Starter } from "./start.js";
 import type { Steps } from "./steps.js";
@@ -54,6 +55,8 @@ export interface Run {
   quiet: Set<string>; quietOn: boolean;
   /** 끝낸 사람 단계의 결과(수업 기록에 남길 것). */
   outcomes: StepOutcome[];
+  /** 내용물 보류(실행 전 검사가 컵 안을 몰라 막음, src/act/track/contents.ts). 없으면 null. */
+  hold: Hold | null;
 }
 
 /** at: 같은 행동 다시 계획 간격(planGapMs)을 세려고 적은 시각. */
@@ -82,6 +85,7 @@ export class TrackCore {
   safety!: SafetyTracker;
   answers!: Answers;
   coach!: Coach;
+  contents!: ContentsHold;
 
   constructor(readonly o: TrackerOptions, readonly clock: { now(): number }, readonly cfg: TrackConfig) {}
 

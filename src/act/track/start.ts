@@ -138,7 +138,7 @@ export class Starter extends Part {
       asking: null, askAt: now, watch: null, others, alias: new Map([...ids].map((id) => [id, id])), carried: new Set(), placeAt: (id) => (id ? this.o.floor().objects.get(id)?.position ?? null : null), deadline: now, again: false, device: "idle", gen: 0,
       looks: 0, lookAt: Number.NEGATIVE_INFINITY, stepEnd: null, gapAt: job.at, onAt: new Map(), ends: new Map(), offAsked: -1, deferred: false, phoneWait: false, phone: false,
       strays: 0, strayAt: Number.NEGATIVE_INFINITY, strayNear: null, told: null, helped: false,
-      quiet: taskOf(r.plan.task)?.coach ? quietLabels(this.o.lessons?.get(r.plan.task) ?? null) : new Set(), quietOn: false, outcomes: [],
+      quiet: taskOf(r.plan.task)?.coach ? quietLabels(this.o.lessons?.get(r.plan.task) ?? null) : new Set(), quietOn: false, outcomes: [], hold: null,
     };
     core.run = run;
     this.o.plans.onDecision(r.plan.view);
@@ -161,9 +161,17 @@ export class Starter extends Part {
         r.since = this.clock.now();
         return;
       }
+      // 내용물을 몰라 막혔으면 보류가 붙잡는 동안 다시 보기 기한을 세지 않는다(src/act/track/contents.ts). 보류 중 컵이 낡아도 보류를 이어 간다
+      const held = r.hold;
+      if ((c.reason === "contents_unknown" && c.object && this.core.contents.keep(r, c.object))
+        || (c.reason === "stale" && held && this.core.contents.holding(r) && this.core.contents.keep(r, held.objectId))) {
+        r.since = this.clock.now();
+        return;
+      }
       if (last) steps.finish(r, "failed", c.text);
       return;
     }
+    this.core.contents.release(r);
     const why = this.core.approval.need(r);
     r.phone = needsPhone(r.plan, why, this.o.handDevices?.() ?? []);
     // 끄기 안내가 남아 있으면 폰이 필요한 계획은 첫 명령(승인 질문 포함)을 미룬다(한 번 기록): 안내가 다 풀리면 nextReminder가 다시 부른다.

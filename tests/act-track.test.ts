@@ -7,11 +7,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { ActionChoice } from "../src/act/prompts.js";
-import { ExecutionTracker, TRACK_DEFAULTS, type Stall, type Stray, type TrackerOptions } from "../src/act/track/tracker.js";
+import { ExecutionTracker, TRACK_DEFAULTS, type ContentsLook, type Stall, type Stray, type TrackerOptions } from "../src/act/track/tracker.js";
 import type { TrackCore } from "../src/act/track/core.js";
 import { ApprovalStore, type ApprovalAnswer } from "../src/agent/approval.js";
 import type { AgentStep } from "../src/agent/planTools.js";
-import { checkDecision, type CheckResult } from "../src/act/check.js";
+import { checkDecision, checkPlan, type CheckResult } from "../src/act/check.js";
 import { TASKS, clearsAway, targetOf } from "../src/act/tasks.js";
 import { PlanDraft } from "../src/agent/planTools.js";
 import type { BrainLog, DecisionRecord } from "../src/contract/events.js";
@@ -528,6 +528,75 @@ describe("실행 추적: 그 자리에서 하는 일(do, 채워 주기)", () => 
     for (const n of [1, 2, 3]) s.t.onAnswer("plan:pam-1", `plan:pam-1:${n}`, "done");
     expect(s.last()).toMatchObject({ step: "plan:pam-1:4", vision: "식탁까지 0.5m", target: TABLE, kind: "do" });
   });
+
+  describe("내용물 보류(실행 전 검사가 컵 안을 몰라 막은 계획)", () => {
+    const fillDecision = { ...water, tasks: [WATER] };
+    const inferred = (v: string) => ({ contents: { value: v, at_ms: 9_000, since_ms: 9_000, certainty: "inferred" as const } });
+    const confirmed = (v: string) => ({ contents: { value: v, at_ms: 9_500, since_ms: 9_000, certainty: "confirmed" as const } });
+    /** 컵 facts를 바꿔 가며 볼 World와 실제 checkPlan으로 검사하는 실행 추적. looks: 받은 가까이 보기 부탁. */
+    function holdSetup(over: Parameters<typeof setup>[0] = {}) {
+      let facts: WorldObject["facts"] = inferred("empty");
+      let seen = 9_000;
+      const w = () => world([{ ...cup("present", undefined, seen), facts, contents_gen: 3 }]);
+      const looks: ContentsLook[] = [];
+      const s = fillSetup({
+        w, lookContents: (h) => { looks.push(h); return true; },
+        check: () => checkPlan({ decision: fillDecision, tasks: [WATER], plan: s.plans.current()!, world: w(), nowMs: s.clock.t, staleMs: 3_000, mode: "test" }),
+        ...over,
+      });
+      return { ...s, looks, set: (f: WorldObject["facts"]) => { facts = f; }, see: (at: number) => { seen = at; } };
+    }
+
+    it("모르면 실패로 닫지 않고 그 컵을 가까이 본 뒤 4초 사진을 기다린다. 그사이 확인되면 첫 명령을 보낸다", async () => {
+      const s = holdSetup();
+      await s.decide(fillDecision);
+      s.clock.t += 3_500; s.t.tick(); // recheckMs(3초)가 지나도 닫히지 않는다
+      expect(s.exec().map((e) => e.state)).not.toContain("failed");
+      expect(s.looks).toEqual([expect.objectContaining({ planId: "plan:pam-1", objectId: "cup_1" })]);
+      expect(s.commands()).toEqual([]);
+      s.looks[0]!.done();
+      s.set(confirmed("empty"));
+      s.see(s.clock.t);
+      s.clock.t += 500; s.t.tick();
+      expect(s.spoken()).toEqual(["냉장고로 가 주세요"]);
+    });
+
+    it("확인된 반대 값이면 보류하지 않고 그 까닭으로 닫는다", async () => {
+      const s = holdSetup();
+      s.set(confirmed("has_contents"));
+      await s.decide(fillDecision);
+      s.clock.t += 3_100; s.see(s.clock.t); s.t.tick();
+      expect(s.exec().at(-1)).toMatchObject({ state: "failed", text: CHECK_TEXT.contents_mismatch });
+      expect(s.looks).toEqual([]);
+    });
+
+    it("보류하는 동안 컵을 다시 못 봐 낡아도 닫지 않는다(가까이 보기·사진 기다림 중)", async () => {
+      const s = holdSetup();
+      await s.decide(fillDecision);
+      for (let i = 0; i < 20; i++) { s.clock.t += 250; s.t.tick(); } // 컵을 9초에 본 뒤 15초까지: 낡음
+      expect(s.exec().map((e) => e.state)).not.toContain("failed");
+    });
+
+    it("보기 담당이 바빠 받지 않으면 3초 뒤 가까이 보기 없이 사진을 기다리고, 묻지 못하면 30초 뒤 「안을 몰라」로 닫는다", async () => {
+      const s = holdSetup({ lookContents: () => false });
+      await s.decide(fillDecision);
+      for (let i = 0; i < 150; i++) { s.clock.t += 250; s.see(s.clock.t); s.t.tick(); } // 보류 30초 + 다시 보기 기한 3초(컵은 계속 보인다)
+      expect(s.exec().at(-1)).toMatchObject({ state: "failed", text: CHECK_TEXT.contents_unknown });
+      expect(s.commands()).toEqual([]);
+    });
+
+    it("불투명이 확인된 컵은 가까이 보지 않는다. 그만두면 가까이 보기 신호가 끊긴다", async () => {
+      const s = holdSetup();
+      s.set({ ...inferred("contents_unknown"), body: { value: "opaque", at_ms: 9_000, since_ms: 9_000, certainty: "confirmed" } });
+      await s.decide(fillDecision);
+      s.clock.t += 500; s.t.tick();
+      expect(s.looks).toEqual([]);
+      const t2 = holdSetup();
+      await t2.decide(fillDecision);
+      t2.heard("그만해");
+      expect(t2.looks[0]!.signal.aborted).toBe(true);
+    });
+  });
 });
 
 describe("실행 추적: 계획 없는 행동(컵 그대로 두기)", () => {
@@ -595,7 +664,7 @@ describe("실행 추적: 계획 없는 행동(컵 그대로 두기)", () => {
     expect(s.spoken()).toEqual(["식탁으로 가 주세요"]);
   });
 
-  it("계획 전 검사는 그대로 두기에도 돈다: 컵이 안 보이면 no_target이고 「그대로 둠」을 남기지 않는다", async () => {
+  it("계획 전 검사는 그대로 두기에도 돈다: 컵이 안 보이면 no_target, 컵 안을 모르면 contents_unknown이고 「그대로 둠」을 남기지 않는다(묻지 않는다)", async () => {
     let w = world([]);
     const s = leaveSetup({ w: () => w, precheck: (d) => checkDecision({ decision: d, tasks: Object.keys(TASKS), world: w }) });
     await s.decide(leave("pam-1", 1));
@@ -603,7 +672,11 @@ describe("실행 추적: 계획 없는 행동(컵 그대로 두기)", () => {
     expect(s.t.leftAt()).toBeNull();
     w = world([cup("present")]);
     await s.decide(leave("pam-2", 2));
-    expect(s.exec().slice(2).map((l) => [l.state, l.text])).toEqual([["decided", EXEC_TEXT.decided], ["done", "그대로 둠"]]);
+    expect(s.exec().slice(2).map((l) => [l.state, l.text])).toEqual([["decided", EXEC_TEXT.decided], ["failed", CHECK_TEXT.contents_unknown]]);
+    expect(s.t.leftAt()).toBeNull();
+    w = world([{ ...cup("present"), facts: { contents: { value: "has_contents", at_ms: 9_000, since_ms: 9_000, certainty: "confirmed" } } }]);
+    await s.decide(leave("pam-3", 3));
+    expect(s.exec().slice(4).map((l) => [l.state, l.text])).toEqual([["decided", EXEC_TEXT.decided], ["done", "그대로 둠"]]);
   });
 });
 

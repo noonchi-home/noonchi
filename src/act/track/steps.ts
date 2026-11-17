@@ -369,6 +369,7 @@ export class Steps extends Part {
 
   /** close: 계획을 닫을 상태. null이면 닫지 않는다(새 계획이 PlanHub.onDecision으로 취소로 닫는다). */
   finish(r: Run, state: "done" | "failed", text?: string, close: "done" | "failed" | "cancelled" | null = state): void {
+    this.core.contents.release(r);
     if (r.asking?.why === "device") this.o.devices?.cancel(r.asking.token);
     r.asking = null;
     r.gen++;

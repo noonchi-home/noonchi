@@ -10,6 +10,8 @@
 //   물건마다 objectGapMs, B 전체로 gapMs에 한 번. 이미 싱크대 안·시야 밖 물건, frameFreshMs 넘게 낡은 프레임, 카메라 없는 프레임은 보지 않는다.
 // C 코치 계획의 다른 행동(실행 추적 strayed, src/act/track/coach.ts Stray): 사람이 지금 단계와 다른 일을 하는 것 같다 → tell_person·wait.
 //   다른 일(A·B·C)이 도는 중이면 받지 않는다. 그 단계 신호로 끊긴다(끊기면 기록 없음). tell_person이면 실행 추적의 tell을 부른다.
+// E 내용물 보류(실행 추적 src/act/track/contents.ts contents): 실행 전 검사가 컵 안을 몰라 붙잡은 계획의 그 컵을 관찰 모드 없이 바로 가까이 본다.
+//   다른 일이 돌면 받지 않는다(실행 추적이 다음 tick에 다시 부른다). objectGapMs 안에 본 컵은 보지 않고 done만. 끝나면 done 한 번(look 기록, 계기 unknown_fact).
 // D 코치 계획 중 들은 말(heard): 명령의 답이 아닌 말 → tell_person(told)·pass_on(passed, 말 요청 에이전트로 넘김)·wait(waited).
 //   보기 담당이 바쁘거나 한 시간 상한을 넘었거나 관찰 모드가 실패하면 passed다. 들은 말은 관찰 모드 입력에만 넣고 기록(글·까닭)에는 남기지 않는다.
 // A가 먼저다: B가 관찰 모드를 부르는 중이면 끊고(B 기록 없음) A를 돌린다. B가 잘라 보는 중이거나 다른 A가 도는 중이면 A를 받지 않는다(실행 추적이 다음 tick에 다시 부른다).
@@ -26,7 +28,7 @@ import { OBJECT_NAME, redactSaid } from "../world/labels.js";
 import { inView } from "../world/index.js";
 import { CLASSES, type ClassKey } from "../world/vocab.js";
 import { opaqueBody, putAway, sureValue, type Placed } from "./tasks.js";
-import type { Stall, Stray } from "./track/tracker.js";
+import type { ContentsLook, Stall, Stray } from "./track/tracker.js";
 import { headWithin } from "../shared/cut.js";
 
 /** 들은 말에 관찰 모드가 고른 것: told 지금 할 일을 다시 알림, passed 말 요청 에이전트로 넘김, waited 답하지 않음. */
@@ -111,6 +113,40 @@ export class Looker {
       stuckMs: s.stuckMs, spots: s.spots, tools: ["look_closer", "ask_person", "wait"], planId: s.planId, stepId: s.stepId, settle: (c) => s.settle(c),
     }, s.signal);
     return true;
+  }
+
+  /** 내용물 보류의 가까이 보기(E). 받았으면 true(끝나면 h.done 한 번). 다른 일이 돌면 false. */
+  contents(h: ContentsLook): boolean {
+    if (this.stopped || h.signal.aborted || this.job) return false;
+    const now = this.clock.now();
+    if (now - (this.lookedAt.get(h.objectId) ?? Number.NEGATIVE_INFINITY) < this.cfg.objectGapMs) {
+      h.done();
+      return true;
+    }
+    this.lookedAt.set(h.objectId, now);
+    const abort = new AbortController();
+    const job: Job = {
+      trigger: "unknown_fact", key: `${h.planId}:contents`, goal: LOOK_TEXT.held(h.spot.label), stuckMs: null, spots: [h.spot], tools: ["look_closer"],
+      planId: h.planId, abort, signal: AbortSignal.any([abort.signal, h.signal]), phase: "act",
+    };
+    this.job = job;
+    const p: Promise<void> = this.closerOnly(job, h.spot).catch(() => {}).finally(() => {
+      if (this.job === job) this.job = null;
+      this.running.delete(p);
+      h.done();
+    });
+    this.running.add(p);
+    return true;
+  }
+
+  /** 관찰 모드 없이 가까이 보고 look 기록 하나(감지를 합치기 전에 끊기면 기록 없음). */
+  private async closerOnly(job: Job, spot: LookSpot): Promise<void> {
+    this.o.onLook?.(spot);
+    const r = await this.o.closer(spot, job.signal).catch((): CloserResult => ({ ok: false, why: "error" }));
+    if (this.stopped || (!r.ok && r.why === "aborted")) return;
+    this.count.looks++;
+    const detail = r.ok ? r.found.map((f) => `${f.id ?? f.cls} ${f.score} ${f.facts.join(" ")}`.trim()).join(", ") : "";
+    this.record(job, { tool: "look_closer", reason: job.goal }, spot, LOOK_TEXT.closer(spot.label, closerText(r)), r, detail);
   }
 
   /** 코치 계획의 다른 행동(C). 받았으면 true. 다른 일이 도는 중이면 받지 않는다(실행 추적이 다음 계기에 다시 부른다). */
@@ -282,7 +318,7 @@ export class Looker {
     if (this.earlier.size > KEYS_MAX) this.earlier.delete(this.earlier.keys().next().value!);
     this.o.emit({
       type: "look", at_ms: at, trigger: job.trigger, target, tool: choice.tool, reason: choice.reason, text, result,
-      ...(job.planId ? { plan_id: job.planId, step_id: job.stepId } : {}),
+      ...(job.planId ? { plan_id: job.planId, ...(job.stepId ? { step_id: job.stepId } : {}) } : {}),
     });
   }
 }

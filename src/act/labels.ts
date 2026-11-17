@@ -209,5 +209,7 @@ export const LOOK_TEXT = {
   passed: "말 요청으로 넘김",
   waited: (place: string | null) => (place ? `${place} 쪽은 기다림` : "기다림"),
   capped: "한 시간 관찰 횟수를 다 써서 부르지 않음",
+  /** 내용물 보류의 가까이 보기 까닭(관찰 모드를 부르지 않는다). */
+  held: (place: string) => `${place} 안을 몰라 가까이 봄`,
   failed: (why: string) => `관찰 모드 호출 실패: ${why}`,
 };
