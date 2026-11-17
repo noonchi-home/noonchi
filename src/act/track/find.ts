@@ -11,7 +11,7 @@
 // 계획 전 찾기(idle 칸 TrackCore.finding, 명령 id find:<번호>): 계획 전 검사가 no_target·in_sink로 막았고 찾을 자리가 있으면 시작한다.
 //   찾는 동안 같은 행동 판단은 기록만 하고 가장 새 것으로 바꿔 두며(start.ts), 찾으면 그 판단으로 다시 계획 전 검사부터 한다. 다른 행동의 계획을 받으면 거둔다.
 //   계획 밖 가까이 가서 보기보다 먼저다(찾는 동안은 시작하지 않는다). 「그만」은 거두고 그 자리를 쉰다.
-// 실행 전 찾기(Run.find, 계획 명령 줄): 실행 전 검사가 no_target·stale로 막은 계획 대상 하나를 그 마지막 자리에서 찾는다(start.ts tryStart).
+// 실행 전 찾기(Run.find, 계획 명령 줄): 실행 전 검사가 다시 보기 기한(recheckMs)이 지나도 no_target·stale로 막은 계획 대상 하나를 그 마지막 자리에서 찾는다(start.ts tryStart).
 //   막은 그 물건을 찾으면 검사가 다시 통과해 첫 단계로 가고, 그 자리에서 다른 id의 같은 종류 물건만 찾으면 계획을 「찾은 뒤 다시 판단」으로 닫는다.
 import type { DecisionRecord } from "../../contract/events.js";
 import type { PlannedCommand } from "../../contract/phone.js";
@@ -165,8 +165,10 @@ export class Finder extends Part {
 
   private make(spot: LostSpot, freshMs: number, after: number, now: number): Find {
     const name = OBJECT_NAME[spot.cls] ?? spot.cls;
+    // 면 이름은 계획 단계와 같은 평면도 이름(「식탁」), 모르면 World State 면 이름
+    const place = (spot.surface ? this.core.nameOf(spot.surface) : null) ?? spot.surface_label;
     const f: Find = {
-      objectId: spot.objectId, cls: spot.cls, name, label: spot.surface_label ?? name, surfaceLabel: spot.surface_label, spotId: spot.objectId ?? `find_${spot.cls}`, at: [...spot.position],
+      objectId: spot.objectId, cls: spot.cls, name, label: place ?? name, surfaceLabel: place, spotId: spot.objectId ?? `find_${spot.cls}`, at: [...spot.position],
       freshMs, after, phase: "cmd", part: null, sent: null, since: now, aimAt: now, startedAt: now, blockedAt: null, lookTryAt: now, afterAt: now, guarded: false, end: new AbortController(),
     };
     if (f.objectId) {

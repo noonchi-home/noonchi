@@ -3908,6 +3908,12 @@ describe("실행 추적: 안 보이는 대상은 마지막으로 본 자리로 �
     expect(s.t.openCommand()).toMatchObject({ planId: "find:1", kind: "command", text: "식탁으로 가 주세요", choices: [] });
   });
 
+  it("자리 이름은 계획 단계와 같은 평면도 이름을 쓴다(World State 면 이름 「거실·복도 식탁」이 아니라 「식탁」)", async () => {
+    const s = findSetup({ sightings: [{ ...sighting(), surface: "table_1", surface_label: "거실·복도 식탁" }] });
+    await s.decide(decision);
+    expect(s.last()).toMatchObject({ text: "식탁으로 가 주세요", target: { label: "식탁" }, vision: expect.stringMatching(/^식탁까지 /) });
+  });
+
   it("싱크대에 치운 컵이 따로 있어 계획 전 검사가 in_sink로 막아도 후보 자리가 있으면 찾으러 간다", async () => {
     const inSink = { ...cup("present", "in_sink", 9_500), id: "cup_9", position: [5, 0.9, 1] as [number, number, number] };
     const s = findSetup({ objects: [inSink] });
@@ -4107,10 +4113,18 @@ describe("실행 추적: 계획 대상이 안 보이면 그 마지막 자리에�
     };
   }
   const seenAt = (ms: number, id = "cup_1", at: [number, number, number] = AT): WorldObject => ({ ...cup("present", "on_table", ms), id, position: at });
-
-  it("계획 대상 컵을 5초 전에 마지막으로 봤으면(실행 전 기준 3초 넘음) 계획을 붙잡고 그 자리로 가기 명령(계획 명령 줄, 단추 없음)을 보내고 보기 지킴을 건다", async () => {
-    const s = runSetup({ objects: [seenAt(5_000)] });
+  /** 계획을 받고 실행 전 검사를 다시 보는 3초(recheckMs) 동안 막힌 채 둔다: 그 뒤에야 찾기를 시작한다. */
+  async function blocked(s: ReturnType<typeof runSetup>) {
     await s.decide(decision);
+    expect(s.commands()).toEqual([]);
+    for (let i = 0; i < 11; i++) s.tick();
+    expect(s.commands()).toEqual([]);
+    s.tick();
+  }
+
+  it("계획 대상 컵을 5초 전에 마지막으로 봤고 실행 전 검사를 다시 보는 3초에도 못 보면 닫지 않고 붙잡아 그 자리로 가기 명령(계획 명령 줄, 단추 없음)을 보내고 보기 지킴을 건다", async () => {
+    const s = runSetup({ objects: [seenAt(5_000)] });
+    await blocked(s);
     expect(s.exec().some((l) => l.state === "failed")).toBe(false);
     expect(s.last()).toMatchObject({
       type: "command", id: "plan:pam-1", step: "plan:pam-1:find:cup_1:go:1", text: "식탁으로 가 주세요", kind: "go", near_m: FIND.nearM, choices: [],
@@ -4123,15 +4137,15 @@ describe("실행 추적: 계획 대상이 안 보이면 그 마지막 자리에�
   });
 
   // Codex(d2a34f4): 실행 전 검사는 판단 뒤 다시 못 본 컵을 낡음으로 막는데 찾을 자리는 3초 안이면 없다고 해 판단 바로 전에 본 컵을 찾지 않았다
-  it("판단 바로 전에 본 컵(3초 안이지만 판단 뒤 다시 못 봄)도 찾는다", async () => {
+  it("판단 바로 전에 본 컵(3초 안이지만 판단 뒤 다시 못 봄)도 3초 동안 다시 못 보면 찾는다", async () => {
     const s = runSetup({ objects: [seenAt(7_500)] });
-    await s.decide(decision);
+    await blocked(s);
     expect(s.last()).toMatchObject({ id: "plan:pam-1", step: "plan:pam-1:find:cup_1:go:1", text: "식탁으로 가 주세요" });
   });
 
   it("막은 그 컵이 다시 보이면 첫 단계를 보낸다(지킴 풂)", async () => {
     const s = runSetup({ objects: [seenAt(5_000)] });
-    await s.decide(decision);
+    await blocked(s);
     s.objects([seenAt(s.clock.t + 250)]);
     s.tick();
     expect(s.last()).toMatchObject({ id: "plan:pam-1", step: "plan:pam-1:1" });
@@ -4140,7 +4154,7 @@ describe("실행 추적: 계획 대상이 안 보이면 그 마지막 자리에�
 
   it("가까이 보기에서만 잡혀 3초를 넘겼으면 새 사진으로 다시 비추고 가까이 본다", async () => {
     const s = runSetup({ objects: [seenAt(5_000)] });
-    await s.decide(decision);
+    await blocked(s);
     s.eye([2.6, 1]);
     s.tick();
     const aimAt = s.clock.t;
@@ -4165,7 +4179,7 @@ describe("실행 추적: 계획 대상이 안 보이면 그 마지막 자리에�
 
   it("그 자리 0.5m 안에 다른 id의 같은 종류 컵만 생기면 계획을 「찾은 뒤 다시 판단」으로 닫고 같은 행동 다시 계획 간격에서 뺀다", async () => {
     const s = runSetup({ objects: [seenAt(5_000)], over: { planGapMs: 15_000 } });
-    await s.decide(decision);
+    await blocked(s);
     s.objects([{ ...seenAt(5_000), status: "out_of_view" }, seenAt(s.clock.t, "cup_7", [2.2, 0.75, 1])]);
     s.tick();
     expect(s.exec().find((l) => l.state === "failed")).toMatchObject({ plan_id: "plan:pam-1", text: EXEC_TEXT.foundNew });
@@ -4176,7 +4190,7 @@ describe("실행 추적: 계획 대상이 안 보이면 그 마지막 자리에�
 
   it("못 찾으면 낡음 글로 닫는다. 들고 감 보호였던 컵·치운 컵이면 찾지 않는다", async () => {
     const s = runSetup({ objects: [seenAt(5_000)] });
-    await s.decide(decision);
+    await blocked(s);
     s.eye([2.6, 1]);
     s.tick();
     s.ready(true);
@@ -4187,6 +4201,8 @@ describe("실행 추적: 계획 대상이 안 보이면 그 마지막 자리에�
     expect(s.guards.at(-1)).toEqual(["cup_1", false]);
     const carried = runSetup({ objects: [{ ...seenAt(5_000), carried: true }] });
     await carried.decide(decision);
+    for (let i = 0; i < 13; i++) carried.tick();
     expect(carried.commands().some((c) => c.step.includes(":find:"))).toBe(false);
+    expect(carried.exec().find((l) => l.state === "failed")).toMatchObject({ text: CHECK_TEXT.stale });
   });
 });

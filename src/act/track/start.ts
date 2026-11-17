@@ -188,8 +188,9 @@ export class Starter extends Part {
         r.since = this.clock.now();
         return;
       }
-      // 계획 대상이 안 보이면(없음·낡음, 내용물 보류가 아님) 그 대상의 마지막 자리에서 찾는다. 찾는 동안은 다시 보기 기한을 세지 않는다
-      if ((c.reason === "no_target" || c.reason === "stale") && c.object && !r.hold) {
+      // 계획 대상이 다시 보기 기한(recheckMs)이 지나도 안 보이면(없음·낡음, 내용물 보류가 아님) 닫지 않고 그 대상의 마지막 자리에서 찾는다.
+      // 찾는 동안은 다시 보기 기한을 세지 않는다
+      if ((c.reason === "no_target" || c.reason === "stale") && c.object && !r.hold && (last || r.find)) {
         const k = this.core.finder.keep(r, c.object);
         if (k === "hold") {
           r.since = this.clock.now();
