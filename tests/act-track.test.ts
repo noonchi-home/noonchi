@@ -3922,10 +3922,10 @@ describe("실행 추적: 안 보이는 대상은 마지막으로 본 자리로 �
   const sighting = (at_ms = 9_000, label: string | null = "식탁"): NonNullable<WorldView["sightings"]>[number] =>
     ({ cls: "cup", position: SPOT, surface: label ? "t" : null, surface_label: label, at_ms, in_hand: false });
   const found = (id: string, at: [number, number, number], seen: number): WorldObject => ({ ...cup("present", "on_table", seen), id, position: at });
-  const TASKS_ALL = ["컵 치우기", "사용자에게 물어보기"];
+  const TASKS_ALL = ["컵 치우기", "사용자에게 물어보기", "컵 그대로 두기", "컵에 물 채워 주기"];
   /** 가까이 보기가 새 사진으로 보고 VLM도 답했는데 찾은 것이 없다(분명히 없음). */
   const ABSENT: CloserResult = { ok: true, frame_id: "e9.c1", captured_at_ms: 9_000, crop: [0, 0, 10, 10], frames: 5, found: [], summary: "s", vlm: "ok" };
-  function findSetup(o: { objects?: WorldObject[]; sightings?: WorldView["sightings"] | null; over?: Parameters<typeof setup>[0] } = {}) {
+  function findSetup(o: { objects?: WorldObject[]; sightings?: WorldView["sightings"] | null; person?: string; over?: Parameters<typeof setup>[0] } = {}) {
     let objects = o.objects ?? [];
     let sightings: WorldView["sightings"] | null = o.sightings === undefined ? [sighting()] : o.sightings;
     let ready = false;
@@ -3933,7 +3933,7 @@ describe("실행 추적: 안 보이는 대상은 마지막으로 본 자리로 �
     const looks: ContentsLook[] = [];
     const guards: [string, boolean][] = [];
     const asked: [number[], number][] = [];
-    const w = (): WorldView => ({ ...world(objects), ...(sightings ? { sightings } : {}) });
+    const w = (): WorldView => ({ ...world(objects, o.person), ...(sightings ? { sightings } : {}) });
     const s = setup({
       w, precheck: (d) => checkDecision({ decision: d, tasks: TASKS_ALL, world: w() }),
       spotReady: (at, since) => { asked.push([at, since]); return ready; },
@@ -3985,6 +3985,32 @@ describe("실행 추적: 안 보이는 대상은 마지막으로 본 자리로 �
     expect(s.last()).toEqual(shown);
     s.tick();
     expect(s.commands().some((c) => c.id.startsWith("find:"))).toBe(false);
+  });
+
+  // 2026-11-18 실제 녹화(cup-mug-empty.real3): 사람이 컵을 들고 마시는 중에 PAM이 「컵 그대로 두기」를 고르자 찾기가 시작돼 「컵 있던 곳으로 가 주세요」가 나갔고
+  // 영상 모드가 걷는 단계 영상으로 바꿔 사람이 나가는 장면이 재생되지 않았다. 그 뒤 「컵 치우기」는 찾는 중이라 계속 막혔다
+  it("대상에 손을 대지 않는 행동(컵 그대로 두기)은 대상이 안 보여도 찾지 않고 지금처럼 닫는다. 채우기는 찾는다", async () => {
+    const s = findSetup();
+    await s.decide({ ...decision, action: "컵 그대로 두기" });
+    expect(s.exec().map((l) => [l.state, l.text])).toEqual([["decided", "판단"], ["failed", CHECK_TEXT.no_target]]);
+    expect(s.commands()).toEqual([]);
+    const fill = findSetup();
+    await fill.decide({ ...decision, action: "컵에 물 채워 주기" });
+    expect(fill.last()).toMatchObject({ id: "find:1" });
+  });
+
+  it("사람이 그 컵(또는 무엇인지 모르는 물건)을 들고 있거나, 사람이 보이고 그 자리를 손에 든 채 봤으면 찾지 않는다(손에 든 컵을 찾으러 사람을 걷게 하지 않는다)", async () => {
+    const holding = findSetup({ person: "holding_object" });
+    await holding.decide(decision);
+    expect(holding.exec().at(-1)).toMatchObject({ state: "failed", text: CHECK_TEXT.no_target });
+    expect(holding.commands()).toEqual([]);
+    const inHand = findSetup({ person: "standing", sightings: [{ ...sighting(), in_hand: true }] });
+    await inHand.decide(decision);
+    expect(inHand.commands()).toEqual([]);
+    // 사람이 안 보이면 손에 든 채 본 자리라도 마지막으로 본 자리로 간다
+    const gone = findSetup({ sightings: [{ ...sighting(), in_hand: true }] });
+    await gone.decide(decision);
+    expect(gone.last()).toMatchObject({ id: "find:1" });
   });
 
   it("싱크대에 치운 컵이 따로 있어 계획 전 검사가 in_sink로 막아도 후보 자리가 있으면 찾으러 간다", async () => {

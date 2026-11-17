@@ -28,6 +28,9 @@ export interface TaskSpec {
   coach?: true;
   /** 이 행동 계획의 단계 수 상한(없으면 8, src/agent/planTools.ts PLAN_LIMITS). */
   maxSteps?: number;
+  /** 대상 물건에 손을 대는 행동(치우기·채우기·따르기): 대상이 안 보이면 마지막으로 본 자리로 찾으러 간다(src/act/track/find.ts).
+   *  대상을 건드리지 않는 행동(그대로 두기)은 찾지 않는다. */
+  touch?: true;
 }
 
 const HAND = ["go", "pick", "place"] as const;
@@ -36,7 +39,7 @@ const FILL: TaskAllow = { kinds: ["go", "pick", "do", "place"], need: ["go", "pi
 
 export const TASKS: Record<string, TaskSpec> = {
   "컵 치우기": {
-    name: "컵 치우기", description: "사람이 자리를 비운 뒤 식탁 등에 남은 컵을 사람이 싱크대에 넣게 한다.", target: "cup",
+    name: "컵 치우기", description: "사람이 자리를 비운 뒤 식탁 등에 남은 컵을 사람이 싱크대에 넣게 한다.", target: "cup", touch: true,
     allow: { kinds: HAND, need: HAND },
   },
   "사용자에게 물어보기": { name: "사용자에게 물어보기", description: "컵 안을 확인할 수 없는 등 애매할 때 폰으로 사용자에게 어떻게 할지 묻는다.", allow: { kinds: ["ask", "say"], need: ["ask"] } },
@@ -54,11 +57,11 @@ export const TASKS: Record<string, TaskSpec> = {
     allow: { kinds: [], need: [] },
   },
   "컵에 물 채워 주기": {
-    name: "컵에 물 채워 주기", description: "사람이 식사 중인데 컵이 비어 있으면 사람이 냉장고에서 물병을 꺼내 와 컵에 물을 따르게 한다.", target: "cup", look: ["contents"], want: { contents: "empty" },
+    name: "컵에 물 채워 주기", description: "사람이 식사 중인데 컵이 비어 있으면 사람이 냉장고에서 물병을 꺼내 와 컵에 물을 따르게 한다.", target: "cup", touch: true, look: ["contents"], want: { contents: "empty" },
     carry: "bottle", carryUnseen: true, allow: FILL,
   },
   "컵에 콜라 따라 주기": {
-    name: "컵에 콜라 따라 주기", description: "사람이 TV를 보는 중인데 컵이 비어 있으면 사람이 냉장고에서 콜라를 꺼내 와 컵에 따르게 한다.", target: "cup", look: ["contents"], want: { contents: "empty" },
+    name: "컵에 콜라 따라 주기", description: "사람이 TV를 보는 중인데 컵이 비어 있으면 사람이 냉장고에서 콜라를 꺼내 와 컵에 따르게 한다.", target: "cup", touch: true, look: ["contents"], want: { contents: "empty" },
     carry: "bottle", carryUnseen: true, allow: FILL,
   },
   // 코치 행동(2026-11-13): 단계 목록은 에이전트 계획 모드가 만든다. 여기에는 설명과 쓸 수 있는 단계만 둔다(device 없음)
@@ -144,8 +147,8 @@ export function targetOf(spec: Pick<TaskSpec, "target">, world: WorldView, place
   return world.objects.filter((o) => o.cls === spec.target && o.status !== "gone" && !putAway(o, placed)).sort((a, b) => b.last_seen_ms - a.last_seen_ms)[0] ?? null;
 }
 
-/** 찾을 자리: 안 보이는 대상을 마지막으로 본 자리. objectId는 확인 물건 id, 후보 자리(World State sightings)면 null. */
-export interface LostSpot { objectId: string | null; cls: ObjClass; position: [number, number, number]; surface: string | null; surface_label: string | null; at_ms: number }
+/** 찾을 자리: 안 보이는 대상을 마지막으로 본 자리. objectId는 확인 물건 id, 후보 자리(World State sightings)면 null. in_hand: 그 자리를 손에 든 채 봤다. */
+export interface LostSpot { objectId: string | null; cls: ObjClass; position: [number, number, number]; surface: string | null; surface_label: string | null; at_ms: number; in_hand: boolean }
 
 /** 대상이 안 보일 때 찾으러 갈 자리(가장 새 것 하나). 그 종류 있는 물건이 freshMs 안에(seenAfter를 주면 그 뒤에도) 보였으면 null
  *  (막은 검사의 신선도 기준을 그대로 받는다: 실행 전 검사는 판단 뒤에 다시 본 것만 신선하다).
@@ -163,10 +166,13 @@ export function lostTarget(i: {
   const fresh = (o: WorldObject) => o.status === "present" && o.last_seen_ms > (i.seenAfter ?? Number.NEGATIVE_INFINITY) && i.now - o.last_seen_ms <= i.freshMs;
   if (mine.some((o) => fresh(o) && !putAway(o, i.placed))) return null;
   const spots: LostSpot[] = mine.filter((o) => o.position && !putAway(o, i.placed) && o.carried !== true && !i.away?.has(o.id))
-    .map((o) => ({ objectId: o.id, cls: i.cls, position: [...o.position!] as [number, number, number], surface: o.surface, surface_label: o.surface_label, at_ms: o.last_seen_ms }));
+    .map((o) => ({
+      objectId: o.id, cls: i.cls, position: [...o.position!] as [number, number, number], surface: o.surface, surface_label: o.surface_label, at_ms: o.last_seen_ms,
+      in_hand: o.facts.place?.value === "in_hand",
+    }));
   if (i.objectId === undefined) {
     for (const s of i.world.sightings ?? []) {
-      if (s.cls === i.cls) spots.push({ objectId: null, cls: i.cls, position: [...s.position], surface: s.surface, surface_label: s.surface_label, at_ms: s.at_ms });
+      if (s.cls === i.cls) spots.push({ objectId: null, cls: i.cls, position: [...s.position], surface: s.surface, surface_label: s.surface_label, at_ms: s.at_ms, in_hand: s.in_hand });
     }
   }
   return spots.filter((s) => !i.resting?.(s)).sort((a, b) => b.at_ms - a.at_ms)[0] ?? null;
