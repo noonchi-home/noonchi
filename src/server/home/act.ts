@@ -147,6 +147,8 @@ export function startAct(core: HomeCore): (event: BrainLog) => void {
     // 실제 폰에 승인 대기가 떠 있거나 폰 대화를 쓰는 중이면 내용물 질문을 미룬다(승인 질문·대화를 덮지 않는다)
     approvalsWaiting: () => core.agent.pending(PHONE_SESSION).length > 0,
     talking: () => core.talk.inflight > 0 || now() - core.talk.at < TALK_QUIET_MS,
+    // 이번 판단에 보내는 행동 목록: 내용물 행동이 있을 때만 계획 밖 내용물 질문(판단 전 보기 B 끝)을 한다
+    tasks: () => tasksFor(core.assist()),
     // 코치 계획 중 다른 행동을 본 것 같으면 보기 담당(관찰 모드 계기 off_track)에 알린다
     strayed: (s) => core.looker?.strayed(s) ?? false,
   });
@@ -163,6 +165,8 @@ export function startLooker(core: HomeCore, emit: (event: BrainLog) => void): vo
   core.looker = new Looker({
     observer, closer: (spot, signal) => observed.closer(spot, signal), frame: () => observed.latest(), world: () => world.view(now()),
     askPerson: (planId, stepId, spot) => tracking.askCloser(planId, stepId, spot), tell: (planId, stepId, mode) => tracking.tell(planId, stepId, mode), emit, targets: lookTargets, placed: () => tracking.placed(), clock: ctx.brain?.clock,
+    // B가 가까이 본 컵: 실행 추적이 계획 밖으로 물을지 본다
+    looked: (id) => tracking.lookedIdle(id),
     onLook: (spot) => {
       core.lookSay = { place: spot.label, atMs: Date.now() };
       core.speak();

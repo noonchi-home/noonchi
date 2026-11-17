@@ -77,6 +77,8 @@ export interface TrackConfig {
 export class TrackCore {
   run: Run | null = null;
   planning: Job | null = null;
+  /** 계획 밖 내용물 질문(판단 전 보기 B 끝, src/act/track/contents.ts idle): 명령 id ask:<번호>, 그 컵·세대, 보낸 명령, 물은·읽은 시각. 없으면 null. */
+  idleAsk: { id: string; objectId: string; gen: number; sent: PlannedCommand; askAt: number; spokeAt: number } | null = null;
   /** 마지막으로 기다리기·기기 단계가 시작된 시각. 그 전에 보낸 다른 행동 판단은 쓰지 않는다. */
   quietFrom = -Infinity;
   stopped = false;

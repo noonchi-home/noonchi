@@ -165,6 +165,8 @@ export interface TrackerOptions {
   approvalsWaiting?: () => boolean;
   /** 실제 폰 대화를 쓰는 중인가(에이전트가 들은 말을 처리하는 중이거나 끝난 지 얼마 안 됨). 그동안 내용물 질문을 하지 않는다. */
   talking?: () => boolean;
+  /** 이번 판단에 보내는 행동 목록(src/act/tasks.ts tasksFor). 내용물 행동(want)이 있을 때만 계획 밖 내용물 질문을 한다. 없으면 묻지 않는다. */
+  tasks?: () => readonly string[];
   /** 그 자리에서 하는 일 단계가 물건 안을 바꾸는 단계(끝 조건에 그 물건 내용물)일 때 창을 연다·닫는다(src/world/state/world.ts contentsAction). */
   contentsAction?: (objectId: string, on: boolean) => void;
   /** 집기·놓기 단계가 이만큼(ms) 안 끝나면 stalled를 부른다(단계 시작 뒤, 받은 부름 뒤). */
@@ -288,6 +290,8 @@ export class ExecutionTracker {
     const { steps, safety } = core;
     const r = core.run;
     if (!core.stopped) safety.reminderTick();
+    // 계획 밖 내용물 질문(판단 전 보기 B 끝): 계획이 없을 때만 묻고, 막는 것이 생기면 지운다
+    if (!core.stopped) core.contents.idle();
     if (core.stopped || !r || !OPEN.has(r.state)) return;
     const now = core.clock.now();
     if (r.state === "planned" && !r.asking) return core.start.tryStart(r, now - r.since >= core.cfg.recheckMs);
@@ -328,9 +332,15 @@ export class ExecutionTracker {
     if (HUMAN_KINDS.includes(step.kind) || step.kind === "ask") steps.repeat(r, now);
   }
 
+  /** 판단 전 보기 B가 그 컵을 가까이 봤다(src/act/look.ts looked): 계획 밖 내용물 질문을 할지 본다. */
+  lookedIdle(objectId: string): void {
+    this.core.contents.lookedIdle(objectId);
+  }
+
   /** 멈추면 더 기록하지 않고 폰에도 보내지 않는다. 만들던 계획과 멈춘 단계 알림은 끊는다. */
   stop(): void {
     const core = this.core;
+    core.contents.dropIdle(false);
     core.planning?.abort.abort();
     core.planning = null;
     core.run?.stepEnd?.abort();

@@ -55,6 +55,8 @@ export interface LookerOptions {
   /** 지금 할 일 다시 알리기(src/act/track/coach.ts tell): 방식으로 서버가 글을 만든다. 보낸 글, 못 보냈으면 null. 없으면 보내지 못한 것으로 본다. */
   tell?: (planId: string, stepId: string, mode: TellMode) => string | null;
   emit: (l: BrainLog) => void;
+  /** 판단 전 보기 B가 가까이 보기를 마쳤다(자원 사정으로 못 본 것은 빼고): 그 물건 id. 실행 추적이 계획 밖으로 물을지 본다(src/act/track/contents.ts). */
+  looked?: (objectId: string) => void;
   /** 판단 전에 더 잘 볼 종류와 면(src/act/tasks.ts lookTargets). */
   targets: () => readonly { cls: ObjClass; facets: readonly Facet[] }[];
   /** 실행 추적이 놓기 단계를 끝낸 물건(이미 치운 것, src/act/track/steps.ts placed). 판단 전 보기(B)에서 뺀다. */
@@ -277,6 +279,8 @@ export class Looker {
       result = r;
       this.count.looks++;
       counted = !WAITS.has(r.ok ? r.vlm : r.why);
+      // 판단 전 보기 B(계획 없음)가 가까이 보기를 마쳤다: 실행 추적이 그 컵을 계획 밖으로 물을지 본다
+      if (job.trigger === "unknown_fact" && !job.planId && counted) this.o.looked?.(spot.id);
       text = LOOK_TEXT.closer(spot.label, closerText(r));
       if (r.ok) detail = r.found.map((f) => `${f.id ?? f.cls} ${f.score} ${f.facts.join(" ")}`.trim()).join(", ");
     } else if (choice.tool === "ask_person") {
