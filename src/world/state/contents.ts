@@ -1,10 +1,12 @@
 // World State의 내용물(컵·병·그릇 안) 갱신기 하나(ContentsBook): 전체 사진 VLM 답(facts.ts)·가까이 본 VLM 답(closer.ts)·사람 답·마시기 따르기 사건(people.ts)·
 // 계획의 따르기 단계 창이 모두 여기로 온다. 물건의 facts.contents는 여기서만 쓴다.
 // - 확인: 서로 다른 원본 프레임 사진에서 같은 값이 CONTENTS_CONFIRM.photos장, 처음과 마지막 촬영이 spanMs 이상, 이웃 사진 사이 gapMs 이하로 이어지면 확인 값.
-//   같은 원본 프레임은 한 장이다(잘라 본 답이 전체 사진 답보다 앞선다). 「안이 안 보임」 답은 후보가 아니다.
+//   같은 원본 프레임은 한 장이다(잘라 본 답이 전체 사진 답보다 앞선다). 「안이 안 보임」 답은 후보가 아니다. 확인을 받치는 사진 목록도 쌓는 사진 안이다.
+//   가까이 본 답이 넣은 값의 closer_ms는 같은 값이 이어지는 동안 남는다.
 //   확인 값을 받치던 사진이 같은 원본 프레임의 잘라 본 답으로 반대가 되면 바뀐 근거로 다시 세어, 다 이어진 묶음이 없으면 확인을 거둔다.
 // - 확인 값은 행동으로만 바꾼다: 사건(마시기·따르기)·계획의 따르기 단계 창이 「다시 확인 필요」로 열고(이전 값은 보관, 그 전에 찍힌 사진은 버림) 그 뒤 다 이어진 값이 새 확인 값이다.
-//   창이 아니면 반대 값 한 장은 무시하고, conflict장 이어지면 확인 값을 짐작으로 낮춘다(실행에서 모름). 다 이어져도 확인 값은 바꾸지 않는다. 창 안에서는 다 이어진 값이 바꾼다.
+//   창이 아니면 반대 값 한 장은 무시하고, conflict장 이어지면 확인 값을 짐작으로 낮춘다(실행에서 모름). 그 충돌은 기억해, 반대 묶음이 공백으로 끊겨도
+//   같은 값의 새 사진(가장 새 사진)이 오기 전에는 확인됨으로 되살리지 않는다. 다 이어져도 확인 값은 바꾸지 않는다. 창 안에서는 다 이어진 값이 바꾼다.
 //   사람 답·앞서 연 때보다 먼저(같은 때 포함) 찍힌 사건(대기열에서 늦게 나온 관절 결과)은 버린다.
 // - 사람 답은 확인 값(출처 사람)이다. 다음 사건 전까지 VLM 답을 받지 않는다. 답은 지금 세대일 때만 받는다(늦은 답은 null).
 // - 확인된 불투명(body opaque) 컵은 VLM 내용물 답을 쓰지 않고 「안이 안 보임」(확인됨)이다. 사람 답이 앞선다.
@@ -32,6 +34,8 @@ export interface ContentsState {
   from: number;
   /** 계획의 따르기 단계 동안: 다 이어진 값이 확인 값을 바꾼다. */
   window: boolean;
+  /** 후보 충돌: 확인 값과 반대 값이 conflict장 이어졌고, 그 뒤 같은 값의 새 사진이 아직 없다(확인 값을 짐작으로 둔다). */
+  doubt: boolean;
   gen: number;
   past: { value: Sure; by: "vlm" | "person"; atMs: number }[];
 }
@@ -58,7 +62,7 @@ const complete = (s: Streak | null): s is Streak => !!s && s.count >= CONTENTS_C
 /** 내용물 갱신기. */
 export class ContentsBook extends Part {
   private state(obj: Obj): ContentsState {
-    return (obj.contents ??= { sure: null, photos: [], from: Number.NEGATIVE_INFINITY, window: false, gen: 0, past: [] });
+    return (obj.contents ??= { sure: null, photos: [], from: Number.NEGATIVE_INFINITY, window: false, doubt: false, gen: 0, past: [] });
   }
 
   private opaque(obj: Obj): boolean {
@@ -88,8 +92,7 @@ export class ContentsBook extends Part {
     const sure = s.sure;
     if (sure?.by === "vlm" && replaced && replaced.value !== value && sure.frames.includes(frameId)
       && !streaks(s.photos).some((x) => x.value === sure.value && complete(x))) {
-      s.sure = null;
-      s.gen++;
+      Object.assign(s, { sure: null, doubt: false, gen: s.gen + 1 });
     }
     const changes: WorldChange[] = [];
     const run = streakOf(s.photos);
@@ -97,11 +100,21 @@ export class ContentsBook extends Part {
       if (!s.sure || (s.sure.value !== run.value && s.window)) {
         this.keepPast(s);
         s.sure = { value: run.value, by: "vlm", sinceMs: run.first, atMs: run.last, frames: run.frames };
+        s.doubt = false;
         s.gen++;
         changes.push({ kind: "state", at_ms: atMs, subject: obj.id, meaningful: true, text: CHANGE_TEXT.state(this.core.name(obj), run.value) });
       } else if (s.sure.value === run.value) {
         Object.assign(s.sure, { atMs: Math.max(s.sure.atMs, run.last), frames: [...new Set([...s.sure.frames, ...run.frames])] });
       }
+    }
+    if (s.sure) {
+      // 받치는 사진 목록은 쌓는 사진 안만 둔다(바뀐 근거로 다시 셀 때만 쓴다)
+      const live = new Set(s.photos.map((p) => p.frame));
+      s.sure.frames = s.sure.frames.filter((f) => live.has(f));
+      // 후보 충돌: 가장 새 사진이 같은 값이면 풀고, 반대 값이 conflict장 이어지면 건다(공백으로 끊겨도 같은 값의 새 사진 전에는 풀지 않는다)
+      const newest = s.photos.filter((p) => isSure(p.value)).at(-1);
+      if (newest?.value === s.sure.value) s.doubt = false;
+      else if (run && run.value !== s.sure.value && run.count >= CONTENTS_CONFIRM.conflict) s.doubt = true;
     }
     return { changes, changed: this.settle(obj) };
   }
@@ -111,7 +124,7 @@ export class ContentsBook extends Part {
     const s = this.state(obj);
     if (s.gen !== gen) return null;
     this.keepPast(s);
-    Object.assign(s, { sure: { value, by: "person", sinceMs: atMs, atMs, frames: [] }, photos: [], from: atMs, gen: s.gen + 1 });
+    Object.assign(s, { sure: { value, by: "person", sinceMs: atMs, atMs, frames: [] }, photos: [], from: atMs, doubt: false, gen: s.gen + 1 });
     this.settle(obj);
     return [{ kind: "state", at_ms: atMs, subject: obj.id, meaningful: true, text: CHANGE_TEXT.contentsAnswered(this.core.name(obj), value) }];
   }
@@ -122,7 +135,7 @@ export class ContentsBook extends Part {
     if (atMs <= s.from) return [];
     const had = s.sure;
     this.keepPast(s);
-    Object.assign(s, { sure: null, from: atMs, gen: s.gen + 1 });
+    Object.assign(s, { sure: null, from: atMs, doubt: false, gen: s.gen + 1 });
     s.photos = s.photos.filter((p) => p.at >= atMs);
     this.settle(obj);
     return had ? [{ kind: "state", at_ms: atMs, subject: obj.id, meaningful: false, text: CHANGE_TEXT.contentsAgain(this.core.name(obj), why) }] : [];
@@ -134,16 +147,17 @@ export class ContentsBook extends Part {
     this.state(obj).window = on;
   }
 
-  /** facts.contents를 지금 상태로 다시 쓴다(사람 답 > 불투명 > 확인 값(반대 후보가 이어지면 짐작) > 후보 짐작 > 보관 값 짐작 > 「안이 안 보임」 짐작). 바뀌었으면 true. */
+  /** facts.contents를 지금 상태로 다시 쓴다(사람 답 > 불투명 > 확인 값(후보 충돌이면 짐작) > 후보 짐작 > 보관 값 짐작 > 「안이 안 보임」 짐작).
+   *  값이 그대로면 closer_ms를 남긴다. 값이 새로 생기거나 바뀌거나 없어졌으면 true(가까이 보기 횟수·closer_ms는 이때만 바꾼다). */
   settle(obj: Obj): boolean {
     // 내용물 답이 한 번도 없어도 불투명이 확인되면 「안이 안 보임」을 둔다
     const s = obj.contents ?? (this.opaque(obj) ? this.state(obj) : null);
     if (!s) return false;
     const before = obj.facts.contents;
     const next = this.effective(obj, s);
-    if (next) obj.facts.contents = next;
+    if (next) obj.facts.contents = before?.closer_ms !== undefined && before.value === next.value ? { ...next, closer_ms: before.closer_ms } : next;
     else delete obj.facts.contents;
-    return before?.value !== next?.value || before?.certainty !== next?.certainty || before?.since_ms !== next?.since_ms;
+    return before?.value !== next?.value;
   }
 
   private effective(obj: Obj, s: ContentsState): WorldFact | undefined {
@@ -152,10 +166,7 @@ export class ContentsBook extends Part {
     const body = obj.facts.body;
     if (body && this.opaque(obj)) return { value: "contents_unknown", at_ms: body.at_ms, since_ms: body.since_ms, certainty: "confirmed" };
     const run = streakOf(s.photos);
-    if (sure) {
-      const against = !!run && run.value !== sure.value && run.count >= CONTENTS_CONFIRM.conflict;
-      return { value: sure.value, at_ms: sure.atMs, since_ms: sure.sinceMs, certainty: against ? "inferred" : "confirmed" };
-    }
+    if (sure) return { value: sure.value, at_ms: sure.atMs, since_ms: sure.sinceMs, certainty: s.doubt ? "inferred" : "confirmed" };
     if (run) return { value: run.value, at_ms: run.last, since_ms: run.first, certainty: "inferred" };
     const last = s.past[0];
     if (last) return { value: last.value, at_ms: last.atMs, since_ms: last.atMs, certainty: "inferred" };

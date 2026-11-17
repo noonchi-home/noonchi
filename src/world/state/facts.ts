@@ -6,7 +6,7 @@ import type { Facet, WorldChange } from "../../contract/world.js";
 import type { SceneObservation } from "../../contract/observe.js";
 import { CHANGE_TEXT, OBJECT_NAME, fixtureName } from "../labels.js";
 import { FACT_FRESH_MS, NOW_FACETS, STATES, VLM_ONLY, type ClassKey, type StateKey, type StateOf, type Target } from "../vocab.js";
-import { PERSON, Part, fits, type Facts } from "./core.js";
+import { PERSON, Part, fits, type Facts, type Obj } from "./core.js";
 
 /** VLM 답을 원본 프레임·대상·면마다 한 번만 세려고 기억하는 수(넣은 순서, 최근 것). */
 const ANSWERS_KEEP = 4000;
@@ -87,6 +87,8 @@ export class SceneFacts extends Part {
     const turn = new Set<string>();
     /** 몸통 답을 받은 물건(값이 그대로여도: 두 번째 같은 값이 확인됨으로 올린다). 고리 끝에 내용물을 다시 쓴다. */
     const bodies = new Set<string>();
+    /** 안 내용 답: 몸통을 먼저 넣고(불투명이면 버림) 확인 줄을 낸다. */
+    const contents: [Obj, StateOf<"contents">][] = [];
     const hidden = new Set(scene.observations.filter((o) => (VLM_ONLY as readonly string[]).includes(o.state)).map((o) => ids.get(o.object_id)).filter((x): x is string => !!x));
     for (const ob of scene.observations) {
       const id = ids.get(ob.object_id);
@@ -96,10 +98,9 @@ export class SceneFacts extends Part {
       if (!fits(value, target.cls, target.kind)) continue;
       const facet = STATES[value].facet;
       said.add(`${id}|${facet}`);
+      // 안 내용은 이 답의 몸통(불투명)을 넣은 뒤 갱신기로 넣는다(아래)
       if (target.kind === "object" && facet === "contents") {
-        const obj = core.objects.get(id)!;
-        const { changes: c } = core.contents.see(obj, frameId, capturedAtMs, value as StateOf<"contents">, false);
-        if (obj.confirmed && obj.status !== "gone") changes.push(...c);
+        contents.push([core.objects.get(id)!, value as StateOf<"contents">]);
         continue;
       }
       if (target.kind === "object" && facet === "body") bodies.add(id);
@@ -116,6 +117,10 @@ export class SceneFacts extends Part {
       }
     }
     for (const id of bodies) core.contents.settle(core.objects.get(id)!);
+    for (const [obj, value] of contents) {
+      const { changes: c } = core.contents.see(obj, frameId, capturedAtMs, value, false);
+      if (obj.confirmed && obj.status !== "gone") changes.push(...c);
+    }
     // 이 프레임에서 본 대상의 지금만 맞는 사실: 이 답에 없으면 지운다(더 새 답의 사실, 같은 원본 프레임을 잘라 본 답의 사실은 그대로)
     for (const id of new Set(ids.values())) {
       const target = this.targetOf(id);

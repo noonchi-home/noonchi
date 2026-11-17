@@ -244,6 +244,7 @@ export class CloserLook extends Part {
       this.liftHolds(created, used);
     }
     const turn = new Set<string>();
+    const contents: [Obj, StateOf<"contents">][] = [];
     // 이미 있는 물건도 가렸다고 답한 상자는 함께 답한 사실을 넣지 않는다(답 순서와 상관없이, 상자마다)
     const hidden = new Set(scene.observations.filter((ob) => (VLM_ONLY as readonly string[]).includes(ob.state)).map((ob) => ob.object_id));
     for (const ob of scene.observations) {
@@ -254,14 +255,9 @@ export class CloserLook extends Part {
       const value = ob.state as StateKey;
       if (!fits(value, obj.cls, "object")) continue;
       const facet = STATES[value].facet;
-      // 안 내용은 내용물 갱신기(contents.ts)가 정한다: 같은 원본 프레임의 전체 사진 답보다 이 답이 앞선다
+      // 안 내용은 이 답의 몸통(불투명)을 넣은 뒤 내용물 갱신기(contents.ts)로 넣는다(아래). 같은 원본 프레임의 전체 사진 답보다 이 답이 앞선다
       if (facet === "contents") {
-        const r = core.contents.see(obj, sourceFrameId, capturedAtMs, value as StateOf<"contents">, true);
-        if (r.changed) {
-          obj.closerRev.contents = (obj.closerRev.contents ?? 0) + 1;
-          if (obj.facts.contents) obj.facts.contents = { ...obj.facts.contents, closer_ms: capturedAtMs };
-        }
-        if (obj.confirmed && obj.status !== "gone") changes.push(...r.changes);
+        contents.push([obj, value as StateOf<"contents">]);
         continue;
       }
       if (core.people.poseHolds(obj.facts[facet], capturedAtMs) || core.merge.carriedPlace(obj.id, facet)) continue;
@@ -272,6 +268,15 @@ export class CloserLook extends Part {
       if (facet === "body") core.contents.settle(obj);
       obj.closerRev[facet] = (obj.closerRev[facet] ?? 0) + 1;
       if (obj.confirmed && obj.status !== "gone") changes.push({ kind: "state", at_ms: capturedAtMs, subject: obj.id, meaningful: true, text: CHANGE_TEXT.state(core.name(obj), value) });
+    }
+    for (const [obj, value] of contents) {
+      const r = core.contents.see(obj, sourceFrameId, capturedAtMs, value, true);
+      // 가까이 본 답이 내용물 값을 새로 넣거나 바꿨으면 횟수와 그 촬영 시각(같은 값이 이어지는 동안 남는다)
+      if (r.changed) {
+        obj.closerRev.contents = (obj.closerRev.contents ?? 0) + 1;
+        if (obj.facts.contents) obj.facts.contents = { ...obj.facts.contents, closer_ms: capturedAtMs };
+      }
+      if (obj.confirmed && obj.status !== "gone") changes.push(...r.changes);
     }
     return changes;
   }

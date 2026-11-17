@@ -93,6 +93,50 @@ describe("내용물 확인", () => {
     s.say(2, "empty"); s.say(3, "contents_unknown"); s.say(4, "empty"); s.say(6, "empty");
     expect(s.cupNow().facts.contents).toMatchObject({ value: "empty", certainty: "confirmed" });
   });
+
+  it("후보 충돌은 기억한다: 반대 값 묶음이 공백으로 끊겨도 같은 값의 새 사진 없이 확인됨으로 되살리지 않는다", () => {
+    const s = scene();
+    for (const i of [1, 3, 5]) s.say(i, "empty");
+    s.say(6, "has_contents"); s.say(7, "has_contents");
+    expect(s.cupNow().facts.contents).toMatchObject({ value: "empty", certainty: "inferred" });
+    s.say(14, "has_contents"); // 7초 뒤 반대 값 한 장: 묶음은 끊겼지만 충돌은 이어진다
+    expect(s.cupNow().facts.contents).toMatchObject({ value: "empty", certainty: "inferred" });
+    s.say(15, "empty"); // 같은 값의 새 사진
+    expect(s.cupNow().facts.contents).toMatchObject({ value: "empty", certainty: "confirmed" });
+  });
+
+  it("같은 답에서 불투명이 안 내용 뒤에 와도, 불투명이 확인되면 안 내용 확인 줄을 내지 않는다(몸통을 먼저 넣는다). 가까이 본 답도 같다", () => {
+    const s = scene();
+    s.say(1, "empty");
+    expect(s.lines(s.say(3, "empty", "opaque"))).toEqual([["컵 cup_1 불투명", true]]);
+    // 셋째 사진(4초)에 불투명이 확인된다: 안 내용 「비어 있음」 확인 줄을 내지 않는다
+    expect(s.lines(s.say(5, "empty", "opaque"))).toEqual([]);
+    expect(s.cupNow().facts.contents).toMatchObject({ value: "contents_unknown", certainty: "confirmed" });
+    const c = scene();
+    c.say(1, "empty"); c.say(3, "empty", "opaque");
+    expect(c.lines(c.crop(5, "empty", "opaque"))).toEqual([]);
+    expect(c.cupNow().facts.contents).toMatchObject({ value: "contents_unknown", certainty: "confirmed" });
+  });
+
+  it("확인을 받치는 사진 목록도 쌓는 사진 수(12장) 안이다(오래 보는 컵)", () => {
+    const s = scene();
+    for (let i = 1; i <= 40; i++) s.say(i * 2, "empty");
+    const core = (s.w as unknown as { core: { objects: Map<string, { contents: { sure: { frames: string[] } } }> } }).core;
+    expect(core.objects.get("cup_1")!.contents.sure.frames.length).toBeLessThanOrEqual(12);
+    expect(s.cupNow().facts.contents).toMatchObject({ value: "empty", certainty: "confirmed" });
+  });
+
+  it("가까이 본 답이 넣은 값의 closer_ms는 같은 값이 이어지는 동안 남고(전체 사진이 같은 값을 이어 봐도), 값이 바뀌면 없어진다", () => {
+    const s = scene();
+    s.crop(1, "empty");
+    expect(s.cupNow().facts.contents).toMatchObject({ value: "empty", closer_ms: 1000 });
+    s.say(3, "empty"); s.say(5, "empty");
+    expect(s.cupNow().facts.contents).toMatchObject({ value: "empty", certainty: "confirmed", closer_ms: 1000 });
+    const t = scene();
+    t.crop(1, "empty"); t.say(2, "has_contents");
+    expect(t.cupNow().facts.contents).toMatchObject({ value: "has_contents" });
+    expect(t.cupNow().facts.contents).not.toHaveProperty("closer_ms");
+  });
 });
 
 describe("사람 답", () => {
