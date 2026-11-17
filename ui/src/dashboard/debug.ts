@@ -5,6 +5,7 @@
 //   &eye=0       대시보드 폰 칸 영상 없음(연결 QR)
 //   &wide=1      실제 폰을 가로로 든 것처럼: 눈 그림과 컵 모양이 가로 프레임(세로 눈 그림에서 잘라 낸 405×228)
 //   &talk=find   계획 전 찾기 중: 판단은 컵 치우기(1번 순간의 판단), 메시지 상자 최신 줄이 찾기 상태 줄(말풍선 말은 빼고)
+//   &mode=coach  서버가 정한 지금 모드를 코치 모드로(마스코트 머리 위 모드 말풍선)
 //   &offline=1   서버 연결 끊김
 //   &settings=1  설정 창을 연 채
 // window.__dash.step(n)으로 바로 그 순간으로 간다. 대시보드 폰 칸은 그 순간 눈 그림(세로 405×720)이다.
@@ -44,6 +45,11 @@ export function talkMoment(m: Moment, talk: DebugTalk | null): Moment {
   };
 }
 
+/** 그 순간의 서버 지금 모드를 바꾼다(coach). null이면 그대로(가짜 단계는 눈치 모드). */
+export function modeMoment(m: Moment, mode: "coach" | null): Moment {
+  return mode ? { ...m, messages: [...m.messages.filter((x) => x.type !== "mode"), { type: "mode", mode }] } : m;
+}
+
 /** 그 순간을 가로 프레임으로: seen의 프레임 크기를 가로로 바꾸고 마스크 자리를 잘라 낸 만큼 올린다. 다른 메시지는 그대로다. */
 export function wideMoment(m: Moment): Moment {
   const top = WIDE_TOP[m.eye];
@@ -72,6 +78,8 @@ export interface DebugQuery {
   settings: boolean;
   /** 메시지 상자 상태(&talk=find). 없으면 null. */
   talk: DebugTalk | null;
+  /** 서버 지금 모드를 코치 모드로(&mode=coach). 없으면 null. */
+  mode: "coach" | null;
 }
 
 /** 주소 → 가짜 단계 설정. ?debug=steps가 아니면 null. */
@@ -89,6 +97,7 @@ export function debugQuery(search: string): DebugQuery | null {
     offline: q.get("offline") === "1",
     settings: q.get("settings") === "1",
     talk: q.get("talk") === "find" ? "find" : null,
+    mode: q.get("mode") === "coach" ? "coach" : null,
   };
 }
 
@@ -108,7 +117,7 @@ export function useDebugSteps(q: DebugQuery | null, onMoment: (m: Moment) => voi
   const [index, setIndex] = useState(q?.step ?? 0);
   const report = useRef(onMoment);
   report.current = onMoment;
-  const at = (i: number) => talkMoment(q?.wide ? wideMoment(MOMENTS[i]!) : MOMENTS[i]!, q?.talk ?? null);
+  const at = (i: number) => modeMoment(talkMoment(q?.wide ? wideMoment(MOMENTS[i]!) : MOMENTS[i]!, q?.talk ?? null), q?.mode ?? null);
   useEffect(() => { if (q) report.current(at(index)); }, [q, index]);
   useEffect(() => {
     if (!q) return;

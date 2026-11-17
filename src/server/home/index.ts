@@ -160,6 +160,7 @@ function startApp(core: HomeCore): void {
     phoneSync: () => core.phone?.syncState() ?? null,
     plan: plans, offTrack: () => core.tracker?.offTrack() ?? null, history: history.db, reflect: history.reflect, scene: () => core.scene,
     brainLast: () => [...todayReflection(history.db), ...(core.lastDecision ? [core.lastDecision] : [])], thoughtLast: () => core.thoughts?.last() ?? null, seenLast: () => core.lastSeen, say: () => ({ text: core.said, ...(core.saidSafety ? { safety: true as const } : {}) }),
+    actMode: () => core.mode(),
   });
   core.speak();
 }

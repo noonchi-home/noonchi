@@ -41,7 +41,7 @@ describe("대시보드 메시지 계약", () => {
 
 // PlanView의 키 전부. 계약에 키를 더하거나 빼면 typecheck가 여기서 실패한다(true = 꼭 있어야 함).
 const PLAN_KEYS: Record<keyof PlanView, boolean> = {
-  id: true, revision: true, supersedes: false, origin: false, source: true, goal: true, assist: false, judgment: true,
+  id: true, revision: true, supersedes: false, origin: false, source: true, goal: true, judgment: true,
   dryRun: true, robot: true, path: true, legs: true, steps: true, status: true, updatedAt: true,
 };
 

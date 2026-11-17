@@ -1,8 +1,8 @@
 // @vitest-environment node
 // 가짜 단계(debug.ts) 주소 설정과 순간 자료.
 import { describe, expect, it } from "vitest";
-import { EMPTY_DASH, reduceDash, talkOf } from "../../src/dashboard/data";
-import { debugPhone, debugQuery, FIND_LINE, MOMENTS, talkMoment, WIDE_FRAME, WIDE_TOP, wideMoment, type Moment } from "../../src/dashboard/debug";
+import { EMPTY_DASH, modeNow, reduceDash, talkOf } from "../../src/dashboard/data";
+import { debugPhone, debugQuery, FIND_LINE, modeMoment, MOMENTS, talkMoment, WIDE_FRAME, WIDE_TOP, wideMoment, type Moment } from "../../src/dashboard/debug";
 
 /** 순간 메시지를 차례로 넣은 메시지 상자. */
 const talkAt = (m: Moment) => talkOf(m.messages.reduce((s, x, i) => reduceDash(s, x, i), EMPTY_DASH));
@@ -53,6 +53,18 @@ describe("가짜 단계 메시지 상자 상태(&talk)", () => {
     expect(find.fsm).toEqual({ state: "컵을 두고 자리를 뜸", trigger: expect.any(String), action: "컵 치우기" });
     expect(talkAt(MOMENTS[0]!)!.fsm).toEqual({ state: "먹거나 마시는 중", trigger: "대기", action: "대기" });
     expect(talkMoment(MOMENTS[1]!, null)).toBe(MOMENTS[1]);
+  });
+});
+
+describe("가짜 단계 모드 말풍선(&mode)", () => {
+  const modeAt = (m: Moment) => modeNow(m.messages.reduce((s, x, i) => reduceDash(s, x, i), EMPTY_DASH));
+  it("주소의 mode는 coach만 받는다. 순간마다 서버가 보낸 지금 모드는 눈치 모드이고, coach면 코치 모드로 바꾼다", () => {
+    expect(debugQuery("?debug=steps&mode=coach")?.mode).toBe("coach");
+    expect(debugQuery("?debug=steps&mode=x")?.mode).toBeNull();
+    expect(debugQuery("?debug=steps")?.mode).toBeNull();
+    for (const m of MOMENTS) expect(modeAt(m)).toBe("noonchi");
+    expect(modeAt(modeMoment(MOMENTS[2]!, "coach"))).toBe("coach");
+    expect(modeMoment(MOMENTS[2]!, null)).toBe(MOMENTS[2]);
   });
 });
 

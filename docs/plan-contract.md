@@ -26,7 +26,6 @@ task planner가 클로이드 계획(판단·단계·이동 경로)을 트윈 화
 | `origin` | 시험으로 보낸 계획이면 `"mock"`. 없으면 실제(`"live"`) |
 | `source` | task planner는 `"planner"`. 서버가 만든 계획은 `"brain"`(PAM이 고른 행동을 에이전트가 계획 모드로 만든 것, `src/agent/planner.ts`)·`"agent"`(말로 시킨 기기 행동) |
 | `goal` | 할 일 이름. 예: 컵 치우기 |
-| `assist` | 그 행동이 어느 모드로 하는 행동인가: `"coach"`(코치 행동) · `"noonchi"`(그 밖의 행동). 서버가 PAM 판단으로 만든 계획에만 있다(대시보드 메시지 상자 머리) |
 | `judgment` | 지금 상황 판단 한 줄 |
 | `dryRun` | `true`면 모의 계획. 화면에 「모의」가 붙는다 |
 | `robot` | `{ position, room }`. 로봇 위치를 모르면 `position: null`이고 그때 `path: []` |

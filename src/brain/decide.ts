@@ -31,7 +31,10 @@ export interface DeciderOptions {
   pam: PamClient;
   world: WorldState;
   trigger: Trigger;
-  tasks: () => string[];
+  /** PAM에 보내는 행동 목록. heard: 이번 관찰 텍스트에 사람이 한 말이 있다(지금 모드와 함께 목록을 정한다, src/act/mode.ts pamTasks). */
+  tasks: (heard: boolean) => string[];
+  /** 판단 기록 assist: 이 판단(고른 행동, 대기면 null) 뒤의 지금 모드(src/act/mode.ts modeNow). 없으면 고른 행동의 종류(modeOf). */
+  mode?: (action: string | null) => "noonchi" | "coach";
   memory: () => { memory: PamMemory; kind: "list" | "fsm"; version: number };
   emit: (log: BrainLog) => void;
   onDecision?: (d: DecisionRecord) => void;
@@ -86,7 +89,7 @@ export class Decider {
     const seq = ++this.seq;
     const textSent = textFromWorld(view, this.recent, { nowMs: now, offsetMinutes: this.o.offsetMinutes });
     const finalTime = isoWithOffset(now, this.o.offsetMinutes);
-    const tasks = this.o.tasks();
+    const tasks = this.o.tasks(saidIn(textSent).length > 0);
     const mem = this.o.memory();
     const base = { id: `pam-${seq}`, seq, atMs: now, textSent, finalTime, memoryVersion: mem.version, world: decisionWorld(view), tasks };
     const job: Promise<void> = Promise.resolve()
@@ -131,8 +134,8 @@ export class Decider {
     if (this.stopped) return;
     this.o.emit({
       type: "decision", at_ms: this.clock.now(), id: r.id, seq: r.seq, text_sent: this.o.keepHeard?.() ? r.textSent : redactHeard(r.textSent), status: r.status, prediction: r.prediction, action: r.action, fsm: r.fsm ?? null,
-      // 고른 행동의 종류(표시용): 그 행동이 코치 행동인가
-      assist: modeOf(r.action),
+      // 이 판단 뒤의 지금 모드(서버가 정하는 한 곳, src/act/mode.ts)
+      assist: this.o.mode ? this.o.mode(r.action) : modeOf(r.action),
       ...(r.error ? { error: r.error } : {}), memory_version: r.memoryVersion, world: r.world,
     });
     this.o.onDecision?.(r);
