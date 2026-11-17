@@ -6,7 +6,7 @@
 // 집는 것이 대상과 다른 행동(carry, 채워 주기)은 사람이 그 자리에서 다른 것을 들고 있는 일이라, 든 것을 모르는 것만으로는 막지 않는다(그 컵을 들었다고 보일 때만).
 // 「치운 것」(src/act/tasks.ts putAway)은 싱크대 안 사실이거나 실행 추적이 놓기 단계를 끝낸 물건(placed)이다.
 // 행동 조건(TaskSpec.want, 컵 안): 계획 전 검사는 확인된 반대 값이면 막고 모르면 계획으로 넘긴다(계획 없는 행동은 모르면 막는다).
-// 실행 전 검사는 계획의 대상 물건이 확인된 반대 값이면 막고, 모르면 contents_unknown과 그 물건 id를 낸다(실행 추적이 보류해 가까이 보고 묻는다).
+// 실행 전 검사는 계획의 대상 물건이 확인된 반대 값이면 막고, 모르면 unknown_contents와 그 물건 id를 낸다(실행 추적이 보류해 가까이 보고 묻는다).
 // 낡음·들고 있음 뒤에 본다(보류 중 낡음은 실행 추적이 보류를 이어 간다, src/act/track/start.ts).
 import type { PlanView } from "../contract/plan.js";
 import type { ControlMode } from "../contract/setup.js";
@@ -17,7 +17,7 @@ import { holdsTarget, planObjectOf, planObjectsOf, putAway, taskOf, wantOf, type
 
 export type CheckFail = keyof typeof CHECK_TEXT;
 /** carried: in_hand가 대상 물건의 들고 감 보호(World State 물건 carried)에서만 왔다. 실행 추적은 이때 보호가 풀릴 때까지 다시 보기 기한을 세지 않는다. */
-/** object: contents_unknown이면 안을 모르는 대상 물건 id(실행 추적 보류, src/act/track/contents.ts). */
+/** object: unknown_contents면 안을 모르는 대상 물건 id(실행 추적 보류, src/act/track/contents.ts). */
 export type CheckResult = { ok: true } | { ok: false; reason: CheckFail; text: string; carried?: true; object?: string };
 export interface CheckInput {
   decision: DecisionRecord;
@@ -55,7 +55,7 @@ export function checkDecision(i: Pick<CheckInput, "decision" | "tasks" | "world"
     if (ws.length && !ws.some((w) => w.ok)) {
       const unknown = ws.some((w) => !w.ok && w.why === "unknown");
       if (!unknown) return fail("contents_mismatch");
-      if (spec.plan === false) return fail("contents_unknown");
+      if (spec.plan === false) return fail("unknown_contents");
     }
   }
   return { ok: true };
@@ -83,7 +83,7 @@ export function checkPlan(i: CheckInput): CheckResult {
       const ws = all.map((x) => ({ x, w: wantOf(spec, x) }));
       if (ws.some(({ w }) => !w.ok && w.why === "mismatch")) return fail("contents_mismatch");
       const unknown = ws.find(({ w }) => !w.ok);
-      if (unknown) return { ok: false, reason: "contents_unknown", text: CHECK_TEXT.contents_unknown, object: unknown.x.id };
+      if (unknown) return { ok: false, reason: "unknown_contents", text: CHECK_TEXT.unknown_contents, object: unknown.x.id };
     }
   }
   // 손 자리를 모르면(맞추기 전) 길 없이 「완료」로 넘긴다. 자리를 아는데 길이 없을 때만 막는다

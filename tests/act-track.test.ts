@@ -632,7 +632,7 @@ describe("실행 추적: 그 자리에서 하는 일(do, 채워 주기)", () => 
       const s = holdSetup({ lookContents: () => false });
       await s.decide(fillDecision);
       for (let i = 0; i < 150; i++) { s.clock.t += 250; s.see(s.clock.t); s.t.tick(); } // 보류 30초 + 다시 보기 기한 3초(컵은 계속 보인다)
-      expect(s.exec().at(-1)).toMatchObject({ state: "failed", text: CHECK_TEXT.contents_unknown });
+      expect(s.exec().at(-1)).toMatchObject({ state: "failed", text: CHECK_TEXT.unknown_contents });
       expect(s.commands()).toEqual([]);
     });
 
@@ -803,7 +803,7 @@ describe("실행 추적: 계획 없는 행동(컵 그대로 두기)", () => {
     expect(s.spoken()).toEqual(["식탁으로 가 주세요"]);
   });
 
-  it("계획 전 검사는 그대로 두기에도 돈다: 컵이 안 보이면 no_target, 컵 안을 모르면 contents_unknown이고 「그대로 둠」을 남기지 않는다(묻지 않는다)", async () => {
+  it("계획 전 검사는 그대로 두기에도 돈다: 컵이 안 보이면 no_target, 컵 안을 모르면 unknown_contents이고 「그대로 둠」을 남기지 않는다(묻지 않는다)", async () => {
     let w = world([]);
     const s = leaveSetup({ w: () => w, precheck: (d) => checkDecision({ decision: d, tasks: Object.keys(TASKS), world: w }) });
     await s.decide(leave("pam-1", 1));
@@ -811,7 +811,7 @@ describe("실행 추적: 계획 없는 행동(컵 그대로 두기)", () => {
     expect(s.t.leftAt()).toBeNull();
     w = world([cup("present")]);
     await s.decide(leave("pam-2", 2));
-    expect(s.exec().slice(2).map((l) => [l.state, l.text])).toEqual([["decided", EXEC_TEXT.decided], ["failed", CHECK_TEXT.contents_unknown]]);
+    expect(s.exec().slice(2).map((l) => [l.state, l.text])).toEqual([["decided", EXEC_TEXT.decided], ["failed", CHECK_TEXT.unknown_contents]]);
     expect(s.t.leftAt()).toBeNull();
     w = world([{ ...cup("present"), facts: { contents: { value: "has_contents", at_ms: 9_000, since_ms: 9_000, certainty: "confirmed" } } }]);
     await s.decide(leave("pam-3", 3));

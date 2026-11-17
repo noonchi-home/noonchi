@@ -38,12 +38,12 @@ describe("행동 조건(내용물)", () => {
   });
   it("계획 없는 행동(그대로 두기)은 모르면 계획 전 검사가 막는다(묻지 않는다)", () => {
     const keep = (c?: C) => ({ ...fill(c), decision: { ...base().decision, action: "컵 그대로 두기" } });
-    expect(pre(keep({ value: "has_contents", certainty: "inferred" }))).toMatchObject({ ok: false, reason: "contents_unknown" });
+    expect(pre(keep({ value: "has_contents", certainty: "inferred" }))).toMatchObject({ ok: false, reason: "unknown_contents" });
     expect(pre(keep({ value: "has_contents", certainty: "confirmed" }))).toEqual({ ok: true });
     expect(pre(keep({ value: "empty", certainty: "confirmed" }))).toMatchObject({ reason: "contents_mismatch" });
   });
-  it("실행 전 검사: 계획의 대상 컵이 모르면 contents_unknown과 그 컵 id, 확인된 반대 값이면 contents_mismatch. 낡음·들고 있음 뒤에 본다", () => {
-    expect(checkPlan(fill({ value: "empty", certainty: "inferred" }))).toEqual({ ok: false, reason: "contents_unknown", text: CHECK_TEXT.contents_unknown, object: "cup_1" });
+  it("실행 전 검사: 계획의 대상 컵이 모르면 unknown_contents와 그 컵 id, 확인된 반대 값이면 contents_mismatch. 낡음·들고 있음 뒤에 본다", () => {
+    expect(checkPlan(fill({ value: "empty", certainty: "inferred" }))).toEqual({ ok: false, reason: "unknown_contents", text: CHECK_TEXT.unknown_contents, object: "cup_1" });
     expect(checkPlan(fill({ value: "has_contents", certainty: "confirmed" }))).toMatchObject({ reason: "contents_mismatch" });
     expect(checkPlan(fill({ value: "empty", certainty: "confirmed" }))).toEqual({ ok: true });
     expect(checkPlan(fill({ value: "empty", certainty: "inferred" }, { last_seen_ms: 1_000 }))).toMatchObject({ reason: "stale" });
@@ -63,7 +63,7 @@ describe("행동 조건(내용물)", () => {
     const steps = [...fill().plan!.steps, { id: "s3", kind: "act" as const, label: "l", target: { objectId: "cup_2" }, status: "pending" as const }];
     const both = (b: WorldObject) => ({ ...fill(), plan: { ...fill().plan!, steps }, world: { ...base().world, objects: [cupOf("cup_1", "empty"), b] } });
     expect(checkPlan(both(cupOf("cup_2", "has_contents")))).toMatchObject({ reason: "contents_mismatch" });
-    expect(checkPlan(both(cupOf("cup_2", "empty", "inferred")))).toEqual({ ok: false, reason: "contents_unknown", text: CHECK_TEXT.contents_unknown, object: "cup_2" });
+    expect(checkPlan(both(cupOf("cup_2", "empty", "inferred")))).toEqual({ ok: false, reason: "unknown_contents", text: CHECK_TEXT.unknown_contents, object: "cup_2" });
     expect(checkPlan(both(cupOf("cup_2", "empty")))).toEqual({ ok: true });
   });
 });

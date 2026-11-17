@@ -78,7 +78,7 @@ export const CHECK_TEXT = {
   in_hand: "사람이 그 물건을 쓰는 중이라 실행하지 않아요",
   unreachable: "갈 수 있는 길이 없어 실행하지 않아요",
   device_mode: "시험 모드라 실제 가전은 부르지 않아요",
-  contents_unknown: "대상 물건 안을 몰라 실행하지 않아요",
+  unknown_contents: "대상 물건 안을 몰라 실행하지 않아요",
   contents_mismatch: "대상 물건 안이 맞지 않아 실행하지 않아요",
 } as const;
 

@@ -165,7 +165,7 @@ export class Starter extends Part {
       }
       // 내용물을 몰라 막혔으면 보류가 붙잡는 동안 다시 보기 기한을 세지 않는다(src/act/track/contents.ts). 보류 중 컵이 낡아도 보류를 이어 간다
       const held = r.hold;
-      if ((c.reason === "contents_unknown" && c.object && this.core.contents.keep(r, c.object))
+      if ((c.reason === "unknown_contents" && c.object && this.core.contents.keep(r, c.object))
         || (c.reason === "stale" && held && this.core.contents.holding(r) && this.core.contents.keep(r, held.objectId))) {
         r.since = this.clock.now();
         return;
