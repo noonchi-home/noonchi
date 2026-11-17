@@ -10,7 +10,7 @@ export const KEY_OWNERS: Record<string, readonly string[]> = {
   THINQ_API_KEY: ["noonchi"],
   PLAN_TOKEN: ["noonchi"],
   OPENROUTER_API_KEY: ["pam"],
-  PAM_LLM_API_KEY: ["pam"],
+  PAM_LLM_API_KEY: ["noonchi", "pam"],
   // vLLM 서버 키: 서버(vllm-*)가 요구하고, noonchi(live VLM)·pam(live PAM LLM)이 붙인다
   VLLM_API_KEY: ["noonchi", "pam", "vllm-pam", "vllm-vlm"],
   HF_TOKEN: ["vllm-pam", "vllm-vlm"],

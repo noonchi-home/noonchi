@@ -31,15 +31,15 @@ async function writerOn(replies: ThoughtReplies, env: Record<string, string> = {
 const thoughtRequests = () => f!.requests.filter((r) => r.method === "POST" && isThought(r.body));
 
 describe("생각 말풍선 메시지 쓰기", () => {
-  it.each(["mock", "live"])("%s: 이번 판단과 이미 올린 메시지를 글로만(사진 없음) 같은 VLM 주소 자리에 보내고 새 메시지를 받는다", async (mode) => {
+  it.each(["openai", "vllm"])("%s: 이번 판단과 이미 올린 메시지를 글로만(사진 없음) 같은 VLM 주소 자리에 보내고 새 메시지를 받는다", async (mode) => {
     const replies = thoughtReplies();
     const writer = await writerOn(replies, { INFERENCE_MODE: mode });
     expect(await writer.write({ ...ASK, recent: [CUP_MESSAGES[0]!] })).toEqual([CUP_MESSAGES[1]]);
     const [req] = thoughtRequests();
     expect(req!.path).toBe("/v1/chat/completions");
-    expect(req!.body.model).toBe(mode === "mock" ? "gpt-5.4-nano" : "vlm");
-    // mock만 OpenAI 제공자 칸(reasoning_effort)을 더 보낸다
-    expect(req!.body.reasoning_effort).toBe(mode === "mock" ? "none" : undefined);
+    expect(req!.body.model).toBe(mode === "openai" ? "gpt-5.4-nano" : "vlm");
+    // openai만 OpenAI 제공자 칸(reasoning_effort)을 더 보낸다
+    expect(req!.body.reasoning_effort).toBe(mode === "openai" ? "none" : undefined);
     expect(req!.body.response_format).toMatchObject({ type: "json_schema", json_schema: { name: "thought_messages", strict: true } });
     expect(req!.body.response_format.json_schema.schema).toMatchObject({ required: ["messages"], additionalProperties: false, properties: { messages: { type: "array", items: { type: "string" } } } });
     const messages = req!.body.messages as { role: string; content: unknown }[];

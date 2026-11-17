@@ -1,0 +1,14 @@
+{
+  "timeout_seconds": 120,
+  "max_tokens": {
+    "predictor": 2048,
+    "reflector": 16384
+  },
+  "notes": [
+    "All PAM LLM routes (OpenAI, same-server vLLM) use these values. Addresses, model names and provider fields are chosen by INFERENCE_MODE in src/infer/endpoints.ts.",
+    "The 120-second timeout and the 2048/16384 output-token caps are caller safeguards, not paper settings. The timeout covers the whole call including the body read.",
+    "Reasoning tokens can consume the output cap. A result whose finish_reason is neither stop nor null is rejected, not accepted as a valid result.",
+    "No response repair, automatic retry, or alternative model is enabled.",
+    "Temperature 0.3 and role-specific reasoning come from config/paper.json, not this file."
+  ]
+}

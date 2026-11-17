@@ -225,8 +225,8 @@ export interface HealthView {
 export interface ReadyView {
   /** VLM·PAM LLM·에이전트·기록 DB가 모두 준비됐는가. */
   ok: boolean;
-  /** 추론 모드: mock(외부 AI API) · live(같은 서버 vLLM). 두 모드는 같은 코드 경로다. */
-  inference_mode: "mock" | "live";
+  /** 추론 모드: openai(개발, OpenAI API) · vllm(AWS 같은 서버 vLLM). 두 모드는 같은 코드 경로다. */
+  inference_mode: "openai" | "vllm";
   vlm: { base_url: string; model: string; key: boolean; reachable: boolean };
   /** PAM LLM(PAM_LLM_BASE_URL) 주소 응답. 판단·반성은 서버 안 함수(src/brain/pam/)가 이 주소를 부른다. */
   pam: { base_url: string; model: string; key: boolean; reachable: boolean };

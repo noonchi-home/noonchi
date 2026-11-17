@@ -1,4 +1,4 @@
-// mock과 live는 같은 코드 경로다: 같은 클래스·같은 요청 순서, 다른 것은 주소·모델 이름·제공자 요청 칸뿐이다.
+// openai와 vllm은 같은 코드 경로다: 같은 클래스·같은 요청 순서, 다른 것은 주소·모델 이름·제공자 요청 칸뿐이다.
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -14,8 +14,8 @@ afterEach(async () => { await f?.close(); f = undefined; });
 
 describe("같은 구조", () => {
   it("두 모드의 차이는 VLM·PAM LLM 주소·모델·키·제공자 칸뿐이다", () => {
-    const a = loadEndpoints({ INFERENCE_MODE: "mock" });
-    const b = loadEndpoints({ INFERENCE_MODE: "live" });
+    const a = loadEndpoints({ INFERENCE_MODE: "openai" });
+    const b = loadEndpoints({ INFERENCE_MODE: "vllm" });
     expect({ ...a, mode: "", vlm: {}, pam: {} }).toEqual({ ...b, mode: "", vlm: {}, pam: {} });
     expect(Object.keys(a.vlm)).toEqual(Object.keys(b.vlm));
     expect(Object.keys(a.pam)).toEqual(Object.keys(b.pam));
@@ -41,7 +41,7 @@ describe("같은 구조", () => {
     f = await startFakeOpenAI({ reply: () => '{"a":1}' });
     const paths: string[][] = [];
     const bodies: string[][] = [];
-    for (const mode of ["mock", "live"]) {
+    for (const mode of ["openai", "vllm"]) {
       const before = f.requests.length;
       const { vlm } = createInference({ INFERENCE_MODE: mode, VLM_BASE_URL: `${f.url}/v1` });
       const r = await vlm.json({ prompt: "p", images: [Buffer.from([0xff, 0xd8])], schema: { name: "s", schema: {} }, parse: JSON.parse });
@@ -50,7 +50,7 @@ describe("같은 구조", () => {
       bodies.push(f.requests.slice(before).flatMap((q) => Object.keys(q.body ?? {}).sort()));
     }
     expect(paths[0]).toEqual(paths[1]);
-    // mock만 OpenAI 제공자 칸(reasoning_effort)을 더 보낸다
+    // openai만 OpenAI 제공자 칸(reasoning_effort)을 더 보낸다
     expect(bodies[0]!.filter((k) => !bodies[1]!.includes(k))).toEqual(["reasoning_effort"]);
     expect(bodies[1]!.filter((k) => !bodies[0]!.includes(k))).toEqual([]);
   });

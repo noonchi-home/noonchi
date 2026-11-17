@@ -1,67 +1,5 @@
 [
   {
-    "id": "mock",
-    "settings": {
-      "mode": "mock",
-      "base_url": "https://openrouter.ai/api/v1",
-      "model": "qwen/qwen3.5-27b",
-      "api_key": "",
-      "thinking": "openrouter",
-      "extra": {
-        "provider": {
-          "order": [
-            "alibaba"
-          ],
-          "allow_fallbacks": false,
-          "require_parameters": true
-        },
-        "plugins": [
-          {
-            "id": "context-compression",
-            "enabled": false
-          }
-        ]
-      },
-      "timeout_s": 120.0,
-      "max_tokens": {
-        "predictor": 2048,
-        "reflector": 16384
-      },
-      "max_model_len": 32768
-    }
-  },
-  {
-    "id": "mock-key",
-    "settings": {
-      "mode": "mock",
-      "base_url": "https://openrouter.ai/api/v1",
-      "model": "qwen/qwen3.5-27b",
-      "api_key": "k",
-      "thinking": "openrouter",
-      "extra": {
-        "provider": {
-          "order": [
-            "alibaba"
-          ],
-          "allow_fallbacks": false,
-          "require_parameters": true
-        },
-        "plugins": [
-          {
-            "id": "context-compression",
-            "enabled": false
-          }
-        ]
-      },
-      "timeout_s": 120.0,
-      "max_tokens": {
-        "predictor": 2048,
-        "reflector": 16384
-      },
-      "max_model_len": 32768
-    }
-  },
-  {
     "id": "live",
     "settings": {
       "mode": "live",
@@ -115,18 +53,6 @@
       },
       "max_model_len": 32768
     }
-  },
-  {
-    "id": "gemini",
-    "error": "PAM_LLM_PROVIDER=gemini: mock에서 openai만 됩니다"
-  },
-  {
-    "id": "live-openai",
-    "error": "PAM_LLM_PROVIDER=openai: mock에서 openai만 됩니다"
-  },
-  {
-    "id": "replay",
-    "error": "INFERENCE_MODE=replay: mock 또는 live여야 합니다"
   },
   {
     "id": "override",

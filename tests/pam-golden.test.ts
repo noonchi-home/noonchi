@@ -64,7 +64,15 @@ describe("Python과 같은 결과", () => {
 });
 
 
-const TRANSPORTS = { mock: { OPENROUTER_API_KEY: "k" }, live: { INFERENCE_MODE: "live" }, openai: { PAM_LLM_PROVIDER: "openai", OPENAI_API_KEY: "k" } };
+// Python 정답의 전송 갈래: live(vLLM) → vllm, mock + PAM_LLM_PROVIDER=openai → openai. OpenRouter 갈래는 2026-11-17에 뺐다.
+const TRANSPORTS = { vllm: { INFERENCE_MODE: "vllm" }, openai: { INFERENCE_MODE: "openai", OPENAI_API_KEY: "k" } };
+/** Python 설정 env → 지금 이름(INFERENCE_MODE live → vllm, PAM_LLM_PROVIDER=openai → INFERENCE_MODE=openai). */
+function nowEnv(env: Record<string, string>): Record<string, string> {
+  const { PAM_LLM_PROVIDER, ...rest } = env;
+  if (PAM_LLM_PROVIDER === "openai") return { ...rest, INFERENCE_MODE: "openai" };
+  return rest.INFERENCE_MODE?.trim() === "live" ? { ...rest, INFERENCE_MODE: "vllm" } : rest;
+}
+const NOW_MODE: Record<string, string> = { live: "vllm", mock: "openai" };
 
 async function wire(env: Record<string, string>, built: { messages: PamMessage[]; generation: Generation }, role: "predictor" | "reflector") {
   let line = "";
@@ -89,17 +97,19 @@ describe("Python과 같은 전송", () => {
     }
   });
 
-  it("설정(모드 표·덮어쓰기·오류 글)", () => {
+  it("설정(모드 표·덮어쓰기·오류 글, 모드 이름은 지금 이름으로)", () => {
     const got = inputs.settings.map((c: { id: string; env: Record<string, string> }) => {
       try {
-        const s = pamSettings(c.env);
-        return { id: c.id, settings: { mode: loadEndpoints(c.env).mode, base_url: s.baseUrl, model: s.model, api_key: s.apiKey, thinking: s.thinking,
+        const env = nowEnv(c.env);
+        const s = pamSettings(env);
+        return { id: c.id, settings: { mode: loadEndpoints(env).mode, base_url: s.baseUrl, model: s.model, api_key: s.apiKey, thinking: s.thinking,
           extra: s.extraBody, timeout_s: s.timeoutMs / 1000, max_tokens: s.maxTokens, max_model_len: s.maxModelLen } };
       } catch (e) {
         return { id: c.id, error: (e as Error).message };
       }
     });
-    expect(got).toEqual(out("settings.json"));
+    const want = (out("settings.json") as { id: string; settings?: { mode: string } }[]).map((c) => (c.settings ? { ...c, settings: { ...c.settings, mode: NOW_MODE[c.settings.mode] } } : c));
+    expect(got).toEqual(want);
   });
 
   it("요청 결과: 400→PamRequestError, 413→PamBudgetError, 200 invalid→PamAnswerError, 502→PamLinkError, 보낸 횟수까지 같다", async () => {
@@ -107,7 +117,7 @@ describe("Python과 같은 전송", () => {
     for (const c of inputs.requests) {
       let sent = 0;
       const fetchImpl = (async () => { sent++; return Response.json(c.llm.json, { status: c.llm.status }); }) as typeof fetch;
-      const pam = new PamClient({ settings: pamSettings({ INFERENCE_MODE: "live" }), fetchImpl });
+      const pam = new PamClient({ settings: pamSettings({ INFERENCE_MODE: "vllm" }), fetchImpl });
       let status = 200;
       let answer: string | null = "valid";
       try {

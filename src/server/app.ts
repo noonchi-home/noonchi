@@ -117,7 +117,7 @@ export function skipsWhenBehind(msg: unknown, bufferedAmount: number): boolean {
 const LOCAL_ORIGIN = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/i;
 /** 준비 상태를 모를 때(앱만 따로 띄운 시험). */
 const NOT_READY: ReadyView = {
-  ok: false, inference_mode: "mock", vlm: { base_url: "", model: "", key: false, reachable: false },
+  ok: false, inference_mode: "openai", vlm: { base_url: "", model: "", key: false, reachable: false },
   pam: { base_url: "", model: "", key: false, reachable: false }, agent: { provider: "openai", base_url: "", model: "", key: false, reachable: false }, db: false,
 };
 

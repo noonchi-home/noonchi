@@ -6478,16 +6478,6 @@
   ],
   "settings": [
     {
-      "id": "mock",
-      "env": {}
-    },
-    {
-      "id": "mock-key",
-      "env": {
-        "OPENROUTER_API_KEY": "k"
-      }
-    },
-    {
       "id": "live",
       "env": {
         "INFERENCE_MODE": "live"
@@ -6512,25 +6502,6 @@
       "env": {
         "PAM_LLM_PROVIDER": "openai",
         "OPENAI_API_KEY": "k"
-      }
-    },
-    {
-      "id": "gemini",
-      "env": {
-        "PAM_LLM_PROVIDER": "gemini"
-      }
-    },
-    {
-      "id": "live-openai",
-      "env": {
-        "INFERENCE_MODE": "live",
-        "PAM_LLM_PROVIDER": "openai"
-      }
-    },
-    {
-      "id": "replay",
-      "env": {
-        "INFERENCE_MODE": "replay"
       }
     },
     {

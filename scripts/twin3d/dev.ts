@@ -46,8 +46,8 @@ export function serverEnv(home: string, base: NodeJS.ProcessEnv = process.env): 
   return {
     ...base, PORT: String(SERVER_PORT), HUB: "memory", HOME_ID: home,
     RUNTIME_DIR: "runtime-3d", TWIN_STUDIO_DIR: base.TWIN_STUDIO_DIR?.trim() || resolve(ROOT, "twin"), PHONE_PORT: "", BRAIN: "",
-    INFERENCE_MODE: "mock", AGENT_PROVIDER: "openai", OPENAI_BASE_URL: `${CLOSED}/v1`, VLM_BASE_URL: `${CLOSED}/v1`, PAM_LLM_BASE_URL: `${CLOSED}/v1`,
-    OPENAI_API_KEY: "", ANTHROPIC_API_KEY: "", VLM_API_KEY: "", PAM_LLM_API_KEY: "", OPENROUTER_API_KEY: "",
+    INFERENCE_MODE: "openai", AGENT_PROVIDER: "openai", OPENAI_BASE_URL: `${CLOSED}/v1`, VLM_BASE_URL: `${CLOSED}/v1`, PAM_LLM_BASE_URL: `${CLOSED}/v1`,
+    OPENAI_API_KEY: "", ANTHROPIC_API_KEY: "", VLM_API_KEY: "", PAM_LLM_API_KEY: "",
   };
 }
 

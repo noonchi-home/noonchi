@@ -217,7 +217,7 @@ describe("배포 파일", () => {
     const s = read("scripts/container-smoke.ts");
     expect(s).toContain('"--profile", "check"');
     for (const k of ["VLM_BASE_URL", "PAM_LLM_BASE_URL", "OPENAI_BASE_URL"]) expect(s).toContain(`${k}: "http://fake-openai:8500/v1"`);
-    expect(s).toContain('INFERENCE_MODE: "live"');
+    expect(s).toContain('INFERENCE_MODE: "vllm"');
     expect(s).not.toMatch(/PAM_URL:/);
     expect(s).toContain("ready.ok");
     expect(s).toContain("/api/agent/chat");

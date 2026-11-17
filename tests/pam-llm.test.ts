@@ -22,36 +22,41 @@ let close: (() => void) | undefined;
 afterEach(() => { close?.(); close = undefined; });
 
 describe("PAM LLM 전송", () => {
-  it("mock 모드 표는 config/openrouter.json과 같다", () => {
-    const t = JSON.parse(readFileSync("src/brain/pam/config/openrouter.json", "utf8"));
-    expect(PAM_PRESETS.mock).toEqual({ baseUrl: t.endpoint.replace(/\/chat\/completions$/, ""), model: t.model, keyEnv: t.api_key_env, thinking: "openrouter",
-      extraBody: { provider: t.provider, plugins: [{ id: "context-compression", enabled: false }] } });
-    expect(pamSettings({}).maxTokens).toEqual(t.max_tokens);
-    expect(pamSettings({}).timeoutMs).toBe(t.timeout_seconds * 1000);
+  it("모드 표: openai는 OpenAI(OPENAI_API_KEY), vllm은 같은 서버 vLLM. 전송 값은 config/transport.json", () => {
+    const t = JSON.parse(readFileSync("src/brain/pam/config/transport.json", "utf8"));
+    expect(PAM_PRESETS).toEqual({
+      openai: { baseUrl: "https://api.openai.com/v1", model: "gpt-5.4-mini", keyEnv: "OPENAI_API_KEY", thinking: "openai", extraBody: {} },
+      vllm: { baseUrl: "http://vllm-pam:8000/v1", model: "pam", keyEnv: "VLLM_API_KEY", thinking: "chat_template", extraBody: {} },
+    });
+    for (const INFERENCE_MODE of ["openai", "vllm"]) {
+      expect(pamSettings({ INFERENCE_MODE }).maxTokens).toEqual(t.max_tokens);
+      expect(pamSettings({ INFERENCE_MODE }).timeoutMs).toBe(t.timeout_seconds * 1000);
+    }
+    expect(t.max_tokens).toEqual({ predictor: 2048, reflector: 16384 });
   });
 
-  it("두 모드가 같은 칸(model·messages·temperature·max_tokens·stream)을 보내고, 다른 것은 제공자 칸뿐이다", async () => {
+  it("두 모드가 같은 칸(model·messages·temperature·stream)을 보내고, 다른 것은 출력 상한 이름과 생각 칸뿐이다", async () => {
     const c = capture();
-    await new PamLlm(pamSettings({ OPENROUTER_API_KEY: "k" }), c).complete(X, OFF, "predictor", 5000);
-    await new PamLlm(pamSettings({ INFERENCE_MODE: "live" }), c).complete(X, OFF, "predictor", 5000);
-    const [mock, live] = c.sent;
-    expect([mock!.url, mock!.auth]).toEqual(["https://openrouter.ai/api/v1/chat/completions", "Bearer k"]);
-    expect([live!.url, live!.auth]).toEqual(["http://vllm-pam:8000/v1/chat/completions", null]);
-    const shared = ["model", "messages", "temperature", "max_tokens", "stream"];
-    expect(Object.keys(mock!.body).filter((k) => !shared.includes(k)).sort()).toEqual(["plugins", "provider", "reasoning"]);
-    expect(Object.keys(live!.body).filter((k) => !shared.includes(k))).toEqual(["chat_template_kwargs"]);
-    expect([mock!.body.max_tokens, live!.body.max_tokens, mock!.body.stream, live!.body.stream]).toEqual([2048, 2048, false, false]);
+    await new PamLlm(pamSettings({ INFERENCE_MODE: "openai", OPENAI_API_KEY: "k" }), c).complete(X, OFF, "predictor", 5000);
+    await new PamLlm(pamSettings({ INFERENCE_MODE: "vllm" }), c).complete(X, OFF, "predictor", 5000);
+    const [openai, vllm] = c.sent;
+    expect([openai!.url, openai!.auth]).toEqual(["https://api.openai.com/v1/chat/completions", "Bearer k"]);
+    expect([vllm!.url, vllm!.auth]).toEqual(["http://vllm-pam:8000/v1/chat/completions", null]);
+    const shared = ["model", "messages", "temperature", "stream"];
+    expect(Object.keys(openai!.body).filter((k) => !shared.includes(k)).sort()).toEqual(["max_completion_tokens", "reasoning_effort"]);
+    expect(Object.keys(vllm!.body).filter((k) => !shared.includes(k)).sort()).toEqual(["chat_template_kwargs", "max_tokens"]);
+    expect([openai!.body.max_completion_tokens, vllm!.body.max_tokens, openai!.body.stream, vllm!.body.stream]).toEqual([2048, 2048, false, false]);
   });
 
   it("반성은 반성 max_tokens와 생각 켜기", async () => {
     const c = capture();
-    await new PamLlm(pamSettings({ INFERENCE_MODE: "live" }), c).complete(X, ON, "reflector", 5000);
+    await new PamLlm(pamSettings({ INFERENCE_MODE: "vllm" }), c).complete(X, ON, "reflector", 5000);
     expect(c.sent[0]!.body).toMatchObject({ max_tokens: 16384, chat_template_kwargs: { enable_thinking: true } });
   });
 
-  it("openai 공급자는 max_completion_tokens·reasoning_effort, 생각을 켜면 temperature를 보내지 않는다", async () => {
+  it("openai는 max_completion_tokens·reasoning_effort, 생각을 켜면 temperature를 보내지 않는다", async () => {
     const c = capture();
-    const llm = new PamLlm(pamSettings({ PAM_LLM_PROVIDER: "openai", OPENAI_API_KEY: "k" }), c);
+    const llm = new PamLlm(pamSettings({ INFERENCE_MODE: "openai", OPENAI_API_KEY: "k" }), c);
     await llm.complete(X, OFF, "predictor", 5000);
     await llm.complete(X, ON, "reflector", 5000);
     expect(c.sent.map((s) => s.body)).toEqual([
@@ -60,17 +65,17 @@ describe("PAM LLM 전송", () => {
     ]);
   });
 
-  it("모르는 공급자·live의 공급자·모르는 모드·작은 문맥 길이는 시작할 때 실패", () => {
-    expect(() => pamSettings({ PAM_LLM_PROVIDER: "gemini" })).toThrow("PAM_LLM_PROVIDER=gemini: mock에서 openai만 됩니다");
-    expect(() => pamSettings({ INFERENCE_MODE: "live", PAM_LLM_PROVIDER: "openai" })).toThrow(/PAM_LLM_PROVIDER/);
-    expect(() => pamSettings({ INFERENCE_MODE: "replay" })).toThrow("mock 또는 live");
-    expect(() => pamSettings({ INFERENCE_MODE: "live", PAM_MAX_MODEL_LEN: "16384" })).toThrow(/PAM_MAX_MODEL_LEN/);
+  it("예전 모드 이름·모르는 모드·작은 문맥 길이는 시작할 때 실패", () => {
+    expect(() => pamSettings({ INFERENCE_MODE: "mock" })).toThrow("INFERENCE_MODE=mock: openai 또는 vllm이어야 합니다(예전 이름 mock → openai)");
+    expect(() => pamSettings({ INFERENCE_MODE: "live" })).toThrow("(예전 이름 live → vllm)");
+    expect(() => pamSettings({ INFERENCE_MODE: "replay" })).toThrow("INFERENCE_MODE=replay: openai 또는 vllm이어야 합니다");
+    expect(() => pamSettings({ INFERENCE_MODE: "vllm", PAM_MAX_MODEL_LEN: "16384" })).toThrow(/PAM_MAX_MODEL_LEN/);
   });
 
   it("HTTP 오류는 다시 보내지 않고 PamLinkError(한 번만 보냄)", async () => {
     for (const status of [500, 429]) {
       const c = capture(() => Response.json({ error: "x" }, { status }));
-      await expect(new PamLlm(pamSettings({ INFERENCE_MODE: "live" }), c).complete(X, OFF, "predictor", 5000)).rejects.toThrow(`PAM LLM HTTP ${status}`);
+      await expect(new PamLlm(pamSettings({ INFERENCE_MODE: "vllm" }), c).complete(X, OFF, "predictor", 5000)).rejects.toThrow(`PAM LLM HTTP ${status}`);
       expect(c.sent).toHaveLength(1);
     }
   });
@@ -80,7 +85,7 @@ describe("PAM LLM 전송", () => {
     const srv = createServer((req, res) => { hits++; res.writeHead(302, { location: "/elsewhere" }); res.end(); });
     const { port } = await listenRetry(srv, 0, "127.0.0.1");
     close = () => srv.close();
-    const s = pamSettings({ INFERENCE_MODE: "live", PAM_LLM_BASE_URL: `http://127.0.0.1:${port}/v1` });
+    const s = pamSettings({ INFERENCE_MODE: "vllm", PAM_LLM_BASE_URL: `http://127.0.0.1:${port}/v1` });
     await expect(new PamLlm(s).complete(X, OFF, "predictor", 5000)).rejects.toThrow("PAM LLM HTTP 302");
     expect(hits).toBe(1);
   });
@@ -92,16 +97,16 @@ describe("PAM LLM 전송", () => {
     });
     const { port } = await listenRetry(srv, 0, "127.0.0.1");
     close = () => { srv.closeAllConnections(); srv.close(); };
-    const s = pamSettings({ INFERENCE_MODE: "live", PAM_LLM_BASE_URL: `http://127.0.0.1:${port}/v1` });
+    const s = pamSettings({ INFERENCE_MODE: "vllm", PAM_LLM_BASE_URL: `http://127.0.0.1:${port}/v1` });
     const t0 = Date.now();
     await expect(new PamLlm(s).complete(X, OFF, "predictor", 300)).rejects.toBeInstanceOf(PamLinkError);
     expect(Date.now() - t0).toBeLessThan(3000);
   });
 
   it("닿지 않음·시간 초과는 PamLinkError", async () => {
-    const down = pamSettings({ INFERENCE_MODE: "live", PAM_LLM_BASE_URL: "http://127.0.0.1:9/v1" });
+    const down = pamSettings({ INFERENCE_MODE: "vllm", PAM_LLM_BASE_URL: "http://127.0.0.1:9/v1" });
     await expect(new PamLlm(down).complete(X, OFF, "predictor", 5000)).rejects.toBeInstanceOf(PamLinkError);
     const hang = ((_u: string | URL, init?: RequestInit) => new Promise<Response>((_, rej) => init?.signal?.addEventListener("abort", () => rej(init.signal!.reason)))) as typeof fetch;
-    await expect(new PamLlm(pamSettings({ INFERENCE_MODE: "live" }), { fetchImpl: hang }).complete(X, OFF, "predictor", 200)).rejects.toBeInstanceOf(PamLinkError);
+    await expect(new PamLlm(pamSettings({ INFERENCE_MODE: "vllm" }), { fetchImpl: hang }).complete(X, OFF, "predictor", 200)).rejects.toBeInstanceOf(PamLinkError);
   });
 });

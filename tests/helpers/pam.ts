@@ -33,9 +33,9 @@ export interface FakePamLlmOptions {
 /** 서버에 넘길 PAM LLM 환경(가짜 서버 주소, 실제 키 대신 가짜 키). */
 export const pamLlmEnv = (pam: Pick<FakePamLlm, "url">) => ({ PAM_LLM_BASE_URL: pam.url, PAM_LLM_API_KEY: "fake-key" });
 
-/** 가짜 PAM LLM에 붙은 PamClient(live 모드 표, 문맥 길이 등은 env로 바꾼다). */
+/** 가짜 PAM LLM에 붙은 PamClient(vllm 모드 표, 문맥 길이 등은 env로 바꾼다). */
 export const pamClientFor = (pam: Pick<FakePamLlm, "url">, o: { env?: Record<string, string>; timeoutMs?: number; fetchImpl?: typeof fetch } = {}) =>
-  new PamClient({ settings: pamSettings({ INFERENCE_MODE: "live", ...pamLlmEnv(pam), ...o.env }), timeoutMs: o.timeoutMs, fetchImpl: o.fetchImpl });
+  new PamClient({ settings: pamSettings({ INFERENCE_MODE: "vllm", ...pamLlmEnv(pam), ...o.env }), timeoutMs: o.timeoutMs, fetchImpl: o.fetchImpl });
 
 const WAIT: Pred = { observation: "o", reasoning: "r", task_index: -1 };
 const PLACE = /\{(window|tasks_block|n_tasks_minus_one|rules_block|fsm_block)\}/;

@@ -34,7 +34,7 @@ const PLAN_TOKEN = "check-plan-token";
 /** 확인용 폰 주소. /api/health 폰 주소는 이것 하나여야 한다(컨테이너 안 주소는 밖에서 열 수 없어 넣지 않는다). */
 const CHECK_PHONE_URL = "https://noonchi-check.example/phone/";
 const CHECK_ENV = {
-  HUB: "memory", BRAIN: "1", INFERENCE_MODE: "live", VLM_BASE_URL: "http://fake-openai:8500/v1", PAM_LLM_BASE_URL: "http://fake-openai:8500/v1",
+  HUB: "memory", BRAIN: "1", INFERENCE_MODE: "vllm", VLM_BASE_URL: "http://fake-openai:8500/v1", PAM_LLM_BASE_URL: "http://fake-openai:8500/v1",
   AGENT_PROVIDER: "openai", OPENAI_API_KEY: "fake-key", OPENAI_BASE_URL: "http://fake-openai:8500/v1", PLAN_TOKEN, PHONE_URL: CHECK_PHONE_URL,
 };
 /** docs/plan-contract.md의 { plan } 예시. */
@@ -154,7 +154,7 @@ try {
   if (h.provider !== "openai") fails.push(`에이전트가 openai가 아니에요(${h.provider})`);
   if (!h.twin) fails.push("트윈 결과물(twin/)이 이미지에 없어요");
   if (h.ready?.db !== true) fails.push("기록 DB를 열지 못했어요");
-  if (h.ready?.inference_mode !== "live" || h.ready?.vlm?.base_url !== FAKE) fails.push("추론 설정이 확인용 env 파일 값이 아니에요");
+  if (h.ready?.inference_mode !== "vllm" || h.ready?.vlm?.base_url !== FAKE) fails.push("추론 설정이 확인용 env 파일 값이 아니에요");
   if (h.ready?.pam?.url !== "http://pam:8300" || h.ready?.pam?.llm?.base_url !== FAKE) fails.push("PAM 서비스·PAM LLM 주소가 compose·확인용 값이 아니에요");
   console.log(`폰 주소: ${JSON.stringify(h.phone_urls)}`);
   if (JSON.stringify(h.phone_urls) !== JSON.stringify([CHECK_PHONE_URL])) fails.push(`폰 주소가 PHONE_URL 하나가 아니에요(${JSON.stringify(h.phone_urls)})`);

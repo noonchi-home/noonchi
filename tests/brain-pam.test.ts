@@ -109,8 +109,8 @@ describe("반성과 입력 한도", () => {
   });
 
   it("limits()는 문맥 길이(PAM_MAX_MODEL_LEN)에서 판단·반성 입력 한도를 센다", async () => {
-    const big = await new PamClient({ settings: pamSettings({ INFERENCE_MODE: "live" }) }).limits();
-    const small = await new PamClient({ settings: pamSettings({ INFERENCE_MODE: "live", PAM_MAX_MODEL_LEN: "20000" }) }).limits();
+    const big = await new PamClient({ settings: pamSettings({ INFERENCE_MODE: "vllm" }) }).limits();
+    const small = await new PamClient({ settings: pamSettings({ INFERENCE_MODE: "vllm", PAM_MAX_MODEL_LEN: "20000" }) }).limits();
     expect(big.max_model_len).toBe(32768);
     expect(small.max_model_len).toBe(20000);
     expect(small.reflect_input_bytes).toBeGreaterThan(0);

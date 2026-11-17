@@ -81,6 +81,11 @@ services:
       VLM_EXTRA_BODY:
       VLM_TIMEOUT_MS:
       VLLM_API_KEY:
+      PAM_LLM_BASE_URL:
+      PAM_LLM_MODEL:
+      PAM_LLM_API_KEY:
+      PAM_LLM_TIMEOUT_S:
+      PAM_MAX_MODEL_LEN:
       PAM_TIMEOUT_MS:
       PAM_TRIGGER:
       PAM_MIN_GAP_MS:

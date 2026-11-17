@@ -1,39 +1,39 @@
-// 추론 모드(src/infer/endpoints.ts): mock·live는 VLM 주소·모델 이름만 고른다. 코드 경로는 같다.
+// 추론 모드(src/infer/endpoints.ts): openai·vllm은 VLM·PAM LLM 주소·모델 이름·키 자리·제공자 칸만 고른다. 코드 경로는 같다.
 import { describe, expect, it } from "vitest";
 import { loadEndpoints, VLM_PRESETS, vlmTimeoutMs } from "../src/infer/endpoints.js";
 import { createInference } from "../src/infer/inference.js";
 import { ReachCache, reachable } from "../src/infer/reach.js";
 
 describe("추론 모드", () => {
-  it("mock이 기본이고 OpenAI 주소·모델을 고른다", () => {
+  it("openai가 기본이고 OpenAI 주소·모델을 고른다", () => {
     const e = loadEndpoints({ OPENAI_API_KEY: "k" });
-    expect(e.mode).toBe("mock");
-    expect(e.vlm).toMatchObject({ baseUrl: VLM_PRESETS.mock.baseUrl, model: VLM_PRESETS.mock.model, apiKey: "k" });
+    expect(e.mode).toBe("openai");
+    expect(e.vlm).toMatchObject({ baseUrl: VLM_PRESETS.openai.baseUrl, model: VLM_PRESETS.openai.model, apiKey: "k" });
   });
-  it("live는 같은 서버 vLLM 주소와 vLLM이 내건 이름 vlm을 고른다", () => {
-    expect(loadEndpoints({ INFERENCE_MODE: "live" }).vlm).toMatchObject({ baseUrl: "http://vllm-vlm:8000/v1", model: "vlm" });
+  it("vllm은 같은 서버 vLLM 주소와 vLLM이 내건 이름 vlm을 고른다", () => {
+    expect(loadEndpoints({ INFERENCE_MODE: "vllm" }).vlm).toMatchObject({ baseUrl: "http://vllm-vlm:8000/v1", model: "vlm" });
   });
   it("두 모드는 같은 모양이고 주소·모델 이름·키 자리·요청 칸만 다르다", () => {
-    expect(Object.keys(VLM_PRESETS.mock).sort()).toEqual(Object.keys(VLM_PRESETS.live).sort());
-    const [m, l] = [loadEndpoints({}), loadEndpoints({ INFERENCE_MODE: "live" })];
+    expect(Object.keys(VLM_PRESETS.openai).sort()).toEqual(Object.keys(VLM_PRESETS.vllm).sort());
+    const [m, l] = [loadEndpoints({}), loadEndpoints({ INFERENCE_MODE: "vllm" })];
     expect(Object.keys(m).sort()).toEqual(Object.keys(l).sort());
     expect(Object.keys(m.vlm).sort()).toEqual(Object.keys(l.vlm).sort());
   });
   it("PAM LLM: 따로 준 주소·모델·키가 앞서고 끝 /를 지운다. 키는 PAM_LLM_API_KEY → 모드 키 → 빈 글", () => {
-    const e = loadEndpoints({ INFERENCE_MODE: "live", PAM_LLM_BASE_URL: "http://x:1/v1//", PAM_LLM_MODEL: "m", VLLM_API_KEY: "v" });
+    const e = loadEndpoints({ INFERENCE_MODE: "vllm", PAM_LLM_BASE_URL: "http://x:1/v1//", PAM_LLM_MODEL: "m", VLLM_API_KEY: "v" });
     expect(e.pam).toMatchObject({ baseUrl: "http://x:1/v1", model: "m", apiKey: "v", thinking: "chat_template" });
-    expect(loadEndpoints({ INFERENCE_MODE: "live", PAM_LLM_API_KEY: "a", VLLM_API_KEY: "v" }).pam.apiKey).toBe("a");
-    expect(loadEndpoints({}).pam).toMatchObject({ baseUrl: "https://openrouter.ai/api/v1", model: "qwen/qwen3.5-27b", apiKey: "", thinking: "openrouter" });
-    expect(loadEndpoints({ PAM_LLM_PROVIDER: "openai", OPENAI_API_KEY: "k" }).pam).toMatchObject({ baseUrl: "https://api.openai.com/v1", model: "gpt-5.4-mini", apiKey: "k", thinking: "openai" });
+    expect(loadEndpoints({ INFERENCE_MODE: "vllm", PAM_LLM_API_KEY: "a", VLLM_API_KEY: "v" }).pam.apiKey).toBe("a");
+    expect(loadEndpoints({}).pam).toMatchObject({ baseUrl: "https://api.openai.com/v1", model: "gpt-5.4-mini", apiKey: "", thinking: "openai" });
+    expect(loadEndpoints({ OPENAI_API_KEY: "k" }).pam).toMatchObject({ baseUrl: "https://api.openai.com/v1", model: "gpt-5.4-mini", apiKey: "k", thinking: "openai" });
   });
   it("따로 준 VLM 주소·모델이 앞선다", () => {
-    const e = loadEndpoints({ INFERENCE_MODE: "live", VLM_BASE_URL: "http://127.0.0.1:8500/v1/", VLM_MODEL: "m" });
+    const e = loadEndpoints({ INFERENCE_MODE: "vllm", VLM_BASE_URL: "http://127.0.0.1:8500/v1/", VLM_MODEL: "m" });
     expect(e.vlm.baseUrl).toBe("http://127.0.0.1:8500/v1");
     expect(e.vlm.model).toBe("m");
   });
   it("VLM_CLOSER_MODEL은 가까이 보기 VLM 모델 이름만 바꾼다. 비우면 VLM 모델과 같고, 주소·키·요청 칸은 같다", () => {
-    expect(loadEndpoints({}).vlm.closerModel).toBe(VLM_PRESETS.mock.model);
-    expect(loadEndpoints({ INFERENCE_MODE: "live" }).vlm.closerModel).toBe("vlm");
+    expect(loadEndpoints({}).vlm.closerModel).toBe(VLM_PRESETS.openai.model);
+    expect(loadEndpoints({ INFERENCE_MODE: "vllm" }).vlm.closerModel).toBe("vlm");
     expect(loadEndpoints({ VLM_MODEL: "gpt-5.4-nano", VLM_CLOSER_MODEL: " " }).vlm.closerModel).toBe("gpt-5.4-nano");
     expect(loadEndpoints({ VLM_MODEL: "gpt-5.4-nano", VLM_CLOSER_MODEL: "gpt-5.4-mini" }).vlm).toMatchObject({ model: "gpt-5.4-nano", closerModel: "gpt-5.4-mini" });
     const { vlm, closerVlm } = createInference({ VLM_MODEL: "gpt-5.4-nano", VLM_CLOSER_MODEL: "gpt-5.4-mini" });
@@ -41,13 +41,13 @@ describe("추론 모드", () => {
     const same = createInference({ VLM_MODEL: "gpt-5.4-nano" });
     expect(same.closerVlm.model).toBe("gpt-5.4-nano");
   });
-  it("생각 말풍선 모델(THOUGHT_MODEL)은 같은 VLM 주소·키·요청 칸에 모델 이름만 바꾼다: 비우면 mock gpt-5.4-nano, live vlm", () => {
-    expect(VLM_PRESETS.mock.thoughtModel).toBe("gpt-5.4-nano");
-    expect(VLM_PRESETS.live.thoughtModel).toBe("vlm");
+  it("생각 말풍선 모델(THOUGHT_MODEL)은 같은 VLM 주소·키·요청 칸에 모델 이름만 바꾼다: 비우면 openai gpt-5.4-nano, vllm vlm", () => {
+    expect(VLM_PRESETS.openai.thoughtModel).toBe("gpt-5.4-nano");
+    expect(VLM_PRESETS.vllm.thoughtModel).toBe("vlm");
     expect(loadEndpoints({}).vlm.thoughtModel).toBe("gpt-5.4-nano");
-    expect(loadEndpoints({ INFERENCE_MODE: "live" }).vlm.thoughtModel).toBe("vlm");
+    expect(loadEndpoints({ INFERENCE_MODE: "vllm" }).vlm.thoughtModel).toBe("vlm");
     expect(loadEndpoints({ VLM_MODEL: "gpt-5.4-mini", THOUGHT_MODEL: " " }).vlm.thoughtModel).toBe("gpt-5.4-nano");
-    expect(loadEndpoints({ THOUGHT_MODEL: "small" }).vlm).toMatchObject({ model: VLM_PRESETS.mock.model, thoughtModel: "small" });
+    expect(loadEndpoints({ THOUGHT_MODEL: "small" }).vlm).toMatchObject({ model: VLM_PRESETS.openai.model, thoughtModel: "small" });
     const { thought } = createInference({ VLM_BASE_URL: "http://127.0.0.1:9/v1", OPENAI_API_KEY: "k" });
     expect(thought.model).toBe("gpt-5.4-nano");
     expect(thought.endpoint).toEqual({ baseUrl: "http://127.0.0.1:9/v1", model: "gpt-5.4-nano", apiKey: "k", extraBody: { reasoning_effort: "none" } });
@@ -57,7 +57,9 @@ describe("추론 모드", () => {
     expect(() => loadEndpoints({ VLM_EXTRA_BODY: "{" })).toThrow(/VLM_EXTRA_BODY/);
   });
   it("모르는 모드는 시작을 막는다", () => {
-    expect(() => loadEndpoints({ INFERENCE_MODE: "replay" })).toThrow(/mock 또는 live/);
+    expect(() => loadEndpoints({ INFERENCE_MODE: "replay" })).toThrow(/openai 또는 vllm/);
+    expect(() => loadEndpoints({ INFERENCE_MODE: "mock" })).toThrow("(예전 이름 mock → openai)");
+    expect(() => loadEndpoints({ INFERENCE_MODE: "live" })).toThrow("(예전 이름 live → vllm)");
   });
 });
 

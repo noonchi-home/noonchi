@@ -1,6 +1,6 @@
 // OpenAI 호환 chat completions 한 번(openai SDK). 고치거나 다시 묻지 않는다(maxRetries 0). 잘린 답(finish_reason이 stop도 null도 아님)은 오류다.
-// 요청 칸 model, messages, temperature, max_tokens, stream=false는 두 모드가 같다. 생각 칸은 mock(OpenRouter) reasoning.enabled, live(vLLM) chat_template_kwargs.enable_thinking.
-// OpenAI(PAM_LLM_PROVIDER=openai)는 max_completion_tokens·reasoning_effort(none·medium)이고 생각을 켜면 temperature를 보내지 않는다.
+// 요청 칸 model, messages, stream=false는 두 모드가 같다. vllm(같은 서버 vLLM)은 temperature·max_tokens·생각 칸 chat_template_kwargs.enable_thinking,
+// openai(OpenAI)는 max_completion_tokens·reasoning_effort(none·medium)이고 생각을 켜면 temperature를 보내지 않는다(기본값 1만 받는다).
 // 키가 없으면 authorization을 보내지 않는다. 연결 단계 EFAULT만 다시 보낸다(fetchRetry). 넘겨주기(3xx)는 따라가지 않는다.
 import OpenAI, { APIError } from "openai";
 import { z } from "zod";
@@ -35,8 +35,8 @@ export class PamLlm {
       return { model: s.model, messages, max_completion_tokens: s.maxTokens[role], stream: false,
         reasoning_effort: g.enable_thinking ? "medium" : "none", ...(g.enable_thinking ? {} : { temperature: g.temperature }), ...s.extraBody };
     }
-    const thinking = s.thinking === "openrouter" ? { reasoning: { enabled: g.enable_thinking } } : { chat_template_kwargs: { enable_thinking: g.enable_thinking } };
-    return { model: s.model, messages, temperature: g.temperature, max_tokens: s.maxTokens[role], stream: false, ...thinking, ...s.extraBody };
+    return { model: s.model, messages, temperature: g.temperature, max_tokens: s.maxTokens[role], stream: false,
+      chat_template_kwargs: { enable_thinking: g.enable_thinking }, ...s.extraBody };
   }
 
   async complete(messages: PamMessage[], g: Generation, role: Role, timeoutMs: number): Promise<string> {
