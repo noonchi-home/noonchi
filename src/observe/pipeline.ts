@@ -529,8 +529,7 @@ export class ObservationPipeline {
     // 쓴 장이 그사이 낡은 것은 막지 않는다(붙잡은 장면·가만히 든 폰은 같은 사진이 이어진다)
     const stale = this.inputCut();
     const vlm: CloserVlm = !r || signal?.aborted ? "aborted" : r.scene && stale ? "no_fresh_frames" : r.missing ?? "ok";
-    // 끊긴 뒤에 온 답도 그 사진의 관찰이라 넣는다(가로 머그 r6: 집기 끝 직후 온 답을 버렸다). 답이 없거나 입력이 끊겼으면 넣지 않는다
-    if (vlm === "no_fresh_frames" || (vlm === "aborted" && (!r?.scene || stale))) r = null;
+    if (vlm === "aborted" || vlm === "no_fresh_frames") r = null;
     if (r) {
       this.o.emit({
         type: "observe", at_ms: this.clock.now(), frame_id: id, captured_at_ms: last.frame.capturedAtMs, yolo: null, vlm: r.scene?.summary ?? null,
