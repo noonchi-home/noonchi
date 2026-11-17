@@ -60,7 +60,7 @@ export class People extends Part {
         changes.push({ kind: "state", at_ms: at, subject: obj.id, meaningful: true, text: CHANGE_TEXT.state(core.name(obj), POSE_HOLD.object) });
       }
     }
-    this.sips(people, boxes, at, changes);
+    this.sips(people, boxes, at, changes, this.downOf(frame.view, size));
     const personFact = (facet: Facet, value: string) => {
       if (this.setPoseFact(core.person.facts, facet, value, at) && core.person.visible) {
         changes.push({ kind: "person_state", at_ms: at, subject: PERSON, meaningful: false, text: CHANGE_TEXT.state(OBJECT_NAME.person!, value) });
@@ -116,15 +116,19 @@ export class People extends Part {
   }
 
   /** 마시기·따르기 사건(src/world/sip.ts): 든 그릇을 입에 대면 그 그릇, 든 병을 기울여 그릇 위에 두면 그 그릇의 내용물을 다시 연다.
-   *  줄은 확인된(사라지지 않은) 물건 것만 낸다. */
-  private sips(people: ReturnType<typeof describePose>[], boxes: { obj: Obj; box: Detection["box"] }[], at: number, changes: WorldChange[]): void {
+   *  따르기는 병과 그릇 가운데 점의 중력 방향(down, 카메라 자세가 없으면 모름이라 보지 않는다)으로 본다. 줄은 확인된(사라지지 않은) 물건 것만 낸다. */
+  private sips(people: ReturnType<typeof describePose>[], boxes: { obj: Obj; box: Detection["box"] }[], at: number, changes: WorldChange[], down: (pt: Pt) => Pt | null): void {
     const core = this.core;
     const vessel = (o: Obj) => (CLASSES[o.cls].facets as readonly Facet[]).includes("contents");
     const say = (obj: Obj, c: WorldChange[]) => { if (obj.confirmed && obj.status !== "gone") changes.push(...c); };
     for (const { obj, box } of boxes) if (vessel(obj) && atMouth(people, box)) say(obj, core.contents.reopen(obj, at, "drink"));
     for (const b of boxes) {
       if (b.obj.cls !== "bottle") continue;
-      for (const c of boxes) if (c !== b && c.obj.cls !== "bottle" && vessel(c.obj) && pouringInto(people, b.box, c.box)) say(c.obj, core.contents.reopen(c.obj, at, "pour"));
+      for (const c of boxes) {
+        if (c === b || c.obj.cls === "bottle" || !vessel(c.obj)) continue;
+        const mid: Pt = [(b.box[0] + b.box[2] / 2 + c.box[0] + c.box[2] / 2) / 2, (b.box[1] + b.box[3] / 2 + c.box[1] + c.box[3] / 2) / 2];
+        if (pouringInto(people, b.box, c.box, down(mid))) say(c.obj, core.contents.reopen(c.obj, at, "pour"));
+      }
     }
   }
 
