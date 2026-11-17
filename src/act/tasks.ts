@@ -144,6 +144,29 @@ export function targetOf(spec: Pick<TaskSpec, "target">, world: WorldView, place
   return world.objects.filter((o) => o.cls === spec.target && o.status !== "gone" && !putAway(o, placed)).sort((a, b) => b.last_seen_ms - a.last_seen_ms)[0] ?? null;
 }
 
+/** 찾을 자리: 안 보이는 대상을 마지막으로 본 자리. objectId는 확인 물건 id, 후보 자리(World State sightings)면 null. */
+export interface LostSpot { objectId: string | null; cls: ObjClass; position: [number, number, number]; surface: string | null; surface_label: string | null; at_ms: number }
+
+/** 대상이 안 보일 때 찾으러 갈 자리(가장 새 것 하나). 그 종류 있는 물건이 freshMs 안에 보였으면 null(막은 검사의 신선도 기준을 그대로 받는다).
+ *  objectId를 주면(실행 전) 그 물건의 마지막 자리만, 아니면(계획 전) 그 종류 확인 물건과 후보 자리(sightings) 가운데 고른다.
+ *  치운 것(putAway)·들고 감 보호(carried)였던 물건·자리를 모르는 물건·쉬는 자리(resting: 찾아보고 못 찾은 자리)는 뺀다. */
+export function lostTarget(i: {
+  world: WorldView; cls: ObjClass; now: number; freshMs: number; placed?: Placed; objectId?: string;
+  resting?: (spot: { cls: ObjClass; position: [number, number, number] }) => boolean;
+}): LostSpot | null {
+  const mine = i.world.objects.filter((o) => o.cls === i.cls && (i.objectId === undefined || o.id === i.objectId));
+  const fresh = (o: WorldObject) => o.status === "present" && i.now - o.last_seen_ms <= i.freshMs;
+  if (mine.some((o) => fresh(o) && !putAway(o, i.placed))) return null;
+  const spots: LostSpot[] = mine.filter((o) => o.position && !putAway(o, i.placed) && o.carried !== true)
+    .map((o) => ({ objectId: o.id, cls: i.cls, position: [...o.position!] as [number, number, number], surface: o.surface, surface_label: o.surface_label, at_ms: o.last_seen_ms }));
+  if (i.objectId === undefined) {
+    for (const s of i.world.sightings ?? []) {
+      if (s.cls === i.cls) spots.push({ objectId: null, cls: i.cls, position: [...s.position], surface: s.surface, surface_label: s.surface_label, at_ms: s.at_ms });
+    }
+  }
+  return spots.filter((s) => !i.resting?.(s)).sort((a, b) => b.at_ms - a.at_ms)[0] ?? null;
+}
+
 /** 놓기를 끝낸 물건이 「치운 물건」(placed)인가: 그 행동의 대상 종류이고 집어 옮긴 것이 바로 그 대상일 때만(컵 치우기의 컵).
  *  다시 쓰는 물건(채워 주기에서 따르고 내려놓은 병: 집는 종류가 대상과 다름)과 대상 종류가 없는 행동의 물건은 아니다. 기준은 여기 하나다. */
 export const clearsAway = (spec: Pick<TaskSpec, "target" | "carry"> | null, cls: string): boolean =>

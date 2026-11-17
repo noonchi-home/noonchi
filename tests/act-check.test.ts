@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { checkDecision, checkPlan, loadActConfig, type CheckInput } from "../src/act/check.js";
 import { CHECK_TEXT } from "../src/act/labels.js";
-import type { WorldObject } from "../src/contract/world.js";
-import { planObjectsOf } from "../src/act/tasks.js";
+import type { WorldObject, WorldView } from "../src/contract/world.js";
+import { lostTarget, planObjectsOf } from "../src/act/tasks.js";
 
 const obj = (over: Partial<WorldObject> = {}): WorldObject => ({
   id: "cup_1", cls: "cup", position: [2, 0.75, 0], surface: "t", surface_label: "식탁", room: "kitchen", error_m: 0.1, status: "present",
@@ -89,16 +89,20 @@ describe("실행 전 검사", () => {
     expect(checkPlan(base({ tasks: ["사용자에게 물어보기"] }))).toMatchObject({ reason: "unknown_task" });
     expect(checkPlan(base({ plan: null }))).toMatchObject({ reason: "unknown_task" });
   });
-  it("대상 물건이 World State에 없거나 사라짐", () => {
-    expect(checkPlan(base({ world: { ...base().world, objects: [] } }))).toMatchObject({ reason: "no_target" });
-    expect(checkPlan(base({ world: { ...base().world, objects: [obj({ status: "gone" })] } }))).toMatchObject({ reason: "no_target" });
+  it("대상 물건이 World State에 없거나 사라짐: 막은 물건 id를 싣는다", () => {
+    expect(checkPlan(base({ world: { ...base().world, objects: [] } }))).toEqual({ ok: false, reason: "no_target", text: CHECK_TEXT.no_target, object: "cup_1" });
+    expect(checkPlan(base({ world: { ...base().world, objects: [obj({ status: "gone" })] } }))).toEqual({ ok: false, reason: "no_target", text: CHECK_TEXT.no_target, object: "cup_1" });
   });
-  it("대상이 이미 싱크대 안이거나, 남은 같은 종류 물건이 모두 싱크대 안", () => {
+  it("대상 자신이 싱크대 안이거나 놓기로 끝낸 것이면 in_sink, 다른 컵이 치워진 것은 상관없이 no_target이다", () => {
     const inSink = { place: fact("in_sink") };
     expect(checkPlan(base({ world: { ...base().world, objects: [obj({ facts: inSink })] } }))).toEqual({ ok: false, reason: "in_sink", text: CHECK_TEXT.in_sink });
+    const other = obj({ id: "cup_2", facts: inSink });
+    expect(checkPlan(base({ world: { ...base().world, objects: [obj({ status: "gone" }), other] } }))).toEqual({ ok: false, reason: "no_target", text: CHECK_TEXT.no_target, object: "cup_1" });
+    expect(checkPlan(base({ world: { ...base().world, objects: [other] } }))).toMatchObject({ reason: "no_target", object: "cup_1" });
+    const placed = new Map([["cup_1", { target: "sink_1", atMs: 9_000 }]]);
+    expect(checkPlan(base({ placed, world: { ...base().world, objects: [other] } }))).toMatchObject({ reason: "in_sink" });
     const noTarget = { ...base().plan!, steps: [base().plan!.steps[0]!, { ...base().plan!.steps[1]!, target: { objectId: "table_1" } }] };
-    expect(checkPlan(base({ plan: noTarget, world: { ...base().world, objects: [obj({ facts: inSink })] } }))).toMatchObject({ reason: "in_sink" });
-    expect(checkPlan(base({ plan: noTarget, world: { ...base().world, objects: [obj({ facts: inSink, status: "gone" })] } }))).toMatchObject({ reason: "no_target" });
+    expect(checkPlan(base({ plan: noTarget, world: { ...base().world, objects: [obj({ facts: inSink })] } }))).toEqual({ ok: false, reason: "no_target", text: CHECK_TEXT.no_target });
   });
   it("실행 추적이 놓기 단계를 끝낸 물건(placed)은 이미 치운 것이라 계획 전 검사·실행 전 검사가 막는다", () => {
     const placed = new Map([["cup_1", { target: "sink_1", atMs: 9_000 }]]);
@@ -106,9 +110,9 @@ describe("실행 전 검사", () => {
     expect(checkDecision({ decision: base().decision, tasks: base().tasks, world: base().world, placed })).toMatchObject({ reason: "in_sink" });
     expect(checkDecision({ decision: base().decision, tasks: base().tasks, world: base().world })).toEqual({ ok: true });
   });
-  it("판단 뒤에 다시 보지 않았거나 STALE_MS가 넘은 근거", () => {
-    expect(checkPlan(base({ world: { ...base().world, objects: [obj({ last_seen_ms: 8_000 })] } }))).toMatchObject({ reason: "stale" });
-    expect(checkPlan(base({ nowMs: 12_001 }))).toMatchObject({ reason: "stale" });
+  it("판단 뒤에 다시 보지 않았거나 STALE_MS가 넘은 근거: 막은 물건 id를 싣는다", () => {
+    expect(checkPlan(base({ world: { ...base().world, objects: [obj({ last_seen_ms: 8_000 })] } }))).toEqual({ ok: false, reason: "stale", text: CHECK_TEXT.stale, object: "cup_1" });
+    expect(checkPlan(base({ nowMs: 12_001 }))).toMatchObject({ reason: "stale", object: "cup_1" });
     expect(checkPlan(base({ nowMs: 12_000 }))).toEqual({ ok: true });
   });
   it("사람이 그 물건을 들고 있거나 쓰는 중", () => {
@@ -216,5 +220,42 @@ describe("계획 전 검사(에이전트를 부르기 전)", () => {
     const at = (nowMs: number) => checkDecision({ decision: base().decision, tasks: base().tasks, world: w([obj({ last_seen_ms: 9_000 })]), nowMs });
     expect(at(19_000)).toEqual({ ok: true });
     expect(at(19_001)).toMatchObject({ reason: "no_target" });
+  });
+});
+
+describe("찾을 자리(lostTarget): 대상이 안 보일 때 마지막으로 본 자리", () => {
+  const world = (objects: WorldObject[], sightings: WorldView["sightings"] = undefined): WorldView => ({ ...base().world, objects, ...(sightings ? { sightings } : {}) });
+  const seen = (at_ms: number, x = 2): NonNullable<WorldView["sightings"]>[number] => ({ cls: "cup", position: [x, 0.75, 0], surface: "t", surface_label: "식탁", at_ms, in_hand: false });
+  const inSink = { place: fact("in_sink") };
+
+  it("있는 컵이 기준(freshMs) 안에 보였으면 없다. 실행 전 기준(3초)이면 5초 된 컵의 자리를 낸다", () => {
+    const w = world([obj({ last_seen_ms: 5_000 })]);
+    expect(lostTarget({ world: w, cls: "cup", now: 10_000, freshMs: 10_000 })).toBeNull();
+    expect(lostTarget({ world: w, cls: "cup", now: 10_000, freshMs: 3000 })).toEqual({ objectId: "cup_1", cls: "cup", position: [2, 0.75, 0], surface: "t", surface_label: "식탁", at_ms: 5_000 });
+  });
+  it("objectId를 주면 그 물건의 자리만 낸다(다른 컵 자리가 더 새도)", () => {
+    const w = world([obj({ last_seen_ms: 4_000, status: "out_of_view" }), obj({ id: "cup_2", position: [3, 0, 1], last_seen_ms: 6_000, status: "out_of_view" })], [seen(7_000)]);
+    expect(lostTarget({ world: w, cls: "cup", now: 10_000, freshMs: 3000, objectId: "cup_1" })).toMatchObject({ objectId: "cup_1", at_ms: 4_000 });
+    expect(lostTarget({ world: w, cls: "cup", now: 10_000, freshMs: 3000 })).toMatchObject({ objectId: null, at_ms: 7_000 });
+  });
+  it("싱크대에 치운 컵과 식탁 위 후보 자리가 함께 있으면 후보 자리를 낸다", () => {
+    const w = world([obj({ id: "cup_2", facts: inSink, last_seen_ms: 9_500 })], [seen(8_000)]);
+    expect(checkDecision({ decision: base().decision, tasks: base().tasks, world: w, nowMs: 10_000 })).toMatchObject({ reason: "in_sink" });
+    expect(lostTarget({ world: w, cls: "cup", now: 10_000, freshMs: 10_000 })).toEqual({ objectId: null, cls: "cup", position: [2, 0.75, 0], surface: "t", surface_label: "식탁", at_ms: 8_000 });
+  });
+  it("들고 감 보호였던 물건·치운 것(싱크대 안·놓기로 끝냄)·쉬는 자리는 빼고, 여럿이면 가장 새 것", () => {
+    const placed = new Map([["cup_3", { target: "sink_1", atMs: 9_000 }]]);
+    const w = world([
+      obj({ id: "cup_1", status: "gone", last_seen_ms: 6_000, carried: true }),
+      obj({ id: "cup_2", status: "out_of_view", last_seen_ms: 6_500, facts: inSink }),
+      obj({ id: "cup_3", status: "out_of_view", last_seen_ms: 7_000 }),
+      obj({ id: "cup_4", status: "gone", last_seen_ms: 4_000, position: [1, 0, 1] }),
+    ], [seen(3_000, 5), seen(5_000, 4)]);
+    expect(lostTarget({ world: w, cls: "cup", placed, now: 20_000, freshMs: 3000 })).toMatchObject({ objectId: null, at_ms: 5_000, position: [4, 0.75, 0] });
+    const resting = (s: { cls: string; position: [number, number, number] }) => s.position[0] === 4;
+    expect(lostTarget({ world: w, cls: "cup", placed, now: 20_000, freshMs: 3000, resting })).toMatchObject({ objectId: "cup_4", at_ms: 4_000 });
+    expect(lostTarget({ world: w, cls: "cup", placed, now: 20_000, freshMs: 3000, objectId: "cup_1" })).toBeNull();
+    expect(lostTarget({ world: w, cls: "cup", placed, now: 20_000, freshMs: 3000, objectId: "cup_3" })).toBeNull();
+    expect(lostTarget({ world: world([]), cls: "cup", now: 20_000, freshMs: 3000 })).toBeNull();
   });
 });
