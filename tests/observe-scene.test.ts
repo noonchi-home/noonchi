@@ -62,6 +62,20 @@ describe("VLM 장면 분석", () => {
     expect(CLASSES.bowl.vlm).toMatch(/never a bowl/);
   });
 
+  // 가로 머그 r6(2026-11-18): 가까이 본 VLM 요약은 「흰 머그가 조리대 위에」인데 물건 목록이 비어 「찾은 것 없음」이었다(픽셀 상자·감지 번호를 쓴 물건이 버려진 것으로 본다)
+  it("VLM 물건 상자가 픽셀이면 그 사진 크기로 비율로 바꾸고, 감지 번호(d1)를 물건 번호로 쓰면 그 감지에 이은 물건으로 받는다", () => {
+    const raw = { scene: "k", summary: "s",
+      objects: [{ id: "v1", cls: "cup", box: { x: 240, y: 90, w: 48, h: 36 }, det: null }, { id: "d1", cls: "cup", box: { x: 0.1, y: 0.1, w: 0.2, h: 0.2 }, det: null }],
+      observations: [{ object_id: "v1", state: "on_counter" }, { object_id: "d1", state: "empty" }] };
+    const s = parseScene(JSON.stringify(raw), new Set(["d1"]), [480, 360]);
+    expect(s.objects).toEqual([
+      { id: "v1", cls: "cup", box: { x: 0.5, y: 0.25, w: 0.1, h: 0.1 }, det: null },
+      { id: "v_d1", cls: "cup", box: { x: 0.1, y: 0.1, w: 0.2, h: 0.2 }, det: "d1" },
+    ]);
+    expect(s.observations).toEqual([{ object_id: "v1", state: "on_counter" }, { object_id: "d1", state: "empty" }]);
+    expect(SCENE_PROMPT).toContain("fractions between 0 and 1, not pixels");
+  });
+
   it("스키마 objects의 종류 enum은 낱말 표의 내용물 면이 있는 물건(VLM_FIND)이고, 프롬프트가 감지 목록에 없는 물건도 상자와 함께 답하라고 한다", () => {
     const schema = JSON.stringify(SCENE_JSON_SCHEMA);
     for (const c of VLM_FIND) expect(schema).toContain(`"${c}"`);

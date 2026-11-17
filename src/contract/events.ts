@@ -120,6 +120,8 @@ export type BrainLog =
     scene?: SceneObservation;
     view?: CameraView;
     size?: [number, number];
+    /** 그 사진의 YOLO 감지(번호·종류·상자·신뢰도, 엔진 프레임 픽셀). */
+    dets?: { id: string; class: string; box: [number, number, number, number]; score: number }[];
   }
   | { type: "world_change"; at_ms: number; kind: WorldChangeKind; text: string }
   | {

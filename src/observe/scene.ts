@@ -44,7 +44,7 @@ export interface SceneDetection { id: string; class: string; box: [number, numbe
 export const SCENE_PROMPT = [
   "You see one or more photos from a handheld phone camera in a home, oldest first, a few seconds apart. The line before each photo gives its capture time relative to the latest photo (t-0s).",
   "Detections lists the objects found in the latest photo, with ids and pixel boxes [x, y, w, h].",
-  `objects: list every ${VLM_FIND.join(", ")} you can see in the latest photo, including ones missing from Detections. Give each an id v1, v2… and its box {x, y, w, h} as fractions of the latest photo width and height; set det to the matching detection id, or null. You may report facts for these ids in observations too.`,
+  `objects: list every ${VLM_FIND.join(", ")} you can see in the latest photo, including ones missing from Detections. Give each an id v1, v2… and its box {x, y, w, h} as fractions between 0 and 1, not pixels, of the latest photo width and height; set det to the matching detection id, or null. You may report facts for these ids in observations too.`,
   `Kinds: ${VLM_FIND.map((c) => `${c} = ${(CLASSES[c] as { vlm?: string }).vlm}`).join("; ")}. A clear drinking glass is a cup, not a bottle.`,
   "For each detected id, report only what is visible in the latest photo, one observation per fact, using the allowed states.",
   `Objects. Place: ${values("place", "object")}; in_hand only when a hand holding it is visible in the latest photo (a person's hand, or the camera holder's hand reaching into the photo), never for an object resting on a surface. Contents, only if the inside is actually visible: ${values("contents", "object")}. Cup, bottle and bowl sides: ${values("body", "object")}. Lids, doors and covers: ${values("open", "object")}. Use: ${values("use", "fixture")}. Screens: ${values("screen", "object")}.`,
@@ -56,10 +56,14 @@ export const SCENE_PROMPT = [
 
 /** 스키마에 맞지 않으면 던진다(VlmClient가 한 번 다시 묻는다). VLM 물건은 사진 밖·넓이 없는 상자와 겹친 번호를 버리고, 감지 목록에 없는 det는 null로 둔다.
  *  관찰은 감지 목록 번호와 남은 VLM 물건 번호에만 단다. */
-export function parseScene(text: string, ids: ReadonlySet<string>): SceneObservation {
+export function parseScene(text: string, ids: ReadonlySet<string>, size?: [number, number]): SceneObservation {
   const s = SceneSchema.parse(JSON.parse(text));
   const seen = new Set<string>();
-  const objects = (s.objects ?? []).filter((o) => inPhoto(o.box) && !ids.has(o.id) && !seen.has(o.id) && seen.add(o.id))
+  // 픽셀로 답한 상자는 그 사진 크기로 비율로 바꾼다. 감지 번호(d1)를 물건 번호로 쓴 물건은 그 감지에 이은 물건으로 받는다(가로 머그 r6: 목록이 비었다)
+  const frac = (b: { x: number; y: number; w: number; h: number }) => (size && Math.max(b.x, b.y, b.w, b.h) > 1.001
+    ? { x: b.x / size[0], y: b.y / size[1], w: b.w / size[0], h: b.h / size[1] } : b);
+  const objects = (s.objects ?? []).map((o) => (ids.has(o.id) ? { ...o, id: `v_${o.id}`, det: o.id } : o)).map((o) => ({ ...o, box: frac(o.box) }))
+    .filter((o) => inPhoto(o.box) && !ids.has(o.id) && !seen.has(o.id) && seen.add(o.id))
     .map((o) => ({ ...o, det: o.det !== null && ids.has(o.det) ? o.det : null }));
   const known = new Set([...ids, ...objects.map((o) => o.id)]);
   return { scene: s.scene, observations: s.observations.filter((o) => known.has(o.object_id)), objects, summary: s.summary };
@@ -88,11 +92,13 @@ export async function analyzeScene(
 ): Promise<{ scene: SceneObservation | null; costUsd: number; model: string; error?: string }> {
   if (!frames.length) throw new Error("분석할 프레임이 없습니다");
   const ids = new Set(dets.map((d) => d.id));
+  const last = frames.at(-1)!;
+  const size: [number, number] | undefined = last.width && last.height ? [last.width, last.height] : undefined;
   const r = await vlm.json({
     prompt: SCENE_PROMPT,
     texts: [...(note ? [note] : []), `Detections: ${JSON.stringify(dets.map((d) => ({ id: d.id, class: d.class, box: d.box.map(Math.round) })))}`],
     images: frames.map((f) => f.jpeg), captions: frameCaptions(frames),
-    schema: { name: "scene_observation", schema: SCENE_JSON_SCHEMA }, parse: (t) => parseScene(t, ids), signal,
+    schema: { name: "scene_observation", schema: SCENE_JSON_SCHEMA }, parse: (t) => parseScene(t, ids, size), signal,
   });
   return { scene: r.value, costUsd: r.costUsd, model: r.model, ...(r.error ? { error: r.error } : {}) };
 }

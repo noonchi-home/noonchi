@@ -224,7 +224,7 @@ export class ObservationPipeline {
         const look = f?.view ? { view: f.view, width: f.width, height: f.height, eye: f.eye ? f.eye.position : null } : undefined;
         const scene = r.scene && f ? linkDets(r.scene, dets, f.width, f.height) : r.scene;
         const changes = scene ? o.world.applyScene(r.frameId, r.capturedAtMs, scene, ids, look) : o.world.applyMissing(r.frameId, r.capturedAtMs, { vlm: r.missing! });
-        o.emit({ type: "observe", at_ms: this.clock.now(), frame_id: r.frameId, captured_at_ms: r.capturedAtMs, yolo: null, vlm: r.scene?.summary ?? null, ...(r.missing ? { vlm_missing: r.missing } : {}), ...(r.scene ? { scene: r.scene, ...(look ? { view: look.view, size: [look.width, look.height] as [number, number] } : {}) } : {}) });
+        o.emit({ type: "observe", at_ms: this.clock.now(), frame_id: r.frameId, captured_at_ms: r.capturedAtMs, yolo: null, vlm: r.scene?.summary ?? null, ...(r.missing ? { vlm_missing: r.missing } : {}), ...(r.scene ? { scene: r.scene, dets: dets.map((d) => ({ id: d.id, class: d.class, box: [...d.box] as [number, number, number, number], score: d.score })), ...(look ? { view: look.view, size: [look.width, look.height] as [number, number] } : {}) } : {}) });
         this.publish(changes);
       },
     });
@@ -529,7 +529,8 @@ export class ObservationPipeline {
     // 쓴 장이 그사이 낡은 것은 막지 않는다(붙잡은 장면·가만히 든 폰은 같은 사진이 이어진다)
     const stale = this.inputCut();
     const vlm: CloserVlm = !r || signal?.aborted ? "aborted" : r.scene && stale ? "no_fresh_frames" : r.missing ?? "ok";
-    if (vlm === "aborted" || vlm === "no_fresh_frames") r = null;
+    // 끊긴 뒤에 온 답도 그 사진의 관찰이라 넣는다(가로 머그 r6: 집기 끝 직후 온 답을 버렸다). 답이 없거나 입력이 끊겼으면 넣지 않는다
+    if (vlm === "no_fresh_frames" || (vlm === "aborted" && (!r?.scene || stale))) r = null;
     if (r) {
       this.o.emit({
         type: "observe", at_ms: this.clock.now(), frame_id: id, captured_at_ms: last.frame.capturedAtMs, yolo: null, vlm: r.scene?.summary ?? null,

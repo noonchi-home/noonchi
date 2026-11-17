@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 import type { Detection, SceneObservation } from "../src/contract/observe.js";
 import { WorldState } from "../src/world/state/world.js";
 import type { DetLabel } from "../src/world/vocab.js";
-import { engineFrame, LOOK_VIEW } from "./helpers/camera.js";
+import { AWAY_VIEW, engineFrame, LOOK_VIEW } from "./helpers/camera.js";
 import { det as mkDet } from "./helpers/detectors.js";
 
 const ws = () => new WorldState({ evidenceStepMs: 1000, surfaces: () => [], floorAt: () => 0, roomAt: () => ({ id: "kitchen", label: "주방" }), devices: () => [] });
@@ -47,6 +47,18 @@ describe("집기·내려놓기 대상(focus)", () => {
     };
     expect(make(true)).toMatchObject({ status: "gone", followed_by: "cup_1" });
     expect(make(false)).toMatchObject({ status: "present", followed_by: null });
+  });
+
+  // 가로 머그 r6(2026-11-18): 싱크대로 가는 중 폰 눈을 모르는 사진에서 손에 든 머그가 새 cup_10이 됐고, 대상 cup_8은 「손에 있음 · 시야 밖」으로 남았다
+  it("든 물건(carry)이 손에 있고 자리를 잃었으면(시야 밖·자리 모름) 폰 눈을 모르는 사진의 같은 종류 새 감지도 대상으로 잇는다", () => {
+    const w = ws();
+    for (let t = 0; t <= 2000; t += 500) full(w, `e${t}`, t, [cupIn]);
+    for (const at of [2000, 2500]) w.applyScene(`h${at}`, at, { scene: "k", summary: "s", observations: [{ object_id: "d1", state: "in_hand" }] }, new Map([["d1", "cup_1"]]));
+    w.focus("cup_1", { step: "carry", spot: null });
+    w.applyDetections(engineFrame("n3000", 3000, { view: AWAY_VIEW }), []);
+    expect(w.view(3000).objects[0]!.status).toBe("out_of_view");
+    const r = full(w, "e3500", 3500, [atSink]);
+    expect(r.ids.get("d1")).toBe("cup_1");
   });
 
   // 가로 키 큰 컵 실제 판 r1(2026-11-18): 사람이 들고 있던 cup_4를 식탁에 내려놓고 나가자 같은 자리에 새 cup_6이 생겨 한 컵이 두 id였다
@@ -112,5 +124,38 @@ describe("집기·내려놓기 대상(focus)", () => {
     far.focus("cup_1", { step: "place", spot: [sink[0] + 5, sink[1] + 5] });
     for (let t = 2500; t <= 6000; t += 500) full(far, `e${t}`, t, [atSink]);
     expect(far.view(6000).objects.map((o) => o.id)).toEqual(["cup_1", "cup_2"]);
+  });
+});
+
+// 가로 키 큰 컵 r3·가로 유리컵 r9(2026-11-18): 내려놓기 중 폰 눈 자리를 모르는 사진이 끼어 손에 든 대상 자리를 잃었고, 싱크대 위 새 컵(cup_35·cup_24)이
+// 대상으로 이어지지 않아 내려놓기가 끝나지 않았다. 대상의 놓인 곳은 「식탁 위」로도 흔들렸다
+describe("내려놓기 단계: 목적지에 새로 보인 컵은 대상", () => {
+  it("내려놓기 시작 뒤 처음 보인 같은 종류 컵이 목적지 1.5m 안이면(손에 있음으로 보인 적 없어도, 대상 자리를 몰라도) 대상으로 잇는다. 시작 전부터 보이던 컵은 잇지 않는다", () => {
+    const w = ws();
+    for (let t = 0; t <= 2000; t += 500) full(w, `e${t}`, t, [cupIn]);
+    const sink = xz(w, atSink);
+    const before = det("cup", [430, 150, 20, 10]);   // 목적지 옆에 원래 있던 컵
+    for (let t = 2500; t <= 4500; t += 500) full(w, `e${t}`, t, [cupIn, before]);
+    const kept = w.view(4500).objects.map((o) => o.id);
+    expect(kept).toHaveLength(2);
+    // 손에 든 대상은 자리를 모른다(눈 자리 모름)
+    w.applyDetections({ ...engineFrame("n5000", 5000, { view: null }), eye: null }, []);
+    w.focus("cup_1", { step: "place", spot: sink });
+    for (let t = 5500; t <= 9000; t += 500) full(w, `e${t}`, t, [before, atSink]);
+    const v = w.view(9000).objects;
+    expect(v.filter((o) => o.status !== "gone").map((o) => o.id).sort()).toEqual(kept.sort());
+    const p = v.find((o) => o.id === "cup_1")!.position!;
+    expect(Math.hypot(p[0] - sink[0], p[2] - sink[1])).toBeLessThan(0.3);
+  });
+
+  it("내려놓기 중 대상의 놓인 곳은 목적지에서 먼 면 위 값(식탁 위)으로 바뀌지 않는다(손에 있음 → 목적지 쪽만)", () => {
+    const w = ws();
+    for (let t = 0; t <= 2000; t += 500) full(w, `e${t}`, t, [cupIn]);
+    const hand = (at: number) => w.applyScene(`h${at}`, at, { scene: "k", summary: "s", observations: [{ object_id: "d1", state: "in_hand" }] }, new Map([["d1", "cup_1"]]));
+    hand(2000);
+    hand(2500);
+    w.focus("cup_1", { step: "place", spot: [9, 9] });
+    for (const at of [3000, 3500]) w.applyScene(`t${at}`, at, { scene: "k", summary: "s", observations: [{ object_id: "d1", state: "on_table" }] }, new Map([["d1", "cup_1"]]));
+    expect(w.view(3500).objects[0]!.facts.place?.value).toBe("in_hand");
   });
 });

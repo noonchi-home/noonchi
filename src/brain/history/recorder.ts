@@ -60,7 +60,7 @@ export function attachRecorder(db: HistoryDb, o: RecorderSources): () => void {
               subject: l.frame_id, data: { captured_at_ms: l.captured_at_ms, yolo_missing: l.yolo_missing, vlm_missing: l.vlm_missing ?? null },
             });
           } else if (l.vlm !== null || l.vlm_missing) {
-            db.add("vlm", l.at_ms, l.vlm ?? CHANGE_TEXT.vlmMissing[l.vlm_missing!], { subject: l.frame_id, data: { captured_at_ms: l.captured_at_ms, missing: l.vlm_missing ?? null, ...(l.scene ? { scene: l.scene } : {}), ...(l.view ? { view: l.view, size: l.size } : {}) } });
+            db.add("vlm", l.at_ms, l.vlm ?? CHANGE_TEXT.vlmMissing[l.vlm_missing!], { subject: l.frame_id, data: { captured_at_ms: l.captured_at_ms, missing: l.vlm_missing ?? null, ...(l.scene ? { scene: l.scene } : {}), ...(l.view ? { view: l.view, size: l.size } : {}), ...(l.dets ? { dets: l.dets } : {}) } });
           }
           return;
         case "world_change":
