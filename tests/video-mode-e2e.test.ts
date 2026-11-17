@@ -160,14 +160,14 @@ describe("영상 모드 처음부터 끝까지", () => {
     expect(spoken().filter((m) => m.id === planId).map((m) => m.text)).toEqual(STEPS);
 
     // 4 면(식탁·싱크대)인 명령 대상은 배치 상자 가운데가 아니라 윗면 가운데다: 식탁 윗면 0.75m, 싱크대 윗면 0.9m(영상 폰 바닥은 AR y 0).
-    // 싱크볼이 있는 싱크대는 조리대 가운데([5.853, 0.761])가 아니라 싱크볼 가운데([5.86, 1.38])다. 수평 거리는 시작 자리(AR 원점)에서 잰 것과 같다
+    // 싱크볼이 있는 싱크대는 조리대 가운데([5.853, 0.761])가 아니라 싱크볼 가운데([5.86, 0.693])다. 수평 거리는 시작 자리(AR 원점)에서 잰 것과 같다
     const targetOf = (text: string) => spoken().find((m) => m.id === planId && m.text === text)!.target;
     expect(first.target.ar[1]).toBeCloseTo(0.75, 3);
     for (const text of [STEPS[2]!, STEPS[3]!]) {
       const t = targetOf(text);
       expect(t.id).toBe("sink_counter_kitchen");
       expect(t.ar[1]).toBeCloseTo(0.9, 3);
-      expect(Math.hypot(t.ar[0], t.ar[2])).toBeCloseTo(Math.hypot(START[0] - 5.86, START[1] - 1.38), 3);
+      expect(Math.hypot(t.ar[0], t.ar[2])).toBeCloseTo(Math.hypot(START[0] - 5.86, START[1] - 0.693), 3);
     }
 
     // 5 대시보드 눈은 모두 맞춘 눈(estimated 없음), 시작 자리에서 시작 방향

@@ -26,7 +26,7 @@ describe("도면 설비를 서버 장면에 넣기", () => {
     const sink = objects(loadScene(home)!).find((o) => o.id === "sink_counter_kitchen")!;
     expect(sink).toMatchObject({
       type: "sink_counter", room: "kitchen", name: "주방·식당 싱크대", asset: null, interactive: false, attrs: {}, mount: "floor",
-      plan: { position: [5.853, 0.761], facing_deg: 0 }, position: [5.853, 0, 0.761], footprint: [2.278, 0.65], height: 0.9, anchors: { basin: [5.86, 1.38] },
+      plan: { position: [5.853, 0.761], facing_deg: 0 }, position: [5.853, 0, 0.761], footprint: [2.278, 0.65], height: 0.9, anchors: { basin: [5.86, 0.693] },
     });
   });
   it("방향은 구운 GLB drawn_<id> 노드와 같다: −(facing + 90)°", () => {

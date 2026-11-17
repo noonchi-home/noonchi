@@ -37,7 +37,7 @@ describe("종류 표", () => {
     const fridge = mokryeon.find((l) => l.id === "fridge_bbc363a3")!;
     expect(fridge).toMatchObject({ cls: "refrigerator", center: [5.9191, 2.4596], footprint: [0.92, 0.75], facingDeg: 0, baseM: 0 });
     const sink = mokryeon.find((l) => l.id === "sink_counter_kitchen")!;
-    expect(sink.center).toEqual([5.86, 1.38]);
+    expect(sink.center).toEqual([5.86, 0.693]);
     expect(sink.baseM).toBeCloseTo(0.9, 6);
     const tv = mokryeon.find((l) => l.cls === "tv")!;
     expect(tv).toMatchObject({ id: "tv_62442cb3", center: [11.4412, 9.9068], unique: true });

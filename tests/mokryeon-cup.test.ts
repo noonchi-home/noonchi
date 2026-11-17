@@ -20,7 +20,7 @@ const NOW = "2026-11-09T00:00:00.000Z";
 
 describe("한양목련 컵 치우기", () => {
   it("평면도가 싱크대와 그 싱크볼(도면 설비 sink 점)을 안다", () => {
-    expect(fp.objects.get("sink_counter_kitchen")).toEqual({ id: "sink_counter_kitchen", type: "sink_counter", room: "kitchen", position: [5.853, 0.761], basin: [5.86, 1.38] });
+    expect(fp.objects.get("sink_counter_kitchen")).toEqual({ id: "sink_counter_kitchen", type: "sink_counter", room: "kitchen", position: [5.853, 0.761], basin: [5.86, 0.693] });
     expect(fp.objects.get("counter_kitchen_w")?.basin).toBeUndefined();
   });
   it("에이전트가 식탁·컵·싱크대·내려놓기 네 단계를 만들고, 경로·단계가 컵 계획 모양(cupPlan)과 같다", async () => {
