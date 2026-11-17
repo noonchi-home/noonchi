@@ -1,6 +1,6 @@
 // 기본 보기 벽·자르기(스파이크 docs/twin3d-spike/main.mjs 296~387줄, 벽 보기 auto 하나): 안쪽 면이 카메라를 향한 바깥벽만 세우고
-// 나머지 벽 위쪽은 숨긴다. 낮춘 벽의 문·창, 키 큰 가구(view.clip)는 자르기 높이(cut)에서 자르고 단면을 스텐실 뚜껑으로 어둡게 칠한다.
-// 키 큰 가구는 속이 보이는 열린 상자, 낮춘 벽의 창은 그 자리 낮은 유리 난간, 낮춘 벽의 문짝은 숨긴다.
+// 나머지 벽 위쪽은 숨긴다. 낮춘 벽의 문(문틀과 열리거나 닫힌 문짝)·창, 키 큰 가구(view.clip)는 자르기 높이(cut)에서 자르고 단면을 스텐실 뚜껑으로 어둡게 칠한다.
+// 키 큰 가구는 자른 자리에 몸통 색 뚜껑을 덮어 꽉 찬 가구로 보이고, 낮춘 벽의 창은 그 자리 낮은 유리 난간이다.
 import * as THREE from "three";
 import { cameraHeading, collectWalls, cutAction, upperVisible } from "@viewer/walls.mjs";
 import { scene3d } from "../../../../src/design/tokens.ts";
@@ -10,6 +10,10 @@ import { placeCamera, viewTarget } from "./view";
 
 /** 자른 가구 속(뒷면) = 몸통 색 × 이 값(구운 빛 없이 그늘 정도). */
 const INSIDE = 0.62;
+/** 자른 가구 뚜껑 = 몸통 색 × 이 값(위에서 빛을 받는 윗면 정도). */
+const LID = 0.9;
+/** 뚜껑은 자르기 높이보다 이만큼 위(m): 자른 판 끝과 겹쳐 깜박이지 않게. */
+const LID_LIFT = 0.002;
 
 export interface PlanWall { id: string; kind?: string; faces?: { room?: string; normal: number[] }[] }
 /** 서버 장면(/api/scene)에서 쓰는 칸만. */
@@ -92,7 +96,8 @@ export function applyDefaultView(o: {
   };
   const setClipped = (node: THREE.Object3D, on: boolean, stencil = true) => {
     node.traverse((m) => {
-      if (!(m instanceof THREE.Mesh) || m.userData.isStencil) return;
+      // 뒷면·뚜껑 메시는 자기 자른 재질이 있고 스텐실을 세면 안 된다(닫힌 몸이 아니다)
+      if (!(m instanceof THREE.Mesh) || m.userData.isStencil || m.userData.isInside || m.userData.isLid) return;
       let st = clipState.get(m);
       if (!st && !on) return;
       if (!st) {
@@ -145,14 +150,51 @@ export function applyDefaultView(o: {
     });
   };
 
+  // 자른 키 큰 가구 뚜껑: 가구 로컬 경계 상자(자식 메시 전부)의 바닥 자리를 자르기 높이 바로 위에서 덮는 판.
+  // 색은 몸통(이름이 _carcass, 없으면 가장 큰 메시) 재질 색. 문·손잡이가 뚜껑 아래에 있어 위에서 보면 꽉 찬 가구다
+  const lids = new Map<THREE.Object3D, THREE.Mesh>();
+  const setLid = (node: THREE.Object3D, on: boolean) => {
+    if (!lids.has(node) && on) {
+      node.updateWorldMatrix(true, true);
+      const inv = node.matrixWorld.clone().invert();
+      const box = new THREE.Box3();
+      let body: THREE.Mesh | null = null;
+      let bodyScore = -1;
+      node.traverse((m) => {
+        if (!(m instanceof THREE.Mesh) || m.userData.isStencil || m.userData.isInside || m.userData.isLid) return;
+        m.geometry.computeBoundingBox();
+        const b = m.geometry.boundingBox!.clone().applyMatrix4(inv.clone().multiply(m.matrixWorld));
+        box.union(b);
+        const size = b.getSize(new THREE.Vector3());
+        const score = m.name.endsWith("_carcass") ? Infinity : size.x * size.y * size.z;
+        if (score > bodyScore) { body = m; bodyScore = score; }
+      });
+      const own = body ? flat((body as THREE.Mesh).material as Mats)[0] as THREE.Material & { color?: THREE.Color; map?: THREE.Texture | null } : null;
+      if (box.isEmpty() || !own) return;
+      const mat = new THREE.MeshBasicMaterial({ name: `${own.name}_lid`, map: own.map ?? null });
+      if (own.color) mat.color.copy(own.color);
+      mat.color.multiplyScalar(LID);
+      const y = new THREE.Vector3(0, cut + LID_LIFT, 0).applyMatrix4(inv).y;
+      const size = box.getSize(new THREE.Vector3());
+      const geo = new THREE.PlaneGeometry(size.x, size.z).rotateX(-Math.PI / 2).translate((box.min.x + box.max.x) / 2, y, (box.min.z + box.max.z) / 2);
+      const lid = new THREE.Mesh(geo, mat);
+      lid.userData.isLid = true;
+      lid.name = `${node.name}_lid`;
+      node.add(lid);
+      lids.set(node, lid);
+    }
+    const lid = lids.get(node);
+    if (lid) lid.visible = on;
+  };
+
   const tallClip = new Set(view.clip);
+  const doorIds = new Set((data.plan.doors ?? []).map((d) => d.id));
   const hideIds = new Set(view.hide);
   const railOf = new Map<string, THREE.Object3D>();
   for (const [win, name] of Object.entries(view.rails ?? {})) {
     const n = root.getObjectByName(name);
     if (n) railOf.set(win, n);
   }
-  const doorPart = new Map((data.plan.doors ?? []).map((d) => [d.id, d.kind === "swing" ? "leaf" : "panel"]));
   const actions: Record<string, number> = {};
   for (const e of data.objects) {
     const node = find(e.id);
@@ -169,9 +211,15 @@ export function applyDefaultView(o: {
     if (tallClip.has(e.id)) {
       setClipped(node, act === "clip", false);
       setInside(node, act === "clip");
-    } else setClipped(node, act === "clip");
-    const part = doorPart.get(e.id); // 낮춘 벽의 문짝(여닫이 leaf·미닫이 panel)은 숨긴다. 문틀은 남는다
-    if (part) node.traverse((n) => { if (n.userData?.part === part) n.visible = act !== "clip"; });
+      setLid(node, act === "clip");
+    } else {
+      // 낮춘 벽의 문은 문틀·문짝(열림·닫힘 모두)을 함께 자른다. 문짝(여닫이 leaf·미닫이 panel)은 구멍·유리 판이 있어 닫힌 몸이
+      // 아니므로 스텐실 뚜껑 대신 뒷면을 문짝 색으로 칠한다(먼저 정한 메시별 자르기 상태를 문 전체 자르기가 그대로 쓴다)
+      if (doorIds.has(e.id)) node.traverse((n) => {
+        if (n.userData?.part === "leaf" || n.userData?.part === "panel") { setClipped(n, act === "clip", false); setInside(n, act === "clip"); }
+      });
+      setClipped(node, act === "clip");
+    }
     actions[act] = (actions[act] ?? 0) + 1;
   }
   return {
