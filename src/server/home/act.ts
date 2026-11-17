@@ -3,11 +3,10 @@
 import { ExecutionTracker, LessonStore, Looker, PlanHub, checkDecision, checkPlan, deviceRunner, lessonsPath, loadActConfig } from "../../act/index.js";
 import { lookTargets, taskOf, tasksFor } from "../../act/tasks.js";
 import { deviceViews, placesOf, type PlaceInfo } from "../../agent/index.js";
-import { Decider, PamClient, ThoughtWriter, lastStoredThoughts, memoryForDay, storeThought, thoughtFeed } from "../../brain/index.js";
+import { Decider, PamClient, lastStoredThoughts, memoryForDay, storeThought, thoughtFeed } from "../../brain/index.js";
 import type { BrainLog } from "../../contract/events.js";
 import type { PlanView } from "../../contract/plan.js";
 import { loadEndpoints } from "../../infer/endpoints.js";
-import { createInference } from "../../infer/inference.js";
 import { floorPlanFrom, loadScene, type LayoutEditor, type PlaceNames } from "../../layout/index.js";
 import { Trigger, loadTriggerConfig, type PlaneSurface } from "../../world/index.js";
 import { PHONE_SESSION, TALK_QUIET_MS, type HomeCore } from "./core.js";
@@ -64,9 +63,9 @@ export function startAct(core: HomeCore): (event: BrainLog) => void {
   const { home } = twin;
   const world = core.world!;
   const now = () => core.nowMs();
-  // 판단·계획은 메시지를 기다리지 않는다: 판단 기록을 보낸 뒤 부르고, 새 메시지가 오면 보낸다. 다시 띄우면 이 집의 최근 메시지(10분 안)로 시작한다
+  // 메시지 상자 문장은 모델 없이 판단 기록의 사실로만 만든다(src/brain/thought.ts). 다시 띄우면 이 집의 최근 메시지(10분 안)로 시작한다
   const feed = thoughtFeed({
-    writer: new ThoughtWriter({ chat: createInference(env).thought }), send: (m) => core.app?.broadcast(m),
+    send: (m) => core.app?.broadcast(m),
     record: (m) => storeThought(history.db, home.id, m), seed: lastStoredThoughts(history.db, home.id, Date.now()),
   });
   core.thoughts = feed;

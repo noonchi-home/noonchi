@@ -16,10 +16,10 @@ import { startServer, type RunningServer } from "../src/server/start.js";
 import { ScriptedDetector, det } from "./helpers/detectors.js";
 import { startFakePam, type FakePam } from "./helpers/pam.js";
 import { CUP_SCRIPTS, plannerRespond } from "./helpers/planner.js";
-import { CUP_MESSAGES, thoughtReplies } from "./helpers/thought.js";
 import { heardAtOf, openPhone, openWebSocket } from "./helpers/ws.js";
 
 type Msg = Record<string, any>;
+const RULE_LINE = "컵을 두고 자리를 뜨면 치워도 된다고 하셨어요";
 let srv: RunningServer | undefined;
 let fake: FakeServer | undefined;
 let pam: FakePam | undefined;
@@ -39,13 +39,8 @@ const inbox = (list: Msg[]) => (ws: WebSocket) => ws.on("message", (d, bin) => {
 describe("NOONCHI 처음부터 끝까지", () => {
   it("관찰부터 단계 명령·실행 결과까지 한 흐름으로 돌고 기록·대시보드에 남는다", async () => {
     let cupPlace = "on_table";
-    // 생각 말풍선 메시지(VLM 주소 자리의 같은 가짜 서버): 첫 명령이 나갈 때까지 답을 붙잡아 둔다(판단·계획이 메시지를 기다리지 않는지)
-    const thoughts = thoughtReplies();
-    thoughts.hold();
     fake = await startFakeOpenAI({
       reply: (body) => {
-        const lines = thoughts.reply(body);
-        if (lines !== null) return lines;
         if (body?.response_format?.json_schema?.name !== "scene_observation") return null;
         const parts = (body.messages as { role: string; content: unknown }[]).filter((m) => m.role === "user").flatMap((m) => (Array.isArray(m.content) ? m.content : [{ text: m.content }]));
         const text = parts.map((p: { text?: unknown }) => (typeof p.text === "string" ? p.text : "")).join("\n");
@@ -90,14 +85,10 @@ describe("NOONCHI 처음부터 끝까지", () => {
     const first = said("식탁으로 가 주세요")!;
     expect(first).toEqual({ type: "command", id: expect.stringMatching(/^plan:pam-\d+$/), step: `${first.id}:1`, text: "식탁으로 가 주세요", vision: "식탁까지 거리 모름", choices: [{ id: "done", label: "완료" }], target: null, speak: true, kind: "go" });
     const planId = first.id as string;
-    // 두 줄 답을 붙잡아 둔 동안에도 판단 → 계획 → 첫 명령이 나갔다. 놓으면 마지막 판단 id로 두 줄이 대시보드에 온다
-    // 메시지 답을 붙잡아 둔 동안에도 판단 → 계획 → 첫 명령이 나갔다. 놓으면 컵 치우기 판단의 메시지(본 것 → 근거와 할 일)가 차례로 온다
-    expect(thoughts.bodies.length).toBeGreaterThan(0);
-    expect(dash.some((m) => m.type === "thought")).toBe(false);
-    thoughts.release();
+    // 메시지 상자 문장은 모델 없이 판단 기록의 사실(맞은 규칙 left_cup + 컵 치우기)로 만든다
     const shown = () => dash.filter((m) => m.type === "thought").flatMap((m) => m.messages as { id: string; text: string; decision: string }[]);
-    await pump(() => CUP_MESSAGES.every((t) => shown().some((m) => m.text === t)));
-    const cupAt = shown().find((m) => m.text === CUP_MESSAGES[0])!;
+    await pump(() => shown().some((m) => m.text === RULE_LINE));
+    const cupAt = shown().find((m) => m.text === RULE_LINE)!;
     const cupDecision = dash.find((m) => m.type === "brain" && m.event.type === "decision" && m.event.id === cupAt.decision)!.event;
     expect(cupDecision).toMatchObject({ action: "컵 치우기", prediction: { reasoning: "자리를 비워 컵을 치운다" } });
     // 1 이동: 「완료」 단추
@@ -141,13 +132,16 @@ describe("NOONCHI 처음부터 끝까지", () => {
     // 메시지는 같은 말을 되풀이하지 않고, PAM 원래 생각·관찰은 대시보드로 보내지 않는다
     const texts = shown().map((m) => m.text);
     expect(new Set(texts).size).toBe(texts.length);
-    expect(texts.indexOf(CUP_MESSAGES[0]!)).toBeLessThan(texts.indexOf(CUP_MESSAGES[1]!));
+    // 생각 말풍선 모델을 부르지 않는다: 모델 요청(chat/completions)은 모두 사진을 실은 VLM 요청이다
+    const chats = fake.requests.filter((r) => r.path.endsWith("/chat/completions"));
+    expect(chats.length).toBeGreaterThan(0);
+    expect(chats.every((r) => JSON.stringify(r.body).includes("image_url"))).toBe(true);
     for (const raw of ["자리를 비워 컵을 치운다", "빈 컵이 식탁에 남음", "할 일 없음", "컵 없음"]) expect(JSON.stringify(dash.filter((m) => m.type === "thought"))).not.toContain(raw);
     // 메시지는 기록 DB에 하나씩 집 id와 함께 남는다(다시 붙은 대시보드·다시 띄운 서버에 최근 것을 다시 보낸다)
     const stored = (await history("thought")).rows;
     expect(stored.map((r) => r.text)).toEqual(texts);
     expect(stored.map((r) => r.data)).toEqual(shown().map((m) => ({ home: "apartment", id: m.id })));
-    expect(stored.find((r) => r.text === CUP_MESSAGES[0])!.subject).toBe(cupDecision.id);
+    expect(stored.find((r) => r.text === RULE_LINE)!.subject).toBe(cupDecision.id);
     expect(pam.bodies.some((b) => String(b.observation_text).includes("컵 cup_1 보임"))).toBe(true);
     // 대시보드: 판단·실행 기록과 계획(집기 대상 cup_1). 단계 상태가 지금 단계를 따라가고 끝나면 done
     const planMsgs = dash.filter((m) => m.type === "plan" && m.plan?.id === planId).map((m) => m.plan);
@@ -162,12 +156,12 @@ describe("NOONCHI 처음부터 끝까지", () => {
     expect(dash.some((m) => m.type === "brain" && m.event.type === "execution" && m.event.plan_id === planId && m.event.state === "done")).toBe(true);
     // 실제 폰 위에는 명령만 온다(판단·관찰 글을 보내지 않는다)
     expect(phone.some((m) => m.type === "brain_line")).toBe(false);
-    // 대시보드 말풍선 카드: 정한 것 → 실제 폰에 낸 명령 넷 → 끝낸 일. 글이 바뀔 때만 보낸다
+    // 대시보드 말풍선 말(클로이드가 직접 하는 말): 정한 것 → 실제 폰에 낸 명령 넷 → 끝낸 일. 글이 바뀔 때만 보낸다
     const says = dash.filter((m) => m.type === "say").map((m) => m.text as string | null);
     expect(says.every((t, i) => i === 0 || t !== says[i - 1])).toBe(true);
-    const told = says.indexOf("식탁으로 가라고 했어요.");
-    expect(says[told - 1]).toMatch(/컵을 치우기로 했어요\.$/);
-    expect(says.slice(told, told + 5)).toEqual(["식탁으로 가라고 했어요.", "컵을 들라고 했어요.", "싱크대로 가라고 했어요.", "컵을 싱크대에 넣으라고 했어요.", "컵을 다 치웠어요."]);
+    const told = says.indexOf("식탁으로 갈게요.");
+    expect(says[told - 1]).toMatch(/컵을 치울게요\.$/);
+    expect(says.slice(told, told + 5)).toEqual(["식탁으로 갈게요.", "컵을 들게요.", "싱크대로 갈게요.", "컵을 싱크대에 넣을게요.", "컵을 다 치웠어요."]);
     // 새로 붙은 대시보드: world 다음에 마지막 판단과 그 판단의 생각 두 줄, 마지막 물체 모양(seen), 그다음 지금 말풍선 글
     const late: Msg[] = [];
     sockets.push(await openWebSocket(`${srv.url.replace(/^http/, "ws")}/events`, { setup: inbox(late) }));

@@ -3,6 +3,7 @@ import { josa } from "../shared/korean.js";
 import type { CloserMiss, TopDrop } from "../contract/events.js";
 import { KINDS, KIND_ORDER } from "../devices/kinds.js";
 import { OBJECT_NAME } from "../world/labels.js";
+import { TASK_SAY } from "./tasks.js";
 
 export const STEP_LABEL = {
   goTable: "식탁으로 가기", pickCup: "컵 집기", goSink: "싱크대로 가기", placeCup: "컵 내려놓기",
@@ -28,7 +29,15 @@ export const DEVICE_UNKNOWN = "가전";
 
 export const GOAL = { clearCup: "컵 치우기", askUser: "사용자에게 물어보기" };
 
-/** 대시보드 말풍선 카드 한 문장(src/act/say.ts). 클로이드가 정한 것과 실제 폰에 낸 명령이다. 클로이드가 몸으로 하는 말로 쓰지 않는다. */
+/** 실제 폰 명령(사람에게 「~주세요」)의 끝 → 대시보드 메시지 상자의 클로이드 말(「~ㄹ게요」). 긴 끝부터 본다. */
+const WILL_END: readonly [string, string][] = [
+  ["꺼내 주세요", "꺼낼게요"], ["들어 주세요", "들게요"], ["내려 주세요", "내릴게요"], ["넣어 주세요", "넣을게요"], ["올려 주세요", "올릴게요"],
+  ["놓아 주세요", "놓을게요"], ["따라 주세요", "따를게요"], ["받아 주세요", "받을게요"], ["저어 주세요", "저을게요"], ["열어 주세요", "열게요"],
+  ["닫아 주세요", "닫을게요"], ["켜 주세요", "켤게요"], ["꺼 주세요", "끌게요"], ["가 주세요", "갈게요"],
+];
+
+/** 대시보드 말풍선 말 한 문장(src/act/say.ts): 클로이드가 정한 것과 하는 일을 클로이드가 직접 하는 말로 쓴다(「컵을 치울게요」·「식탁으로 갈게요」).
+ *  실제 폰 명령(STEP_COMMAND·STEP_TEXT)만 사람에게 「~주세요」다(2026-11-18 사용자 바로잡음). */
 export const SAY_TEXT = {
   watching: "지켜보고 있어요.",
   /** 사람 자세가 쓰러짐 의심(src/world/fall.ts)인 동안: 다른 글보다 먼저. */
@@ -39,10 +48,12 @@ export const SAY_TEXT = {
   looking: (surface: string) => `${josa(surface, "을/를")} 보고 있어요.`,
   closer: (place: string) => `${josa(place, "을/를")} 가까이 보고 있어요.`,
   decided: (goal: string, surface: string | null = null) =>
-    goal === GOAL.clearCup && surface ? `${surface} 컵을 치우기로 했어요.` : DECIDED[goal] ?? `${josa(goal, "을/를")} 하기로 했어요.`,
-  told: { goTable: "식탁으로 가라고 했어요.", pickCup: "컵을 들라고 했어요.", goSink: "싱크대로 가라고 했어요.", placeCup: "컵을 싱크대에 넣으라고 했어요." },
-  /** 컵 명령이 아닌 사람 단계: 단계 이름. */
-  toldStep: (label: string) => `${josa(label, "을/를")} 부탁했어요.`,
+    goal === GOAL.clearCup && surface ? `${surface} 컵을 치울게요.` : `${TASK_SAY[goal]?.will ?? `${josa(goal, "을/를")} 할게요`}.`,
+  /** 실제 폰에 낸 사람 단계 명령 → 클로이드 말(「컵을 들어 주세요」 → 「컵을 들게요.」). 끝을 모르면 단계 이름으로 「<이름>을 할게요.」. */
+  will: (command: string, label: string) => {
+    const hit = WILL_END.find(([end]) => command.endsWith(end));
+    return hit ? `${command.replace(new RegExp(`${hit[0]}$`), hit[1])}.` : `${josa(label, "을/를")} 할게요.`;
+  },
   said: "폰으로 알렸어요.",
   waiting: (label: string) => `${josa(label, "을/를")} 기다리고 있어요.`,
   device: (label: string) => `${josa(label, "을/를")} 하고 있어요.`,
@@ -50,17 +61,16 @@ export const SAY_TEXT = {
   /** 코치 계획: 다시 알린 뒤, 조용한 단계(소리로 읽지 않고 지켜봄), 켠 채 닫힌 계획의 끄기 안내가 떠 있는 동안. */
   retold: "다시 알려 줬어요.",
   quiet: (label: string) => `${josa(label, "을/를")} 지켜보고 있어요.`,
-  offAsked: "불을 꺼 달라고 했어요.",
+  offAsked: "불을 끌게요.",
   /** 끄기 안내가 남아 새 계획 시작을 미루는 동안(그 가전 이름). */
   offWait: (device: string) => `${device} 꺼짐을 기다리고 있어요.`,
   /** 다른 계획이 도는 동안 닫힌 계획의 가전이 다시 켜져 끄기 안내가 줄에서 기다릴 때(20초). */
   rearmed: (device: string) => `${josa(device, "이/가")} 다시 켜졌어요.`,
   /** 계획 없는 행동(컵 그대로 두기)을 고른 뒤. */
-  left: "컵을 그대로 두기로 했어요.",
+  left: "컵을 그대로 둘게요.",
   done: (goal: string) => DONE[goal] ?? `${josa(goal, "을/를")} 마쳤어요.`,
   stopped: (goal: string) => `${josa(goal, "을/를")} 그만뒀어요.`,
 };
-const DECIDED: Record<string, string> = { [GOAL.clearCup]: "컵을 치우기로 했어요.", [GOAL.askUser]: "폰으로 물어보기로 했어요." };
 const DONE: Record<string, string> = { [GOAL.clearCup]: "컵을 다 치웠어요." };
 
 /** 기기를 바꾸는 에이전트 도구 → 단계 글 끝말. 여기 없는 도구(읽기·배치)는 계획을 만들지 않는다. */

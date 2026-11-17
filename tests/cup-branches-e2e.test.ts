@@ -156,7 +156,7 @@ describe("컵 장면 갈래", () => {
     expect(plan.at(-1)).toMatchObject({ status: "done" });
     expect(s.dash.find((m) => m.type === "brain" && m.event.type === "decision" && `plan:${m.event.id}` === planId)!.event).toMatchObject({ action: "컵에 물 채워 주기", fsm: { state: "drinking" } });
     const says = s.dash.filter((m) => m.type === "say").map((m) => m.text as string);
-    expect(says).toEqual(expect.arrayContaining(["냉장고로 가기를 부탁했어요.", "물병 꺼내기를 부탁했어요.", "컵에 물 따르기를 부탁했어요.", "컵에 물 채워 주기를 마쳤어요."]));
+    expect(says).toEqual(expect.arrayContaining(["컵에 물을 채울게요.", "냉장고로 갈게요.", "물병을 꺼낼게요.", "컵에 물을 따를게요.", "컵에 물 채워 주기를 마쳤어요."]));
     // PAM 계약 그대로: pam-predict/2, 칸 여섯, 사진 칸·사진 글 없음
     expect(pam!.bodies.length).toBeGreaterThan(0);
     for (const b of pam!.bodies) {

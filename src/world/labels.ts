@@ -8,6 +8,8 @@ export const OBJECT_NAME: Record<string, string> = Object.fromEntries(Object.ent
 /** PAM FSM 기억의 상태 id → 대시보드 생각 말풍선 「상태」 칩 글. 여기 없는 상태는 칩을 보이지 않는다.
  *  열쇠는 FSM 상태 id(src/brain/decision.ts CUP_FSM_MEMORY)다. 낱말 표 값과 이름이 같은 것이 있어도 다른 것이라, 낱말 목록 검사(tests/world-vocab.test.ts)와 헷갈리지 않게 따옴표로 쓴다. */
 export const FSM_STATE_TEXT: Record<string, string> = { "drinking": "먹거나 마시는 중", "watching_tv": "TV 보는 중", "left_cup": "컵을 두고 자리를 뜸", "cooking": "주방에서 할 일을 찾음" };
+/** 메시지 상자 문장(src/brain/thought.ts 「<조건> <허락> 된다고 하셨어요」)의 상태 조건형. 표에 없는 상태는 「<상태 글> 때는」(FSM_STATE_TEXT, 없으면 상태 id). */
+export const FSM_STATE_IF: Record<string, string> = { "drinking": "먹거나 마실 때", "watching_tv": "TV를 볼 때", "left_cup": "컵을 두고 자리를 뜨면", "cooking": "주방에서 할 일을 찾을 때" };
 
 /** YOLO 기록 글: 이 프레임에 찾은 것이 없음, 감지기가 없어 VLM만 돎. */
 export const YOLO_TEXT = { none: "감지 없음", noDetector: "감지기 없음" };

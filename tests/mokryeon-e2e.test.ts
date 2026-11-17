@@ -137,12 +137,12 @@ describe("한양목련 처음부터 끝까지", () => {
     const says = dash.filter((m) => m.type === "say").map((m) => m.text as string);
     expect(says[0]).toBe("지켜보고 있어요.");
     expect(says.every((t, i) => i === 0 || t !== says[i - 1])).toBe(true);
-    const decided = says.findIndex((t) => t.endsWith("컵을 치우기로 했어요."));
+    const decided = says.findIndex((t) => t.endsWith("컵을 치울게요."));
     const cleared = says.indexOf("컵을 다 치웠어요.");
     expect(decided).toBeGreaterThan(0);
     for (const t of says.slice(0, decided)) expect(t).toMatch(/^(지켜보고 있어요\.|.+[을를] 보고 있어요\.)$/);
     expect(says.slice(decided, cleared + 1)).toEqual([
-      "거실·복도 식탁 컵을 치우기로 했어요.", "식탁으로 가라고 했어요.", "컵을 들라고 했어요.", "싱크대로 가라고 했어요.", "컵을 싱크대에 넣으라고 했어요.", "컵을 다 치웠어요.",
+      "거실·복도 식탁 컵을 치울게요.", "식탁으로 갈게요.", "컵을 들게요.", "싱크대로 갈게요.", "컵을 싱크대에 넣을게요.", "컵을 다 치웠어요.",
     ]);
     const progress = dash.filter((m) => m.type === "plan" && m.plan?.id === planId).map((m) => m.plan.steps.map((s: Msg) => s.status).join(","));
     expect(progress).toEqual([

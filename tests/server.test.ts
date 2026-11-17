@@ -149,13 +149,13 @@ describe("REST 명령 + WS 이벤트", () => {
       type: "seen", at_ms: 11, frame_id: "e7", captured_at_ms: 9, frame: { width: 360, height: 640 },
       shapes: [{ label: "cup", score: 0.83, mask: { at: [100, 50, 40, 60], cols: 1, rows: 1, bits: "gA==" } }],
     };
-    const app = createApp({ hub: home.hub, policy: home.policy, rooms: ROOMS, log: () => {}, world: () => world, brainLast: () => [decision], seenLast: () => seen, say: () => ({ text: "컵을 들라고 했어요." }) });
+    const app = createApp({ hub: home.hub, policy: home.policy, rooms: ROOMS, log: () => {}, world: () => world, brainLast: () => [decision], seenLast: () => seen, say: () => ({ text: "컵을 들게요." }) });
     const { url } = await app.listen(0, "127.0.0.1");
     cleanups.push(() => app.close());
     const { waitFor, messages } = await listen(url);
     await waitFor((m) => m.type === "say");
     const tail = messages.slice(messages.findIndex((m) => m.type === "world"));
-    expect(tail).toEqual([{ type: "world", world }, { type: "brain", event: decision, replay: true }, { ...seen, replay: true }, { type: "say", text: "컵을 들라고 했어요." }]);
+    expect(tail).toEqual([{ type: "world", world }, { type: "brain", event: decision, replay: true }, { ...seen, replay: true }, { type: "say", text: "컵을 들게요." }]);
   });
 
   it("마지막 판단·말풍선 글이 없으면 brain 없이 say null", async () => {

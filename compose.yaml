@@ -76,7 +76,6 @@ services:
       VLM_BASE_URL:
       VLM_MODEL:
       VLM_CLOSER_MODEL:
-      THOUGHT_MODEL:
       VLM_API_KEY:
       VLM_EXTRA_BODY:
       VLM_TIMEOUT_MS:

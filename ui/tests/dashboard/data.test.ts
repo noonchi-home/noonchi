@@ -13,7 +13,6 @@ const at = (i: number) => feed(run.moments[i]!.messages as ServerMessage[]);
 const said = (decision: string, atMs: number, ...texts: string[]): ServerMessage =>
   ({ type: "thought", messages: texts.map((text, i) => ({ id: `${decision}@${atMs}:${i}`, text, at_ms: atMs, decision })) });
 const textsOf = (s: ReturnType<typeof feed>) => talkOf(s)?.lines.map((m: { text: string }) => m.text);
-const WAIT = "식탁 위 컵을 지켜보고 있어요";
 
 describe("대시보드 자료", () => {
   it("지켜보기: 계획 없음, 마스코트는 그림 그대로. 줄이 없으면 메시지 상자 자료가 없다", () => {
@@ -24,11 +23,11 @@ describe("대시보드 자료", () => {
   });
   it("메시지 상자 줄: 생각 메시지와 말풍선 카드 말을 받은 차례로 쌓고 최근 TALK_SHOWN(3)줄을 보인다. 같은 id·같은 말은 한 번만이고 원래 생각은 싣지 않는다", () => {
     expect(TALK_SHOWN).toBe(3);
-    const s = feed([said("pam-1", 10, "사람이 컵을 두고 떠났어요", "컵이 비어 보여요"), { type: "say", text: "컵을 치우기로 했어요." }, { type: "say", text: "컵을 치우기로 했어요." }]);
-    expect(textsOf(s)).toEqual(["사람이 컵을 두고 떠났어요", "컵이 비어 보여요", "컵을 치우기로 했어요."]);
-    expect(textsOf(reduceDash(s, said("pam-1", 10, "사람이 컵을 두고 떠났어요"), 0))).toEqual(["사람이 컵을 두고 떠났어요", "컵이 비어 보여요", "컵을 치우기로 했어요."]);
-    expect(textsOf(reduceDash(s, said("pam-2", 1, "컵을 찾았어요"), 0))).toEqual(["컵이 비어 보여요", "컵을 치우기로 했어요.", "컵을 찾았어요"]);
-    expect(JSON.stringify(talkOf(feed([branchDecision(BRANCHES.clear, 1), said("pam-1", 10, "치우는 습관이라 컵을 치울게요")]))!)).not.toContain(REASON);
+    const s = feed([said("pam-1", 10, "사람이 컵을 두고 떠났어요", "컵이 비어 보여요"), { type: "say", text: "컵을 치울게요." }, { type: "say", text: "컵을 치울게요." }]);
+    expect(textsOf(s)).toEqual(["사람이 컵을 두고 떠났어요", "컵이 비어 보여요", "컵을 치울게요."]);
+    expect(textsOf(reduceDash(s, said("pam-1", 10, "사람이 컵을 두고 떠났어요"), 0))).toEqual(["사람이 컵을 두고 떠났어요", "컵이 비어 보여요", "컵을 치울게요."]);
+    expect(textsOf(reduceDash(s, said("pam-2", 1, "컵을 찾았어요"), 0))).toEqual(["컵이 비어 보여요", "컵을 치울게요.", "컵을 찾았어요"]);
+    expect(JSON.stringify(talkOf(feed([branchDecision(BRANCHES.clear, 1), said("pam-1", 10, "컵을 두고 자리를 뜨면 치워도 된다고 하셨어요")]))!)).not.toContain(REASON);
   });
   it("알약 셋(상태·트리거·액션)은 서버 판단의 FSM으로 정한다: 규칙대로 고르면 상태 이름·트리거·행동, 대기면 트리거·액션 「대기」, 규칙 없는 행동은 트리거 「규칙 없음」, 규칙이 여럿이면 「규칙 여럿」. 판단 전·FSM 없음이면 없다", () => {
     const one = said("pam-1", 10, "컵을 살피고 있어요");
@@ -86,7 +85,7 @@ describe("대시보드 자료", () => {
     expect(modeNow(feed([{ type: "hello", home: null } as unknown as ServerMessage, coachPlan, branchDecision(null, 9), one]))).toBe("coach");
   });
   it("계획 단계마다 번호·마스코트·말이 따라간다", () => {
-    const says = ["식탁으로 가라고 했어요.", "컵을 들라고 했어요.", "싱크대로 가라고 했어요.", "컵을 싱크대에 넣으라고 했어요."];
+    const says = ["식탁으로 갈게요.", "컵을 들게요.", "싱크대로 갈게요.", "컵을 싱크대에 넣을게요."];
     for (let n = 1; n <= 4; n++) {
       const s = at(n);
       expect([stepIndex(s.plan), s.say, textsOf(s)?.at(-1)]).toEqual([n, says[n - 1], says[n - 1]]);

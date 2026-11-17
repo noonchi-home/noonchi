@@ -103,7 +103,7 @@ describe("대시보드 자료 연결", () => {
     await mount(false);
     send(moment(2));
     expect(document.querySelector("[data-progress]")).toHaveTextContent("2/4 · 컵 집기");
-    expect(sayLine()).toHaveTextContent("컵을 들라고 했어요.");
+    expect(sayLine()).toHaveTextContent("컵을 들게요.");
     expect(screen.getByRole("region", { name: "마스코트" }).querySelector<HTMLElement>("[data-mascot-turn]")!.style.transform).toBe("scaleX(-1)");
     expect(document.querySelector("main")).toHaveAttribute("data-step", "2");
   });
@@ -236,7 +236,7 @@ describe("가짜 단계(?debug=steps)", () => {
   it("&step=2면 서버 자료 없이 그 순간이다: 진행도·말·대시보드 폰 칸 눈 그림·메시지 상자·컵 이름표", async () => {
     open("&step=2");
     expect(document.querySelector("[data-progress]")).toHaveTextContent("2/4 · 컵 집기");
-    expect(sayLine()).toHaveTextContent("컵을 들라고 했어요.");
+    expect(sayLine()).toHaveTextContent("컵을 들게요.");
     const img = phonePane().querySelector<HTMLImageElement>('img[alt="폰 카메라 영상"]')!;
     expect(img.getAttribute("src")).toBe("/debug-eye/eye-table-near.webp");
     expect(document.querySelector("[data-mode-text]")).toHaveTextContent(/^눈치 모드$/);
