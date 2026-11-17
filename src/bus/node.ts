@@ -137,8 +137,9 @@ export class BusNode {
   /** 구독·그룹·커서를 만든다(배달은 start 뒤). 다시 부르면 그 뒤 더한 구독만 만든다(재생은 받은 노드를 다시 준비한다). */
   async prepare(): Promise<void> {
     while (this.#prepared < this.#subs.length) {
-      const s = this.#subs[this.#prepared++]!;
+      const s = this.#subs[this.#prepared]!;
       this.#handles.push({ topic: s.topic, h: await this.#bus.subscribe(s.topic, this.name, (e) => this.#enqueue(e, s), { mode: s.mode }) });
+      this.#prepared++;   // 구독이 된 뒤에 센다: 실패하면 다음 prepare가 그 구독부터 다시 만든다
     }
   }
 

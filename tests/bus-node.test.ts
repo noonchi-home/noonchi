@@ -214,6 +214,22 @@ describe("BusNode 실행기", () => {
     expect(made).toEqual(["/world/changes", "/world/state"]);
   });
 
+  it("구독이 실패한 뒤 prepare를 다시 부르면 실패한 구독부터 다시 만든다", async () => {
+    const mem = new MemoryBus();
+    const made: string[] = [];
+    let fail = true;
+    const bus: Bus = {
+      publish: (e) => mem.publish(e), close: () => mem.close(),
+      subscribe: async (t, n, d, o) => { made.push(t); if (t === "/world/state" && fail) { fail = false; throw new Error("구독 실패"); } return mem.subscribe(t, n, d, o); },
+    };
+    const n = new BusNode({ name: "act", bus, epoch: EPOCH, log: () => {} });
+    n.on("/world/changes", () => {});
+    n.on("/world/state", () => {});
+    await expect(n.prepare()).rejects.toThrow(/구독 실패/);
+    await n.prepare();
+    expect(made).toEqual(["/world/changes", "/world/state", "/world/state"]);
+  });
+
   it("보내는 노드가 아닌 노드가 발행하면 거절된다", async () => {
     const n = node("brain", new MemoryBus());
     await expect(n.publish("/world/state", { rev: 1, view: VIEW })).rejects.toThrow(/world/);

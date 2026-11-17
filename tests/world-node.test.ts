@@ -2,7 +2,7 @@
 // 입력(VLM 답 /perception/scene·/world/input·/phone/heard·/device/changes와 YOLO 다리)을 노드 줄에 들어온 차례로 넣고,
 // 변화가 있으면 rev를 올려 /world/state와 /world/changes를 낸다. 가까이 보기는 VLM 합치기 뒤 /world/closer로 최종 id 표를 답한다.
 import { describe, expect, it } from "vitest";
-import { BusNode, MemoryBus, VirtualClock, type NodeName, type TopicName } from "../src/bus/index.js";
+import { BusNode, MemoryBus, RETRY_MS, VirtualClock, type Envelope, type NodeName, type TopicName } from "../src/bus/index.js";
 import type { Detection, FrameMeta, SceneObservation } from "../src/contract/observe.js";
 import type { WorldChange } from "../src/contract/world.js";
 import { settle } from "../src/record/replay.js";
@@ -51,9 +51,18 @@ function spy(world: WorldState) {
 }
 
 /** 집 상태 노드와 입력을 보내는 노드들, 나온 것을 받는 노드(perception: 가까이 보기 답을 받는 쪽). */
+/** 정한 토픽의 다음 발행 한 번을 실패시키는 통로(다시 주기는 가상 시계로 돈다). */
+class FlakyBus extends MemoryBus {
+  readonly failing = new Set<TopicName>();
+  override async publish<N extends TopicName>(e: Envelope<N>): Promise<void> {
+    if (this.failing.delete(e.topic)) throw new Error(`${e.topic} 발행 실패`);
+    return super.publish(e);
+  }
+}
+
 async function rig(world = ws()) {
-  const bus = new MemoryBus({ warn: () => {} });
   const clock = new VirtualClock(NOW);
+  const bus = new FlakyBus({ warn: () => {}, clock });
   const w = await startWorldNode({ bus, epoch: EPOCH, world, clock, log: () => {} });
   const node = (name: NodeName) => new BusNode({ name, bus, epoch: EPOCH, clock, log: () => {} });
   const perception = node("perception");
@@ -168,6 +177,55 @@ describe("집 상태 노드", () => {
     r.w.bridge.missing("e1", 1000, { yolo: "error" });
     await r.flush();
     expect(s.calls.map((c) => [c.name, c.depth])).toEqual([["applyMissing", 1], ["guard", 1]]);
+  });
+
+  it("발행이 실패해 다시 받은 입력은 다시 넣지 않고 남은 출력(변화·판본·가까이 보기 답)만 다시 낸다", async () => {
+    const s = spy(ws());
+    const direct = ws();
+    const d: WorldChange[] = [];
+    const r = await rig(s.proxy);
+    for (const [id, at, state] of [["e1", 1000, "in_sink"], ["e2", 2000, "in_sink"], ["e3", 3000, "on_floor"]] as const) {
+      const r1 = direct.applyDetections(meta(id, at), [cupIn, person]);
+      d.push(...r1.changes, ...direct.applyScene(id, at, said(["d1", state]), r1.ids));
+      r.w.bridge.frame(meta(id, at), [cupIn, person]);
+      await r.flush();
+      if (id === "e3") r.bus.failing.add("/world/changes");
+      await r.perception.publish("/perception/scene", { kind: "scene", frame_id: id, observed_ms: at, scene: said(["d1", state]) });
+      await r.flush();
+    }
+    await r.clock.advanceTo(NOW + RETRY_MS, r.flush);
+    expect(s.calls.filter((c) => c.name === "applyScene")).toHaveLength(3);
+    expect(changesOf(r.got)).toEqual(d);
+    // 가까이 보기 답이 실패해도 VLM 합치기는 한 번, 답은 같은 최종 표로 한 번
+    r.w.bridge.closer("e5.c1", [pass("e4", 4000, [cupFar]), pass("e5", 5000, [person, cupFar])], "e5");
+    await r.flush();
+    r.bus.failing.add("/world/closer");
+    await r.perception.publish("/perception/scene", { kind: "closer_scene", look: "e5.c1", frame_id: "e5", observed_ms: 5000, scene: said(["d2", "on_floor"]) });
+    await r.flush();
+    await r.clock.advanceTo(NOW + 2 * RETRY_MS, r.flush);
+    expect(s.calls.filter((c) => c.name === "applyCloserScene")).toHaveLength(1);
+    expect(of(r.got, "/world/closer")).toEqual([{ look: "e5.c1", ids: { d2: "cup_2" } }]);
+  });
+
+  it("다리 입력의 발행이 실패하면 남은 변화를 다음 발행(250ms 다시 냄)에 한 번 낸다", async () => {
+    const r = await rig();
+    r.bus.failing.add("/world/changes");
+    r.w.bridge.missing("e1", 1000, { yolo: "error" });
+    await r.flush();
+    expect(of(r.got, "/world/changes")).toEqual([]);
+    await r.clock.advanceTo(NOW + 250, r.flush);
+    expect(of(r.got, "/world/changes").map((b) => [b.rev, b.changes.map((c: WorldChange) => c.kind)])).toEqual([[1, ["yolo_missing"]]]);
+  });
+
+  it("VLM 답이 오지 않아 30초 넘은 가까이 보기 후보는 지우기 전에 endCloser로 끝낸다", async () => {
+    const s = spy(ws());
+    const r = await rig(s.proxy);
+    r.w.bridge.closer("e2.c1", [pass("e1", 1000, [cupIn]), pass("e2", 2000, [person, cupIn])], "e2");
+    await r.flush();
+    await r.clock.advanceTo(NOW + 29_000, r.flush);
+    expect(s.calls.filter((c) => c.name === "endCloser")).toEqual([]);
+    await r.clock.advanceTo(NOW + 31_000, r.flush);
+    expect(s.calls.filter((c) => c.name === "endCloser")).toHaveLength(1);
   });
 
   it("노드를 끝내면 다리 입력은 오류 없이 버리고, 끝내기는 다리 입력 때문에 기다리지 않는다", async () => {
