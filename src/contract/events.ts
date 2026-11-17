@@ -8,7 +8,7 @@ import type { ControlMode } from "./setup.js";
 import type { CameraView, Mask, SceneObservation } from "./observe.js";
 import type { DetLabel } from "../world/vocab.js";
 import type { VlmMissing, WorldChangeKind, WorldView, YoloMissing } from "./world.js";
-import type { Prediction, FsmRuleAt } from "./pam.js";
+import type { Prediction, FsmAt } from "./pam.js";
 import type { ServiceKind } from "./service.js";
 
 // 좌표
@@ -125,10 +125,11 @@ export type BrainLog =
   | {
     type: "decision"; at_ms: number; id: string; seq: number; text_sent: string; status: "valid" | "failed";
     prediction: { observation: string; reasoning: string; task_index: number } | null; action: string | null;
-    /** 고른 행동의 FSM 자리(행동 단위, src/brain/decision.ts FsmRuleAt): 그 행동의 규칙이 한 상태에만 있으면 상태 id, 규칙이 하나면 트리거,
-     *  seed에 없는 규칙이 있으면 learned. 대기·실패·못 찾으면 null. 예전 기록에는 없다. */
-    fsm?: { state: string | null; trigger: string | null; learned: boolean } | null;
-    /** 고른 행동의 종류(표시용, TaskSpec.coach): 코치 행동이면 coach, 아니면 noonchi. 대기·실패는 null. 예전 기록에는 없다. */
+    /** 판단 때 지금 FSM(src/brain/decision.ts fsmNow): 고른 행동의 규칙이 있으면(matched) 그 상태·트리거, 대기·규칙 없는 행동이면 직전 상태(처음이면 기억의 처음 상태)에
+     *  트리거 없음. seed에 없는 규칙이 있으면 learned. 실패·list 기억이면 null. 예전 기록에는 없거나 matched가 없다. */
+    fsm?: { state: string | null; trigger: string | null; learned: boolean; matched?: boolean } | null;
+    /** 고른 행동이 어느 모드로 하는 행동인가(TaskSpec.coach, src/act/tasks.ts): 코치 행동이면 coach, 아니면 noonchi. 대기·실패는 null.
+     *  대시보드 메시지 상자 머리(「코치 모드」·「눈치 모드」, 대기면 없음)가 이 값만 쓴다. 예전 기록에는 없다. */
     assist?: "noonchi" | "coach" | null;
     error?: string; memory_version: number; world: DecisionWorld;
   }
@@ -298,8 +299,8 @@ export type ServerMessage =
   | { type: "world"; world: WorldView }
   /** 실행 중 배치 보정(src/contract/layout.ts). 바뀔 때마다, 그리고 접속 때 맞추기 메시지. */
   | LayoutMessage
-  /** 대시보드 말풍선 카드 한 문장(src/act/say.ts). 바뀔 때마다, 그리고 접속 때 한 번. null이면 글 없음. */
-  | { type: "say"; text: string | null };
+  /** 대시보드 말풍선 말 한 문장(src/act/say.ts). 바뀔 때마다, 그리고 접속 때 한 번. null이면 글 없음. safety: 안전 알림(쓰러짐 의심·다시 켜짐·꺼짐 기다림·끄기 안내)이다. */
+  | { type: "say"; text: string | null; safety?: true };
 
 export interface DecisionRecord {
   id: string;
@@ -313,7 +314,7 @@ export interface DecisionRecord {
   /** 고른 행동(대기·실패면 null). */
   action: string | null;
   /** 고른 행동의 FSM 규칙 자리(그때 보낸 기억에서 찾는다). 대기·실패·못 찾으면 null. */
-  fsm?: FsmRuleAt | null;
+  fsm?: FsmAt | null;
   error?: string;
   memoryVersion: number;
   /** 이 판단에 보낸 행동 목록(돕는 방식마다 다르다). 계획 전·실행 전 검사가 이 목록으로 본다. */

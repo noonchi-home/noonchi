@@ -154,7 +154,7 @@ export class ContentsHold extends Part {
     }
     const eye = eyeNow(core, now);
     const blocked = !o || o.status === "gone" || !o.position || !!o.followed_by || phoneBlocked(core, now, asking)
-      || o.facts.place?.value === "in_hand" || !core.use.mayApproach(o.cls);
+      || o.facts.place?.value === "in_hand" || !core.use.mayApproach({ cls: o.cls, id: o.id });
     if (blocked) {
       if (h.peek?.sent) {
         this.withdraw(line, h);
@@ -320,7 +320,7 @@ export class ContentsHold extends Part {
     const placed = this.core.steps.placed();
     const hit = world.objects.filter((o) => {
       const facets = wants.filter((t) => t.target === o.cls).flatMap((t) => Object.keys(t.want!) as Facet[]);
-      if (!facets.length || o.status !== "present" || !o.position || putAway(o, placed) || o.facts.place?.value === "in_hand" || !this.core.use.mayApproach(o.cls)) return false;
+      if (!facets.length || o.status !== "present" || !o.position || putAway(o, placed) || o.facts.place?.value === "in_hand" || !this.core.use.mayApproach({ cls: o.cls, id: o.id })) return false;
       const gen = o.contents_gen ?? 0;
       if (!facets.some((f) => sureValue(o, f) === null)) return false;
       const recent = this.peeked.get(o.id);
@@ -347,7 +347,7 @@ export class ContentsHold extends Part {
       // 사람이 안 보여도 되는 것은 위에서 비추기·위에서 보기·사진 기다림뿐이다(폰이 컵을 내려다봐 사람이 안 찍힌다). 가까이 가기 중에는 사람이 보여야 한다
       const away = !world.person.visible && h.phase === "peek" && h.peek?.part !== "above";
       // 사람이 그 컵을 쓰기 시작하면(use.ts) 어느 차례든 거둔다
-      if (lapsed || blocked || away || !core.use.mayApproach(o!.cls)) return this.dropIdle();
+      if (lapsed || blocked || away || !core.use.mayApproach({ cls: o!.cls, id: o!.id })) return this.dropIdle();
       const line = idleLine(this.core, q);
       const going = h.phase === "after" ? now - h.afterAt <= CONTENTS_HOLD.settleMs || this.over(line, h) : this.advance(line, h, o, now, false);
       if (!going) core.idlePeek = null;

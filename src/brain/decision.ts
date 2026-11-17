@@ -5,7 +5,7 @@
 
 
 
-import type { Prediction, FsmRuleAt } from "../contract/pam.js";
+import type { Prediction, FsmAt, FsmRuleAt } from "../contract/pam.js";
 import { PAM_TEXT_MAX } from "../world/index.js";
 
 export class ContractError extends Error {}
@@ -271,6 +271,16 @@ export function fsmRuleOf(memory: PamMemory, kind: "list" | "fsm", action: strin
     trigger: hits.length === 1 ? hits[0]!.trigger : null,
     learned: hits.some((h) => !seed.some((r) => r.trigger === h.trigger && r.action === action)),
   };
+}
+
+/** 판단 때 지금 FSM(대시보드 메시지 상자 알약): 고른 행동의 규칙이 있으면 그 상태(규칙이 여러 상태에 흩어졌으면 정할 수 없어 null)·트리거, 대기·규칙 없는 행동이면
+ *  직전 상태에 트리거 없음. 직전 상태 last: undefined 직전 없음(기억의 처음 상태), null 정할 수 없었음(그대로 null), 지금 기억에 없는 상태(반성으로 지워짐)는 처음 상태.
+ *  list 기억이면 null. PAM 답에는 지금 상태가 없어 FSM은 마지막으로 맞은 규칙의 상태에 머문다고 본다. */
+export function fsmNow(memory: PamMemory, kind: "list" | "fsm", action: string | null, last?: string | null): FsmAt | null {
+  if (kind !== "fsm" || !("states" in memory)) return null;
+  const rule = fsmRuleOf(memory, kind, action);
+  const prev = last === null ? null : last !== undefined && memory.states.some((s) => s.id === last) ? last : memory.initial_state;
+  return { state: rule ? rule.state : prev, trigger: rule?.trigger ?? null, learned: rule?.learned ?? false, matched: !!rule };
 }
 
 /** PAM 판단 관찰 텍스트 상한(글자 수). PAM 서비스 pam-predict/2와 같다. 관찰 텍스트를 만드는 World State(world/text.ts)와 한 값이다. */

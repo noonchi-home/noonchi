@@ -235,7 +235,8 @@ export function Dashboard() {
       <BakedStage home={kind === "three" ? homeId : null} layout={layout} plan={dash.plan} eye={dash.eye} checks={checks} devices={devices} onEngine={onEngine} onReady={onBakedReady} />
     );
   const plan = isOpen(dash.plan) ? dash.plan : null;
-  const talk = useMemo(() => talkOf(dash), [dash.decision, dash.talk]);
+  // talkOf가 읽는 것 모두: 판단·줄·안전 알림·계획(머리)·행동별 모드
+  const talk = useMemo(() => talkOf(dash), [dash.decision, dash.talk, dash.safety, dash.plan, dash.modes]);
   return (
     <DashboardScreen
       index={stepIndex(plan)} plan={plan} step={currentStep(plan)} robotKnown={dash.eye !== null} connected={online} map={map} mapReady={mapReady}

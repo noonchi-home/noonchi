@@ -27,13 +27,18 @@ function plainFeed() {
   return { feed };
 }
 
-/** 쓰기만 흉내 내는 응답: full이면 write가 false(쓰기 버퍼가 참)를 돌려준다. frames: 쓴 JPEG들. */
+/** 쓰기만 흉내 내는 응답: write는 늘 true를 돌려주지만(쓰기 버퍼 한도 아래) 쓴 조각은 flush를 부를 때까지 보내지 않은 것으로 남는다(write 콜백을 미룬다).
+ *  frames: 쓴 JPEG들. */
 function fakeStream() {
   const out: Buffer[] = [];
+  let pending: (() => void)[] = [];
   const res = Object.assign(new EventEmitter(), {
-    full: false,
-    writeHead: () => res, flushHeaders: () => {}, end: () => {},
-    write: (c: string | Buffer) => { out.push(Buffer.from(c)); return !res.full; },
+    writeHead: () => res, flushHeaders: () => {}, end: () => { res.writableEnded = true; }, destroyed: false, writableEnded: false,
+    /** 끝낸 뒤에 쓴 횟수(실제 응답이면 ERR_STREAM_WRITE_AFTER_END). */
+    afterEnd: 0,
+    write: (c: string | Buffer, cb?: () => void) => { if (res.writableEnded) res.afterEnd++; out.push(Buffer.from(c)); if (cb) pending.push(cb); return true; },
+    /** 쓴 조각을 다 보냈다(write 콜백을 부른다). */
+    flush: () => { const cbs = pending; pending = []; for (const cb of cbs) cb(); },
     frames: () => out.filter((c) => c[0] === 0xff && c[1] === 0xd8),
   });
   return res;
@@ -98,25 +103,38 @@ describe("EyeFeed", () => {
     expect(b).toBeGreaterThan(a);
   });
 
-  it("연결에 아직 못 보낸 데이터가 있으면 프레임을 줄 세우지 않고 가장 새 한 장만 들고 있다가 비면 그것만 보낸다(늦게 보이는 미니맵)", () => {
+  // Codex(76d212b feed.ts:179): write가 true여도 못 보낸 데이터가 남아 작은 JPEG는 버퍼 한도까지 여러 장 쌓였다
+  it("한 장을 다 보내기 전(write가 true여도)에는 프레임을 줄 세우지 않고 가장 새 한 장만 들고 있다가, 다 보내면 그것만 보낸다(늦게 보이는 미니맵)", () => {
     const { feed } = plainFeed();
     const res = fakeStream();
     expect(feed.handle({ method: "GET" } as IncomingMessage, res as unknown as ServerResponse, "/api/eye/stream")).toBe(true);
-    // 첫 장은 바로 쓰고, 쓰기 버퍼가 차 있는 동안 온 B·C는 C 하나만 남긴다
-    res.full = true;
+    // 첫 장은 바로 쓰고, 그 장을 보내는 동안 온 B·C는 C 하나만 남긴다
     feed.pushFrame(JPEG_A, 640, 480);
     feed.pushFrame(JPEG_B, 640, 480);
     feed.pushFrame(JPEG_C, 640, 480);
     expect(res.frames()).toEqual([JPEG_A]);
-    res.full = false;
-    res.emit("drain");
+    res.flush();
     expect(res.frames()).toEqual([JPEG_A, JPEG_C]);
-    // 비어 있으면 바로 쓴다
+    // 다 보내 비어 있으면 바로 쓴다
+    res.flush();
     feed.pushFrame(JPEG_B, 640, 480);
     expect(res.frames()).toEqual([JPEG_A, JPEG_C, JPEG_B]);
-    // 더 보낼 것이 없을 때 온 drain은 아무것도 쓰지 않는다
-    res.emit("drain");
+    // 더 보낼 것이 없으면 다 보낸 뒤에도 아무것도 쓰지 않는다
+    res.flush();
     expect(res.frames()).toHaveLength(3);
+  });
+
+  // Codex(33a76df feed.ts:158·178): 끝내는 중에 남은 프레임의 쓰기 콜백이 res.end() 뒤에 다시 보내 ERR_STREAM_WRITE_AFTER_END가 날 수 있었다
+  it("끝낼 때(close) 기다리던 프레임은 버리고, 보내던 장의 쓰기 콜백이 그 뒤에 와도 끝낸 연결에 쓰지 않는다", () => {
+    const { feed } = plainFeed();
+    const res = fakeStream();
+    feed.handle({ method: "GET" } as IncomingMessage, res as unknown as ServerResponse, "/api/eye/stream");
+    feed.pushFrame(JPEG_A, 640, 480);
+    feed.pushFrame(JPEG_B, 640, 480);
+    feed.close();
+    res.flush();
+    expect(res.frames()).toEqual([JPEG_A]);
+    expect(res.afterEnd).toBe(0);
   });
 
   it("사진을 JPEG·JSON으로 저장하고 photo 이벤트를 보낸다", async () => {

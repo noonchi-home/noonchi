@@ -152,7 +152,7 @@ interface DeviceHub {
 - 맞춘 뒤 자세는 본 서버 `/events`로 `{type:"eye", eye:{position:[x,y], height_m, yaw_deg, pitch_deg, tracking, at}}`가 된다. 뷰어는 `aptViewer.setEye`로 눈 마커만 움직인다. 판단에는 쓰지 않는다.
 - WebSocket은 페이지를 준 호스트와 같은 출처만 받는다.
 - 카메라(WebXR `camera-access`): 폰은 `/phone/events`에 바이너리 패킷 `[헤더 길이 4바이트 BE][JSON 헤더][JPEG]`(`src/phone/packet.ts`, 최대 4MB)을 보낸다. 헤더 `{kind:"frame"|"photo", width, height, position?, orientation?, tracking?}`. `frame`은 기본 초당 12장·가로 480px·품질 0.55(폰 주소 `?fps=`·`?w=`로 바꾼다, 인코딩 중이거나 와이파이에 쌓이면 건너뜀), `photo`는 카메라 원본 크기.
-- 본 서버(127.0.0.1)의 `GET /api/eye/stream`(MJPEG, 연결에 못 보낸 데이터가 남아 있으면 프레임을 줄 세우지 않고 가장 새 한 장만 들고 있다가 비면 보낸다), `/api/eye/frame.jpg`(최신), `/api/eye/photos/<id>.jpg`, `/api/eye/stats`(최근 2초 받은 fps·장당 KB·마지막 크기, 대시보드 눈 캡션에 fps). 실시간 화면은 표시 전용이며 엔진 입력이 아니다.
+- 본 서버(127.0.0.1)의 `GET /api/eye/stream`(MJPEG, 한 장을 다 보내기 전에는 프레임을 줄 세우지 않고 가장 새 한 장만 들고 있다가 그 장을 다 보내면 보낸다), `/api/eye/frame.jpg`(최신), `/api/eye/photos/<id>.jpg`, `/api/eye/stats`(최근 2초 받은 fps·장당 KB·마지막 크기, 대시보드 눈 캡션에 fps). 실시간 화면은 표시 전용이며 엔진 입력이 아니다.
 - `photo`는 `PHONE_PHOTO_DIR`(기본 `runtime/photos/`)에 JPEG·JSON으로 저장하고 `/events`로 `{type:"photo", photo:{id, at, url, width, height, measured_pose, pose_note?}}`를 보낸다. 맞추기 전이면 `measured_pose: null`, `pose_note: "not_aligned"`. 폰에는 `{type:"photo_saved", id, aligned}`.
 
 ## 집 고르기·배치 보정·음성·초점 (4단계)

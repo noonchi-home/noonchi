@@ -129,7 +129,7 @@ describe("판단 호출", () => {
     });
   });
 
-  it("판단 기록에 고른 행동의 FSM 상태와 트리거를 붙인다. 대기·실패면 null이다", async () => {
+  it("판단 기록에 지금 FSM 상태·맞은 규칙 트리거를 붙인다: 처음 대기는 기억의 처음 상태, 규칙대로 고르면 그 규칙의 상태·트리거, 그 뒤 대기는 그 상태(트리거 없음). 실패면 null이다", async () => {
     let index = 0;
     pam = await startFakePam({ predict: () => ({ observation: "o", reasoning: "r", task_index: index }) });
     const logs: BrainLog[] = [];
@@ -138,12 +138,56 @@ describe("판단 호출", () => {
     const d = new Decider({ pam: new PamClient({ url: pam.url }), world: emptyWorld(), trigger: event(),
       tasks: () => [...CUP_TASKS], memory, emit: (l) => logs.push(l), onDecision: (r) => records.push(r), offsetMinutes: 540, clock: { now: () => now } });
     const poke = async () => { d.onChanges([{ kind: "appeared", at_ms: now, subject: "cup_1", text: "컵 cup_1 보임", meaningful: true }]); d.tick(); await d.idle(); now += 1000; };
+    index = -1;
+    await poke();
+    index = 0;
     await poke();
     index = -1;
     await poke();
-    const fsm = { state: "left_cup", trigger: CUP_FSM_MEMORY.states.find((x) => x.id === "left_cup")!.rules[0]!.trigger, learned: false };
-    expect(logs.filter((l) => l.type === "decision").map((l) => l.type === "decision" && [l.action, l.fsm])).toEqual([["컵 치우기", fsm], [null, null]]);
-    expect(records.map((r) => r.fsm)).toEqual([fsm, null]);
+    const first = { state: CUP_FSM_MEMORY.initial_state, trigger: null, learned: false, matched: false };
+    const fsm = { state: "left_cup", trigger: CUP_FSM_MEMORY.states.find((x) => x.id === "left_cup")!.rules[0]!.trigger, learned: false, matched: true };
+    const after = { state: "left_cup", trigger: null, learned: false, matched: false };
+    expect(logs.filter((l) => l.type === "decision").map((l) => l.type === "decision" && [l.action, l.fsm])).toEqual([[null, first], ["컵 치우기", fsm], [null, after]]);
+    expect(records.map((r) => r.fsm)).toEqual([first, fsm, after]);
+  });
+
+  // Codex(f8b6209 decide.ts:108): 규칙이 여러 상태라 「모름」을 보인 뒤에도 안에 옛 상태가 남아 다음 대기 판단에 옛 상태가 다시 나왔다
+  it("고른 행동의 규칙이 여러 상태라 상태를 정할 수 없었으면 그 뒤 대기 판단의 상태도 정할 수 없음(null)이다", async () => {
+    let index = TASK_NAMES.indexOf("컵 치우기");
+    pam = await startFakePam({ predict: () => ({ observation: "o", reasoning: "r", task_index: index }) });
+    const records: DecisionRecord[] = [];
+    let now = 10_000;
+    const add = (id: string, trigger: string) => (s: (typeof CUP_FSM_MEMORY.states)[number]) => (s.id === id ? { ...s, rules: [...s.rules, { trigger, action: "에어컨 켜기" }] } : s);
+    const memory2 = { ...CUP_FSM_MEMORY, states: CUP_FSM_MEMORY.states.map(add("watching_tv", "사용자가 덥다고 말한다.")).map(add("drinking", "사용자가 먹다가 덥다고 부채질을 한다.")) };
+    const d = new Decider({ pam: new PamClient({ url: pam.url }), world: emptyWorld(), trigger: event(),
+      tasks: () => [...TASK_NAMES], memory: () => ({ memory: memory2, kind: "fsm" as const, version: 0 }), emit: () => {}, onDecision: (r) => records.push(r), offsetMinutes: 540, clock: { now: () => now } });
+    const poke = async () => { d.onChanges([{ kind: "appeared", at_ms: now, subject: "cup_1", text: "컵 cup_1 보임", meaningful: true }]); d.tick(); await d.idle(); now += 1000; };
+    await poke();
+    index = TASK_NAMES.indexOf("에어컨 켜기");
+    await poke();
+    index = -1;
+    await poke();
+    expect(records.map((r) => r.fsm?.state)).toEqual(["left_cup", null, null]);
+  });
+
+  // Codex(d64a383 decide.ts:106–107): 반성으로 기억 판본이 바뀌어 옛 상태가 지워져도 그 상태가 대기 알약에 남았다
+  it("반성으로 바뀐 기억에 직전 상태가 없으면 대기 판단의 상태는 새 기억의 처음 상태다", async () => {
+    let index = 0;
+    pam = await startFakePam({ predict: () => ({ observation: "o", reasoning: "r", task_index: index }) });
+    const records: DecisionRecord[] = [];
+    let now = 10_000;
+    let mem = { memory: CUP_FSM_MEMORY, kind: "fsm" as const, version: 0 };
+    const d = new Decider({ pam: new PamClient({ url: pam.url }), world: emptyWorld(), trigger: event(),
+      tasks: () => [...CUP_TASKS], memory: () => mem, emit: () => {}, onDecision: (r) => records.push(r), offsetMinutes: 540, clock: { now: () => now } });
+    const poke = async () => { d.onChanges([{ kind: "appeared", at_ms: now, subject: "cup_1", text: "컵 cup_1 보임", meaningful: true }]); d.tick(); await d.idle(); now += 1000; };
+    await poke();
+    expect(records.at(-1)!.fsm!.state).toBe("left_cup");
+    // 새 판본: left_cup 상태가 없다(다른 상태가 그 다음 처음 상태)
+    const next = { ...CUP_FSM_MEMORY, states: CUP_FSM_MEMORY.states.filter((x) => x.id !== "left_cup").map((x) => ({ ...x, next: x.next.filter((n) => n.to !== "left_cup") })) };
+    mem = { memory: next, kind: "fsm", version: 1 };
+    index = -1;
+    await poke();
+    expect(records.at(-1)!.fsm).toEqual({ state: next.initial_state, trigger: null, learned: false, matched: false });
   });
 
   it("판단 사건에 고른 행동의 종류를 붙인다: 라면 끓이기 알려 주기는 coach, 에어컨 켜기는 noonchi, 대기·실패는 null", async () => {

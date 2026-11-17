@@ -78,10 +78,10 @@ export class Finder extends Part {
   start(d: DecisionRecord, text: string): boolean {
     const core = this.core;
     const cls = touchTarget(d.action);
-    if (core.stopped || core.finding || !cls || core.open() || core.planning || !core.use.mayApproach(cls)) return false;
+    if (core.stopped || core.finding || !cls || core.open() || core.planning) return false;
     const now = this.clock.now();
     const spot = lostTarget({ world: this.o.world(), cls, placed: core.steps.placed(), away: core.steps.awayIds(), now, freshMs: PRECHECK_FRESH_MS, resting: (s) => this.resting(s, now) });
-    if (!spot) return false;
+    if (!spot || !core.use.mayApproach({ cls, id: spot.objectId })) return false;
     // 계획 밖 가까이 가서 보기와 함께 돌지 않는다(찾기가 먼저)
     core.contents.dropIdle();
     const q: FindSlot = { id: `find:${++this.slotSeq}`, sent: null, spokeAt: now, visionAt: now, find: this.make(spot, PRECHECK_FRESH_MS, Number.NEGATIVE_INFINITY, now), first: d, decision: d, text };
@@ -161,7 +161,7 @@ export class Finder extends Part {
     if (f?.phase === "over") return "over";
     if (!f) {
       const cls = touchTarget(r.decision.action);
-      const spot = cls && this.core.use.mayApproach(cls) ? lostTarget({
+      const spot = cls && this.core.use.mayApproach({ cls, id: objectId }) ? lostTarget({
         world: this.o.world(), cls, placed: this.core.steps.placed(), away: this.core.steps.awayIds(), now, freshMs: this.staleMs(), seenAfter: r.decision.atMs, objectId,
         resting: (s) => this.resting(s, now),
       }) : null;
@@ -210,7 +210,7 @@ export class Finder extends Part {
   private step(line: Line, f: Find, now: number, asking: boolean): Outcome {
     if (now - f.startedAt > FIND.totalMs) return this.over(line, f);
     // 사람이 그 종류를 쓰는 중이면(use.ts) 명령·보기 지킴·가까이 보기를 거두고 사람이 사라질 때까지 기다린다(막힘 한도 holdMs). 풀리면 가기·비추기부터 다시 한다
-    if (!this.core.use.mayApproach(f.cls)) return this.pause(line, f, now);
+    if (!this.core.use.mayApproach({ cls: f.cls, id: f.objectId })) return this.pause(line, f, now);
     const hit = this.hit(this.o.world(), f, now);
     if (hit?.fresh) {
       this.close(line, f, "done");

@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import type { WorldObject, WorldView } from "../src/contract/world.js";
-import { holdsTarget, lookTargets, opaqueBody, planTargetId, putAway, sureValue, targetOf, TASK_NAMES, TASKS, taskOf, tasksFor, touchTarget, usingNow, wantOf } from "../src/act/tasks.js";
+import { holdsTarget, lookTargets, opaqueBody, planTargetId, putAway, sureValue, targetOf, TASK_NAMES, TASKS, taskOf, tasksFor, modeOf, touchTarget, usingNow, wantOf } from "../src/act/tasks.js";
 import type { WorldFact } from "../src/contract/world.js";
 import { smallFloor } from "./helpers/floor.js";
 import { cupPlan } from "./helpers/cup-plan.js";
@@ -169,20 +169,24 @@ describe("사람이 그 물건을 쓰는 중인가(usingNow, 쓰는 중 지킴�
     return { ...w, ...extra, person: { ...w.person, visible: p.visible ?? true, since_ms: 5_000, holding: p.holding ?? [], facts: p.facts ?? {} } };
   };
   it("사람이 보이고 마시는 중이면 컵·병을 쓰는 중이고(활동), 그 종류를 들거나 손에 든 채 봤으면 들고 있음이다", () => {
-    expect(usingNow(person([cupAt()], { facts: { activity: seen("drinking") } }), "cup")).toEqual({ kind: "act", act: "drinking" });
-    expect(usingNow(person([cupAt()], { facts: { activity: seen("drinking") } }), "bottle")).toEqual({ kind: "act", act: "drinking" });
-    expect(usingNow(person([cupAt()], { facts: { holding: seen("holding_object") }, holding: ["cup_1"] }), "cup")).toEqual({ kind: "holding" });
-    expect(usingNow(person([cupAt({ facts: { place: seen("in_hand", 6_000) } })]), "cup")).toEqual({ kind: "holding" });
+    expect(usingNow(person([cupAt()], { facts: { activity: seen("drinking") } }), "cup")).toEqual({ why: { kind: "act", act: "drinking" }, ids: null });
+    expect(usingNow(person([cupAt()], { facts: { activity: seen("drinking") } }), "bottle")).toEqual({ why: { kind: "act", act: "drinking" }, ids: null });
+    // 마시는 중에 손에 든 컵이 보이면 그 컵이다
+    expect(usingNow(person([cupAt({ facts: { place: seen("in_hand", 6_000) } })], { facts: { activity: seen("drinking") } }), "cup")).toEqual({ why: { kind: "act", act: "drinking" }, ids: ["cup_1"] });
+    expect(usingNow(person([cupAt()], { facts: { holding: seen("holding_object") }, holding: ["cup_1"] }), "cup")).toEqual({ why: { kind: "holding" }, ids: ["cup_1"] });
+    expect(usingNow(person([cupAt({ facts: { place: seen("in_hand", 6_000) } })]), "cup")).toEqual({ why: { kind: "holding" }, ids: ["cup_1"] });
+    // 든 id가 World State 물건이 아니면(확인 전 물건) 어느 컵인지 몰라 종류 전체다
+    expect(usingNow(person([cupAt()], { facts: { holding: seen("holding_object") }, holding: ["cup_9"] }), "cup")).toEqual({ why: { kind: "holding" }, ids: null });
     // 확인 전 후보 자리를 손에 든 채 봤다(ccd08c9의 「손에 든 채 본 자리」)
     const sighting = { cls: "cup" as const, position: [7, 0.75, 3] as [number, number, number], surface: null, surface_label: null, at_ms: 6_000, in_hand: true };
-    expect(usingNow(person([], {}, { sightings: [sighting] }), "cup")).toEqual({ kind: "holding" });
+    expect(usingNow(person([], {}, { sightings: [sighting] }), "cup")).toEqual({ why: { kind: "holding" }, ids: null });
     // 무엇을 들었는지 모르면 그 종류를 든 것으로 본다(식탁에 컵이 보여도: 실제 판 real4에서 든 컵을 못 가려 가까이 가기가 나갔다)
-    expect(usingNow(person([], { facts: { holding: seen("holding_object") } }), "cup")).toEqual({ kind: "holding" });
-    expect(usingNow(person([cupAt()], { facts: { holding: seen("holding_object") } }), "cup")).toEqual({ kind: "holding" });
+    expect(usingNow(person([], { facts: { holding: seen("holding_object") } }), "cup")).toEqual({ why: { kind: "holding" }, ids: null });
+    expect(usingNow(person([cupAt()], { facts: { holding: seen("holding_object") } }), "cup")).toEqual({ why: { kind: "holding" }, ids: null });
     // 그 물건·가전이 쓰는 중으로 보였다(전자레인지를 쓰는 사람)
     const microwave = { id: "microwave_kitchen", cls: "microwave" as const, room: "kitchen", room_label: "주방", device: null, first_seen_ms: 0, last_seen_ms: 6_000, facts: { use: seen("in_use", 6_000) }, answered_ms: null };
-    expect(usingNow(person([], {}, { fixtures: [microwave] }), "microwave")).toEqual({ kind: "using" });
-    expect(usingNow(person([cupAt({ facts: { use: seen("in_use", 6_000) } })]), "cup")).toEqual({ kind: "using" });
+    expect(usingNow(person([], {}, { fixtures: [microwave] }), "microwave")).toEqual({ why: { kind: "using" }, ids: null });
+    expect(usingNow(person([cupAt({ facts: { use: seen("in_use", 6_000) } })]), "cup")).toEqual({ why: { kind: "using" }, ids: ["cup_1"] });
   });
   it("다른 종류를 쓰는 것, 사람이 나타나기 전에 본 사실, 사람이 안 보일 때는 쓰는 중이 아니다", () => {
     expect(usingNow(person([cupAt()], { facts: { holding: seen("holding_object") }, holding: ["book_1"] }), "cup")).toBeNull();
@@ -192,6 +196,9 @@ describe("사람이 그 물건을 쓰는 중인가(usingNow, 쓰는 중 지킴�
     expect(usingNow(person([], { facts: { holding: seen("holding_object", 4_500) } }), "cup")).toBeNull();
     expect(usingNow(person([cupAt({ facts: { place: seen("in_hand", 4_000) } })]), "cup")).toBeNull();
     expect(usingNow(person([cupAt()], { visible: false, facts: { activity: seen("drinking") } }), "cup")).toBeNull();
+  });
+  it("행동의 모드(modeOf, 메시지 상자 머리의 기준): 코치 행동은 coach, 그 밖의 목록 행동은 noonchi, 대기·목록 밖은 null", () => {
+    expect(["컵 치우기", "에어컨 켜기", "라면 끓이기 알려 주기", "전자레인지로 데우기 알려 주기", null, "춤추기"].map(modeOf)).toEqual(["noonchi", "noonchi", "coach", "coach", null, null]);
   });
   it("손대는 행동(touch)만 대상 종류가 있다(그대로 두기·에어컨 켜기는 없다)", () => {
     expect(["컵 치우기", "컵에 물 채워 주기", "컵에 콜라 따라 주기"].map(touchTarget)).toEqual(["cup", "cup", "cup"]);

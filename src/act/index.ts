@@ -5,5 +5,5 @@ export { deviceRunner } from "./devices.js";
 export { PlanHub } from "./hub.js";
 export { LessonStore, lessonsPath } from "./lessons.js";
 export { Looker } from "./look.js";
-export { SAY_DONE_MS, sayLine } from "./say.js";
+export { SAY_DONE_MS, sayLine, sayOf } from "./say.js";
 export { ExecutionTracker } from "./track/tracker.js";

@@ -3,8 +3,8 @@
 // PAM 연결 끊김·연결됨(link)과 주기 판단 멈춤(폰 사진 없음·사람 없음)·다시 시작(trigger)은 바뀔 때 한 번씩 기록한다.
 import type { BrainLog, DecisionWorld, DecisionRecord } from "../contract/events.js";
 import type { WorldChange, WorldView } from "../contract/world.js";
-import { taskOf } from "../act/tasks.js";
-import { checkInput, fsmRuleOf, isoWithOffset, type PamMemory } from "./decision.js";
+import { modeOf } from "../act/tasks.js";
+import { checkInput, fsmNow, isoWithOffset, type PamMemory } from "./decision.js";
 import { PamLinkError, type PamClient } from "./pam.js";
 import { LINK_TEXT, TRIGGER_TEXT, redactHeard, redactSaid, saidIn } from "../world/labels.js";
 import type { WorldState } from "../world/index.js";
@@ -50,6 +50,8 @@ export class Decider {
   private seq = 0;
   private stopped = false;
   private link: boolean | null = null;
+  /** 마지막으로 맞은 규칙의 FSM 상태(대기 판단의 지금 상태). undefined면 아직 없음(기억의 처음 상태), null이면 규칙이 여러 상태라 정할 수 없었음. */
+  private fsmState: string | null | undefined = undefined;
   private paused: TriggerPause | "acting" | null = null;
   private readonly clock: { now(): number };
 
@@ -101,7 +103,11 @@ export class Decider {
           // PAM의 생각 글은 계획 이유·판단 기록·대시보드에 남는다: 들은 말을 그대로 옮겼으면 뺀다
           const said = this.o.keepHeard?.() ? [] : saidIn(textSent);
           const prediction = said.length ? { ...p, observation: redactSaid(p.observation, said), reasoning: redactSaid(p.reasoning, said) } : p;
-          this.finish({ ...base, status: "valid", prediction, action, fsm: fsmRuleOf(mem.memory, mem.kind, action) });
+          const fsm = fsmNow(mem.memory, mem.kind, action, this.fsmState);
+          // 맞은 규칙의 상태(정할 수 없으면 null)로 옮긴다. 대기·규칙 없는 행동이 직전 상태를 쓰지 못했으면(지금 기억에 없음) 처음으로 돌린다
+          if (fsm?.matched) this.fsmState = fsm.state;
+          else if (fsm && fsm.state !== this.fsmState) this.fsmState = undefined;
+          this.finish({ ...base, status: "valid", prediction, action, fsm });
         },
         (e: unknown) => {
           if (e instanceof PamLinkError) this.setLink(false);
@@ -126,7 +132,7 @@ export class Decider {
     this.o.emit({
       type: "decision", at_ms: this.clock.now(), id: r.id, seq: r.seq, text_sent: this.o.keepHeard?.() ? r.textSent : redactHeard(r.textSent), status: r.status, prediction: r.prediction, action: r.action, fsm: r.fsm ?? null,
       // 고른 행동의 종류(표시용): 그 행동이 코치 행동인가
-      assist: r.action ? (taskOf(r.action)?.coach ? "coach" : "noonchi") : null,
+      assist: modeOf(r.action),
       ...(r.error ? { error: r.error } : {}), memory_version: r.memoryVersion, world: r.world,
     });
     this.o.onDecision?.(r);

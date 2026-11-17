@@ -6,7 +6,7 @@ import { z } from "zod";
 import { copyRules } from "../shared/copy.js";
 import { ASK_CHOICES, type ActionPrompt } from "../act/prompts.js";
 import type { Lesson, PlanTarget, PlanView, StepKind, XZ } from "../contract/plan.js";
-import { planIdOf, type Placed, type TaskSpec } from "../act/tasks.js";
+import { modeOf, planIdOf, type Placed, type TaskSpec } from "../act/tasks.js";
 import type { DeviceView, DecisionRecord } from "../contract/events.js";
 import type { DraftStep, PlanHead } from "./planShape.js";
 import { assemblePlan } from "./planShape.js";
@@ -304,8 +304,9 @@ export class PlanDraft {
       if (s.until && objectNames(s.until).some((n) => n !== s.object)) return { ok: false, error: `${i + 1}번 내려놓기 until은 든 물건(${s.object ?? "없음"}) id만 봅니다` };
     }
     const draft: DraftStep[] = steps.map((s, i) => ({ kind: VIEW_KIND[s.kind], label: s.label, ...this.viewTarget(s, steps[i + 1]) }));
+    const mode = modeOf(task.name);
     const head: PlanHead = {
-      id, goal: task.name, judgment: decision.prediction?.reasoning ?? "", source: "brain", dryRun: !steps.some((s) => s.kind === "device"), nowIso,
+      id, goal: task.name, judgment: decision.prediction?.reasoning ?? "", source: "brain", dryRun: !steps.some((s) => s.kind === "device"), nowIso, ...(mode ? { assist: mode } : {}),
     };
     this.done = { view: assemblePlan(walkable(floor), head, draft), steps, task: task.name };
     return { ok: true, plan: this.done };

@@ -1,5 +1,6 @@
 // 대시보드 자료(순수 리듀서): /events 메시지 → 지금 계획·맞춘 눈·마지막 유효 판단·쌓인 생각 메시지·말풍선 카드 말. 물체 모양(seen)은 초당 10번 와서 여기 넣지 않는다(masks.ts 저장소). 화면 값(단계 번호·마스코트 방향·생각 말풍선)도 여기서 고른다.
 // hello는 처음으로 돌린다(접속 스냅숏이 뒤따른다). 같은 계획의 옛 번호, 맞추기 전 추정 눈, 실패한 판단은 버린다.
+import { ASSIST_NAME } from "../lib/assist";
 import type { BrainLog, EyeEvent, ServerMessage, ThoughtMessage } from "../../../src/contract/events.ts";
 import type { PlanStep, PlanView } from "../../../src/contract/plan.ts";
 import { FSM_STATE_TEXT } from "../../../src/world/labels.ts";
@@ -20,11 +21,17 @@ export interface DashData {
   /** 마지막 성공한 반성(접속 때 다시 받은 오늘 것 포함). */
   reflection: Reflection | null;
   say: string | null;
+  /** 판단에서 본 행동마다 그 모드(판단 기록 assist): 진행 중 계획의 행동으로 메시지 상자 머리를 정한다. */
+  modes: Record<string, "noonchi" | "coach">;
+  /** 메시지 상자에 넣은 말의 수(말 줄 id의 차례). */
+  says: number;
+  /** 지금 유효한 안전 알림 말(say safety)과 그 줄 id. 안전 아닌 말이나 빈 말이 오면 null. 메시지 상자는 그동안 한 줄을 늘 이 알림에 준다. */
+  safety: { id: string; text: string } | null;
   /** 메시지 상자 줄: 새로 온 생각 메시지(반성 메시지 포함)와 바뀐 말풍선 카드 말을 받은 차례로(시계가 다른 기기여도 차례가 맞다). 최근 THOUGHT_KEPT개. */
   talk: { id: string; text: string }[];
 }
 
-export const EMPTY_DASH: DashData = { plan: null, eye: null, decision: null, thoughts: [], reflection: null, say: null, talk: [] };
+export const EMPTY_DASH: DashData = { plan: null, eye: null, decision: null, thoughts: [], reflection: null, say: null, modes: {}, says: 0, safety: null, talk: [] };
 
 /** 메시지 상자 줄 더하기: 같은 id는 한 번만, 받은 차례로 최근 THOUGHT_KEPT개. */
 function addTalk(list: DashData["talk"], more: { id: string; text: string }[]): DashData["talk"] {
@@ -32,8 +39,8 @@ function addTalk(list: DashData["talk"], more: { id: string; text: string }[]): 
   return fresh.length ? [...list, ...fresh].slice(-THOUGHT_KEPT) : list;
 }
 
-/** 메시지 상자에 보이는 줄 수(최근 것): 지난 줄 하나와 최신 줄 하나. */
-export const TALK_SHOWN = 2;
+/** 메시지 상자에 보이는 줄 수(최근 것): 지난 줄 둘과 최신 줄 하나. */
+export const TALK_SHOWN = 3;
 /** 자료에 두는 메시지 수. */
 const THOUGHT_KEPT = 6;
 
@@ -70,9 +77,16 @@ export function reduceDash(s: DashData, m: ServerMessage, now: number): DashData
     }
     case "eye":
       return m.eye.estimated ? s : { ...s, eye: m.eye };
-    case "say":
-      if (m.text === s.say) return s;
-      return { ...s, say: m.text, talk: m.text ? addTalk(s.talk, [{ id: `say@${now}:${s.talk.length}`, text: m.text }]) : s.talk };
+    case "say": {
+      const safe = !!m.safety && !!m.text;
+      if (m.text === s.say && safe === !!s.safety) return s;
+      // 줄 id는 받은 말의 차례(같은 메시지 묶음을 다시 넣어도 같은 id라 메시지 상자가 굴러갈 줄을 가른다)
+      const id = `say#${s.says}`;
+      const changed = m.text !== s.say;
+      const talk = changed && m.text ? addTalk(s.talk, [{ id, text: m.text }]) : s.talk;
+      const safety = safe ? (changed ? { id, text: m.text! } : s.safety ?? { id, text: m.text! }) : null;
+      return { ...s, say: m.text, safety, talk, says: changed && m.text ? s.says + 1 : s.says };
+    }
     case "thought": {
       const thoughts = addThoughts(s.thoughts, m.messages);
       if (thoughts === s.thoughts) return s;
@@ -81,7 +95,11 @@ export function reduceDash(s: DashData, m: ServerMessage, now: number): DashData
     }
     case "brain": {
       const e = m.event;
-      if (e.type === "decision") return e.status === "valid" ? { ...s, decision: e } : s;
+      if (e.type === "decision") {
+        // 동시에 나간 판단의 늦은 응답(seq가 더 작음)은 쓰지 않는다
+        if (e.status !== "valid" || (s.decision && e.seq < s.decision.seq)) return s;
+        return { ...s, decision: e, modes: e.action && e.assist ? { ...s.modes, [e.action]: e.assist } : s.modes };
+      }
       if (e.type === "reflection") {
         if (!e.ok) return s;
         const more = reflectionThoughts(e);
@@ -113,19 +131,32 @@ export function currentStep(p: PlanView | null): PlanStep | null {
 /** 마스코트가 보는 쪽: 열린 계획이 있으면 트윈(왼쪽), 아니면 그림 그대로(오른쪽). */
 export const facingOf = (p: PlanView | null): Facing => (isOpen(p) ? "twin" : "video");
 
-/** 메시지 상자에 보이는 것: 최근 줄(오래된 것부터 TALK_SHOWN개, 다듬은 생각 메시지와 말풍선 카드 말을 받은 차례로)과
- *  배운 습관대로 행동할 때만 그 습관 한 줄(아니면 null). PAM의 원래 생각(reasoning)은 싣지 않는다. */
-export interface Talk { lines: { id: string; text: string }[]; habit: string | null }
+/** 메시지 상자 알약 셋(FSM 구조): 지금 상태 이름, 맞은 규칙의 트리거, 그 행동. */
+export interface Pills { state: string; trigger: string; action: string }
+/** 메시지 상자에 보이는 것: 최근 줄(오래된 것부터 TALK_SHOWN개, 다듬은 생각 메시지와 말풍선 카드 말을 받은 차례로), 마지막 판단의 알약 셋(FSM을 모르면 null),
+ *  지금 행동의 모드(「눈치 모드」·「코치 모드」, 대기·판단 전이면 null). PAM의 원래 생각(reasoning)은 싣지 않는다. */
+export interface Talk { lines: { id: string; text: string }[]; fsm: Pills | null; mode: string | null }
 
 /**
- * 메시지 상자: 다듬은 생각 메시지(반성 메시지 포함)와 말풍선 카드 말을 받은 차례로 섞은 최근 TALK_SHOWN줄. 줄이 하나도 없으면 null.
- * 마지막 유효 판단이 배운 규칙대로 고른 행동이면(서버가 붙인 fsm.learned) 「배운 습관: <상태> · <행동>」 한 줄을 더한다(상태 이름표가 없으면 트리거, 그것도 없으면 행동만).
+ * 메시지 상자: 다듬은 생각 메시지(반성 메시지 포함)와 말풍선 카드 말을 받은 차례로 섞은 최근 TALK_SHOWN줄과 마지막 유효 판단의 알약 셋. 둘 다 없으면 null.
+ * 알약은 서버가 판단 기록에 실은 지금 FSM(src/brain/decision.ts fsmNow)이다: 상태는 기억 상태 이름(FSM_STATE_TEXT, 없으면 상태 id), 트리거는 맞은 규칙의 트리거
+ * (대기면 「대기」, 규칙 없이 고른 행동이면 「규칙 없음」, 그 행동 규칙이 여럿이면 「규칙 여럿」), 액션은 고른 행동(대기면 「대기」). 판단의 FSM을 모르면(list 기억·판단 전) 알약이 없다.
  */
 export function talkOf(s: DashData): Talk | null {
-  if (!s.talk.length) return null;
-  const lines = s.talk.slice(-TALK_SHOWN);
+  // 안전 알림이 유효한 동안 최신 줄은 늘 그 알림이고, 지난 줄은 그 밖의 가장 새 줄이다
+  const safety = s.safety;
+  const lines = safety ? [...s.talk.filter((l) => l.id !== safety.id).slice(-(TALK_SHOWN - 1)), safety] : s.talk.slice(-TALK_SHOWN);
   const d = s.decision;
-  const rule = d?.action && d.fsm?.learned ? (d.fsm.state ? FSM_STATE_TEXT[d.fsm.state] ?? d.fsm.trigger : d.fsm.trigger) : null;
-  const habit = d?.action && d.fsm?.learned ? `${WORDS.habitLine}: ${rule ? `${rule} · ` : ""}${d.action}` : null;
-  return { lines, habit };
+  const f = d?.fsm;
+  const fsm = d && f ? {
+    state: f.state ? FSM_STATE_TEXT[f.state] ?? f.state : WORDS.unknown,
+    trigger: f.trigger ?? (d.action ? (f.matched ? WORDS.manyRules : WORDS.noRule) : WORDS.idle),
+    action: d.action ?? WORDS.idle,
+  } : null;
+  // 머리: 실행 추적이 받아들인 행동이 어느 모드로 하는 행동인가(서버 판단 기록 assist, 행동 목록 TaskSpec.coach). 진행 중 계획이 있으면 그 계획의 행동,
+  // 없으면 가장 새 판단의 행동이고, 대기면 없다. 설정의 돕는 방식(자동 등)은 쓰지 않는다
+  const open = isOpen(s.plan) ? s.plan : null;
+  const m = open ? open.assist ?? s.modes[open.goal] ?? null : d?.action ? d.assist ?? null : null;
+  const mode = m ? ASSIST_NAME[m] : null;
+  return lines.length || fsm || mode ? { lines, fsm, mode } : null;
 }
