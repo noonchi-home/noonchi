@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { checkDecision, checkPlan, loadActConfig, type CheckInput } from "../src/act/check.js";
 import { CHECK_TEXT } from "../src/act/labels.js";
 import type { WorldObject } from "../src/contract/world.js";
-import { planObjectOf } from "../src/act/tasks.js";
+import { planObjectsOf } from "../src/act/tasks.js";
 
 const obj = (over: Partial<WorldObject> = {}): WorldObject => ({
   id: "cup_1", cls: "cup", position: [2, 0.75, 0], surface: "t", surface_label: "식탁", room: "kitchen", error_m: 0.1, status: "present",
@@ -147,15 +147,15 @@ describe("실행 전 검사", () => {
     });
     it("첫 act 단계가 냉장고에서 집기여도 넷째 단계 대상 컵을 판단 뒤에 다시 봤으면 통과한다", () => {
       expect(checkPlan(fill())).toEqual({ ok: true });
-      expect(planObjectOf(fill().plan!, fill().world, "cup")).toBe("cup_1");
-      expect(planObjectOf(fill().plan!, fill().world, "bottle")).toBeNull();
+      expect(planObjectsOf(fill().plan!, fill().world, "cup")).toEqual(["cup_1"]);
+      expect(planObjectsOf(fill().plan!, fill().world, "bottle")).toEqual([]);
       expect(checkPlan(fill({ world: { ...base().world, objects: [emptyCup({ last_seen_ms: 8_000 })] } }))).toMatchObject({ reason: "stale" });
     });
     it("병을 집는 단계의 대상이 보이는 병이어도 검사 대상은 컵이다", () => {
       const seen = fill();
       seen.plan!.steps[1] = { ...seen.plan!.steps[1]!, target: { objectId: "bottle_1" } };
       const w = { ...base().world, objects: [bottle, emptyCup()] };
-      expect(planObjectOf(seen.plan!, w, "cup")).toBe("cup_1");
+      expect(planObjectsOf(seen.plan!, w, "cup")).toEqual(["cup_1"]);
       expect(checkPlan({ ...seen, world: w })).toEqual({ ok: true });
     });
     it("컵을 실제로 들고 있으면 시야 밖 병이 들고 감 보호 중이어도 carried를 붙이지 않는다", () => {

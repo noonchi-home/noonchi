@@ -1,7 +1,8 @@
 // 실행 추적의 내용물 보류(ContentsHold): 실행 전 검사가 행동 조건의 내용물을 몰라(unknown_contents) 막은 계획은 실패로 닫지 않고 붙잡는다.
 // 차례: 가까이 보기(불투명 컵·자리를 모르는 컵이면 건너뜀, 보기 담당이 바쁘면 lookWaitMs 뒤 건너뜀) → 사진이 이어질 settleMs → 기다림(wait).
 // 그사이 확인되면 실행 전 검사가 통과해 tryStart가 release하고 첫 단계로 간다. 확인된 반대 값이면 검사가 contents_mismatch로 막는다.
-// 컵의 내용물 세대가 바뀌면(마시기 사건·확인) 가까이 보기부터 다시 한다. holdMs가 지나도 모르면 그만둔다(검사 실패로 닫힘). 사용자에게 묻지 않는다.
+// 컵의 내용물 세대가 바뀌면(마시기 사건·확인) 가까이 보기부터 다시 한다. holdMs가 지나도 모르면 차례와 상관없이(가까이 보기가 늦거나 멈춰도)
+// 가까이 보기 신호를 끊고 그만둔다(검사 실패로 닫힘). 사용자에게 묻지 않는다.
 // 보류하는 동안 컵을 다시 보지 못해 낡아도(stale) 보류를 이어 간다(src/act/track/start.ts tryStart).
 import type { LookSpot } from "../../observe/index.js";
 import { OBJECT_NAME } from "../../world/labels.js";
@@ -29,7 +30,7 @@ export class ContentsHold extends Part {
       // 같은 컵이면 처음 붙잡은 때를 둔다(사건이 이어져도 holdMs 안에서 끝난다)
       h = r.hold = { objectId, gen, phase: "look", at: h?.objectId === objectId ? h.at : now, lookedAt: now, end: new AbortController() };
     }
-    if (h.phase !== "looking" && now - h.at > CONTENTS_HOLD.holdMs) {
+    if (now - h.at > CONTENTS_HOLD.holdMs) {
       h.end.abort();
       h.phase = "over";
       return false;

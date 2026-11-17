@@ -168,15 +168,6 @@ export function planObjectsOf(plan: PlanView, world: WorldView, cls: ObjClass): 
   return out;
 }
 
-/** 계획 단계 대상(objectId) 가운데 World State에서 그 종류인 첫 물건 id. 없으면 null. */
-export function planObjectOf(plan: PlanView, world: WorldView, cls: ObjClass): string | null {
-  for (const s of plan.steps) {
-    const id = s.target?.objectId;
-    if (id && world.objects.some((o) => o.id === id && o.cls === cls)) return id;
-  }
-  return null;
-}
-
 export const planIdOf = (decisionId: string) => `plan:${decisionId}`;
 
 const squash = (t: string) => t.replace(/[\s.,!?~·]+/g, "");

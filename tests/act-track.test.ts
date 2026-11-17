@@ -646,6 +646,15 @@ describe("실행 추적: 그 자리에서 하는 일(do, 채워 주기)", () => 
       expect(t2.looks[0]!.signal.aborted).toBe(true);
     });
 
+    it("가까이 보기가 끝나지 않아도(VLM이 늦거나 멈춤) 30초 기한이 되면 가까이 보기 신호를 끊고 「안을 몰라」로 닫는다", async () => {
+      const s = holdSetup();
+      await s.decide(fillDecision);
+      for (let i = 0; i < 140; i++) { s.clock.t += 250; s.see(s.clock.t); s.t.tick(); }
+      expect(s.looks).toHaveLength(1);
+      expect(s.looks[0]!.signal.aborted).toBe(true);
+      expect(s.exec().at(-1)).toMatchObject({ state: "failed", text: CHECK_TEXT.unknown_contents });
+    });
+
     it("가까이 봐도 모르면 사용자에게 묻지 않는다: 위치를 맞췄어도 명령을 보내지 않고 30초 뒤 「안을 몰라」로 닫는다", async () => {
       const s = holdSetup({ lookContents: (h) => { h.done(); return true; } });
       s.t.onEye([0, 0]);
