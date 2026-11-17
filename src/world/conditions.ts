@@ -2,6 +2,7 @@
 // 계획을 만드는 에이전트는 CONDITION_JSON_SCHEMA에 맞춰 쓰고 checkCondition으로 이 집에 맞는지 보고, 실행 쪽은 ConditionWatch로 볼 때마다 판정한다.
 // - 판정은 참·거짓·모름 세 값이다. 안 보여서 모르는 것은 모름이고, not(모름)도 모름이다. 단계는 참일 때만 넘어간다.
 // - 단계가 시작된 뒤(sinceMs) 본 사실만 쓴다: 그 전 사실은 모름. 「모름」 값(안이 안 보임·하는 일 모름)은 다른 값과 견주면 모름.
+// - 안 내용(contents)은 확인됨일 때만 값으로 본다(짐작은 모름, World State 갱신기 src/world/state/contents.ts).
 // - 지금만 맞는 면(하는 일·순간 동작·쓰는 중 등)은 FACT_FRESH_MS 안의 VLM 답만 쓴다. 값이 없으면 그 안에 그 대상 답이 있었을 때만 거짓.
 // - person_holding: 사람이 물건을 들고 있고(지금만 맞는 면), 든 것을 모르거나 그 종류(종류 이름)·그 id(id, 따라간 같은 물건 포함). 관절로 든 확인 전 물건도 본다.
 //   FACT_FRESH_MS 안에 분석한 프레임에 사람이 안 보이면 거짓(프레임이 끊기면 모름).
@@ -176,6 +177,9 @@ function factIs(f: WorldFact | undefined, value: StateKey, target: Target, answe
   const since = now ? Math.max(x.sinceMs, x.nowMs - FACT_FRESH_MS) : x.sinceMs;
   if (f) {
     if (f.at_ms < since) return null;
+    // 안 내용은 World State 갱신기(src/world/state/contents.ts)가 확인 규칙(사진 3장·4초, 사람 답)을 지킨 값만 확인됨으로 둔다.
+    // 짐작은 모름이다(따르기 끝 조건이 사진 한 장으로 넘어가지 않게)
+    if (STATES[value].facet === "contents" && f.certainty !== "confirmed") return null;
     if (f.value === value) return true;
     return UNKNOWN_STATES.includes(f.value as StateKey) ? null : false;
   }

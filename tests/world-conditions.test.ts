@@ -147,6 +147,19 @@ describe("계획 단계 조건", () => {
     expect(back.check(view(), ctx(2000))).toBe(true);
   });
 
+  it("내용물 조건은 확인된 값만 참이다: 짐작이면 같은 값이어도·반대 값이어도 모름, 사람이 답한 값은 참. 다른 면의 짐작은 지금처럼 받는다", () => {
+    const until = { object: "cup_1", follow: true, facts: { contents: "has_contents" } } as const;
+    const at = (value: string, certainty: "confirmed" | "inferred", by?: "person") => view({ objects: [cup({ facts: { contents: { ...fact(value, 6000), certainty, ...(by ? { by } : {}) } } })] });
+    expect(evaluate(until, at("has_contents", "inferred"), ctx(7000, 5000))).toBeNull();
+    expect(evaluate(until, at("empty", "inferred"), ctx(7000, 5000))).toBeNull();
+    expect(evaluate({ not: until }, at("has_contents", "inferred"), ctx(7000, 5000))).toBeNull();
+    expect(evaluate(until, at("has_contents", "confirmed"), ctx(7000, 5000))).toBe(true);
+    expect(evaluate(until, at("empty", "confirmed"), ctx(7000, 5000))).toBe(false);
+    expect(evaluate(until, at("has_contents", "confirmed", "person"), ctx(7000, 5000))).toBe(true);
+    const place = view({ objects: [cup({ facts: { place: { ...fact("on_table", 6000), certainty: "inferred" } } })] });
+    expect(evaluate({ object: "cup_1", facts: { place: "on_table" } }, place, ctx(7000, 5000))).toBe(true);
+  });
+
   it("「모름」 값(하는 일 모름·안이 안 보임)은 다른 값과 견주면 모름, 지금만 맞는 면은 10초 넘은 답이면 모름", () => {
     const w = view({ person: person({ facts: { activity: fact("unknown") } }), objects: [cup({ facts: { contents: fact("contents_unknown") } })] });
     expect(evaluate({ not: { person_fact: "activity", value: "drinking" } }, w, ctx(1000))).toBeNull();

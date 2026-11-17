@@ -93,6 +93,24 @@ describe("PAM 관찰 텍스트", () => {
     ]);
   });
 
+  it("사람이 말로 답한 내용물 줄은 꼬리 「사람이 답함」, 불투명 컵은 「안이 안 보임」(짐작 아님)과 「불투명」 줄", () => {
+    const cupWith = (facts: WorldView["objects"][number]["facts"]): WorldView => ({
+      at_ms: T(21, 0, 9),
+      objects: [{ id: "cup_1", cls: "cup", position: null, surface: null, surface_label: null, room: null, error_m: null, status: "present",
+        first_seen_ms: T(21, 0, 0), last_seen_ms: T(21, 0, 9), last_in_view_ms: T(21, 0, 9), facts, answered_ms: null, devices: [], closer_hold: false, followed_by: null }],
+      person: { visible: false, since_ms: null, last_seen_ms: null, count: 0, room: null, room_label: null, position: null, near: [], holding: [], position_ms: null, answered_ms: null, facts: {} },
+      fixtures: [], devices: [], eye: null, frame_ms: null, vlm_missing: 0, yolo_missing: 0,
+    });
+    const cupLines = (v: WorldView) => textFromWorld(v, [], { nowMs: T(21, 0, 9), offsetMinutes: 540 }).split("\n").filter((l) => l.startsWith("[지속] 컵"));
+    expect(cupLines(cupWith({ contents: { value: "empty", at_ms: T(21, 0, 5), since_ms: T(21, 0, 5), certainty: "confirmed", by: "person" } })))
+      .toContain("[지속] 컵 cup_1 비어 있음: 21:00:05부터 4초째, 사람이 답함");
+    const opaque = cupLines(cupWith({
+      body: { value: "opaque", at_ms: T(21, 0, 5), since_ms: T(21, 0, 4), certainty: "confirmed" },
+      contents: { value: "contents_unknown", at_ms: T(21, 0, 5), since_ms: T(21, 0, 4), certainty: "confirmed" },
+    }));
+    expect(opaque).toEqual(expect.arrayContaining(["[지속] 컵 cup_1 안이 안 보임: 21:00:04부터 5초째", "[지속] 컵 cup_1 불투명: 21:00:04부터 5초째"]));
+  });
+
   it("면 자리와 같은 놓인 곳(식탁 위)도 사실 줄을 둔다: 그 값이 처음 보인 시각과 (짐작)을 잃지 않는다", () => {
     const view: WorldView = {
       at_ms: T(21, 10, 0),
