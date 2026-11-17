@@ -16,7 +16,7 @@ export const DOC_PATH = fileURLToPath(new URL("../docs/world-vocabulary.md", imp
 export const DOC_HOME = "mokryeon_180b";
 
 const ROLE = { person: "사람", object: "물건", fixture: "가전 설비", scene: "가구, 거름" } as const;
-const FACET = { place: "자리", contents: "안 내용", open: "열림", use: "쓰는 중", screen: "화면", posture: "자세", holding: "들고 있음", activity: "하는 일", moment: "순간 동작" } as const;
+const FACET = { place: "자리", contents: "안 내용", body: "몸통", open: "열림", use: "쓰는 중", screen: "화면", posture: "자세", holding: "들고 있음", activity: "하는 일", moment: "순간 동작" } as const;
 const TARGET = { person: "사람", object: "물건", fixture: "가전 설비" } as const;
 const row = (cells: (string | number)[]) => `| ${cells.join(" | ")} |`;
 const table = (head: string[], rows: (string | number)[][]) => [row(head), row(head.map(() => "---")), ...rows.map(row)].join("\n");

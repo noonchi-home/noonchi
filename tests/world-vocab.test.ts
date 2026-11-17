@@ -92,4 +92,13 @@ describe("World State 낱말 표", () => {
     }
     expect(found, "목록은 src/world/vocab.ts에만 둔다").toEqual([]);
   });
+
+  it("컵·병·그릇에는 몸통 면(속이 비침·불투명)이 있고 VLM 값 목록에 그 설명이 들어간다", () => {
+    for (const cls of ["cup", "bottle", "bowl"] as const) expect(CLASSES[cls].facets).toContain("body");
+    expect(CLASSES.book.facets).not.toContain("body");
+    expect(STATES.see_through).toMatchObject({ facet: "body", label: "속이 비침", for: ["object"] });
+    expect(STATES.opaque).toMatchObject({ facet: "body", label: "불투명", for: ["object"] });
+    expect(SCENE_STATES).toEqual(expect.arrayContaining(["see_through", "opaque"]));
+    expect(SCENE_PROMPT).toMatch(/Cup, bottle and bowl sides: see_through \(.+\), opaque \(.+\)\./);
+  });
 });

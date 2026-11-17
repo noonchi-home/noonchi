@@ -61,6 +61,8 @@ export const STATE_DOC: Record<StateKey, { how?: string; example: string }> = {
   empty: { how: "안이 보일 때만", example: "식탁 위 컵이 비어 있다." },
   has_contents: { how: "안이 보일 때만", example: "그릇에 내용물 있음이 2시간째다." },
   contents_unknown: { example: "컵 안이 안 보인다." },
+  see_through: { how: "옆면으로 안이 비쳐 보일 때", example: "유리컵이라 남은 물 높이가 보인다." },
+  opaque: { how: "옆면으로 안이 안 보일 때", example: "흰 머그라 옆에서는 안을 알 수 없다." },
   open: { example: "노트북이 열려 있다. 냉장고가 열림으로 보인다." },
   closed: { example: "전자레인지 문이 닫혀 있다." },
   in_use: { how: "물건은 지금 쓰는 중, 가전은 돌아가는 중", example: "전자레인지 쓰는 중이 끝났다." },

@@ -24,7 +24,7 @@ type Plan2 = [number, number];
 export type Tri = boolean | null;
 
 const keys = <T extends object>(o: T) => Object.keys(o) as [keyof T & string, ...(keyof T & string)[]];
-const ALL_FACETS = ["place", "contents", "open", "use", "screen", "posture", "holding", "activity", "moment"] as const satisfies readonly Facet[];
+const ALL_FACETS = ["place", "contents", "body", "open", "use", "screen", "posture", "holding", "activity", "moment"] as const satisfies readonly Facet[];
 const PERSON_FACETS = ["posture", "place", "holding", "activity", "moment"] as const satisfies readonly Facet[];
 const STATE_KEYS = z.enum(keys(STATES));
 const DEVICE_KEYS = z.enum(keys(DEVICE_STATES));

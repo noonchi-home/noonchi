@@ -6,7 +6,7 @@
 /** object: World State가 id·자리·사실을 쌓는 물건. fixture: 자리가 정해진 가전·설비, 보이는 상태만 방마다 하나. scene: 트윈 배치에 이미 있는 가구라 거른다. */
 export type Role = "person" | "object" | "fixture" | "scene";
 /** 사실의 면. 면마다 값 하나. */
-export type Facet = "place" | "contents" | "open" | "use" | "screen" | "posture" | "holding" | "activity" | "moment";
+export type Facet = "place" | "contents" | "body" | "open" | "use" | "screen" | "posture" | "holding" | "activity" | "moment";
 /** 사실이 붙는 곳. */
 export type Target = "person" | "object" | "fixture";
 
@@ -24,7 +24,8 @@ export interface ClassEntry {
 }
 
 const OBJ = ["place", "use"] as const;
-const VESSEL = ["place", "contents", "use"] as const;
+/** 마시는 그릇: 안 내용과 몸통(옆면으로 안이 비치는가)이 있다. */
+const VESSEL = ["place", "contents", "body", "use"] as const;
 
 /** 감지 종류. 순서가 감지 결과 순서다(사람 먼저). */
 export const CLASSES = {
@@ -114,6 +115,8 @@ export const STATES = {
   empty: { facet: "contents", label: "비어 있음", for: ["object"] },
   has_contents: { facet: "contents", label: "내용물 있음", for: ["object"] },
   contents_unknown: { facet: "contents", label: "안이 안 보임", for: ["object"], hint: "inside not visible" },
+  see_through: { facet: "body", label: "속이 비침", for: ["object"], hint: "clear or translucent sides that show the drink level, like a glass or clear plastic cup" },
+  opaque: { facet: "body", label: "불투명", for: ["object"], hint: "sides you cannot see through, like a ceramic mug, can or paper cup" },
   open: { facet: "open", label: "열림", for: ["object", "fixture"] },
   closed: { facet: "open", label: "닫힘", for: ["object", "fixture"] },
   in_use: { facet: "use", label: "쓰는 중", for: ["object", "fixture"], hint: "used right now, or an appliance running" },

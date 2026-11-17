@@ -259,6 +259,8 @@ describe("계획 단계 조건", () => {
     expect(checkCondition(parseCondition({ device: "cooktop", state: "running" }), home)).toEqual(["cooktop에 없는 상태: running"]);
     expect(checkCondition(parseCondition({ person_in_room: "garage" }), home)).toEqual(["없는 방: garage"]);
     expect(checkCondition(parseCondition({ object: "cup", facts: { screen: "screen_on" } }), home)).toEqual(["cup에 없는 면: screen"]);
+    expect(checkCondition(parseCondition({ object: "cup_1", facts: { body: "opaque" } }), home)).toEqual([]);
+    expect(checkCondition(parseCondition({ object: "book_1", facts: { body: "opaque" } }), home)).toEqual(["book에 없는 면: body"]);
     expect(checkCondition(parseCondition({ object: "chair", status: "gone" }), home)).toEqual(["물건 종류나 id가 아님: chair"]);
     expect(checkCondition(parseCondition({ object: "cup_3", surface: "desk_9" }), home)).toEqual(["없는 자리: desk_9"]);
     expect(checkCondition(parseCondition({ object: "cup", follow: true, status: "gone" }), home)).toEqual(["follow는 물건 id에만: cup"]);
