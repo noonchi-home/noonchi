@@ -38,6 +38,13 @@ export class Steps extends Part {
   private readonly put = new Map<string, { target: string; part?: "basin"; atMs: number }>();
   /** 놓기를 끝낸 물건의 종류(새 id로 다시 잡혔을 때 같은 종류만 이어 간다). */
   private readonly putCls = new Map<string, string>();
+  /** 놓기를 끝낸 물건의 옛 id: 계획이 따라간 옛 id와, 놓은 뒤 사라져 새 id로 넘기거나 잊은 id. 다시 집거나 옮기면 지운다. */
+  private readonly putOld = new Set<string>();
+
+  /** 찾기에서 뺄 물건(src/act/track/find.ts): 놓기를 끝낸 물건(placed)과 그 옛 id. 안 보이는 옛 id의 마지막 자리는 치우기 전 자리다. */
+  awayIds(): ReadonlySet<string> {
+    return new Set([...this.placed().keys(), ...this.putOld]);
+  }
 
   /** 놓기 단계를 끝낸 물건(이미 치운 것): World State id → 그 계획의 넣은 곳, 끝낸 때 싱크볼 안이었으면 part basin, 끝낸 시각.
    *  그 뒤 손에 있음이 확인되거나(다시 집음, VLM 한 번의 손에 있음은 싱크대 속 컵에도 나와 확인됨만 본다) 트윈 자리가 그 영역을 벗어나거나
@@ -57,6 +64,7 @@ export class Steps extends Part {
       if (picked || moved) {
         this.put.delete(id);
         this.putCls.delete(id);
+        this.putOld.delete(id);
       } else if (!o || o.status === "gone") this.carryPut(id, p, objects, now);
     }
     // 싱크볼 안에 있고 손에 있음이 확인되지 않은 물건도 치운 것이다(치우기 계획 놓기 끝 자리: 싱크대 면의 싱크볼 안이고 손에 없음).
@@ -85,6 +93,7 @@ export class Steps extends Part {
     if (one || now - lostAt > PUT_HANDOVER_MS) {
       this.put.delete(id);
       this.putCls.delete(id);
+      this.putOld.add(id);
     }
     if (one) {
       this.put.set(one.id, p);
@@ -103,6 +112,8 @@ export class Steps extends Part {
       this.put.set(id, { target, ...(basin ? { part: "basin" as const } : {}), atMs: now });
       this.putCls.set(id, cls);
     }
+    // 계획 물건 id와 따라간 id 가운데 지금 그 물건이 아닌 것(옮겨 새 id가 붙기 전 id)
+    for (const old of [object, r.alias.get(object) ?? object]) if (!at.some((x) => x.id === old)) this.putOld.add(old);
   }
 
   /** 지금 단계를 끝내고 다음 단계로. 마지막이었으면 계획 완료. 집기를 마치면 그 물건은 사람이 들고 다니고, 놓기를 마치면 그 물건은 넣은 곳에 치운 것이다. */
@@ -384,6 +395,7 @@ export class Steps extends Part {
   /** close: 계획을 닫을 상태. null이면 닫지 않는다(새 계획이 PlanHub.onDecision으로 취소로 닫는다). */
   finish(r: Run, state: "done" | "failed", text?: string, close: "done" | "failed" | "cancelled" | null = state): void {
     this.core.contents.release(r);
+    this.core.finder.release(r);
     this.window(r, null);
     if (r.asking?.why === "device") this.o.devices?.cancel(r.asking.token);
     r.asking = null;

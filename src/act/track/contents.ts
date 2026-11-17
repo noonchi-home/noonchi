@@ -35,8 +35,9 @@ export const CONTENTS_HOLD = { lookWaitMs: 3000, settleMs: 4000, holdMs: 30_000 
  *  같은 컵·세대를 다시 가까이 가기 전 기다림(ms), 옮겨짐으로 보는 자리 바뀜(m), 맞춘 눈이 이만큼(ms) 안 오면 지금 위치를 모른다(폰 자세는 초당 10번). */
 export const PEEK = { nearM: 0.5, stepMs: 30_000, retryMs: 60_000, movedM: 0.1, eyeMs: EYE_MS } as const;
 /** 보류의 가까이 보기 부탁(보기 담당 src/act/look.ts contents). done은 끝날 때 한 번(못 봐도). signal은 보류가 풀리면 끊긴다.
- *  top이 있으면 잘라 보기 대신 위에서 보기(그 뒤 찍힌 컵 안을 내려다본 사진 쌍, src/observe/pipeline.ts topLook)다. planId가 빈 글이면 계획 밖이다. */
-export interface ContentsLook { planId: string; objectId: string; spot: LookSpot; signal: AbortSignal; done(): void; top?: { sinceMs: number } }
+ *  top이 있으면 잘라 보기 대신 위에서 보기(그 뒤 찍힌 컵 안을 내려다본 사진 쌍, src/observe/pipeline.ts topLook)다. planId가 빈 글이면 계획 밖이다.
+ *  force면 찾기의 다시 보기다(src/act/track/find.ts): 같은 물건을 objectGapMs 안에 봤어도 다시 본다. */
+export interface ContentsLook { planId: string; objectId: string; spot: LookSpot; signal: AbortSignal; done(): void; top?: { sinceMs: number }; force?: true }
 type V3 = [number, number, number];
 /** 가까이 가서 보기 한 차례: 지금 명령(go·above, 거뒀으면 null)과 보낸 때, 시작 때 컵 자리, 위에서 비추기를 보낸 때(위에서 보기 sinceMs), 보기 지킴을 걸었는가. */
 export interface Peek { part: "go" | "above" | null; sent: PlannedCommand | null; since: number; at: V3; aboveAt: number; guarded: boolean }
@@ -290,10 +291,10 @@ export class ContentsHold extends Part {
     this.lookedB.set(objectId, { gen: o?.contents_gen ?? 0, at: this.clock.now() });
   }
 
-  /** 계획 밖 가까이 가서 보기를 이어 가지 않을 때: 멈춤·열린 계획·만드는 계획·위치 맞추기 전·폰 없음·끄기 안내·승인 대기·폰 대화 중. */
+  /** 계획 밖 가까이 가서 보기를 이어 가지 않을 때: 멈춤·열린 계획·만드는 계획·계획 전 찾기 중·위치 맞추기 전·폰 없음·끄기 안내·승인 대기·폰 대화 중. */
   private idleBlocked(): boolean {
     const core = this.core;
-    return core.stopped || !!core.open() || !!core.planning || phoneBlocked(core, this.clock.now(), false);
+    return core.stopped || !!core.open() || !!core.planning || !!core.finding || phoneBlocked(core, this.clock.now(), false);
   }
 
   /** 행동 목록의 내용물 행동(want와 대상 종류가 있는 행동). */

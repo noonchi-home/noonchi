@@ -11,7 +11,8 @@
 // C 코치 계획의 다른 행동(실행 추적 strayed, src/act/track/coach.ts Stray): 사람이 지금 단계와 다른 일을 하는 것 같다 → tell_person·wait.
 //   다른 일(A·B·C)이 도는 중이면 받지 않는다. 그 단계 신호로 끊긴다(끊기면 기록 없음). tell_person이면 실행 추적의 tell을 부른다.
 // E 내용물 보류(실행 추적 src/act/track/contents.ts contents): 실행 전 검사가 컵 안을 몰라 붙잡은 계획의 그 컵을 관찰 모드 없이 바로 가까이 본다.
-//   다른 일이 돌면 받지 않는다(실행 추적이 다음 tick에 다시 부른다). objectGapMs 안에 본 컵은 보지 않고 done만. 끝나면 done 한 번(look 기록, 계기 unknown_fact).
+//   다른 일이 돌면 받지 않는다(실행 추적이 다음 tick에 다시 부른다). objectGapMs 안에 본 컵은 보지 않고 done만(찾기의 다시 보기 force는 그래도 본다).
+//   끝나면 done 한 번(look 기록, 계기 unknown_fact).
 //   위에서 보기(top, 사람이 폰을 컵 위에 든 뒤)는 objectGapMs를 보지 않고 topLook을 부른다. B가 관찰 모드를 부르는 중이면 A처럼 끊고 먼저 돈다.
 //   topLook이 없으면 done만.
 // D 코치 계획 중 들은 말(heard): 명령의 답이 아닌 말 → tell_person(told)·pass_on(passed, 말 요청 에이전트로 넘김)·wait(waited).
@@ -127,14 +128,15 @@ export class Looker {
     if (h.top) return this.above(h, h.top.sinceMs);
     if (this.job) return false;
     const now = this.clock.now();
-    if (now - (this.lookedAt.get(h.objectId) ?? Number.NEGATIVE_INFINITY) < this.cfg.objectGapMs) {
+    // 찾기의 다시 보기(force)는 같은 물건 건너뛰기를 보지 않는다
+    if (!h.force && now - (this.lookedAt.get(h.objectId) ?? Number.NEGATIVE_INFINITY) < this.cfg.objectGapMs) {
       h.done();
       return true;
     }
     this.lookedAt.set(h.objectId, now);
     const abort = new AbortController();
     const job: Job = {
-      trigger: "unknown_fact", key: `${h.planId}:contents`, goal: LOOK_TEXT.held(h.spot.label), stuckMs: null, spots: [h.spot], tools: ["look_closer"],
+      trigger: "unknown_fact", key: `${h.planId}:contents`, goal: h.force ? LOOK_TEXT.find(h.spot.label) : LOOK_TEXT.held(h.spot.label), stuckMs: null, spots: [h.spot], tools: ["look_closer"],
       planId: h.planId, abort, signal: AbortSignal.any([abort.signal, h.signal]), phase: "act",
     };
     this.job = job;

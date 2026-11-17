@@ -59,7 +59,8 @@
 // 계획 전·실행 전 검사·계획 입력·제출 검사와 대상 고르기가 이미 치운 것으로 본다. 다시 집거나(손에 있음 확인됨) 그 영역 밖(다른 면, 싱크볼이면 싱크볼 밖)에서 보이면 지운다.
 // 파일 나눔(src/act/track/): tracker.ts 겉 클래스·공개 메서드·tick, core.ts 안쪽 공유 객체 TrackCore(상태·기록·실제 폰 길)와 Run, start.ts 판단 받기·계획 시작,
 // steps.ts 단계 진행·치운 물건, approval.ts 승인 질문, safety.ts 켠 위험 가전 추적·끄기 안내(SafetyTracker, 추적 상태는 # 칸), answers.ts 폰 명령 줄·답·말·보내기,
-// coach.ts 다시 알리기·다른 행동·사람 부탁·조용한 단계, contents.ts 내용물 보류(실행 전 검사가 컵 안을 몰라 막은 계획: 잘라 보기 → 사진 기다리기 → 가까이 가서 위에서 보기, 사용자에게 묻지 않음).
+// coach.ts 다시 알리기·다른 행동·사람 부탁·조용한 단계, contents.ts 내용물 보류(실행 전 검사가 컵 안을 몰라 막은 계획: 잘라 보기 → 사진 기다리기 → 가까이 가서 위에서 보기, 사용자에게 묻지 않음),
+// find.ts 찾기(대상이 안 보여 검사가 막은 판단·계획: 마지막으로 본 자리로 가기 → 비추기 → 다시 가까이 보기, 사용자에게 묻지 않음), phone-line.ts 사람 단계 명령 줄 규칙.
 // 다른 도메인은 src/act/index.ts로 가져온다.
 import type { BrainLog, ExecState, DecisionRecord } from "../../contract/events.js";
 import type { HeardAt, PlannedCommandMessage } from "../../contract/phone.js";
@@ -79,6 +80,7 @@ import { Approvals } from "./approval.js";
 import { Coach, type Stray } from "./coach.js";
 import { ContentsHold, type ContentsLook } from "./contents.js";
 import { OPEN, TrackCore, type TrackConfig } from "./core.js";
+import { Finder } from "./find.js";
 import { SafetyTracker, type Cycle, type CycleEnd } from "./safety.js";
 import { Starter } from "./start.js";
 
@@ -161,6 +163,11 @@ export interface TrackerOptions {
   lookContents?: (h: ContentsLook) => boolean;
   /** 위에서 비추기가 끝났는가(src/observe/pipeline.ts topReady): sinceMs 뒤 그 컵 안을 내려다본 VLM 프레임 쌍이 있다. 없으면 위에서 비추기가 끝나지 않는다. */
   topReady?: (objectId: string, sinceMs: number) => boolean;
+  /** 찾기의 비추기가 끝났는가(src/observe/pipeline.ts spotReady): 가까이 보기가 그 자리(트윈 [x, 높이, y])를 sinceMs 뒤 사진으로만 고를 수 있다.
+   *  없으면 비추기가 끝나지 않는다(src/act/track/find.ts). */
+  spotReady?: (position: [number, number, number], sinceMs: number) => boolean;
+  /** 실행 전 검사의 낡음 기준(ms, STALE_MS). 실행 전 찾기가 찾았다고 보는 신선도다. 없으면 3초. */
+  staleMs?: number;
   /** 보기 지킴(src/world/state/world.ts guard): 위에서 비추는 동안 그 컵을 사라짐으로 세지 않게 걸고(true) 그 차례가 끝나면 푼다(false). */
   guardObject?: (objectId: string, on: boolean) => void;
   /** 실제 폰에 승인 대기(가전·외부 연락)가 떠 있는가. 그동안 가까이 가서 보라고 하지 않고 보류에서 풀린 첫 명령도 미룬다. 없으면 없다고 본다. */
@@ -205,6 +212,7 @@ export class ExecutionTracker {
     core.answers = new Answers(core);
     core.coach = new Coach(core);
     core.contents = new ContentsHold(core);
+    core.finder = new Finder(core);
     this.core = core;
   }
 
@@ -298,7 +306,8 @@ export class ExecutionTracker {
     const { steps, safety } = core;
     const r = core.run;
     if (!core.stopped) safety.reminderTick();
-    // 계획 밖 가까이 가서 보기(판단 전 보기 B 뒤에도 모를 때): 계획이 없을 때만 하고, 막는 것이 생기면 거둔다
+    // 계획 전 찾기(대상이 안 보여 막은 판단)가 먼저, 계획 밖 가까이 가서 보기(판단 전 보기 B 뒤에도 모를 때)는 계획·찾기가 없을 때만 하고 막는 것이 생기면 거둔다
+    if (!core.stopped) core.finder.idle();
     if (!core.stopped) core.contents.idle();
     if (core.stopped || !r || !OPEN.has(r.state)) return;
     const now = core.clock.now();
@@ -340,7 +349,9 @@ export class ExecutionTracker {
   stop(): void {
     const core = this.core;
     if (core.run) core.contents.release(core.run);
+    if (core.run) core.finder.release(core.run);
     core.contents.dropIdle();
+    core.finder.drop();
     core.planning?.abort.abort();
     core.planning = null;
     core.run?.stepEnd?.abort();

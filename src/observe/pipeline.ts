@@ -402,23 +402,39 @@ export class ObservationPipeline {
     const detector = this.o.detector;
     if (!detector) return this.closerMiss("no_detector");
     if (this.closing || !this.pool.closerFree()) return this.closerMiss("vlm_busy");
-    const ring = this.ring.frames();
-    const newest = ring.at(-1);
-    const step = vlmStepMs(this.o.config);
-    if (!newest || this.clock.now() - newest.capturedAtMs > closerStaleMs(step)) return this.closerMiss("no_fresh_frames");
-    if (!newest.view) return this.closerMiss("no_view");
-    if (!inView(newest.view, spot.position, LOOK_MARGIN)) return this.closerMiss("out_of_view");
-    const span = closerSpanMs(step);
-    const slow = ring.filter((f) => f.vlm !== false);
-    const newestSlow = slow.at(-1)?.capturedAtMs ?? newest.capturedAtMs;
-    const picked = slow.filter((f) => f.view && newestSlow - f.capturedAtMs <= span && inView(f.view, spot.position, LOOK_MARGIN)).slice(-CLOSER_FRAMES);
-    if (new Set(picked.map((f) => f.id)).size < CLOSER_NEW_FRAMES) return this.closerMiss("no_fresh_frames");
+    const frames = this.closerFrames(spot.position);
+    if (!frames.ok) return this.closerMiss(frames.why);
     this.closing = true;
     try {
-      return await this.look(spot, picked, detector, signal);
+      return await this.look(spot, frames.picked, detector, signal);
     } finally {
       this.closing = false;
     }
+  }
+
+  /** 가까이 보기가 그 자리(트윈 [x, 높이, y])를 볼 장을 고른다(closer와 같은 규칙): 가장 새 프레임이 closerStaleMs 안이고 카메라가 있고 그 자리가 사진 안이며,
+   *  가장 새 VLM 프레임으로부터 closerSpanMs 안에 찍혀 그 자리가 사진 안(LOOK_MARGIN)인 VLM 프레임을 최근 것부터 CLOSER_FRAMES장까지, 서로 다른 장이 CLOSER_NEW_FRAMES장 이상. */
+  private closerFrames(position: [number, number, number]): { ok: true; picked: EngineFrame[] } | { ok: false; why: "no_fresh_frames" | "no_view" | "out_of_view" } {
+    const ring = this.ring.frames();
+    const newest = ring.at(-1);
+    const step = vlmStepMs(this.o.config);
+    if (!newest || this.clock.now() - newest.capturedAtMs > closerStaleMs(step)) return { ok: false, why: "no_fresh_frames" };
+    if (!newest.view) return { ok: false, why: "no_view" };
+    if (!inView(newest.view, position, LOOK_MARGIN)) return { ok: false, why: "out_of_view" };
+    const span = closerSpanMs(step);
+    const slow = ring.filter((f) => f.vlm !== false);
+    const newestSlow = slow.at(-1)?.capturedAtMs ?? newest.capturedAtMs;
+    const picked = slow.filter((f) => f.view && newestSlow - f.capturedAtMs <= span && inView(f.view, position, LOOK_MARGIN)).slice(-CLOSER_FRAMES);
+    if (new Set(picked.map((f) => f.id)).size < CLOSER_NEW_FRAMES) return { ok: false, why: "no_fresh_frames" };
+    return { ok: true, picked };
+  }
+
+  /** 찾기의 비추기가 끝났는가(실행 추적이 본다, src/act/track/find.ts): 가까이 보기가 지금 그 자리를 볼 장을 고를 수 있고(closerFrames), 고른 장이 모두 sinceMs 뒤에 찍혔다.
+   *  그래서 참인 바로 뒤 가까이 보기는 새 사진이 모자라지 않고 비추기 뒤 사진만 본다. */
+  spotReady(position: [number, number, number], sinceMs: number): boolean {
+    if (this.closed) return false;
+    const r = this.closerFrames(position);
+    return r.ok && r.picked.every((f) => f.capturedAtMs >= sinceMs);
   }
 
   private async look(spot: LookSpot, picked: readonly EngineFrame[], detector: Detector, signal: AbortSignal | undefined): Promise<CloserResult> {

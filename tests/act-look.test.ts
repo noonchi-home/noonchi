@@ -169,6 +169,18 @@ describe("보기 담당: 내용물 보류의 가까이 보기(contents)", () => 
     expect(t.looked).toHaveLength(1);
     expect(done).toBe(2);
   });
+  it("찾기의 다시 보기(force): 30초 안에 본 자리도 다시 가까이 보고 까닭은 찾기 글이다", async () => {
+    const t = await setup({ script: () => [["wait", { reason: "x" }]] });
+    let done = 0;
+    const h = { planId: "", objectId: "find_cup", spot: CUP, signal: new AbortController().signal, done: () => { done++; }, force: true as const };
+    expect(t.looker.contents(h)).toBe(true);
+    await t.looker.idle();
+    expect(t.looker.contents(h)).toBe(true);
+    await t.looker.idle();
+    expect(t.looked).toEqual([CUP, CUP]);
+    expect(done).toBe(2);
+    expect(t.looks()[1]).toMatchObject({ trigger: "unknown_fact", tool: "look_closer", reason: LOOK_TEXT.find(CUP.label) });
+  });
   it("위에서 보기(top): 30초 안에 본 컵도 관찰 모드 없이 topLook(그 자리, sinceMs, 신호)을 부르고 look 기록(까닭 「컵 안을 위에서 봄」)과 done 한 번", async () => {
     const calls: [LookSpot, number, AbortSignal | undefined][] = [];
     const top: CloserResult = { ...(CLOSER_FOUND as Extract<CloserResult, { ok: true }>), frames: 2, found: [{ id: "cup_1", cls: "cup", score: 1, facts: ["empty", "empty"] }], top: [{ frame_id: "e8.t1", kept: true }, { frame_id: "e9.t2", kept: false, why: "no_vessel" }] };

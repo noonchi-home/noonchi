@@ -16,6 +16,7 @@ import type { Answers } from "./answers.js";
 import type { Approvals, Asking } from "./approval.js";
 import type { Coach } from "./coach.js";
 import type { ContentsHold, Hold, IdlePeek } from "./contents.js";
+import type { Find, Finder, FindSlot } from "./find.js";
 import type { Cycle, CycleEnd, SafetyTracker } from "./safety.js";
 import type { Starter } from "./start.js";
 import type { Steps } from "./steps.js";
@@ -62,6 +63,8 @@ export interface Run {
   heldIds: Set<string>; busyAt: number | null;
   /** 따르기 창을 연 물건(World State id, src/act/track/steps.ts window). 없으면 null. */
   window: string | null;
+  /** 실행 전 찾기(실행 전 검사가 대상이 안 보여 막은 계획, src/act/track/find.ts). 없으면 null. */
+  find: Find | null;
 }
 
 /** at: 같은 행동 다시 계획 간격(planGapMs)을 세려고 적은 시각. */
@@ -82,6 +85,8 @@ export class TrackCore {
   planning: Job | null = null;
   /** 계획 밖 가까이 가서 보기(판단 전 보기 B 뒤에도 모를 때, src/act/track/contents.ts idle): 명령 id peek:<번호>와 그 상태. 없으면 null. */
   idlePeek: IdlePeek | null = null;
+  /** 계획 전 찾기(계획 전 검사가 대상이 안 보여 막은 판단, src/act/track/find.ts): 명령 id find:<번호>와 그 상태. 없으면 null. */
+  finding: FindSlot | null = null;
   /** 마지막으로 기다리기·기기 단계가 시작된 시각. 그 전에 보낸 다른 행동 판단은 쓰지 않는다. */
   quietFrom = -Infinity;
   stopped = false;
@@ -95,6 +100,7 @@ export class TrackCore {
   answers!: Answers;
   coach!: Coach;
   contents!: ContentsHold;
+  finder!: Finder;
 
   constructor(readonly o: TrackerOptions, readonly clock: { now(): number }, readonly cfg: TrackConfig) {}
 
@@ -109,7 +115,7 @@ export class TrackCore {
   /** 실제 폰에 명령·질문을 띄운 계획: 진행 중이거나 승인 답을 기다리는 중. */
   shown(): (Run & { sent: PlannedCommand }) | null {
     const r = this.run;
-    return !this.stopped && r && r.sent && (r.state === "running" || (r.state === "planned" && (r.asking || r.hold?.peek?.sent))) ? (r as Run & { sent: PlannedCommand }) : null;
+    return !this.stopped && r && r.sent && (r.state === "running" || (r.state === "planned" && (r.asking || r.hold?.peek?.sent || r.find?.sent))) ? (r as Run & { sent: PlannedCommand }) : null;
   }
 
   /** 행동 중 기다리기·기기 단계인가: 그동안 판단(PAM)을 멈추고 다른 행동으로 바꾸지 않는다(src/brain/decide.ts hold). */
