@@ -5,7 +5,7 @@ import { MemoryBus } from "./memory.js";
 
 export async function openBus(env: Record<string, string | undefined>, o: { boot: string; log?: (s: string) => void; onLost: (err: Error) => void }): Promise<Bus> {
   const url = env.REDIS_URL?.trim();
-  if (!url) return new MemoryBus(o.log);
+  if (!url) return new MemoryBus({ warn: o.log });
   const { RedisBus } = await import("./redis.js");
   return RedisBus.connect(url, { boot: o.boot, log: o.log, onLost: o.onLost });
 }

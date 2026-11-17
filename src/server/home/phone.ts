@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { APPROVE } from "../../act/prompts.js";
 import { EXEC_TEXT } from "../../act/labels.js";
 import { matchChoice } from "../../act/tasks.js";
-import { FEEDBACK_TEXT, PHOTO_TEXT } from "../../brain/index.js";
+import { FEEDBACK_TEXT, PHOTO_TEXT, recordFeedback } from "../../brain/index.js";
 import type { BrainLog } from "../../contract/events.js";
 import type { ApprovalAnswer } from "../../contract/phone.js";
 import { eyeHeightOf, floorLookup, homeBounds, readScenePlan } from "../../layout/index.js";
@@ -128,7 +128,7 @@ export async function startPhone(core: HomeCore): Promise<void> {
       const open = tracker?.openCommand();
       const picked = open?.choices.find((c) => c.id === choice);
       if (open && picked && tracker?.onAnswer(id, step, choice)) {
-        history.db.add("feedback", core.nowMs(), FEEDBACK_TEXT.answer(picked.label, open.kind, open.text), { subject: id, data: { choice, via: "button" } });
+        recordFeedback(history.db, { type: "feedback", at_ms: core.nowMs(), subject: id, text: FEEDBACK_TEXT.answer(picked.label, open.kind, open.text), data: { choice, via: "button" } });
       }
     },
     // 들은 말을 에이전트보다 먼저 본다(at: 말할 때 폰에 떠 있던 명령·보인 승인 대기). 「그만」은 실제 폰 명령이 없는 단계(기다리기·기기)에도 계획을 그만둔다.
@@ -155,7 +155,7 @@ export async function startPhone(core: HomeCore): Promise<void> {
       if (approval && at && at.pending.length > 0) return byToken();
       const heard = tracker?.onHeard(text, at) ?? null;
       if (heard?.kind === "answer") {
-        if (open) history.db.add("feedback", core.nowMs(), FEEDBACK_TEXT.answer(text, open.kind, open.text), { subject: open.planId, data: { choice: heard.choice.id, via: "voice" } });
+        if (open) recordFeedback(history.db, { type: "feedback", at_ms: core.nowMs(), subject: open.planId, text: FEEDBACK_TEXT.answer(text, open.kind, open.text), data: { choice: heard.choice.id, via: "voice" } });
         return { handled: true, reply: heard.choice.reply };
       }
       if (heard?.kind === "stale") return stale();

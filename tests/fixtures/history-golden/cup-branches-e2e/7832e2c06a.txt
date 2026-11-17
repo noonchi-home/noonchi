@@ -1,11 +1,11 @@
 # 물이 남은 컵 + 사람 없음 → 컵 치우기(컵을 두고 떠나면 치우는 습관, 내용물과 상관없음): 실제 폰 첫 명령은 「식탁으로 가 주세요」이고 그대로 두기는 고르지 않는다
-decision 대기 valid
-decision 컵 치우기 valid
-detection 컵 cup_1 보임
-execution 계획
-execution 대기
-execution 실행 중
-execution 판단
-vlm 있음
-world VLM: 식탁
-world 컵 cup_1 내용물 있음
+[판단·실행·답] execution 대기
+[판단·실행·답] decision 컵 치우기 valid
+[판단·실행·답] execution 판단
+[판단·실행·답] execution 계획
+[판단·실행·답] execution 실행 중
+[집 상태] world VLM: 식탁
+[집 상태] detection 컵 cup_1 보임
+[집 상태] world 컵 cup_1 내용물 있음
+[있음] decision 대기
+[있음] vlm

@@ -2,8 +2,8 @@
 // 메시지 하나의 기록 줄과 처리표(bus_seen, msgId)는 한 트랜잭션이다(db.once): 다시 온 메시지는 쓰지 않는다. 가전 지난 값(device_last)도 같은 트랜잭션이다.
 // 녹화는 같은 메시지를 다시 남기지 않는다. 다 쓰면 콜백이 끝나 실행기가 ack한다(실패하면 던져 다시 받는다).
 // 녹화하는 SENSOR(record: true)는 커서(mode "all")로 다 읽는다. 사진 토픽과 /bus/dead는 녹화하지 않는다.
-import type { BrainLog } from "../contract/events.js";
-import { deviceRecorder, recordBrainLog, type HistoryDb } from "../brain/index.js";
+import type { BrainLog, FeedbackLog } from "../contract/events.js";
+import { deviceRecorder, recordBrainLog, recordFeedback, type HistoryDb } from "../brain/index.js";
 import { TOPICS, msgId, type BusNode, type TopicName } from "../bus/index.js";
 import type { Bag } from "./bag.js";
 
@@ -17,7 +17,7 @@ export function historyRoutes(node: BusNode, db: HistoryDb, o: { bag?: Bag; now:
     "/world/changes": (b) => logs(b.changes),
     "/brain/decision": (b) => recordBrainLog(db, b as unknown as BrainLog),
     "/brain/link": (b) => recordBrainLog(db, b as unknown as BrainLog),
-    "/act/log": (b) => recordBrainLog(db, b as unknown as BrainLog),
+    "/act/log": (b) => (b.type === "feedback" ? recordFeedback(db, b as unknown as FeedbackLog) : recordBrainLog(db, b as unknown as BrainLog)),
     "/device/changes": (b) => device(b.state as never, b.note as never),
     "/bus/dead": (b) => { db.add("bus_gap", o.now(), `처리하지 못한 메시지: ${String(b.topic)}`, { data: b }); },
   };

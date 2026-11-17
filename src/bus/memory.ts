@@ -4,10 +4,12 @@
 // STATE: 열쇠마다 마지막 하나. 바뀐 열쇠만 표시해 두고 읽을 때 그 열쇠의 지금 값을 준다. 시작할 때 모든 열쇠를 먼저 준다.
 // RELIABLE: 토픽 기록 + 그룹마다 다음 차례·처리 중 하나·전달 횟수. 처리 중인 것이 ack되거나 dead가 될 때까지 뒤 메시지를 주지 않는다.
 // 배달은 늘 다음 차례(setImmediate, 다시 주기는 RETRY_MS 뒤)에 한다: publish 안에서 콜백을 부르지 않는다. quiet()는 예약된 배달이 없는지 본다.
-// 받는 쪽이 거절(reject)하면 "retry"로 본다. 다시 주기는 RETRY_MS가 지난 뒤에만 한다(그 사이 새 메시지가 와도 앞당기지 않는다).
+// 받는 쪽이 거절(reject)하면 "retry"로 본다. 다시 주기는 시계(clock, 기본 실제 시계)로 RETRY_MS가 지난 뒤에만 한다(그 사이 새 메시지가 와도 앞당기지 않는다).
+// 재생은 가상 시계를 넘겨 다시 주기도 가상 시각으로 돈다(장벽은 다시 주기를 기다리지 않고, 시계를 당길 때 돈다).
 // close() 뒤에는 발행·구독을 거절하고 예약된 배달도 돌리지 않는다.
 import { CLOSED, deadBody, gapCounter, MAX_DELIVERIES, RETRY_MS, type Bus, type Deliver, type Subscription } from "./bus.js";
 import { decode, encode, type Envelope } from "./header.js";
+import { realClock, type Clock } from "./clock.js";
 import { TOPICS, type NodeName, type TopicName } from "./topics.js";
 
 type Raw = { id: number; raw: string };
@@ -22,13 +24,18 @@ export class MemoryBus implements Bus {
   readonly #wake = new Map<string, Set<(key: string) => void>>();
   readonly #groups = new Map<string, Map<string, Group>>();
 
-  constructor(private readonly warn: (s: string) => void = (s) => console.error(s)) {}
+  readonly #warn: (s: string) => void;
+  readonly #clock: Clock;
 
-  #later(f: () => void, ms = 0): void {
+  constructor(o: { warn?: (s: string) => void; clock?: Clock } = {}) {
+    this.#warn = o.warn ?? ((s) => console.error(s));
+    this.#clock = o.clock ?? realClock;
+  }
+
+  /** 다음 차례에 배달한다(예약 수를 센다: quiet). */
+  #later(f: () => void): void {
     this.#scheduled++;
-    const go = () => { this.#scheduled--; if (!this.#closed) f(); };
-    if (ms > 0) setTimeout(go, ms);
-    else setImmediate(go);
+    setImmediate(() => { this.#scheduled--; if (!this.#closed) f(); });
   }
 
   /** 예약된 배달이 없다(재생·시험 장벽). 처리 중인 콜백은 노드 쪽(BusNode.busy)이 센다. */
@@ -109,7 +116,7 @@ export class MemoryBus implements Bus {
   }
 
   #pump(topic: TopicName, g: Group): void {
-    if (!g.started || g.busy || !g.deliver || Date.now() < g.retryAt) return;
+    if (!g.started || g.busy || !g.deliver || this.#clock.now() < g.retryAt) return;
     const item = g.pending ?? (this.#log.get(topic) ?? []).find((r) => r.id >= g.next);
     if (!item) return;
     if (g.pending !== item) g.tries = 0;
@@ -123,8 +130,8 @@ export class MemoryBus implements Bus {
         g.tries++;
         if (out === "retry" && g.tries < MAX_DELIVERIES) {   // RETRY_MS 뒤 같은 메시지를 다시 준다. 뒤 메시지는 기다린다
           g.busy = false;
-          g.retryAt = Date.now() + RETRY_MS;
-          this.#later(() => { g.retryAt = 0; this.#pump(topic, g); }, RETRY_MS);
+          g.retryAt = this.#clock.now() + RETRY_MS;
+          this.#clock.after(RETRY_MS, () => { if (this.#closed) return; g.retryAt = 0; this.#pump(topic, g); });
           return;
         }
         if (out === "retry") await this.#dead(topic, g.name, item.raw, g.tries);
@@ -132,12 +139,12 @@ export class MemoryBus implements Bus {
         g.busy = false;
         this.#trim(topic);
         this.#pump(topic, g);
-      }).catch((err: Error) => this.warn(`[통로] ${topic} 배달 마무리 실패(${g.name}): ${err.message}`));
+      }).catch((err: Error) => this.#warn(`[통로] ${topic} 배달 마무리 실패(${g.name}): ${err.message}`));
     });
   }
 
   async #dead(topic: TopicName, group: NodeName, raw: string, tries: number): Promise<void> {
-    if (topic === "/bus/dead") return this.warn(`[통로] /bus/dead 처리 실패(${group}, ${tries}번): 다시 보내지 않아요`);
+    if (topic === "/bus/dead") return this.#warn(`[통로] /bus/dead 처리 실패(${group}, ${tries}번): 다시 보내지 않아요`);
     const e = decode(topic, raw);
     await this.publish({ topic: "/bus/dead", key: topic, header: { ...e.header, node: group }, body: deadBody(topic, group, raw, tries) } as never);
   }

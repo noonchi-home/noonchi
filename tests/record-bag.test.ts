@@ -86,6 +86,24 @@ describe("기록 노드", () => {
     expect(db.list({ kinds: ["detection"] }).map((r) => r.text)).toEqual(["컵 cup_1 보임", "컵 cup_2 보임"]);
   });
 
+  it("/act/log의 사용자 답(feedback)을 기록 DB feedback 줄로 쓴다(반성 입력)", async () => {
+    const bus = new MemoryBus({ warn: () => {} });
+    const db = HistoryDb.open(":memory:");
+    const rec = await startRecorder({ bus, epoch: EPOCH, db });
+    rec.start();
+    const act = new BusNode({ name: "act", bus, epoch: EPOCH, log: () => {} });
+    await act.prepare();
+    act.start();
+    await act.publish("/act/log", { type: "feedback", at_ms: 1000, subject: "plan:pam-1", text: "완료 · 부탁: 식탁으로 가 주세요", data: { choice: "done", via: "button" } });
+    await act.publish("/act/log", { type: "execution", at_ms: 1001, plan_id: "plan:pam-1", state: "done", text: "완료" });
+    await tick(100);
+    await rec.idle();
+    expect(db.list({}).map((r) => [r.kind, r.text, r.subject])).toEqual([
+      ["feedback", "완료 · 부탁: 식탁으로 가 주세요", "plan:pam-1"],
+      ["execution", "완료", "plan:pam-1"],
+    ]);
+  });
+
   it("녹화에 사진 바이트(jpeg_b64)는 남기지 않는다", async () => {
     const path = join(mkdtempSync(join(tmpdir(), "bag-")), "bag.sqlite");
     const bus = new MemoryBus();

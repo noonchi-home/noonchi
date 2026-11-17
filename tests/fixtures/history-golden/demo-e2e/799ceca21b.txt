@@ -1,24 +1,24 @@
 # 6 「라면 끓이는 법 알려 줘」: 첫 명령 「수납장으로 가 주세요」, 6번 「냄비를 인덕션에 올려 주세요」, 7번 전에 승인 질문, 12번은 허브 꺼짐으로 끝나 끄기 안내가 없다. 판단 사건은 코치
-decision 대기 valid
-decision 라면 끓이기 알려 주기 valid
-detection 사람 보임
-device induction_counter_5641ccf0 power "off"→"on"
-device induction_counter_5641ccf0 power "on"→"off"
-execution 계획
-execution 대기
-execution 실행 중
-execution 완료
-execution 판단
-feedback 승인 · 질문: 냄비와 상판이 뜨거워져요. 인덕션을 켤까요?
-feedback 완료 · 부탁: 냄비를 꺼내 주세요
-feedback 완료 · 부탁: 냄비를 인덕션에 올려 주세요
-feedback 완료 · 부탁: 냄비에 물을 받아 주세요
-feedback 완료 · 부탁: 면과 스프를 넣어 주세요
-feedback 완료 · 부탁: 수납장으로 가 주세요
-feedback 완료 · 부탁: 싱크대로 가 주세요
-feedback 완료 · 부탁: 인덕션으로 가 주세요
-vlm 있음
-world VLM: 집
-world 들은 말 있음
-world 주방·식당 인덕션 꺼짐
-world 주방·식당 인덕션 켜짐
+[판단·실행·답] execution 대기
+[판단·실행·답] decision 라면 끓이기 알려 주기 valid
+[판단·실행·답] execution 판단
+[판단·실행·답] execution 계획
+[판단·실행·답] execution 실행 중
+[판단·실행·답] feedback 완료 · 부탁: 수납장으로 가 주세요
+[판단·실행·답] feedback 완료 · 부탁: 냄비를 꺼내 주세요
+[판단·실행·답] feedback 완료 · 부탁: 싱크대로 가 주세요
+[판단·실행·답] feedback 완료 · 부탁: 냄비에 물을 받아 주세요
+[판단·실행·답] feedback 완료 · 부탁: 인덕션으로 가 주세요
+[판단·실행·답] feedback 완료 · 부탁: 냄비를 인덕션에 올려 주세요
+[판단·실행·답] feedback 승인 · 질문: 냄비와 상판이 뜨거워져요. 인덕션을 켤까요?
+[판단·실행·답] feedback 완료 · 부탁: 면과 스프를 넣어 주세요
+[판단·실행·답] execution 완료
+[집 상태] world VLM: 집
+[집 상태] world 들은 말 있음
+[집 상태] detection 사람 보임
+[집 상태] world 주방·식당 인덕션 켜짐
+[집 상태] world 주방·식당 인덕션 꺼짐
+[가전] device induction_counter_5641ccf0 power "off"→"on"
+[가전] device induction_counter_5641ccf0 power "on"→"off"
+[있음] decision 대기
+[있음] vlm

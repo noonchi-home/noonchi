@@ -3,7 +3,7 @@ import type { Envelope, TopicName } from "../src/bus/index.js";
 import { MemoryBus } from "../src/bus/memory.js";
 import { busContract } from "./helpers/bus-contract.js";
 
-busContract("MemoryBus", async () => new MemoryBus(() => {}), { length: async (b, t) => (b as MemoryBus).length(t) });
+busContract("MemoryBus", async () => new MemoryBus({ warn: () => {} }), { length: async (b, t) => (b as MemoryBus).length(t) });
 
 const EPOCH = { boot: "b1", home: "h#1" };
 const env = <N extends TopicName>(topic: N, body: Record<string, unknown>, seq: number, node = "world"): Envelope<N> =>
@@ -12,7 +12,7 @@ const until = async (f: () => boolean, ms = 3000) => { const t0 = Date.now(); wh
 
 describe("MemoryBus", () => {
   it("닫은 뒤에는 예약된 배달이 돌지 않고, 발행·구독을 거절한다", async () => {
-    const bus = new MemoryBus(() => {});
+    const bus = new MemoryBus({ warn: () => {} });
     const got: number[] = [];
     const s = await bus.subscribe("/phone/pose", "world", async (m) => { got.push(m.body.observed_ms as number); return "ack"; });
     s.start();
@@ -25,7 +25,7 @@ describe("MemoryBus", () => {
   });
 
   it("받는 쪽이 거절(reject)해도 다시 주기로 처리하고 줄이 멈추지 않는다", async () => {
-    const bus = new MemoryBus(() => {});
+    const bus = new MemoryBus({ warn: () => {} });
     let calls = 0;
     const got: number[] = [];
     const s = await bus.subscribe("/world/changes", "act", async (m) => {

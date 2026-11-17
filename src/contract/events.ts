@@ -112,6 +112,9 @@ export interface ThoughtEvent { type: "thought"; messages: ThoughtMessage[] }
  *  YOLO 결과(yolo) 또는 yolo_missing, VLM 답(vlm) 또는 vlm_missing. 그 사이 빠른 프레임은 observe 기록 없이 SeenEvent만 낸다.
  *  상자는 싣지 않는다: 물체 모양은 SeenEvent의 마스크로만 간다.
  *  가까이 보기(frame_id 「e3.c1」)의 기록은 잘라 본 자리(closer, 원본 엔진 프레임 픽셀)를 싣는다. */
+/** 사용자 답(실제 폰 「완료」·질문 답·말 답) 한 줄: 반성 피드백. 실행 추적 쪽이 /act/log로 내고 기록 노드가 기록 DB feedback 줄로 쓴다. */
+export interface FeedbackLog { type: "feedback"; at_ms: number; subject: string; text: string; data: { choice: string; via: "button" | "voice" } }
+
 export type BrainLog =
   | {
     type: "observe"; at_ms: number; frame_id: string; captured_at_ms: number; yolo: string | null; yolo_missing?: YoloMissing; vlm: string | null; vlm_missing?: VlmMissing;
