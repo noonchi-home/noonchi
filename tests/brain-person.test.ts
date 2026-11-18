@@ -49,6 +49,22 @@ describe("시간 줄 사람 줄 자료", () => {
     expect(out.every((m) => m.type === "person")).toBe(true);
     expect(lane.last()).toMatchObject({ state: "~reading" });
   });
+  // Codex(1b07d3e2 P2): 새 World State가 「자리에 없음」을 보낸 뒤 그 전 관찰의 PAM 답이 오면 사람 줄이 과거 drinking으로 돌아가고 since_ms가 거꾸로 쌓였다
+  it("더 새 관찰(World State 하는 일·판단)을 받은 뒤 온 그보다 앞선 관찰의 판단은 쓰지 않는다: 사람 줄은 과거 상태로 돌아가지 않고 since_ms는 앞으로만 간다", () => {
+    const out = seen();
+    const lane = new PersonLane({ emit: (m) => out.push(m), memory: () => LEARNED_FSM_MEMORY });
+    lane.onDecision(decisionWith({ id: "pam-1", at_ms: 1_000, fsm: { state: "drinking", from: "away", next_index: 0 } }));
+    lane.onWorld(person({ visible: false }), 3_000);
+    lane.onDecision(decisionWith({ id: "pam-2", at_ms: 2_000, fsm: { state: "drinking", from: null, next_index: -1 } }));   // 3초 전 관찰의 답이 늦게 옴
+    lane.onWorld(person({ facts: act("drinking", 5_000) }), 5_000);
+    lane.onWorld(person({ facts: act("drinking", 5_000) }), 6_000);
+    lane.onDecision(decisionWith({ id: "pam-3", at_ms: 5_500, fsm: { state: "away", from: "drinking", next_index: 0 } }));   // 6초에 본 마시는 중보다 앞선 관찰
+    expect(out.map((m) => [m.state, m.since_ms, m.source, m.decision_id])).toEqual([
+      ["drinking", 1_000, "decision", "pam-1"],
+      ["away", 3_000, "world", null],
+      ["drinking", 5_000, "world", null],
+    ]);
+  });
   it("기억이 없거나(list·판단 전) World State로 상태를 정할 수 없으면 내지 않는다", () => {
     const out = seen();
     const lane = new PersonLane({ emit: (m) => out.push(m), memory: () => null });

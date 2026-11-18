@@ -21,9 +21,12 @@ export function stateOfWorld(memory: FsmMemory, world: Pick<WorldView, "person">
 const nameOf = (state: string) => (state.startsWith(TEMP_STATE) ? STATE_TEXT[state.substring(TEMP_STATE.length)] : FSM_STATE_TEXT[state]) ?? state;
 
 /** 시간 줄 사람 줄 자료: 판단 기록의 fsm.state(PAM 답)와 판단 사이 World State 하는 일(stateOfWorld)로 지금 사람 상태를 갖고, 바뀔 때만 emit한다.
- *  늦은 답(late)은 쓰지 않는다. memory는 판단이 쓰는 그날 기억(fsm이 아니거나 판단 전이면 null: World State로는 정하지 않는다). */
+ *  늦은 답(late)과 이미 받은 관찰보다 앞선 관찰의 판단(판단 atMs가 받은 가장 새 관찰 시각보다 앞섬)은 쓰지 않는다: 사람 줄은 과거 상태로 돌아가지 않고 since_ms는 앞으로만 간다
+ *  (Codex 1b07d3e2 P2). memory는 판단이 쓰는 그날 기억(fsm이 아니거나 판단 전이면 null: World State로는 정하지 않는다). */
 export class PersonLane {
   private now: PersonMessage | null = null;
+  /** 받은 가장 새 관찰 시각(상태를 정한 World State 하는 일·판단의 관찰 시각). */
+  private seenAt = Number.NEGATIVE_INFINITY;
 
   constructor(private readonly o: { emit: (m: PersonMessage) => void; memory: () => FsmMemory | null }) {}
 
@@ -44,6 +47,8 @@ export class PersonLane {
   }
 
   private set(state: string, atMs: number, source: PersonMessage["source"], decision: string | null): void {
+    if (atMs < this.seenAt) return;
+    this.seenAt = atMs;
     if (this.now?.state === state) return;
     this.now = { type: "person", state, name: nameOf(state), since_ms: atMs, source, decision_id: decision };
     this.o.emit(this.now);
