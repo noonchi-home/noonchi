@@ -41,3 +41,37 @@ describe("VLM이 물건에 붙인 사람 사실", () => {
     expect(v.objects.every((o) => o.facts.activity === undefined)).toBe(true);
   });
 });
+
+// 2026-11-18 7541d94 합침: 그릇의 순간 값 drank·poured(caf638f·2a9e8c1)는 같은 장면 사실 넣는 곳을 지난다. 사람 사실만 사람에게 옮기고 순간 값은 그 컵 사건으로 남는다
+describe("VLM이 물건에 붙인 사람 사실과 그릇 사건", () => {
+  const answer = (w: WorldState, at: number, states: string[], from = at - 8000) => w.applyScene(`v${at}`, at, scene(states), new Map(), look, from);
+  const again = (changes: { text: string }[]) => changes.filter((c) => c.text.includes("내용물 다시 확인")).map((c) => c.text);
+
+  it("한 답에서 컵에 붙은 「마시는 중」·「물건을 들고 있음」은 사람 사실로 옮기고, 「마심」(drank)은 그 컵 사건으로 남아 내용물을 다시 연다", () => {
+    const w = ws();
+    answer(w, 1000, [], 1000);
+    answer(w, 2000, [], 1000);
+    for (const t of [3000, 5000, 8000]) answer(w, t, ["has_contents"]);
+    expect(w.view(8000).objects[0]?.facts.contents).toMatchObject({ value: "has_contents", certainty: "confirmed" });
+    for (let t = 8100; t <= 10000; t += 100) w.applyDetections(frame(`e${t}`, t), [PERSON]);
+    expect(w.view(10000).person.visible).toBe(true);
+    expect(again(answer(w, 10050, ["drinking", "holding_object", "drank"]))).toEqual(["컵 cup_1 마심 · 내용물 다시 확인"]);
+    const v = w.view(10050);
+    expect(v.person.facts.activity?.value).toBe("drinking");
+    expect(v.person.facts.holding?.value).toBe("holding_object");
+    expect(v.person.facts).not.toHaveProperty("moment");
+    expect(v.objects[0]?.facts.contents?.certainty).not.toBe("confirmed");
+    expect(v.objects[0]?.facts.activity).toBeUndefined();
+  });
+
+  it("따름(poured)도 사람이 보여도 사람에게 가지 않고 컵 사건이다", () => {
+    const w = ws();
+    answer(w, 1000, [], 1000);
+    answer(w, 2000, [], 1000);
+    for (const t of [3000, 5000, 8000]) answer(w, t, ["has_contents"]);
+    for (let t = 8100; t <= 10000; t += 100) w.applyDetections(frame(`e${t}`, t), [PERSON]);
+    expect(again(answer(w, 10050, ["holding_object", "poured"]))).toEqual(["컵 cup_1 따름 · 내용물 다시 확인"]);
+    expect(w.view(10050).person.facts.holding?.value).toBe("holding_object");
+    expect(w.view(10050).person.facts).not.toHaveProperty("moment");
+  });
+});
