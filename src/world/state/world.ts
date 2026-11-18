@@ -177,8 +177,9 @@ export class WorldState {
     d.followed = { id: t.id, at: d.lastSeen, frame: d.judgedFrame };
   }
 
-  /** 찾기가 겨눈 자리에서 찾은 다른 id의 같은 무리 물건(fromId)을 계획 대상(toId)으로 잇는다(src/act/track/find.ts): 대상이 그 자리·보임·더 새 사실·본 시각을 받고
-   *  확인된 물건이 되며, 그 물건은 사라짐과 옮김 표시(followed_by: 대상)를 남긴다. 대상 id가 유령이었어도 계획은 그 id로 이어 간다.
+  /** 찾기가 겨눈 자리에서 찾은 다른 id의 같은 무리 물건(fromId)을 계획 대상(toId)으로 잇는다(src/act/track/find.ts): 대상이 그 자리·보임·더 새 사실·본 시각과
+   *  그 물건의 내용물 갱신기 상태를 받고(대상의 옛 확인 값은 버린다) 확인된 물건이 되며, 그 물건은 사라짐과 옮김 표시(followed_by: 대상)를 남기고 자리를 잃어
+   *  식별 후보에서 빠진다(Codex P2 5f230c5: 남은 원본이 같은 종류 먼저인 자리 잇기로 되살아났다). 대상 id가 유령이었어도 계획은 그 id로 이어 간다.
    *  둘 중 하나가 없거나, 같은 무리가 아니거나, 그 물건이 사라졌으면 false. */
   relink(fromId: string, toId: string, atMs: number): boolean {
     const core = this.core;
@@ -186,6 +187,11 @@ export class WorldState {
     if (!d || !t || d === t || d.status === "gone" || !sameDrinkware(d.cls, t.cls)) return false;
     Object.assign(t, { position: d.position, surface: d.surface, surfaceLabel: d.surfaceLabel, part: d.part, room: d.room, errorM: d.errorM, posAt: d.posAt, posCloser: d.posCloser, posFrom: d.posFrom });
     for (const [facet, fact] of Object.entries(d.facts)) if (fact && (!t.facts[facet as keyof typeof t.facts] || fact.at_ms > t.facts[facet as keyof typeof t.facts]!.at_ms)) (t.facts as Record<string, unknown>)[facet] = fact;
+    // 내용물은 지금 본 그 물건 것이다: 갱신기 상태와 사실을 함께 옮긴다(그 물건에 없으면 대상 것도 지운다)
+    t.contents = d.contents;
+    if (d.facts.contents) t.facts.contents = d.facts.contents;
+    else delete t.facts.contents;
+    d.contents = null;
     t.confirmed = true;
     t.status = d.status;
     t.goneAt = null;
@@ -198,6 +204,8 @@ export class WorldState {
     d.status = "gone";
     d.goneAt = atMs;
     d.followed = { id: t.id, at: atMs, frame: d.judgedFrame };
+    d.position = null;
+    d.posVote = null;
     return true;
   }
 

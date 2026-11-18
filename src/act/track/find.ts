@@ -20,7 +20,7 @@
 //   계획 밖 가까이 가서 보기보다 먼저다(찾는 동안은 시작하지 않는다). 「그만」은 거두고 그 자리를 쉰다.
 // 실행 전 찾기(Run.find, 계획 명령 줄): 실행 전 검사가 다시 보기 기한(recheckMs)이 지나도 no_target·stale로 막은 계획 대상 하나를 그 마지막 자리에서 찾는다(start.ts tryStart).
 //   막은 그 물건을 찾으면 검사가 다시 통과해 첫 단계로 가고, 그 자리 FIND.matchM 안에서 다른 id의 같은 무리 물건만 찾으면 그 물건을 계획 대상 id로 이어
-//   (World State relink, 대상 id가 유령이었어도) 계획을 잇는다. 잇지 못하면 계획을 「찾은 뒤 다시 판단」으로 닫는다.
+//   (World State relink, 대상 id가 유령이었어도) 계획을 잇는다. 찾기 전부터 따로 있던 물건이거나 잇지 못하면 계획을 「찾은 뒤 다시 판단」으로 닫는다.
 import type { CloserResult, DecisionRecord } from "../../contract/events.js";
 import type { PlannedCommand } from "../../contract/phone.js";
 import type { ObjClass, WorldObject, WorldView } from "../../contract/world.js";
@@ -176,8 +176,12 @@ export class Finder extends Part {
       return "over";
     }
     if (out.kind === "found") this.o.thought?.(FIND_THOUGHT.found(f.name), r.decision.id);
-    // 그 자리의 다른 id 같은 무리 물건: 계획 대상 id로 이어 계획을 잇는다(가로 키 큰 컵 r4·r5: 대상 id가 유령이었다). 잇지 못하면 다시 판단
-    if (out.kind === "found" && out.obj.id !== objectId) return this.o.linkObject?.(out.obj.id, objectId) ? "hold" : "other";
+    // 그 자리의 다른 id 같은 무리 물건: 찾기 중에 처음 본 것이면 계획 대상 id로 이어 계획을 잇는다(가로 키 큰 컵 r4·r5: 대상 id가 유령이었다).
+    // 찾기 전부터 따로 있던 물건(계획을 받을 때 있던 같은 종류, 찾기 시작 전에 처음 본 것)은 다른 물건이라 잇지 않는다(Codex P2 5f230c5). 잇지 못하면 다시 판단
+    if (out.kind === "found" && out.obj.id !== objectId) {
+      const before = !!r.others.get(objectId)?.has(out.obj.id) || out.obj.first_seen_ms < f.startedAt;
+      return !before && this.o.linkObject?.(out.obj.id, objectId) ? "hold" : "other";
+    }
     return "hold";
   }
 
