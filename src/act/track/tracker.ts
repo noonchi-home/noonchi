@@ -130,6 +130,8 @@ export interface TrackerOptions {
   toPhone: (msg: PlannedCommandMessage) => void;
   /** 평면도 물건의 이름과 트윈 자리 [x, 높이, y](명령 대상 고리·가까이 볼 자리, 면이면 윗면 가운데). 모르면 undefined. */
   locate?: (id: string) => { label: string; position: [number, number, number] } | undefined;
+  /** 서버 로그 한 줄(계획 검사에서 버린 계획의 까닭 등). 없으면 남기지 않는다. */
+  log?: (line: string) => void;
   /** 처음 하는 일 묻기를 켜 볼 때만(시험). 없으면 src/agent/approval.ts ASK_FIRST_TIME(끔)이다. */
   askFirst?: boolean;
   /** 이 집의 충전 자리(트윈 자리 [x, 높이, y], twin/data/homes/<집>/dock.json). 없으면(null) 계획이 끝나도 충전 자리로 가지 않는다(src/act/track/dock.ts). */
