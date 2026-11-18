@@ -11,8 +11,9 @@ import { WorldState, loadFallConfig, restsFromLayout, startWorldMirror, startWor
 import { HEARD_MARK } from "../../world/labels.js";
 import type { HomeCore } from "./core.js";
 
-/** 트윈의 식탁·책상·조리대·싱크대 윗면(물건의 트윈 위치). 싱크볼 점(도면 설비 anchors.basin)이 있으면 그 싱크볼도. 배치가 바뀌면 다시 만든다. */
-function surfaceSource(editor: LayoutEditor | undefined): () => PlaneSurface[] {
+/** 트윈의 식탁·책상·조리대·싱크대 윗면(물건의 트윈 위치). 바닥 크기는 배치에 없으면 카탈로그 값(그 면의 실제 사각형). 싱크볼 점(도면 설비 anchors.basin)이 있으면 그 싱크볼도.
+ *  배치가 바뀌면 다시 만든다. */
+export function surfaceSource(editor: LayoutEditor | undefined): () => PlaneSurface[] {
   if (!editor) return () => [];
   let cache: PlaneSurface[] | null = null;
   editor.subscribe(() => { cache = null; });
@@ -22,7 +23,7 @@ function surfaceSource(editor: LayoutEditor | undefined): () => PlaneSurface[] {
     const basin = (o.anchors as { basin?: unknown } | undefined)?.basin;
     return {
       id: o.id, name: o.name, type: o.type, plan: o.plan.position, base: o.position[1],
-      height: c ? Math.max(0, 2 * (c.position[1] - o.position[1])) : o.height ?? 0, footprint: o.footprint,
+      height: c ? Math.max(0, 2 * (c.position[1] - o.position[1])) : o.height ?? 0, footprint: o.footprint ?? editor.typeInfo(o.type)?.footprint,
       facing_deg: o.plan.facing_deg, ...(pair(basin) ? { basin } : {}),
     };
   })));

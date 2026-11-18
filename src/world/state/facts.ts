@@ -12,6 +12,10 @@ import { inBasin, surfacePlace } from "../place.js";
 /** 트윈 면·싱크볼로 놓인 곳을 덮을 때 빼는 투영 오차 여유(m). */
 const TWIN_MARGIN_M = 0.15;
 
+/** 트윈에 없는 면(선반)으로 답한 놓인 곳: 광선이 트윈 면 사각형 안에서 윗면에 닿았으면 끝 가까이여도 그 면이다(가로 키 큰 컵 r5·v1: 식탁 끝 컵을 VLM이
+ *  「선반 위」로 답해 그대로 남았다). 다른 면·바닥으로 답한 것은 투영 오차 여유(TWIN_MARGIN_M)를 뺀 안쪽일 때만 덮는다(Codex 4e682c8 2·3). */
+const NOT_TWIN_SURFACE: ReadonlySet<string> = new Set(["on_shelf"]);
+
 /** 트윈 면으로 알 수 없어 VLM 말을 그대로 쓰는 놓인 곳. */
 const KEEP_VLM_PLACE: ReadonlySet<string> = new Set(["in_hand", "in_sink", "in_dish_rack", "in_fridge"]);
 
@@ -89,16 +93,16 @@ export class SceneFacts extends Part {
   }
 
   /** VLM 놓인 곳 답을 트윈 면으로 바꾼다: 손에 있음·싱크대 안·식기 건조대 안·냉장고 안은 VLM 말 그대로, 그 밖(면 위·바닥)은 물건 자리 아래 트윈 면이 있으면 그 면의 놓인 곳. */
-  private twinPlace(obj: Obj, value: string): string | null {
+  twinPlace(obj: Obj, value: string): string {
     if (value === "in_hand" || !obj.surface) return value;
     const s = this.o.surfaces().find((x) => x.id === obj.surface);
     if (!s) return value;
     if (KEEP_VLM_PLACE.has(value) || !obj.position) return value;
-    // 투영 오차 여유(TWIN_MARGIN_M, 그 물건 오차가 더 크면 그 오차)를 빼고도 안쪽일 때만 트윈으로 덮는다(Codex 4e682c8 2·3: 옆 조리대 컵·긴 식탁 바깥 컵)
+    // 선반이 아닌 값이면 투영 오차 여유(TWIN_MARGIN_M, 그 물건 오차가 더 크면 그 오차)를 빼고도 안쪽일 때만 덮는다(Codex 4e682c8 2·3: 옆 조리대 컵·긴 식탁 바깥 컵)
     const at: [number, number] = [obj.position[0], obj.position[2]];
     // 내려놓기 대상이 목적지 면에 있으면 싱크볼 판정에 투영 오차 여유를 빼지 않는다(가로 머그 r6: 싱크볼 자리를 「바닥」으로 남겼다)
     const placing = this.core.focusOn?.step === "place" && this.core.focusOn.id === obj.id;
-    const margin = placing && obj.part === "basin" ? 0 : Math.max(TWIN_MARGIN_M, obj.errorM ?? 0);
+    const margin = (placing && obj.part === "basin") || NOT_TWIN_SURFACE.has(value) ? 0 : Math.max(TWIN_MARGIN_M, obj.errorM ?? 0);
     // 싱크볼 안은 「싱크대 안」이다: VLM이 다른 면 위(조리대 위 등)로 답해도 싱크볼 안쪽이면 싱크대 안으로 넣는다(가로 머그 r4). 2장 규칙은 그대로다
     if (obj.part === "basin") return s.basin && inBasin(s.basin, at, margin) ? "in_sink" : value;
     const inside = s.rect ? inBasin(s.rect, at, margin) : Math.hypot(at[0] - s.center[0], at[1] - s.center[1]) <= s.radius * 0.8 && (obj.errorM ?? 0) <= TWIN_MARGIN_M;

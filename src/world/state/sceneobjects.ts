@@ -27,6 +27,14 @@ export const REACH_M = NEAR_M;
 const VLM_STILL_M = 0.3;
 /** 상자가 사진 끝에서 이만큼(비율) 안이면 잘린 것으로 본다(아랫변이 놓인 자리가 아닐 수 있다). */
 const EDGE = 0.01;
+/** VLM 상자 아랫변 오차(사진 높이 비율): 광선이 바닥에 닿아도 이만큼 아래(카메라 쪽) 안에서 트윈 면에 닿으면 그 면 자리다. YOLO 감지 바닥 점은 SNAP_UP_DET. */
+const SNAP_UP = 0.04;
+const SNAP_UP_DET = 0.01;
+/** 바닥 자리를 믿는가: 아랫변을 사진 높이 LOOSE_DV만큼 옮겼을 때 자리가 LOOSE_M 넘게 움직이면(먼 바닥을 비스듬히 본 광선) 믿지 않는다. */
+const LOOSE_DV = 0.03;
+const LOOSE_M = 0.5;
+/** VLM 상자로 믿는 바닥 자리의 카메라 수평 거리 한도(m). 트윈 면 위 자리와 YOLO 감지 바닥 점은 이 한도가 없다. */
+const FAR_FLOOR_M = 3;
 /** 움직임을 보는 시간(ms): 이 안의 다른 자리와 견준다. */
 const SETTLE_MS = 3000;
 /** 제자리로 보는 움직임: 트윈 자리 0.15m, 트윈 자리를 모르면 사진 가운데 점이 사진 너비·높이의 5%. */
@@ -55,8 +63,10 @@ export class SceneObjects extends Part {
     /** 이 답이 본 물건(가림 답은 있다는 근거가 아니라 빼고, 사라짐 셈을 막지 않는다). */
     const saw = new Set<string>();
     const said = (id: string) => scene.observations.filter((ob) => ob.object_id === id).map((ob) => ob.state as string);
-    for (const v of blind ? [] : scene.objects ?? []) {
-      if (!OBJ_CLASSES.has(v.cls)) continue;
+    // 한 답 안에서 같은 무리 상자가 크게 겹치면 한 물건이다(가로 유리컵 v1: 한 잔을 상자 둘로 답했다). 겹친 번호는 앞 번호의 물건 id를 받는다
+    const { kept, alias } = dedupe(scene.objects ?? []);
+    // 물건마다 상자·바닥 점 자리를 먼저 낸다
+    const items = (blind ? [] : kept).filter((v) => OBJ_CLASSES.has(v.cls)).map((v) => {
       const cls = v.cls as ObjClass;
       const states = [...said(v.id), ...(v.det ? said(v.det) : [])];
       const lifted = states.includes(POSE_HOLD.object);
@@ -66,14 +76,32 @@ export class SceneObjects extends Part {
       const px: Px | null = look ? (d ? [...d.box] : [v.box.x * look.width, v.box.y * look.height, v.box.w * look.width, v.box.h * look.height]) : null;
       const foot: [number, number] | null = px ? (d?.foot ? [d.foot[0], d.foot[1]] : [px[0] + px[2] / 2, px[1] + px[3]]) : null;
       const edge = !!px && !!look && (px[0] <= EDGE * look.width || px[1] <= EDGE * look.height || px[0] + px[2] >= (1 - EDGE) * look.width || px[1] + px[3] >= (1 - EDGE) * look.height);
-      const spot = look && foot ? placePoint(look.view, foot, { width: look.width, height: look.height }, surfaces, this.o.floorAt) : null;
+      // 바닥 점 자리: 트윈 면을 먼저 맞추고, 상자 높이 오차에 크게 흔들리는 먼 바닥 자리는 믿지 않는다(잇기·자리·새 물건에 쓰지 않음)
+      const spot = look && foot ? this.footSpot(foot, look, surfaces, !!d) : null;
       // 상자 자리: 들렸거나 가렸으면 잇기에만 쓰고(놓인 자리가 아니다) 자리·새 물건에는 쓰지 않는다
       const placed = lifted || hidden ? null : spot;
-      let obj: Obj | null = null;
-      // 든 물건: 실행 추적의 집기 대상이 먼저다(들린 근거: 이 답의 손에 있음). 이을 컵이 모호하면 미룬다(liftTarget null)
-      if (lifted) obj = core.focusTarget(cls, null, used, true) ?? this.liftTarget(cls, eye, used);
-      // 든 물건 잇기가 모호하면 상자 투영 자리로 우회해 잇지도 않는다(Codex e0fb3b8 4)
-      if (!obj && spot?.position && !lifted) obj = core.matchAt(cls, spot.position, used, VLM_MATCH_M);
+      return { v, cls, lifted, hidden, px, edge, spot, placed, obj: null as Obj | null };
+    });
+    // 0차: 든 물건은 실행 추적의 집기 대상이 먼저다(들린 근거: 이 답의 손에 있음). 이을 컵이 모호하면 미룬다(liftTarget null)
+    for (const it of items) {
+      if (!it.lifted) continue;
+      it.obj = core.focusTarget(it.cls, null, used, true) ?? this.liftTarget(it.cls, eye, used);
+      if (it.obj) used.add(it.obj.id);
+    }
+    // 1차: 자리로 잇기(core.matchAt, VLM_MATCH_M 안)를 가까운 짝부터 한다. 같은 답의 먼 상자가 시야 안 물건을 먼저 가져가 가까운 상자가 새 id가 되지 않게(가로 키 큰 컵 v1)
+    // 든 물건 잇기가 모호하면 상자 투영 자리로 우회해 잇지도 않는다(Codex e0fb3b8 4)
+    const near = (it: (typeof items)[number]) => {
+      const hit = it.spot?.position && !it.lifted ? core.matchAt(it.cls, it.spot.position, used, VLM_MATCH_M) : null;
+      return hit && it.spot?.position && hit.position ? dist(hit.position, it.spot.position) : Number.POSITIVE_INFINITY;
+    };
+    for (const it of [...items].sort((x, y) => near(x) - near(y))) {
+      if (!it.spot?.position || it.lifted) continue;
+      it.obj = core.matchAt(it.cls, it.spot.position, used, VLM_MATCH_M);
+      if (it.obj) used.add(it.obj.id);
+    }
+    for (const it of items) {
+      const { v, cls, lifted, hidden, px, edge, spot, placed } = it;
+      let obj = it.obj;
       // 손에 있던 물건이 다른 자리 PUT_DOWN_M 안에 다시 보였다(내려놓음)
       if (!obj && spot?.position && !lifted) obj = core.putDown(cls, spot.position, used);
       // 실행 추적이 지금 집기·내려놓기 하는 대상(들린 컵, 바짝 댄 잔: 그 사진에서 대상 자리가 상자 안에 비침, 목적지에 놓인 컵)
@@ -88,8 +116,8 @@ export class SceneObjects extends Part {
       // 맞추기 전(카메라를 본 적 없음): 자리를 모르니 같은 무리 물건을 처음 본 순서로 잇는다. 손에 든 물건은 같은 종류만(냉장고에서 꺼낸 병이 식탁 컵이 되지 않게)
       if (!obj && !look) obj = this.blindKin(cls, used, lifted);
       // VLM 무조건 우선: YOLO가 못 봤어도 VLM이 본 물건은 있다. 놓인 자리와 그 사진의 폰 눈을 알 때(맞추기 전은 자리 없이) 후보로 만든다.
-      // 손에 든 물건은 놓인 자리가 아니라 카메라가 있으면 만들지 않는다(1인칭 집기: 든 컵이 새 id가 되지 않게)
-      if (!obj && !hidden && (look ? !lifted && !!placed?.position && !!eye : true) && vlmFirst(false, true)) {
+      // 손에 든 물건은 놓인 자리가 아니라 카메라가 있으면 만들지 않는다(1인칭 집기: 든 컵이 새 id가 되지 않게). 사진 끝에 닿은 상자는 놓인 자리를 몰라 만들지 않는다
+      if (!obj && !hidden && (look ? !lifted && !edge && !!placed?.position && !!eye : true) && vlmFirst(false, true)) {
         obj = core.create(cls, at, frameId);
         obj.vlmEye = eye;
       }
@@ -109,6 +137,13 @@ export class SceneObjects extends Part {
       // 움직임·정지 근거(들고 감 보호): 이 사진에서 본 자리(들린 컵은 상자 투영, 모르면 사진 가운데 점)
       const center: [number, number] = px && look ? [(px[0] + px[2] / 2) / look.width, (px[1] + px[3] / 2) / look.height] : [v.box.x + v.box.w / 2, v.box.y + v.box.h / 2];
       this.track(obj, [{ at, frame: frameId, position: spot?.position ?? null, center }]);
+    }
+    for (const [dropped, keep] of alias) {
+      const id = ids.get(keep);
+      if (!id) continue;
+      ids.set(dropped, id);
+      const d = scene.objects?.find((x) => x.id === dropped)?.det;
+      if (d) ids.set(d, id);
     }
     if (!blind) this.unseen(frameId, at, saw, look, changes);
     core.closer.liftHolds(fresh, saw);
@@ -160,6 +195,28 @@ export class SceneObjects extends Part {
     }
   }
 
+  /** 바닥 점(픽셀)의 트윈 자리. 광선이 바닥에 닿았는데 사진 높이 SNAP_UP 안 아래 점(카메라 쪽)이 트윈 면에 닿으면 그 면 자리다(상자 아랫변이 식탁 먼 끝을
+   *  조금 넘었다). 면에 닿지 않은 바닥 자리가 상자 높이 오차(사진 높이 LOOSE_DV)에 LOOSE_M 넘게 흔들리거나, VLM 상자인데 카메라에서 FAR_FLOOR_M 넘으면
+   *  믿지 않는다(null).
+   *  precise: YOLO 감지 바닥 점(마스크)이라 면 맞추기 폭을 SNAP_UP_DET로 줄인다. */
+  private footSpot(foot: [number, number], look: SceneLook, surfaces: PlaneSurface[], precise: boolean): Placed | null {
+    const size = { width: look.width, height: look.height };
+    const at = (dv: number) => placePoint(look.view, [foot[0], foot[1] + dv * look.height], size, surfaces, this.o.floorAt);
+    const p0 = at(0);
+    if (!p0.position || p0.surface) return p0;
+    const up = precise ? SNAP_UP_DET : SNAP_UP;
+    for (let k = 1; k <= 4; k++) {
+      const p = at((up * k) / 4);
+      if (p.position && p.surface) return p;
+    }
+    // VLM 상자만으로는 카메라에서 FAR_FLOOR_M 넘는 바닥 자리를 믿지 않는다(창 너머 발코니 장식, 걷는 동안 어긋난 카메라)
+    const o = look.view.origin;
+    if (!precise && Math.hypot(p0.position[0] - o[0], p0.position[2] - o[2]) > FAR_FLOOR_M) return null;
+    const near = at(LOOSE_DV);
+    if (!near.position) return null;
+    return Math.hypot(near.position[0] - p0.position[0], near.position[2] - p0.position[2]) > LOOSE_M ? null : p0;
+  }
+
   /** 손에 있음으로 답한 물건이 이을 물건: 손에 있는 같은 무리 확인 물건이 하나면 그것(둘 이상이면 모호), 아니면 그 사진의 폰 눈 REACH_M 안의 확인된 같은 무리 물건이
    *  하나일 때 그것(같은 종류가 있으면 같은 종류 중에서). 모호하면 null(잇기를 미룬다). */
   private liftTarget(cls: ObjClass, eye: Plan2 | null, used: ReadonlySet<string>): Obj | null {
@@ -195,12 +252,17 @@ export class SceneObjects extends Part {
     return false;
   }
 
-  /** 그 사진 시야 안의 같은 무리 확인 물건 중 이 답에서 아직 쓰지 않은 것이 하나뿐이면 그것(같은 종류가 있으면 같은 종류 중에서). 둘 이상이면 모호해 null. */
+  /** 그 사진 시야 안의 같은 무리 확인 물건 중 이 답에서 아직 쓰지 않은 것이 하나뿐이면 그것(같은 종류가 있으면 같은 종류 중에서). 둘 이상이면 모호해 null.
+   *  확인 물건이 시야 안에 없으면 확인 전 후보로 같은 규칙을 쓴다(상자 투영이 흔들려 한 물건이 두 후보로 갈라지지 않게). */
   private inViewKin(cls: ObjClass, used: ReadonlySet<string>, view: CameraView): Obj | null {
-    const kin = [...this.core.objects.values()].filter((x) => x.confirmed && x.status !== "gone" && !used.has(x.id) && sameDrinkware(x.cls, cls) && x.position && inView(view, x.position));
-    const same = kin.filter((x) => x.cls === cls);
-    const pool = same.length ? same : kin;
-    return pool.length === 1 ? pool[0]! : null;
+    const one = (confirmed: boolean) => {
+      const kin = [...this.core.objects.values()].filter((x) => x.confirmed === confirmed && x.status !== "gone" && !used.has(x.id) && sameDrinkware(x.cls, cls) && x.position && inView(view, x.position));
+      const same = kin.filter((x) => x.cls === cls);
+      const pool = same.length ? same : kin;
+      return { n: kin.length, hit: pool.length === 1 ? pool[0]! : null };
+    };
+    const sure = one(true);
+    return sure.n ? sure.hit : one(false).hit;
   }
 
   /** 맞추기 전: 이 답에서 아직 쓰지 않은 사라지지 않은 같은 무리 물건(같은 종류 먼저, 확인된 것 먼저, 처음 본 순서). same이면 같은 종류만. */
@@ -289,3 +351,27 @@ export class SceneObjects extends Part {
     }
   }
 }
+
+type SceneObj = NonNullable<SceneObservation["objects"]>[number];
+/** 상자 겹침(IoU, 사진 비율 상자). */
+const iouOf = (a: SceneObj["box"], b: SceneObj["box"]): number => {
+  const x = Math.max(0, Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x));
+  const y = Math.max(0, Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y));
+  const inter = x * y;
+  return inter / (a.w * a.h + b.w * b.h - inter || 1);
+};
+/** 한 답 안에서 같은 물건을 두 번 답한 상자로 보는 겹침. */
+export const SAME_BOX_IOU = 0.5;
+/** 한 답의 VLM 물건에서 앞 물건과 같은 무리이고 상자가 SAME_BOX_IOU 넘게 겹치는 것을 뺀다(서로 다른 감지 번호와 이은 둘은 두지 않는다). alias: 뺀 번호 → 남긴 번호. */
+function dedupe(objects: readonly SceneObj[]): { kept: SceneObj[]; alias: Map<string, string> } {
+  const kept: SceneObj[] = [];
+  const alias = new Map<string, string>();
+  for (const v of objects) {
+    // 서로 다른 YOLO 감지와 이은 물건은 다른 물건이다
+    const same = kept.find((k) => sameDrinkware(k.cls, v.cls) && iouOf(k.box, v.box) >= SAME_BOX_IOU && !(k.det && v.det && k.det !== v.det));
+    if (same) alias.set(v.id, same.id);
+    else kept.push(v);
+  }
+  return { kept, alias };
+}
+
