@@ -351,6 +351,27 @@ export const viz = {
   "touchPins": {
     "a": "#e8590c",
     "b": "#1c7ed6"
+  },
+  "fsm": {
+    "edge": {
+      "color": "#8f847f",
+      "width": 1.5
+    },
+    "out": {
+      "color": "#645b5b",
+      "width": 1.5
+    },
+    "taken": {
+      "color": "#a1143e",
+      "width": 2.5
+    },
+    "ring": {
+      "color": "#8f847f",
+      "width": 1
+    },
+    "dot": "#a1143e",
+    "dotSize": 10,
+    "note": "메시지 상자 FSM 카드(카드 바탕 위 한 겹 선): edge 그 밖의 전이, out 지금 상태에서 나가는 전이, taken 막 지나온 전이, ring 상태 원 테, dot 지나가는 빨간 점"
   }
 } as const;
 

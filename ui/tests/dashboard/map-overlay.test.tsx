@@ -1,9 +1,12 @@
 // 3D 트윈 위 표시 판(MapOverlay): 어둡게 한 방 층은 계획이 오면 묶음마다 미리 만들고 지금 묶음만 보인다. 판 transform은 엔진 카메라가 그림마다 바꾼다.
 // 선·점은 마우스를 받지 않고 점선이 없다. 확인한 기기·물건에만 말풍선이 있다. 클로이드는 SVG가 아니라 엔진의 3D 원뿔(setEye)이 맞춘 눈을 따른다.
-// 동선(계획 경로 길 선)은 그리지 않는다. 목적지·확인한 것 점은 그린다.
+// 계획 길(지나온 길·지금 구간·남은 길)과 단계 번호(①②③④, 지금 단계 brand·끝난 단계 흐림)·지금 단계 이름표·사람 이름표를 그린다(2026-11-18 사용자 결정).
+// 목적지 고리는 그리지 않는다(지금 단계 번호가 그 자리다). 확인한 것 점은 그린다. 목표 글은 트윈에 없다.
 import { act, render, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from "vitest";
 import type { DeviceView, EyeEvent, HealthView, ServerMessage } from "../../../src/contract/events.ts";
+import type { WorldView } from "../../../src/contract/world.ts";
+import run from "../../src/dashboard/fake-run.json";
 import type { Check } from "../../src/dashboard/checks/checks";
 import { coverScale, focusOf, livedOf, toScreen, wideCamera } from "../../src/dashboard/camera";
 import { Dashboard } from "../../src/dashboard/Dashboard";
@@ -44,14 +47,14 @@ function fakeEngine(start: MapCamera) {
   };
 }
 
-function propsAt(n: number, checks: Check[] = n > 0 ? PLAN_CHECKS : []) {
-  const frame = twinFrame({ ...moment(n), checks, anchor: anchorOf, home: HOME, cam: CAM });
+function propsAt(n: number, checks: Check[] = n > 0 ? PLAN_CHECKS : [], world: WorldView | null = null) {
+  const frame = twinFrame({ ...moment(n), checks, anchor: anchorOf, home: HOME, cam: CAM, world });
   const cam = wideCamera(IMAGE, SIZE, focusOf(frame, HOME.shapes), PAD);
   return { frame, checks, cam };
 }
 
-function overlay(n: number, engine: ReturnType<typeof fakeEngine> | null, roomSets = roomSetsOf(PLAN, HOME), checks?: Check[]) {
-  const p = propsAt(n, checks);
+function overlay(n: number, engine: ReturnType<typeof fakeEngine> | null, roomSets = roomSetsOf(PLAN, HOME), checks?: Check[], world: WorldView | null = null) {
+  const p = propsAt(n, checks, world);
   return <MapOverlay {...p} shapes={HOME.shapes} roomSets={roomSets} image={IMAGE} size={SIZE} engine={engine} devices={devices} objects={objects} moveMs={0} blocked={[]} />;
 }
 
@@ -102,7 +105,7 @@ describe("트윈 위 표시 판", () => {
     const { container } = render(overlay(3, null));
     const root = container.firstElementChild as HTMLElement;
     expect(root).toHaveClass("pointer-events-none");
-    for (const sel of ["[data-target]", `[data-mark="${SINK}"]`]) {
+    for (const sel of ['[data-line="now"]', "[data-stop]", "[data-step-tag]", `[data-mark="${SINK}"]`]) {
       const el = container.querySelector(sel);
       expect(el, sel).not.toBeNull();
       expect(el!.closest(".pointer-events-none")).not.toBeNull();
@@ -120,15 +123,36 @@ describe("트윈 위 표시 판", () => {
     expect(container.querySelector('[fill^="url("]')).toBeNull();
   });
 
-  it.each([0, 1, 2, 3, 4])("순간 %i: 동선(지나온 길·남은 길·지금 구간 길 선)은 그리지 않는다. 판에는 어둡게 한 방·밝힌 방 테두리·목적지·확인한 것 점만 있다", (n) => {
+  it.each([0, 1, 2, 3, 4])("순간 %i: 판에는 어둡게 한 방·밝힌 방 테두리·계획 길·확인한 것 점만 있다. 계획이 있으면 길을 그리고 목적지 고리는 없다", (n) => {
     const { frame } = propsAt(n);
     expect(frame.route.points.length > 0).toBe(n > 0);
     const { container } = render(overlay(n, null));
     const plate = container.querySelector("[data-map-plate]")!;
-    expect(plate.querySelector("[data-line]")).toBeNull();
+    expect(!!plate.querySelector("[data-line]")).toBe(n > 0);
     const kinds = [...plate.children].map((el) => (el as HTMLElement).dataset);
-    for (const d of kinds) expect(d.mapDim !== undefined || d.roomEdge !== undefined || d.target !== undefined || d.mark !== undefined, JSON.stringify(d)).toBe(true);
-    expect(!!plate.querySelector("[data-target]")).toBe(!!frame.target);
+    for (const d of kinds) expect(d.mapDim !== undefined || d.roomEdge !== undefined || d.line !== undefined || d.mark !== undefined, JSON.stringify(d)).toBe(true);
+    expect(plate.querySelector("[data-target]")).toBeNull();
+  });
+
+  it("순간 3(싱크대로 가기): 지나온 길과 지금 구간이 있고, 번호 넷 중 지금 3번만 brand, 끝난 1·2번은 흐림, 남은 4번은 회색이며 지금 단계 이름표는 「③ 싱크대로 가기」다", () => {
+    const { container } = render(overlay(3, null));
+    expect([...container.querySelectorAll<HTMLElement>("[data-map-plate] [data-line]")].map((l) => l.dataset.line)).toEqual(["done", "now"]);
+    const stops = [...container.querySelectorAll<HTMLElement>("[data-stop]")];
+    expect(stops.map((s) => [s.dataset.stop, s.dataset.status, s.querySelector("[data-tone]")?.getAttribute("data-tone"), s.style.opacity])).toEqual([
+      ["1", "done", "brand", "0.4"], ["2", "done", "brand", "0.4"], ["3", "active", "brand", "1"], ["4", "pending", "off", "1"],
+    ]);
+    expect(stops[2]).toHaveAttribute("data-now");
+    expect(container.querySelector("[data-step-tag]")).toHaveTextContent("③ 싱크대로 가기");
+    expect(container.querySelector("[data-step-tag] [data-slot=status]")).toHaveAttribute("data-variant", "brand");
+    expect(container).not.toHaveTextContent("목표");
+  });
+
+  it("World State 사람 자리가 있으면 그 자리 위에 「사람 · 마시는 중」 이름표(Status)가 있다. 없으면 이름표가 없다", () => {
+    const world = (run.moments[0]!.messages as ServerMessage[]).flatMap((m) => (m.type === "world" ? [m.world] : []))[0]!;
+    const { container, unmount } = render(overlay(0, null, undefined, undefined, world));
+    expect(container.querySelector("[data-person-tag]")).toHaveTextContent("사람 · 마시는 중");
+    unmount();
+    expect(render(overlay(0, null)).container.querySelector("[data-person-tag]")).toBeNull();
   });
 
   it("표시는 21st.dev Line Draw SVG를 겹친 것이고, 한 장은 받은 코드처럼 path 하나만 그린다", () => {
@@ -137,7 +161,7 @@ describe("트윈 위 표시 판", () => {
     const svgs = [...plate.querySelectorAll("svg")];
     expect(svgs.length).toBeGreaterThan(0);
     for (const svg of svgs) expect([...svg.children].map((c) => c.tagName.toLowerCase())).toEqual(["path"]);
-    expect(container.querySelector("[data-target]")!.querySelectorAll("svg")).toHaveLength(6);
+    expect(container.querySelector('[data-line="now"]')!.querySelectorAll("svg")).toHaveLength(3);
     expect(container.querySelector(`[data-mark="${SINK}"]`)!.querySelectorAll("svg")).toHaveLength(3);
   });
 
@@ -245,15 +269,14 @@ describe("대시보드 구운 트윈 위 표시", () => {
     Object.defineProperty(HTMLElement.prototype, "offsetHeight", height);
   });
 
-  it("?debug=steps면 트윈 위 표시도 그 순간 것이고 서버 계획은 쓰지 않는다: 순간 3은 목적지·클로이드 원뿔·주방 묶음(동선 없음), 순간 0은 목적지 없이 집 전체", async () => {
+  it("?debug=steps면 트윈 위 표시도 그 순간 것이고 서버 계획은 쓰지 않는다: 순간 3은 계획 길·번호·클로이드 원뿔·주방 묶음, 순간 0은 길 없이 집 전체와 사람 이름표", async () => {
     history.replaceState(null, "", "/?debug=steps&step=3");
     const { container } = render(<Dashboard />);
     await waitFor(() => expect(load).toHaveBeenCalled());
     await waitFor(() => expect(engine.setEye.mock.calls.at(-1)?.[0]).toEqual(moment(3).eye));
     // 표시 판의 클로이드 자리는 엔진이 원뿔을 그리는 자리(stand)로 묻고, 엔진에는 받은 눈을 그대로 넣는다
     expect(engine.stand.mock.calls.at(-1)?.[0]).toEqual(moment(3).eye!.position);
-    for (const sel of ["[data-target]", `[data-mark="${SINK}"]`]) expect(container.querySelector(sel), sel).not.toBeNull();
-    expect(container.querySelector("[data-map-plate] [data-line]")).toBeNull();
+    for (const sel of ["[data-map-plate] [data-line]", "[data-stop]", `[data-mark="${SINK}"]`]) expect(container.querySelector(sel), sel).not.toBeNull();
     const lit = () => [...container.querySelectorAll<HTMLElement>("[data-map-dim]")].filter((d) => d.style.opacity === "1").map((d) => d.dataset.mapDim);
     expect(lit()).toEqual(["kitchen+living"]);
     const cover = coverScale(IMAGE, SIZE);
@@ -265,7 +288,9 @@ describe("대시보드 구운 트윈 위 표시", () => {
     expect(lit()).toEqual(["kitchen+living"]);
     expect(engine.setView.mock.calls.at(-1)).toBe(moved);
     act(() => window.__dash!.step(0));
-    await waitFor(() => expect(container.querySelector("[data-target]")).toBeNull());
+    await waitFor(() => expect(container.querySelector("[data-stop]")).toBeNull());
+    expect(container.querySelector("[data-map-plate] [data-line]")).toBeNull();
+    expect(container.querySelector("[data-person-tag]")).toHaveTextContent("사람 · 마시는 중");
     expect(engine.setEye.mock.calls.at(-1)![0]).toEqual(moment(0).eye);
     expect(container.querySelector("[data-robot]")).toBeNull();
     expect(lit()).toEqual([]);
@@ -294,7 +319,7 @@ describe("대시보드 구운 트윈 위 표시", () => {
     expect(engine.resize.mock.calls.length).toBe(resized);
   });
 
-  it("계획·맞춘 눈이 오면 트윈 위에 목적지·확인한 것을 그리고(동선은 그리지 않음), 3D 원뿔이 맞춘 눈을 따르며, 카메라가 그 단계로 옮긴다", async () => {
+  it("계획·맞춘 눈이 오면 트윈 위에 계획 길·단계 번호·확인한 것을 그리고, 3D 원뿔이 맞춘 눈을 따르며, 카메라가 그 단계로 옮긴다", async () => {
     const { container } = render(<Dashboard />);
     await waitFor(() => expect(load).toHaveBeenCalled());
     await waitFor(() => expect(FakeSocket.last).not.toBeNull());
@@ -311,8 +336,7 @@ describe("대시보드 구운 트윈 위 표시", () => {
       FakeSocket.last!.push({ type: "eye", eye });
     });
     await waitFor(() => expect(engine.setEye.mock.calls.at(-1)?.[0]).toEqual(eye));
-    for (const sel of ["[data-target]", `[data-mark="${SINK}"]`]) expect(container.querySelector(sel), sel).not.toBeNull();
-    expect(container.querySelector("[data-map-plate] [data-line]")).toBeNull();
+    for (const sel of ["[data-map-plate] [data-line]", "[data-stop]", `[data-mark="${SINK}"]`]) expect(container.querySelector(sel), sel).not.toBeNull();
     expect(container.querySelector("[data-robot]")).toBeNull();
     const dims = [...container.querySelectorAll<HTMLElement>("[data-map-dim]")];
     expect(dims.filter((d) => d.style.opacity === "1").map((d) => d.dataset.mapDim)).toEqual(["kitchen+living"]);
@@ -324,9 +348,10 @@ describe("대시보드 구운 트윈 위 표시", () => {
     expect(engine.setView.mock.calls.at(-1)).toBe(moved);
     expect(engine.setEye.mock.calls.length).toBe(eyes);
     expect(engine.setEye.mock.calls.some(([e]) => e?.estimated)).toBe(false);
-    // 계획이 끝나면 목적지·어둡게 한 층이 없어진다
+    // 계획이 끝나면 길·번호·어둡게 한 층이 없어진다
     act(() => FakeSocket.last!.push({ type: "plan", plan: { ...plan!, revision: plan!.revision + 1, status: "done" } }));
-    await waitFor(() => expect(container.querySelector("[data-target]")).toBeNull());
+    await waitFor(() => expect(container.querySelector("[data-stop]")).toBeNull());
+    expect(container.querySelector("[data-map-plate] [data-line]")).toBeNull();
     expect(container.querySelector("[data-map-dim]")).toBeNull();
   });
 });

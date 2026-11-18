@@ -3,13 +3,15 @@ import { CLASSES } from "../../../src/world/vocab.ts";
 
 export const WORDS = {
   waiting: "기다리는 중",
-  /** 메시지 상자: 알약 앞말(상태·트리거·액션), 대기 판단의 트리거·액션, 규칙 없이 고른 행동·규칙이 여럿인 행동의 트리거, 오른쪽 아래 이어짐 표시. */
-  pill: { state: "상태", trigger: "트리거", action: "액션", goal: "목표" },
-  idle: "대기",
-  unknown: "모름",
-  noRule: "규칙 없음",
-  manyRules: "규칙 여럿",
+  /** 메시지 상자 오른쪽 아래 이어짐 표시. */
   more: "▼",
+  /** 메시지 상자 FSM 카드: 하는 일이 없는 상태, 행동이 여럿일 때 「<첫 행동> 외 N」. */
+  fsm: { watch: "지켜봄", more: "외" },
+  /** 목표 한 줄 「목표 · <행동> · <단계>」(goal-line.ts): 세움 → 준비됨 → 시작 → 끝/버림. */
+  goal: { head: "목표", stage: { set: "세움", ready: "준비됨", started: "시작", done: "끝", dropped: "버림" } },
+  /** 트윈 위 사람 이름표 「사람 · …」: 하는 일·자세를 모를 때, 안 보일 때. */
+  personSeen: "보임",
+  personGone: "안 보임",
   /** 마스코트 머리 위 모드 말풍선. */
   mode: { noonchi: "눈치 모드", coach: "코치 모드" },
   newHabit: "새로 배운 습관이에요",

@@ -9,6 +9,10 @@ import { hubOf } from "../../src/lib/hub";
 import { createSeenStore, type SeenStore } from "../../src/dashboard/masks";
 import type { PhoneSlot } from "../../src/dashboard/PhonePane";
 import type { Talk } from "../../src/dashboard/data";
+import type { FsmNow } from "../../src/dashboard/fsm";
+import type { GoalLine } from "../../src/dashboard/goal-line";
+import { CUP_FSM_MEMORY } from "../../../src/brain/decision.ts";
+import { habitView } from "../../../src/brain/habit.ts";
 import { taskOf } from "../../../src/act/tasks.ts";
 import { BOX_NAME } from "../../src/dashboard/words";
 import type { SeenEvent } from "../../../src/contract/events.ts";
@@ -97,14 +101,18 @@ export const MESSAGES = [
   { id: "pam-1@1794214809000:0", text: "컵을 두고 자리를 뜨면 치워도 된다고 하셨어요" },
   { id: "say#1", text: "식탁 컵을 치울게요." },
 ];
-/** 컵 치우기 규칙대로 고른 판단의 알약 셋(상태 이름·트리거·액션). */
-export const PILLS = { state: "컵을 두고 자리를 뜸", trigger: "사용자가 컵을 식탁 등에 두고 자리를 비웠고, 아무도 컵을 들거나 만지지 않는다.", action: "컵 치우기" };
-/** 대기 판단의 알약 셋(처음 상태, 트리거·액션은 대기). */
-export const WAIT_PILLS = { state: "먹거나 마시는 중", trigger: "대기", action: "대기" };
-/** 계획 단계의 메시지 상자(다듬은 생각 두 줄과 알약 셋). */
-export const TALK: Talk = { lines: MESSAGES, fsm: PILLS };
-/** 지켜보기의 메시지 상자(말풍선 카드 말 한 줄과 대기 알약). */
-export const WATCH_TALK: Talk = { lines: [{ id: "say@0:0", text: "지켜보고 있어요." }], fsm: WAIT_PILLS };
+/** 계획 단계의 메시지 상자(다듬은 생각 두 줄). */
+export const TALK: Talk = { lines: MESSAGES };
+/** 지켜보기의 메시지 상자(말풍선 카드 말 한 줄). */
+export const WATCH_TALK: Talk = { lines: [{ id: "say@0:0", text: "지켜보고 있어요." }] };
+/** 시연 습관 FSM 그림(서버 src/brain/habit.ts habitView, 판본 1). */
+export const HABIT = habitView(CUP_FSM_MEMORY, 1);
+/** 지켜보기의 FSM 카드: 마시는 중(처음 상태), 하는 일 없음. */
+export const FSM_WATCH: FsmNow = { habit: HABIT, state: "drinking", from: null, doing: null };
+/** 지켜보기의 목표 한 줄: 컵 치우기 계획을 준비해 둠. */
+export const GOAL_READY: GoalLine = { stage: "ready", text: "목표 · 컵 치우기 · 준비됨" };
+/** 계획 단계의 FSM 카드: 마시는 중에서 넘어온 컵을 두고 자리를 뜸, 컵 치우기 중, 목표는 씀. */
+export const FSM_CLEAR: FsmNow = { habit: HABIT, state: "left_cup", from: "drinking", doing: CLEAR_CUP };
 
 /** 컵 갈래 판단 고정 자료: 행동, 그 규칙이 있는 FSM 상태 id·트리거(src/brain/decision.ts CUP_FSM_MEMORY와 같다, data.test.ts가 견준다), PAM의 생각 한 문장. */
 export interface Branch { action: string; state: string; trigger: string; reasoning: string }
@@ -160,7 +168,7 @@ export function screenAt(n: number, over: Partial<ScreenProps> = {}): ScreenProp
   return {
     index: n, plan, step: plan ? plan.steps[n - 1]! : null, robotKnown: true, connected: true, map: MAP, mapReady: true,
     phone: imageSlot(), seen: seenOf([BOX]),
-    talk: n > 0 ? TALK : WATCH_TALK, mode: n > 0 ? "noonchi" : null, hub: HUB,
+    talk: n > 0 ? TALK : WATCH_TALK, fsm: n > 0 ? FSM_CLEAR : FSM_WATCH, goal: n > 0 ? null : GOAL_READY, mode: n > 0 ? "noonchi" : null, hub: HUB,
     ...over,
   };
 }

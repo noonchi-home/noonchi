@@ -1,5 +1,6 @@
-// 미리 그려 보기: 화면이 뜰 때 트윈 첫 그림 뒤 한 번만, 단계가 바뀔 때 새로 그리는 칸(할 일 진행도 알약)을 거의 투명하게 그려
-// GPU 첫 일(타일 그리기·셰이더 만들기)을 끝내 둔다. 다 그린 뒤에 data-ready를 달고 onReady를 부른다. 단계가 바뀔 때는 하지 않는다.
+// 미리 그려 보기: 화면이 뜰 때 트윈 첫 그림 뒤 한 번만 PREDRAW_FRAMES 그림을 기다려 GPU 첫 일(타일 그리기·셰이더 만들기)을 끝내 둔다
+// (트윈 표시 판의 이름표·말풍선 층은 그동안 따로 합성해 그려 본다, MapOverlay). 다 그린 뒤에 data-ready를 달고 onReady를 부른다. 단계가 바뀔 때는 하지 않는다.
+// 할 일 진행도 알약이 없어(2026-11-18 사용자 결정) 화면 틀이 따로 미리 그리는 칸(data-predraw)은 없다.
 import { act, render } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DashboardScreen, type ScreenProps } from "../../src/dashboard/DashboardScreen";
@@ -35,7 +36,6 @@ describe("미리 그려 보기", () => {
     expect(main).not.toHaveAttribute("data-ready");
 
     view.rerender(draw(screenAt(2)));
-    expect(predraws(view.container).length).toBeGreaterThan(0);
     expect(main).not.toHaveAttribute("data-ready");
     expect(onReady).not.toHaveBeenCalled();
 
@@ -45,23 +45,10 @@ describe("미리 그려 보기", () => {
     expect(onReady).toHaveBeenCalledTimes(1);
   });
 
-  it("미리 그리는 칸은 거의 투명하고 마우스를 받지 않으며 화면을 가리지 않는다(가림판 아님)", () => {
-    const view = render(<DashboardScreen {...screenAt(2)} />);
-    const layers = [...predraws(view.container)] as HTMLElement[];
-    expect(layers.length).toBeGreaterThan(0);
-    for (const el of layers) {
-      expect(Number(el.style.opacity)).toBeGreaterThan(0);
-      expect(Number(el.style.opacity)).toBeLessThanOrEqual(0.02);
-      expect(el.className).toMatch(/(^|\s)pointer-events-none(\s|$)/);
-      expect(el).toHaveAttribute("aria-hidden", "true");
-    }
-    expect(view.container.querySelector("[data-veil]")).toBeNull();
-  });
-
-  it("계획 전 지켜보기에서 떠도 진행도 알약 모양을 미리 그려 본다", () => {
+  it("미리 그려 보는 동안에도 화면을 가리는 칸(가림판·진행도 알약 모양)이 없다", () => {
     const view = render(<DashboardScreen {...screenAt(0)} />);
-    expect(view.container.querySelector("[data-progress]")).toBeNull();
-    expect(view.container.querySelector("[data-predraw] [data-slot=liquid-glass]")).not.toBeNull();
+    expect(predraws(view.container)).toHaveLength(0);
+    expect(view.container.querySelector("[data-veil], [data-progress]")).toBeNull();
   });
 
   it("단계가 바뀔 때는 미리 그려 보지 않고 onReady도 다시 부르지 않는다", () => {

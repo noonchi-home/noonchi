@@ -11,6 +11,8 @@ import { TwinStage, useAnchors, type TwinEngine, LiveQueue, attachLive, BAKE_VIE
 import { useViewer } from "../lib/twin-viewer";
 import { focusOf, homeCamera, homeKeep, livedOf, still, wholeOf, wideCamera, type Camera } from "./camera";
 import { currentStep, isOpen, modeNow, stepIndex, talkOf } from "./data";
+import { fsmOf } from "./fsm";
+import { goalLineOf } from "./goal-line";
 import { DashboardScreen } from "./DashboardScreen";
 import { debugPhone, debugQuery, useDebugSteps, type Moment } from "./debug";
 import { roomSetsOf, twinFrame } from "./frame";
@@ -115,8 +117,8 @@ function BakedStage({ home, layout, plan, eye, checks, devices, onEngine: toLive
   // 말풍선·이름표가 비킬 클로이드 자리는 원뿔을 그리는 자리(방 안·벽에서 떨어진 자리)다. 엔진에는 받은 눈을 그대로 넣는다
   const drawn = useMemo(() => (eye && engine && !eye.estimated ? { ...eye, position: engine.stand(eye.position) } : eye), [eye, engine]);
   const frame = useMemo(
-    () => (v && homeData ? twinFrame({ plan, eye: drawn, checks: list, anchor: (id) => engine?.anchor(id) ?? null, home: homeData.index, cam: v }) : null),
-    [v, homeData, plan, drawn, list, engine],
+    () => (v && homeData ? twinFrame({ plan, eye: drawn, checks: list, anchor: (id) => engine?.anchor(id) ?? null, home: homeData.index, cam: v, world: checks.world ?? null }) : null),
+    [v, homeData, plan, drawn, list, engine, checks.world],
   );
   const roomSets = useMemo(() => (frame?.plan && homeData ? roomSetsOf(frame.plan, homeData.index) : []), [frame?.plan, homeData]);
   // 집 전체(모든 방)는 가장 먼 보기, 사람이 있는 방(거실·주방·식당)은 지켜보기 기본 보기가 얹은 것 밖에 두는 곳이다
@@ -242,11 +244,14 @@ export function Dashboard() {
   const plan = isOpen(dash.plan) ? dash.plan : null;
   // talkOf가 읽는 것 모두: 판단·줄·안전 알림·계획(머리)·행동별 모드
   const talk = useMemo(() => talkOf(dash), [dash.decision, dash.talk, dash.safety]);
+  // FSM 카드가 읽는 것: 습관 그림·판단으로 쌓은 지금 상태. 목표 한 줄은 목표·계획
+  const fsm = useMemo(() => fsmOf(dash), [dash.habit, dash.fsmAt]);
+  const goal = useMemo(() => goalLineOf(dash), [dash.goal, dash.plan]);
   const mode = modeNow(dash);
   return (
     <DashboardScreen
       index={stepIndex(plan)} plan={plan} step={currentStep(plan)} robotKnown={dash.eye !== null} connected={online} map={map} mapReady={mapReady}
-      phone={phone} seen={seen} talk={talk}
+      phone={phone} seen={seen} talk={talk} fsm={fsm} goal={goal}
       mode={mode} hub={hub} settingsOpen={debug?.settings} onReady={onScreenReady} tzMinutes={health?.tz_minutes ?? null}
     />
   );

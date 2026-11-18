@@ -4,7 +4,7 @@
 //   단추 아래 끝이 화면 밑 선이고 그림은 그 아래로 이어진다), 생각 말풍선은 마스코트 위(크기 고정)이고 꼬리 점 둘이 마스코트로 이어진다.
 //   말풍선 카드는 트윈 아래쪽, 마스코트 왼쪽까지다(크기는 말풍선 글 두 줄에 맞춰 정해져 있다).
 //   마스코트를 좌우로 뒤집어도(행동하는 동안, Mascot.tsx) 단추 가운데 축을 중심으로 뒤집어 단추 자리는 그대로다.
-// 지도 카메라는 그 단계에 중요한 것(길·목적지·클로이드·확인한 기기 말풍선·방 이름표)을 진행도 아래·말풍선 카드 위·미니맵과 생각 말풍선 왼쪽 칸(focus)에 맞춰,
+// 지도 카메라는 그 단계에 중요한 것(길·목적지·클로이드·확인한 기기 말풍선·방 이름표)을 트윈 위쪽 여백 아래·메시지 상자 위·미니맵과 마스코트 왼쪽 칸(focus)에 맞춰,
 //   얹은 것(가린 자리 blocked) 밑에 깔리지 않게 한다.
 // 여백은 디자인 토큰(layout, 1680px부터 hub1920 값)이다. 글 줄 높이는 부품 글 크기(text-sm 줄 20px, 말풍선 카드 Item say text-base 줄 24px)라 화면 너비와 상관없다.
 // 자리는 화면 크기와 미니맵 영상 비율로만 정해지고 단계와 상관없다. 영상 비율이 바뀌면(폰을 돌림·영상 종류가 바뀜) 미니맵 높이만 바뀐다.
@@ -26,7 +26,7 @@ export interface PageLayout {
   scale: number;
   /** 트윈 칸(화면 전체, 여백 안). 지도는 이 칸을 꽉 채운다. */
   twin: Rect;
-  /** 지도 카메라가 그 단계에 중요한 것을 맞출 칸(진행도 아래·말풍선 카드 위·미니맵과 생각 말풍선 왼쪽)과, 그 칸의 트윈 기준 여백. */
+  /** 지도 카메라가 그 단계에 중요한 것을 맞출 칸(트윈 위쪽 여백 아래·메시지 상자 위·미니맵과 마스코트 왼쪽)과, 그 칸의 트윈 기준 여백. */
   focus: Rect;
   camPad: Pad;
   /** 지도 위에 얹어 지도를 가리는 자리: [메시지 상자, 마스코트 단추(초점 고리 포함), 미니맵]. */
@@ -73,11 +73,16 @@ export const MASCOT_SHARE = 0.3;
 const HEAD_ROOM = LIFT + 2;
 /** 부품 원래 글(text-sm 14px)의 줄 높이(px). 화면 너비로 커지지 않는다. */
 export const TEXT_LINE = 20;
-/** 메시지 상자 높이(px): Item sm 위아래 여백(py-3) 24 + 테두리 2 + 머리 줄(모드·알약 Status) 24 + 사이 4 + 문장 세 줄(20씩)과 사이 둘(4씩) 68 + 둘레 여유 6 = 128.
- *  화면 크기·글 길이와 상관없다. */
-export const TALK_H = 128;
-/** 지도 카메라 칸: 위는 할 일 진행도(top-4 16 + 알약 44) 아래 20, 왼쪽은 40, 얹은 것(말풍선 카드·미니맵·생각 말풍선·마스코트)과는 FOCUS_GAP 떨어진다. */
-const FOCUS_TOP = 80;
+/** 메시지 상자 높이(px): 마스코트 눈 높이쯤(1280×800에서 상자 아래 끝부터 눈까지 약 176). Item sm 위아래 여백(py-3) 24 + 테두리 2 + FSM 카드(FSM_CARD_H) 140 + 여유 4 = 170.
+ *  문장 세 줄(20씩, 사이 4씩 68)은 상자 가운데 높이에 선다. 화면 크기·글 길이와 상관없다. */
+export const TALK_H = 170;
+/** 메시지 상자 오른쪽 FSM 카드 크기(px): 상태 원(88)과 그 위아래 글·고리 자리. 화면 크기와 상관없다(글은 부품 원래 크기). */
+export const FSM_CARD_W = 460;
+export const FSM_CARD_H = 140;
+/** 메시지 상자 안 FSM 카드 크기: 상자가 좁으면(너비 절반 아래) 절반으로 줄인다. */
+export const fsmCardBox = (bubble: Pick<Rect, "width">) => ({ width: Math.max(0, Math.min(FSM_CARD_W, Math.floor(bubble.width / 2))), height: FSM_CARD_H });
+/** 지도 카메라 칸: 위는 칩 줄(top-4 16 + 칩 28) 아래 4(할 일 진행도 알약은 없다), 왼쪽은 40, 얹은 것(메시지 상자·미니맵·마스코트)과는 FOCUS_GAP 떨어진다. */
+const FOCUS_TOP = 48;
 const FOCUS_LEFT = 40;
 const FOCUS_GAP = 24;
 /** 미니맵·생각 말풍선 쪽은 더 띄운다: 칸 오른쪽 끝에 맞춘 대상의 확인 말풍선(가로 약 176, 꼬리 끝 가운데)이 미니맵 밑에 깔리지 않게 그 반 너비 + 8. */
@@ -123,7 +128,7 @@ export function pageLayout(view: BoxSize, mascot: Pick<MascotImage, "width" | "h
     { left: m.left - RING, top: m.top - RING, width: m.width + 2 * RING, height: m.height + RING },
     { ...video },
   ];
-  // 지도 카메라 칸: 진행도 아래, 메시지 상자 위, 미니맵·마스코트 왼쪽
+  // 지도 카메라 칸: 칩 줄 아래, 메시지 상자 위, 미니맵·마스코트 왼쪽
   const fx = twin.left + FOCUS_LEFT;
   const fy = twin.top + FOCUS_TOP;
   const edge = Math.min(video.left, m.left - RING);

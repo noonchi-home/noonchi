@@ -99,22 +99,26 @@ describe("대시보드 자료 연결", () => {
     history.replaceState(null, "", "/");
   });
 
-  it("순간 2(컵 집기)를 받으면 진행도 2/4 · 컵 집기, 말풍선 카드 말, 마스코트는 늘 왼쪽을 본다", async () => {
+  it("순간 2(컵 집기)를 받으면 단계 2, 말풍선 카드 말, FSM 카드 지금 상태는 컵을 두고 자리를 뜸, 마스코트는 늘 왼쪽을 본다", async () => {
     await mount(false);
     send(moment(2));
-    expect(document.querySelector("[data-progress]")).toHaveTextContent("2/4 · 컵 집기");
+    expect(document.querySelector("[data-progress]")).toBeNull();
     expect(sayLine()).toHaveTextContent("컵을 들게요.");
+    expect(talk().querySelector('[data-fsm-state="left_cup"]')).toHaveAttribute("data-now");
     expect(screen.getByRole("region", { name: "마스코트" }).querySelector<HTMLElement>("[data-mascot-turn]")!.style.transform).toBe("scaleX(-1)");
     expect(document.querySelector("main")).toHaveAttribute("data-step", "2");
   });
 
-  it("지켜보기(순간 0)는 진행도가 없고 마스코트는 늘 왼쪽을 본다", async () => {
+  it("지켜보기(순간 0)는 사람이 마시는 중이고 목표가 서 있다: 최신 줄은 목표 줄, 목표 한 줄은 준비됨, 마스코트는 늘 왼쪽을 본다", async () => {
     await mount(false);
     send(moment(2));
     send(moment(0));
-    expect(document.querySelector("[data-progress]")).toBeNull();
     expect(screen.getByRole("region", { name: "마스코트" }).querySelector<HTMLElement>("[data-mascot-turn]")!.style.transform).toBe("scaleX(-1)");
-    expect(sayLine()).toHaveTextContent("식탁을 보고 있어요.");
+    expect(sayLine()).toHaveTextContent("컵을 두고 자리를 뜨면 컵을 치울게요");
+    // 순간 0의 판단(seq 1)은 순간 2의 판단(seq 2)보다 늦게 온 옛 판단이라 지금 상태는 그대로다
+    expect(talk().querySelector('[data-fsm-state="left_cup"]')).toHaveAttribute("data-now");
+    expect(talk().querySelector("[data-goal-line]")).toHaveTextContent("목표 · 컵 치우기 · 준비됨");
+    expect(talk().querySelector("[data-fsm-card]")).not.toHaveTextContent("목표");
   });
 
   it("판단 없이 반성 사건만 와도 메시지 상자에 그 규칙 두 줄이 쌓인다. 칩은 없다", async () => {
@@ -234,14 +238,15 @@ describe("가짜 단계(?debug=steps)", () => {
     return render(<Dashboard />);
   };
 
-  it("&step=2면 서버 자료 없이 그 순간이다: 진행도·말·대시보드 폰 칸 눈 그림·메시지 상자·컵 이름표", async () => {
+  it("&step=2면 서버 자료 없이 그 순간이다: 단계·말·대시보드 폰 칸 눈 그림·메시지 상자 FSM 카드·컵 이름표", async () => {
     open("&step=2");
-    expect(document.querySelector("[data-progress]")).toHaveTextContent("2/4 · 컵 집기");
+    expect(document.querySelector("main")).toHaveAttribute("data-step", "2");
     expect(sayLine()).toHaveTextContent("컵을 들게요.");
     const img = phonePane().querySelector<HTMLImageElement>('img[alt="폰 카메라 영상"]')!;
     expect(img.getAttribute("src")).toBe("/debug-eye/eye-table-near.webp");
     expect(document.querySelector("[data-mode-text]")).toHaveTextContent(/^눈치 모드$/);
-    expect([...talk().querySelectorAll("[data-talk-pill]")].map((p) => p.textContent)).toEqual(["상태 · 컵을 두고 자리를 뜸", expect.stringMatching(/^트리거 · /), "액션 · 컵 치우기"]);
+    expect(talk().querySelector("[data-talk-pill]")).toBeNull();
+    expect(talk().querySelector('[data-fsm-state="left_cup"]')).toHaveAttribute("data-now");
     expect([...phonePane().querySelectorAll("[data-detection-label]")].map((t) => t.textContent?.split(" ")[0])).toEqual(["컵"]);
     expect(phonePane().querySelector("canvas[data-masks]")).not.toBeNull();
   });
@@ -257,18 +262,20 @@ describe("가짜 단계(?debug=steps)", () => {
     open("&step=2");
     await waitFor(() => expect(FakeSocket.last).not.toBeNull());
     send(moment(4));
-    expect(document.querySelector("[data-progress]")).toHaveTextContent("2/4 · 컵 집기");
+    expect(document.querySelector("main")).toHaveAttribute("data-step", "2");
+    expect(sayLine()).toHaveTextContent("컵을 들게요.");
   });
 
   it("window.__dash.step(n)으로 그 순간으로 간다", () => {
     open("&step=1");
     expect(document.querySelector("main")).toHaveAttribute("data-step", "1");
     act(() => window.__dash!.step(3));
-    expect(document.querySelector("[data-progress]")).toHaveTextContent("3/4 · 싱크대로 가기");
+    expect(document.querySelector("main")).toHaveAttribute("data-step", "3");
+    expect(sayLine()).toHaveTextContent("싱크대로 갈게요.");
     expect(phonePane().querySelector('img[alt="폰 카메라 영상"]')!.getAttribute("src")).toBe("/debug-eye/eye-sink.webp");
     act(() => window.__dash!.step(0));
     expect(document.querySelector("main")).toHaveAttribute("data-step", "0");
-    expect(document.querySelector("[data-progress]")).toBeNull();
+    expect(talk().querySelector('[data-fsm-state="drinking"]')).toHaveAttribute("data-now");
   });
 
   it("&play=MS면 지도가 준비된 뒤부터 MS마다 4→0→1 차례로 넘긴다", async () => {
