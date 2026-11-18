@@ -151,11 +151,14 @@ describe("물건은 장면 VLM 답으로만", () => {
     expect(w.view(2000).objects).toEqual([]);
   });
 
-  it("확정 전 후보도 그 사진 시야 안 같은 무리 후보가 하나뿐이면 잇는다(상자 투영이 흔들려 두 후보로 갈라지지 않는다)", () => {
+  // Codex P2(41e1181): 거리 제한 없는 후보 잇기가 서로 먼 곳에 한 장씩 나온 상자 둘을 한 물건의 2장으로 확정했다
+  it("확정 전 후보는 0.5m 안에서만 잇는다: 먼 곳에 한 장씩 나온 같은 무리 상자 둘은 확정하지 않는다", () => {
     const w = ws();
     w.applyScene("e1", 1000, cupScene(), new Map(), look);
     w.applyScene("e2", 2000, cupScene([300, 150, 20, 10]), new Map(), look);   // 0.5m 넘게 떨어진 투영
-    expect(objs(w, 2000)).toEqual([["cup_1", "present"]]);
+    expect(w.view(2000).objects).toEqual([]);
+    w.applyScene("e3", 3000, cupScene([232, 170, 20, 10]), new Map(), look);   // 첫 상자 옆
+    expect(objs(w, 3000)).toEqual([["cup_1", "present"]]);
   });
 });
 
@@ -253,5 +256,85 @@ describe("계획 대상으로 잇기(relink)", () => {
     expect(v.find((o) => o.id === "bottle_1")).toMatchObject({ status: "gone", followed_by: "cup_1" });
     expect(w.relink("cup_9", "cup_1", 5000)).toBe(false);
   });
+});
+
+// 머그 q2(2026-11-18 09:55): 한 머그를 VLM이 큰 상자와 그 안 작은 상자 둘로 답해(IoU 0.5 아래) cup_2 후보가 생겼고, 같은 사진의 가까이 보기가 그 후보를 확정했다.
+// 그 뒤 cup_1이 사라짐이 돼 계획이 「찾은 뒤 다시 판단」으로 취소됐다
+describe("머그 q2: 한 머그 두 상자", () => {
+  it("한 답에서 작은 상자가 큰 상자 안에 거의 들면(작은 상자의 70% 이상) 한 물건이다", () => {
+    const w = ws();
+    const nested: SceneObservation = { scene: "k", summary: "s", observations: [],
+      objects: [{ id: "v1", cls: "cup", box: { x: 0.45, y: 0.51, w: 0.14, h: 0.35 }, det: null }, { id: "v2", cls: "cup", box: { x: 0.49, y: 0.48, w: 0.1, h: 0.29 }, det: null }] };
+    w.applyScene("e1", 1000, nested, new Map(), look);
+    w.applyScene("e2", 2000, nested, new Map(), look);
+    expect(w.view(2000).objects.map((o) => o.id)).toEqual(["cup_1"]);
+  });
+
+  it("가까이 보기는 확정 전 후보보다 그 자리의 확인된 물건을 먼저 잇는다(후보를 확정하지 않는다)", () => {
+    const w = confirmed();
+    // 확인된 cup_1 옆 0.3m에 후보 하나(같은 사진 한 장)
+    w.applyScene("e3", 3000, { scene: "k", summary: "s", observations: [], objects: [{ id: "v1", cls: "cup", box: frac(CUP), det: null }, { id: "v2", cls: "cup", box: frac([258, 172, 20, 10]), det: null }] }, new Map(), look);
+    const r = w.applyCloser([{ frameId: "e3", capturedAtMs: 3000, view: LOOK_VIEW, ...LOOK_SIZE, dets: [] }]);
+    const sees: SceneObservation = { scene: "k", summary: "s", observations: [], objects: [{ id: "v1", cls: "cup", box: { x: (252 - 120) / 240, y: (170 - 90) / 180, w: 20 / 240, h: 10 / 180 }, det: null }] };
+    w.applyCloserScene("e3", 3000, sees, r.ids, r.pending, { view: LOOK_VIEW, ...LOOK_SIZE, crop: [120, 90, 240, 180] });
+    expect(w.view(3000).objects.map((o) => o.id)).toEqual(["cup_1"]);
+    expect(r.ids.get("v1")).toBe("cup_1");
+  });
+});
+
+// 키 큰 컵 q2: 싱크대 면 위 컵을 VLM이 「식탁 위」로 답해 「주방·식당 싱크대 · 식탁 위」였다
+it("싱크대 면(싱크볼 밖) 위 물건을 VLM이 다른 가구 위(식탁·책상·선반)로 답하면 조리대 위다. 싱크볼 안은 싱크대 안", () => {
+  const sink = { id: "sink_1", label: "싱크대", kind: "sink" as const, center: [1.5, 0] as [number, number], top: 0, radius: 1.2,
+    rect: { center: [1.5, 0] as [number, number], size: [2, 1] as [number, number], facing_deg: 0 }, basin: { center: [1.5, 0.6] as [number, number], size: [0.6, 0.4] as [number, number], facing_deg: 0 } };
+  const w = new WorldState({ evidenceStepMs: 1000, surfaces: () => [sink], floorAt: () => 0, roomAt: () => null, devices: () => [] });
+  const said = (id: string, at: number, state: "on_table" | "on_floor") => w.applyScene(id, at, { ...cupScene(), observations: [{ object_id: "v1", state }] }, new Map(), look);
+  said("e1", 1000, "on_table");
+  said("e2", 2000, "on_table");
+  expect(w.view(2000).objects[0]).toMatchObject({ surface: "sink_1", facts: { place: { value: "on_counter" } } });
+});
+
+// Codex P2(b8fe7bf): 컵을 들고 나가면 남은 「손에 있음」이 사라짐 셈을 계속 막아, 그 뒤 VLM 사진에 계속 안 보여도 컵과 「손에 있음」이 남았다
+describe("손에 있음 보호", () => {
+  const PERSON_BOX: [number, number, number, number] = [100, 50, 80, 250];
+  /** 사람(YOLO, 0.5초마다)을 보며 VLM이 컵을 손에 있음으로 답한 뒤(2.5·3초), times마다 컵 없는 VLM 답. person이면 그 사이에도 사람을 본다. */
+  const run = (times: number[], person: boolean) => {
+    const w = confirmed();
+    for (let t = 1500; t <= 3000; t += 500) w.applyDetections(frame(`p${t}`, t), [det("person", PERSON_BOX)]);
+    // 놓인 곳은 두 장이 같아야 바뀐다(steady)
+    for (const [id, t] of [["h1", 2500], ["h2", 3000]] as const) w.applyScene(id, t, { ...cupScene(), observations: [{ object_id: "v1", state: "in_hand" }] }, new Map(), look);
+    expect(w.view(3000).objects[0]?.facts.place?.value).toBe("in_hand");
+    let last = 3000;
+    for (const t of times) {
+      for (let p = last + 500; p <= t; p += 500) w.applyDetections(frame(`p${p}`, p), person ? [det("person", PERSON_BOX)] : []);
+      w.applyScene(`n${t}`, t, none, new Map(), look);
+      last = t;
+    }
+    return objs(w, last);
+  };
+  it("사람이 보이고 손에 있음이 새것(6초 안)이면 그 자리가 비어도 사라짐을 세지 않는다", () => {
+    expect(run([4000, 5000, 6000], true)).toEqual([["cup_1", "present"]]);
+  });
+  it("손에 있음이 6초 넘게 새로 오지 않으면 보호를 풀어 VLM 사진 3장으로 사라짐이다", () => {
+    expect(run([10000, 11000, 12000], true)).toEqual([["cup_1", "gone"]]);
+  });
+  it("사람이 안 보이면 손에 있음이 새것이어도 보호를 푼다", () => {
+    expect(run([5000, 6000, 7000], false)).toEqual([["cup_1", "gone"]]);
+  });
+});
+
+// 키 큰 컵 q2: 식탁 위 컵 둘(0.03m·0.38m) 사이를 가까이 본 VLM이 「병」으로 답해 새 병 id가 생겼다
+it("다른 종류 같은 무리 답은 가장 가까운 물건이 둘째보다 3배 넘게 가까우면 그 물건이다(새 id를 만들지 않는다)", () => {
+  const w = ws();
+  const two: SceneObservation = { scene: "k", summary: "s", observations: [], objects: [{ id: "v1", cls: "cup", box: frac(CUP), det: null }, { id: "v2", cls: "cup", box: frac([200, 170, 20, 10]), det: null }] };
+  w.applyScene("e1", 1000, two, new Map(), look);
+  w.applyScene("e2", 2000, two, new Map(), look);
+  expect(w.view(2000).objects.map((o) => o.id)).toEqual(["cup_1", "cup_2"]);
+  const [c1, c2] = w.view(2000).objects.map((o) => o.position!);
+  expect(Math.hypot(c1![0] - c2![0], c1![2] - c2![2])).toBeLessThan(0.5);
+  const bottle: SceneObservation = { scene: "k", summary: "s", observations: [], objects: [{ id: "v1", cls: "bottle", box: frac([231, 170, 20, 10]), det: null }] };
+  const ids = new Map<string, string>();
+  w.applyScene("e3", 3000, bottle, ids, look);
+  expect(ids.get("v1")).toBe("cup_1");
+  expect(w.view(3000).objects.map((o) => o.id)).toEqual(["cup_1", "cup_2"]);
 });
 

@@ -71,9 +71,11 @@ export class CloserLook extends Part {
     return at > obj.judgedAt || (at === obj.judgedAt && !obj.judgedCloser && obj.judgedFrame === frameId);
   }
 
-  /** 트윈 자리로 맞추기만(가까이 보기): 장면 VLM과 같은 식별 규칙(core.matchAt, VLM_MATCH_M 안. 장면 VLM 상자로 낸 자리와 잘라 본 자리는 투영 차이가 크다). */
+  /** 트윈 자리로 맞추기만(가까이 보기): 장면 VLM과 같은 식별 규칙(core.matchAt, VLM_MATCH_M 안. 장면 VLM 상자로 낸 자리와 잘라 본 자리는 투영 차이가 크다).
+   *  확인된 물건(사라진 것 포함)을 먼저 보고, 없을 때만 확정 전 후보를 잇는다(머그 q2: 가까이 보기가 옆 후보를 확정해 한 머그가 두 id가 됐다). */
   private nearest(cls: ObjClass, position: V3, used: ReadonlySet<string>): Obj | null {
-    return this.core.matchAt(cls, position, used, VLM_MATCH_M);
+    const candidates = [...this.core.objects.values()].filter((x) => !x.confirmed).map((x) => x.id);
+    return this.core.matchAt(cls, position, new Set([...used, ...candidates]), VLM_MATCH_M) ?? this.core.matchAt(cls, position, used, VLM_MATCH_M);
   }
 
   /** 가까이 보기 묶기: 잘라 본 몇 장(원본 프레임마다 그 프레임 카메라)의 물건 감지를 묶어 VLM 답까지 들고 있는다. World State는 바꾸지 않는다.
