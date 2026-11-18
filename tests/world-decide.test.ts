@@ -51,6 +51,22 @@ describe("판단 호출", () => {
     d.stop();
   });
 
+  it("habit은 판단이 마지막으로 PAM에 보낸 기억과 그 상태다: 판단 전에는 null이고 기억을 새로 읽지 않는다(그날 판본을 고정하지 않는다, demo-e2e 4 반성 적용 날)", async () => {
+    pam = await startFakePamLlm({ predict: (v) => ({ observation: "o", reasoning: "r", task_index: v.tasks.indexOf("컵 치우기") }) });
+    let reads = 0;
+    const counted = () => { reads++; return memory(); };
+    const d = new Decider({ pam: pamClientFor(pam), world: emptyWorld(), trigger: event(), tasks: () => [...CUP_TASKS], memory: counted, emit: () => {}, offsetMinutes: 540 });
+    expect(d.habit()).toBeNull();
+    expect(reads).toBe(0);
+    d.onChanges([{ kind: "person_gone", at_ms: 0, subject: "person", text: "사람 안 보임", meaningful: true }]);
+    d.tick();
+    await d.idle();
+    expect(reads).toBe(1);
+    expect(d.habit()).toMatchObject({ memory: CUP_FSM_MEMORY, kind: "fsm", version: 0, state: "left_cup" });
+    expect(reads).toBe(1);
+    d.stop();
+  });
+
   describe("들은 말", () => {
     const SAID = "라면 끓이는 법 알려 줘";
     const setup = async (over: { keepHeard?: boolean; predict?: Parameters<typeof startFakePamLlm>[0] } = {}) => {

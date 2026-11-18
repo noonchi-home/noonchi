@@ -57,11 +57,13 @@ export class GoalWatch extends Part {
   private arm(): void {
     const world = this.o.world();
     const p = world.person;
-    const habit = this.o.habit?.();
-    if (!habit || !p.visible || p.since_ms === this.spent || this.core.open() || this.core.planning || this.core.dock.busy()) return;
+    if (!this.o.habit || !p.visible || p.since_ms === this.spent || this.core.open() || this.core.planning || this.core.dock.busy()) return;
     if (emergencyOf({ world, offNotices: this.core.safety.offTrack().notices })) return;
+    const held = this.core.use.holding();
+    const habit = held.length ? this.o.habit() : null;
+    if (!habit) return;
     const tasks = this.o.tasks?.() ?? TASK_NAMES;
-    for (const h of this.core.use.holding()) {
+    for (const h of held) {
       const pick = goalAhead({ memory: habit.memory, kind: habit.kind, state: habit.state, tasks, cls: h.cls });
       const objectId = h.id ?? targetOf({ target: h.cls as ObjClass }, world, this.core.steps.placed())?.id ?? null;
       if (!pick || !objectId) continue;

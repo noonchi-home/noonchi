@@ -172,8 +172,10 @@ export async function startFakePamLlm(o: FakePamLlmOptions = {}): Promise<FakePa
   };
   const server = createServer(async (req, res) => {
     if (req.method === "GET" && req.url === "/v1/models") return send(res, 200, { object: "list", data: [] });
-    let raw = "";
-    for await (const c of req) raw += c;
+    // 조각을 모아 한 번에 읽는다(조각마다 글로 바꾸면 조각 끝에 걸린 한글이 깨져 관찰 텍스트가 달라진다)
+    const parts: Buffer[] = [];
+    for await (const c of req) parts.push(c as Buffer);
+    const raw = Buffer.concat(parts).toString("utf8");
     const body = JSON.parse(raw) as Record<string, unknown> & { messages: { content: string | { text: string }[] }[]; model: string };
     requests.push(body);
     const v = pamView(body);

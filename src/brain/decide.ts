@@ -57,6 +57,8 @@ export class Decider {
   private link: boolean | null = null;
   /** 마지막으로 맞은 규칙의 FSM 상태(대기 판단의 지금 상태). undefined면 아직 없음(기억의 처음 상태), null이면 규칙이 여러 상태라 정할 수 없었음. */
   private lastState: string | null | undefined = undefined;
+  /** 마지막으로 PAM에 보낸 기억(판본). 판단 전이면 null. */
+  private lastMem: { memory: PamMemory; kind: "list" | "fsm"; version: number } | null = null;
   private paused: TriggerPause | "acting" | null = null;
   private readonly clock: { now(): number };
 
@@ -74,6 +76,12 @@ export class Decider {
   /** 판단이 마지막으로 맞은 규칙의 FSM 상태(미리 세울 목표가 읽는다, src/brain/goal.ts). undefined 아직 없음(기억의 처음 상태), null 규칙이 여러 상태라 정할 수 없었음. */
   fsmState(): string | null | undefined {
     return this.lastState;
+  }
+
+  /** 습관 FSM: 마지막으로 PAM에 보낸 기억(판본)과 그 기억에서 마지막으로 맞은 규칙의 상태(미리 세울 목표가 읽는다, src/act/track/goal.ts).
+   *  판단 전이면 null. 기억을 새로 읽지 않는다(읽으면 그날 판본을 고정해 반성 판본이 그날부터 쓰이지 못한다). */
+  habit(): { memory: PamMemory; kind: "list" | "fsm"; version: number; state: string | null | undefined } | null {
+    return this.lastMem ? { ...this.lastMem, state: this.lastState } : null;
   }
 
   /** 다음 판단 타이머에 기다림 없이 PAM을 부르게 한다(미리 세운 목표의 사람이 떠남, src/act/track/goal.ts). 동시 상한·쉼(hold)은 그대로다. */
@@ -103,6 +111,7 @@ export class Decider {
     const finalTime = isoWithOffset(now, this.o.offsetMinutes);
     const tasks = this.o.tasks(saidIn(textSent).length > 0);
     const mem = this.o.memory();
+    this.lastMem = mem;
     const base = { id: `pam-${seq}`, seq, atMs: now, textSent, finalTime, memoryVersion: mem.version, world: decisionWorld(view), tasks };
     let usage: PamUsage | undefined;
     const job: Promise<void> = Promise.resolve()
