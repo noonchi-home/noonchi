@@ -71,6 +71,7 @@ const fromTable = (p: readonly number[]) => Math.hypot(p[0]! - TABLE_CENTER[0], 
 describe("실제 판 재생(장면·가까이 본 VLM 답 + 카메라 + YOLO 감지 + 한양목련 트윈 면)", () => {
   const limit: Record<string, number> = {
     "wide-glass-r10": 4, "wide-tall-r4": 2, "wide-mug-r7": 3, "wide-tall-r5": 2, "wide-mug-r8": 2, "wide-glass-v1": 1, "wide-tall-v1": 3, "wide-mug-v1": 2,
+    "wide-tall-q1": 4, "wide-mug-q1": 2,
   };
   for (const name of Object.keys(limit)) {
     it(`${name}: 마시는 그릇 id가 ${limit[name]}개를 넘지 않는다`, () => {
@@ -88,8 +89,9 @@ describe("실제 판 재생(장면·가까이 본 VLM 답 + 카메라 + YOLO 감
     expect(fromTable(cup.position!)).toBeLessThan(0.2);
   });
 
-  it("처음 고정 카메라로 본 컵은 모두 식탁 위에 있다(가운데에서 0.9m 안, 후면 발코니 바닥으로 가지 않는다): 키 큰 컵 v1·r5, 머그 r8", () => {
-    for (const name of ["wide-tall-v1", "wide-tall-r5", "wide-mug-r8"]) {
+  // 0371f2a 실제 판 q1(2026-11-18 09:36~09:44): 키 큰 컵 q1은 후면 발코니 유령 cup_4를 계획 대상으로 잡아 「세탁기로 가 주세요」를 보냈고, 식탁 위 cup_3·머그 cup_2는 「선반 위」였다
+  it("처음 고정 카메라로 본 컵은 모두 식탁 위에 있다(가운데에서 0.9m 안, 후면 발코니 바닥으로 가지 않는다): 키 큰 컵 v1·r5·q1, 머그 r8·q1", () => {
+    for (const name of ["wide-tall-v1", "wide-tall-r5", "wide-mug-r8", "wide-tall-q1", "wide-mug-q1"]) {
       const steps = JSON.parse(readFileSync(new URL(`./fixtures/replay/${name}.json`, import.meta.url), "utf-8")) as Step[];
       const first = steps[0]!.view.origin;
       // 폰 눈이 처음 자리에서 0.3m 넘게 움직인 사진부터는 보지 않는다(싱크대로 가는 단계 영상)
@@ -103,6 +105,7 @@ describe("실제 판 재생(장면·가까이 본 VLM 답 + 카메라 + YOLO 감
           if (!o.position || (o.cls !== "cup" && o.cls !== "bottle")) continue;
           expect(fromTable(o.position), `${name} ${o.id} ${at}`).toBeLessThan(0.9);
           expect(o.surface, `${name} ${o.id} ${at}`).toBe(TABLE);
+          if (o.facts.place) expect(o.facts.place.value, `${name} ${o.id} ${at}`).not.toBe("on_shelf");
         }
         last = at;
       });
