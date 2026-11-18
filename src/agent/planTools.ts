@@ -66,7 +66,7 @@ export interface AgentStep {
   id: string;
   kind: AgentStepKind;
   label: string;
-  /** go·place: 평면도 id, pick·do: World State 물건 id 또는 평면도 id, device: 가전 id. */
+  /** go: 평면도 물건 id(방 id 아님, 집으러 가면 그 물건이 놓인 면 id), place: 평면도 id, pick·do: World State 물건 id 또는 평면도 id, device: 가전 id. */
   target: string | null;
   /** pick·place: 든 World State 물건 id(없으면 null). */
   object: string | null;
@@ -144,7 +144,7 @@ export const STEP_ARGS = z.object({
   step: z.number().int().min(1).describe("몇 번째 단계인지(1부터). 고칠 때는 같은 번호로 다시 보낸다"),
   kind: z.enum(["go", "pick", "place", "do", "device", "ask", "say", "wait"]).describe("go 이동·pick 집기·place 내려놓기·do 그 자리에서 하는 일(사람이 함), device 가전 조작, ask 질문, say 알림, wait 기다리기"),
   label: z.string().min(1).max(30).optional().describe("device: 화면 단계 이름(예: 건조기 시작). 그 밖의 단계 이름은 서버가 정한다"),
-  target: z.string().min(1).optional().describe("go·place: 평면도 id, pick·do: World State 물건 id 또는 평면도 id, device: 가전 id"),
+  target: z.string().min(1).optional().describe("go: 평면도 물건 id(방 id 아님, 집으러 가면 그 물건이 놓인 면 id), place: 평면도 id, pick·do: World State 물건 id 또는 평면도 id, device: 가전 id"),
   object: z.string().min(1).optional().describe("pick·place: 든 World State 물건 id"),
   act: z.enum(ALL_ACTS).optional().describe(`사람 단계(go·pick·place·do)마다 꼭 쓴다: ${Object.entries(STEP_ACTS).map(([k, v]) => `${k} ${v.join("·")}`).join(", ")}. 사람에게 하는 말은 서버가 동작·대상·물건으로 만든다`),
   item: z.enum(STEP_ITEMS).optional().describe("물건 이름(목록 안 한국어): 안 보이는 물건·do에서 다루는 것·끝 알림. pick·place가 World State 물건이면 쓰지 않는다(서버가 그 물건 종류 이름으로 부른다)"),

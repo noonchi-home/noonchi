@@ -87,6 +87,15 @@ describe("plan1 차례 기록에서 찾은 첫 차례 실수", () => {
     expect(example.every((s) => typeof s.act === "string" && s.item === undefined)).toBe(true);
   });
 
+  // glass plan3 1차례·tall plan1 2차례: go target에 방 id(living·kitchen)를 썼다(지시문 「target은 평면도 id」에 방도 든다고 읽음)
+  it("지시문·도구 설명은 go target이 평면도 물건 id이고 방 id가 아니며, 집으러 가면 그 물건이 놓인 면 id라고 말한다", () => {
+    const go = PLANNER_PROMPT.split("\n").find((l) => l.startsWith("- go:"))!;
+    expect(go).toContain("target은 평면도 물건 id다(방 id 아님). 물건을 집으러 가면 그 물건이 놓인 면 id(World State 물건 줄의 「면」)다.");
+    expect(go).not.toContain("target은 평면도 id.");
+    const target = SUBMIT_ARGS.shape.steps.element.shape.target.description;
+    expect(target).toMatch(/^go: 평면도 물건 id\(방 id 아님, 집으러 가면 그 물건이 놓인 면 id\), place: 평면도 id, /);
+  });
+
   it("[미리 세운 목표] 줄은 그때를 기다리거나 할지 묻는 단계를 넣지 말라고 한다(tall plan1 1차례 wait, mug 1차례 ask)", () => {
     const input = planInput({ ...ctx(), ahead: { trigger: "사용자가 컵을 두고 자리를 떠나 보이지 않는다.", on: null, object: "cup_1" } });
     expect(input).toContain("[미리 세운 목표] 목표 물건 cup_1. 사람이 아직 쓰는 중이다. 「사용자가 컵을 두고 자리를 떠나 보이지 않는다.」가 되면 서버가 이 계획을 시작한다. 그때를 기다리거나 할지 묻는 단계 없이 그 뒤에 할 단계만 계획하고, 물건은 cup_1만 쓴다.");

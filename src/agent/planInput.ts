@@ -17,7 +17,7 @@ export const PLANNER_PROMPT = `너는 이 집 스마트홈 에이전트의 계�
 - item은 물건 이름(목록 안 한국어)이다. pick·place가 World State 물건이면 item을 쓰지 않는다(서버가 그 물건 종류 이름으로 부른다). 안 보이는 물건(냉장고 안 물병, 세탁기 안 세탁물)이나 do에서 다루는 것(따르는 물, 넣는 것)에 쓴다.
 
 단계
-- go: 그 자리로 가기. target은 평면도 id. until은 보통 {"phone_near": target}(쓰지 않으면 그것으로 본다).
+- go: 그 자리로 가기. target은 평면도 물건 id다(방 id 아님). 물건을 집으러 가면 그 물건이 놓인 면 id(World State 물건 줄의 「면」)다. until은 보통 {"phone_near": target}(쓰지 않으면 그것으로 본다).
 - pick: 집기. target은 보이는 World State 물건 id(없으면 평면도 id). 물건 id면 until은 {"any": [{"object": id, "follow": true, "facts": {"place": "in_hand"}}, {"person_holding": 종류}]}.
 - place: 내려놓기·넣기. target은 평면도 id, object는 든 물건 id(앞 pick 물건이면 생략). 물건 id면 until은 「그 물건 자리 사실 또는 트윈 자리 조건(놓을 자리에 있고 손에 없음)」을 any로 묶고, 그 any와 「사람이 그 물건을 들고 있지 않음」(not person_holding)을 all로 묶는다. 물건 조건({"object": …})은 모두 follow: true로 쓴다. person_holding에는 follow를 쓰지 않는다. VLM이 자리 사실을 놓쳐도 트윈 자리로 넘어가고, 손에 든 채 지나가면 넘기지 않는다. 사람이 그 물건을 들고 있다고 보이면(person_holding) 자리 사실이 와도 넘기지 않는다. 비전으로 못 보는 것(세탁물 등)은 until 없이 두면 사람이 「완료」로 넘긴다.
   - 위에 놓기(식탁·조리대 위 등): 놓을 자리는 면(target) 위, 자리 사실은 그 면 값(식탁 on_table, 조리대 on_counter). 예: {"all": [{"any": [{"object": id, "follow": true, "facts": {"place": "on_table"}}, {"all": [{"object": id, "follow": true, "surface": target}, {"not": {"object": id, "follow": true, "facts": {"place": "in_hand"}}}]}]}, {"not": {"person_holding": id}}]}
