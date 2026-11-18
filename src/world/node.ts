@@ -152,6 +152,7 @@ export async function startWorldNode(o: { bus: Bus; epoch: { boot: string; home:
   }));
   node.on("/world/input", (b, { e }) => once(e, () => {
     if (b.kind === "focus") world.focus(b.id, b.focus);
+    else if (b.kind === "link") world.relink(b.from, b.to, b.at_ms);
     else if (b.kind === "guard") world.guard(b.id, b.at_ms, b.on);
     else world.contentsAction(b.id, b.at_ms, b.on);
     return { changes: [], state: true };

@@ -25,6 +25,8 @@ describe("격리 재생", () => {
     expect(REPLAY_INPUTS).not.toContain("/device/command");
     expect(REPLAY_INPUTS).not.toContain("/brain/plan");
     expect(REPLAY_INPUTS).toContain("/perception/analysis");
+    // 실행 추적이 집 상태에 넣은 입력(지킴·따르기 창·지금 단계 대상·잇기)도 집 상태 입력이다
+    expect(REPLAY_INPUTS).toContain("/world/input");
   });
 
   it("녹화한 YOLO 갈래·VLM 답(/perception/scene, 사진 없음)을 흘려 집 상태 노드가 컵의 등장·사실·가까이 보기 결과를 바로 넣은 것과 같게 다시 만든다", async () => {

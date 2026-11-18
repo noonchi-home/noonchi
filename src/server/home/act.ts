@@ -9,7 +9,7 @@ import type { WorldInput, WorldView } from "../../contract/world.js";
 import type { SignalHub } from "../../devices/index.js";
 import type { PlanView } from "../../contract/plan.js";
 import { floorPlanFrom, loadScene, type LayoutEditor, type PlaceNames } from "../../layout/index.js";
-import { Trigger, deviceStateKeys, deviceStatus, loadTriggerConfig, type PlaneSurface } from "../../world/index.js";
+import { Trigger, canRelink, deviceStateKeys, deviceStatus, loadTriggerConfig, type PlaneSurface } from "../../world/index.js";
 import { DEVICE_STATES } from "../../world/vocab.js";
 import { PHONE_SESSION, TALK_QUIET_MS, type HomeCore } from "./core.js";
 
@@ -171,6 +171,13 @@ export function startAct(core: HomeCore): (event: BrainLog) => void {
     guardObject: (id, on) => worldInput(core, { kind: "guard", id, on, at_ms: now() }),
     // 지금 단계가 보는 물건(집기·놓기·들고 감): 집 상태 노드가 VLM 식별에 쓴다(/world/input focus)
     focusObject: (id, f) => worldInput(core, { kind: "focus", id, focus: f ?? null, at_ms: now() }),
+    // 찾기가 겨눈 자리의 같은 무리 물건을 계획 대상으로 잇는다(/world/input link). 잇는지는 집 상태와 같은 규칙(canRelink)으로 지금 보기에서 바로 답한다
+    linkObject: (from, to) => {
+      const objects = view().objects;
+      if (!canRelink(objects.find((o) => o.id === from), objects.find((o) => o.id === to))) return false;
+      worldInput(core, { kind: "link", from, to, at_ms: now() });
+      return true;
+    },
     // 따르기 단계 동안 그 컵의 창(그 뒤 사진만, 다 이어진 값이 확인 값을 바꿈)
     contentsAction: (id, on) => worldInput(core, { kind: "contents", id, on, at_ms: now() }),
     // 실제 폰의 승인 대기와 폰 대화 사용(실행 추적이 그동안 사람을 움직이게 하지 않는다)

@@ -1,7 +1,13 @@
 // accept.ts — 상태 없는 감지 거르기: 낱말 표의 종류와 그 종류의 최소 신뢰도만 본다.
 // World State와 인식 노드(World State를 갖지 않음)가 같은 함수로 같은 감지를 거른다(stage-queue 묶음 2).
 import type { Detection } from "../contract/observe.js";
-import { CLASSES, type ClassKey } from "./vocab.js";
+import { CLASSES, sameDrinkware, type ClassKey } from "./vocab.js";
+
+/** 잇기(찾기가 겨눈 자리의 물건 from을 계획 대상 to로, WorldState.relink): 둘 다 있고, 다른 물건이고, from이 사라지지 않았고, 같은 무리(마시는 그릇)다.
+ *  집 상태(relink)와 실행 추적의 잇기 답(src/server/home/act.ts linkObject)이 이 하나를 쓴다. */
+export function canRelink(from: { id: string; cls: string; status: string } | undefined, to: { id: string; cls: string } | undefined): boolean {
+  return !!from && !!to && from.id !== to.id && from.status !== "gone" && sameDrinkware(from.cls, to.cls);
+}
 
 /** 물건 종류(낱말 표 role object). */
 export const OBJ_CLASSES: ReadonlySet<string> = new Set((Object.keys(CLASSES) as ClassKey[]).filter((k) => CLASSES[k].role === "object"));
