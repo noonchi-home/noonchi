@@ -403,7 +403,7 @@ describe("미리 만든 계획 다시 내기", () => {
     const ctx = planContext({ decision: decision("goal-1", null), world: view([cupAt("cup_1")]), floor: smallFloor() });
     expect(planInput(ctx)).not.toContain("[미리 세운 목표]");
     expect(planInput({ ...ctx, ahead: { trigger: "t", on: "사용자가 컵을 두고 자리를 떠나 보이지 않는다." } }))
-      .toContain("[미리 세운 목표] 사람이 아직 대상을 쓰는 중이다. 「사용자가 컵을 두고 자리를 떠나 보이지 않는다.」가 되면 할 일이다. 사람이 떠난 뒤를 생각해 계획한다.");
+      .toContain("[미리 세운 목표] 목표 물건 cup_1. 사람이 아직 쓰는 중이다. 「사용자가 컵을 두고 자리를 떠나 보이지 않는다.」가 되면 할 일이다. 사람이 떠난 뒤를 생각해 계획하고, 물건은 cup_1만 쓴다.");
   });
 });
 ```
@@ -477,7 +477,7 @@ export function resubmit(plan: AgentPlan, ctx: PlanContext): PlanResult {
 `src/agent/planInput.ts` `planInput`의 `[PAM 판단]` 줄 바로 뒤:
 
 ```ts
-    ...(ctx.ahead ? [`[미리 세운 목표] 사람이 아직 대상을 쓰는 중이다. 「${ctx.ahead.on ?? ctx.ahead.trigger}」가 되면 할 일이다. 사람이 떠난 뒤를 생각해 계획한다.`] : []),
+    ...(ctx.ahead ? [`[미리 세운 목표] 목표 물건 ${ctx.ahead.object}. 사람이 아직 쓰는 중이다. 「${ctx.ahead.on ?? ctx.ahead.trigger}」가 되면 할 일이다. 사람이 떠난 뒤를 생각해 계획하고, 물건은 ${ctx.ahead.object}만 쓴다.`] : []),
 ```
 
 `src/agent/index.ts`의 planTools 내보내기 줄에 `resubmit`, `type PlanAhead`를 더한다.
