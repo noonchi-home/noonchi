@@ -9,7 +9,7 @@ import { useEvents } from "../lib/use-events";
 import { useHealth } from "../lib/use-health";
 import { TwinStage, useAnchors, type TwinEngine, LiveQueue, attachLive, BAKE_VIEWS, Twin3D, useLayoutBox } from "../twin";
 import { useViewer } from "../lib/twin-viewer";
-import { focusOf, homeCamera, homeKeep, livedOf, still, wholeOf, wideCamera, type Camera } from "./camera";
+import { focusOf, still, watchFocus, wholeOf, wideCamera, type Camera } from "./camera";
 import { currentStep, isOpen, modeNow, stepIndex, talkOf } from "./data";
 import { timelineLast, timelineOf } from "./timeline";
 import { goalOf, type GoalNow } from "./goal";
@@ -92,7 +92,8 @@ function useHomeData(home: string | null): HomeData | null {
 /**
  * 구운 3D 트윈(TwinStage와 같은 틀): 캔버스와 그 위 표시 판(MapOverlay: 경로·목적지·확인한 것·어둡게 한 방·말풍선).
  * 계획·맞춘 눈은 대시보드 자료(data.ts)의 것이다. 클로이드(맞춘 눈)는 엔진 장면의 보는 방향 원뿔이다(engine.setEye).
- * 지도 카메라는 그 단계에 중요한 것(focusOf)을, 지켜보기는 집 전체보다 당긴 기본 보기(homeCamera: 사람이 있는 방을)를 지도 카메라 칸(layout.camPad 안쪽: 미니맵·말풍선·마스코트 밖)에 맞추고, 작은 눈 움직임(still)에는 그대로 둔다.
+ * 지도 카메라는 그 단계에 중요한 것(focusOf)을, 지켜보기는 클로이드가 있는 방과 그 원뿔(watchFocus)을 트윈이 가리지 않는 빈 곳(layout.camPad 안쪽: 칩 줄·미니맵·메시지 상자·시간 줄 카드·마스코트 밖)
+ * 가운데에 두고 빈 곳을 채우게 당기며, 작은 눈 움직임(still)에는 그대로 둔다.
  * 바뀌면 CAMERA_MS 동안 옮긴다(움직임 줄이기면 바로). 종류를 정하기 전(home null)에는 캔버스 없이 틀만.
  * 엔진이 뜨고 버려질 때 onEngine, 첫 그림을 그리면 onReady.
  */
@@ -126,15 +127,11 @@ function BakedStage({ home, layout, plan, eye, goal, checks, devices, onEngine: 
     [v, homeData, plan, drawn, list, engine, checks.world, goal],
   );
   const roomSets = useMemo(() => (frame?.plan && homeData ? roomSetsOf(frame.plan, homeData.index) : []), [frame?.plan, homeData]);
-  // 집 전체(모든 방)는 가장 먼 보기, 사람이 있는 방(거실·주방·식당)은 지켜보기 기본 보기가 얹은 것 밖에 두는 곳이다
+  // 집 전체(모든 방)는 가장 먼 보기다
   const whole = useMemo(() => (homeData ? wholeOf(homeData.index.shapes) : null), [homeData]);
-  const lived = useMemo(() => (homeData ? livedOf(homeData.index.shapes) : null), [homeData]);
-  const focus = frame && homeData ? focusOf(frame, homeData.index.shapes) : null;
-  // 지켜보기가 칸 안에 지키는 곳: 사람이 있는 방과 클로이드 원뿔
-  const keep = frame && homeData ? homeKeep(frame, homeData.index.shapes) : lived;
-  // 계획 단계는 그 단계에 중요한 것, 지켜보기는 기본 보기(집 전체보다 HOME_ZOOM배 당김)
-  const want = !v || size.width <= 0 || size.height <= 0 ? null
-    : !focus && whole && keep ? homeCamera(size, whole, keep, layout.camPad) : wideCamera(v, size, focus, layout.camPad, whole);
+  const focus = frame && homeData ? focusOf(frame, homeData.index.shapes) ?? watchFocus(frame, homeData.index.shapes) : null;
+  // 맞출 곳(계획 단계는 그 단계에 중요한 것, 지켜보기는 클로이드가 있는 방)을 빈 곳 가운데에 두고 빈 곳을 채우게 당긴다
+  const want = !v || size.width <= 0 || size.height <= 0 ? null : wideCamera(v, size, focus, layout.camPad, whole);
   const last = useRef<Camera | null>(null);
   const cam = want && last.current && still(last.current, want) ? last.current : want;
   useLayoutEffect(() => { last.current = cam; });

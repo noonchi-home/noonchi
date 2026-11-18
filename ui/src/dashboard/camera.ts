@@ -1,5 +1,6 @@
-// 트윈 지도 카메라(순수 함수, 시안 A에서 옮김). 계획 전 지켜보기는 집 전체를 보이고, 이동 중이면 지금 구간과 목적지 둘레를 당겨 보이고,
-// 서 있는 단계면 관계된 곳(밝힐 방·다음 길·목적지·확인한 것)을 맞춰 보인다.
+// 트윈 지도 카메라(순수 함수, 시안 A에서 옮김). 맞출 곳의 가운데를 트윈이 가리지 않는 빈 곳(지도 카메라 칸) 가운데에 두고 빈 곳을 채우게 당긴다
+// (2026-11-19 사용자 「지금 트윈이 너무 멀어. 3인칭일 때 화면 중앙에 확대되게 수정해」).
+// 계획 전 지켜보기는 클로이드가 있는 방과 그 원뿔(watchFocus), 이동 중이면 지금 구간과 목적지 둘레, 서 있는 단계면 그 단계 대상과 클로이드를 맞춘다.
 // 카메라는 「상자 가운데에 올 구운 보기 그림 픽셀 자리 + 배율」(twin/3d/view.ts MapCamera와 같음)이다.
 import type { BoxSize } from "./fit";
 import type { TwinFrame } from "./frame";
@@ -18,6 +19,10 @@ export const MIN_FOCUS = { w: 440, h: 360 };
 export const ROOM_MAX = 640;
 /** 그림을 이보다 크게 늘리지 않는다(흐려짐). */
 export const MAX_SCALE = 1.3;
+/** 집 전체 보기 배율에 곱하는 가장 큰 당김. 빈 곳을 채우는 배율이 대개 먼저 걸리고, 그림 MAX_SCALE이 그다음이다. */
+export const MAX_ZOOM = 3.2;
+/** 지켜보기 맞출 곳의 가장 작은 크기(그림 픽셀): 클로이드가 작은 방(욕실 등)에 있어도 둘레가 보인다. */
+export const MIN_WATCH = { w: 640, h: 520 };
 
 export function boundsOf(points: Px[]): Bounds | null {
   if (points.length === 0) return null;
@@ -64,21 +69,32 @@ function moveFocus(frame: TwinFrame, shapes: RoomShape[], leg: { from: number; t
 }
 
 /**
- * 지도가 맞출 곳. 계획 전 지켜보기(열린 계획 없음)는 null(집 전체). 이동 중이면 지금 구간과 목적지 둘레만(moveFocus).
- * 서 있는 단계면 밝힐 방, 다음 이동 길, 목적지, 확인한 것. 움직이는 로봇은 넣지 않는다(이동 길 위에 있다).
+ * 지도가 맞출 곳. 계획 전 지켜보기(열린 계획 없음)는 null(watchFocus). 이동 중이면 지금 구간과 목적지 둘레만(moveFocus).
+ * 서 있는 단계면 확인한 것(그 단계 대상 포함)·다음 이동 길·목적지·클로이드(바닥 자리와 원뿔)이고, 그 둘레 MIN_FOCUS까지 넓힌다. 밝힐 방 전체는 넣지 않는다(더 가깝게).
  */
 export function focusOf(frame: TwinFrame, shapes: RoomShape[]): Bounds | null {
   if (!frame.plan) return null;
   const now = legOf(frame);
   if (now?.now && frame.robot) return moveFocus(frame, shapes, now);
-  const pts: Px[] = [];
-  for (const s of shapes) if (frame.rooms.includes(s.id)) pts.push(...s.floor, ...s.top);
-  const leg = legOf(frame);
-  if (leg) pts.push(...frame.route.points.slice(leg.from, leg.to + 1));
+  const pts: Px[] = frame.marks.map((m) => m.px);
+  if (now) pts.push(...frame.route.points.slice(now.from, now.to + 1));
   if (frame.target) pts.push(frame.target);
-  for (const m of frame.marks) pts.push(m.px);
-  if (pts.length === 0 && frame.robot) pts.push(frame.robot.px);
-  return boundsOf(pts);
+  if (frame.robot) pts.push(frame.robot.px, [frame.robot.body.x0, frame.robot.body.y0], [frame.robot.body.x1, frame.robot.body.y1]);
+  return atLeast(boundsOf(pts), MIN_FOCUS);
+}
+
+/**
+ * 계획 전 지켜보기가 맞출 곳: 클로이드(맞춘 눈)가 있는 방(바닥·벽 위)과 그 3D 원뿔, 사람 이름표 자리. 가운데를 두고 MIN_WATCH까지 넓힌다.
+ * 눈을 모르면(맞추기 전) 사람이 있는 방(livedOf). 방이 없으면 null.
+ */
+export function watchFocus(frame: Pick<TwinFrame, "robot" | "planned">, shapes: RoomShape[]): Bounds | null {
+  const r = frame.robot;
+  if (!r) return livedOf(shapes);
+  const pts: Px[] = [[r.body.x0, r.body.y0], [r.body.x1, r.body.y1]];
+  const room = r.room ? shapes.find((s) => s.id === r.room) : undefined;
+  if (room) pts.push(...room.floor, ...room.top);
+  if (frame.planned.person) pts.push(frame.planned.person.px);
+  return atLeast(boundsOf(pts), MIN_WATCH);
 }
 
 /** 그림이 상자를 빈 곳 없이 덮는 가장 작은 배율. */
@@ -99,12 +115,12 @@ export function clampCamera(c: Camera, image: BoxSize, box: BoxSize): Camera {
 export const wholeOf = (shapes: RoomShape[]): Bounds | null => boundsOf(shapes.flatMap((s) => [...s.floor, ...s.top]));
 
 /**
- * 지도: focus가 pad 안쪽에 다 보이게, focus 가운데를 pad 안쪽 가운데에 둔다.
- * whole(집 전체)이 있으면 가장 먼 보기는 집 전체가 pad 안쪽에 다 보이는 배율이고, focus가 없으면(지켜보기) 그 보기다. 그 배율의 maxZoom배, 그림 MAX_SCALE배까지 당긴다.
+ * 지도: focus가 pad 안쪽(빈 곳)에 다 보이게, focus 가운데를 pad 안쪽 가운데에 두고 빈 곳을 채우는 배율로 당긴다.
+ * whole(집 전체)이 있으면 가장 먼 보기는 집 전체가 pad 안쪽에 다 보이는 배율이고, focus가 없으면 그 보기다. 그 배율의 maxZoom배, 그림 MAX_SCALE배까지 당긴다.
  *   트윈 칸이 그림보다 옆으로 넓어 그림 밖(3D 장면 바탕)이 보여도 된다: 얹은 것(미니맵·말풍선) 밑에 집이 깔리지 않는 것이 먼저다.
  * whole이 없으면 그림이 상자를 빈 곳 없이 덮는 배율(cover)부터이고, 그림 가장자리가 상자 안으로 들어오지 않게 가운데를 당긴다(clampCamera).
  */
-export function wideCamera(image: BoxSize, box: BoxSize, focus: Bounds | null, pad: Pad, whole: Bounds | null = null, maxZoom = 2.4): Camera {
+export function wideCamera(image: BoxSize, box: BoxSize, focus: Bounds | null, pad: Pad, whole: Bounds | null = null, maxZoom = MAX_ZOOM): Camera {
   const c0 = coverScale(image, box);
   const aw = Math.max(1, box.width - pad.left - pad.right);
   const ah = Math.max(1, box.height - pad.top - pad.bottom);
@@ -119,48 +135,12 @@ export function wideCamera(image: BoxSize, box: BoxSize, focus: Bounds | null, p
   return whole ? { cx, cy, scale } : clampCamera({ cx, cy, scale }, image, box);
 }
 
-/** 지켜보기(기본 보기) 확대: 집 전체가 지도 카메라 칸에 다 드는 배율에 곱한다. 사용자가 그림을 보고 다시 정한다.
- *  1.3 → 1.5(2026-11-16 회의 「공간 전체가 너무 넓게 보인다」): 1920×1080은 사람이 있는 방이 칸에 다 드는 배율(0.889, 예전보다 6.9%)에서,
- *  1440×900은 1.5배(0.663, 예전보다 15.4%)에서 멈춘다. 집 가장자리 방은 한 변에 트윈 칸의 15% 안으로 잘릴 수 있다. */
-export const HOME_ZOOM = 1.5;
-/** 사람이 있는 방(방 id): 거실·주방·식당. 기본 보기에서 얹은 것 밑에 깔리지 않게 지킨다. */
+/** 사람이 있는 방(방 id): 거실·주방·식당. 눈을 모를 때 지켜보기가 맞춘다. */
 const LIVED_ROOM = /^(living|kitchen|dining)/;
 /** 사람이 있는 방을 담는 그림 픽셀 상자. 그런 방이 없으면 집 전체, 방이 없으면 null. */
 export function livedOf(shapes: RoomShape[]): Bounds | null {
   const lived = shapes.filter((s) => LIVED_ROOM.test(s.id));
   return wholeOf(lived.length ? lived : shapes);
-}
-
-/** 지켜보기 기본 보기가 지도 카메라 칸 안에 지키는 곳: 사람이 있는 방(livedOf)과, 맞춘 눈이 있으면 그 3D 원뿔 상자(frame.robot.body).
- *  클로이드가 사람이 있는 방 밖(알파룸 등)에 있어도 당긴 보기에서 화면 밖·얹은 것 밑으로 가지 않게 한다. 둘 다 없으면 null. */
-export function homeKeep(frame: Pick<TwinFrame, "robot">, shapes: RoomShape[]): Bounds | null {
-  const lived = livedOf(shapes);
-  const body = frame.robot?.body;
-  if (!body) return lived;
-  if (!lived) return { x0: body.x0, y0: body.y0, x1: body.x1, y1: body.y1 };
-  return { x0: Math.min(lived.x0, body.x0), y0: Math.min(lived.y0, body.y0), x1: Math.max(lived.x1, body.x1), y1: Math.max(lived.y1, body.y1) };
-}
-
-/**
- * 지켜보기(기본 보기): 집 전체 보기(whole이 pad 안쪽에 다 드는 배율)보다 zoom배 당겨 집이 트윈 칸을 더 채우게 한다.
- * 집 가운데를 트윈 칸 가운데에 두되, 지킬 곳(keep: homeKeep, 사람이 있는 방과 클로이드 원뿔)이 pad 안쪽(미니맵·생각 말풍선·말풍선 카드·칩 밖)에 다 들게 옮긴다.
- * keep이 pad 안쪽보다 커지는 배율로는 당기지 않는다. 집 가장자리(다른 방)는 얹은 것 밑에 깔리거나 트윈 밖으로 조금 잘릴 수 있다.
- */
-export function homeCamera(box: BoxSize, whole: Bounds, keep: Bounds, pad: Pad, zoom = HOME_ZOOM): Camera {
-  const aw = Math.max(1, box.width - pad.left - pad.right);
-  const ah = Math.max(1, box.height - pad.top - pad.bottom);
-  const fit = (b: Bounds) => Math.min(aw / Math.max(1, b.x1 - b.x0), ah / Math.max(1, b.y1 - b.y0));
-  const base = fit(whole);
-  const scale = Math.max(base, Math.min(base * zoom, fit(keep), MAX_SCALE));
-  // 그 방향으로 keep을 [lo, hi] 안에 넣는 가장 작은 옮김(화면 px)
-  const shift = (center: number, k0: number, k1: number, view: number, lo: number, hi: number) => {
-    const at = (u: number) => view / 2 + (u - center) * scale;
-    return at(k0) < lo ? lo - at(k0) : at(k1) > hi ? hi - at(k1) : 0;
-  };
-  const [hx, hy] = [(whole.x0 + whole.x1) / 2, (whole.y0 + whole.y1) / 2];
-  const dx = shift(hx, keep.x0, keep.x1, box.width, pad.left, box.width - pad.right);
-  const dy = shift(hy, keep.y0, keep.y1, box.height, pad.top, box.height - pad.bottom);
-  return { cx: hx - dx / scale, cy: hy - dy / scale, scale };
 }
 
 /** 카메라를 그대로 두는 차이: 가운데가 화면에서 px 안, 배율이 ratio 몫 안. 클로이드가 조금 움직일 때마다 지도를 다시 맞추지 않는다. */

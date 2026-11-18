@@ -29,6 +29,14 @@ const devices = new Map([[FRIDGE, fridge]]);
 const objects = new Map([...HOME.objects].map(([id, o]) => [id, o.name]));
 const key = (rooms: string[]) => [...rooms].sort().join("+");
 /** 그 카메라(지켜보기 기본 보기)로 사람이 있는 방(거실·주방·식당)이 트윈 칸 안에 다 보이는가. */
+/** 순간 n의 클로이드 원뿔(그림 픽셀 상자)이 상자 안에 다 보이는가. */
+function showsRobot(c: MapCamera, n: number) {
+  const b = twinFrame({ ...moment(n), checks: [], anchor: anchorOf, home: HOME, cam: CAM }).robot!.body;
+  return ([[b.x0, b.y0], [b.x1, b.y1]] as [number, number][]).every((q) => {
+    const p = toScreen(c, SIZE, q);
+    return p.x >= -1e-6 && p.x <= SIZE.width + 1e-6 && p.y >= -1e-6 && p.y <= SIZE.height + 1e-6;
+  });
+}
 function showsLivedRooms(c: MapCamera) {
   const w = livedOf(HOME.shapes)!;
   return ([[w.x0, w.y0], [w.x1, w.y1]] as [number, number][]).every((q) => {
@@ -336,9 +344,10 @@ describe("대시보드 구운 트윈 위 표시", () => {
     expect(engine.setEye.mock.calls.at(-1)![0]).toEqual(moment(0).eye);
     expect(container.querySelector("[data-robot]")).toBeNull();
     expect(lit()).toEqual([]);
+    // 지켜보기는 클로이드가 있는 방과 그 원뿔을 빈 곳 가운데에 당겨 보인다(2026-11-19 사용자 「트윈이 너무 멀어 … 화면 중앙에 확대」)
     const watching = engine.setView.mock.calls.at(-1)![0];
-    expect(watching.scale).toBeLessThan(moved[0].scale);
-    expect(showsLivedRooms(watching)).toBe(true);
+    expect(watching).not.toEqual(moved[0]);
+    expect(showsRobot(watching, 0)).toBe(true);
   });
 
   it("단계가 바뀌면 엔진은 카메라만 옮기고(setView) 캔버스 크기(resize)는 다시 정하지 않는다", async () => {

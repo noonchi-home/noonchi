@@ -146,6 +146,14 @@ describe.each([[1920, 1080], [1440, 900], [1522, 722]])("%i×%i", (width, height
     expect(L.camPad).toEqual({ left: f.left - L.twin.left, top: f.top - L.twin.top, right: right(L.twin) - right(f), bottom: bottom(L.twin) - bottom(f) });
   });
 
+  // 사용자 결정(2026-11-19): 「지금 트윈이 너무 멀어. 3인칭일 때 화면 중앙에 확대되게 수정해」. 카메라 칸은 트윈이 가리지 않는 빈 곳 전체다
+  it("지도 카메라 칸(focus)은 트윈이 가리지 않는 빈 곳 전체다: 왼쪽은 트윈 안쪽 여백, 위는 칩 줄 아래, 오른쪽은 오른쪽 위 카메라 칸(미니맵)에서 사이만큼, 아래는 메시지 상자·시간 줄 카드에서 사이만큼", () => {
+    const f = L.focus;
+    expect(f.left).toBe(L.twin.left + space.panelPadding);
+    expect(near(right(f), Math.min(L.video.left, L.mascot.left - RING) - L.gap)).toBe(true);
+    expect(near(bottom(f), Math.min(L.bubble.top, L.timeline.top) - L.gap)).toBe(true);
+  });
+
   it("모든 자리가 화면 안이다(가로·세로 넘침 없음)", () => {
     for (const r of [L.twin, L.focus, L.video, L.mascot, L.bubble]) {
       expect(r.left).toBeGreaterThanOrEqual(0);

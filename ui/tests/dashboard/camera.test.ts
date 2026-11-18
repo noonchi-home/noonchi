@@ -2,7 +2,7 @@
 // 트윈 지도 카메라: 트윈이 화면 전체라 구운 보기 그림(1920×1536)보다 옆으로 넓다. 지켜보기는 집 전체(모든 방)를, 계획 단계는 그 단계에 중요한 것(목적지·클로이드·확인한 것·지금 길·말풍선·방 이름표)을
 // 지도 카메라 칸(focus) 안, 얹은 것(말풍선 카드·마스코트·미니맵·생각 말풍선) 밑이 아닌 곳에 맞춘다. 그림 밖은 3D 장면 바탕이라 비워 둬도 된다. 가장자리 표시 흐리기, 방 이름표 자리.
 import { describe, expect, it } from "vitest";
-import { coverScale, focusOf, HOME_ZOOM, homeCamera, homeKeep, legOf, livedOf, still, toScreen, wholeOf, wideCamera } from "../../src/dashboard/camera";
+import { coverScale, focusOf, legOf, livedOf, MAX_SCALE, still, toScreen, watchFocus, wholeOf, wideCamera } from "../../src/dashboard/camera";
 import { BUBBLE_BOX, edgeFade } from "../../src/dashboard/checks";
 import { twinFrame } from "../../src/dashboard/frame";
 import { avoidBoxes, placeLabel } from "../../src/dashboard/labels";
@@ -29,7 +29,14 @@ const LINE_R = 6;
 const checksAt = (n: number) => (n > 0 ? PLAN_CHECKS : []);
 const frameAt = (n: number) => twinFrame({ ...moment(n), checks: checksAt(n), anchor: anchorOf, home: HOME, cam: CAM });
 
-describe.each([[1920, 1080], [1440, 900]])("%i×%i", (width, height) => {
+/** 고치기 전(2026-11-19 c4801a0) 배율: 지켜보기(순간 0)와 계획 단계(순간 1~4). 사용자 「지금 트윈이 너무 멀어」. */
+const BEFORE: Record<string, number[]> = {
+  "1280x800": [0.586, 1.012, 0.65, 1.012, 1.012],
+  "1280x720": [0.502, 0.867, 0.557, 0.867, 0.867],
+  "1920x1080": [0.866, 1.3, 0.961, 1.3, 1.3],
+};
+
+describe.each([[1920, 1080], [1440, 900], [1280, 800], [1280, 720]])("%i×%i", (width, height) => {
   const L = pageLayout({ width, height }, MASCOT);
   const box = { width: L.twin.width, height: L.twin.height };
   const toTwin = (r: Rect): Box => ({ x0: r.left - L.twin.left, y0: r.top - L.twin.top, x1: r.left + r.width - L.twin.left, y1: r.top + r.height - L.twin.top });
@@ -37,9 +44,11 @@ describe.each([[1920, 1080], [1440, 900]])("%i×%i", (width, height) => {
   const focus = toTwin(L.focus);
   const view = (n: number) => {
     const frame = frameAt(n);
-    const f = focusOf(frame, HOME.shapes);
-    return { frame, cam: f ? wideCamera(IMAGE, box, f, L.camPad, WHOLE) : homeCamera(box, WHOLE, homeKeep(frame, HOME.shapes)!, L.camPad) };
+    const f = focusOf(frame, HOME.shapes) ?? watchFocus(frame, HOME.shapes);
+    return { frame, cam: wideCamera(IMAGE, box, f, L.camPad, WHOLE) };
   };
+  /** 빈 곳(지도 카메라 칸) 가운데(트윈 칸 px). */
+  const middle = { x: (focus.x0 + focus.x1) / 2, y: (focus.y0 + focus.y1) / 2 };
   const WHOLE = wholeOf(HOME.shapes)!;
   const LIVED = livedOf(HOME.shapes)!;
   const far = wideCamera(IMAGE, box, null, L.camPad, WHOLE);
@@ -65,56 +74,46 @@ describe.each([[1920, 1080], [1440, 900]])("%i×%i", (width, height) => {
     expect(LIVED.x1 - LIVED.x0).toBeLessThan(WHOLE.x1 - WHOLE.x0);
   });
 
-  it("순간 0(지켜보기, 계획 없음) 기본 보기는 집 전체 보기의 HOME_ZOOM(1.5)배까지 당기되 사람이 있는 방(거실·주방·식당)이 지도 카메라 칸에 다 드는 배율을 넘지 않는다: 예전(1.3배)보다 집이 화면을 더 채우고, 사람이 있는 방은 미니맵·생각 말풍선·말풍선 카드·칩 밑에 깔리지 않는다", () => {
-    const { cam } = view(0);
-    expect(focusOf(frameAt(0), HOME.shapes)).toBeNull();
-    expect(HOME_ZOOM).toBe(1.5);
-    const aw = box.width - L.camPad.left - L.camPad.right;
-    const ah = box.height - L.camPad.top - L.camPad.bottom;
-    const keep = homeKeep(frameAt(0), HOME.shapes)!;
-    const fitKeep = Math.min(aw / (keep.x1 - keep.x0), ah / (keep.y1 - keep.y0));
-    expect(cam.scale).toBeCloseTo(Math.min(far.scale * HOME_ZOOM, fitKeep), 9);
-    // 2026-11-16 회의(김준형 「공간 전체가 너무 넓게 보인다」): 예전 1.3배보다 5% 넘게 당긴다
-    expect(cam.scale).toBeGreaterThan(homeCamera(box, WHOLE, LIVED, L.camPad, 1.3).scale * 1.05);
-    const [a, b] = [toScreen(cam, box, [LIVED.x0, LIVED.y0]), toScreen(cam, box, [LIVED.x1, LIVED.y1])];
-    const lived: Box = { x0: a.x, y0: a.y, x1: b.x, y1: b.y };
-    expect(lived.x0).toBeGreaterThanOrEqual(focus.x0 - 1e-6);
-    expect(lived.y0).toBeGreaterThanOrEqual(focus.y0 - 1e-6);
-    expect(lived.x1).toBeLessThanOrEqual(focus.x1 + 1e-6);
-    expect(lived.y1).toBeLessThanOrEqual(focus.y1 + 1e-6);
-    for (const k of blocked) expect(hit(lived, k)).toBe(false);
-    // 집 가장자리(다른 방)는 얹은 것 밑에 깔리거나 트윈 밖으로 조금 잘릴 수 있다: 잘리는 것은 한 변에 트윈 칸의 15% 안이다
-    const [h0, h1] = [toScreen(cam, box, [WHOLE.x0, WHOLE.y0]), toScreen(cam, box, [WHOLE.x1, WHOLE.y1])];
-    for (const cut of [-h0.x, h1.x - box.width]) expect(cut).toBeLessThan(box.width * 0.15);
-    for (const cut of [-h0.y, h1.y - box.height]) expect(cut).toBeLessThan(box.height * 0.15);
-  });
-
-  it("지켜보기에서도 클로이드 눈 원뿔은 지도 카메라 칸 안이고 얹은 것 밑에 깔리지 않는다: 알파룸 [0.27, 10.28]처럼 사람이 있는 방 밖이어도 그 원뿔까지 담게 맞춘다", () => {
-    const eye = { ...moment(0).eye, position: [0.27, 10.28] as [number, number] };
-    const frame = twinFrame({ ...moment(0), eye, checks: [], anchor: anchorOf, home: HOME, cam: CAM });
+  // 사용자 결정(2026-11-19): 「지금 트윈이 너무 멀어. 3인칭일 때 화면 중앙에 확대되게 수정해」
+  it("순간 0(지켜보기): 맞출 곳은 클로이드가 있는 방과 그 원뿔(사람 이름표 자리)이고, 그 가운데를 빈 곳(지도 카메라 칸) 가운데에 두고 빈 곳을 채우는 배율(MAX_SCALE까지)로 당긴다", () => {
+    const { frame, cam } = view(0);
     expect(focusOf(frame, HOME.shapes)).toBeNull();
-    const keep = homeKeep(frame, HOME.shapes)!;
-    const cam = homeCamera(box, WHOLE, keep, L.camPad);
-    const [a, b] = [toScreen(cam, box, [frame.robot!.body.x0, frame.robot!.body.y0]), toScreen(cam, box, [frame.robot!.body.x1, frame.robot!.body.y1])];
-    const cone: Box = { x0: a.x, y0: a.y, x1: b.x, y1: b.y };
+    const f = watchFocus(frame, HOME.shapes)!;
+    const room = HOME.shapes.find((r) => r.id === frame.robot!.room)!;
+    for (const [u, v] of [...room.floor, ...room.top]) expect(u >= f.x0 - 1e-6 && u <= f.x1 + 1e-6 && v >= f.y0 - 1e-6 && v <= f.y1 + 1e-6).toBe(true);
+    const c = toScreen(cam, box, [(f.x0 + f.x1) / 2, (f.y0 + f.y1) / 2]);
+    expect(Math.abs(c.x - middle.x)).toBeLessThan(1);
+    expect(Math.abs(c.y - middle.y)).toBeLessThan(1);
+    const fit = Math.min((focus.x1 - focus.x0) / (f.x1 - f.x0), (focus.y1 - focus.y0) / (f.y1 - f.y0));
+    expect(cam.scale).toBeCloseTo(Math.min(fit, MAX_SCALE), 6);
+    // 클로이드 원뿔은 빈 곳 안이고 얹은 것 밑에 깔리지 않는다
+    const cone = coneBox(0, cam, box);
     expect(cone.x0).toBeGreaterThanOrEqual(focus.x0 - 1e-6);
-    expect(cone.y0).toBeGreaterThanOrEqual(focus.y0 - 1e-6);
     expect(cone.x1).toBeLessThanOrEqual(focus.x1 + 1e-6);
+    expect(cone.y0).toBeGreaterThanOrEqual(focus.y0 - 1e-6);
     expect(cone.y1).toBeLessThanOrEqual(focus.y1 + 1e-6);
     for (const k of blocked) expect(hit(cone, k)).toBe(false);
-    // 사람이 있는 방도 그대로 칸 안이다
-    const [l0, l1] = [toScreen(cam, box, [LIVED.x0, LIVED.y0]), toScreen(cam, box, [LIVED.x1, LIVED.y1])];
-    expect(l0.x).toBeGreaterThanOrEqual(focus.x0 - 1e-6);
-    expect(l1.x).toBeLessThanOrEqual(focus.x1 + 1e-6);
-    // 눈을 모르면(맞추기 전) 사람이 있는 방만 지킨다
-    expect(homeKeep({ ...frame, robot: null }, HOME.shapes)).toEqual(LIVED);
+    // 눈을 모르면(맞추기 전) 사람이 있는 방
+    expect(watchFocus({ ...frame, robot: null }, HOME.shapes)).toEqual(LIVED);
   });
 
-  it("사람이 있는 방이 칸보다 커지는 배율로는 당기지 않는다", () => {
-    const tight = { top: 300, right: 900, bottom: 300, left: 300 };
-    const c = homeCamera(box, WHOLE, LIVED, tight);
-    const fit = Math.min((box.width - 1200) / (LIVED.x1 - LIVED.x0), (box.height - 600) / (LIVED.y1 - LIVED.y0));
-    expect(c.scale).toBeLessThanOrEqual(fit + 1e-9);
+  it("고치기 전보다 가깝다: 지켜보기는 20% 넘게, 계획 단계는 그림 MAX_SCALE에 닿지 않았으면 더 가깝다(닿았으면 그대로)", () => {
+    const before = BEFORE[`${width}x${height}`];
+    if (!before) return;
+    expect(view(0).cam.scale).toBeGreaterThan(before[0]! * 1.2);
+    for (const n of [1, 2, 3, 4]) {
+      const now = view(n).cam.scale;
+      if (before[n]! >= MAX_SCALE - 1e-9) expect(now, `순간 ${n}`).toBeCloseTo(MAX_SCALE, 6);
+      else expect(now, `순간 ${n}`).toBeGreaterThan(before[n]! * 1.1);
+    }
+  });
+
+  it.each([1, 2, 3, 4])("순간 %i: 맞출 곳(그 단계)의 가운데가 빈 곳 가운데에 온다", (n) => {
+    const { frame, cam } = view(n);
+    const f = focusOf(frame, HOME.shapes)!;
+    const c = toScreen(cam, box, [(f.x0 + f.x1) / 2, (f.y0 + f.y1) / 2]);
+    expect(Math.abs(c.x - middle.x)).toBeLessThan(1);
+    expect(Math.abs(c.y - middle.y)).toBeLessThan(1);
   });
 
   it.each([0, 1, 2, 3, 4])("순간 %i: 카메라 배율은 집 전체를 보이는 배율 이상이다(집 전체보다 멀어지지 않는다)", (n) => {
