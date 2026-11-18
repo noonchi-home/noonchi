@@ -137,7 +137,7 @@ export function startAct(core: HomeCore): (event: BrainLog) => void {
     pam: new PamClient({ settings: pamSettings(env), timeoutMs: Number.isFinite(pamTimeout) && pamTimeout > 0 ? pamTimeout : undefined }),
     // 행동 목록은 지금 모드를 따르고(들은 말이 있으면 말로 부탁한 코치 행동도), 판단 기록의 모드는 그 판단 뒤의 지금 모드다(src/act/mode.ts)
     world: { view }, trigger: new Trigger(loadTriggerConfig(env), now()), tasks: (heard) => pamTasks(core.mode(), heard), mode: (action) => core.mode(action),
-    memory: () => memoryForDay(history.db, history.db.dayOf(now())), emit, offsetMinutes: history.db.offsetMinutes, clock: ctx.brain?.clock,
+    memory: () => memoryForDay(history.db, history.db.dayOf(now()), { log: ctx.log }), emit, offsetMinutes: history.db.offsetMinutes, clock: ctx.brain?.clock,
     // 행동 중 기다리기·기기 단계 동안은 PAM을 부르지 않는다(실행 추적이 조건을 본다)
     hold: () => (core.tracker?.waiting() ?? false) || (core.tracker?.coaching() ?? false),
     keepHeard: () => core.keepHeard,

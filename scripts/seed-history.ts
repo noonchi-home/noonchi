@@ -303,7 +303,7 @@ class Week {
     const atMs = this.t;
     const view = this.view();
     const textSent = textFromWorld(view, this.recent, { nowMs: atMs, offsetMinutes: this.db.offsetMinutes });
-    const mem = this.seedOnly !== null ? { version: this.seedOnly } : memoryForDay(this.db, this.day, { patch: false });
+    const mem = this.seedOnly !== null ? { version: this.seedOnly } : memoryForDay(this.db, this.day);
     const seq = ++this.seq;
     // 판단은 돕는 방식 자동처럼 모든 행동 가운데 고른다(앞 둘의 순서는 컵 행동과 같다)
     const tasks: string[] = [...TASK_NAMES];

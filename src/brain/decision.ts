@@ -246,19 +246,10 @@ export const CUP_FSM_MEMORY: FsmMemory = {
   ],
 };
 
-/** 이미 배운 기억(반성·합성 판본)에도 한 번 넣는 seed 바뀜: 그 상태의 규칙을 지금 seed의 규칙으로 바꾼다(다른 상태의 배운 규칙은 둔다).
- *  seed 판본은 seed 올리기(src/brain/history/reflect.ts memoryForDay)가 바꾸므로, 가장 새 판본이 반성·합성 판본인 DB에만 쓴다. DB마다 한 번(그 뒤 반성이 배운 것은 둔다). */
-export const SEED_PATCHES: readonly { id: string; state: string }[] = [
-  // 컵을 두고 자리를 비우면 내용물과 상관없이 치우는 습관(2026-11-16 사용자 결정): 그대로 두기·물어보기 규칙을 뺀다
-  { id: "2026-11-16-clear-habit", state: "left_cup" },
-];
-
-/** seed 바뀜 하나를 넣은 기억. 그 상태가 없으면 null. */
-export function patchMemory(memory: FsmMemory, patch: { state: string }): FsmMemory | null {
-  const seed = CUP_FSM_MEMORY.states.find((s) => s.id === patch.state);
-  if (!seed || !memory.states.some((s) => s.id === patch.state)) return null;
-  return { ...memory, states: memory.states.map((s) => (s.id === patch.state ? { ...s, next: seed.next.map((e) => ({ ...e })) } : s)) };
-}
+/** 2026-11-18 전 모양(상태 안 rules)인가. 옮기지 않는다(합성 기록에서 나온 기억이라 새 seed로 다시 시작, 사용자 답). */
+export const isOldFsm = (v: unknown): boolean =>
+  !!v && typeof v === "object" && Array.isArray((v as { states?: unknown }).states)
+  && (v as { states: unknown[] }).states.some((s) => !!s && typeof s === "object" && "rules" in s);
 
 /** 대기(null)·list 기억·기억에 없는 행동이면 null. */
 export function fsmRuleOf(memory: PamMemory, kind: "list" | "fsm", action: string | null): FsmRuleAt | null {

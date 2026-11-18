@@ -125,16 +125,6 @@ export class HistoryDb {
     this.db.prepare(`INSERT INTO meta(key, value) VALUES (?, ?) ON CONFLICT(key) DO ${replace ? "UPDATE SET value = excluded.value" : "NOTHING"}`).run(`memory_day:${day}`, String(version));
   }
 
-  /** 이미 배운 기억에 넣는 seed 바뀜(src/brain/decision.ts SEED_PATCHES)의 표시(meta seed_patch:<열쇠>): <id>는 넣을 판본의 경계, <id>:<판본>은 그 판본을 고친 판본. 없으면 null. */
-  seedPatch(id: string): number | null {
-    const r = this.db.prepare("SELECT value FROM meta WHERE key = ?").get(`seed_patch:${id}`) as { value: string } | undefined;
-    return r ? Number(r.value) : null;
-  }
-
-  /** seed 바뀜 하나를 넣었다고 적는다(한 DB에 한 번). */
-  markSeedPatch(id: string, version: number): void {
-    this.db.prepare("INSERT INTO meta(key, value) VALUES (?, ?) ON CONFLICT(key) DO NOTHING").run(`seed_patch:${id}`, String(version));
-  }
 
   /** 디스크에 둔 사진 하나(photo 사진 찍기, dataset 시험 자료). 보관 기간이 지나면 retention.sweep이 지운다. */
   addPhoto(p: StoredPhoto): void {

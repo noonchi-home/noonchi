@@ -5,12 +5,12 @@
 // 결과는 기록 DB(reflection)와 판단 기록(brain)에 남긴다.
 // fsm 기억은 저장 전에 반성 뒤 검사를 거친다(src/brain/history/habits.ts): 코치 규칙 지키기 → 습관 거르기(기본 모두 남기기) → 코치 규칙 지키기 → 모양 검사.
 import { TASKS } from "../../act/tasks.js";
-import { CUP_FSM_MEMORY, MAX_REFLECT_TEXT, SEED_PATCHES, patchMemory, validateMemory, type FsmMemory, type PamMemory } from "../decision.js";
+import { CUP_FSM_MEMORY, MAX_REFLECT_TEXT, isOldFsm, validateMemory, type FsmMemory, type PamMemory } from "../decision.js";
 import type { PamClient } from "../pam/index.js";
 import type { BrainLog, PamUsage } from "../../contract/events.js";
 import type { HistoryDb } from "./db.js";
 import { coachGuard, keepAll, learnedRules, type HabitFilter, type HabitRuleNote, type RuleLine } from "./habits.js";
-import { REFLECT_TEXT } from "./labels.js";
+import { MEMORY_TEXT, REFLECT_TEXT } from "./labels.js";
 import { daySummary } from "./summary.js";
 
 const nextDay = (day: string) => new Date(Date.parse(`${day}T00:00:00Z`) + 86_400_000).toISOString().slice(0, 10);
@@ -41,67 +41,10 @@ const HABIT_KINDS = ["world", "device", "decision", "execution", "feedback"] as 
 /** 그날 고정한 판본. 없으면 그날 쓸 수 있는 가장 새 판본을 고정하고, 판본이 하나도 없으면 컵 FSM 기억을 seed로 저장한다.
  *  seed 판본 올리기: 그날 쓸 판본이 seed인데 내용이 지금 코드의 seed(CUP_FSM_MEMORY)와 다르고(JSON 글 비교) DB에서 가장 새 판본도 seed면,
  *  지금 seed 판본(가장 새 판본이 이미 그것이면 그 판본, 아니면 새로 저장)을 그날에 다시 고정한다.
- *  가장 새 판본이 반성 판본(또는 합성 기록)이면 건드리지 않는다: seed는 seed 뒤에만 올리므로 새 seed가 반성 판본을 덮지 않는다. */
-export function memoryForDay(db: HistoryDb, day: string, o: { patch?: boolean } = {}): DayMemory {
-  const cur = dayMemory(db, day);
-  // 합성 기록을 만드는 동안(scripts/seed-history.ts, 습관을 배우기 전 기록)과 지난날 반성(그날 판본 그대로)은 넣지 않는다
-  return o.patch === false ? cur : patchedForDay(db, day, cur);
-}
-
-/** seed 바뀜(SEED_PATCHES)을 이미 배운 기억(반성·합성 판본)에 넣는다. 그 바뀜을 처음 본 때의 가장 새 판본까지(경계, meta seed_patch:<id>)만 넣고
- *  그 뒤 판본(반성이 고친 기억에서 다시 배운 것)은 둔다. 넣는 것은 판본마다 한 번(meta seed_patch:<id>:<판본>): 그날 쓰는 판본을 먼저, 가장 새 판본을 나중에 고쳐
- *  가장 새 판본을 고친 것이 가장 높은 판본이 되게 한다(앞으로의 날이 옛 판본을 고친 것을 쓰지 않게). 가장 새 판본에 고칠 것이 없으면(이미 습관이 있음·경계 뒤 판본)
- *  옛 판본을 고친 것보다 앞서게 같은 내용으로 다시 저장한다. 그날 쓰던 판본을 고쳤으면 그날을 고친 판본으로 다시 고정한다.
- *  seed 판본은 seed 올리기가 맡는다. */
-function patchedForDay(db: HistoryDb, day: string, cur: DayMemory): DayMemory {
-  let out = cur;
-  for (const patch of SEED_PATCHES) {
-    let edge = db.seedPatch(patch.id);
-    if (edge === null) {
-      edge = db.latestMemoryVersion() ?? cur.version;
-      db.markSeedPatch(patch.id, edge);
-    }
-    const head = db.latestMemoryVersion();
-    if (head === null) continue;
-    const pin = (made: number) => {
-      db.pinMemory(day, made, true);
-      out = { memory: validateMemory(db.memoryVersion(made)!.memory as never, "fsm"), kind: "fsm", version: made };
-    };
-    // 그날 판본이 가장 새 판본이 아니면 그것을 먼저 고친다
-    let copied = false;
-    if (cur.version !== head && cur.version <= edge) {
-      const made = patchVersion(db, patch, cur.version);
-      if (made !== null) {
-        pin(made);
-        copied = made > head;
-      }
-    }
-    const headMade = head <= edge ? patchVersion(db, patch, head) : null;
-    if (headMade !== null && headMade > head) {
-      if (out.version === head) pin(headMade);
-    } else if (copied) {
-      // 옛 그날 판본을 고친 것이 가장 높은 판본이 됐다: 가장 새 판본을 그대로 다시 저장해 앞서게 한다(다음 날이 그 배운 규칙을 잃지 않게)
-      const src = db.memoryVersion(head)!;
-      db.saveMemory({ kind: src.kind, memory: src.memory, day: src.day, appliesDay: src.appliesDay, source: src.source });
-    }
-  }
-  return out;
-}
-
-/** 판본 하나에 seed 바뀜을 넣은 판본(같은 출처·적용일). 넣을 것이 없으면(seed·list·그 상태 없음·이미 같음) null. 판본마다 한 번만 만든다. */
-function patchVersion(db: HistoryDb, patch: (typeof SEED_PATCHES)[number], base: number): number | null {
-  const key = `${patch.id}:${base}`;
-  const done = db.seedPatch(key);
-  if (done !== null) return done === base ? null : done;
-  const m = db.memoryVersion(base);
-  const memory = m && m.kind === "fsm" && m.source !== "seed" ? patchMemory(validateMemory(m.memory as never, "fsm") as FsmMemory, patch) : null;
-  if (!m || !memory || JSON.stringify(memory) === JSON.stringify(m.memory)) {
-    db.markSeedPatch(key, base);
-    return null;
-  }
-  const version = db.saveMemory({ kind: "fsm", memory, day: m.day, appliesDay: m.appliesDay, source: m.source });
-  db.markSeedPatch(key, version);
-  return version;
+ *  가장 새 판본이 반성 판본(또는 합성 기록)이면 건드리지 않는다: seed는 seed 뒤에만 올리므로 새 seed가 반성 판본을 덮지 않는다.
+ *  옛 모양 기억(상태 안 rules, isOldFsm)은 옮기지 않는다: 새 seed 판본으로 다시 시작하고(가장 새 판본이 이미 지금 seed면 그 판본) log에 한 줄 남긴다(2026-11-18 사용자 답). */
+export function memoryForDay(db: HistoryDb, day: string, o: { log?: (line: string) => void } = {}): DayMemory {
+  return dayMemory(db, day, o);
 }
 
 /** 반성이 읽는 그날 기억: 고정·저장하지 않는다. 그날 고정 판본 → 그날 쓸 판본 → 지금 seed 차례(dayMemory와 같은 골라내기). */
@@ -109,6 +52,8 @@ function readDayMemory(db: HistoryDb, day: string): { memory: PamMemory; kind: "
   const pinned = db.pinnedMemory(day);
   const m = pinned !== null ? db.memoryVersion(pinned) : db.memoryFor(day);
   if (!m) return { memory: CUP_FSM_MEMORY, kind: "fsm" };
+  // 옛 모양 기억은 읽지 않는다(새 seed로 반성한다)
+  if (m.kind === "fsm" && isOldFsm(m.memory)) return { memory: CUP_FSM_MEMORY, kind: "fsm" };
   const seed = JSON.stringify(CUP_FSM_MEMORY);
   if (m.source === "seed" && JSON.stringify(m.memory) !== seed && db.memoryVersion(db.latestMemoryVersion() ?? m.version)?.source === "seed") {
     return { memory: CUP_FSM_MEMORY, kind: "fsm" };
@@ -116,10 +61,18 @@ function readDayMemory(db: HistoryDb, day: string): { memory: PamMemory; kind: "
   return { memory: validateMemory(m.memory, m.kind), kind: m.kind };
 }
 
-function dayMemory(db: HistoryDb, day: string): DayMemory {
+function dayMemory(db: HistoryDb, day: string, o: { log?: (line: string) => void }): DayMemory {
   const pinned = db.pinnedMemory(day);
   const m = pinned !== null ? db.memoryVersion(pinned) : db.memoryFor(day);
   const seed = JSON.stringify(CUP_FSM_MEMORY);
+  if (m && m.kind === "fsm" && isOldFsm(m.memory)) {
+    const latest = db.memoryVersion(db.latestMemoryVersion() ?? m.version);
+    const version = latest && latest.source === "seed" && JSON.stringify(latest.memory) === seed
+      ? latest.version : db.saveMemory({ kind: "fsm", memory: CUP_FSM_MEMORY, day: null, appliesDay: null, source: "seed" });
+    db.pinMemory(day, version, true);
+    o.log?.(MEMORY_TEXT.restart(m.version));
+    return { memory: CUP_FSM_MEMORY, kind: "fsm", version };
+  }
   if (m && m.source === "seed" && JSON.stringify(m.memory) !== seed) {
     const latest = db.memoryVersion(db.latestMemoryVersion() ?? m.version);
     if (latest?.source === "seed") {
@@ -188,7 +141,7 @@ export async function runReflection(db: HistoryDb, pam: PamClient, day: string, 
     // 저장 바로 전에도 끊겼는지 본다(끊긴 반성은 날 고정·새 판본·성공 기록을 남기지 않는다)
     if (o.signal?.aborted) return { ok: false, error: REFLECT_TEXT.cancelled };
     // 끝난 반성만 그날 판본을 고정한다(판본이 없으면 seed를 저장한다). 읽을 때는 고정하지 않았다
-    memoryForDay(db, day, { patch: false });
+    memoryForDay(db, day);
     let appliesDay = nextDay(day);
     while (db.pinnedMemory(appliesDay) !== null) appliesDay = nextDay(appliesDay);
     const version = db.saveMemory({ kind: cur.kind, memory, day, appliesDay, source: "reflection" });

@@ -33,6 +33,9 @@ export const REFLECT_TEXT = {
   learned: (n: number) => `새 규칙 ${n}개를 배웠어요`,
 };
 
+/** 기억 판본 글(서버 로그). */
+export const MEMORY_TEXT = { restart: (version: number) => `옛 모양 기억 ${version}판이라 새 seed로 다시 시작해요` };
+
 /** 폰 부탁·질문의 답과 그동안의 말(반성 피드백). */
 export const FEEDBACK_TEXT = {
   answer: (said: string, kind: "command" | "ask", asked: string) => `${said} · ${kind === "ask" ? "질문" : "부탁"}: ${asked}`,
