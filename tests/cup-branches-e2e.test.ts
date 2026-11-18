@@ -109,6 +109,11 @@ describe("컵 장면 갈래", () => {
     await s.pump(async () => (await s.history("world")).some((r) => r.text === "컵 cup_1 비어 있음"));
     expect((await s.history("decision")).map((r) => r.text)).toContain("컵 치우기");
     expect((pam!.bodies.at(-1) as PredictView).tasks).toEqual(tasksFor("noonchi"));
+    // 계획 모드 차례마다 기록 DB planner 줄(계획 id·차례·시간·통과 여부, data에 낸 단계)
+    const rounds = await s.history("planner");
+    expect(rounds.at(-1)).toMatchObject({ kind: "planner", text: expect.stringMatching(/^계획 모드 1\/3차례 \d+\.\d초 · 통과$/), data: { task: "컵 치우기", n: 1, error: null, last: true } });
+    expect(rounds.at(-1)!.subject).toMatch(/^plan:pam-\d+$/);
+    expect(((rounds.at(-1)!.data as { steps: { kind: string }[] }).steps).map((x) => x.kind)).toEqual(["go", "pick", "go", "place"]);
   }, 60_000);
 
   it("물이 남은 컵 + 사람 없음 → 컵 치우기(컵을 두고 떠나면 치우는 습관, 내용물과 상관없음): 실제 폰 첫 명령은 「식탁으로 가 주세요」이고 그대로 두기는 고르지 않는다", async () => {

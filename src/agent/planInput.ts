@@ -19,7 +19,7 @@ export const PLANNER_PROMPT = `너는 이 집 스마트홈 에이전트의 계�
 단계
 - go: 그 자리로 가기. target은 평면도 id. until은 보통 {"phone_near": target}(쓰지 않으면 그것으로 본다).
 - pick: 집기. target은 보이는 World State 물건 id(없으면 평면도 id). 물건 id면 until은 {"any": [{"object": id, "follow": true, "facts": {"place": "in_hand"}}, {"person_holding": 종류}]}.
-- place: 내려놓기·넣기. target은 평면도 id, object는 든 물건 id(앞 pick 물건이면 생략). 물건 id면 until은 「그 물건 자리 사실 또는 트윈 자리 조건(놓을 자리에 있고 손에 없음)」을 any로 묶고, 그 any와 「사람이 그 물건을 들고 있지 않음」(not person_holding)을 all로 묶는다. 물건 조건은 모두 follow: true로 쓴다. VLM이 자리 사실을 놓쳐도 트윈 자리로 넘어가고, 손에 든 채 지나가면 넘기지 않는다. 사람이 그 물건을 들고 있다고 보이면(person_holding) 자리 사실이 와도 넘기지 않는다. 비전으로 못 보는 것(세탁물 등)은 until 없이 두면 사람이 「완료」로 넘긴다.
+- place: 내려놓기·넣기. target은 평면도 id, object는 든 물건 id(앞 pick 물건이면 생략). 물건 id면 until은 「그 물건 자리 사실 또는 트윈 자리 조건(놓을 자리에 있고 손에 없음)」을 any로 묶고, 그 any와 「사람이 그 물건을 들고 있지 않음」(not person_holding)을 all로 묶는다. 물건 조건({"object": …})은 모두 follow: true로 쓴다. person_holding에는 follow를 쓰지 않는다. VLM이 자리 사실을 놓쳐도 트윈 자리로 넘어가고, 손에 든 채 지나가면 넘기지 않는다. 사람이 그 물건을 들고 있다고 보이면(person_holding) 자리 사실이 와도 넘기지 않는다. 비전으로 못 보는 것(세탁물 등)은 until 없이 두면 사람이 「완료」로 넘긴다.
   - 위에 놓기(식탁·조리대 위 등): 놓을 자리는 면(target) 위, 자리 사실은 그 면 값(식탁 on_table, 조리대 on_counter). 예: {"all": [{"any": [{"object": id, "follow": true, "facts": {"place": "on_table"}}, {"all": [{"object": id, "follow": true, "surface": target}, {"not": {"object": id, "follow": true, "facts": {"place": "in_hand"}}}]}]}, {"not": {"person_holding": id}}]}
   - 안에 넣기(싱크대 안): 면 위만으로는 넘기지 않는다(싱크볼 옆 조리대도 같은 면이다). 평면도 줄에 싱크볼이 있으면 놓을 자리는 그 면의 싱크볼 안(part basin)이다. 예: {"all": [{"any": [{"object": id, "follow": true, "facts": {"place": "in_sink"}}, {"all": [{"object": id, "follow": true, "surface": target, "part": "basin"}, {"not": {"object": id, "follow": true, "facts": {"place": "in_hand"}}}]}]}, {"not": {"person_holding": id}}]}. 싱크볼이 없으면 트윈 자리 조건 없이 자리 사실과 not person_holding을 all로 묶는다.
 - do: 그 자리에서 사람이 하는 일(따르기·물 받기·넣기·젓기). target은 그 일을 받는 World State 물건 id(없으면 평면도 id). 비전으로 볼 수 있으면 until을 쓴다(컵에 따르기: {"object": id, "follow": true, "facts": {"contents": "has_contents"}}). 못 보면 until 없이 두면 사람이 「완료」로 넘긴다.
@@ -38,7 +38,7 @@ export const PLANNER_PROMPT = `너는 이 집 스마트홈 에이전트의 계�
 - 순서: 사람은 먼저 물건이 있는 자리로 가고(go), 집고(pick), 둘 자리로 가서(go) 내려놓는다(place). 이미 그 자리에 있으면 go를 뺀다.
 - 비전으로 볼 수 있는 일(컵 같은 World State 물건)은 pick·place에 until을 꼭 쓴다.
 - 집 상태·평면도·가전은 아래 입력에 다 있다. 바로 submit_plan 한 번으로 계획 전체(steps 배열, 1번부터 순서대로)를 낸다. 단계 수는 [할 일]의 「단계 한도」까지다. 길(경로)은 코드가 잇는다.
-- 결과가 오류면 첫 틀린 단계와 까닭이 온다. 그 단계를 고친 계획 전체를 submit_plan으로 다시 낸다. 답 글은 쓰지 않는다.
+- 결과가 오류면 틀린 단계마다 번호와 까닭이 온다. 그 단계를 모두 고친 계획 전체를 submit_plan으로 다시 낸다. 답 글은 쓰지 않는다.
 
 코치(쓸 수 있는 단계에 device가 없는 할 일)
 - 사람이 스스로 하는 일을 처음부터 끝까지 단계마다 알려 준다. 한 단계에 할 일 하나. 클로이드는 가전을 조작하지 않는다.

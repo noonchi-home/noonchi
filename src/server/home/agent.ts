@@ -1,7 +1,7 @@
 // 집 실행 묶음의 에이전트 잇기(src/agent): 승인 기억·정책(가전 명령)·공급자·배치 보정·외부 연락·말 요청 에이전트·계획 모드·관찰 모드, 에이전트가 다룬 물건 초점.
 // 승인 기억(runtime/homes/<집>/approvals.json, src/agent/approval.ts)은 집마다 하나이고 정책(가전 명령)과 실행 추적(PAM 계획)이 같이 쓴다.
 // 외부 연락(call_service)은 받는 이 등록부·다시 보내기 id 파일과 함께 에이전트에 붙고, 결과는 기록 DB service 줄과 말풍선 카드(serviceSaid)에 남는다.
-import { Agent, ApprovalStore, Observer, Planner, Policy, approvalsPath, createProvider } from "../../agent/index.js";
+import { Agent, ApprovalStore, Observer, Planner, Policy, approvalsPath, createProvider, planRoundLine, planRoundText } from "../../agent/index.js";
 import { ServiceRetryStore, contactsPath, loadContacts, serviceRecord, serviceRetryPath, serviceSay } from "../../agent/index.js";
 import { callServiceFrom } from "../../infer/call-service.js";
 import type { ServiceResult } from "../../contract/service.js";
@@ -42,8 +42,15 @@ export function startAgent(core: HomeCore): void {
   const retriesProblem = retries.problem();
   if (retriesProblem) log(`[경고] ${retriesProblem}. 고칠 때까지 외부 연락을 하지 않습니다.`);
   const agent = new Agent({ hub: signals, policy, rooms: twin.rooms, provider, layout, keepHeard, service, onService, contacts, retries });
-  // 에이전트 계획 모드(src/agent/planner.ts): PAM이 고른 행동 하나를 단계 계획으로. 말 요청 에이전트와 같은 공급자
-  const planner = new Planner({ provider });
+  // 에이전트 계획 모드(src/agent/planner.ts): PAM이 고른 행동 하나를 단계 계획으로. 말 요청 에이전트와 같은 공급자.
+  // 차례마다(모델 호출 하나) 시간·토큰·낸 단계·계획 검사가 버린 까닭을 서버 로그와 기록 DB(planner)에 남긴다
+  const planner = new Planner({
+    provider,
+    onRound: (r) => {
+      log(planRoundLine(r));
+      history.db.add("planner", core.nowMs(), planRoundText(r), { subject: r.plan, data: r });
+    },
+  });
   // 에이전트 관찰 모드(src/agent/observer.ts): 잘 못 볼 때 가까이 보기·사람 부탁·기다리기 중 하나를 고른다. 말 요청·계획 모드와 같은 공급자
   const observer = new Observer({ provider });
   core.approvals = approvals;

@@ -1,5 +1,5 @@
 // 에이전트 계획 모드의 도구와 계획 검사(docs/superpowers/plans/2026-11-10-agent-plans.md).
-// 에이전트는 submit_plan 한 번으로 계획 전체를 낸다. 낼 때마다 전체를 새로 검사해 틀리면 첫 틀린 단계와 이유를 돌려준다(모델이 고친 전체를 다시 낸다).
+// 에이전트는 submit_plan 한 번으로 계획 전체를 낸다. 낼 때마다 전체를 새로 검사해 틀리면 틀린 단계마다 번호와 이유를 돌려준다(모델이 고친 전체를 다시 낸다).
 // 경로는 모델이 아니라 assemblePlan(src/agent/planShape.ts)이 이동 단계마다 잇는다. 기기를 바꾸는 도구는 계획 모드에 없다:
 // 기기 단계는 도구 이름·인자만 적어 두고, 실행 추적(src/act/track/)이 그 단계가 되면 정책(승인 규칙)을 거쳐 부른다.
 import { z } from "zod";
@@ -19,7 +19,7 @@ import { KIND_LABELS, findTypeRule } from "../devices/index.js";
 import { placeName, type PlaceNames } from "../layout/index.js";
 import { OBJECT_NAME } from "../world/labels.js";
 import { CLASSES, DEVICE_STATES, type DeviceStateKey } from "../world/vocab.js";
-import { ConditionSchema, checkCondition, type Condition, type ConditionHome } from "../world/index.js";
+import { ConditionSchema, checkCondition, conditionProblems, type Condition, type ConditionHome } from "../world/index.js";
 import { RISKY_NAME_PROBLEM, riskyNames } from "./policy.js";
 import { TOOLS, type ToolDef, type ToolResult } from "./tools.js";
 import { HUMAN_KINDS, riskyHand, selfStopWait } from "./plan-rules.js";
@@ -155,7 +155,7 @@ export const STEP_ARGS = z.object({
   args: z.record(z.string(), z.unknown()).optional().describe("device: 그 도구 인자(device_id 빼고)"),
   hand_device: z.object({ id: z.string().min(1), to: z.enum(["on", "off", "open", "close"]) }).optional()
     .describe("do 켜기·끄기·열기·닫기: 그 대상 가전(id는 target과 같음)과 동작(on·off·open·close). 그 밖의 단계에는 쓰지 않는다"),
-  until: z.record(z.string(), z.unknown()).optional().describe("끝나는 조건: World State 조건 JSON(조건 낱말의 키만). wait에는 꼭. place는 자리 사실 또는 트윈 자리(손에 없음, not in_hand)를 any로 묶고, 그 any와 사람이 들고 있지 않음(not person_holding)을 all로 묶는다. 트윈 자리는 위에 놓기면 놓을 면(target) 위, 안에 넣기(싱크대)면 그 면의 싱크볼 안(part basin). 물건 조건은 모두 follow: true"),
+  until: z.record(z.string(), z.unknown()).optional().describe(`끝나는 조건: World State 조건 JSON(조건 낱말의 키만). wait에는 꼭. place는 자리 사실 또는 트윈 자리(손에 없음, not in_hand)를 any로 묶고, 그 any와 사람이 들고 있지 않음(not person_holding)을 all로 묶는다. 트윈 자리는 위에 놓기면 놓을 면(target) 위, 안에 넣기(싱크대)면 그 면의 싱크볼 안(part basin). 물건 조건({"object": …})은 모두 follow: true(person_holding에는 쓰지 않음)`),
   timeout_s: z.number().int().describe("이 단계 시간 한도(초)"),
   on_timeout: z.enum(["ask", "fail"]).optional().describe("시간이 지나면 ask 계속할지 묻기, fail 실패(기본)"),
 });
@@ -197,6 +197,8 @@ interface Added { step: Omit<AgentStep, "id">; at: XZ | null }
 
 /** 계획 한 번의 초안. 도구(planTools)가 쓰고, OpenAI를 부르지 않는 합성 기록(scripts/seed-history.ts)도 같은 검사로 쓴다. */
 export const SUBMIT_PLAN = "submit_plan";
+/** 틀린 제출의 오류 글 끝에 붙는 다시 내라는 말(차례 기록에는 빼고 남긴다, src/agent/planner.ts). */
+export const RESUBMIT_HINT = "계획 전체를 고쳐 submit_plan으로 다시 보내세요.";
 
 export class PlanDraft {
   private readonly added: Added[] = [];
@@ -227,13 +229,13 @@ export class PlanDraft {
    *  틀리면 그 번호부터 지우고 까닭을 돌려준다(모델에게 돌려줄 한국어). 그 뒤 번호는 앞 번호가 없어 받지 않는다. */
   add(raw: unknown): { ok: true; step: number } | { ok: false; error: string } {
     if (this.done) return { ok: false, error: "이미 끝낸 계획입니다." };
-    const parsed = STEP_ARGS.safeParse(raw);
-    if (!parsed.success) return { ok: false, error: parsed.error.issues.map((i) => `${i.path.join(".") || "(전체)"}: ${i.message}`).join("; ") };
-    const n = parsed.data.step;
+    const parsed = this.parse(raw);
+    if (typeof parsed === "string") return { ok: false, error: parsed };
+    const n = parsed.step;
     if (n > this.maxSteps) return { ok: false, error: `단계는 ${this.maxSteps}개까지입니다.` };
     if (n > this.added.length + 1) return { ok: false, error: `${n}번 앞에 ${this.added.length + 1}번 단계가 없습니다. ${this.added.length + 1}번부터 번호 순서대로 보내세요.` };
     this.added.length = n - 1;
-    const r = this.check(parsed.data);
+    const r = this.check(parsed);
     if (typeof r === "string") {
       this.blocked = n;
       return { ok: false, error: `${n}번 단계: ${r}.` };
@@ -245,20 +247,34 @@ export class PlanDraft {
 
 
 
+  /** 단계 칸 모양(STEP_ARGS). 틀리면 칸마다 까닭. */
+  private parse(raw: unknown): StepArgs | string {
+    const parsed = STEP_ARGS.safeParse(raw);
+    return parsed.success ? parsed.data : parsed.error.issues.map((i) => `${i.path.join(".") || "(전체)"}: ${i.message}`).join("; ");
+  }
+
   /** submit_plan: 낼 때마다 계획 전체를 새로 검사한다(앞 제출은 남지 않는다). 단계 번호는 배열 순서다.
-   *  틀리면 첫 틀린 단계와 까닭에 「전체를 다시 보내라」를 붙여 돌려준다. 다 맞으면 끝낸다(finish). */
+   *  틀린 단계마다 번호와 까닭을 모아 「전체를 다시 보내라」를 붙여 한 번에 돌려준다(2026-11-18: 첫 틀린 단계만 돌려주면 집기·놓기가 같은 실수를 해도
+   *  고치는 데 단계마다 한 차례씩 들어 모델 차례 3번을 넘겼다). 틀린 단계는 두지 않아, 뒤 단계는 틀린 단계 없이 검사한다. 다 맞으면 끝낸다(finish). */
   submit(raw: unknown): { ok: true; plan: AgentPlan } | { ok: false; error: string } {
     if (this.done) return { ok: true, plan: this.done };
-    const again = (e: string) => ({ ok: false as const, error: `${e} 계획 전체를 고쳐 submit_plan으로 다시 보내세요.` });
+    const again = (e: string) => ({ ok: false as const, error: `${e} ${RESUBMIT_HINT}` });
     const steps = (raw as { steps?: unknown } | null)?.steps;
     if (!Array.isArray(steps) || steps.length === 0) return again("steps에 단계가 없습니다.");
     if (steps.length > this.maxSteps) return again(`단계는 ${this.maxSteps}개까지입니다.`);
     this.added.length = 0;
     this.blocked = null;
+    const wrong: string[] = [];
     for (const [i, step] of steps.entries()) {
       const n = i + 1;
-      const r = this.add({ ...(step && typeof step === "object" ? step : {}), step: n });
-      if (!r.ok) return again(r.error.startsWith(`${n}번 단계`) ? r.error : `${n}번 단계: ${r.error}`);
+      const parsed = this.parse({ ...(step && typeof step === "object" ? step : {}), step: n });
+      const r = typeof parsed === "string" ? parsed : this.check(parsed);
+      if (typeof r === "string") wrong.push(`${n}번 단계: ${r}.`);
+      else this.added.push(r);
+    }
+    if (wrong.length) {
+      this.added.length = 0;
+      return again(wrong.join(" "));
     }
     const f = this.finish();
     if (!f.ok) return again(f.error);
@@ -525,7 +541,7 @@ export class PlanDraft {
     // 손 조작 동작(켜기·끄기·열기·닫기)의 끝 조건은 서버가 만든다: 모델 until은 보지도 쓰지도 않는다
     if (a.until !== undefined && !(a.kind === "do" && handTo)) {
       const c = ConditionSchema.safeParse(a.until);
-      if (!c.success) errors.push(`until이 조건 낱말 모양이 아닙니다: ${c.error.issues.slice(0, 3).map((i) => `${i.path.join(".") || "(전체)"}: ${i.message}`).join("; ")}`);
+      if (!c.success) errors.push(`until이 조건 낱말 모양이 아닙니다: ${conditionProblems(a.until).slice(0, 3).join("; ")}`);
       else {
         until = c.data;
         const bad = checkCondition(until, this.home);

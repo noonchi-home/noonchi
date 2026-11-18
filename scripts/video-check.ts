@@ -84,7 +84,7 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 // 표
 
-export type Kind = "사람 등장" | "사람 사라짐" | "물건 등장" | "물건 사라짐" | "PAM 판단" | "목표" | "계획" | "단계" | "명령" | "영상" | "트윈" | "가까이 보기" | "말" | "누름" | "끝";
+export type Kind = "사람 등장" | "사람 사라짐" | "물건 등장" | "물건 사라짐" | "PAM 판단" | "목표" | "계획" | "단계" | "명령" | "영상" | "트윈" | "가까이 보기" | "계획 모드" | "말" | "누름" | "끝";
 /** 표 한 줄. ms는 영상 시각, n은 묶은 줄 수. */
 export interface Row { ms: number; kind: Kind; text: string; n: number }
 /** 폰 페이지가 남긴 명령(window.__noonchiVideo.commands). */
@@ -167,6 +167,8 @@ export function timeline(t0: number | ((atMs: number) => number), history: Histo
     } else if (h.kind === "goal") {
       // 미리 세운 목표의 전환(세움·계획 준비됨·사람 떠남·씀·버림, 서버 goalRecorder)
       raw.push({ ms, kind: "목표", text: h.text, n: 1, from: `goal:${h.subject ?? ""}` });
+    } else if (h.kind === "planner") {
+      raw.push({ ms, kind: "계획 모드", text: h.text, n: 1, from: "planner" });
     } else if (h.kind === "execution") {
       const state = (h.data as { state?: string } | null)?.state ?? "";
       if (!EXEC_PLAIN.has(h.text)) raw.push({ ms, kind: EXEC_END.has(state) ? "끝" : "계획", text: h.text, n: 1, from: "execution" });

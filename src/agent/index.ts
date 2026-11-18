@@ -6,7 +6,7 @@ export { type ObserveChoice, type ObserveSituation, Observer, type ObserverStatu
 export { devicePlan } from "./planShape.js";
 export { TOOL_STATES, objectNames, resubmit, type AgentPlan, type AgentStep, type PlanAhead, type PlanContext, type PlanResult, placesOf, type PlaceInfo } from "./planTools.js";
 export { HUMAN_KINDS, needsPhone, riskyHand, selfStopWait } from "./plan-rules.js";
-export { Planner } from "./planner.js";
+export { Planner, planRoundLine, planRoundText, type PlanRound } from "./planner.js";
 export { Policy } from "./policy.js";
 export { ServiceRetryStore, contactsPath, loadContacts, serviceRecord, serviceRetryPath, serviceSay } from "./service.js";
 export { createProvider, type AgentEndpoint, agentEndpoint } from "./providers/index.js";

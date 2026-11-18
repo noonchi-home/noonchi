@@ -340,6 +340,16 @@ describe("video-check", () => {
     ]);
   });
 
+  // 2026-11-18 tall e1: 미리 만들기 실패가 「3번 안에 못 냄」만 보여 차례마다 무엇을 버렸는지 시각표에서 몰랐다
+  it("시각표는 계획 모드 차례 기록(planner)을 「계획 모드」 줄로 넣는다", () => {
+    const row = (id: number, at_ms: number, text: string): HistoryRow => ({ id, at_ms, day: "2026-11-18", kind: "planner", subject: "plan:goal-1", text, data: { n: id } });
+    const rows = timeline(0, [row(1, 7_300, "계획 모드 1/3차례 2.4초 · 버림 · 2번 단계: until이 조건 낱말 모양이 아닙니다: any.1: 쓰지 않는 키 follow."), row(2, 9_800, "계획 모드 2/3차례 2.5초 · 통과")], []);
+    expect(rows.map((r) => [clock(r.ms), r.kind, r.text])).toEqual([
+      ["00:07.3", "계획 모드", "계획 모드 1/3차례 2.4초 · 버림 · 2번 단계: until이 조건 낱말 모양이 아닙니다: any.1: 쓰지 않는 키 follow."],
+      ["00:09.8", "계획 모드", "계획 모드 2/3차례 2.5초 · 통과"],
+    ]);
+  });
+
   it("비용 줄: /api/brain이 없으면 모름, 가까이 보기·관찰 모드가 없으면 앞 글 그대로, 있으면 횟수와 비용(모르면 비용 모름)", () => {
     expect(costLine(null)).toBe("VLM 비용 모름(/api/brain 없음)");
     expect(costLine({ frames: 54, vlm: { sent: 54, costUsd: 0.0301 } })).toBe("VLM 54장 · $0.0301 · 엔진 프레임 54장 · PAM·계획 비용 빠짐");

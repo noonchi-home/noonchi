@@ -96,6 +96,42 @@ export const CONDITION_KINDS = [
   "person", "person_in_room", "person_near", "person_fact", "person_holding", "people_at_least", "object", "fixture", "device", "phone_near", "elapsed_s", "day_part", "for_s", "seq", "all", "any", "not",
 ] as const;
 
+/** 조건 모양이 틀린 곳(「경로: 까닭」, 맞으면 빈 배열). zod 합집합 오류는 「Invalid input」만 남겨 어디를 고칠지 알 수 없어(2026-11-18 계획 모드),
+ *  합집합 오류마다 그 자리 조건 종류에 가장 맞는 갈래(맨 바깥에 모르는 키·빠진 키가 가장 적은 것)의 까닭을 따라 내려간다. */
+export function conditionProblems(raw: unknown): string[] {
+  const r = ConditionSchema.safeParse(raw);
+  return r.success ? [] : issueLines(r.error.issues, [], raw);
+}
+
+type Issue = z.core.$ZodIssue;
+
+/** 그 자리의 값(raw 안 경로). */
+function valueAt(raw: unknown, path: readonly PropertyKey[]): unknown {
+  return path.reduce<unknown>((v, k) => (v && typeof v === "object" ? (v as Record<PropertyKey, unknown>)[k] : undefined), raw);
+}
+
+/** 갈래가 맞지 않는 정도: 맨 바깥의 모르는 키 수와 빠진 키 수. */
+function misfit(issues: readonly Issue[], raw: unknown, at: readonly PropertyKey[]): number {
+  return issues.reduce((n, i) => n + (i.code === "unrecognized_keys" && i.path.length === 0 ? i.keys.length
+    : i.path.length === 1 && (i.code === "invalid_type" || i.code === "invalid_value") && valueAt(raw, [...at, ...i.path]) === undefined ? 1 : 0), 0);
+}
+
+function issueLines(issues: readonly Issue[], base: readonly PropertyKey[], raw: unknown): string[] {
+  return issues.flatMap((i) => {
+    const path = [...base, ...i.path];
+    if (i.code === "invalid_union" && i.errors.length) {
+      const best = [...i.errors].sort((a, b) => misfit(a, raw, path) - misfit(b, raw, path))[0]!;
+      return issueLines(best, path, raw);
+    }
+    const where = path.map(String).join(".") || "(전체)";
+    if (i.code === "unrecognized_keys") return [`${where}: 쓰지 않는 키 ${i.keys.join(", ")}`];
+    const value = valueAt(raw, path);
+    if (i.code === "invalid_value" || (i.code === "invalid_type" && value !== undefined)) return [`${where}: 조건 낱말에 없는 값 ${JSON.stringify(value)}`];
+    if (i.code === "invalid_type") return [`${where}: 빠짐`];
+    return [`${where}: ${i.message}`];
+  });
+}
+
 export function parseCondition(raw: unknown): Condition {
   return ConditionSchema.parse(raw);
 }

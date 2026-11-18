@@ -784,7 +784,7 @@ describe("공급자 배선(가짜 API)", () => {
   });
 
   it("도구를 꼭 부르게 하면(requireTool) openai는 required·병렬 끔, anthropic은 auto·병렬 끔. forceTool이 먼저다. 응답 사용량을 돌려준다", async () => {
-    const usage = { input_tokens: 100, input_tokens_details: { cached_tokens: 40 }, output_tokens: 7, output_tokens_details: { reasoning_tokens: 0 }, total_tokens: 107 };
+    const usage = { input_tokens: 100, input_tokens_details: { cached_tokens: 40 }, output_tokens: 7, output_tokens_details: { reasoning_tokens: 3 }, total_tokens: 107 };
     const resp = (output: unknown[]) => ({ id: "resp_1", object: "response", created_at: 0, model: "gpt-5.5", status: "completed", output, parallel_tool_calls: false, tool_choice: "required", tools: [], usage });
     const call = resp([{ type: "function_call", id: "fc_1", call_id: "call_1", name: "turn_on", arguments: "{}", status: "completed" }]);
     const msg = (content: unknown[], stop: string) => ({ id: "msg_1", type: "message", role: "assistant", model: "claude-opus-5-5", content, stop_reason: stop, stop_sequence: null,
@@ -797,7 +797,8 @@ describe("공급자 배선(가짜 API)", () => {
       const openai = new OpenAIProvider({ apiKey: "test-key", baseURL: oapi.url + "/v1" });
       const r = await openai.step(openai.createState(), { system: "s", tools: [tool], allowTools: true, requireTool: true });
       expect(r.calls).toHaveLength(1);
-      expect(r.usage).toEqual({ model: "gpt-5.5", input: 100, cached: 40, output: 7 });
+      // 생각 토큰(output 가운데)도 알려 주면 남긴다(계획 모드 차례 기록이 생각이 켜졌는지 본다)
+      expect(r.usage).toEqual({ model: "gpt-5.5", input: 100, cached: 40, output: 7, reasoning: 3 });
       await openai.step(openai.createState(), { system: "s", tools: [tool], allowTools: true, requireTool: true, forceTool: "turn_on" });
       await openai.step(openai.createState(), { system: "s", tools: [tool], allowTools: false, requireTool: true });
       expect(oapi.seen[0]!.body).toMatchObject({ tool_choice: "required", parallel_tool_calls: false });
