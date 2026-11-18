@@ -122,7 +122,7 @@ const deviceChange = z.strictObject({
 /** /brain/goal·/brain/goal_changes: 미리 세운 목표 하나. 계획 보기는 실행 추적이 타입으로 만든 객체라 깊이 보지 않는다(최상위 id·steps만). */
 const planView = z.custom<PlanView>((v) => isObj(v) && typeof v.id === "string" && Array.isArray(v.steps));
 const pendingGoal = z.strictObject({
-  id, action: z.string().min(1), state: z.string().min(1), trigger: z.string(), object: id, cls: z.string().min(1),
+  id, action: z.string().min(1), state: z.string().min(1), trigger: z.string(), object: id.nullable(), cls: z.string().min(1),
   status: z.enum(["armed", "fired", "used", "dropped"]), prep: z.enum(["waiting", "planning", "ready", "failed"]),
   reason: z.enum(["took", "back", "moved", "other", "safety", "mode", "dock", "expired", "pam", "stale", "stop"]).nullable(),
   text: z.string().nullable(), armed_ms: at, ready_ms: at.nullable(), gone_ms: at.nullable(), fired_ms: at.nullable(), plan: planView.nullable(),

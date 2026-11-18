@@ -23,7 +23,7 @@
 // t0는 폰 페이지가 서버 시계로 고친 마지막 값을 쓴다. 서버 기록·트윈 줄·누름은 폰 페이지가 남긴 [서버 시각, 영상 시각] 짝(__noonchiVideo.sync)으로
 // 영상 시각에 옮긴다(videoClock): 영상이 멈칫하면 영상 시각이 서버 시계보다 늦게 가 t0 하나로는 폰 명령과 어긋난다. 짝이 없는 옛 기록은 t0를 뺀다.
 // 트윈 컵 줄은 면 이름, 면이 없으면 장면(GET /api/scene)의 방 이름을 쓴다.
-// 끝나면 서버 기록(GET /api/history: 사람·물건 등장·사라짐, PAM 판단, 계획·단계, 실행, 관찰 모드가 고른 것(가까이 보기)), 폰 명령, 바꾼 단계 영상(영상 줄), 트윈 줄(눈 방이 바뀌거나
+// 끝나면 서버 기록(GET /api/history: 사람·물건 등장·사라짐, PAM 판단, 계획·단계, 실행, 관찰 모드가 고른 것(가까이 보기), 미리 세운 목표(목표 줄)), 폰 명령, 바꾼 단계 영상(영상 줄), 트윈 줄(눈 방이 바뀌거나
 // 마지막 눈 줄에서 0.5m 넘게 옮김, 컵 상태·놓인 곳·면·방이 바뀜)을 영상 시각(at_ms − t0)순 표 하나로 합쳐 찍고 --out에 markdown으로 쓴다.
 // 같은 출처의 같은 글이 이어지면 한 줄로 묶고 번 수를 붙인다. 표 밑에 판정 줄(첫 명령 시각, --expect-after초 전 명령, 첫 명령의 계획이 끝났는지),
 // --step이 있으면 단계 판정 줄(첫 명령 계획의 끝난 단계 수, 누른 단추 수, 마지막 트윈 눈 방·컵 놓인 곳), 이번 판 비용 줄(GET /api/brain: VLM, 가까이 보기 횟수·모델,
@@ -78,13 +78,13 @@ const DASH_SIZE: [number, number] = [1280, 800];
 const DASH_WAIT_MS = 8_000;
 /** 마지막 눈 줄에서 이만큼(m) 옮기면 눈 줄을 다시 쓴다 */
 const EYE_MOVE_M = 0.5;
-const HISTORY_KINDS = "detection,decision,plan,execution,look";
+const HISTORY_KINDS = "detection,decision,plan,execution,look,goal";
 /** 영상이 끝난 뒤 남은 답 누르기·계획 끝을 더 기다리는 시간 */
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 // 표
 
-export type Kind = "사람 등장" | "사람 사라짐" | "물건 등장" | "물건 사라짐" | "PAM 판단" | "계획" | "단계" | "명령" | "영상" | "트윈" | "가까이 보기" | "말" | "누름" | "끝";
+export type Kind = "사람 등장" | "사람 사라짐" | "물건 등장" | "물건 사라짐" | "PAM 판단" | "목표" | "계획" | "단계" | "명령" | "영상" | "트윈" | "가까이 보기" | "말" | "누름" | "끝";
 /** 표 한 줄. ms는 영상 시각, n은 묶은 줄 수. */
 export interface Row { ms: number; kind: Kind; text: string; n: number }
 /** 폰 페이지가 남긴 명령(window.__noonchiVideo.commands). */
@@ -164,6 +164,9 @@ export function timeline(t0: number | ((atMs: number) => number), history: Histo
       raw.push({ ms, kind: "PAM 판단", text: h.text, n: 1, from: "decision" });
     } else if (h.kind === "look") {
       raw.push({ ms, kind: "가까이 보기", text: h.text, n: 1, from: "look" });
+    } else if (h.kind === "goal") {
+      // 미리 세운 목표의 전환(세움·계획 준비됨·사람 떠남·씀·버림, 서버 goalRecorder)
+      raw.push({ ms, kind: "목표", text: h.text, n: 1, from: `goal:${h.subject ?? ""}` });
     } else if (h.kind === "execution") {
       const state = (h.data as { state?: string } | null)?.state ?? "";
       if (!EXEC_PLAIN.has(h.text)) raw.push({ ms, kind: EXEC_END.has(state) ? "끝" : "계획", text: h.text, n: 1, from: "execution" });

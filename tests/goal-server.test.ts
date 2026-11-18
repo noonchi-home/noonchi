@@ -5,7 +5,7 @@ import { HistoryDb } from "../src/brain/index.js";
 import { BusNode, MemoryBus, Outbox, realClock } from "../src/bus/index.js";
 import type { PendingGoal } from "../src/contract/goal.js";
 import { Bag, startRecorder } from "../src/record/index.js";
-import { publishGoal } from "../src/server/home/act.js";
+import { goalRecorder, publishGoal } from "../src/server/home/act.js";
 
 const EPOCH = { boot: "b1", home: "h#1" };
 const GOAL: PendingGoal = {
@@ -37,5 +37,22 @@ describe("미리 세운 목표 잇기", () => {
     expect(sent).toEqual(steps.map((goal) => ({ type: "goal", goal })));
     expect(core.goal).toMatchObject({ status: "fired" });
     expect(db.list({})).toEqual([]);
+  });
+});
+
+describe("미리 세운 목표 기록(기록 DB goal 줄, 영상 판정 시각표가 읽는다)", () => {
+  it("전환마다 「세움 · 컵 치우기」·「계획 미리 만드는 중」·「계획 준비됨」·「사람 떠남 · 판단 부름」·「준비한 계획으로 시작」 줄을 남기고, 버림은 까닭을 붙인다", () => {
+    const db = HistoryDb.open(":memory:");
+    const record = goalRecorder(db);
+    const steps: PendingGoal[] = [
+      GOAL, { ...GOAL, prep: "planning" }, { ...GOAL, prep: "ready" }, { ...GOAL, status: "fired", prep: "ready" }, { ...GOAL, status: "used", prep: "ready" },
+      { ...GOAL, id: "goal-2" }, { ...GOAL, id: "goal-2", status: "dropped", reason: "back" },
+    ];
+    steps.forEach((g, i) => record(g, 1000 + i));
+    const rows = db.list({ kinds: ["goal"] });
+    expect(rows.map((r) => r.text)).toEqual([
+      "세움 · 컵 치우기", "계획 미리 만드는 중", "계획 준비됨", "사람 떠남 · 판단 부름", "준비한 계획으로 시작", "세움 · 컵 치우기", "버림 · 다시 나타남",
+    ]);
+    expect(rows[0]).toMatchObject({ subject: "goal-1", data: { status: "armed", prep: "waiting", object: "cup_1" } });
   });
 });

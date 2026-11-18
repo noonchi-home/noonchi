@@ -9,7 +9,7 @@
 // 상태(status: 세움·떠남·씀·버림)와 미리 만들기(prep)는 따로 바뀐다. 바뀔 때마다 o.onGoal로 낸다(서버가 /brain/goal_changes·/brain/goal과 대시보드로 보낸다).
 import type { DecisionRecord } from "../../contract/events.js";
 import type { GoalDrop, PendingGoal } from "../../contract/goal.js";
-import type { ObjClass, WorldView } from "../../contract/world.js";
+import type { ObjClass, WorldObject, WorldView } from "../../contract/world.js";
 import type { AgentPlan, PlanResult } from "../../agent/index.js";
 import { decisionWorld, fsmRuleOf, goalAhead, type GoalPick } from "../../brain/index.js";
 import { ruleIf } from "../../world/labels.js";
@@ -24,8 +24,9 @@ export const GOAL_DEFAULTS = { armMs: 30 * 60_000, fireWaitMs: 15_000 } as const
 interface Goal {
   view: PendingGoal;
   pick: GoalPick;
-  /** 지금 따라가는 대상 물건 id(옮김 표시로 바뀐다). */
-  objectId: string;
+  /** 지금 따라가는 대상 물건 id(옮김 표시로 바뀐다). 모르면 null: 사람이 쓰는 컵이 아직 World State 물건이 아닐 때(VLM이 손에 든 컵을 물건으로 잘 안 답한다, 2026-11-18 g1)
+   *  세우고, 그 종류 컵이 보이면(가장 최근에 본 치우지 않은 것) 그 컵으로 정한다. */
+  objectId: string | null;
   /** 세운 때 사람 등장(since_ms). */
   presence: number | null;
   /** 미리 만든 계획과 그때 대상이 놓인 면. */
@@ -66,7 +67,7 @@ export class GoalWatch extends Part {
     for (const h of held) {
       const pick = goalAhead({ memory: habit.memory, kind: habit.kind, state: habit.state, tasks, cls: h.cls });
       const objectId = h.id ?? targetOf({ target: h.cls as ObjClass }, world, this.core.steps.placed())?.id ?? null;
-      if (!pick || !objectId) continue;
+      if (!pick) continue;
       const id = `goal-${++this.n}`;
       const learned = fsmRuleOf(habit.memory, habit.kind, pick.action)?.learned ?? false;
       const will = TASK_SAY[pick.action]?.will;
@@ -98,7 +99,7 @@ export class GoalWatch extends Part {
   private preplan(g: Goal): void {
     if (g.view.prep !== "waiting" || g.view.status !== "armed" || this.core.open() || this.core.planning) return;
     const world = this.o.world();
-    const o = world.objects.find((x) => x.id === followedId(world, g.objectId));
+    const o = this.objectOf(g, world);
     // 대상이 면 위에 놓였을 때 만든다: 손에 든 컵 자리로 만든 계획은 가기 단계 자리가 틀린다
     if (!o || o.status !== "present" || !o.surface || o.facts.place?.value === "in_hand" || o.carried === true) return;
     g.objectId = o.id;
@@ -126,9 +127,19 @@ export class GoalWatch extends Part {
     this.jobs.add(p);
   }
 
+  /** 목표 물건: 정했으면 그 물건(옮김 표시를 따라감), 모르면 그 종류 가운데 가장 최근에 본 치우지 않은 물건(src/act/tasks.ts targetOf). 없으면 undefined. */
+  private objectOf(g: Goal, world: WorldView): WorldObject | undefined {
+    if (g.objectId) {
+      const id = followedId(world, g.objectId);
+      return world.objects.find((x) => x.id === id);
+    }
+    return targetOf({ target: g.view.cls as ObjClass }, world, this.core.steps.placed()) ?? undefined;
+  }
+
   /** 계획이 다루는 그 종류 물건이 모두 목표 물건(옮김 표시로 이어진 것 포함)인가. 하나도 없어도 아니다. */
   private mine(g: Goal, plan: AgentPlan): boolean {
     const world = this.o.world();
+    if (!g.objectId) return false;
     const goal = followedId(world, g.objectId);
     const ids = planObjectsOf(plan.view, world, g.view.cls as ObjClass);
     return ids.length > 0 && ids.every((id) => followedId(world, id) === goal);
@@ -150,7 +161,7 @@ export class GoalWatch extends Part {
     if (this.core.dock.busy()) return this.drop("dock");
     if (this.core.open() || (this.core.planning && this.core.planning.decision.action !== v.action)) return this.drop("other");
     if (now - v.armed_ms > (this.o.goalArmMs ?? GOAL_DEFAULTS.armMs)) return this.drop("expired");
-    const o = world.objects.find((x) => x.id === followedId(world, g.objectId));
+    const o = this.objectOf(g, world);
     if (v.status === "fired") {
       if (p.visible) return this.drop("back");
       if (!o || o.status === "gone") return this.drop("took");
@@ -159,13 +170,17 @@ export class GoalWatch extends Part {
     }
     if (p.visible) {
       if (p.since_ms !== g.presence) return this.drop("back");
-      if (!o || o.status === "gone" || putAway(o, this.core.steps.placed())) return this.drop("moved");
+      // 정한 물건만 본다: 아직 모르는 물건(컵이 World State에 없음)은 사라졌다고 하지 않는다
+      if (g.objectId && (!o || o.status === "gone" || putAway(o, this.core.steps.placed()))) return this.drop("moved");
       return;
     }
-    if (!o || o.status === "gone") return this.drop("took");
+    const waited = p.since_ms !== null && now - p.since_ms > GOAL_DEFAULTS.fireWaitMs;
+    // 물건을 모르면 그 종류 컵이 보일 때까지 기다린다(사람 사라짐 뒤 컵 확정, g1 tall 0.7초). fireWaitMs가 지나도 없으면 들고 나간 것이다
+    if (!o) return g.objectId || waited ? this.drop("took") : undefined;
+    if (o.status === "gone") return this.drop("took");
     if (putAway(o, this.core.steps.placed())) return this.drop("moved");
     if (o.facts.place?.value === "in_hand" || o.carried === true) {
-      if (p.since_ms !== null && now - p.since_ms > GOAL_DEFAULTS.fireWaitMs) this.drop("took");
+      if (waited) this.drop("took");
       return;
     }
     g.objectId = o.id;
@@ -201,6 +216,7 @@ export class GoalWatch extends Part {
     const surface = g.surface;
     const objectId = g.objectId;
     const sameSurface = () => {
+      if (!objectId) return false;
       const world = this.o.world();
       return world.objects.find((x) => x.id === followedId(world, objectId))?.surface === surface;
     };

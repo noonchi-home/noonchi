@@ -18,8 +18,8 @@ export interface PendingGoal {
   /** 그 규칙이 있는 FSM 상태 id와 트리거 글. */
   state: string;
   trigger: string;
-  /** 대상 World State 물건 id(지금 따라가는 id)와 종류. */
-  object: string;
+  /** 대상 World State 물건 id(지금 따라가는 id, 아직 모르면 null)와 종류. */
+  object: string | null;
   cls: string;
   status: GoalStatus;
   prep: GoalPrep;

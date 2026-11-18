@@ -6,6 +6,8 @@ import { deviceViews, placesOf, resubmit, type PlaceInfo, type PlanAhead, type P
 import { Decider, PamClient, lastStoredThoughts, memoryForDay, pamSettings, storeThought, thoughtFeed } from "../../brain/index.js";
 import type { BrainLog, DecisionRecord } from "../../contract/events.js";
 import type { PendingGoal } from "../../contract/goal.js";
+import { GOAL_LOG } from "../../act/labels.js";
+import type { HistoryDb } from "../../brain/index.js";
 import type { WorldInput, WorldView } from "../../contract/world.js";
 import type { SignalHub } from "../../devices/index.js";
 import type { PlanView } from "../../contract/plan.js";
@@ -53,6 +55,26 @@ export function publishGoal(core: Pick<HomeCore, "out" | "app" | "goal">, g: Pen
   core.out.act?.push("/brain/goal_changes", { goal: g });
   core.out.act?.push("/brain/goal", { goal: g });
   core.app?.broadcast({ type: "goal", goal: g });
+}
+
+/** 목표 전환 한 줄: 바로 앞 상태(같은 목표)와 견줘 무엇이 바뀌었는지(세움·미리 만들기·사람 떠남·씀·버림). */
+function goalLine(prev: PendingGoal | null, g: PendingGoal): string {
+  if (g.status === "dropped") return GOAL_LOG.dropped(GOAL_LOG.why[g.reason ?? "stale"]);
+  if (g.status === "used") return GOAL_LOG.used;
+  if (!prev) return GOAL_LOG.armed(g.action);
+  if (g.status === "fired" && prev.status !== "fired") return GOAL_LOG.fired;
+  if (g.prep !== prev.prep && g.prep !== "waiting") return GOAL_LOG[g.prep];
+  return GOAL_LOG.armed(g.action);
+}
+
+/** 미리 세운 목표 전환을 기록 DB goal 줄로 남기는 것(영상 판정 시각표 「목표」 줄, 반성 입력이 아니다). */
+export function goalRecorder(db: Pick<HistoryDb, "add">): (g: PendingGoal, atMs: number) => void {
+  let last: PendingGoal | null = null;
+  return (g, atMs) => {
+    const prev = last?.id === g.id ? last : null;
+    last = g;
+    db.add("goal", atMs, goalLine(prev, g), { subject: g.id, data: { status: g.status, prep: g.prep, reason: g.reason, object: g.object } });
+  };
 }
 
 /** 클로이드 계획(src/act/hub.ts): 장면·평면도·부르는 이름과 계획 묶음(PlanHub). 계획 방송은 대시보드·기록·말풍선 카드로 간다. */
@@ -129,6 +151,7 @@ export function startAct(core: HomeCore): (event: BrainLog) => void {
   const devices = deviceRunner(signals, policy, twin.rooms);
   // 명령 대상 자리는 배치(면이면 윗면 가운데, 싱크볼이 있으면 싱크볼)에서
   const placeAt = placeLocator(layout?.editor, core.surfaces);
+  const recordGoal = goalRecorder(history.db);
   // 계획 입력: 계획 모드·미리 만든 계획 다시 내기가 같은 맥락을 쓴다(이미 치운 물건 placed는 그때 것)
   const planCtx = (d: DecisionRecord, task: TaskSpec, ahead?: PlanAhead): PlanContext => ({
     decision: d, task, world: view(), floor: plans.floor(), places: core.places(), names: placeNames, rooms: twin.rooms, devices: deviceViews(signals), nowIso: new Date(now()).toISOString(),
@@ -152,7 +175,10 @@ export function startAct(core: HomeCore): (event: BrainLog) => void {
       const task = taskOf(d.action);
       return task ? resubmit(plan, planCtx(d, task)) : { ok: false, error: "행동 목록에 없는 행동" };
     },
-    onGoal: (g) => publishGoal(core, g),
+    onGoal: (g) => {
+      publishGoal(core, g);
+      recordGoal(g, now());
+    },
     nudge: () => decide.nudge(),
     // 실제 폰 명령(src/contract/phone.ts). 폰 서버가 지금 명령을 기억해 새로 붙은 폰에도 보낸다. 명령 대상 자리는 배치(면이면 윗면 가운데)에서
     toPhone: (m) => {

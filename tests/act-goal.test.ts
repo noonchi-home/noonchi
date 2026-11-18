@@ -536,3 +536,49 @@ describe("미리 세운 목표: Codex 검토(5c4961e) 고침", () => {
     expect(s.goals.some((g) => g.prep === "ready")).toBe(false);
   });
 });
+
+describe("미리 세운 목표: 실제 영상 g1에서 드러난 것(2026-11-18)", () => {
+  it("마시는 동안 컵이 아직 World State 물건이 아니어도(VLM이 손에 든 컵을 물건으로 잘 안 답함) 목표를 세운다(물건 모름). 컵이 식탁에 보이면 그 컵으로 계획을 미리 만든다", async () => {
+    const s = goalSetup();
+    s.setObjects(() => []);
+    s.person({ act: "drinking" });
+    s.tick();
+    expect(s.t.goal()).toMatchObject({ status: "armed", prep: "waiting", object: null, text: "컵을 두고 자리를 뜨면 컵을 치울게요" });
+    s.setObjects(() => [cupOn({ seen: s.clock.t })]);
+    s.tick();
+    await s.t.idle();
+    expect(s.t.goal()).toMatchObject({ prep: "ready", object: "cup_1" });
+  });
+
+  it("물건을 모른 채 사람이 떠나면 컵이 보일 때까지 기다렸다가(사람 사라짐 뒤 0.7초에 컵 확정, g1 tall) 떠남으로 바꾸고 판단을 부른다. 15초 안에 컵이 안 보이면 took", async () => {
+    const s = goalSetup();
+    s.setObjects(() => []);
+    s.person({ act: "drinking" });
+    s.tick();
+    s.gone();
+    expect(s.t.goal()).toMatchObject({ status: "armed", object: null });
+    expect(s.nudged()).toBe(0);
+    s.tick(700);
+    s.setObjects(() => [cupOn({ seen: s.clock.t })]);
+    s.tick();
+    expect(s.t.goal()).toMatchObject({ status: "fired", object: "cup_1" });
+    expect(s.nudged()).toBe(1);
+    const n = goalSetup();
+    n.setObjects(() => []);
+    n.person({ act: "drinking" });
+    n.tick();
+    n.gone();
+    for (let i = 0; i < 61; i++) n.tick();
+    expect(n.goals.at(-1)).toMatchObject({ status: "dropped", reason: "took" });
+  });
+
+  it("사람이 마시는 동안 PAM이 「컵 그대로 두기」(계획 없음)·막힌 판단을 골라도 그 일이 맡지 않았으니 목표를 버리지 않는다(g1 세 판 모두 마시는 중 그대로 두기 판단)", async () => {
+    const s = goalSetup();
+    s.person({ act: "drinking" });
+    s.tick();
+    await s.t.idle();
+    await s.decide(pam("pam-1", 1, s.clock.t, "컵 그대로 두기", true));
+    expect(s.t.goal()).toMatchObject({ status: "armed", prep: "ready" });
+    expect(s.goals.some((g) => g.status === "dropped")).toBe(false);
+  });
+});

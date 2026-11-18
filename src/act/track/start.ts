@@ -36,9 +36,6 @@ export class Starter extends Part {
     if (d.atMs < core.quietFrom && core.open()?.decision.action !== d.action) return this.note(d, EXEC_TEXT.late);
     if (d.status !== "valid") return this.note(d, EXEC_TEXT.decisionFailed);
     if (!d.action) return this.note(d, EXEC_TEXT.wait);
-    // 다른 행동을 고른 판단이 맡는다: 미리 세운 목표를 버리고 지금 길로(goal.ts)
-    const goal = core.goal.current();
-    if (goal && goal.action !== d.action) core.goal.drop("other");
     // 미리 세운 목표와 같은 행동인데 사람이 떠난 뒤의 판단이 아니면 목표가 맡는다(사람이 떠나면 판단을 다시 부른다, goal.ts)
     if (core.goal.holds(d)) return this.note(d, EXEC_TEXT.goalWait);
     // 계획이 끝난 뒤 사용자 위치 확인·충전 자리로 가는 동안은 새 일을 미룬다(충전 자리에서 시작한다, dock.ts).
@@ -57,7 +54,7 @@ export class Starter extends Part {
     const pre = this.o.precheck?.(d) ?? { ok: true };
     if (!pre.ok) {
       // 대상이 안 보이면 마지막으로 본 자리로 찾으러 간다(찾을 자리가 없으면 지금처럼 닫는다)
-      if ((pre.reason === "no_target" || pre.reason === "in_sink") && core.finder.start(d, pre.text)) return;
+      if ((pre.reason === "no_target" || pre.reason === "in_sink") && core.finder.start(d, pre.text)) return this.takeover(d);
       core.emit(planIdOf(d.id), "decided");
       core.emit(planIdOf(d.id), "failed", pre.text);
       return;
@@ -74,6 +71,8 @@ export class Starter extends Part {
     const last = this.planAt.get(d.action);
     if (last !== undefined && now - last < this.cfg.planGapMs) return this.note(d, EXEC_TEXT.held);
     this.planAt.set(d.action, now);
+    // 다른 행동의 계획이 맡으면 미리 세운 목표를 버리고 지금 길로(goal.ts). 계획 없는 행동(그대로 두기)·막힌 판단은 맡지 않으니 그대로 둔다
+    this.takeover(d);
     // 계획을 만드는 중이던 다른 행동은 끊고 버린다(답이 와도 쓰지 않는다)
     this.dropPlanning(EXEC_TEXT.superseded);
     const job: Job = { decision: d, gen: ++this.gen, abort: new AbortController(), at: now };
@@ -114,6 +113,12 @@ export class Starter extends Part {
    *  그 판단이 적은 시각일 때만 지운다. */
   private ungap(d: DecisionRecord, at: number): void {
     if (d.action && this.planAt.get(d.action) === at) this.planAt.delete(d.action);
+  }
+
+  /** 다른 행동의 판단이 일을 맡았다(계획을 만들기 시작하거나 대상을 찾으러 감): 미리 세운 목표를 버린다. 같은 행동이면 목표가 이어 간다. */
+  private takeover(d: DecisionRecord): void {
+    const goal = this.core.goal.current();
+    if (goal && goal.action !== d.action) this.core.goal.drop("other");
   }
 
   /** 만들던 계획을 끊고 그 판단 줄에 까닭을 남긴다. */

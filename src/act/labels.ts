@@ -124,6 +124,17 @@ export const GOAL_TEXT = {
   armed: (cond: string, will: string) => `${cond} ${will}`,
 } as const;
 
+/** 미리 세운 목표 기록 줄(기록 DB goal, 영상 판정 시각표 「목표」 줄): 세움·미리 만들기·사람 떠남·씀·버림과 그 까닭. */
+export const GOAL_LOG = {
+  armed: (action: string) => `세움 · ${action}`,
+  planning: "계획 미리 만드는 중", ready: "계획 준비됨", failed: "계획 못 만듦", fired: "사람 떠남 · 판단 부름", used: "준비한 계획으로 시작",
+  dropped: (why: string) => `버림 · ${why}`,
+  why: {
+    took: "들고 나감", back: "다시 나타남", moved: "컵이 옮겨지거나 사라짐", other: "다른 일이 맡음", safety: "안전 알림", mode: "코치 모드", dock: "충전 자리로 가는 중",
+    expired: "30분 지남", pam: "PAM이 고르지 않음", stale: "준비한 계획이 지금과 안 맞음", stop: "그만",
+  },
+} as const;
+
 /** 승인(src/act/track/approval.ts): 처음 하는 계획을 실제 폰에 묻는 글, 「거절」을 받은 계획의 실행 기록. */
 export const APPROVAL_TEXT = {
   ask: (task: string) => `${josa(task, "을/를")} 할까요?`,
