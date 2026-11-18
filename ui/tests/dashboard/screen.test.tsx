@@ -7,6 +7,7 @@ import tokens from "../../../src/design/tokens.json";
 import { DashboardScreen, type ScreenProps } from "../../src/dashboard/DashboardScreen";
 import { TAG_H, tagWidth } from "../../src/dashboard/detections";
 import { mascotPoint, pageLayout, TALK_H, type Rect } from "../../src/dashboard/layout";
+import { TALK_ROW_H } from "../../src/dashboard/TalkBox";
 import { MASCOT } from "../../src/lib/mascot-image";
 import { WORDS } from "../../src/dashboard/words";
 import { EMPTY_DASH, reduceDash, talkOf } from "../../src/dashboard/data";
@@ -345,11 +346,15 @@ describe("대시보드 메시지 상자(트윈 아래쪽 하나, 생각 말풍�
     } finally { rect.mockRestore(); }
   });
 
-  it("21st.dev 부품으로 그린다: 판은 LiquidGlass 불투명 판, 안은 Item(부품 원래 글 크기 sm)이고 말풍선 카드 크기(say)를 쓰지 않는다", () => {
+  // 사용자 허락(2026-11-18): 「메시지박스 글씨 키워」. 문장 줄만 16px(item.tsx talk), 목표 줄은 Status 그대로
+  it("21st.dev 부품으로 그린다: 판은 LiquidGlass 불투명 판, 안은 Item 대화 상자 크기(talk, 문장 줄 16px)이고 말풍선 카드 크기(say)를 쓰지 않는다. 줄 칸은 한 줄 높이 24px", () => {
     draw(screenAt(2));
     expect(talk()).toHaveAttribute("data-glass", "opaque");
     const item = talk().querySelector<HTMLElement>("[data-slot=item]")!;
-    expect(item).toHaveAttribute("data-size", "sm");
+    expect(item).toHaveAttribute("data-size", "talk");
+    for (const l of lines()) expect(cls(l, "h-6")).toBe(true);
+    expect(TALK_ROW_H).toBe(24);
+    expect(talk().querySelector<HTMLElement>("[data-talk-lines]")!.parentElement!.style.height).toBe(`${3 * 24 + 2 * 4}px`);
   });
 
   it("줄이 없으면(talk null) 상자는 그대로 두고 줄이 없다(FSM 카드는 그대로)", () => {
@@ -784,14 +789,19 @@ describe("대시보드 글 크기", () => {
   const sizesIn = (root: Element, keep: (el: Element) => boolean = () => true) => new Set([root, ...root.querySelectorAll("*")].filter(keep).flatMap((el) =>
     (typeof el.className === "string" ? el.className : el.getAttribute("class") ?? "").split(/\s+/).map((c) => c.replace(/^.*:/, "")).filter((c) => SIZE.test(c))));
 
-  it.each([0, 1, 2, 3, 4])("1920×1080 %i: 화면 글은 부품 원래 크기(text-xs 12px·text-sm 14px)다(메시지 상자도 Item sm): far·화면 너비로 커지는 글 크기가 없다", (n) => {
+  // 사용자 허락(2026-11-18): 「메시지박스 글씨 키워」. 메시지 상자 문장 줄만 16px(Item talk), 그 밖은 부품 원래 크기
+  it.each([0, 1, 2, 3, 4])("1920×1080 %i: 화면 글은 부품 원래 크기(text-xs 12px·text-sm 14px)다. 메시지 상자만 사용자가 허락한 16px(Item talk)가 있다. far·화면 너비로 커지는 글 크기가 없다", (n) => {
     const rect = atScreen(1920, 1080);
     try {
       draw(screenAt(n, { robotKnown: n !== 2, connected: n === 3 ? false : true }));
-      const all = sizesIn(document.body);
+      const box = talk();
+      const all = sizesIn(document.body, (el) => !box.contains(el));
       expect(all.size).toBeGreaterThan(0);
       for (const c of all) expect(["text-xs", "text-sm"], c).toContain(c);
-      expect(sizesIn(talk()).has("text-base")).toBe(false);
+      const inBox = sizesIn(box);
+      for (const c of inBox) expect(["text-xs", "text-sm", "text-base"], c).toContain(c);
+      expect(inBox.has("text-base")).toBe(true);
+      expect(box.querySelector("[data-slot=item]")).toHaveAttribute("data-size", "talk");
     } finally { rect.mockRestore(); }
   });
 

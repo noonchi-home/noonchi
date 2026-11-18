@@ -104,6 +104,15 @@ const title = cn("flex w-fit items-center gap-2 ${title} leading-snug font-mediu
     });
   });
 
+  it("메시지 상자 문장 줄(item.tsx talk 크기 줄) text-base(16px)는 사용자 말 「메시지박스 글씨 키워」(2026-11-18)로 된다. 그 밖 줄의 text-base는 잡는다", () => {
+    expect(USER_SIZES).toContainEqual(expect.objectContaining({
+      part: "components/ui/item.tsx", size: "text-base", px: 16, quote: "메시지박스 글씨 키워", date: "2026-11-18", where: "대시보드 메시지 상자 문장 줄(Item size talk)",
+    }));
+    const line = `talk: "py-3 px-4 gap-2.5 text-base **:data-[slot=item-title]:text-base **:data-[slot=item-description]:text-base",`;
+    expect(fileProblems("ui/src/components/ui/item.tsx", item(line), "part")).toEqual([]);
+    expect(fileProblems("ui/src/components/ui/item.tsx", item(`chat: "text-base",`), "part").map((p) => p.rule)).toEqual(["원래보다 큰 글"]);
+  });
+
   it("item.tsx say 크기 줄의 text-base는 된다", () => {
     expect(fileProblems("ui/src/components/ui/item.tsx", item(`say: "py-3 px-4 gap-2.5 text-base font-bold text-center",`), "part")).toEqual([]);
   });

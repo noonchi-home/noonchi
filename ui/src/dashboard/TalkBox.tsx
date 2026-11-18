@@ -10,8 +10,8 @@ import type { Rect } from "./layout";
 import { useReducedMotionNow } from "./motion";
 import { WORDS } from "./words";
 
-/** 문장 한 줄 높이(px, 부품 원래 글 text-sm 줄)와 줄 사이(gap-1), 한 칸 굴리는 거리. */
-export const TALK_ROW_H = 20;
+/** 문장 한 줄 높이(px, Item talk 글 text-base 줄 24, 사용자 허락 2026-11-18 「메시지박스 글씨 키워」)와 줄 사이(gap-1), 한 칸 굴리는 거리. */
+export const TALK_ROW_H = 24;
 export const TALK_ROW_GAP = 4;
 export const TALK_ROW_STEP = TALK_ROW_H + TALK_ROW_GAP;
 /** 한 칸 굴리는 시간(ms)과 맨 위 지난 줄의 흐림(opacity). */
@@ -27,7 +27,7 @@ const TAIL_FILL = `M0 0L${TAIL.w} ${TAIL.h / 2}L0 ${TAIL.h}Z`;
 const TAIL_EDGE = `M0 0L${TAIL.w} ${TAIL.h / 2}L0 ${TAIL.h}`;
 
 /**
- * 트윈 아래쪽 메시지 상자 하나(마스코트 바로 왼쪽, 마스코트가 옆에서 말하는 사람처럼 선다). 판은 LiquidGlass 불투명 판 + Item(sm, 부품 원래 글 크기).
+ * 트윈 아래쪽 메시지 상자 하나(마스코트 바로 왼쪽, 마스코트가 옆에서 말하는 사람처럼 선다). 판은 LiquidGlass 불투명 판 + Item(talk: sm 여백에 문장 줄 16px, 사용자가 허락한 큰 글).
  * 맨 위 줄은 목표 한 줄 자리(Status brand, 「목표 · 컵 치우기 · 준비됨」, goal-line.ts, 목표가 없으면 빈 줄), 그 아래 최근 세 줄이 굴러가고(TalkLines) 오른쪽 아래에 이어짐 표시 ▼.
  * 오른쪽 끝에 마스코트를 가리키는 꼬리(21st.dev Line Draw SVG: 판 색 칠한 삼각형과 판 바깥 선 색 두 변)가 상자 밖 형제로 붙는다. 알약은 없다.
  * 모드는 마스코트 머리 위 모드 말풍선(ModeBubble)이 보인다. 크기·자리(layout.ts bubble)는 정해져 있어 글 길이가 바꾸지 않는다.
@@ -43,7 +43,7 @@ export function TalkBox({ talk, goal = null, box }: { talk: Talk | null; goal?: 
       className="pointer-events-none absolute z-50"
       style={{ left: box.left, top: box.top, width: box.width, height: box.height }}
     >
-      <Item size="sm" className="size-full flex-nowrap items-start">
+      <Item size="talk" className="size-full flex-nowrap items-start">
         <ItemContent className="min-w-0">
           <ItemHeader data-talk-goal className="h-6 min-w-0 justify-start">
             {goal && <Status variant="brand" data-goal-line={goal.stage}>{goal.text}</Status>}
@@ -155,10 +155,10 @@ function TalkLines({ lines }: { lines: Line[] }) {
         {view.rows.map((l, i) => {
           const fromEnd = n - 1 - i;
           if (fromEnd === 0) {
-            return <ItemTitle key={l.id} data-talk-line="new" className="h-5 min-w-0 max-w-full shrink-0"><span className="truncate">{l.text}</span></ItemTitle>;
+            return <ItemTitle key={l.id} data-talk-line="new" className="h-6 min-w-0 max-w-full shrink-0"><span className="truncate">{l.text}</span></ItemTitle>;
           }
           return (
-            <ItemDescription key={l.id} data-talk-line="old" className="h-5 shrink-0 truncate" style={{ opacity: fromEnd >= 2 ? TOP_FADE : 1 }}>
+            <ItemDescription key={l.id} data-talk-line="old" className="h-6 shrink-0 truncate" style={{ opacity: fromEnd >= 2 ? TOP_FADE : 1 }}>
               {l.text}
             </ItemDescription>
           );

@@ -5,7 +5,7 @@
 import { describe, expect, it } from "vitest";
 import tokens from "../../../src/design/tokens.json";
 import { mascotLogoBox } from "../../src/dashboard/bust";
-import { ASPECT_STEP, FSM_TOP_SHARE, LIFT, MASCOT_SHARE, mascotPoint, MINIMAP_ASPECT, MINIMAP_MAX_SHARE, MINIMAP_SHARE, nextAspect, pageLayout, RING, TALK_H, TALK_SHARE, type Rect } from "../../src/dashboard/layout";
+import { ASPECT_STEP, FSM_TOP_SHARE, LIFT, MASCOT_SHARE, mascotPoint, MINIMAP_ASPECT, MINIMAP_MAX_SHARE, MINIMAP_SHARE, nextAspect, pageLayout, RING, TALK_H, TALK_MIN_W, TALK_SHARE, type Rect } from "../../src/dashboard/layout";
 import { MASCOT } from "../../src/lib/mascot-image";
 
 const M = MASCOT;
@@ -91,12 +91,13 @@ describe.each([[1920, 1080], [1440, 900], [1522, 722]])("%i×%i", (width, height
   });
 
   // 사용자 결정(2026-11-18): 「메시지박스를 절반으로 줄이고 마스코트 쪽으로 붙이자 / 남은 왼쪽 자리에 FSM 표시」, 「FSM은 훨씬 더 크게」
-  it("메시지 상자는 트윈 아래쪽 안, 마스코트 바로 왼쪽에서 사이(gap)만큼 띄운 상자 하나다(마스코트가 옆에서 말한다): 너비는 트윈 안 남은 너비의 절반(TALK_SHARE), 높이는 TALK_H(128)이고 초점 고리와도 겹치지 않는다", () => {
+  it("메시지 상자는 트윈 아래쪽 안, 마스코트 바로 왼쪽에서 사이(gap)만큼 띄운 상자 하나다(마스코트가 옆에서 말한다): 너비는 트윈 안 남은 너비의 절반(TALK_SHARE, 좁은 화면은 TALK_MIN_W까지), 높이는 TALK_H(140)이고 초점 고리와도 겹치지 않는다", () => {
     expect(RING).toBe(4);
-    expect(TALK_H).toBe(128);
+    // 문장 줄 16px(사용자 허락 2026-11-18 「메시지박스 글씨 키워」): 위아래 여백 24 + 테두리 2 + 목표 줄 24 + 사이 4 + 세 줄(24씩)과 사이 둘(4씩) 80 + 여유 6
+    expect(TALK_H).toBe(140);
     expect(TALK_SHARE).toBe(0.5);
     const full = L.mascot.left - RING - L.gap - (L.twin.left + space.panelPadding);
-    expect(near(L.bubble.width, full * TALK_SHARE, 1)).toBe(true);
+    expect(near(L.bubble.width, Math.max(full * TALK_SHARE, TALK_MIN_W), 1)).toBe(true);
     expect(near(bottom(L.bubble), bottom(L.twin) - space.panelPadding)).toBe(true);
     expect(L.bubble.height).toBe(TALK_H);
     expect(near(right(L.bubble), L.mascot.left - RING - L.gap)).toBe(true);
@@ -221,13 +222,13 @@ describe("크기(스케치 6안)", () => {
     expect([L.video.width, L.video.height]).toEqual([320, 180]);
   });
 
-  it("1920×1080: 트윈 1888×1048, 미니맵 480×270, 마스코트 약 320 높이, 메시지 상자 높이 TALK_H(128: 목표 줄 + 문장 세 줄)", () => {
+  it("1920×1080: 트윈 1888×1048, 미니맵 480×270, 마스코트 약 320 높이, 메시지 상자 높이 TALK_H(140: 목표 줄 + 16px 문장 세 줄)", () => {
     const L = pageLayout({ width: 1920, height: 1080 }, M);
     expect([L.twin.width, L.twin.height]).toEqual([1888, 1048]);
     expect([L.video.width, L.video.height]).toEqual([480, 270]);
     expect(near(L.mascot.height, 320, 10)).toBe(true);
     expect(L.bubble.height).toBe(TALK_H);
-    expect(TALK_H).toBe(128);
+    expect(TALK_H).toBe(140);
     expect(near(L.fsm.top, 1080 * FSM_TOP_SHARE, 1)).toBe(true);
   });
 });

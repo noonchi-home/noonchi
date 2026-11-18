@@ -40,6 +40,10 @@ export const USER_SIZES = [
     where: "설정 1~3단계 상태 칩(Status size setup)", quote: "1,2,3 글씨 더 키워도될거같고", date: "2026-11-09",
   },
   {
+    part: "components/ui/item.tsx", line: /^\s*talk\s*:/, size: "text-base", px: 16,
+    where: "대시보드 메시지 상자 문장 줄(Item size talk)", quote: "메시지박스 글씨 키워", date: "2026-11-18",
+  },
+  {
     part: "components/ui/item.tsx", line: /^\s*setup\s*:/, size: "text-base", px: 16,
     where: "설정 1~3단계 검색 결과 줄·ThinQ 짝 줄(Item size setup)", quote: "1,2,3 글씨 더 키워도될거같고", date: "2026-11-09",
   },

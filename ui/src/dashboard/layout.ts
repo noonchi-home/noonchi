@@ -75,11 +75,13 @@ export const MASCOT_SHARE = 0.3;
 const HEAD_ROOM = LIFT + 2;
 /** 부품 원래 글(text-sm 14px)의 줄 높이(px). 화면 너비로 커지지 않는다. */
 export const TEXT_LINE = 20;
-/** 메시지 상자 높이(px, 마스코트 목 높이쯤): Item sm 위아래 여백(py-3) 24 + 테두리 2 + 맨 위 목표 줄(Status) 24 + 사이 4 + 문장 세 줄(20씩)과 사이 둘(4씩) 68 + 둘레 여유 6 = 128.
+/** 메시지 상자 높이(px, 마스코트 목 높이쯤): Item 위아래 여백(py-3) 24 + 테두리 2 + 맨 위 목표 줄(Status) 24 + 사이 4 + 문장 세 줄(16px 글 줄 24씩, 사용자 허락 2026-11-18 「메시지박스 글씨 키워」)과 사이 둘(4씩) 80 + 둘레 여유 6 = 140.
  *  화면 크기·글 길이와 상관없다. */
-export const TALK_H = 128;
+export const TALK_H = 140;
 /** 메시지 상자 너비: 마스코트 왼쪽 남은 너비(트윈 안쪽 여백부터)에 곱하는 몫(2026-11-18 사용자 결정 「메시지박스를 절반으로」). */
 export const TALK_SHARE = 0.5;
+/** 메시지 상자 가장 작은 너비(px): 시연 기억 허락 줄 가운데 가장 긴 것(16px 글 약 552)과 상자 안 여백·▼ 자리(66)가 한 줄에 드는 너비. 좁은 화면(1280)만 절반보다 넓어진다. */
+export const TALK_MIN_W = 640;
 /** FSM 카드 위 끝: 화면 높이에 곱하는 몫(화면 아래에서 1/3 높이까지, 2026-11-18 사용자 결정 「FSM은 훨씬 더 크게」). */
 export const FSM_TOP_SHARE = 2 / 3;
 /** 지도 카메라 칸: 위는 칩 줄(top-4 16 + 칩 28) 아래 4(할 일 진행도 알약은 없다), 왼쪽은 40, 얹은 것(메시지 상자·미니맵·마스코트)과는 FOCUS_GAP 떨어진다. */
@@ -120,7 +122,7 @@ export function pageLayout(view: BoxSize, mascot: Pick<MascotImage, "width" | "h
   const bubbleH = TALK_H;
   const roomLeft = twin.left + inset;
   const bubbleRight = m.left - RING - gap;
-  const bubbleW = Math.max(0, (bubbleRight - roomLeft) * TALK_SHARE);
+  const bubbleW = Math.max(0, Math.min(bubbleRight - roomLeft, Math.max((bubbleRight - roomLeft) * TALK_SHARE, TALK_MIN_W)));
   const bubble: Rect = { left: bubbleRight - bubbleW, top: bottom(twin) - inset - bubbleH, width: bubbleW, height: bubbleH };
   // FSM 카드: 상자 왼쪽 남은 자리 전체, 바닥 줄은 상자와 같고 위는 화면 높이의 FSM_TOP_SHARE(상자보다 낮지 않게)
   const fsmTop = Math.min(bubble.top, view.height * FSM_TOP_SHARE);

@@ -1,7 +1,7 @@
 // 21st.dev「Basic Item」(id 28573, bundui/item1) 받은 코드.
-// 바꾼 것: 꾸러미의 의존 부품 item.tsx(shadcn Item)를 쓴다. [a]:hover:bg-accent/50 → [a]:hover:bg-hover/50(accent 별칭 없음). muted variant bg-muted/50은 그대로(muted=cream). size say(마스코트 말풍선 카드: sm 여백에 글 text-base 굵게 가운데)를 더함. 설정 1~3단계 큰 글(사용자 2026-11-09 「1,2,3 글씨 더 키워도될거같고」): size setup(sm 여백, 글·제목·설명 text-base)을 더했다.
+// 바꾼 것: 꾸러미의 의존 부품 item.tsx(shadcn Item)를 쓴다. [a]:hover:bg-accent/50 → [a]:hover:bg-hover/50(accent 별칭 없음). muted variant bg-muted/50은 그대로(muted=cream). size say(마스코트 말풍선 카드: sm 여백에 글 text-base 굵게 가운데)를 더함. 설정 1~3단계 큰 글(사용자 2026-11-09 「1,2,3 글씨 더 키워도될거같고」): size setup(sm 여백, 글·제목·설명 text-base)을 더했다. 대시보드 메시지 상자 문장 줄 큰 글(사용자 2026-11-18 「메시지박스 글씨 키워」): size talk(sm 여백, 글·제목·설명 text-base)을 더했다.
 // 원래 글 크기: text-sm(14px). 받은 크기 그대로다(item·제목·설명 text-sm). 더 큰 글은 npm run lint(scripts/lint-ui-type.ts)가 막는다.
-// say 줄의 text-base(16px)만 사용자가 허락했다(2026-11-09, scripts/lint-ui-type.ts USER_SIZES).
+// say·setup 줄(2026-11-09)과 talk 줄(2026-11-18)의 text-base(16px)만 사용자가 허락했다(scripts/lint-ui-type.ts USER_SIZES).
 
 import * as React from "react"
 import { Slot } from "@radix-ui/react-slot"
@@ -49,6 +49,7 @@ const itemVariants = cva(
         sm: "py-3 px-4 gap-2.5",
         say: "py-3 px-4 gap-2.5 text-base font-bold text-center",
         setup: "py-3 px-4 gap-2.5 text-base **:data-[slot=item-title]:text-base **:data-[slot=item-description]:text-base",
+        talk: "py-3 px-4 gap-2.5 text-base **:data-[slot=item-title]:text-base **:data-[slot=item-description]:text-base",
       },
     },
     defaultVariants: {
