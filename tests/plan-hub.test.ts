@@ -135,6 +135,28 @@ describe("PlanHub PAM 판단 계획", () => {
     expect(hub.setSteps(p.id, {})).toBe(false);
     expect(sent).toHaveLength(n + 1);
   });
+  it("단계 시각: 시각(at_ms)을 주면 진행 중이 된 단계에 started_ms, 진행 중에서 끝난(done·failed·skipped) 단계에 ended_ms를 단다. 시작하지 않은 단계에는 없다", () => {
+    const { hub } = hubWithLog();
+    const p = cupPlan(smallFloor(), "plan:pam-1", "t")!;
+    hub.onDecision(p);
+    const [s1, s2, s3] = p.steps;
+    hub.setSteps(p.id, { [s1!.id]: "active" }, 1000);
+    expect(hub.current()!.steps[0]).toMatchObject({ status: "active", started_ms: 1000 });
+    expect(hub.current()!.steps[0]!.ended_ms).toBeUndefined();
+    hub.setSteps(p.id, { [s1!.id]: "done", [s2!.id]: "active" }, 1500);
+    expect(hub.current()!.steps.slice(0, 2)).toMatchObject([{ status: "done", started_ms: 1000, ended_ms: 1500 }, { status: "active", started_ms: 1500 }]);
+    hub.close(p.id, "failed", 2600);
+    const steps = hub.current()!.steps;
+    expect(steps[1]).toMatchObject({ status: "failed", started_ms: 1500, ended_ms: 2600 });
+    expect(steps[2]).toMatchObject({ id: s3!.id, status: "skipped" });
+    expect(steps[2]!.started_ms).toBeUndefined();
+    expect(steps[2]!.ended_ms).toBeUndefined();
+    // 시각을 주지 않으면(task planner의 단계 상태 요청) 시각 칸을 바꾸지 않는다
+    const q = cupPlan(smallFloor(), "plan:pam-2", "t")!;
+    hub.onDecision(q);
+    hub.setStep(q.id, q.steps[0]!.id, "active");
+    expect(hub.current()!.steps[0]!.started_ms).toBeUndefined();
+  });
   it("끝난 판단 계획 다음 계획에는 supersedes가 없다", () => {
     const { hub } = hubWithLog();
     const first = askPlan(smallFloor(), "plan:pam-1", "t");

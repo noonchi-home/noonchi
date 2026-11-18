@@ -351,6 +351,15 @@ export const viz = {
   "touchPins": {
     "a": "#e8590c",
     "b": "#1c7ed6"
+  },
+  "talkTail": {
+    "fill": "#fffcf8",
+    "edge": {
+      "color": "#42403f",
+      "opacity": 0.12,
+      "width": 1
+    },
+    "note": "메시지 상자 오른쪽 꼬리(마스코트를 가리킴): 판(LiquidGlass opaque surface)과 같은 색으로 칠하고, 바깥 두 변은 판 바깥 선 glass-edge(charcoal 0.12)"
   }
 } as const;
 

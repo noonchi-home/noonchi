@@ -1,6 +1,7 @@
 // 서버↔화면 메시지 계약(WebSocket /events, /api 응답). 순수 타입만 둔다: ui/가 이 파일을 그대로 가져다 쓴다.
 // 바꾸면 ui/src/lib/messages.ts의 parseMessage와 화면 테스트를 같이 고친다.
 import type { PendingGoal } from "./goal.js";
+import type { HabitFsm } from "./habit.js";
 import type { Command, DeviceSpec, DeviceState } from "./devices.js";
 import type { LayoutMessage } from "./layout.js";
 import type { PhoneChoice } from "./phone.js";
@@ -324,7 +325,9 @@ export type ServerMessage =
   /** 지금 행동 모드(눈치·코치, src/act/mode.ts modeNow): 대시보드 마스코트 머리 위 모드 말풍선. 바뀔 때마다, 그리고 접속 때 한 번. */
   | { type: "mode"; mode: "noonchi" | "coach" }
   /** 미리 세운 목표(src/act/track/goal.ts): 바뀔 때마다, 그리고 접속 때 마지막 것. 대시보드는 세움·떠남인 동안 메시지 상자 알약으로 보인다. */
-  | { type: "goal"; goal: PendingGoal };
+  | { type: "goal"; goal: PendingGoal }
+  /** 습관 FSM 그림 자료(src/brain/habit.ts): 판단이 PAM에 보낸 기억 판본이 바뀔 때, 그리고 접속 때 마지막 것. 대시보드 메시지 상자 FSM 카드가 그린다. */
+  | { type: "habit"; habit: HabitFsm };
 
 export interface DecisionRecord {
   id: string;

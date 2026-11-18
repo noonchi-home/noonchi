@@ -18,6 +18,14 @@ export const RULE_IF: Record<string, string> = {
   "라면 끓이기 알려 주기": "라면 끓이는 법을 묻거나 끓이다 막히면",
   "전자레인지로 데우기 알려 주기": "전자레인지 쓰는 법을 묻거나 어떻게 하냐면",
 };
+/** 대시보드 FSM 카드 상태 넘김 화살표 글: 시연 FSM 기억(src/brain/decision.ts CUP_FSM_MEMORY)의 next on 글 → 짧은 글. 열쇠는 그 on 글 그대로다.
+ *  여기 없는 글(반성으로 배운 넘김)은 src/brain/habit.ts가 끝 마침표만 떼어 그대로 쓴다. */
+export const NEXT_ON: Record<string, string> = {
+  "사용자가 돌아와 먹거나 마신다.": "돌아와 먹거나 마심",
+  "사용자가 돌아와 TV를 본다.": "돌아와 TV를 봄",
+  "사용자가 돌아와 요리를 시작한다.": "돌아와 요리를 시작함",
+  "사용자가 요리를 마치고 먹기 시작한다.": "요리를 마치고 먹음",
+};
 /** 맞은 규칙 → 조건형: 시연 기억의 규칙(learned 아님)이면 RULE_IF의 그 행동 글, 아니면 트리거를 줄이지 않고 끝 마침표만 떼어 「~다면」(평서문 끝 「다」), 그 밖은 「「<트리거>」일 때」. */
 export function ruleIf(rule: { trigger: string; action: string; learned: boolean }): string {
   const known = rule.learned ? undefined : RULE_IF[rule.action];

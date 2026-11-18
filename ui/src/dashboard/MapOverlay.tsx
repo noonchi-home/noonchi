@@ -3,6 +3,7 @@ import type { DeviceView } from "../../../src/contract/events.ts";
 import { BubbleLayer } from "./bubbles/BubbleLayer";
 import { deviceSummary } from "./bubbles/summary";
 import type { Check } from "./checks/checks";
+import { Avatar, AvatarFallback } from "../components/ui/avatar";
 import { LineDrawSvg } from "../components/ui/line-draw-svg";
 import { Status } from "../components/ui/status";
 import { type TwinEngine, plateTransform, type MapCamera } from "../twin";
@@ -11,15 +12,25 @@ import type { BoxSize } from "./fit";
 import type { TwinFrame } from "./frame";
 import { otherRooms, roomsPath, type RoomShape } from "./home";
 import { PreDrawing, useFadeIn } from "./motion";
-import { checkDotLayers, destinationLayers, dimLayer, roomEdgeLayer, type Layer, type MarkTone } from "./marks";
+import { checkDotLayers, dimLayer, goalRingLayers, lineLayers, roomEdgeLayer, type Layer, type MarkTone } from "./marks";
+import { toScreen, type Px } from "./camera";
 import { mapScene, type Box } from "./scene";
 
 /** 밝힌 방 묶음 이름(순서와 상관없음). */
 const roomsKey = (rooms: string[]) => [...rooms].sort().join("+");
+/** 꺾은선 → SVG path d. */
+const lineOf = (pts: Px[]) => (pts.length > 1 ? `M${pts.map(([u, v]) => `${u.toFixed(1)},${v.toFixed(1)}`).join("L")}` : "");
+/** 끝난 단계 번호의 흐림(opacity). */
+const DONE_FADE = 0.4;
+/** 미리 그린 길(목표가 준비된 계획)의 흐림(opacity). 시작(사람이 떠남)이면 1이다. */
+export const PRE_FADE = 0.35;
 
 /**
  * 3D 트윈 위 표시 판. 구운 보기 그림 픽셀(image) 크기의 판(data-map-plate) 하나에 같은 그림 픽셀 그림(LineDrawSvg)으로
- * 밝히지 않는 방 어둡게 칠한 층, 밝힌 방 테두리, 목적지, 확인한 것 점을 겹쳐 놓는다. 동선(계획 경로 길 선)은 그리지 않는다.
+ * 밝히지 않는 방 어둡게 칠한 층, 밝힌 방 테두리, 계획 길(지나온 길 흐림·지금 구간·남은 길), 확인한 것 점을 겹쳐 놓는다.
+ * 미리 세운 목표가 선 동안 치울 물건 위에 작은 빨간 고리(세 겹, 글 없음)를 판에 그린다. 목표가 준비되면 미리 만든 계획의 길(남은 길 색)과 단계 번호를 글 없이 흐리게 그리고,
+ * 시작(사람이 떠남)이면 진해지며(opacity), 열린 계획이 오면 같은 번호 자리(같은 요소)가 그 계획의 번호로 이어진다.
+ * 단계 번호(①②③④, 21st.dev Avatar: 지금 단계 brand, 끝난 단계 흐림, 남은 단계 회색)·지금 단계 이름표·사람 이름표(Status)는 판 밖 상자 px에 둔다(frame.planned, plan-marks.ts).
  * 클로이드(맞춘 눈)는 판에 그리지 않고 엔진 장면의 3D 원뿔이 따른다. frame.robot은 카메라 맞춤·말풍선 비킬 자리에만 쓴다.
  * 판 transform은 엔진이 그림을 그릴 때마다 그 지도 카메라로 바꾼다(React 상태를 거치지 않아 3D 그림과 같은 그림에 움직인다).
  * 어둡게 한 층은 계획의 밝힌 방 묶음(roomSets)마다 미리 만들고 지금 묶음만 opacity 1이다: 밝힌 방이 바뀌어도 새 모양을 그리지 않는다.
@@ -101,8 +112,9 @@ export function MapOverlay({ frame, checks, shapes, roomSets, image, size, cam, 
   }, [roomSets, frame.rooms, shapes]);
   const lit = frame.rooms.length ? roomsKey(frame.rooms) : null;
   const litPath = useMemo(() => roomsPath(frame.rooms, shapes), [frame.rooms, shapes]);
-  const { target } = frame;
+  const { planned } = frame;
   const { points, checks: shownChecks, labels, keep } = mapScene(frame, checks, shapes, size, cam, blocked);
+  const screenAt = (p: Px) => toScreen(cam, size, p);
   const markTone = (id: string): MarkTone => {
     const d = devices.get(id);
     return d ? deviceSummary(d).tone : "object";
@@ -121,7 +133,12 @@ export function MapOverlay({ frame, checks, shapes, roomSets, image, size, cam, 
           </div>
         ))}
         {litPath && <div data-room-edge className="absolute inset-0">{draw([roomEdgeLayer(litPath, k)])}</div>}
-        {target && <div data-target className="absolute inset-0">{draw(destinationLayers(target, k))}</div>}
+        {([["done", planned.route.done, "routePassed"], ["now", planned.route.now, "route"], ["ahead", planned.route.ahead, "routeAhead"]] as const).map(([id, pts, tone]) =>
+          pts.length > 1 && <div key={id} data-line={id} className="absolute inset-0">{draw(lineLayers(tone, lineOf([...pts]), k))}</div>)}
+        {planned.pre && planned.pre.route.length > 1 && (
+          <div data-line="pre" className="absolute inset-0 transition-opacity duration-300" style={{ opacity: planned.pre.strong ? 1 : PRE_FADE }}>{draw(lineLayers("routeAhead", lineOf(planned.pre.route), k))}</div>
+        )}
+        {planned.goal && <div data-goal-ring className="absolute inset-0">{draw(goalRingLayers(planned.goal.px, k))}</div>}
         {frame.marks.map((m) => {
           // 상자 가장자리에 걸린 표시는 반쪽만 보이지 않게 흐리게 지운다
           const p = points.get(m.id);
@@ -138,6 +155,25 @@ export function MapOverlay({ frame, checks, shapes, roomSets, image, size, cam, 
             <Status>{l.label}</Status>
           </div>
         ))}
+        {/* 단계 번호: 열린 계획의 번호, 없으면 미리 그린 길의 번호(같은 key라 열린 계획이 오면 그 요소가 진해진다) */}
+        {(planned.stops.length ? planned.stops : (planned.pre?.stops ?? []).map((s) => ({ ...s, status: "pending" as const, now: false, pre: true }))).map((s) => {
+          const p = screenAt(s.px);
+          const pre = "pre" in s;
+          const opacity = pre ? (planned.pre?.strong ? 1 : PRE_FADE) : s.status === "done" ? DONE_FADE : 1;
+          return (
+            <div key={s.n} data-stop={s.n} data-status={s.status} data-now={s.now || undefined} data-pre={pre || undefined} className="absolute -translate-x-1/2 -translate-y-1/2 transition-opacity duration-300" style={{ left: p.x, top: p.y, opacity }}>
+              <Avatar size="md"><AvatarFallback tone={s.now || s.status === "done" ? "brand" : "off"}>{s.n}</AvatarFallback></Avatar>
+            </div>
+          );
+        })}
+        {planned.step && (() => {
+          const p = screenAt(planned.step.px);
+          return <div data-step-tag className="absolute -translate-y-1/2 translate-x-4" style={{ left: p.x, top: p.y }}><Status variant="brand">{planned.step.text}</Status></div>;
+        })()}
+        {planned.person && (() => {
+          const p = screenAt(planned.person.px);
+          return <div data-person-tag className="absolute -translate-x-1/2 -translate-y-full" style={{ left: p.x, top: p.y }}><Status>{planned.person.text}</Status></div>;
+        })()}
         <BubbleLayer checks={shownChecks} devices={devices} objects={objects} points={points} avoid={avoid} keep={keep} />
       </div>
     </div>

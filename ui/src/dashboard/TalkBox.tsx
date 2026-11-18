@@ -1,14 +1,15 @@
 import { useLayoutEffect, useRef, useState } from "react";
-import { Item, ItemActions, ItemContent, ItemDescription, ItemHeader, ItemTitle } from "../components/ui/item";
+import { Item, ItemActions, ItemContent, ItemDescription, ItemTitle } from "../components/ui/item";
 import { LiquidGlass } from "../components/ui/liquid-glass";
-import { Status } from "../components/ui/status";
-import { TALK_SHOWN, type Pills, type Talk } from "./data";
+import { LineDrawSvg } from "../components/ui/line-draw-svg";
+import { TALK_TAIL } from "../lib/tokens";
+import { TALK_SHOWN, type Talk } from "./data";
 import type { Rect } from "./layout";
 import { useReducedMotionNow } from "./motion";
 import { WORDS } from "./words";
 
-/** 문장 한 줄 높이(px, 부품 원래 글 text-sm 줄)와 줄 사이(gap-1), 한 칸 굴리는 거리. */
-export const TALK_ROW_H = 20;
+/** 문장 한 줄 높이(px, Item talk 글 text-base 줄 24, 사용자 허락 2026-11-18 「메시지박스 글씨 키워」)와 줄 사이(gap-1), 한 칸 굴리는 거리. */
+export const TALK_ROW_H = 24;
 export const TALK_ROW_GAP = 4;
 export const TALK_ROW_STEP = TALK_ROW_H + TALK_ROW_GAP;
 /** 한 칸 굴리는 시간(ms)과 맨 위 지난 줄의 흐림(opacity). */
@@ -17,14 +18,22 @@ const TOP_FADE = 0.55;
 
 type Line = { id: string; text: string };
 
+/** 꼬리 크기(px)와 상자 높이에서 꼬리 가운데 자리(몫). */
+const TAIL = { w: 10, h: 16, at: 0.55 };
+/** 꼬리: 상자 오른쪽 끝에서 마스코트 쪽을 가리키는 삼각형(칠한 것과 바깥 두 변). */
+const TAIL_FILL = `M0 0L${TAIL.w} ${TAIL.h / 2}L0 ${TAIL.h}Z`;
+const TAIL_EDGE = `M0 0L${TAIL.w} ${TAIL.h / 2}L0 ${TAIL.h}`;
+
 /**
- * 트윈 아래쪽 메시지 상자 하나(마스코트 왼쪽, 마스코트가 옆에서 말하는 사람처럼 선다). 판은 LiquidGlass 불투명 판 + Item(sm, 부품 원래 글 크기).
- * 맨 위에 FSM 알약 셋(Status: 상태·트리거·액션, 긴 트리거는 한 줄로 자른다)과, 미리 세운 목표가 있으면 그 알약(「목표 · 컵 치우기」). 모드는 마스코트 머리 위 모드 말풍선(ModeBubble)이 보인다.
- * 그 아래 문장 칸은 최근 세 줄이 굴러간다(TalkLines). 오른쪽 아래에 이어짐 표시 ▼. 크기·자리(layout.ts bubble)는 정해져 있어 글 길이가 바꾸지 않는다.
+ * 트윈 아래쪽 메시지 상자 하나(마스코트 바로 왼쪽, 마스코트가 옆에서 말하는 사람처럼 선다). 판은 LiquidGlass 불투명 판 + Item(talk: sm 여백에 문장 줄 16px, 사용자가 허락한 큰 글).
+ * 최근 세 줄이 상자 가운데 높이에서 굴러가고(TalkLines) 오른쪽 아래에 이어짐 표시 ▼. 목표 칩은 없다(목표는 문장으로 오고, 트윈에 고리로 보인다).
+ * 오른쪽 끝에 마스코트를 가리키는 꼬리(21st.dev Line Draw SVG: 판 색 칠한 삼각형과 판 바깥 선 색 두 변)가 상자 밖 형제로 붙는다. 알약은 없다.
+ * 모드는 마스코트 머리 위 모드 말풍선(ModeBubble)이 보인다. 크기·자리(layout.ts bubble)는 정해져 있어 글 길이가 바꾸지 않는다.
  * 원래 생각(추론)은 오지 않는다(data.ts talkOf). 트윈·폰 칸 가림판(z-40)보다 위(z-50)에 있다. 보기만 한다: 마우스를 받지 않는다.
  */
 export function TalkBox({ talk, box }: { talk: Talk | null; box: Rect }) {
   return (
+    <>
     <LiquidGlass
       mode="opaque"
       radius={16}
@@ -32,17 +41,21 @@ export function TalkBox({ talk, box }: { talk: Talk | null; box: Rect }) {
       className="pointer-events-none absolute z-50"
       style={{ left: box.left, top: box.top, width: box.width, height: box.height }}
     >
-      <Item size="sm" className="size-full flex-nowrap items-start">
+      <Item size="talk" className="size-full flex-nowrap items-center">
         <ItemContent className="min-w-0">
-          <ItemHeader className="min-w-0 justify-start">
-            {talk?.fsm && <FsmPills pills={talk.fsm} />}
-            {talk?.goal && <Status variant="brand" data-talk-pill="goal">{`${WORDS.pill.goal} · ${talk.goal}`}</Status>}
-          </ItemHeader>
           <TalkLines lines={talk?.lines ?? []} />
         </ItemContent>
         <ItemActions data-talk-more aria-hidden="true" className="self-end">{WORDS.more}</ItemActions>
       </Item>
     </LiquidGlass>
+    <div
+      data-talk-tail aria-hidden="true" className="pointer-events-none absolute z-50"
+      style={{ left: box.left + box.width - 1, top: box.top + box.height * TAIL.at - TAIL.h / 2, width: TAIL.w, height: TAIL.h }}
+    >
+      <LineDrawSvg tone="talkTail" path={TAIL_FILL} width={TAIL.w} height={TAIL.h} className="absolute left-0 top-0" />
+      <LineDrawSvg tone="talkTailEdge" path={TAIL_EDGE} strokeWidth={TALK_TAIL.edge.width} width={TAIL.w} height={TAIL.h} className="absolute left-0 top-0" />
+    </div>
+    </>
   );
 }
 
@@ -137,26 +150,15 @@ function TalkLines({ lines }: { lines: Line[] }) {
         {view.rows.map((l, i) => {
           const fromEnd = n - 1 - i;
           if (fromEnd === 0) {
-            return <ItemTitle key={l.id} data-talk-line="new" className="h-5 min-w-0 max-w-full shrink-0"><span className="truncate">{l.text}</span></ItemTitle>;
+            return <ItemTitle key={l.id} data-talk-line="new" className="h-6 min-w-0 max-w-full shrink-0"><span className="truncate">{l.text}</span></ItemTitle>;
           }
           return (
-            <ItemDescription key={l.id} data-talk-line="old" className="h-5 shrink-0 truncate" style={{ opacity: fromEnd >= 2 ? TOP_FADE : 1 }}>
+            <ItemDescription key={l.id} data-talk-line="old" className="h-6 shrink-0 truncate" style={{ opacity: fromEnd >= 2 ? TOP_FADE : 1 }}>
               {l.text}
             </ItemDescription>
           );
         })}
       </div>
     </div>
-  );
-}
-
-/** FSM 알약 셋: 「상태 · …」·「트리거 · …」·「액션 · …」(Status). 트리거만 줄어들며 한 줄로 자른다. */
-function FsmPills({ pills }: { pills: Pills }) {
-  return (
-    <>
-      <Status variant="default" data-talk-pill="state">{`${WORDS.pill.state} · ${pills.state}`}</Status>
-      <Status variant="default" data-talk-pill="trigger" className="min-w-0 shrink"><span className="truncate">{`${WORDS.pill.trigger} · ${pills.trigger}`}</span></Status>
-      <Status variant="brand" data-talk-pill="action">{`${WORDS.pill.action} · ${pills.action}`}</Status>
-    </>
   );
 }

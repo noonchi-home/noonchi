@@ -9,9 +9,13 @@ import { hubOf } from "../../src/lib/hub";
 import { createSeenStore, type SeenStore } from "../../src/dashboard/masks";
 import type { PhoneSlot } from "../../src/dashboard/PhonePane";
 import type { Talk } from "../../src/dashboard/data";
+import type { TimelineData } from "../../src/dashboard/timeline";
+import { CUP_FSM_MEMORY } from "../../../src/brain/decision.ts";
+import { habitView } from "../../../src/brain/habit.ts";
 import { taskOf } from "../../../src/act/tasks.ts";
 import { BOX_NAME } from "../../src/dashboard/words";
 import type { SeenEvent } from "../../../src/contract/events.ts";
+import { LEARNED_FSM_MEMORY } from "../../../scripts/learned-memory.ts";
 
 export const PHONE_URL = "http://192.168.0.7:8210/phone/";
 
@@ -91,20 +95,40 @@ export const PLAN = planAt(1);
 
 export const CLEAR_CUP = "컵 치우기";
 export const REASON = "사람이 자리를 비운 뒤에도 컵이 식탁에 남아 있어요.";
-export const LEFT_CUP_STATE = "컵을 두고 자리를 뜸";
+export const LEFT_CUP_STATE = "자리에 없음";
 /** 메시지 상자 줄(src/brain/thought.ts 규칙 줄, 이어 말풍선 말): 컵 치우기 판단의 흐름(허락받은 규칙 → 클로이드가 할 일). */
 export const MESSAGES = [
   { id: "pam-1@1794214809000:0", text: "컵을 두고 자리를 뜨면 치워도 된다고 하셨어요" },
   { id: "say#1", text: "식탁 컵을 치울게요." },
 ];
-/** 배운 컵 치우기 화살표대로 고른 판단의 알약 셋(지금 상태 이름·화살표 사건·액션). */
-export const PILLS = { state: "자리에 없음", trigger: "사용자가 먹거나 마시기를 끝내고 다른 일로 넘어간다.", action: "컵 치우기" };
-/** 화살표 없는 판단의 알약 셋(지금 상태, 트리거 「화살표 없음」·액션 「대기」). */
-export const WAIT_PILLS = { state: "먹거나 마시는 중", trigger: "화살표 없음", action: "대기" };
-/** 계획 단계의 메시지 상자(다듬은 생각 두 줄과 알약 셋). */
-export const TALK: Talk = { lines: MESSAGES, fsm: PILLS };
-/** 지켜보기의 메시지 상자(말풍선 카드 말 한 줄과 대기 알약). */
-export const WATCH_TALK: Talk = { lines: [{ id: "say@0:0", text: "지켜보고 있어요." }], fsm: WAIT_PILLS };
+/** 계획 단계의 메시지 상자(다듬은 생각 두 줄). */
+export const TALK: Talk = { lines: MESSAGES };
+/** 지켜보기의 메시지 상자(말풍선 카드 말 한 줄). */
+export const WATCH_TALK: Talk = { lines: [{ id: "say@0:0", text: "지켜보고 있어요." }] };
+/** 시연 습관 FSM 그림(서버 src/brain/habit.ts habitView, 판본 1). */
+export const HABIT = habitView(LEARNED_FSM_MEMORY, 1);
+/** 시간 줄의 지금(ms, 화면 시험은 이 때로 멈춰 그린다)과 그보다 sec초 앞. */
+export const TIMELINE_NOW = 1_794_214_830_000;
+const ago = (sec: number) => TIMELINE_NOW - Math.round(sec * 1000);
+/** 지켜보기의 시간 줄: 마시는 중, 로봇 지켜봄. */
+export const TIMELINE_WATCH: TimelineData = {
+  spans: [
+    { id: "person:1", row: "person", from: ago(20), to: null, text: "먹거나 마시는 중", tone: "muted" },
+    { id: "watch:0", row: "robot", from: Number.NEGATIVE_INFINITY, to: null, text: "지켜봄", tone: "plain" },
+  ],
+  gap: null,
+};
+/** 계획 단계의 시간 줄: 9.3초 앞에 사람이 떠나고 6초 앞에 첫 명령(반응 간격 3.3초), 지금 단계 컵 집기. */
+export const TIMELINE_CLEAR: TimelineData = {
+  spans: [
+    { id: "person:1", row: "person", from: ago(30), to: ago(8), text: "먹거나 마시는 중", tone: "muted" },
+    { id: "person:2", row: "person", from: ago(8), to: null, text: LEFT_CUP_STATE, tone: "muted" },
+    { id: "watch:0", row: "robot", from: Number.NEGATIVE_INFINITY, to: ago(6), text: "지켜봄", tone: "plain" },
+    { id: "cup:1", row: "robot", from: ago(6), to: ago(4), text: "식탁으로 가기", tone: "muted" },
+    { id: "cup:2", row: "robot", from: ago(4), to: null, text: "컵 집기", tone: "brand" },
+  ],
+  gap: { from: ago(9.3), to: ago(6), text: "3.3초" },
+};
 
 /** 컵 갈래 판단 고정 자료: 행동, 일어난 화살표(출발 상태 from·번호 index·도착 to·사건 on·조건 when, 배운 뒤 기억 src/brain/decision.ts CUP_FSM_MEMORY와 같은 글),
  *  그 뒤 사람 상태(state), seed에 없던 화살표인가(learned), PAM의 생각 한 문장. */
@@ -162,7 +186,7 @@ export function screenAt(n: number, over: Partial<ScreenProps> = {}): ScreenProp
   return {
     index: n, plan, step: plan ? plan.steps[n - 1]! : null, robotKnown: true, connected: true, map: MAP, mapReady: true,
     phone: imageSlot(), seen: seenOf([BOX]),
-    talk: n > 0 ? TALK : WATCH_TALK, mode: n > 0 ? "noonchi" : null, hub: HUB,
+    talk: n > 0 ? TALK : WATCH_TALK, timeline: n > 0 ? TIMELINE_CLEAR : TIMELINE_WATCH, timelineNow: TIMELINE_NOW, mode: n > 0 ? "noonchi" : null, hub: HUB,
     ...over,
   };
 }

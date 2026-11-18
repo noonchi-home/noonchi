@@ -1,6 +1,7 @@
 // 대시보드 가짜 단계 자료(ui/src/dashboard/fake-run.json)를 만든다. 실행: npx tsx scripts/twin3d/fake-run.ts
 // 한양목련 실제 장면·평면도(loadScene·floorPlanFrom)로 컵 치우기 계획(에이전트 컵 계획이 맞춰야 할 모양 tests/helpers/cup-plan.ts, 로봇 [10.6, 8.6])을 짜고, 다섯 순간(0 지켜보기, 1~4 계획 단계)마다
-// 서버가 대시보드 /events로 보내는 메시지 묶음(plan·eye·brain decision·생각 메시지 thought·brain observe·seen·say)을 적는다. 생각 메시지는 계획 순간의 컵 치우기 판단 규칙 줄(src/brain/thought.ts decisionLines, 지켜보기 판단은 줄 없음)이다. 판단(decision)은 생각 한 문장(reasoning)과 PAM 답의 사람 상태·화살표(fsm, src/brain/decision.ts fsmStep: 지켜보기는 마시는 중 화살표 없음, 계획 순간은 배운 뒤 기억의 떠남 화살표)를 싣는다. 말은 sayLine에 그 단계 명령을 넣은 글이고, 계획 순간에는 그 앞 계획 순간의 말이 차례로 쌓여 있다.
+// 서버가 대시보드 /events로 보내는 메시지 묶음(plan·eye·brain decision·생각 메시지 thought·brain observe·seen·say·world·습관 FSM 그림 habit·목표 goal)을 적는다.
+// 지켜보기(0)는 사람이 식탁에서 컵으로 마시는 중이고 목표 「컵을 두고 자리를 뜨면 컵 치우기」가 서 있다(목표 줄이 메시지 상자에 있다). 계획 순간(1~4)은 사람이 떠난 뒤다(사람 안 보임, 목표 씀). 생각 메시지는 계획 순간의 컵 치우기 판단 규칙 줄(src/brain/thought.ts decisionLines, 지켜보기 판단은 줄 없음)이다. 판단(decision)은 생각 한 문장(reasoning)과 PAM 답의 사람 상태·화살표(fsm, src/brain/decision.ts fsmStep: 지켜보기는 마시는 중 화살표 없음, 계획 순간은 배운 뒤 기억의 떠남 화살표)를 싣는다. 말은 sayLine에 그 단계 명령을 넣은 글이고, 계획 순간에는 그 앞 계획 순간의 말이 차례로 쌓여 있다.
 // 대시보드 폰 칸 그림은 시안 눈 그림(ui/public/debug-eye/, 세로 405×720)이고, 컵 모양(seen 마스크)은 시안 가로 그림 상자를 잘라 낸 자리만큼 옮긴 상자 안에 컵꼴로 채운 것이다.
 // 시각을 고정해서 다시 만들어도 같은 파일이 나온다.
 import { writeFileSync } from "node:fs";
@@ -10,6 +11,11 @@ import { modeNow } from "../../src/act/mode.js";
 import { planIdOf } from "../../src/act/tasks.js";
 import { assemblePlan, type DraftStep } from "../../src/agent/planShape.js";
 import type { FloorPlan } from "../../src/layout/floor.js";
+import { habitView } from "../../src/brain/habit.js";
+import type { PendingGoal } from "../../src/contract/goal.js";
+import { GOAL_TEXT } from "../../src/act/labels.js";
+import { TASK_SAY } from "../../src/act/tasks.js";
+import { ruleIf } from "../../src/world/labels.js";
 import { CUP_FSM_MEMORY, fsmStep } from "../../src/brain/decision.js";
 import { LEARNED_FSM_MEMORY } from "../learned-memory.js";
 import { decisionLines } from "../../src/brain/thought.js";
@@ -133,6 +139,7 @@ function coachMoment(fp: FloorPlan, world: WorldView): Moment {
       { type: "say", text: say(plan, command(0, "수납장으로 가 주세요")) },
       { type: "say", text: say(plan, command(1, "냄비를 꺼내 주세요")) },
       { type: "mode", mode: modeNow({ world, offNotices: [], coaching: true, plan }) },
+      { type: "habit", habit: habitView(LEARNED_FSM_MEMORY, 1) },
     ],
   };
 }
@@ -158,11 +165,33 @@ function build(): { moments: Moment[]; coach: Moment } {
     at_ms: T0, objects: [cup], person: { visible: false, since_ms: T0, last_seen_ms: null, count: 0, room: null, room_label: null, position: null, near: [], holding: [], position_ms: null, answered_ms: null, facts: {} }, fixtures: [], devices: [], eye: null, frame_ms: null, vlm_missing: 0, yolo_missing: 0,
   };
 
+  // 사람: 지켜보기는 식탁 곁에 앉아 컵으로 마시는 중, 계획 순간은 그 자리에서 떠나 안 보임(마지막 발 자리)
+  const seat: [number, number] = [round(table.position[0] - 0.7), round(table.position[1])];
+  const drinking: WorldView = {
+    ...world, person: {
+      ...world.person, visible: true, since_ms: T0 - 60_000, last_seen_ms: T0, count: 1, position: seat, position_ms: T0, room: table.room, room_label: "거실",
+      facts: { activity: { value: "drinking", at_ms: T0, since_ms: T0 - 20_000, certainty: "confirmed" }, posture: { value: "sitting", at_ms: T0, since_ms: T0 - 60_000, certainty: "confirmed" } },
+    },
+  };
+  const left: WorldView = { ...world, person: { ...world.person, position: seat, position_ms: T0, room: table.room, room_label: "거실" } };
+  // 습관 FSM 그림(배운 뒤 기억, 판본 1)과 목표: 마시는 중에서 떠나는 배운 컵 치우기 화살표(사용자가 정한 짧은 꼴 「컵을 두고 자리를 뜨면」)
+  const habit: ServerMessage = { type: "habit", habit: habitView(LEARNED_FSM_MEMORY, 1) };
+  const leave = LEARNED_FSM_MEMORY.states.find((s) => s.id === "drinking")!.next[0]!;
+  const goalText = GOAL_TEXT.armed(ruleIf({ trigger: leave.on, action: ACTION, learned: false }), TASK_SAY[ACTION]!.will);
+  const goal: PendingGoal = {
+    id: "goal-1", action: ACTION, state: "drinking", trigger: leave.on, object: cup.id, cls: "cup", status: "armed", prep: "ready", reason: null, text: goalText,
+    armed_ms: T0 - 10_000, ready_ms: T0 - 6_000, gone_ms: null, fired_ms: null, plan: null,
+  };
+
   const moments = MOMENTS.map(({ eye, score }, n) => {
     const now = T0 + n * STEP_MS;
     const open: PlanView | null = n === 0 ? null : {
       ...plan, revision: n, status: "running", updatedAt: iso(now), judgment: "사람이 자리를 비운 뒤에도 컵이 식탁에 남아 있어요.",
-      steps: plan.steps.map((s, i) => ({ ...s, status: i < n - 1 ? "done" : i === n - 1 ? "active" : "pending" })),
+      // 단계 i는 순간 i+1에 시작해(그 단계 명령) 다음 순간에 끝난다(실행 추적 단계 시각)
+      steps: plan.steps.map((s, i) => ({
+        ...s, status: i < n - 1 ? "done" : i === n - 1 ? "active" : "pending",
+        ...(i < n ? { started_ms: T0 + (i + 1) * STEP_MS } : {}), ...(i < n - 1 ? { ended_ms: T0 + (i + 2) * STEP_MS } : {}),
+      })),
     };
     const step = open?.steps[n - 1];
     const key = step ? (Object.keys(STEP_COMMAND) as (keyof typeof STEP_COMMAND)[]).find((k) => STEP_LABEL[k] === step.label) ?? null : null;
@@ -197,14 +226,22 @@ function build(): { moments: Moment[]; coach: Moment } {
       { type: "say", text: sayLine({ plan: open, command, world, nowMs: now }) },
       // 서버가 정한 지금 행동 모드(src/act/mode.ts): 컵 치우기는 눈치 모드
       { type: "mode", mode: modeNow({ world, offNotices: [], coaching: false, action: decision.action }) },
+      { type: "world", world: n === 0 ? drinking : left },
+      habit,
+      // 지켜보기: 세운 목표와 그 줄(메시지 상자), 계획 순간: 떠난 뒤 판단이 같은 행동을 골라 씀
+      ...(n === 0
+        ? [{ type: "goal", goal } as ServerMessage, { type: "thought", messages: [{ id: `goal-1@${T0 - 10_000}`, text: goalText, at_ms: T0 - 10_000, decision: "goal-1" }] } as ServerMessage]
+        : [{ type: "goal", goal: { ...goal, status: "used", gone_ms: T0, fired_ms: T0 } } as ServerMessage]),
     ];
     return { index: n, eye, messages };
   });
   // 계획 순간의 말은 실제 서버가 보낸 차례대로 쌓인다: 정한 것(「식탁 컵을 치울게요.」) 뒤에 그 앞 계획 순간의 말(대시보드 메시지 상자 줄이 굴러간다)
   const decided: ServerMessage = { type: "say", text: sayLine({ plan: { ...plan, status: "planned" }, command: null, world, nowMs: T0 + STEP_MS }) };
   const said = moments.map((m) => m.messages.find((x) => x.type === "say")!);
+  // 계획 순간에는 앞 지켜보기 판단(마시는 중)이 먼저 와 있다: FSM 카드가 마시는 중 → 컵을 두고 자리를 뜸 전이를 안다
+  const watched = moments[0]!.messages.find((x) => x.type === "brain" && x.event.type === "decision")!;
   return {
-    moments: moments.map((m, n) => (n === 0 ? m : { ...m, messages: [...m.messages.filter((x) => x.type !== "say"), decided, ...said.slice(1, n + 1)] })),
+    moments: moments.map((m, n) => (n === 0 ? m : { ...m, messages: [watched, ...m.messages.filter((x) => x.type !== "say"), decided, ...said.slice(1, n + 1)] })),
     coach: coachMoment(fp, world),
   };
 }

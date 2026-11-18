@@ -37,6 +37,7 @@ task planner가 클로이드 계획(판단·단계·이동 경로)을 트윈 화
 
 - `kind`: `move` 이동, `act` 손으로 하는 일, `ask` 사람에게 묻기·알리기, `device` 기기 행동, `wait` 기다리기(행동 중, 예: 세탁 멈춤. 대시보드 진행도에 「기다리는 중 · 이름」, 실제 폰에는 보내지 않는다).
 - 단계 `status`: `pending` 아직, `active` 지금, `done` 끝남, `failed` 실패, `skipped` 건너뜀.
+- 단계 `started_ms`·`ended_ms`(없어도 됨): 진행 중이 된 시각(그 단계 명령을 낸 때)과 진행 중에서 끝난 시각(ms). 서버 실행 추적이 단다. 대시보드 시간 줄 로봇 줄이 쓴다.
 - `target`: `objectId` · `deviceId` · `room` · `position` 중 아는 것만 넣는다.
 
 ## 화면에 나오는 글

@@ -38,7 +38,8 @@ export const FIND_LINE = "컵이 안 보여서 식탁 쪽을 다시 볼게요";
 export function talkMoment(m: Moment, talk: DebugTalk | null): Moment {
   if (talk !== "find") return m;
   const isDecision = (x: ServerMessage) => x.type === "brain" && x.event.type === "decision";
-  const decision = MOMENTS[1]!.messages.find(isDecision);
+  // 1번 순간의 마지막 판단(컵 치우기). 그 앞에는 지켜보기 판단이 와 있다
+  const decision = [...MOMENTS[1]!.messages].reverse().find(isDecision);
   const at = Math.max(0, ...m.messages.flatMap((x) => (x.type === "thought" ? x.messages.map((t) => t.at_ms) : []))) + 1;
   return {
     ...m,

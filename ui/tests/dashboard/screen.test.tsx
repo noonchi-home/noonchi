@@ -1,4 +1,4 @@
-// 대시보드 화면 틀(DashboardScreen): 머리줄 막대·맨 아래 줄·오른쪽 칸 없이 트윈(지도 자리는 칸을 꽉 채우고, 할 일 진행도는 여기에만)이 화면 전체를 쓴다.
+// 대시보드 화면 틀(DashboardScreen): 머리줄 막대·맨 아래 줄·오른쪽 칸 없이 트윈(지도 자리는 칸을 꽉 채운다. 할 일 진행도 알약은 없다)이 화면 전체를 쓴다.
 // 그 위에 얹는 것: 오른쪽 위 비전 미니맵 「폰 카메라」(가로 16:9 영상에 마스크·이름표, 영상이 없으면 연결 QR), 오른쪽 아래 마스코트(판 없이 아래 끝을 화면 밑 선에 댄다, 누르면 설정 창),
 // 마스코트 위 생각 말풍선(짧은 메시지가 카톡처럼 쌓인 목록과 그 아래 상태·판단 칩, 메시지가 없으면 숨김), 트윈 아래쪽 말풍선 카드 하나. 자리는 화면 크기로만 정해진다(layout.ts). 자료는 fixtures.ts.
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
@@ -7,11 +7,13 @@ import tokens from "../../../src/design/tokens.json";
 import { DashboardScreen, type ScreenProps } from "../../src/dashboard/DashboardScreen";
 import { TAG_H, tagWidth } from "../../src/dashboard/detections";
 import { mascotPoint, pageLayout, TALK_H, type Rect } from "../../src/dashboard/layout";
+import { TALK_ROW_H } from "../../src/dashboard/TalkBox";
 import { MASCOT } from "../../src/lib/mascot-image";
 import { WORDS } from "../../src/dashboard/words";
 import { EMPTY_DASH, reduceDash, talkOf } from "../../src/dashboard/data";
 import { BRANCHES, branchDecision, coachPlanAt, type Branch } from "./fixtures";
-import { EYE_FRAMES, HUB, imageSlot, MESSAGES, PHONE_URL, PILLS, PLAN, REASON, screenAt, seenEvent, seenOf, TALK } from "./fixtures";
+import { EYE_FRAMES, HUB, imageSlot, MESSAGES, PHONE_URL, PLAN, REASON, screenAt, seenEvent, seenOf, TALK, TIMELINE_CLEAR, TIMELINE_NOW, TIMELINE_WATCH } from "./fixtures";
+import { TIMELINE_SPAN_S } from "../../src/dashboard/TimelineCard";
 import { createSeenStore } from "../../src/dashboard/masks";
 import { clockText } from "../../src/dashboard/clock";
 import { act } from "@testing-library/react";
@@ -32,6 +34,7 @@ const phonePane = () => screen.getByRole("region", { name: "폰 카메라" });
 const twinPane = () => screen.getByRole("region", { name: "트윈" });
 const mascot = () => screen.getByRole("region", { name: "마스코트" });
 const talk = () => document.querySelector<HTMLElement>("[data-talk]")!;
+const card = () => document.querySelector<HTMLElement>("[data-timeline-card]")!;
 /** class 하나가 있는지(변형 접두·대괄호 값 포함 그대로). */
 const cls = (el: Element, name: string) => el.className.split(/\s+/).includes(name);
 const before = (a: Element, b: Element) => (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
@@ -107,7 +110,11 @@ describe("대시보드 배치", () => {
     expect(cls(stage, "overflow-hidden")).toBe(true);
     expect([...stage.children].filter((c) => c.tagName === "SECTION")).toEqual([twin]);
     expect(cls(twin, "flex-1")).toBe(true);
-    expect(container.querySelector("[data-divider], [data-slot=separator], [data-fsm-card], [data-decision]")).toBeNull();
+    expect(container.querySelector("[data-divider], [data-decision]")).toBeNull();
+    // 시간 줄 카드는 트윈 판 밖, 메시지 상자 밖 main 바로 아래 독립 카드다
+    expect(stage.querySelector("[data-timeline-card]")).toBeNull();
+    expect(talk().querySelector("[data-timeline-card]")).toBeNull();
+    expect(card().parentElement).toBe(main);
     for (const el of [phonePane(), talk(), mascot()]) {
       expect(el.parentElement, el.tagName).toBe(main);
       expect(stage.contains(el)).toBe(false);
@@ -210,7 +217,7 @@ describe("대시보드 배치", () => {
         ["0", screenAt(0)], ["2", screenAt(2)], ["3", screenAt(3)], ["4", screenAt(4)],
         ["로봇 모름", screenAt(2, { robotKnown: false })], ["연결 끊김", screenAt(2, { connected: false })], ["모양 없음", screenAt(0, { seen: seenOf(null) })],
         ["긴 줄", screenAt(2, { talk: { ...TALK, lines: MESSAGES.map((m) => ({ ...m, text: m.text.repeat(5) })) } })],
-        ["긴 트리거", screenAt(2, { talk: { ...TALK, fsm: { ...PILLS, trigger: PILLS.trigger.repeat(4) } } })], ["목표", screenAt(2, { talk: { ...TALK, goal: "컵 치우기" } })], ["줄 없음", screenAt(2, { talk: null })],
+        ["목표", screenAt(2, { timeline: TIMELINE_WATCH })], ["시간 줄 없음", screenAt(2, { timeline: null })], ["줄 없음", screenAt(2, { talk: null })],
       ];
       for (const [name, p] of variants) expect(boxes(p), name).toEqual(first);
     } finally { rect.mockRestore(); }
@@ -220,58 +227,122 @@ describe("대시보드 배치", () => {
 describe("대시보드 메시지 상자(트윈 아래쪽 하나, 생각 말풍선 없음)", () => {
   const lines = () => [...talk().querySelectorAll<HTMLElement>("[data-talk-line]")];
 
-  it("오른쪽 생각 말풍선은 없다. 메시지 상자 하나가 트윈 아래쪽에 있고, 맨 위에 알약 줄, 그 아래 줄(지난 줄은 흐리게 ItemDescription, 최신 줄은 진하게 ItemTitle), 오른쪽 아래 ▼다", () => {
+  it("오른쪽 생각 말풍선은 없다. 메시지 상자 하나가 트윈 아래쪽 마스코트 옆에 있고, 줄(지난 줄은 흐리게 ItemDescription, 최신 줄은 진하게 ItemTitle)과 ▼다. 오른쪽 꼬리가 마스코트를 가리킨다", () => {
     draw(screenAt(2));
     expect(document.querySelector("[data-thought], [data-say-card], [data-slot=thought-bubble], [data-talk-who]")).toBeNull();
     expect(document.querySelectorAll("[data-talk]")).toHaveLength(1);
     expect(lines().map((l) => [l.dataset.talkLine, l.getAttribute("data-slot"), l.textContent])).toEqual([
       ["old", "item-description", MESSAGES[0]!.text], ["new", "item-title", MESSAGES[1]!.text],
     ]);
-    expect(talk().querySelector("[data-talk-more]")).toHaveTextContent("▼");
+    const more = talk().querySelector("[data-talk-more]")!;
+    expect(more).toHaveTextContent("▼");
+    expect(before(lines().at(-1)!, more)).toBe(true);
     expect(talk()).not.toHaveTextContent(REASON);
   });
 
-  it("머리는 알약 셋(Status): 「상태 · …」·「트리거 · …」·「액션 · …」이고, 「배운 습관」 줄·칩·모드 글은 없다", () => {
-    draw(screenAt(2));
-    expect(talk().querySelector("[data-talk-habit], [data-thought-chips]")).toBeNull();
-    expect(talk()).not.toHaveTextContent("배운 습관");
-    const pills = [...talk().querySelectorAll<HTMLElement>("[data-talk-pill]")];
-    expect(pills.map((p) => [p.dataset.talkPill, p.getAttribute("data-slot"), p.textContent])).toEqual([
-      ["state", "status", `상태 · ${PILLS.state}`], ["trigger", "status", `트리거 · ${PILLS.trigger}`], ["action", "status", `액션 · ${PILLS.action}`],
-    ]);
-    expect(talk().querySelector("[data-talk-mode]")).toBeNull();
+  it("상자 오른쪽 꼬리가 마스코트를 가리킨다: 상자 밖 형제(마우스 받지 않음), 21st.dev Line Draw SVG 두 장(칠한 삼각형과 바깥 선), 상자 오른쪽 끝에서 시작해 상자 높이 안", () => {
+    const rect = atScreen(1920, 1080);
+    try {
+      draw(screenAt(2));
+      const L = pageLayout({ width: 1920, height: 1080 }, MASCOT);
+      const tail = document.querySelector<HTMLElement>("[data-talk-tail]")!;
+      expect(tail.parentElement).toBe(talk().parentElement);
+      expect(cls(tail, "pointer-events-none")).toBe(true);
+      expect(px(tail.style.left)).toBeCloseTo(L.bubble.left + L.bubble.width - 1, 0);
+      expect(px(tail.style.top)).toBeGreaterThan(L.bubble.top);
+      expect(px(tail.style.top)).toBeLessThan(L.bubble.top + L.bubble.height);
+      expect(tail.querySelectorAll("svg")).toHaveLength(2);
+      expect(px(tail.style.left) + 12).toBeLessThan(L.mascot.left);
+    } finally { rect.mockRestore(); }
+  });
+
+  // 사용자 결정(2026-11-18): 메시지 상자 알약(상태·트리거·액션)과 목표 알약을 뺀다. 사람 상태·목표·단계의 때는 시간 줄 카드가 보인다(2026-11-19)
+  it("알약(상태·트리거·액션·목표)이 없고 「배운 습관」 줄·칩·모드 글도 없다", () => {
+    for (const p of [screenAt(0), screenAt(2)]) {
+      const { unmount } = draw(p);
+      expect(talk().querySelector("[data-talk-pill], [data-talk-habit], [data-thought-chips], [data-talk-mode]")).toBeNull();
+      expect(talk()).not.toHaveTextContent(/상태 ·|트리거 ·|액션 ·|배운 습관/);
+      unmount();
+    }
   });
 
   // 사용자 바로잡음(2026-11-18): 「자동 이런 말 쓰지말고 어떤 모드인지 쓰라니까」. 모드는 마스코트 머리 위 말풍선(눈치/코치)만이고 설정 이름(「자동」)은 어디에도 없다
   it("메시지 상자에는 모드 글이 없고, 화면 어디에도 설정 이름 「자동」이 없다. 모드 말풍선은 눈치·코치 둘뿐이다", () => {
     draw(screenAt(0));
     expect(talk()).not.toHaveTextContent(/자동|모드/);
-    expect(talk().querySelectorAll("[data-talk-pill]")).toHaveLength(3);
     expect(document.querySelector("[data-mode-text]")).toHaveTextContent(/^(눈치|코치) 모드$/);
     expect(document.body).not.toHaveTextContent("자동");
   });
 
-  it("미리 세운 목표가 있으면 머리 알약 줄 끝에 「목표 · 컵 치우기」(Status)가 있고, 판단 FSM이 없어도 그 알약만 있다", () => {
-    const first = draw(screenAt(2, { talk: { ...TALK, goal: "컵 치우기" } }));
-    const pills = () => [...talk().querySelectorAll<HTMLElement>("[data-talk-pill]")];
-    expect(pills().map((p) => p.dataset.talkPill)).toEqual(["state", "trigger", "action", "goal"]);
-    expect(pills().at(-1)).toHaveTextContent("목표 · 컵 치우기");
-    expect(pills().at(-1)!.getAttribute("data-slot")).toBe("status");
-    first.unmount();
-    draw(screenAt(2, { talk: { ...TALK, fsm: null, goal: "컵 치우기" } }));
-    expect(pills().map((p) => [p.dataset.talkPill, p.textContent])).toEqual([["goal", "목표 · 컵 치우기"]]);
+  // 사용자 결정(2026-11-19): 「A+C가 그나마 낫네」, 「만들기, 1.6초 크게」. FSM 원 카드 자리를 시간 줄(21st.dev Timeline)이 쓴다
+  // 사용자 결정(2026-11-19): 「예상을 없애자」. 줄은 사람 · 로봇 둘이다
+  it("시간 줄 카드는 메시지 상자 왼쪽 자리(layout timeline)의 21st.dev Timeline이고, 사람 · 로봇 두 줄과 오른쪽 끝 「지금」 선, 초 눈금 「N초 전」이 있다. 예상 줄·목표 글이 없다. 보기만 한다", () => {
+    const rect = atScreen(1920, 1080);
+    try {
+      draw(screenAt(2));
+      const L = pageLayout({ width: 1920, height: 1080 }, MASCOT);
+      expect(close(boxOf(card()), L.timeline)).toBe(true);
+      expect(cls(card(), "pointer-events-none")).toBe(true);
+      expect(card().querySelector("[data-slot=timeline-grid]")).not.toBeNull();
+      expect([...card().querySelectorAll<HTMLElement>("[data-slot=timeline-row]")].map((r) => [r.dataset.row, r.querySelector("[data-slot=timeline-row-name]")!.textContent])).toEqual([
+        ["person", "사람"], ["robot", "로봇"],
+      ]);
+      expect(card()).not.toHaveTextContent(/예상|준비됨|먼저/);
+      expect(card().querySelector("[data-timeline-caption], [data-slot=timeline-caption]")).toBeNull();
+      const now = card().querySelector<HTMLElement>("[data-slot=timeline-current-time]")!;
+      expect(now).toHaveTextContent("지금");
+      expect([...card().querySelectorAll("[data-slot=timeline-hour-marker]")].map((m) => m.textContent)).toEqual(["10초 전", "20초 전"]);
+      // 끌어 옮기기·마우스 시각 표시가 없다
+      expect(card().querySelector("[data-slot=timeline-mouse-indicator], [data-slot=timeline-drag-overlay], [data-slot=timeline-drop-ghost]")).toBeNull();
+    } finally { rect.mockRestore(); }
   });
 
-  it("판단의 FSM을 모르면(talk.fsm null) 알약이 없고 빈 알약도 두지 않는다", () => {
-    draw(screenAt(2, { talk: { ...TALK, fsm: null } }));
-    expect(talk().querySelectorAll("[data-talk-pill]")).toHaveLength(0);
+  it("구간: 사람 줄은 사람 상태, 로봇 줄은 계획 단계(지금 단계는 brand 빨강)와 지켜봄이다. 지금보다 앞 SPAN초 밖은 그리지 않는다", () => {
+    draw(screenAt(2));
+    const row = (id: string) => card().querySelector<HTMLElement>(`[data-slot=timeline-row][data-row=${id}]`)!;
+    const slots = (id: string) => [...row(id).querySelectorAll<HTMLElement>("[data-slot=timeline-slot]")];
+    expect(slots("person").map((s) => s.textContent)).toEqual(["먹거나 마시는 중", "자리에 없음"]);
+    expect(slots("robot").map((s) => [s.textContent, s.dataset.tone])).toEqual([["지켜봄", "plain"], ["식탁으로 가기", "muted"], ["컵 집기", "brand"]]);
+    // 보이는 때(지금에서 SPAN초 앞까지) 밖만 있는 구간은 없다
+    const old = { id: "old", row: "robot" as const, from: TIMELINE_NOW - (TIMELINE_SPAN_S + 30) * 1000, to: TIMELINE_NOW - (TIMELINE_SPAN_S + 5) * 1000, text: "옛 단계", tone: "muted" as const };
+    const { unmount } = draw(screenAt(0, { timeline: { ...TIMELINE_WATCH, spans: [...TIMELINE_WATCH.spans, old] } }));
+    expect(document.querySelectorAll("[data-timeline-card]")[1]).not.toHaveTextContent("옛 단계");
+    unmount();
+  });
+
+  // 사용자 바로잡음(2026-11-19): 「글자가 너무 크더라 초나오는거」. 22px을 빼고 부품 원래 크기(14px)에 굵기·LG 빨강으로만 띄운다
+  it("사람이 떠난 때 → 첫 명령은 두 줄을 가로지르는 brand 구간과 「N.N초」(부품 원래 크기 14px, 굵게, brand 바탕)다. 간격을 모르면 없다", () => {
+    draw(screenAt(2));
+    const region = card().querySelector<HTMLElement>("[data-slot=timeline-drop-region]")!;
+    expect(region).toHaveTextContent(TIMELINE_CLEAR.gap!.text);
+    const label = region.querySelector<HTMLElement>("[data-slot=timeline-region-label]")!;
+    expect(cls(label, "text-sm")).toBe(true);
+    expect(cls(label, "text-[22px]")).toBe(false);
+    expect(cls(label, "font-bold")).toBe(true);
+    expect(cls(label, "bg-brand")).toBe(true);
+    const { unmount } = draw(screenAt(0));
+    expect(document.querySelectorAll("[data-timeline-card]")[1]!.querySelector("[data-slot=timeline-drop-region]")).toBeNull();
+    unmount();
+  });
+
+  it("목표는 메시지 상자에 칩·글로 없다(목표 문장은 메시지 줄로만 온다). 트윈 글에도 목표가 없다", () => {
+    draw(screenAt(0));
+    expect(talk().querySelector("[data-goal-line], [data-talk-goal]")).toBeNull();
+    expect(talk()).not.toHaveTextContent("목표 ·");
+    expect(twinPane()).not.toHaveTextContent("목표");
+  });
+
+  it("첫 판단 전(timeline null)이면 시간 줄 카드가 없다(빈 틀을 두지 않는다). 옛 FSM 원 카드도 없다", () => {
+    draw(screenAt(2, { timeline: null }));
+    expect(document.querySelector("[data-timeline-card]")).toBeNull();
+    expect(document.querySelector("[data-fsm-card], [data-fsm-state]")).toBeNull();
   });
 
   it("자리·크기는 layout의 메시지 상자 자리이고 줄 길이·습관 줄과 상관없이 같다. 줄은 한 줄로 자른다. 보기만 하고(마우스 받지 않음) 트윈·폰 칸보다 위다", () => {
     const rect = atScreen(1920, 1080);
     try {
       const L = pageLayout({ width: 1920, height: 1080 }, MASCOT);
-      for (const p of [screenAt(0), screenAt(2), screenAt(2, { talk: { lines: MESSAGES.map((m) => ({ ...m, text: m.text.repeat(8) })), fsm: { ...PILLS, trigger: PILLS.trigger.repeat(4) } } })]) {
+      for (const p of [screenAt(0), screenAt(2), screenAt(2, { talk: { lines: MESSAGES.map((m) => ({ ...m, text: m.text.repeat(8) })) } })]) {
         const { unmount } = draw(p);
         expect(close(boxOf(talk()), L.bubble)).toBe(true);
         expect(L.bubble.height).toBe(TALK_H);
@@ -283,17 +354,22 @@ describe("대시보드 메시지 상자(트윈 아래쪽 하나, 생각 말풍�
     } finally { rect.mockRestore(); }
   });
 
-  it("21st.dev 부품으로 그린다: 판은 LiquidGlass 불투명 판, 안은 Item(부품 원래 글 크기 sm)이고 말풍선 카드 크기(say)를 쓰지 않는다", () => {
+  // 사용자 허락(2026-11-18): 「메시지박스 글씨 키워」. 문장 줄만 16px(item.tsx talk), 목표 줄은 Status 그대로
+  it("21st.dev 부품으로 그린다: 판은 LiquidGlass 불투명 판, 안은 Item 대화 상자 크기(talk, 문장 줄 16px)이고 말풍선 카드 크기(say)를 쓰지 않는다. 줄 칸은 한 줄 높이 24px", () => {
     draw(screenAt(2));
     expect(talk()).toHaveAttribute("data-glass", "opaque");
     const item = talk().querySelector<HTMLElement>("[data-slot=item]")!;
-    expect(item).toHaveAttribute("data-size", "sm");
+    expect(item).toHaveAttribute("data-size", "talk");
+    for (const l of lines()) expect(cls(l, "h-6")).toBe(true);
+    expect(TALK_ROW_H).toBe(24);
+    expect(talk().querySelector<HTMLElement>("[data-talk-lines]")!.parentElement!.style.height).toBe(`${3 * 24 + 2 * 4}px`);
   });
 
-  it("줄이 없으면(talk null) 상자는 그대로 두고 머리·알약·줄이 없다", () => {
+  it("줄이 없으면(talk null) 상자는 그대로 두고 줄이 없다(시간 줄 카드는 그대로)", () => {
     draw(screenAt(2, { talk: null }));
     expect(talk().querySelector("[data-talk-mode], [data-talk-pill]")).toBeNull();
     expect(lines()).toEqual([]);
+    expect(document.querySelector("[data-timeline-card]")).not.toBeNull();
   });
 });
 
@@ -623,80 +699,18 @@ describe("대시보드 폰 카메라(대시보드 폰 칸)", () => {
 });
 
 describe("대시보드 트윈", () => {
-  it("할 일·지금 단계·단계 수와 단계 막대를 트윈 안에만 보인다", () => {
-    draw(screenAt(2));
-    const progress = twinPane().querySelector<HTMLElement>("[data-progress]")!;
-    expect(progress).toHaveTextContent(PLAN.goal);
-    expect(progress).toHaveTextContent(`2/${PLAN.steps.length}`);
-    expect(progress).toHaveTextContent(PLAN.steps[1]!.label);
-    expect(progress.querySelectorAll("[data-segment]")).toHaveLength(PLAN.steps.length);
-    expect(document.querySelectorAll("[data-progress]")).toHaveLength(1);
-    expect(mascot()).not.toHaveTextContent(`2/${PLAN.steps.length}`);
-    expect(talk()).not.toHaveTextContent(`2/${PLAN.steps.length}`);
+  // 사용자 결정(2026-11-18): 왼쪽 위 계획 글·진행 막대 알약을 뺀다(계획은 트윈 위 번호 길). 로봇 상태 줄(대기·관찰·이동·실행·복귀)도 두지 않는다
+  it("할 일 진행도 알약(할 일·단계 번호·단계 막대)과 로봇 상태 줄이 화면 어디에도 없다", () => {
+    for (const p of [screenAt(0), screenAt(2), screenAt(4, { plan: coachPlanAt(4), step: coachPlanAt(4).steps[3]! })]) {
+      const { unmount } = draw(p);
+      expect(document.querySelector("[data-progress], [data-predraw], [data-segment]")).toBeNull();
+      expect(twinPane()).not.toHaveTextContent(/\d+\/\d+ ·/);
+      expect(document.body).not.toHaveTextContent(/대기 · 관찰|이동 · 실행|실행 · 복귀/);
+      unmount();
+    }
   });
 
-  it("코치 13단계 계획의 단계 막대는 13칸이고, 칸과 막대의 class·style은 4단계 때와 같다(칸 크기를 바꾸지 않는다). 글은 「4/13 · 물 받기」", () => {
-    const look = (el: Element) => [el.getAttribute("class"), el.getAttribute("style")];
-    const four = draw(screenAt(2));
-    const p4 = twinPane().querySelector<HTMLElement>("[data-progress]")!;
-    const seg4 = look(p4.querySelector("[data-segment]")!);
-    const bar4 = look(p4.querySelector("[data-segment]")!.parentElement!);
-    const box4 = look(p4);
-    four.unmount();
-    const plan = coachPlanAt(4);
-    draw(screenAt(4, { plan, step: plan.steps[3]! }));
-    const p13 = twinPane().querySelector<HTMLElement>("[data-progress]")!;
-    const segs = [...p13.querySelectorAll("[data-segment]")];
-    expect(segs).toHaveLength(13);
-    for (const s of segs) expect(look(s)).toEqual(seg4);
-    expect(look(segs[0]!.parentElement!)).toEqual(bar4);
-    expect(look(p13)).toEqual(box4);
-    expect(segs.map((e) => e.getAttribute("data-state"))).toEqual(["completed", "completed", "completed", "active", ...Array.from({ length: 9 }, () => "inactive")]);
-    expect(p13.querySelector("[data-slot=item-description]")).toHaveTextContent("4/13 · 물 받기");
-    expect(p13).toHaveTextContent("라면 끓이기 알려 주기");
-  });
-
-  it("단계 막대 칸: 끝난 칸 completed, 지금 칸 active, 남은 칸 inactive", () => {
-    draw(screenAt(2));
-    const segs = [...twinPane().querySelector("[data-progress]")!.querySelectorAll("[data-segment]")].map((e) => e.getAttribute("data-state"));
-    expect(segs).toEqual(["completed", "active", "inactive", "inactive"]);
-  });
-
-  it("예정 계획(단계 모두 예정)은 「1/4」 글과 같이 단계 막대도 첫 칸이 지금 칸이고 끝난 칸이 없다", () => {
-    const plan: PlanView = { ...PLAN, status: "planned", steps: PLAN.steps.map((s) => ({ ...s, status: "pending" })) };
-    draw(screenAt(1, { plan, step: plan.steps[0]! }));
-    const progress = twinPane().querySelector<HTMLElement>("[data-progress]")!;
-    expect(progress.querySelector("[data-slot=item-description]")).toHaveTextContent(`1/${PLAN.steps.length} · ${PLAN.steps[0]!.label}`);
-    const segs = [...progress.querySelectorAll("[data-segment]")].map((e) => e.getAttribute("data-state"));
-    expect(segs).toEqual(["active", "inactive", "inactive", "inactive"]);
-  });
-
-  it("행동 중 기다리기 단계는 진행도에만 「기다리는 중 · 단계 이름」으로 보인다", () => {
-    const plan: PlanView = {
-      ...PLAN, goal: "세탁물 건조기로 옮기기",
-      steps: [{ id: "w:1", kind: "wait", label: "세탁 멈춤", status: "active" }, { id: "w:2", kind: "move", label: "세탁기로 가기", status: "pending" }],
-    };
-    draw(screenAt(1, { plan, step: plan.steps[0]! }));
-    const progress = twinPane().querySelector<HTMLElement>("[data-progress]")!;
-    expect(progress.querySelector("[data-slot=item-description]")).toHaveTextContent("1/2 · 기다리는 중 · 세탁 멈춤");
-    expect(phonePane()).not.toHaveTextContent("기다리는 중");
-  });
-
-  it("지켜보기(계획 없음)에는 할 일 진행도가 없다", () => {
-    draw(screenAt(0));
-    expect(document.querySelector("[data-progress]")).toBeNull();
-    expect(talk()).toHaveTextContent("지켜보고 있어요.");
-  });
-
-  it("지켜보기에서 1단계로 넘어가면 할 일 진행도가 트윈 왼쪽 위에 생긴다(1/4 · 첫 계획 단계 이름)", () => {
-    const { rerender } = draw(screenAt(0));
-    rerender(<DashboardScreen {...screenAt(1)} />);
-    const progress = twinPane().querySelector<HTMLElement>("[data-progress]")!;
-    expect(progress.querySelector("[data-slot=item-description]")).toHaveTextContent(`1/${PLAN.steps.length} · ${PLAN.steps[0]!.label}`);
-    expect(progress.querySelectorAll("[data-segment]")).toHaveLength(PLAN.steps.length);
-  });
-
-  it("지도는 트윈 칸 전체(data-map)에 그리고, 할 일 진행도는 트윈 왼쪽 위, 칩은 트윈 위쪽 미니맵 왼쪽에 지도 위로 쌓는다(미니맵에 가리지 않는다)", () => {
+  it("지도는 트윈 칸 전체(data-map)에 그리고, 칩은 트윈 위쪽 미니맵 왼쪽에 지도 위로 쌓는다(미니맵에 가리지 않는다)", () => {
     const rect = atScreen(1920, 1080);
     try {
       draw(screenAt(2, { robotKnown: false, connected: false }));
@@ -704,9 +718,6 @@ describe("대시보드 트윈", () => {
       const twin = twinPane();
       const map = twin.querySelector<HTMLElement>("[data-map]")!;
       for (const c of ["absolute", "inset-0", "overflow-hidden"]) expect(cls(map, c), c).toBe(true);
-      const progress = twin.querySelector<HTMLElement>("[data-progress]")!;
-      expect(map.contains(progress)).toBe(false);
-      for (const c of ["absolute", "left-4", "top-4"]) expect(cls(progress, c), c).toBe(true);
       const chips = twin.querySelector<HTMLElement>("[data-chips]")!;
       expect(map.contains(chips)).toBe(false);
       for (const c of ["pointer-events-none", "absolute", "top-4", "flex", "flex-col", "items-end", "gap-2"]) expect(cls(chips, c), c).toBe(true);
@@ -770,15 +781,6 @@ describe("대시보드 트윈", () => {
   });
 });
 
-describe("대시보드 진행도 글", () => {
-  it.each([1, 2, 3, 4])("%i단계: 지금 단계는 계획 단계 이름 그대로다(클로이드가 하는 중이라고 말하지 않는다)", (n) => {
-    draw(screenAt(n));
-    const progress = twinPane().querySelector<HTMLElement>("[data-progress]")!;
-    expect(progress.querySelector("[data-slot=item-description]")).toHaveTextContent(`${n}/${PLAN.steps.length} · ${PLAN.steps[n - 1]!.label}`);
-    expect(progress.textContent).not.toMatch(/중|어요/);
-  });
-});
-
 describe("대시보드 승인", () => {
   it("승인·대기 글(「승인」)이 화면 어디에도 없다", () => {
     for (const p of [0, 1, 2, 3, 4].map((n) => screenAt(n)).concat([screenAt(2, { connected: false, robotKnown: false }), screenAt(0, { phone: { kind: "qr", url: PHONE_URL } })])) {
@@ -795,14 +797,20 @@ describe("대시보드 글 크기", () => {
   const sizesIn = (root: Element, keep: (el: Element) => boolean = () => true) => new Set([root, ...root.querySelectorAll("*")].filter(keep).flatMap((el) =>
     (typeof el.className === "string" ? el.className : el.getAttribute("class") ?? "").split(/\s+/).map((c) => c.replace(/^.*:/, "")).filter((c) => SIZE.test(c))));
 
-  it.each([0, 1, 2, 3, 4])("1920×1080 %i: 화면 글은 부품 원래 크기(text-xs 12px·text-sm 14px)다(메시지 상자도 Item sm): far·화면 너비로 커지는 글 크기가 없다", (n) => {
+  // 사용자 허락(2026-11-18): 「메시지박스 글씨 키워」. 메시지 상자 문장 줄만 16px(Item talk), 그 밖은 부품 원래 크기
+  // 사용자 바로잡음(2026-11-19): 「글자가 너무 크더라 초나오는거」. 시간 줄 반응 간격 숫자도 부품 원래 크기
+  it.each([0, 1, 2, 3, 4])("1920×1080 %i: 화면 글은 부품 원래 크기(text-xs 12px·text-sm 14px)다. 메시지 상자만 사용자가 허락한 16px(Item talk)가 있다. far·화면 너비로 커지는 글 크기가 없다", (n) => {
     const rect = atScreen(1920, 1080);
     try {
       draw(screenAt(n, { robotKnown: n !== 2, connected: n === 3 ? false : true }));
-      const all = sizesIn(document.body);
+      const box = talk();
+      const all = sizesIn(document.body, (el) => !box.contains(el));
       expect(all.size).toBeGreaterThan(0);
       for (const c of all) expect(["text-xs", "text-sm"], c).toContain(c);
-      expect(sizesIn(talk()).has("text-base")).toBe(false);
+      const inBox = sizesIn(box);
+      for (const c of inBox) expect(["text-xs", "text-sm", "text-base"], c).toContain(c);
+      expect(inBox.has("text-base")).toBe(true);
+      expect(box.querySelector("[data-slot=item]")).toHaveAttribute("data-size", "talk");
     } finally { rect.mockRestore(); }
   });
 

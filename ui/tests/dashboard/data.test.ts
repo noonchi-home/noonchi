@@ -31,21 +31,10 @@ describe("대시보드 자료", () => {
     expect(textsOf(reduceDash(s, said("pam-2", 1, "컵을 찾았어요"), 0))).toEqual(["컵이 비어 보여요", "컵을 치울게요.", "컵을 찾았어요"]);
     expect(JSON.stringify(talkOf(feed([branchDecision(BRANCHES.clear, 1), said("pam-1", 10, "컵을 두고 자리를 뜨면 치워도 된다고 하셨어요")]))!)).not.toContain(REASON);
   });
-  it("알약 셋(상태·트리거·액션)은 서버 판단의 화살표(fsm)로 정한다: 지금 사람 상태 이름, 일어난 화살표의 사건(on), 그 화살표의 행동. 화살표 없음이면 「화살표 없음」·「대기」, 임시 상태는 하는 일 이름. 판단 전·FSM 없음이면 없다", () => {
+  it("메시지 상자 자료는 줄만이다: 알약(상태·트리거·액션)·목표 알약이 없다(사람 상태·목표·단계의 때는 시간 줄 카드, timeline.ts)", () => {
     const one = said("pam-1", 10, "컵을 살피고 있어요");
-    const withFsm = (fsm: FsmStep | null) => {
-      const m = branchDecision(BRANCHES.clear, 1) as Extract<ServerMessage, { type: "brain" }>;
-      const e = m.event as Extract<typeof m.event, { type: "decision" }>;
-      return { ...m, event: { ...e, fsm } } as ServerMessage;
-    };
-    const none = (state: string): FsmStep => ({ state, from: null, next_index: -1, to: null, on: null, when: null, action: null, learned: false });
-    expect(talkOf(feed([branchDecision(BRANCHES.clear, 1), one]))!.fsm).toEqual({ state: "자리에 없음", trigger: BRANCHES.clear.on, action: "컵 치우기" });
-    expect(talkOf(feed([branchDecision(BRANCHES.clear, 1), one, branchDecision(null, 2)]))!.fsm).toEqual({ state: "먹거나 마시는 중", trigger: "화살표 없음", action: "대기" });
-    expect(talkOf(feed([branchDecision(COACH, 1), one]))!.fsm).toEqual({ state: "요리하는 중", trigger: COACH.on, action: COACH.action });
-    // 기억에 없는 활동(임시 상태 ~<하는 일 값>)은 그 하는 일 이름
-    expect(talkOf(feed([withFsm(none("~reading")), one]))!.fsm).toEqual({ state: STATE_TEXT.reading!, trigger: "화살표 없음", action: "대기" });
-    expect(talkOf(feed([withFsm(null), one]))!.fsm).toBeNull();
-    expect(talkOf(feed([one]))!.fsm).toBeNull();
+    expect(talkOf(feed([branchDecision(BRANCHES.clear, 1), one]))).toEqual({ lines: [{ id: "pam-1@10:0", text: "컵을 살피고 있어요" }] });
+    expect(talkOf(feed([branchDecision(BRANCHES.clear, 1)]))).toBeNull();
     expect(JSON.stringify(talkOf(feed([branchDecision(BRANCHES.clear, 1), one])))).not.toContain("배운 습관");
   });
   // Codex(2a449e5 data.ts:75·126): 쓰러짐·끄기 안내 뒤 생각 두 줄이 오면 아직 유효한 안전 알림이 밀려 사라졌다
@@ -72,7 +61,7 @@ describe("대시보드 자료", () => {
     const one = said("pam-1", 10, "컵을 살피고 있어요");
     const late = feed([branchDecision(BRANCHES.clear, 2), { type: "plan", plan: PLAN }, branchDecision(COACH, 1), one]);
     expect(late.decision!.seq).toBe(2);
-    expect(talkOf(late)!.fsm!.action).toBe("컵 치우기");
+    expect(late.decision!.action).toBe("컵 치우기");
   });
   it("계획 단계마다 번호·마스코트·말이 따라간다", () => {
     const says = ["식탁으로 갈게요.", "컵을 들게요.", "싱크대로 갈게요.", "컵을 싱크대에 넣을게요."];
@@ -93,7 +82,7 @@ describe("대시보드 자료", () => {
     const seen = (run.moments[1]!.messages as ServerMessage[]).find((m) => m.type === "seen")!;
     expect(seen).toMatchObject({ type: "seen", frame: { width: 405, height: 720 }, shapes: [{ label: "cup" }] });
     expect(reduceDash(s, seen, 5)).toBe(s);
-    expect(Object.keys(s).sort()).toEqual(["decision", "eye", "goal", "mode", "plan", "reflection", "safety", "say", "says", "talk", "thoughts"]);
+    expect(Object.keys(s).sort()).toEqual(["decision", "eye", "goal", "habit", "mode", "people", "plan", "plans", "reflection", "safety", "say", "says", "talk", "thoughts"]);
   });
   describe("반성 뒤 메시지 상자", () => {
     const NIGHT = { from: "drinking", to: "*", on: "밤에 사용자가 식탁을 떠난다.", when: null as string | null, action: "컵 치우기" };
@@ -107,24 +96,26 @@ describe("대시보드 자료", () => {
       expect(textsOf(feed([reflected(2000, [NIGHT], [AIRCON, NIGHT])]))).toEqual(["밤에 사용자가 식탁을 떠난다", "새로 배운 습관이에요"]);
       expect(textsOf(feed([reflected(2000, [], [AIRCON], true)]))).toEqual(["사용자가 TV를 보러 소파에 앉는다", "전에 배운 습관이에요"]);
       expect(talkOf(feed([reflected(2000, [], [])]))).toBeNull();
+      // 예전 모양 반성 기록(규칙 trigger)은 줄을 만들지 않는다(대시보드가 멈추지 않는다)
+      const old = { state: "left_cup", trigger: "컵을 두고 떠난다.", action: "컵 치우기" } as unknown as typeof NIGHT;
+      expect(talkOf(feed([reflected(2000, [old], [old])]))).toBeNull();
     });
   });
 
-  it("미리 세운 목표(goal 메시지)는 세움·떠남인 동안 메시지 상자 알약(행동 이름)이고, 씀·버림이면 없다. hello는 지운다", () => {
+  it("미리 세운 목표(goal)와 습관 FSM 그림(habit)은 받은 것을 그대로 두고 메시지 상자 줄은 바꾸지 않는다. 같은 판본 habit은 같은 자료다. hello는 지운다", () => {
     const g: PendingGoal = {
       id: "goal-1", action: "컵 치우기", state: "left_cup", trigger: "t", object: "cup_1", cls: "cup", status: "armed", prep: "ready", reason: null, text: "컵을 두고 자리를 뜨면 컵을 치울게요",
       armed_ms: 1, ready_ms: 2, gone_ms: null, fired_ms: null, plan: null,
     };
+    const habit = { version: 1, initial: "drinking", states: [{ id: "drinking", name: "먹거나 마시는 중", learned: false }], transitions: [] };
     let s = reduceDash(EMPTY_DASH, { type: "goal", goal: g }, 0);
-    expect(talkOf(s)).toEqual({ lines: [], fsm: null, goal: "컵 치우기" });
-    s = reduceDash(s, { type: "goal", goal: { ...g, status: "fired" } }, 0);
-    expect(talkOf(s)?.goal).toBe("컵 치우기");
-    s = reduceDash(s, { type: "goal", goal: { ...g, status: "used" } }, 0);
+    expect(s.goal).toEqual(g);
     expect(talkOf(s)).toBeNull();
-    s = reduceDash(s, { type: "goal", goal: { ...g, id: "goal-2", status: "dropped", reason: "back" } }, 0);
-    expect(talkOf(s)).toBeNull();
-    s = reduceDash(reduceDash(s, { type: "goal", goal: { ...g, id: "goal-3" } }, 0), { type: "hello", devices: 0, provider: null, hub: "memory", home: null }, 0);
-    expect(s.goal).toBeNull();
+    s = reduceDash(s, { type: "habit", habit }, 0);
+    expect(s.habit).toEqual(habit);
+    expect(reduceDash(s, { type: "habit", habit: { ...habit } }, 0)).toBe(s);
+    s = reduceDash(s, { type: "hello", devices: 0, provider: null, hub: "memory", home: null }, 0);
+    expect([s.goal, s.habit]).toEqual([null, null]);
   });
 
   it("hello면 처음으로 돌린다(접속 스냅숏이 뒤따름)", () => {

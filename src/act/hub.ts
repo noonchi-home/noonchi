@@ -8,13 +8,20 @@ import { roomAt } from "../layout/index.js";
 
 const isOpen = (p: PlanView | null): p is PlanView => !!p && (p.status === "planned" || p.status === "running");
 
-/** 계획을 닫는다. 끝나지 않은 단계는 done이면 모두 done, failed면 지금 단계만 failed, 나머지는 건너뜀. */
-function close(p: PlanView, status: "done" | "cancelled" | "failed"): PlanView {
+/** 단계 시각(실행 추적이 시각 at을 줄 때만): 진행 중이 된 단계에 started_ms, 진행 중에서 끝난 단계에 ended_ms. 상태가 그대로면 그대로다. */
+function stamp(prev: PlanStep, next: PlanStep, at: number | undefined): PlanStep {
+  if (at === undefined || prev.status === next.status) return next;
+  if (next.status === "active") return { ...next, started_ms: at };
+  return prev.status === "active" ? { ...next, ended_ms: at } : next;
+}
+
+/** 계획을 닫는다. 끝나지 않은 단계는 done이면 모두 done, failed면 지금 단계만 failed, 나머지는 건너뜀. at: 닫은 시각(진행 중이던 단계의 ended_ms). */
+function close(p: PlanView, status: "done" | "cancelled" | "failed", at?: number): PlanView {
   const steps = p.steps.map((s): PlanStep => {
     if (s.status === "done" || s.status === "skipped" || s.status === "failed") return s;
-    if (status === "done") return { ...s, status: "done" };
-    if (status === "failed" && s.status === "active") return { ...s, status: "failed" };
-    return { ...s, status: "skipped" };
+    if (status === "done") return stamp(s, { ...s, status: "done" }, at);
+    if (status === "failed" && s.status === "active") return stamp(s, { ...s, status: "failed" }, at);
+    return stamp(s, { ...s, status: "skipped" }, at);
   });
   return { ...p, steps, status };
 }
@@ -73,22 +80,22 @@ export class PlanHub {
     this.fp = { ...this.fp, robot: { ...this.fp.robot, position: at, room: roomAt(this.fp, at) } };
   }
 
-  /** PAM 판단으로 만든 계획(src/act/tasks.ts). 열린 판단 계획이 있으면 그것을 취소로 닫고 새 계획이 바꾼다(supersedes). */
-  onDecision(plan: PlanView): void {
+  /** PAM 판단으로 만든 계획(src/act/tasks.ts). 열린 판단 계획이 있으면 그것을 취소로 닫고 새 계획이 바꾼다(supersedes). at: 받은 시각(취소한 계획의 진행 중 단계 ended_ms). */
+  onDecision(plan: PlanView, at?: number): void {
     const cur = this.plan;
     if (isOpen(cur) && cur.source === "brain" && cur.id !== plan.id) {
-      this.commit(close(cur, "cancelled"));
+      this.commit(close(cur, "cancelled", at));
       this.commit({ ...plan, supersedes: cur.id });
       return;
     }
     this.commit(plan);
   }
 
-  /** 지금 계획이 planId이고 열려 있으면 닫는다(실행 추적의 완료·실패). 아니면 false. */
-  close(planId: string, status: "done" | "cancelled" | "failed"): boolean {
+  /** 지금 계획이 planId이고 열려 있으면 닫는다(실행 추적의 완료·실패). 아니면 false. at: 닫은 시각(실행 추적 시계, 진행 중이던 단계의 ended_ms). */
+  close(planId: string, status: "done" | "cancelled" | "failed", at?: number): boolean {
     const p = this.plan;
     if (!isOpen(p) || p.id !== planId) return false;
-    this.commit(close(p, status));
+    this.commit(close(p, status, at));
     return true;
   }
 
@@ -102,12 +109,13 @@ export class PlanHub {
     return this.setSteps(planId, { [stepId]: status });
   }
 
-  /** 지금 계획의 단계 상태 여럿을 한 번에 바꾸고 한 번만 보낸다(실행 추적이 단계를 넘길 때: 앞 단계 done, 다음 단계 active). 계획이 다르거나 없는 단계가 있으면 false. */
-  setSteps(planId: string, changes: Record<string, StepStatus>): boolean {
+  /** 지금 계획의 단계 상태 여럿을 한 번에 바꾸고 한 번만 보낸다(실행 추적이 단계를 넘길 때: 앞 단계 done, 다음 단계 active). 계획이 다르거나 없는 단계가 있으면 false.
+   *  at: 바꾼 시각(실행 추적 시계). 있으면 단계 시각(started_ms·ended_ms)을 단다(stamp). */
+  setSteps(planId: string, changes: Record<string, StepStatus>, at?: number): boolean {
     const p = this.plan;
     const ids = Object.keys(changes);
     if (!p || p.id !== planId || ids.length === 0 || !ids.every((id) => p.steps.some((s) => s.id === id))) return false;
-    const steps = p.steps.map((s) => (Object.hasOwn(changes, s.id) ? { ...s, status: changes[s.id]! } : s));
+    const steps = p.steps.map((s) => (Object.hasOwn(changes, s.id) ? stamp(s, { ...s, status: changes[s.id]! }, at) : s));
     this.commit({ ...p, steps, status: statusOf(p.status, steps) });
     return true;
   }

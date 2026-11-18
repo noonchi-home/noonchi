@@ -26,6 +26,8 @@ const PlanSchema = z.object({
     label: PlanCopy.min(1),
     target: z.object({ objectId: z.string().optional(), deviceId: z.string().optional(), room: z.string().optional(), position: XZSchema.optional() }).optional(),
     status: z.enum(["pending", "active", "done", "failed", "skipped"]),
+    started_ms: z.number().finite().optional(),
+    ended_ms: z.number().finite().optional(),
   })).min(1).max(50),
   status: z.enum(["planned", "running", "done", "cancelled", "failed"]),
   updatedAt: z.string().max(64),

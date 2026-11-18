@@ -12,7 +12,8 @@ export interface OffTrack { hot: string[]; notices: string[] }
 
 export interface PlanTarget { objectId?: string; deviceId?: string; room?: string; position?: XZ }
 
-export interface PlanStep { id: string; kind: StepKind; label: string; target?: PlanTarget; status: StepStatus }
+/** started_ms: 진행 중이 된 시각(실행 추적이 그 단계 명령을 낸 때), ended_ms: 진행 중에서 끝난(done·failed·skipped) 시각. 실행 추적이 단 단계에만 있다. */
+export interface PlanStep { id: string; kind: StepKind; label: string; target?: PlanTarget; status: StepStatus; started_ms?: number; ended_ms?: number }
 
 export interface PlanView {
   id: string;

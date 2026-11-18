@@ -8,6 +8,7 @@ import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { fixClock } from "./helpers/clock.js";
 import { expectHistoryGolden, settledRows } from "./helpers/history-golden.js";
 import type WebSocket from "ws";
 import { DEMO_APPROVALS, demoSetup } from "../scripts/demo-setup.js";
@@ -32,6 +33,8 @@ let srv: RunningServer | undefined;
 let fake: FakeServer | undefined;
 let pam: FakePamLlm | undefined;
 const sockets: WebSocket[] = [];
+/** 고정한 시계를 되돌리는 함수(합성 7일 장면). */
+let restoreClock: (() => void) | undefined;
 afterEach(async (ctx) => {
   // 기록 DB 같음 시험: 서버를 닫기 전에 반성용 줄 모양을 뽑아 두고, 다 닫은 뒤 정답과 견준다(시험이 실패했으면 견주지 않음)
   const golden = srv && ctx.task.result?.state !== "fail" ? await settledRows(srv) : null;
@@ -42,9 +45,16 @@ afterEach(async (ctx) => {
   fake = undefined;
   await pam?.close();
   pam = undefined;
+  restoreClock?.();
+  restoreClock = undefined;
   if (golden instanceof Error) throw golden;
   if (golden) await expectHistoryGolden("demo-e2e", ctx.task.name, golden);
 });
+
+/** 합성 7일의 「오늘」: 2026-11-18(수) 정오(기록 시간대 KST, HISTORY_TZ_MINUTES 540). 합성 주는 그 앞 7일(11-11 수 ~ 11-17 화)이다.
+ *  합성 대본은 날마다 요일로 갈려서(scripts/seed-history.ts liveDay: 주말·금요일 외출·목요일 저녁 질문) 오늘 요일이 바뀌면 기록 줄 차례가 바뀐다.
+ *  정답 파일(history-golden)은 이 수요일에 만들었으므로, 어느 날 돌려도 같게 시계를 이 때로 고정한다(2026-11-19 목요일에 실패한 까닭). */
+const WEEK_TODAY = Date.parse("2026-11-18T12:00:00+09:00");
 
 const TZ = { HISTORY_TZ_MINUTES: "540" };
 /** 꺼진 서버 주소(시연 준비 명령은 서버가 꺼져 있어야 폴더를 쓴다). */
@@ -209,6 +219,7 @@ describe("시연 네 장면(자동 모드, 한양목련, 가짜 서버)", () => 
   }, 120_000);
 
   it("4 합성 7일(관찰만)을 날마다 반성하면 날마다 다음 날부터 쓰고 7일 판본은 오늘부터다. 라면 습관은 빠지고 요리 규칙은 seed 글이며, 말없이 TV를 보면 배운 습관으로 에어컨을 켠다", async () => {
+    restoreClock = fixClock(WEEK_TODAY);
     const s = await start({ kind: "week", scene: { dets: [PERSON], facts: { person: ["watching_tv"] } } });
     const db = s.server.history;
     const today = db.dayOf(Date.now());

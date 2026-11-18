@@ -2,10 +2,10 @@
 // 트윈은 화면 전체(여백 안)를 쓰고 나머지는 그 위에 얹는다:
 //   비전 미니맵은 트윈 오른쪽 위 가로 16:9 칸(1280 너비에서 320×180, 화면 너비에 비례), 마스코트는 판 없이 트윈 오른쪽 아래(보이는 높이는 화면 높이의 0.3,
 //   단추 아래 끝이 화면 밑 선이고 그림은 그 아래로 이어진다), 생각 말풍선은 마스코트 위(크기 고정)이고 꼬리 점 둘이 마스코트로 이어진다.
-//   말풍선 카드는 트윈 아래쪽, 마스코트 왼쪽까지다(크기는 말풍선 글 두 줄에 맞춰 정해져 있다).
+//   메시지 상자는 트윈 아래쪽 마스코트 바로 왼쪽, 남은 너비의 절반이다. 그 왼쪽 남은 너비가 시간 줄 카드이고 위·아래 선은 메시지 상자와 같다.
 //   마스코트를 좌우로 뒤집어도(행동하는 동안, Mascot.tsx) 단추 가운데 축을 중심으로 뒤집어 단추 자리는 그대로다.
-// 지도 카메라는 그 단계에 중요한 것(길·목적지·클로이드·확인한 기기 말풍선·방 이름표)을 진행도 아래·말풍선 카드 위·미니맵과 생각 말풍선 왼쪽 칸(focus)에 맞춰,
-//   얹은 것(가린 자리 blocked) 밑에 깔리지 않게 한다.
+// 지도 카메라는 그 단계에 중요한 것(길·목적지·클로이드·확인한 기기 말풍선·방 이름표)을 트윈이 가리지 않는 빈 곳 전체(칩 줄 아래·메시지 상자 위·미니맵과 마스코트 왼쪽, focus)
+//   가운데에 맞춰, 얹은 것(가린 자리 blocked) 밑에 깔리지 않게 한다.
 // 여백은 디자인 토큰(layout, 1680px부터 hub1920 값)이다. 글 줄 높이는 부품 글 크기(text-sm 줄 20px, 말풍선 카드 Item say text-base 줄 24px)라 화면 너비와 상관없다.
 // 자리는 화면 크기와 미니맵 영상 비율로만 정해지고 단계와 상관없다. 영상 비율이 바뀌면(폰을 돌림·영상 종류가 바뀜) 미니맵 높이만 바뀐다.
 import tokens from "../../../src/design/tokens.json";
@@ -26,10 +26,10 @@ export interface PageLayout {
   scale: number;
   /** 트윈 칸(화면 전체, 여백 안). 지도는 이 칸을 꽉 채운다. */
   twin: Rect;
-  /** 지도 카메라가 그 단계에 중요한 것을 맞출 칸(진행도 아래·말풍선 카드 위·미니맵과 생각 말풍선 왼쪽)과, 그 칸의 트윈 기준 여백. */
+  /** 지도 카메라가 그 단계에 중요한 것을 맞출 칸(트윈 위쪽 여백 아래·메시지 상자 위·미니맵과 마스코트 왼쪽)과, 그 칸의 트윈 기준 여백. */
   focus: Rect;
   camPad: Pad;
-  /** 지도 위에 얹어 지도를 가리는 자리: [메시지 상자, 마스코트 단추(초점 고리 포함), 미니맵]. */
+  /** 지도 위에 얹어 지도를 가리는 자리: [메시지 상자, 마스코트 단추(초점 고리 포함), 미니맵, 시간 줄 카드]. */
   blocked: Rect[];
   /** 비전 미니맵(대시보드 폰 칸): 트윈 오른쪽 위. 너비는 화면 너비 몫이고 높이는 영상 비율을 따른다(영상이 없으면 16:9, 세로 영상은 높이 상한까지). */
   video: Rect;
@@ -41,8 +41,10 @@ export interface PageLayout {
   image: Rect;
   /** 가슴 LG 표시 원을 담는 네모(단추 왼쪽 위 기준 px). 그림을 뒤집을 때 이 원만 다시 뒤집어 바로 읽히게 한다. */
   logo: Rect;
-  /** 메시지 상자(트윈 아래쪽, 마스코트 왼쪽). 높이는 TALK_H로 정해져 있다. */
+  /** 메시지 상자(트윈 아래쪽, 마스코트 바로 왼쪽, 남은 너비의 TALK_SHARE). 높이는 TALK_H로 정해져 있다. */
   bubble: Rect;
+  /** 시간 줄 카드(메시지 상자 왼쪽 남은 너비): 위·아래 선과 높이(TALK_H)가 메시지 상자와 같다. */
+  timeline: Rect;
 }
 
 /** 이 너비부터 hub1920 토큰(여백·글 크기). tokens.css의 @media (min-width: 1680px)와 같다. */
@@ -73,15 +75,16 @@ export const MASCOT_SHARE = 0.3;
 const HEAD_ROOM = LIFT + 2;
 /** 부품 원래 글(text-sm 14px)의 줄 높이(px). 화면 너비로 커지지 않는다. */
 export const TEXT_LINE = 20;
-/** 메시지 상자 높이(px): Item sm 위아래 여백(py-3) 24 + 테두리 2 + 머리 줄(모드·알약 Status) 24 + 사이 4 + 문장 세 줄(20씩)과 사이 둘(4씩) 68 + 둘레 여유 6 = 128.
- *  화면 크기·글 길이와 상관없다. */
+/** 메시지 상자 높이(px, 마스코트 목 높이): Item 위아래 여백(py-3) 24 + 테두리 2 + 문장 세 줄(16px 글 줄 24씩, 사용자 허락 2026-11-18 「메시지박스 글씨 키워」)과 사이 둘(4씩) 80 + 둘레 여유 22 = 128.
+ *  세 줄은 상자 가운데 높이에 선다. 화면 크기·글 길이와 상관없다. */
 export const TALK_H = 128;
-/** 지도 카메라 칸: 위는 할 일 진행도(top-4 16 + 알약 44) 아래 20, 왼쪽은 40, 얹은 것(말풍선 카드·미니맵·생각 말풍선·마스코트)과는 FOCUS_GAP 떨어진다. */
-const FOCUS_TOP = 80;
-const FOCUS_LEFT = 40;
-const FOCUS_GAP = 24;
-/** 미니맵·생각 말풍선 쪽은 더 띄운다: 칸 오른쪽 끝에 맞춘 대상의 확인 말풍선(가로 약 176, 꼬리 끝 가운데)이 미니맵 밑에 깔리지 않게 그 반 너비 + 8. */
-const FOCUS_SIDE = 96;
+/** 메시지 상자 너비: 마스코트 왼쪽 남은 너비(트윈 안쪽 여백부터)에 곱하는 몫(2026-11-18 사용자 결정 「메시지박스를 절반으로」). */
+export const TALK_SHARE = 0.5;
+/** 메시지 상자 가장 작은 너비(px): 시연 기억 허락 줄 가운데 가장 긴 것(16px 글 약 552)과 상자 안 여백·▼ 자리(66)가 한 줄에 드는 너비. 좁은 화면(1280)만 절반보다 넓어진다. */
+export const TALK_MIN_W = 640;
+/** 지도 카메라 칸(트윈이 가리지 않는 빈 곳 전체): 위는 칩 줄(top-4 16 + 칩 28) 아래 4(할 일 진행도 알약은 없다), 왼쪽은 트윈 안쪽 여백,
+ *  오른쪽은 오른쪽 위 카메라 칸(미니맵)·마스코트에서, 아래는 메시지 상자·시간 줄 카드에서 사이(gap)만큼 떨어진다(2026-11-19 사용자 「트윈이 너무 멀어 … 화면 중앙에 확대」). */
+const FOCUS_TOP = 48;
 const ZERO: Rect = { left: 0, top: 0, width: 0, height: 0 };
 const right = (r: Rect) => r.left + r.width;
 const bottom = (r: Rect) => r.top + r.height;
@@ -93,7 +96,7 @@ export function pageLayout(view: BoxSize, mascot: Pick<MascotImage, "width" | "h
   const pad = space.gutter;
   const gap = space.gap;
   if (view.width <= 0 || view.height <= 0) {
-    return { pad, gap, scale: 0, twin: ZERO, focus: ZERO, camPad: { top: 0, right: 0, bottom: 0, left: 0 }, blocked: [], video: ZERO, chipsRight: 0, mascot: ZERO, image: ZERO, logo: ZERO, bubble: ZERO };
+    return { pad, gap, scale: 0, twin: ZERO, focus: ZERO, camPad: { top: 0, right: 0, bottom: 0, left: 0 }, blocked: [], video: ZERO, chipsRight: 0, mascot: ZERO, image: ZERO, logo: ZERO, bubble: ZERO, timeline: ZERO };
   }
   // 트윈: 여백 안 화면 전체
   const twin: Rect = { left: pad, top: pad, width: Math.max(0, view.width - 2 * pad), height: Math.max(0, view.height - 2 * pad) };
@@ -110,27 +113,32 @@ export function pageLayout(view: BoxSize, mascot: Pick<MascotImage, "width" | "h
   const videoMax = Math.max(0, Math.min(twin.height * MINIMAP_MAX_SHARE, m.top - LIFT - gap - videoTop));
   const video: Rect = { left: right(twin) - inset - videoW, top: videoTop, width: videoW, height: Math.min(videoW / (videoAspect > 0 ? videoAspect : MINIMAP_ASPECT), videoMax) };
 
-  // 메시지 상자: 트윈 아래쪽 안, 마스코트 왼쪽(초점 고리 밖)에서 사이만큼 띄운다(마스코트가 상자 옆에서 말한다)
+  // 메시지 상자: 트윈 아래쪽 안, 마스코트 왼쪽(초점 고리 밖)에서 사이만큼 띄우고(마스코트가 상자 옆에서 말한다) 남은 너비의 TALK_SHARE
   const bubbleH = TALK_H;
-  const bubbleLeft = twin.left + inset;
-  const bubble: Rect = { left: bubbleLeft, top: bottom(twin) - inset - bubbleH, width: Math.max(0, m.left - RING - gap - bubbleLeft), height: bubbleH };
+  const roomLeft = twin.left + inset;
+  const bubbleRight = m.left - RING - gap;
+  const bubbleW = Math.max(0, Math.min(bubbleRight - roomLeft, Math.max((bubbleRight - roomLeft) * TALK_SHARE, TALK_MIN_W)));
+  const bubble: Rect = { left: bubbleRight - bubbleW, top: bottom(twin) - inset - bubbleH, width: bubbleW, height: bubbleH };
+  // 시간 줄 카드: 상자 왼쪽 남은 너비, 위·아래 선은 상자와 같다(2026-11-19 사용자 「응」: 예상 줄을 빼면서 세로 크기 맞추기)
+  const timeline: Rect = { left: roomLeft, top: bubble.top, width: Math.max(0, bubble.left - gap - roomLeft), height: bubble.height };
   const image = mascotImageBox(mascot, scale, HEAD_ROOM);
   const logo = mascotLogoBox(mascot, scale, image);
 
-  // 지도 위에 얹는 것: 메시지 상자, 마스코트 단추(초점 고리 포함), 미니맵
+  // 지도 위에 얹는 것: 메시지 상자, 마스코트 단추(초점 고리 포함), 미니맵, 시간 줄 카드
   const blocked: Rect[] = [
     { ...bubble },
     { left: m.left - RING, top: m.top - RING, width: m.width + 2 * RING, height: m.height + RING },
     { ...video },
+    { ...timeline },
   ];
-  // 지도 카메라 칸: 진행도 아래, 메시지 상자 위, 미니맵·마스코트 왼쪽
-  const fx = twin.left + FOCUS_LEFT;
+  // 지도 카메라 칸: 트윈이 가리지 않는 빈 곳 전체(칩 줄 아래, 메시지 상자·시간 줄 카드 위, 미니맵·마스코트 왼쪽). 트윈 칸 크기는 그대로, 카메라만 이 칸 가운데에 맞춘다
+  const fx = roomLeft;
   const fy = twin.top + FOCUS_TOP;
   const edge = Math.min(video.left, m.left - RING);
-  const focus: Rect = { left: fx, top: fy, width: Math.max(0, edge - FOCUS_SIDE - fx), height: Math.max(0, bubble.top - FOCUS_GAP - fy) };
+  const focus: Rect = { left: fx, top: fy, width: Math.max(0, edge - gap - fx), height: Math.max(0, Math.min(bubble.top, timeline.top) - gap - fy) };
   const camPad: Pad = { left: focus.left - twin.left, top: focus.top - twin.top, right: right(twin) - right(focus), bottom: bottom(twin) - bottom(focus) };
 
-  return { pad, gap, scale, twin, focus, camPad, blocked, video, chipsRight: right(twin) - video.left + gap, mascot: m, image, logo, bubble };
+  return { pad, gap, scale, twin, focus, camPad, blocked, video, chipsRight: right(twin) - video.left + gap, mascot: m, image, logo, bubble, timeline };
 }
 
 /** 마스코트 그림 픽셀 [x, y] → 화면 자리. */

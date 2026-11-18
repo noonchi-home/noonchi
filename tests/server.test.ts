@@ -171,6 +171,22 @@ describe("REST 명령 + WS 이벤트", () => {
     expect(await waitFor((m) => m.type === "goal")).toEqual({ type: "goal", goal });
   });
 
+  it("WS에 붙으면 마지막 습관 FSM 그림 자료를 {type:\"habit\"}로 보낸다(없으면 보내지 않는다)", async () => {
+    const home = makeHome();
+    const habit = { version: 1, initial: "drinking", states: [{ id: "drinking", name: "먹거나 마시는 중", learned: false }], transitions: [] };
+    const app = createApp({ hub: home.hub, policy: home.policy, rooms: ROOMS, log: () => {}, say: () => ({ text: null }), habitLast: () => habit });
+    const { url } = await app.listen(0, "127.0.0.1");
+    cleanups.push(() => app.close());
+    const { waitFor } = await listen(url);
+    expect(await waitFor((m) => m.type === "habit")).toEqual({ type: "habit", habit });
+    const bare = createApp({ hub: home.hub, policy: home.policy, rooms: ROOMS, log: () => {}, say: () => ({ text: null }), habitLast: () => null });
+    const other = await bare.listen(0, "127.0.0.1");
+    cleanups.push(() => bare.close());
+    const seen = await listen(other.url);
+    await seen.waitFor((m) => m.type === "say");
+    expect(seen.messages.some((m) => m.type === "habit")).toBe(false);
+  });
+
   it("마지막 판단·말풍선 글이 없으면 brain 없이 say null", async () => {
     const { url } = await start();
     const { waitFor, messages } = await listen(url);

@@ -9,8 +9,10 @@ import { useEvents } from "../lib/use-events";
 import { useHealth } from "../lib/use-health";
 import { TwinStage, useAnchors, type TwinEngine, LiveQueue, attachLive, BAKE_VIEWS, Twin3D, useLayoutBox } from "../twin";
 import { useViewer } from "../lib/twin-viewer";
-import { focusOf, homeCamera, homeKeep, livedOf, still, wholeOf, wideCamera, type Camera } from "./camera";
+import { focusOf, still, watchFocus, wholeOf, wideCamera, type Camera } from "./camera";
 import { currentStep, isOpen, modeNow, stepIndex, talkOf } from "./data";
+import { timelineLast, timelineOf } from "./timeline";
+import { goalOf, type GoalNow } from "./goal";
 import { DashboardScreen } from "./DashboardScreen";
 import { debugPhone, debugQuery, useDebugSteps, type Moment } from "./debug";
 import { roomSetsOf, twinFrame } from "./frame";
@@ -26,8 +28,11 @@ declare global {
   interface Window { __twin3d?: { engine: TwinEngine | null; ready: boolean } }
 }
 
+/** 가짜 단계 화면 시간 줄의 지금: 그 순간 자료의 가장 늦은 때 뒤(ms). */
+const DEBUG_AFTER_MS = 2000;
+
 /** 트윈 위에 얹힌 것: 말풍선이 덮지 않을 자리. */
-const AVOID = "[data-talk], [data-mascot], [data-progress], [data-chips], [data-phone]";
+const AVOID = "[data-talk], [data-talk-tail], [data-timeline-card], [data-mascot], [data-chips], [data-phone]";
 
 /** 확인 목록만 말풍선으로(승인 대기 줄은 뺀다). 두뇌 줄은 장면의 식탁(dining_table)에 붙는다. 자리는 확인한 것만 센다. 말풍선은 트윈 위에 얹힌 것(AVOID)을 비킨다. */
 function Overlay({ devices, checks, focusId }: { devices: ReturnType<typeof useDevices>["devices"]; checks: ChecksState; focusId: string | null }) {
@@ -87,15 +92,18 @@ function useHomeData(home: string | null): HomeData | null {
 /**
  * 구운 3D 트윈(TwinStage와 같은 틀): 캔버스와 그 위 표시 판(MapOverlay: 경로·목적지·확인한 것·어둡게 한 방·말풍선).
  * 계획·맞춘 눈은 대시보드 자료(data.ts)의 것이다. 클로이드(맞춘 눈)는 엔진 장면의 보는 방향 원뿔이다(engine.setEye).
- * 지도 카메라는 그 단계에 중요한 것(focusOf)을, 지켜보기는 집 전체보다 당긴 기본 보기(homeCamera: 사람이 있는 방을)를 지도 카메라 칸(layout.camPad 안쪽: 미니맵·말풍선·마스코트 밖)에 맞추고, 작은 눈 움직임(still)에는 그대로 둔다.
+ * 지도 카메라는 그 단계에 중요한 것(focusOf)을, 지켜보기는 클로이드가 있는 방과 그 원뿔(watchFocus)을 트윈이 가리지 않는 빈 곳(layout.camPad 안쪽: 칩 줄·미니맵·메시지 상자·시간 줄 카드·마스코트 밖)
+ * 가운데에 두고 빈 곳을 채우게 당기며, 작은 눈 움직임(still)에는 그대로 둔다.
  * 바뀌면 CAMERA_MS 동안 옮긴다(움직임 줄이기면 바로). 종류를 정하기 전(home null)에는 캔버스 없이 틀만.
  * 엔진이 뜨고 버려질 때 onEngine, 첫 그림을 그리면 onReady.
  */
-function BakedStage({ home, layout, plan, eye, checks, devices, onEngine: toLive, onReady: toReady }: {
+function BakedStage({ home, layout, plan, eye, goal, checks, devices, onEngine: toLive, onReady: toReady }: {
   home: string | null;
   layout: PageLayout;
   plan: PlanView | null;
   eye: EyeEvent | null;
+  /** 미리 세운 목표(goal.ts): 선 동안 치울 물건 위 빨간 고리. */
+  goal: GoalNow | null;
   checks: ChecksState;
   devices: Map<string, DeviceView>;
   onEngine: (engine: TwinEngine | null) => void;
@@ -115,19 +123,15 @@ function BakedStage({ home, layout, plan, eye, checks, devices, onEngine: toLive
   // 말풍선·이름표가 비킬 클로이드 자리는 원뿔을 그리는 자리(방 안·벽에서 떨어진 자리)다. 엔진에는 받은 눈을 그대로 넣는다
   const drawn = useMemo(() => (eye && engine && !eye.estimated ? { ...eye, position: engine.stand(eye.position) } : eye), [eye, engine]);
   const frame = useMemo(
-    () => (v && homeData ? twinFrame({ plan, eye: drawn, checks: list, anchor: (id) => engine?.anchor(id) ?? null, home: homeData.index, cam: v }) : null),
-    [v, homeData, plan, drawn, list, engine],
+    () => (v && homeData ? twinFrame({ plan, eye: drawn, checks: list, anchor: (id) => engine?.anchor(id) ?? null, home: homeData.index, cam: v, world: checks.world ?? null, goal }) : null),
+    [v, homeData, plan, drawn, list, engine, checks.world, goal],
   );
   const roomSets = useMemo(() => (frame?.plan && homeData ? roomSetsOf(frame.plan, homeData.index) : []), [frame?.plan, homeData]);
-  // 집 전체(모든 방)는 가장 먼 보기, 사람이 있는 방(거실·주방·식당)은 지켜보기 기본 보기가 얹은 것 밖에 두는 곳이다
+  // 집 전체(모든 방)는 가장 먼 보기다
   const whole = useMemo(() => (homeData ? wholeOf(homeData.index.shapes) : null), [homeData]);
-  const lived = useMemo(() => (homeData ? livedOf(homeData.index.shapes) : null), [homeData]);
-  const focus = frame && homeData ? focusOf(frame, homeData.index.shapes) : null;
-  // 지켜보기가 칸 안에 지키는 곳: 사람이 있는 방과 클로이드 원뿔
-  const keep = frame && homeData ? homeKeep(frame, homeData.index.shapes) : lived;
-  // 계획 단계는 그 단계에 중요한 것, 지켜보기는 기본 보기(집 전체보다 HOME_ZOOM배 당김)
-  const want = !v || size.width <= 0 || size.height <= 0 ? null
-    : !focus && whole && keep ? homeCamera(size, whole, keep, layout.camPad) : wideCamera(v, size, focus, layout.camPad, whole);
+  const focus = frame && homeData ? focusOf(frame, homeData.index.shapes) ?? watchFocus(frame, homeData.index.shapes) : null;
+  // 맞출 곳(계획 단계는 그 단계에 중요한 것, 지켜보기는 클로이드가 있는 방)을 빈 곳 가운데에 두고 빈 곳을 채우게 당긴다
+  const want = !v || size.width <= 0 || size.height <= 0 ? null : wideCamera(v, size, focus, layout.camPad, whole);
   const last = useRef<Camera | null>(null);
   const cam = want && last.current && still(last.current, want) ? last.current : want;
   useLayoutEffect(() => { last.current = cam; });
@@ -237,16 +241,22 @@ export function Dashboard() {
       </TwinStage>
     )
     : (layout: PageLayout) => (
-      <BakedStage home={kind === "three" ? homeId : null} layout={layout} plan={dash.plan} eye={dash.eye} checks={checks} devices={devices} onEngine={onEngine} onReady={onBakedReady} />
+      <BakedStage home={kind === "three" ? homeId : null} layout={layout} plan={dash.plan} eye={dash.eye} goal={goal} checks={checks} devices={devices} onEngine={onEngine} onReady={onBakedReady} />
     );
   const plan = isOpen(dash.plan) ? dash.plan : null;
   // talkOf가 읽는 것 모두: 판단·줄·안전 알림·계획(머리)·행동별 모드
   const talk = useMemo(() => talkOf(dash), [dash.decision, dash.talk, dash.safety]);
+  // 시간 줄 카드가 읽는 것: 사람 상태·습관 그림(이름)·목표·최근 계획. 목표(트윈 고리·미리 그린 길)는 목표·계획
+  const timeline = useMemo(() => timelineOf(dash), [dash.people, dash.habit, dash.goal, dash.plans, dash.plan]);
+  // 가짜 단계 화면은 그 순간 자료의 가장 늦은 때 DEBUG_AFTER_MS 뒤를 지금으로 멈춰 그린다(마지막 단계도 보이게)
+  const last = debug ? timelineLast(dash) : null;
+  const timelineNow = last === null ? undefined : last + DEBUG_AFTER_MS;
+  const goal = useMemo(() => goalOf(dash), [dash.goal, dash.plan]);
   const mode = modeNow(dash);
   return (
     <DashboardScreen
       index={stepIndex(plan)} plan={plan} step={currentStep(plan)} robotKnown={dash.eye !== null} connected={online} map={map} mapReady={mapReady}
-      phone={phone} seen={seen} talk={talk}
+      phone={phone} seen={seen} talk={talk} timeline={timeline} timelineNow={timelineNow}
       mode={mode} hub={hub} settingsOpen={debug?.settings} onReady={onScreenReady} tzMinutes={health?.tz_minutes ?? null}
     />
   );

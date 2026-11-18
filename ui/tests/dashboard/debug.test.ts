@@ -47,11 +47,11 @@ describe("가짜 단계 메시지 상자 상태(&talk)", () => {
     expect(debugQuery("?debug=steps")?.talk).toBeNull();
   });
 
-  it("find: 최신 줄이 찾기 상태 줄이고 판단은 컵 치우기(알약 액션 · 컵 치우기)다. 지켜보기 순간의 알약은 처음 상태와 대기다", () => {
+  it("find: 최신 줄이 찾기 상태 줄이고 판단은 컵 치우기(1번 순간의 판단)다", () => {
     const find = talkAt(talkMoment(MOMENTS[0]!, "find"))!;
     expect(find.lines.at(-1)!.text).toBe(FIND_LINE);
-    expect(find.fsm).toEqual({ state: "자리에 없음", trigger: expect.any(String), action: "컵 치우기" });
-    expect(talkAt(MOMENTS[0]!)!.fsm).toEqual({ state: "먹거나 마시는 중", trigger: "화살표 없음", action: "대기" });
+    const decided = talkMoment(MOMENTS[0]!, "find").messages.reduce((s, x, i) => reduceDash(s, x, i), EMPTY_DASH).decision;
+    expect(decided?.action).toBe("컵 치우기");
     expect(talkMoment(MOMENTS[1]!, null)).toBe(MOMENTS[1]);
   });
 });
@@ -68,7 +68,7 @@ describe("가짜 단계 모드 말풍선(&mode)", () => {
     expect(modeAt(coach)).toBe("coach");
     expect(coach).toBe(COACH_MOMENT);
     expect(talkAt(coach)!.lines.map((l) => l.text)).toEqual(["라면 끓이는 법을 알려 드릴게요.", "수납장으로 갈게요.", "냄비를 꺼낼게요."]);
-    expect(talkAt(coach)!.fsm).toMatchObject({ state: "요리하는 중", action: "라면 끓이기 알려 주기" });
+    expect(coach.messages.reduce((s, x, i) => reduceDash(s, x, i), EMPTY_DASH).decision?.fsm?.state).toBe("cooking");
     expect(modeMoment(MOMENTS[2]!, null)).toBe(MOMENTS[2]);
   });
 });

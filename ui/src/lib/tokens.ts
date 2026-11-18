@@ -1,5 +1,5 @@
 // 디자인 토큰(src/design/tokens.json, feat/design-system과 같은 원본)의 TS 값. 지도 SVG처럼 class로 칠할 수 없는 그림의 색·굵기를 여기서 읽는다.
-import { alias, color, overlayLine, twin } from "../../../src/design/tokens.json";
+import { alias, color, overlayLine, twin, viz } from "../../../src/design/tokens.json";
 
 type ColorName = keyof typeof color;
 type AliasName = keyof typeof alias;
@@ -19,5 +19,7 @@ export const paint = (r: Ref): Paint => ({ color: hex(r.ref), width: r.width ?? 
 
 /** 트윈·지도 위 표시 토큰(경로·목적지·클로이드·확인 점·말풍선). */
 export const TWIN = twin;
+/** 메시지 상자 꼬리: 판 색 칠함과 판 바깥 선(LiquidGlass ring glass-edge와 같은 색). */
+export const TALK_TAIL = viz.talkTail;
 /** 트윈·지도 위 선 세 겹(바깥 숯색, 흰 테, 심) 규칙. */
 export const OVERLAY = overlayLine;

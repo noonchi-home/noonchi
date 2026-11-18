@@ -1,11 +1,11 @@
 // @vitest-environment node
 // 대시보드 화면 배치(순수 함수): 트윈이 화면 전체(여백 안)를 쓴다. 그 위에 얹는 것: 오른쪽 위 비전 미니맵(가로 16:9, 1280 너비에서 320×180, 화면 너비에 비례),
 // 오른쪽 아래 마스코트(판 없이, 아래 끝이 화면 밑 선), 마스코트 위 생각 말풍선(크기 고정)과 꼬리 점 둘, 트윈 아래쪽 말풍선 카드(마스코트 왼쪽까지).
-// 트윈 지도는 트윈 칸을 꽉 채운다. 지도 카메라는 그 단계에 중요한 것을 진행도 아래·말풍선 카드 위·미니맵과 생각 말풍선 왼쪽 칸(focus)에 맞춘다.
+// 트윈 지도는 트윈 칸을 꽉 채운다. 지도 카메라는 그 단계에 중요한 것을 칩 줄 아래·메시지 상자 위·미니맵과 마스코트 왼쪽 칸(focus)에 맞춘다.
 import { describe, expect, it } from "vitest";
 import tokens from "../../../src/design/tokens.json";
 import { mascotLogoBox } from "../../src/dashboard/bust";
-import { ASPECT_STEP, LIFT, MASCOT_SHARE, mascotPoint, MINIMAP_ASPECT, MINIMAP_MAX_SHARE, MINIMAP_SHARE, nextAspect, pageLayout, RING, TALK_H, type Rect } from "../../src/dashboard/layout";
+import { ASPECT_STEP, LIFT, MASCOT_SHARE, mascotPoint, MINIMAP_ASPECT, MINIMAP_MAX_SHARE, MINIMAP_SHARE, nextAspect, pageLayout, RING, TALK_H, TALK_MIN_W, TALK_SHARE, type Rect } from "../../src/dashboard/layout";
 import { MASCOT } from "../../src/lib/mascot-image";
 
 const M = MASCOT;
@@ -30,7 +30,7 @@ describe.each([[1920, 1080], [1440, 900], [1522, 722]])("%i×%i", (width, height
     expect([L.pad, L.gap]).toEqual([space.gutter, space.gap]);
   });
 
-  it("트윈은 화면 전체를 쓴다(여백 안). 오른쪽 칸·나눔선·FSM 카드가 없다", () => {
+  it("트윈은 화면 전체를 쓴다(여백 안). 오른쪽 칸·나눔선·시간 줄 카드가 없다", () => {
     expect(L.twin).toEqual({ left: L.pad, top: L.pad, width: width - 2 * L.pad, height: height - 2 * L.pad });
     for (const k of ["divider", "card"]) expect(k in L, k).toBe(false);
   });
@@ -90,14 +90,17 @@ describe.each([[1920, 1080], [1440, 900], [1522, 722]])("%i×%i", (width, height
     expect(L.logo.top + L.logo.height).toBeLessThan(L.mascot.height);
   });
 
-  it("메시지 상자는 트윈 아래쪽 안, 마스코트 왼쪽에서 사이(gap)만큼 띄운 상자 하나다(마스코트가 옆에서 말한다): 높이는 TALK_H로 정해져 있고 초점 고리와도 겹치지 않는다", () => {
+  // 사용자 결정(2026-11-18): 「메시지박스를 절반으로 줄이고 마스코트 쪽으로 붙이자 / 남은 왼쪽 자리에 FSM 표시」, 「FSM은 훨씬 더 크게」
+  it("메시지 상자는 트윈 아래쪽 안, 마스코트 바로 왼쪽에서 사이(gap)만큼 띄운 상자 하나다(마스코트가 옆에서 말한다): 너비는 트윈 안 남은 너비의 절반(TALK_SHARE, 좁은 화면은 TALK_MIN_W까지), 높이는 TALK_H(128)이고 초점 고리와도 겹치지 않는다", () => {
     expect(RING).toBe(4);
+    // 문장 줄 16px(사용자 허락 2026-11-18 「메시지박스 글씨 키워」), 목표 칩 없음: 위아래 여백 24 + 테두리 2 + 세 줄(24씩)과 사이 둘(4씩) 80 + 여유 22(마스코트 목 높이 128)
     expect(TALK_H).toBe(128);
-    expect(L.bubble.left).toBe(L.twin.left + space.panelPadding);
+    expect(TALK_SHARE).toBe(0.5);
+    const full = L.mascot.left - RING - L.gap - (L.twin.left + space.panelPadding);
+    expect(near(L.bubble.width, Math.max(full * TALK_SHARE, TALK_MIN_W), 1)).toBe(true);
     expect(near(bottom(L.bubble), bottom(L.twin) - space.panelPadding)).toBe(true);
     expect(L.bubble.height).toBe(TALK_H);
     expect(near(right(L.bubble), L.mascot.left - RING - L.gap)).toBe(true);
-    expect(L.bubble.width).toBeGreaterThan(L.twin.width / 2);
     expect(("thought" in L) || ("tail" in L)).toBe(false);
     for (const r of [L.video, L.mascot]) expect(hit(L.bubble, r)).toBe(false);
     expect(head.y).toBeLessThan(L.bubble.top);
@@ -107,25 +110,48 @@ describe.each([[1920, 1080], [1440, 900], [1522, 722]])("%i×%i", (width, height
     expect("map" in L).toBe(false);
   });
 
-  it("지도 위에 얹는 것(메시지 상자, 마스코트·초점 고리, 미니맵)은 가린 자리(blocked)다. 생각 말풍선은 없다(트윈을 가리지 않는다)", () => {
-    expect(L.blocked).toHaveLength(3);
-    const [say, mascot, video] = L.blocked as [Rect, Rect, Rect];
+  // 사용자 결정(2026-11-19): 「예상을 없애자」, 그리고 「응」(메시지 상자와 세로 크기 맞추기). 시간 줄 카드는 메시지 상자와 같은 높이(TALK_H)이고 위·아래 선이 나란하다
+  it("시간 줄 카드는 메시지 상자 왼쪽 자리다: 왼쪽은 트윈 안쪽 여백, 오른쪽은 상자에서 사이(gap)만큼, 위·아래 선은 메시지 상자와 같다(높이 TALK_H)", () => {
+    expect(L.timeline.left).toBe(L.twin.left + space.panelPadding);
+    expect(near(right(L.timeline), L.bubble.left - L.gap)).toBe(true);
+    expect(near(bottom(L.timeline), bottom(L.bubble))).toBe(true);
+    expect(near(L.timeline.top, L.bubble.top)).toBe(true);
+    expect(L.timeline.height).toBe(TALK_H);
+    expect(L.timeline.width).toBeGreaterThan(L.bubble.width * 0.8);
+    for (const r of [L.video, L.mascot, L.bubble]) expect(hit(L.timeline, r)).toBe(false);
+  });
+
+  it("지도 위에 얹는 것(메시지 상자, 마스코트·초점 고리, 미니맵, 시간 줄 카드)은 가린 자리(blocked)다. 생각 말풍선은 없다(트윈을 가리지 않는다)", () => {
+    expect(L.blocked).toHaveLength(4);
+    const [say, mascot, video, fsm] = L.blocked as [Rect, Rect, Rect, Rect];
+    expect(fsm).toEqual(L.timeline);
     expect(say).toEqual(L.bubble);
     expect(near(mascot.left, L.mascot.left - RING)).toBe(true);
     expect(near(mascot.top, L.mascot.top - RING)).toBe(true);
     expect(video).toEqual(L.video);
   });
 
-  it("지도 카메라가 맞추는 칸(focus)은 트윈 안, 할 일 진행도 아래, 가린 자리(메시지 상자·마스코트·미니맵) 밖이고, 카메라 여백(camPad)은 그 칸의 트윈 기준 여백이다", () => {
+  it("지도 카메라가 맞추는 칸(focus)은 트윈 안, 칩 줄 아래, 가린 자리(메시지 상자·마스코트·미니맵) 밖이고, 카메라 여백(camPad)은 그 칸의 트윈 기준 여백이다", () => {
     const f = L.focus;
     expect(f.left).toBeGreaterThanOrEqual(L.twin.left);
-    expect(f.top).toBeGreaterThanOrEqual(L.twin.top + 60);
+    // 칩 줄(top-4 16 + 칩 28) 아래. 할 일 진행도 알약은 없다(계획은 트윈 위 번호 길)
+    expect(f.top).toBeGreaterThanOrEqual(L.twin.top + 44);
     expect(right(f)).toBeLessThanOrEqual(right(L.twin));
     for (const b of L.blocked) expect(hit(f, b)).toBe(false);
     expect(right(f)).toBeLessThan(Math.min(L.video.left, L.mascot.left));
     expect(f.width).toBeGreaterThan(L.twin.width * 0.55);
-    expect(f.height).toBeGreaterThan(L.twin.height * 0.6);
+    // 시간 줄 카드(아래에서 1/3)가 가린 자리 위가 카메라 칸이다
+    expect(f.height).toBeGreaterThan(L.twin.height * 0.5);
+    expect(bottom(f)).toBeLessThanOrEqual(L.timeline.top);
     expect(L.camPad).toEqual({ left: f.left - L.twin.left, top: f.top - L.twin.top, right: right(L.twin) - right(f), bottom: bottom(L.twin) - bottom(f) });
+  });
+
+  // 사용자 결정(2026-11-19): 「지금 트윈이 너무 멀어. 3인칭일 때 화면 중앙에 확대되게 수정해」. 카메라 칸은 트윈이 가리지 않는 빈 곳 전체다
+  it("지도 카메라 칸(focus)은 트윈이 가리지 않는 빈 곳 전체다: 왼쪽은 트윈 안쪽 여백, 위는 칩 줄 아래, 오른쪽은 오른쪽 위 카메라 칸(미니맵)에서 사이만큼, 아래는 메시지 상자·시간 줄 카드에서 사이만큼", () => {
+    const f = L.focus;
+    expect(f.left).toBe(L.twin.left + space.panelPadding);
+    expect(near(right(f), Math.min(L.video.left, L.mascot.left - RING) - L.gap)).toBe(true);
+    expect(near(bottom(f), Math.min(L.bubble.top, L.timeline.top) - L.gap)).toBe(true);
   });
 
   it("모든 자리가 화면 안이다(가로·세로 넘침 없음)", () => {
@@ -204,13 +230,14 @@ describe("크기(스케치 6안)", () => {
     expect([L.video.width, L.video.height]).toEqual([320, 180]);
   });
 
-  it("1920×1080: 트윈 1888×1048, 미니맵 480×270, 마스코트 약 320 높이, 메시지 상자 높이 TALK_H(128: 알약 줄 + 문장 세 줄)", () => {
+  it("1920×1080: 트윈 1888×1048, 미니맵 480×270, 마스코트 약 320 높이, 메시지 상자 높이 TALK_H(128: 16px 문장 세 줄)", () => {
     const L = pageLayout({ width: 1920, height: 1080 }, M);
     expect([L.twin.width, L.twin.height]).toEqual([1888, 1048]);
     expect([L.video.width, L.video.height]).toEqual([480, 270]);
     expect(near(L.mascot.height, 320, 10)).toBe(true);
     expect(L.bubble.height).toBe(TALK_H);
     expect(TALK_H).toBe(128);
+    expect(L.timeline.height).toBe(TALK_H);
   });
 });
 

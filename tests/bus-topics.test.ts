@@ -194,6 +194,8 @@ describe("인식·집 상태 토픽 모양(묶음 2)", () => {
     for (const t of ["/brain/goal", "/brain/goal_changes"] as const) {
       expect(ok(t, { goal: g }), t).toBe(true);
       expect(ok(t, { goal: { ...g, status: "dropped", reason: "dock" } }), t).toBe(true);
+      // 끝난 때 칸(ended_ms)은 없다(2026-11-19 시간 줄 예상 줄을 뺐다): 모르는 칸이라 거절한다
+      expect(ok(t, { goal: { ...g, ended_ms: 3 } }), t).toBe(false);
       expect(ok(t, { goal: { ...g, status: "ready" } }), t).toBe(false);
       expect(ok(t, { goal: { ...g, prep: "done" } }), t).toBe(false);
       expect(ok(t, { goal: { ...g, jpeg_b64: "AA==" } }), t).toBe(false);
