@@ -4,6 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { memoryForDay } from "../src/brain/history/reflect.js";
+import { CUP_FSM_MEMORY } from "../src/brain/decision.js";
+import { LEARNED_FSM_MEMORY } from "../scripts/learned-memory.js";
 import { fetchRetry } from "../src/shared/net.js";
 import { startServer, type RunningServer } from "../src/server/start.js";
 
@@ -87,11 +89,12 @@ describe("기억 상태 API(GET /api/memory/day/:day)", () => {
     expect((await get(`/api/memory/day/${today}`)).json).toEqual({ ok: true, day: today, pinned: null, uses: null, latest: null });
     expect(db.pinnedMemory(today)).toBeNull();
     memoryForDay(db, today); // 그날 첫 판단이 부르는 것
-    expect((await get(`/api/memory/day/${today}`)).json).toEqual({ ok: true, day: today, pinned: 1, uses: { version: 1, source: "seed", appliesDay: null, day: null }, latest: 1 });
+    // uses.memory: 그날 쓰는 기억 JSON(영상 판정이 시작 전에 배운 화살표를 본다)
+    expect((await get(`/api/memory/day/${today}`)).json).toEqual({ ok: true, day: today, pinned: 1, uses: { version: 1, source: "seed", appliesDay: null, day: null, memory: CUP_FSM_MEMORY }, latest: 1 });
     // 다음 날부터 쓰는 반성 판본: 내일은 아직 고정 전이지만 쓸 판본은 그것이다(부르기만 해서는 고정하지 않는다)
     const tomorrow = new Date(Date.parse(`${today}T00:00:00Z`) + 86_400_000).toISOString().slice(0, 10);
-    const v2 = db.saveMemory({ kind: "fsm", memory: { initial_state: "s", states: [{ id: "s", description: "d", rules: [], next: [] }] }, day: today, appliesDay: tomorrow, source: "reflection" });
-    expect((await get(`/api/memory/day/${tomorrow}`)).json).toEqual({ ok: true, day: tomorrow, pinned: null, uses: { version: v2, source: "reflection", appliesDay: tomorrow, day: today }, latest: v2 });
+    const v2 = db.saveMemory({ kind: "fsm", memory: LEARNED_FSM_MEMORY, day: today, appliesDay: tomorrow, source: "reflection" });
+    expect((await get(`/api/memory/day/${tomorrow}`)).json).toEqual({ ok: true, day: tomorrow, pinned: null, uses: { version: v2, source: "reflection", appliesDay: tomorrow, day: today, memory: LEARNED_FSM_MEMORY }, latest: v2 });
     expect(db.pinnedMemory(tomorrow)).toBeNull();
     expect((await get(`/api/memory/day/${today}`)).json).toMatchObject({ pinned: 1, uses: { version: 1 }, latest: v2 });
     expect((await get("/api/memory/day/2026-13-40")).status).toBe(400);

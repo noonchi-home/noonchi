@@ -1,0 +1,17 @@
+# 1-묻기(seed 기억): 사람이 컵을 두고 떠나면 「컵을 치울지 여쭤볼게요.」(허락 문장 없음)와 폰 「컵을 치울까요?」, 「치워 주세요」 답 뒤 첫 명령 「식탁으로 가 주세요」. 목표는 서지 않는다
+[판단·실행·답] decision 사용자에게 물어보기 valid
+[판단·실행·답] execution 판단
+[판단·실행·답] execution 계획
+[판단·실행·답] execution 실행 중
+[판단·실행·답] execution 완료: 치워 주세요
+[판단·실행·답] decision 컵 치우기 valid
+[판단·실행·답] execution 판단
+[판단·실행·답] feedback 치워 주세요 · 질문: 컵을 치울까요?
+[판단·실행·답] execution 계획
+[판단·실행·답] execution 실행 중
+[집 상태] world VLM: 집
+[집 상태] detection 컵 cup_1 보임 · 거실·복도 식탁 위
+[집 상태] world 컵 cup_1 비어 있음
+[있음] decision 대기 valid
+[있음] execution 대기
+[있음] vlm

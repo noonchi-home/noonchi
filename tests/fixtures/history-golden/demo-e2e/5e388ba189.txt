@@ -1,42 +1,29 @@
-# 4 합성 7일(관찰만)을 날마다 반성하면 날마다 다음 날부터 쓰고 7일 판본은 오늘부터다. 라면 습관은 빠지고 요리 규칙은 seed 글이며, 말없이 TV를 보면 배운 습관으로 에어컨을 켠다
-[판단·실행·답] decision 컵 치우기 valid
-[판단·실행·답] execution 판단
-[판단·실행·답] execution 계획
-[판단·실행·답] execution 사용자가 거절한 일
-[판단·실행·답] feedback 거절 · 질문: 컵 치우기를 할까요?
-[판단·실행·답] decision 컵 치우기 valid
-[판단·실행·답] execution 판단
-[판단·실행·답] execution 계획
-[판단·실행·답] execution 실행 중
-[판단·실행·답] feedback 승인 · 질문: 컵 치우기를 할까요?
-[판단·실행·답] execution 완료
-[판단·실행·답] decision 대기 valid
-[판단·실행·답] decision 컵 치우기 valid
-[판단·실행·답] execution 판단
-[판단·실행·답] execution 계획
-[판단·실행·답] execution 실행 중
-[판단·실행·답] execution 완료
-[판단·실행·답] decision 사용자에게 물어보기 valid
-[판단·실행·답] execution 판단
-[판단·실행·답] execution 계획
-[판단·실행·답] execution 실행 중
-[판단·실행·답] execution 완료: 그대로 둬요
-[판단·실행·답] feedback 그대로 둬요. 밤에는 묻지 마세요 · 질문: 컵을 치울까요?
-[판단·실행·답] decision 컵 치우기 valid
-[판단·실행·답] execution 판단
-[판단·실행·답] execution 계획
-[판단·실행·답] execution 실행 중
-[판단·실행·답] execution 완료
-[판단·실행·답] decision 대기 valid
+# 4 합성 7일(관찰만)을 밤 흐름으로 날마다 반성하면 날마다 다음 날부터 쓰고 7일 판본은 오늘부터다. 채택 검사로 컵 치우기와 말없는 에어컨 화살표가 붙고, 라면 습관은 빠지며 요리·덥다 화살표는 seed 그대로다. 말없이 TV를 보면 배운 화살표로 에어컨을 켠다
 [판단·실행·답] decision 사용자에게 물어보기 valid
 [판단·실행·답] execution 판단
 [판단·실행·답] execution 계획
 [판단·실행·답] execution 실행 중
 [판단·실행·답] execution 완료: 치워 주세요
+[판단·실행·답] decision 컵 치우기 valid
+[판단·실행·답] execution 판단
+[판단·실행·답] execution 계획
 [판단·실행·답] feedback 치워 주세요 · 질문: 컵을 치울까요?
+[판단·실행·답] execution 실행 중
+[판단·실행·답] execution 완료
+[판단·실행·답] decision 대기 valid
+[판단·실행·답] decision 에어컨 켜기 valid
+[판단·실행·답] execution 판단
+[판단·실행·답] execution 실행 중
+[판단·실행·답] execution 완료
+[판단·실행·답] decision 사용자에게 물어보기 valid
+[판단·실행·답] execution 판단
+[판단·실행·답] execution 계획
+[판단·실행·답] execution 실행 중
+[판단·실행·답] execution 완료: 치워 주세요
 [판단·실행·답] decision 컵 치우기 valid
 [판단·실행·답] execution 판단
 [판단·실행·답] execution 계획
+[판단·실행·답] feedback 치워 주세요 · 질문: 컵을 치울까요?
 [판단·실행·답] execution 실행 중
 [판단·실행·답] execution 완료
 [판단·실행·답] decision 대기 valid
@@ -51,9 +38,8 @@
 [판단·실행·답] execution 계획
 [판단·실행·답] execution 실행 중
 [판단·실행·답] execution 완료
-[판단·실행·답] decision 컵 치우기 valid
+[판단·실행·답] decision 에어컨 켜기 valid
 [판단·실행·답] execution 판단
-[판단·실행·답] execution 계획
 [판단·실행·답] execution 실행 중
 [판단·실행·답] execution 완료
 [판단·실행·답] decision 대기 valid
@@ -62,15 +48,8 @@
 [판단·실행·답] execution 계획
 [판단·실행·답] execution 실행 중
 [판단·실행·답] execution 완료
-[판단·실행·답] decision 대기 valid
-[판단·실행·답] decision 컵 치우기 valid
+[판단·실행·답] decision 에어컨 켜기 valid
 [판단·실행·답] execution 판단
-[판단·실행·답] execution 계획
-[판단·실행·답] execution 실행 중
-[판단·실행·답] execution 완료
-[판단·실행·답] decision 컵 치우기 valid
-[판단·실행·답] execution 판단
-[판단·실행·답] execution 계획
 [판단·실행·답] execution 실행 중
 [판단·실행·답] execution 완료
 [판단·실행·답] decision 대기 valid
@@ -79,10 +58,8 @@
 [판단·실행·답] execution 계획
 [판단·실행·답] execution 실행 중
 [판단·실행·답] execution 완료
-[판단·실행·답] decision 대기 valid
-[판단·실행·답] decision 컵 치우기 valid
+[판단·실행·답] decision 에어컨 켜기 valid
 [판단·실행·답] execution 판단
-[판단·실행·답] execution 계획
 [판단·실행·답] execution 실행 중
 [판단·실행·답] execution 완료
 [판단·실행·답] decision 대기 valid
@@ -91,16 +68,8 @@
 [판단·실행·답] execution 계획
 [판단·실행·답] execution 실행 중
 [판단·실행·답] execution 완료
-[판단·실행·답] decision 대기 valid
-[판단·실행·답] decision 컵 치우기 valid
+[판단·실행·답] decision 에어컨 켜기 valid
 [판단·실행·답] execution 판단
-[판단·실행·답] execution 계획
-[판단·실행·답] execution 실행 중
-[판단·실행·답] execution 완료
-[판단·실행·답] decision 대기 valid
-[판단·실행·답] decision 컵 치우기 valid
-[판단·실행·답] execution 판단
-[판단·실행·답] execution 계획
 [판단·실행·답] execution 실행 중
 [판단·실행·답] execution 완료
 [판단·실행·답] decision 대기 valid
@@ -119,16 +88,6 @@
 [집 상태] world 컵 cup_1 식탁 위
 [집 상태] world 컵 cup_1 내용물 있음
 [집 상태] world VLM: A person sits at the dining table drinking from a mug.
-[집 상태] world VLM: A person stands up from the dining table.
-[집 상태] world 사람 서 있음
-[집 상태] world 컵 cup_1 비어 있음
-[집 상태] detection 사람 안 보임
-[집 상태] world VLM: An empty mug is on the dining table.
-[집 상태] detection 사람 보임
-[집 상태] world VLM: A person sits at the dining table and pours coffee into the mug.
-[집 상태] world 사람 앉아 있음
-[집 상태] world 사람 물건을 들고 있음
-[집 상태] world 컵 cup_1 내용물 있음
 [집 상태] world VLM: A person puts the mug down and stands up.
 [집 상태] world 사람 서 있음
 [집 상태] world 컵 cup_1 비어 있음
@@ -149,340 +108,19 @@
 [집 상태] detection 사람 안 보임
 [집 상태] world VLM: The dining table is clear.
 [집 상태] detection 사람 보임
-[집 상태] world VLM: A person stands near the dining table holding a bag.
-[집 상태] world 사람 서 있음
-[집 상태] world 사람 물건을 들고 있음
-[집 상태] detection 그릇 bowl_1 보임 · 거실·복도 식탁 위
-[집 상태] detection 컵 cup_3 보임 · 거실·복도 식탁 위
-[집 상태] world VLM: A person eats dinner at the dining table with a bowl and a cup.
-[집 상태] world 사람 앉아 있음
-[집 상태] world 사람 먹는 중
-[집 상태] world 그릇 bowl_1 식탁 위
-[집 상태] world 그릇 bowl_1 내용물 있음
-[집 상태] world 컵 cup_3 식탁 위
-[집 상태] world 컵 cup_3 내용물 있음
-[집 상태] world VLM: A person stands up from the dining table after eating.
-[집 상태] world 사람 서 있음
-[집 상태] world 그릇 bowl_1 비어 있음
-[집 상태] world 컵 cup_3 비어 있음
-[집 상태] detection 사람 안 보임
-[집 상태] world VLM: An empty cup and an empty bowl are on the dining table.
-[집 상태] world VLM: A hand holds a mug above the dining table.
-[집 상태] world 컵 cup_3 손에 있음
-[집 상태] detection 컵 cup_4 보임 · 주방·식당 싱크대 위
-[집 상태] world 컵 cup_3 시야 밖
-[집 상태] world VLM: A mug sits in the kitchen sink.
-[집 상태] world 컵 cup_4 싱크대 안
-[집 상태] detection 컵 cup_3 사라짐
-[집 상태] world 컵 cup_4 시야 밖
-[집 상태] world VLM: The dining table is clear.
-[집 상태] detection 그릇 bowl_1 사라짐
-[집 상태] detection 사람 보임
 [집 상태] world VLM: A person sits on the sofa watching TV.
 [집 상태] world 사람 앉아 있음
-[집 상태] detection 컵 cup_5 보임 · 거실·복도 테이블 위
-[집 상태] world VLM: A person sits on the sofa holding a cup of tea.
-[집 상태] world 사람 물건을 들고 있음
-[집 상태] world 컵 cup_5 식탁 위
-[집 상태] world 컵 cup_5 내용물 있음
-[집 상태] world VLM: A cup is left on the coffee table in a dim living room.
-[집 상태] world 사람 서 있음
-[집 상태] world 컵 cup_5 안이 안 보임
-[집 상태] detection 사람 안 보임
-[집 상태] detection 사람 보임
-[집 상태] world VLM: A person stands next to the dining table.
-[집 상태] world 사람 서 있음
-[집 상태] detection 컵 cup_1 보임 · 거실·복도 식탁 위
-[집 상태] world VLM: A person sits at the dining table with a mug of coffee.
-[집 상태] world 사람 앉아 있음
-[집 상태] world 사람 마시는 중
-[집 상태] world 컵 cup_1 식탁 위
-[집 상태] world 컵 cup_1 내용물 있음
-[집 상태] world VLM: A person sits at the dining table drinking from a mug.
-[집 상태] world VLM: A person puts the mug down and stands up.
-[집 상태] world 사람 서 있음
-[집 상태] world 컵 cup_1 비어 있음
-[집 상태] detection 사람 안 보임
-[집 상태] world VLM: An empty mug is on the dining table.
-[집 상태] world VLM: A hand holds a mug above the dining table.
-[집 상태] world 컵 cup_1 손에 있음
-[집 상태] detection 컵 cup_2 보임 · 주방·식당 싱크대 위
-[집 상태] world 컵 cup_1 시야 밖
-[집 상태] world VLM: A mug sits in the kitchen sink.
-[집 상태] world 컵 cup_2 싱크대 안
-[집 상태] detection 컵 cup_1 사라짐
-[집 상태] world 컵 cup_2 시야 밖
-[집 상태] world VLM: The dining table is clear.
-[집 상태] detection 사람 보임
-[집 상태] world VLM: A person in a coat walks past the dining table.
-[집 상태] world 사람 서 있음
-[집 상태] detection 사람 안 보임
-[집 상태] world VLM: The dining table is clear.
-[집 상태] detection 사람 보임
-[집 상태] world VLM: A person stands near the dining table holding a bag.
-[집 상태] world 사람 서 있음
-[집 상태] world 사람 물건을 들고 있음
-[집 상태] detection 그릇 bowl_1 보임 · 거실·복도 식탁 위
-[집 상태] detection 컵 cup_3 보임 · 거실·복도 식탁 위
-[집 상태] world VLM: A person eats dinner at the dining table with a bowl and a cup.
-[집 상태] world 사람 앉아 있음
-[집 상태] world 사람 먹는 중
-[집 상태] world 그릇 bowl_1 식탁 위
-[집 상태] world 그릇 bowl_1 내용물 있음
-[집 상태] world 컵 cup_3 식탁 위
-[집 상태] world 컵 cup_3 내용물 있음
-[집 상태] world VLM: A person stands up from the dining table after eating.
-[집 상태] world 사람 서 있음
-[집 상태] world 그릇 bowl_1 비어 있음
-[집 상태] world 컵 cup_3 안이 안 보임
-[집 상태] detection 사람 안 보임
-[집 상태] world VLM: An empty cup and an empty bowl are on the dining table.
-[집 상태] world 컵 cup_3 비어 있음
-[집 상태] world VLM: A hand holds a mug above the dining table.
-[집 상태] world 컵 cup_3 손에 있음
-[집 상태] detection 컵 cup_4 보임 · 주방·식당 싱크대 위
-[집 상태] world 컵 cup_3 시야 밖
-[집 상태] world VLM: A mug sits in the kitchen sink.
-[집 상태] world 컵 cup_4 싱크대 안
-[집 상태] detection 컵 cup_3 사라짐
-[집 상태] world 컵 cup_4 시야 밖
-[집 상태] world VLM: The dining table is clear.
-[집 상태] detection 그릇 bowl_1 사라짐
-[집 상태] detection 사람 보임
-[집 상태] world VLM: A person sits on the sofa watching TV.
-[집 상태] world 사람 앉아 있음
-[집 상태] detection 컵 cup_5 보임 · 거실·복도 테이블 위
-[집 상태] world VLM: A person sits on the sofa holding a cup of tea.
-[집 상태] world 사람 물건을 들고 있음
-[집 상태] world 컵 cup_5 식탁 위
-[집 상태] world 컵 cup_5 내용물 있음
-[집 상태] world VLM: A cup is left on the coffee table in a dim living room.
-[집 상태] world 사람 서 있음
-[집 상태] world 컵 cup_5 안이 안 보임
-[집 상태] detection 사람 안 보임
-[집 상태] detection 사람 보임
-[집 상태] world VLM: A person stands next to the dining table.
-[집 상태] world 사람 서 있음
-[집 상태] detection 컵 cup_1 보임 · 거실·복도 식탁 위
-[집 상태] world VLM: A person sits at the dining table with a mug of coffee.
-[집 상태] world 사람 앉아 있음
-[집 상태] world 사람 마시는 중
-[집 상태] world 컵 cup_1 식탁 위
-[집 상태] world 컵 cup_1 내용물 있음
-[집 상태] world VLM: A person sits at the dining table drinking from a mug.
-[집 상태] world VLM: A person puts the mug down and stands up.
-[집 상태] world 사람 서 있음
-[집 상태] world 컵 cup_1 비어 있음
-[집 상태] detection 사람 안 보임
-[집 상태] world VLM: An empty mug is on the dining table.
-[집 상태] world VLM: A hand holds a mug above the dining table.
-[집 상태] world 컵 cup_1 손에 있음
-[집 상태] detection 컵 cup_2 보임 · 주방·식당 싱크대 위
-[집 상태] world 컵 cup_1 시야 밖
-[집 상태] world VLM: A mug sits in the kitchen sink.
-[집 상태] world 컵 cup_2 싱크대 안
-[집 상태] detection 컵 cup_1 사라짐
-[집 상태] world 컵 cup_2 시야 밖
-[집 상태] world VLM: The dining table is clear.
-[집 상태] detection 사람 보임
-[집 상태] world VLM: A person in a coat walks past the dining table.
-[집 상태] world 사람 서 있음
-[집 상태] detection 사람 안 보임
-[집 상태] world VLM: The dining table is clear.
-[집 상태] detection 사람 보임
-[집 상태] world VLM: A person stands near the dining table holding a bag.
-[집 상태] world 사람 서 있음
-[집 상태] world 사람 물건을 들고 있음
-[집 상태] detection 사람 보임
-[집 상태] world VLM: A person sits on the sofa watching TV.
-[집 상태] world 사람 앉아 있음
+[집 상태] world 사람 TV 보는 중
 [집 상태] detection 컵 cup_3 보임 · 거실·복도 테이블 위
 [집 상태] world VLM: A person sits on the sofa holding a cup of tea.
 [집 상태] world 사람 물건을 들고 있음
 [집 상태] world 컵 cup_3 식탁 위
 [집 상태] world 컵 cup_3 내용물 있음
-[집 상태] world VLM: A cup is left on the coffee table in a dim living room.
+[집 상태] world VLM: A person stands up from the sofa holding a cup of tea.
 [집 상태] world 사람 서 있음
-[집 상태] world 컵 cup_3 안이 안 보임
-[집 상태] detection 사람 안 보임
-[집 상태] detection 사람 보임
-[집 상태] world VLM: A person stands next to the dining table.
-[집 상태] world 사람 서 있음
-[집 상태] detection 컵 cup_1 보임 · 거실·복도 식탁 위
-[집 상태] world VLM: A person sits at the dining table with a mug of coffee.
-[집 상태] world 사람 앉아 있음
-[집 상태] world 사람 마시는 중
-[집 상태] world 컵 cup_1 식탁 위
-[집 상태] world 컵 cup_1 내용물 있음
-[집 상태] world VLM: A person sits at the dining table drinking from a mug.
-[집 상태] world VLM: A person puts the mug down and stands up.
-[집 상태] world 사람 서 있음
-[집 상태] world 컵 cup_1 비어 있음
-[집 상태] detection 사람 안 보임
-[집 상태] world VLM: An empty mug is on the dining table.
-[집 상태] world VLM: A hand holds a mug above the dining table.
-[집 상태] world 컵 cup_1 손에 있음
-[집 상태] detection 컵 cup_2 보임 · 주방·식당 싱크대 위
-[집 상태] world 컵 cup_1 시야 밖
-[집 상태] world VLM: A mug sits in the kitchen sink.
-[집 상태] world 컵 cup_2 싱크대 안
-[집 상태] detection 컵 cup_1 사라짐
-[집 상태] world 컵 cup_2 시야 밖
-[집 상태] world VLM: The dining table is clear.
-[집 상태] detection 그릇 bowl_1 보임 · 거실·복도 식탁 위
-[집 상태] detection 컵 cup_3 보임 · 거실·복도 식탁 위
-[집 상태] world VLM: A person eats lunch at the dining table with a bowl and a cup.
-[집 상태] world 그릇 bowl_1 식탁 위
-[집 상태] world 그릇 bowl_1 내용물 있음
-[집 상태] world 컵 cup_3 식탁 위
-[집 상태] world 컵 cup_3 내용물 있음
-[집 상태] world VLM: A person stands up from the dining table after eating.
-[집 상태] world 그릇 bowl_1 비어 있음
-[집 상태] world 컵 cup_3 비어 있음
-[집 상태] detection 사람 안 보임
-[집 상태] world VLM: An empty cup and an empty bowl are on the dining table.
-[집 상태] world VLM: A hand holds a mug above the dining table.
 [집 상태] world 컵 cup_3 손에 있음
-[집 상태] detection 컵 cup_4 보임 · 주방·식당 싱크대 위
-[집 상태] world 컵 cup_3 시야 밖
-[집 상태] world VLM: A mug sits in the kitchen sink.
-[집 상태] world 컵 cup_4 싱크대 안
+[집 상태] detection 사람 안 보임
 [집 상태] detection 컵 cup_3 사라짐
-[집 상태] world 컵 cup_4 시야 밖
-[집 상태] world VLM: The dining table is clear.
-[집 상태] detection 그릇 bowl_1 사라짐
-[집 상태] detection 사람 보임
-[집 상태] world VLM: A person in a coat walks past the dining table.
-[집 상태] world 사람 서 있음
-[집 상태] detection 사람 안 보임
-[집 상태] world VLM: The dining table is clear.
-[집 상태] detection 사람 보임
-[집 상태] world VLM: A person stands near the dining table holding a bag.
-[집 상태] world 사람 서 있음
-[집 상태] world 사람 물건을 들고 있음
-[집 상태] detection 그릇 bowl_2 보임 · 거실·복도 식탁 위
-[집 상태] detection 컵 cup_5 보임 · 거실·복도 식탁 위
-[집 상태] world VLM: A person eats dinner at the dining table with a bowl and a cup.
-[집 상태] world 사람 앉아 있음
-[집 상태] world 사람 먹는 중
-[집 상태] world 그릇 bowl_2 식탁 위
-[집 상태] world 그릇 bowl_2 내용물 있음
-[집 상태] world 컵 cup_5 식탁 위
-[집 상태] world 컵 cup_5 내용물 있음
-[집 상태] world VLM: A person stands up from the dining table after eating.
-[집 상태] world 사람 서 있음
-[집 상태] world 그릇 bowl_2 비어 있음
-[집 상태] world 컵 cup_5 비어 있음
-[집 상태] detection 사람 안 보임
-[집 상태] world VLM: An empty cup and an empty bowl are on the dining table.
-[집 상태] world VLM: A hand holds a mug above the dining table.
-[집 상태] world 컵 cup_5 손에 있음
-[집 상태] detection 컵 cup_6 보임 · 주방·식당 싱크대 위
-[집 상태] world 컵 cup_5 시야 밖
-[집 상태] world VLM: A mug sits in the kitchen sink.
-[집 상태] world 컵 cup_6 싱크대 안
-[집 상태] detection 컵 cup_5 사라짐
-[집 상태] world 컵 cup_6 시야 밖
-[집 상태] world VLM: The dining table is clear.
-[집 상태] detection 그릇 bowl_2 사라짐
-[집 상태] detection 사람 보임
-[집 상태] world VLM: A person sits on the sofa watching TV.
-[집 상태] world 사람 앉아 있음
-[집 상태] detection 컵 cup_7 보임 · 거실·복도 테이블 위
-[집 상태] world VLM: A person sits on the sofa holding a cup of tea.
-[집 상태] world 사람 물건을 들고 있음
-[집 상태] world 컵 cup_7 식탁 위
-[집 상태] world 컵 cup_7 내용물 있음
-[집 상태] world VLM: A cup is left on the coffee table in a dim living room.
-[집 상태] world 사람 서 있음
-[집 상태] world 컵 cup_7 안이 안 보임
-[집 상태] detection 사람 안 보임
-[집 상태] detection 사람 보임
-[집 상태] world VLM: A person stands next to the dining table.
-[집 상태] world 사람 서 있음
-[집 상태] detection 컵 cup_1 보임 · 거실·복도 식탁 위
-[집 상태] world VLM: A person sits at the dining table with a mug of coffee.
-[집 상태] world 사람 앉아 있음
-[집 상태] world 사람 마시는 중
-[집 상태] world 컵 cup_1 식탁 위
-[집 상태] world 컵 cup_1 내용물 있음
-[집 상태] world VLM: A person sits at the dining table drinking from a mug.
-[집 상태] world VLM: A person puts the mug down and stands up.
-[집 상태] world 사람 서 있음
-[집 상태] world 컵 cup_1 비어 있음
-[집 상태] detection 사람 안 보임
-[집 상태] world VLM: An empty mug is on the dining table.
-[집 상태] world VLM: A hand holds a mug above the dining table.
-[집 상태] world 컵 cup_1 손에 있음
-[집 상태] detection 컵 cup_2 보임 · 주방·식당 싱크대 위
-[집 상태] world 컵 cup_1 시야 밖
-[집 상태] world VLM: A mug sits in the kitchen sink.
-[집 상태] world 컵 cup_2 싱크대 안
-[집 상태] detection 컵 cup_1 사라짐
-[집 상태] world 컵 cup_2 시야 밖
-[집 상태] world VLM: The dining table is clear.
-[집 상태] detection 그릇 bowl_1 보임 · 거실·복도 식탁 위
-[집 상태] detection 컵 cup_3 보임 · 거실·복도 식탁 위
-[집 상태] world VLM: A person eats lunch at the dining table with a bowl and a cup.
-[집 상태] world 그릇 bowl_1 식탁 위
-[집 상태] world 그릇 bowl_1 내용물 있음
-[집 상태] world 컵 cup_3 식탁 위
-[집 상태] world 컵 cup_3 내용물 있음
-[집 상태] world VLM: A person stands up from the dining table after eating.
-[집 상태] world 그릇 bowl_1 비어 있음
-[집 상태] world 컵 cup_3 비어 있음
-[집 상태] detection 사람 안 보임
-[집 상태] world VLM: An empty cup and an empty bowl are on the dining table.
-[집 상태] world VLM: A hand holds a mug above the dining table.
-[집 상태] world 컵 cup_3 손에 있음
-[집 상태] detection 컵 cup_4 보임 · 주방·식당 싱크대 위
-[집 상태] world 컵 cup_3 시야 밖
-[집 상태] world VLM: A mug sits in the kitchen sink.
-[집 상태] world 컵 cup_4 싱크대 안
-[집 상태] detection 컵 cup_3 사라짐
-[집 상태] world 컵 cup_4 시야 밖
-[집 상태] world VLM: The dining table is clear.
-[집 상태] detection 그릇 bowl_1 사라짐
-[집 상태] detection 사람 보임
-[집 상태] world VLM: A person sits on the sofa watching TV.
-[집 상태] world 사람 앉아 있음
-[집 상태] world VLM: A person stands up from the sofa.
-[집 상태] world 사람 서 있음
-[집 상태] detection 사람 안 보임
-[집 상태] detection 그릇 bowl_2 보임 · 거실·복도 식탁 위
-[집 상태] detection 컵 cup_5 보임 · 거실·복도 식탁 위
-[집 상태] world VLM: A person eats dinner at the dining table with a bowl and a cup.
-[집 상태] world 그릇 bowl_2 식탁 위
-[집 상태] world 그릇 bowl_2 내용물 있음
-[집 상태] world 컵 cup_5 식탁 위
-[집 상태] world 컵 cup_5 내용물 있음
-[집 상태] world VLM: A person stands up from the dining table after eating.
-[집 상태] world 그릇 bowl_2 비어 있음
-[집 상태] world 컵 cup_5 비어 있음
-[집 상태] detection 사람 안 보임
-[집 상태] world VLM: An empty cup and an empty bowl are on the dining table.
-[집 상태] world VLM: A hand holds a mug above the dining table.
-[집 상태] world 컵 cup_5 손에 있음
-[집 상태] detection 컵 cup_6 보임 · 주방·식당 싱크대 위
-[집 상태] world 컵 cup_5 시야 밖
-[집 상태] world VLM: A mug sits in the kitchen sink.
-[집 상태] world 컵 cup_6 싱크대 안
-[집 상태] detection 컵 cup_5 사라짐
-[집 상태] world 컵 cup_6 시야 밖
-[집 상태] world VLM: The dining table is clear.
-[집 상태] detection 그릇 bowl_2 사라짐
-[집 상태] detection 사람 보임
-[집 상태] world VLM: A person sits on the sofa watching TV.
-[집 상태] world 사람 앉아 있음
-[집 상태] detection 컵 cup_7 보임 · 거실·복도 테이블 위
-[집 상태] world VLM: A person sits on the sofa holding a cup of tea.
-[집 상태] world 사람 물건을 들고 있음
-[집 상태] world 컵 cup_7 식탁 위
-[집 상태] world 컵 cup_7 내용물 있음
-[집 상태] world VLM: A cup is left on the coffee table in a dim living room.
-[집 상태] world 사람 서 있음
-[집 상태] world 컵 cup_7 안이 안 보임
-[집 상태] detection 사람 안 보임
 [집 상태] detection 사람 보임
 [집 상태] world VLM: A person stands next to the dining table.
 [집 상태] world 사람 서 있음
@@ -513,46 +151,19 @@
 [집 상태] detection 사람 안 보임
 [집 상태] world VLM: The dining table is clear.
 [집 상태] detection 사람 보임
-[집 상태] world VLM: A person stands near the dining table holding a bag.
-[집 상태] world 사람 서 있음
-[집 상태] world 사람 물건을 들고 있음
-[집 상태] detection 그릇 bowl_1 보임 · 거실·복도 식탁 위
-[집 상태] detection 컵 cup_3 보임 · 거실·복도 식탁 위
-[집 상태] world VLM: A person eats dinner at the dining table with a bowl and a cup.
-[집 상태] world 사람 앉아 있음
-[집 상태] world 사람 먹는 중
-[집 상태] world 그릇 bowl_1 식탁 위
-[집 상태] world 그릇 bowl_1 내용물 있음
-[집 상태] world 컵 cup_3 식탁 위
-[집 상태] world 컵 cup_3 내용물 있음
-[집 상태] world VLM: A person stands up from the dining table after eating.
-[집 상태] world 사람 서 있음
-[집 상태] world 그릇 bowl_1 비어 있음
-[집 상태] world 컵 cup_3 비어 있음
-[집 상태] detection 사람 안 보임
-[집 상태] world VLM: An empty cup and an empty bowl are on the dining table.
-[집 상태] world VLM: A hand holds a mug above the dining table.
-[집 상태] world 컵 cup_3 손에 있음
-[집 상태] detection 컵 cup_4 보임 · 주방·식당 싱크대 위
-[집 상태] world 컵 cup_3 시야 밖
-[집 상태] world VLM: A mug sits in the kitchen sink.
-[집 상태] world 컵 cup_4 싱크대 안
-[집 상태] detection 컵 cup_3 사라짐
-[집 상태] world 컵 cup_4 시야 밖
-[집 상태] world VLM: The dining table is clear.
-[집 상태] detection 그릇 bowl_1 사라짐
-[집 상태] detection 사람 보임
 [집 상태] world VLM: A person sits on the sofa watching TV.
 [집 상태] world 사람 앉아 있음
-[집 상태] detection 컵 cup_5 보임 · 거실·복도 테이블 위
+[집 상태] world 사람 TV 보는 중
+[집 상태] detection 컵 cup_3 보임 · 거실·복도 테이블 위
 [집 상태] world VLM: A person sits on the sofa holding a cup of tea.
 [집 상태] world 사람 물건을 들고 있음
-[집 상태] world 컵 cup_5 식탁 위
-[집 상태] world 컵 cup_5 내용물 있음
-[집 상태] world VLM: A cup is left on the coffee table in a dim living room.
+[집 상태] world 컵 cup_3 식탁 위
+[집 상태] world 컵 cup_3 내용물 있음
+[집 상태] world VLM: A person stands up from the sofa holding a cup of tea.
 [집 상태] world 사람 서 있음
-[집 상태] world 컵 cup_5 안이 안 보임
+[집 상태] world 컵 cup_3 손에 있음
 [집 상태] detection 사람 안 보임
+[집 상태] detection 컵 cup_3 사라짐
 [집 상태] detection 사람 보임
 [집 상태] world VLM: A person stands next to the dining table.
 [집 상태] world 사람 서 있음
@@ -583,46 +194,191 @@
 [집 상태] detection 사람 안 보임
 [집 상태] world VLM: The dining table is clear.
 [집 상태] detection 사람 보임
-[집 상태] world VLM: A person stands near the dining table holding a bag.
-[집 상태] world 사람 서 있음
-[집 상태] world 사람 물건을 들고 있음
-[집 상태] detection 그릇 bowl_1 보임 · 거실·복도 식탁 위
-[집 상태] detection 컵 cup_3 보임 · 거실·복도 식탁 위
-[집 상태] world VLM: A person eats dinner at the dining table with a bowl and a cup.
+[집 상태] world VLM: A person sits on the sofa watching TV.
 [집 상태] world 사람 앉아 있음
-[집 상태] world 사람 먹는 중
-[집 상태] world 그릇 bowl_1 식탁 위
-[집 상태] world 그릇 bowl_1 내용물 있음
+[집 상태] world 사람 TV 보는 중
+[집 상태] detection 컵 cup_3 보임 · 거실·복도 테이블 위
+[집 상태] world VLM: A person sits on the sofa holding a cup of tea.
+[집 상태] world 사람 물건을 들고 있음
 [집 상태] world 컵 cup_3 식탁 위
 [집 상태] world 컵 cup_3 내용물 있음
-[집 상태] world VLM: A person stands up from the dining table after eating.
+[집 상태] world VLM: A person stands up from the sofa holding a cup of tea.
 [집 상태] world 사람 서 있음
-[집 상태] world 그릇 bowl_1 비어 있음
-[집 상태] world 컵 cup_3 비어 있음
-[집 상태] detection 사람 안 보임
-[집 상태] world VLM: An empty cup and an empty bowl are on the dining table.
-[집 상태] world VLM: A hand holds a mug above the dining table.
 [집 상태] world 컵 cup_3 손에 있음
-[집 상태] detection 컵 cup_4 보임 · 주방·식당 싱크대 위
-[집 상태] world 컵 cup_3 시야 밖
-[집 상태] world VLM: A mug sits in the kitchen sink.
-[집 상태] world 컵 cup_4 싱크대 안
+[집 상태] detection 사람 안 보임
 [집 상태] detection 컵 cup_3 사라짐
-[집 상태] world 컵 cup_4 시야 밖
+[집 상태] detection 사람 보임
+[집 상태] world VLM: A person stands next to the dining table.
+[집 상태] world 사람 서 있음
+[집 상태] detection 컵 cup_1 보임 · 거실·복도 식탁 위
+[집 상태] world VLM: A person sits at the dining table with a mug of coffee.
+[집 상태] world 사람 앉아 있음
+[집 상태] world 사람 마시는 중
+[집 상태] world 컵 cup_1 식탁 위
+[집 상태] world 컵 cup_1 내용물 있음
+[집 상태] world VLM: A person sits at the dining table drinking from a mug.
+[집 상태] world VLM: A person puts the mug down and stands up.
+[집 상태] world 사람 서 있음
+[집 상태] world 컵 cup_1 비어 있음
+[집 상태] detection 사람 안 보임
+[집 상태] world VLM: An empty mug is on the dining table.
+[집 상태] world VLM: A hand holds a mug above the dining table.
+[집 상태] world 컵 cup_1 손에 있음
+[집 상태] detection 컵 cup_2 보임 · 주방·식당 싱크대 위
+[집 상태] world 컵 cup_1 시야 밖
+[집 상태] world VLM: A mug sits in the kitchen sink.
+[집 상태] world 컵 cup_2 싱크대 안
+[집 상태] detection 컵 cup_1 사라짐
+[집 상태] world 컵 cup_2 시야 밖
 [집 상태] world VLM: The dining table is clear.
-[집 상태] detection 그릇 bowl_1 사라짐
+[집 상태] detection 사람 보임
+[집 상태] world VLM: A person in a coat walks past the dining table.
+[집 상태] world 사람 서 있음
+[집 상태] detection 사람 안 보임
+[집 상태] world VLM: The dining table is clear.
 [집 상태] detection 사람 보임
 [집 상태] world VLM: A person sits on the sofa watching TV.
 [집 상태] world 사람 앉아 있음
-[집 상태] detection 컵 cup_5 보임 · 거실·복도 테이블 위
+[집 상태] world 사람 TV 보는 중
+[집 상태] detection 컵 cup_3 보임 · 거실·복도 테이블 위
 [집 상태] world VLM: A person sits on the sofa holding a cup of tea.
 [집 상태] world 사람 물건을 들고 있음
-[집 상태] world 컵 cup_5 식탁 위
-[집 상태] world 컵 cup_5 내용물 있음
-[집 상태] world VLM: A cup is left on the coffee table in a dim living room.
+[집 상태] world 컵 cup_3 식탁 위
+[집 상태] world 컵 cup_3 내용물 있음
+[집 상태] world VLM: A person stands up from the sofa holding a cup of tea.
 [집 상태] world 사람 서 있음
-[집 상태] world 컵 cup_5 안이 안 보임
+[집 상태] world 컵 cup_3 손에 있음
 [집 상태] detection 사람 안 보임
+[집 상태] detection 컵 cup_3 사라짐
+[집 상태] detection 사람 보임
+[집 상태] world VLM: A person stands next to the dining table.
+[집 상태] world 사람 서 있음
+[집 상태] detection 컵 cup_1 보임 · 거실·복도 식탁 위
+[집 상태] world VLM: A person sits at the dining table with a mug of coffee.
+[집 상태] world 사람 앉아 있음
+[집 상태] world 사람 마시는 중
+[집 상태] world 컵 cup_1 식탁 위
+[집 상태] world 컵 cup_1 내용물 있음
+[집 상태] world VLM: A person sits at the dining table drinking from a mug.
+[집 상태] world VLM: A person puts the mug down and stands up.
+[집 상태] world 사람 서 있음
+[집 상태] world 컵 cup_1 비어 있음
+[집 상태] detection 사람 안 보임
+[집 상태] world VLM: An empty mug is on the dining table.
+[집 상태] world VLM: A hand holds a mug above the dining table.
+[집 상태] world 컵 cup_1 손에 있음
+[집 상태] detection 컵 cup_2 보임 · 주방·식당 싱크대 위
+[집 상태] world 컵 cup_1 시야 밖
+[집 상태] world VLM: A mug sits in the kitchen sink.
+[집 상태] world 컵 cup_2 싱크대 안
+[집 상태] detection 컵 cup_1 사라짐
+[집 상태] world 컵 cup_2 시야 밖
+[집 상태] world VLM: The dining table is clear.
+[집 상태] detection 사람 보임
+[집 상태] world VLM: A person in a coat walks past the dining table.
+[집 상태] world 사람 서 있음
+[집 상태] detection 사람 안 보임
+[집 상태] world VLM: The dining table is clear.
+[집 상태] detection 사람 보임
+[집 상태] world VLM: A person sits on the sofa watching TV.
+[집 상태] world 사람 앉아 있음
+[집 상태] world 사람 TV 보는 중
+[집 상태] detection 컵 cup_3 보임 · 거실·복도 테이블 위
+[집 상태] world VLM: A person sits on the sofa holding a cup of tea.
+[집 상태] world 사람 물건을 들고 있음
+[집 상태] world 컵 cup_3 식탁 위
+[집 상태] world 컵 cup_3 내용물 있음
+[집 상태] world VLM: A person stands up from the sofa holding a cup of tea.
+[집 상태] world 사람 서 있음
+[집 상태] world 컵 cup_3 손에 있음
+[집 상태] detection 사람 안 보임
+[집 상태] detection 컵 cup_3 사라짐
+[집 상태] detection 사람 보임
+[집 상태] world VLM: A person stands next to the dining table.
+[집 상태] world 사람 서 있음
+[집 상태] detection 컵 cup_1 보임 · 거실·복도 식탁 위
+[집 상태] world VLM: A person sits at the dining table with a mug of coffee.
+[집 상태] world 사람 앉아 있음
+[집 상태] world 사람 마시는 중
+[집 상태] world 컵 cup_1 식탁 위
+[집 상태] world 컵 cup_1 내용물 있음
+[집 상태] world VLM: A person sits at the dining table drinking from a mug.
+[집 상태] world VLM: A person puts the mug down and stands up.
+[집 상태] world 사람 서 있음
+[집 상태] world 컵 cup_1 비어 있음
+[집 상태] detection 사람 안 보임
+[집 상태] world VLM: An empty mug is on the dining table.
+[집 상태] world VLM: A hand holds a mug above the dining table.
+[집 상태] world 컵 cup_1 손에 있음
+[집 상태] detection 컵 cup_2 보임 · 주방·식당 싱크대 위
+[집 상태] world 컵 cup_1 시야 밖
+[집 상태] world VLM: A mug sits in the kitchen sink.
+[집 상태] world 컵 cup_2 싱크대 안
+[집 상태] detection 컵 cup_1 사라짐
+[집 상태] world 컵 cup_2 시야 밖
+[집 상태] world VLM: The dining table is clear.
+[집 상태] detection 사람 보임
+[집 상태] world VLM: A person in a coat walks past the dining table.
+[집 상태] world 사람 서 있음
+[집 상태] detection 사람 안 보임
+[집 상태] world VLM: The dining table is clear.
+[집 상태] detection 사람 보임
+[집 상태] world VLM: A person sits on the sofa watching TV.
+[집 상태] world 사람 앉아 있음
+[집 상태] world 사람 TV 보는 중
+[집 상태] detection 컵 cup_3 보임 · 거실·복도 테이블 위
+[집 상태] world VLM: A person sits on the sofa holding a cup of tea.
+[집 상태] world 사람 물건을 들고 있음
+[집 상태] world 컵 cup_3 식탁 위
+[집 상태] world 컵 cup_3 내용물 있음
+[집 상태] world VLM: A person stands up from the sofa holding a cup of tea.
+[집 상태] world 사람 서 있음
+[집 상태] world 컵 cup_3 손에 있음
+[집 상태] detection 사람 안 보임
+[집 상태] detection 컵 cup_3 사라짐
+[집 상태] detection 사람 보임
+[집 상태] world VLM: A person stands next to the dining table.
+[집 상태] world 사람 서 있음
+[집 상태] detection 컵 cup_1 보임 · 거실·복도 식탁 위
+[집 상태] world VLM: A person sits at the dining table with a mug of coffee.
+[집 상태] world 사람 앉아 있음
+[집 상태] world 사람 마시는 중
+[집 상태] world 컵 cup_1 식탁 위
+[집 상태] world 컵 cup_1 내용물 있음
+[집 상태] world VLM: A person sits at the dining table drinking from a mug.
+[집 상태] world VLM: A person puts the mug down and stands up.
+[집 상태] world 사람 서 있음
+[집 상태] world 컵 cup_1 비어 있음
+[집 상태] detection 사람 안 보임
+[집 상태] world VLM: An empty mug is on the dining table.
+[집 상태] world VLM: A hand holds a mug above the dining table.
+[집 상태] world 컵 cup_1 손에 있음
+[집 상태] detection 컵 cup_2 보임 · 주방·식당 싱크대 위
+[집 상태] world 컵 cup_1 시야 밖
+[집 상태] world VLM: A mug sits in the kitchen sink.
+[집 상태] world 컵 cup_2 싱크대 안
+[집 상태] detection 컵 cup_1 사라짐
+[집 상태] world 컵 cup_2 시야 밖
+[집 상태] world VLM: The dining table is clear.
+[집 상태] detection 사람 보임
+[집 상태] world VLM: A person in a coat walks past the dining table.
+[집 상태] world 사람 서 있음
+[집 상태] detection 사람 안 보임
+[집 상태] world VLM: The dining table is clear.
+[집 상태] detection 사람 보임
+[집 상태] world VLM: A person sits on the sofa watching TV.
+[집 상태] world 사람 앉아 있음
+[집 상태] world 사람 TV 보는 중
+[집 상태] detection 컵 cup_3 보임 · 거실·복도 테이블 위
+[집 상태] world VLM: A person sits on the sofa holding a cup of tea.
+[집 상태] world 사람 물건을 들고 있음
+[집 상태] world 컵 cup_3 식탁 위
+[집 상태] world 컵 cup_3 내용물 있음
+[집 상태] world VLM: A person stands up from the sofa holding a cup of tea.
+[집 상태] world 사람 서 있음
+[집 상태] world 컵 cup_3 손에 있음
+[집 상태] detection 사람 안 보임
+[집 상태] detection 컵 cup_3 사라짐
 [집 상태] world VLM: 집
 [집 상태] detection 사람 보임
 [집 상태] world 거실·복도 에어컨 켜짐
@@ -646,8 +402,6 @@
 [가전] device wall_ac_703d00ba power "on"→"off"
 [가전] device stand_ac_dc22b8f3 power "off"→"on"
 [가전] device stand_ac_dc22b8f3 power "on"→"off"
-[가전] device stand_ac_dc22b8f3 power "off"→"on"
-[가전] device stand_ac_dc22b8f3 power "on"→"off"
 [가전] device wall_ac_703d00ba power "off"→"on"
 [가전] device wall_ac_703d00ba power "on"→"off"
 [가전] device stand_ac_dc22b8f3 power "off"→"on"
@@ -659,6 +413,5 @@
 [가전] device wall_ac_703d00ba power "off"→"on"
 [가전] device stand_ac_dc22b8f3 power "off"→"on"
 [있음] decision 대기 valid
-[있음] decision 에어컨 켜기 valid
 [있음] execution 대기
 [있음] vlm

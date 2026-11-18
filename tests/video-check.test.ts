@@ -8,7 +8,9 @@ import { describe, expect, it } from "vitest";
 import type { HistoryRow } from "../src/contract/history.js";
 import type { WorldEye, WorldObject, WorldView } from "../src/contract/world.js";
 import { dockId, isDockStep } from "../src/act/dock-step.js";
-import { SEND_SAY, clickChoice, clock, costLine, judgeInput, judgeState, markdown, parseArgs, phoneUrl, plannedClicks, sendStartPose, mainPlan, planState, stepPlaces, stepVerdict, timeline, verdict, twinRows, usedServer, roomLabels, ownAssetFailures, videoClock, runTimeline, clipEnd, syncWarning, mustStop, openDashboard, waitLoaded, waitTwinReady, frameGapLine, type ClickRule, type Row, type VideoCommand } from "../scripts/video-check.js";
+import { CUP_FSM_MEMORY } from "../src/brain/decision.js";
+import { LEARNED_FSM_MEMORY } from "../scripts/learned-memory.js";
+import { SEND_SAY, hasLearnedClear, memoryGate, clickChoice, clock, costLine, judgeInput, judgeState, markdown, parseArgs, phoneUrl, plannedClicks, sendStartPose, mainPlan, planState, stepPlaces, stepVerdict, timeline, verdict, twinRows, usedServer, roomLabels, ownAssetFailures, videoClock, runTimeline, clipEnd, syncWarning, mustStop, openDashboard, waitLoaded, waitTwinReady, frameGapLine, type ClickRule, type Row, type VideoCommand } from "../scripts/video-check.js";
 import { createServer, type Server } from "node:http";
 import { listenRetry } from "../src/shared/net.js";
 import type { SceneJson } from "../src/contract/layout.js";
@@ -1010,5 +1012,24 @@ describe("녹화는 대시보드 한 화면만, 트윈이 다 뜬 뒤 시작", (
     expect(at("await waitLoaded(cdp, url")).toBeLessThan(at("await waitTwinReady(dash"));
     expect(at("await waitTwinReady(dash")).toBeLessThan(at("rec = await startRecording("));
     expect(at("rec = await startRecording(")).toBeLessThan(at("cdp.evaluate(CLICK_START"));
+  });
+});
+
+describe("영상 전 오늘 기억 확인", () => {
+  it("배운 컵 치우기 화살표가 있는 기억만 영상을 튼다(seed·옛 모양이면 멈춘다)", () => {
+    expect(hasLearnedClear(LEARNED_FSM_MEMORY)).toBe(true);
+    expect(hasLearnedClear(CUP_FSM_MEMORY)).toBe(false);
+    expect(hasLearnedClear({ initial_state: "drinking", states: [{ id: "left_cup", description: "d", rules: [{ trigger: "t", action: "컵 치우기" }], next: [] }] })).toBe(false);
+    expect(hasLearnedClear(null)).toBe(false);
+  });
+
+  it("GET /api/memory/day 답으로 정한다: 배운 기억이면 시각표 머리 줄 「기억 <v>판 · <source>」, 아니면 서버를 끄고 learned로 넣으라는 판정 줄", () => {
+    expect(memoryGate({ uses: { version: 3, source: "synthetic", memory: LEARNED_FSM_MEMORY } }, "runtime/demo/day1")).toEqual({ ok: true, line: "기억 3판 · synthetic" });
+    const why = "오늘 기억에 배운 컵 치우기가 없어요. 서버를 끄고 npx tsx scripts/demo-setup.ts learned --dir runtime/demo/day1로 넣은 뒤 다시 켜 주세요";
+    expect(memoryGate({ uses: { version: 1, source: "seed", memory: CUP_FSM_MEMORY } }, "runtime/demo/day1")).toEqual({ ok: false, why });
+    expect(memoryGate({ uses: null }, "runtime/demo/day1")).toEqual({ ok: false, why });
+    expect(memoryGate(null, "<서버 RUNTIME_DIR>")).toMatchObject({ ok: false, why: expect.stringContaining("learned --dir <서버 RUNTIME_DIR>로") });
+    const md = markdown({ clip: "cup.mp4", mode: "가짜 서버", ranAt: "2026-11-19 10:00:00", memory: "기억 3판 · synthetic", rows: [], notes: [], verdict: "판정: 명령 없음", cost: "VLM 0장" });
+    expect(md.split("\n").slice(0, 5)).toEqual(["# 영상 판정 · cup.mp4", "", "2026-11-19 10:00:00 · 가짜 서버", "", "기억 3판 · synthetic"]);
   });
 });
