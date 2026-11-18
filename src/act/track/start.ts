@@ -118,7 +118,7 @@ export class Starter extends Part {
   /** 다른 행동의 판단이 일을 맡았다(계획을 만들기 시작하거나 대상을 찾으러 감): 미리 세운 목표를 버린다. 같은 행동이면 목표가 이어 간다. */
   private takeover(d: DecisionRecord): void {
     const goal = this.core.goal.current();
-    if (goal && goal.action !== d.action) this.core.goal.drop("other");
+    if (goal && goal.action !== d.action) this.core.goal.drop("replaced");
   }
 
   /** 만들던 계획을 끊고 그 판단 줄에 까닭을 남긴다. */

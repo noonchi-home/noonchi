@@ -414,7 +414,7 @@ describe("미리 세운 목표: 맞지 않게 되면 버리고 지금 길로", (
     await s.decide(pam("pam-4", 4, s.clock.t, null));
     expect(s.t.goal()?.status).toBe("armed");
     await s.decide(pam("pam-5", 5, s.clock.t, "사용자에게 물어보기"));
-    expect(s.goals.find((g) => g.status === "dropped")).toMatchObject({ reason: "other" });
+    expect(s.goals.find((g) => g.status === "dropped")).toMatchObject({ reason: "replaced" });
     expect(s.commands().at(-1)).toMatchObject({ id: "plan:pam-5" });
   });
 
@@ -458,7 +458,7 @@ describe("미리 세운 목표: 맞지 않게 되면 버리고 지금 길로", (
     const s = await ready();
     // 다른 판단으로 버린다. 열린 물어보기 계획은 「그만」으로 닫는다(다른 계획이 열려 있으면 세우지 않으므로)
     await s.decide(pam("pam-7", 7, s.clock.t, "사용자에게 물어보기"));
-    expect(last(s)).toMatchObject({ status: "dropped", reason: "other" });
+    expect(last(s)).toMatchObject({ status: "dropped", reason: "replaced" });
     s.t.onHeard("그만");
     const calls = s.planCalls();
     for (let i = 0; i < 20; i++) s.tick();

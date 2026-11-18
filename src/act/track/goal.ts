@@ -153,7 +153,7 @@ export class GoalWatch extends Part {
   }
 
   /** 목표가 아직 맞는지 보고, 사람이 떠났으면 fired로 바꾼다. 맞지 않으면 버리고 지금 길(PAM 판단 → 계획 모드)로 돌아간다:
-   *  안전 알림(safety) → 지금 행동 목록에 없음(mode, 코치 모드) → 충전 자리 복귀 중(dock) → 다른 계획이 열렸거나 다른 행동 계획을 만드는 중(other) → 세운 지 armMs(expired).
+   *  안전 알림(safety) → 지금 행동 목록에 없음(mode, 코치 모드) → 충전 자리 복귀 중(dock) → 다른 계획이 열렸거나 다른 행동 계획을 만드는 중(replaced) → 세운 지 armMs(expired).
    *  - 사람이 보이는 동안: 다른 등장이면 back, 대상이 이어진 물건 없이 사라지거나 치워지면 moved.
    *  - 사람이 떠남: 대상이 없으면 took(들고 나감). 손에 있음으로 남아 있으면 떠난 때부터 fireWaitMs 기다린 뒤 took. 그대로 있으면 떠난 때를 실어 fired로 바꾸고
    *    판단을 바로 부르게 한다(한 번). 미리 만들기(prep)는 따로 이어진다.
@@ -166,7 +166,7 @@ export class GoalWatch extends Part {
     if (emergencyOf({ world, offNotices: this.core.safety.offTrack().notices })) return this.drop("safety");
     if (!(this.o.tasks?.() ?? TASK_NAMES).includes(v.action)) return this.drop("mode");
     if (this.core.dock.busy()) return this.drop("dock");
-    if (this.core.open() || (this.core.planning && this.core.planning.decision.action !== v.action)) return this.drop("other");
+    if (this.core.open() || (this.core.planning && this.core.planning.decision.action !== v.action)) return this.drop("replaced");
     if (now - v.armed_ms > (this.o.goalArmMs ?? GOAL_DEFAULTS.armMs)) return this.drop("expired");
     const o = this.objectOf(g, world);
     if (v.status === "fired") {
@@ -211,7 +211,7 @@ export class GoalWatch extends Part {
   /** 판단 받기(start.ts)가 계획 모드를 부르기 전에 묻는다. 사람이 떠난 목표(fired)와 같은 행동이고 떠난 것이 집 상태에 반영된 뒤 보낸 판단(afterLeave)이면:
    *  - 미리 만든 계획이 있으면 대상이 그때 면 그대로일 때 이 판단으로 다시 검사해(o.reuse) 그 결과. 면이 바뀌었으면 moved, 검사를 못 넘으면 stale로 버리고 null.
    *  - 미리 만드는 중이면 그 호출을 받아 쓴다(새로 부르지 않는다): 끝나면 다시 검사하고, 못 넘으면 stale로 버리고 fallback(계획 모드). 판단 받기 신호가 끊겼으면
-   *    다시 검사도 fallback도 하지 않고 other로 버린다(계획 모드는 한 번에 하나라 fallback이 새 사람 요청의 계획을 끊는다). 끝 상태(used·dropped)는 호출이 끝난 뒤 낸다.
+   *    다시 검사도 fallback도 하지 않고 replaced로 버린다(계획 모드는 한 번에 하나라 fallback이 새 사람 요청의 계획을 끊는다). 끝 상태(used·dropped)는 호출이 끝난 뒤 낸다.
    *  - 둘 다 없으면(미리 만들기 실패·아직) stale로 버리고 null. null이면 부르는 쪽이 계획 모드를 부른다. 쓰면 목표는 used로 끝난다.
    *  준비한 계획을 버리고 계획 모드로 넘어가면 까닭 글(다시 검사·미리 만들기 오류 등)을 목표 error와 서버 로그에 남긴다.
    *  seenSince: 실행 전 검사가 대상을 다시 본 것으로 볼 기준(사람이 떠난 때). */
@@ -252,7 +252,7 @@ export class GoalWatch extends Part {
       const cut: PlanResult = { ok: false, error: "새 판단으로 바뀜" };
       const out = job.done.then((r): PlanResult | Promise<PlanResult> => {
         if (signal.aborted) {
-          this.end(g, "dropped", "other");
+          this.end(g, "dropped", "replaced");
           return cut;
         }
         let why: string;
