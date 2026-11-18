@@ -31,6 +31,7 @@ const markLeaveAt = (time: string) => (v: MarkView) => ({
   actions: v.actions.map((action) => ({ action, times: [] })), unseen: [],
 });
 
+type NightCheckRow = { state: string; action: string; on: string; n: number; k: number; unknown: number };
 let n = 0;
 /** 마시는 중(07:50) → 떠남(leave, 묻기 판단) → 답(answer: 「치워 주세요」면 말 부탁 판단도). */
 function drinkAndLeave(db: HistoryDb, day: string, leave: string): string {
@@ -84,6 +85,26 @@ describe("밤 흐름: 채택 검사", () => {
       const third = await runNight(db, pamClientFor(pam), "2026-11-12", { dir });
       expect(robotSpans(db, "2026-11-12", "컵 치우기")).toEqual([[t("08:00:03"), t("08:01:40")]]);
       expect(third.checks).toContainEqual(expect.objectContaining({ state: "drinking", action: "컵 치우기", on: LEAVE_ON, n: 2, k: 2, unknown: 1, passed: true }));
+    } finally {
+      await pam.close();
+    }
+  });
+
+  // Codex(1b07d3e2 P2): 로봇 실행 구간을 안 보인 구간에 더해도, 그 안에서 사람이 폰 명령대로 한 행동을 시각 찾기가 행동으로 표시하면 checkCandidate가 먼저 따라온 것으로 셌다
+  it("로봇이 그 일을 한 구간 안의 행동 표시(폰 명령대로 사람이 컵을 옮김)는 따라온 것으로 세지 않는다(로봇이 한 때는 못 봄, 사용자 결정)", async () => {
+    const pam = await startFakePamLlm({ chunk: oneChunkPerLine, reflect: () => CANDIDATES_ASK_THEN_CLEAR,
+      mark: (v) => ({ ...markLeaveAt("08:00:00")(v), actions: v.actions.map((action) => ({ action, times: v.lines.some((l) => l.startsWith("08:00:30")) ? ["08:00:30"] : [] })) }) });
+    try {
+      const db = HistoryDb.open(":memory:");
+      const dir = tmp();
+      for (const d of ["2026-11-10", "2026-11-11"]) leaveAndAnswer(db, d, "08:00:00", "08:01:30", "clear");
+      leaveAndRobotClears(db, "2026-11-12", "08:00:00", "08:00:03", "08:01:40");
+      db.add("world", at("2026-11-12", "08:00:30"), "컵 손에 있음");   // 로봇 명령대로 사람이 컵을 들고 감
+      for (const d of ["2026-11-10", "2026-11-11", "2026-11-12"]) await runNight(db, pamClientFor(pam), d, { dir });
+      const third = JSON.parse(readFileSync(join(dir, "marks-2026-11-12.json"), "utf8")) as { actions: Record<string, string[]> };
+      expect(third.actions["컵 치우기"]).toEqual(["08:00:30"]);
+      const last = db.list({ kinds: ["reflection"], latest: true, limit: 1 })[0]!.data as { checks: NightCheckRow[] };
+      expect(last.checks).toContainEqual(expect.objectContaining({ state: "drinking", action: "컵 치우기", on: LEAVE_ON, n: 2, k: 2, unknown: 1 }));
     } finally {
       await pam.close();
     }

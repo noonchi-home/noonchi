@@ -2,7 +2,8 @@
 // → 시각 찾기(지난 날까지, 모르는 것만) → 채택 검사(석준 님 trigger_check, src/brain/pam/adopt.ts) → 로봇 FSM(seed 화살표 + 통과한 배우는 행동 후보) → 코드 검사
 // → 저장(로봇 판본·후보 판본·반성 기록을 한 트랜잭션, HistoryDb.saveNight). 어느 단계든 끝내 거절·실패면 새 판본을 저장하지 않고 전날 기억을 쓴다(반성 기록에 까닭).
 // 셈하기(사용자 결정 2026-11-18): 행동 때 = 사람이 직접 그 일을 한 때(시각 찾기) ∪ 로봇이 그 일을 물었을 때 「치워 주세요」류로 답한 때(answerActions, 묻기 답 말 부탁 판단).
-// 「그대로 둬요」 답은 따라오지 않은 것이고, 답이 있는 창은 사람이 안 보였어도 본 것이다(answerTimes → CheckDay.answered). 로봇이 그 행동을 한 구간은 안 보인 구간에 더해 못 봄이다(robotSpans).
+// 「그대로 둬요」 답은 따라오지 않은 것이고, 답이 있는 창은 사람이 안 보였어도 본 것이다(answerTimes → CheckDay.answered). 로봇이 그 행동을 한 구간은 안 보인 구간에 더해 못 봄이고
+// 그 안의 행동 표시(폰 명령대로 사람이 한 일)는 행동으로 세지 않는다(robotSpans).
 // 시각 찾기 결과는 그날 사실의 사본(<dir>/marks-<날>.json, 임시 파일 → 이름 바꾸기)이라 기억이 저장되지 않아도 다음 밤에 다시 쓴다. 검사 결과 사본(<dir>/check-<날>.json)은 커밋 뒤에 쓴다.
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -295,11 +296,14 @@ export async function runNight(db: HistoryDb, pam: PamClient, day: string, o: Ni
         if (!dl.length) return [];
         const sec = (t: string) => clock(t, "time");
         const asked = answerActions(db, d).find((x) => x.action === r.action)?.times ?? [];
+        // 로봇이 그 일을 한 구간은 못 봄: 그 안의 행동 표시(폰 명령대로 사람이 한 일)는 행동으로 세지 않는다(Codex 1b07d3e2 P2: checkCandidate가 행동을 못 봄보다 먼저 센다)
+        const robot = robotSpans(db, d, r.action);
+        const byRobot = (a: number) => robot.some(([s, e]) => s <= a && a <= e);
         return [{
           start: sec(dl[0]!.time), end: sec(dl.at(-1)!.time) + 1,
           candidate: (m.candidates[markKey(r.state, candidateText(r.cand))] ?? []).map(sec),
-          action: [...(m.actions[r.action] ?? []).map(sec), ...asked],
-          unseen: [...(m.unseen ?? []).map((u) => [sec(u.start), sec(u.end)] as [number, number]), ...robotSpans(db, d, r.action)],
+          action: [...(m.actions[r.action] ?? []).map(sec).filter((a) => !byRobot(a)), ...asked],
+          unseen: [...(m.unseen ?? []).map((u) => [sec(u.start), sec(u.end)] as [number, number]), ...robot],
           answered: answerTimes(db, d, r.action),
         }];
       });
