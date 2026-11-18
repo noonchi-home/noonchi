@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { CUP_FSM_MEMORY, CUP_TASKS, ContractError, validateMemory, type DecisionInput } from "../src/brain/decision.js";
 import { PamAnswerError, PamBudgetError, PamClient, PamDecision, PamLinkError, PamRequestError, pamSettings } from "../src/brain/pam/index.js";
 import { pamClientFor, startFakePamLlm, type FakePamLlm } from "./helpers/pam.js";
+import { candidateFsmOf } from "../src/brain/pam/adopt.js";
 
 let pam: FakePamLlm | undefined;
 afterEach(async () => { await pam?.close(); pam = undefined; });
@@ -13,7 +14,7 @@ const input = (over: Partial<DecisionInput> = {}): DecisionInput => ({
   memory: CUP_FSM_MEMORY, memoryKind: "fsm", tasks: [...CUP_TASKS], facts: { contents: "unknown" }, ...over,
 });
 const predictArgs = () => ({ final_time: "2026-11-07T21:00:08.000+09:00", observation_text: "t", memory_kind: "fsm" as const, memory: CUP_FSM_MEMORY, tasks: [...CUP_TASKS], last_state: null });
-const reflectArgs = { day: "2026-11-07", memory_kind: "fsm" as const, memory: CUP_FSM_MEMORY, observation_text: "07:58:02 사람 보임", action_summary: "08:10:40 컵 치우기 부탁", feedback: null };
+const reflectArgs = { day: "2026-11-07", memory_kind: "fsm_candidates" as const, memory: candidateFsmOf(CUP_FSM_MEMORY), observation_text: "07:58:02 사람 보임", action_summary: "08:10:40 컵 치우기 부탁", feedback: null };
 
 describe("컵 FSM 기억", () => {
   it("PAM fsm 기억 모양이다", () => {
@@ -65,7 +66,7 @@ describe("PamClient 답 검사", () => {
     const c = pamClientFor(pam);
     await expect(c.predict({ ...predictArgs(), tasks: [] })).rejects.toBeInstanceOf(PamRequestError);
     await expect(c.predict({ ...predictArgs(), observation_text: "가".repeat(20_001) })).rejects.toBeInstanceOf(PamRequestError);
-    await expect(c.reflect({ ...reflectArgs, day: "2026-13-01" }, "fsm")).rejects.toBeInstanceOf(PamRequestError);
+    await expect(c.reflect({ ...reflectArgs, day: "2026-13-01" }, "fsm_candidates")).rejects.toBeInstanceOf(PamRequestError);
     expect(pam.requests).toHaveLength(0);
   });
 });
@@ -81,7 +82,7 @@ describe("연결 실패와 형식 오류", () => {
     await expect(pamClientFor(pam).predict(predictArgs())).rejects.toBeInstanceOf(PamLinkError);
     await pam.close();
     pam = await startFakePamLlm();
-    const over = await pamClientFor(pam).reflect({ ...reflectArgs, observation_text: "가".repeat(90_000) }, "fsm").catch((x: unknown) => x);
+    const over = await pamClientFor(pam).reflect({ ...reflectArgs, observation_text: "가".repeat(90_000) }, "fsm_candidates").catch((x: unknown) => x);
     expect(over).toBeInstanceOf(PamBudgetError);
     expect(over).toBeInstanceOf(ContractError);
     expect(over).not.toBeInstanceOf(PamLinkError);
@@ -99,14 +100,14 @@ describe("연결 실패와 형식 오류", () => {
 describe("반성과 입력 한도", () => {
   it("반성 메시지로 보내고 고친 기억을 검사해 돌려준다", async () => {
     pam = await startFakePamLlm();
-    const m = await pamClientFor(pam).reflect(reflectArgs, "fsm");
-    expect(m).toEqual(CUP_FSM_MEMORY);
-    expect(pam.bodies[0]).toMatchObject({ role: "reflect", memory_kind: "fsm", memory: CUP_FSM_MEMORY, action_summary: "08:10:40 컵 치우기 부탁", feedback: null });
+    const m = await pamClientFor(pam).reflect(reflectArgs, "fsm_candidates");
+    expect(m).toEqual(candidateFsmOf(CUP_FSM_MEMORY));
+    expect(pam.bodies[0]).toMatchObject({ role: "reflect", memory_kind: "fsm_candidates", memory: candidateFsmOf(CUP_FSM_MEMORY), action_summary: "08:10:40 컵 치우기 부탁", feedback: null });
   });
 
   it("반성 답이 기억 모양이 아니면 PamAnswerError", async () => {
     pam = await startFakePamLlm({ reflect: () => "not json" });
-    await expect(pamClientFor(pam).reflect(reflectArgs, "fsm")).rejects.toThrow(/PAM 반성 실패/);
+    await expect(pamClientFor(pam).reflect(reflectArgs, "fsm_candidates")).rejects.toThrow(/PAM 반성 실패/);
   });
 
   it("limits()는 문맥 길이(PAM_MAX_MODEL_LEN)에서 판단·반성 입력 한도를 센다", async () => {

@@ -3,7 +3,7 @@
 // 판단 모델은 무엇을 도울지만 정한다. 언제 부를지는 판단 호출 시점(src/world/trigger.ts)이 정한다. 답 글 읽기는 src/brain/pam/answer.ts.
 // 검사 메시지는 PAM 원문(영어)과 같게 두어 두 쪽 기록을 대조하기 쉽게 한다.
 
-import type { Prediction, FsmStep } from "../contract/pam.js";
+import type { CandidateFsm, Prediction, FsmStep } from "../contract/pam.js";
 import { PAM_TEXT_MAX } from "../world/browser.js";
 import { STATES } from "../world/vocab.js";
 import { TASKS, TASK_NAMES } from "../act/tasks.js";
@@ -133,6 +133,88 @@ function validateFsm(value: Json): FsmMemory {
   if (initial !== AWAY_STATE) throw new ContractError("memory.initial_state: must be 'away'");
   for (const [path, to] of destinations) if (!ids.has(to)) throw new ContractError(`${path}: unknown state identifier ${pyRepr(to)}`);
   return m as unknown as FsmMemory;
+}
+
+/** 후보 FSM 코드 검사(석준 님 validate_candidate_memory를 사람 상태 FSM 화살표로): 상태 모양은 사람 활동 FSM과 같고, next는 행동 없는 화살표,
+ *  rules는 (출발 상태, 행동)마다 하나에 후보 1~3개(서로 다름), 한 상태 안의 (사건·조건)은 next와 후보를 통틀어 하나다.
+ *  seed를 주면(반성 답) seed 상태가 같은 id·같은 하는 일 값으로 모두 있어야 하고, 새 상태는 seed 상태의 하는 일 값을 가질 수 없다(정한 습관이 붙는 상태가 바뀌지 않게). */
+export function validateCandidateFsm(value: Json, seed?: FsmMemory): CandidateFsm {
+  const m = object(value, ["initial_state", "states"], "memory");
+  const initial = text(m.initial_state, "memory.initial_state");
+  const states = array(m.states, "memory.states");
+  if (!states.length) throw new ContractError("memory.states: at least one state is required");
+  if (states.length > MAX_STATES) throw new ContractError(`memory.states: at most ${MAX_STATES} states`);
+  const ids = new Set<string>();
+  const owner = new Map<string, string>();
+  const destinations: [string, string][] = [];
+  const seedActs = new Map((seed?.states ?? []).flatMap((x) => x.activity.map((a) => [a, x.id] as const)));
+  // 상태 칸 모양을 먼저 본 뒤 seed 상태가 다 있는지 본다(옛 모양은 칸 오류로, 이름을 바꾼 seed 상태는 「필요」로 알린다)
+  const shaped = states.map((state, i) => object(state, ["id", "description", "activity", "next", "rules"], `memory.states[${i}]`));
+  const named = new Set(shaped.map((s, i) => text(s.id, `memory.states[${i}].id`)));
+  for (const x of seed?.states ?? []) if (!named.has(x.id)) throw new ContractError(`memory.states: seed state ${pyRepr(x.id)} is required`);
+  shaped.forEach((s, i) => {
+    const p = `memory.states[${i}]`;
+    const id = text(s.id, `${p}.id`);
+    if (id === ANY_STATE || id.startsWith(TEMP_STATE)) throw new ContractError(`${p}.id: '*' and '~...' are reserved`);
+    if (ids.has(id)) throw new ContractError(`${p}.id: duplicate state identifier ${pyRepr(id)}`);
+    ids.add(id);
+    text(s.description, `${p}.description`);
+    const acts = array(s.activity, `${p}.activity`);
+    const own = seed?.states.find((x) => x.id === id);
+    if (own && JSON.stringify(acts) !== JSON.stringify(own.activity)) throw new ContractError(`${p}.activity: activity of seed state ${pyRepr(id)} must stay ${pyList(own.activity.map(pyRepr))}`);
+    if (id !== AWAY_STATE && !acts.length) throw new ContractError(`${p}.activity: state ${pyRepr(id)} needs at least one activity`);
+    if (id === AWAY_STATE && acts.length) throw new ContractError(`${p}.activity: 'away' has no activity`);
+    acts.forEach((a, j) => {
+      const v = text(a, `${p}.activity[${j}]`);
+      if (!PERSON_ACTIVITIES.includes(v)) throw new ContractError(`${p}.activity[${j}]: unknown activity ${pyRepr(v)}`);
+      if (!own && seedActs.has(v)) throw new ContractError(`${p}.activity[${j}]: activity ${pyRepr(v)} belongs to seed state ${pyRepr(seedActs.get(v)!)}`);
+      if (owner.has(v)) throw new ContractError(`${p}.activity[${j}]: activity ${pyRepr(v)} is in two states`);
+      owner.set(v, id);
+    });
+    const keys = new Set<string>();
+    const unique = (on: string, when: string | null, path: string) => {
+      const key = JSON.stringify([on, when]);
+      if (keys.has(key)) throw new ContractError(`${path}: duplicate transition (on, when) in state ${pyRepr(id)}`);
+      keys.add(key);
+    };
+    array(s.next, `${p}.next`).forEach((e, j) => {
+      const ep = `${p}.next[${j}]`;
+      const edge = object(e, ["to", "on"], ep);
+      const to = text(edge.to, `${ep}.to`);
+      if (to === ANY_STATE) throw new ContractError(`${ep}.to: '*' needs an action (a rule)`);
+      unique(text(edge.on, `${ep}.on`), null, ep);
+      destinations.push([`${ep}.to`, to]);
+    });
+    const actions = new Set<string>();
+    array(s.rules, `${p}.rules`).forEach((r, j) => {
+      const rp = `${p}.rules[${j}]`;
+      const rule = object(r, ["to", "action", "candidates"], rp);
+      const to = text(rule.to, `${rp}.to`);
+      const action = text(rule.action, `${rp}.action`);
+      if (!isAction(action)) throw new ContractError(`${rp}.action: ${pyRepr(action)} is not an action in the task list (no action means no transition)`);
+      if (actions.has(action)) throw new ContractError(`${rp}.action: one rule per action in state ${pyRepr(id)}`);
+      actions.add(action);
+      const cands = array(rule.candidates, `${rp}.candidates`);
+      if (cands.length < 1 || cands.length > 3) throw new ContractError(`${rp}.candidates: expected 1 to 3 candidates`);
+      const seen = new Set<string>();
+      const parsed = cands.map((c, k) => {
+        const cp = `${rp}.candidates[${k}]`;
+        const cand = objectWith(c, ["on"], ["when"], cp);
+        const on = text(cand.on, `${cp}.on`);
+        const when = "when" in cand ? text(cand.when, `${cp}.when`) : null;
+        const key = JSON.stringify([on, when]);
+        if (seen.has(key)) throw new ContractError(`${rp}.candidates: candidates must differ`);
+        seen.add(key);
+        return { on, when, cp };
+      });
+      for (const c of parsed) unique(c.on, c.when, c.cp);
+      if (to !== ANY_STATE) destinations.push([`${rp}.to`, to]);
+    });
+  });
+  if (!ids.has(AWAY_STATE)) throw new ContractError("memory.states: the 'away' state is required");
+  if (initial !== AWAY_STATE) throw new ContractError("memory.initial_state: must be 'away'");
+  for (const [path, to] of destinations) if (!ids.has(to)) throw new ContractError(`${path}: unknown state identifier ${pyRepr(to)}`);
+  return m as unknown as CandidateFsm;
 }
 
 /** 기억 모양만 검사한다. 규칙을 실행하거나 상태를 넘기지 않는다. */
@@ -301,7 +383,7 @@ export function fsmStep(memory: FsmMemory, p: Prediction): FsmStep {
 /** PAM 판단 관찰 텍스트 상한(글자 수). pam-predict/3과 같다. 관찰 텍스트를 만드는 World State(world/text.ts)와 한 값이다. */
 export const MAX_OBSERVATION_TEXT = PAM_TEXT_MAX;
 
-/** PAM 반성 칸 상한(글자 수). PAM 서비스 pam-reflect/2와 같다. UTF-8 바이트로 이 안에 맞추면 글자 수도 넘지 않는다. */
+/** PAM 반성 칸 상한(글자 수). pam-reflect/3과 같다. UTF-8 바이트로 이 안에 맞추면 글자 수도 넘지 않는다. */
 export const MAX_REFLECT_TEXT = { observation: 100_000, action: 50_000, feedback: 8_000 } as const;
 
 /** 보내기 전 검사: 관찰 텍스트, 시간대 있는 마지막 관찰 시각, 작업 목록, 기억 모양. */

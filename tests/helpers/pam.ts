@@ -10,7 +10,7 @@ type Pred = { observation: string; reasoning: string; task_index?: number; state
 /** 판단 요청 값(메시지에서 되읽음). final_time은 메시지에 쓴 Python isoformat 꼴이다. last_state는 직전 사람 상태(unknown이면 null). */
 export type PredictView = { role: "predict"; final_time: string; observation_text: string; memory_kind: "list" | "fsm"; memory: unknown; tasks: string[]; last_state: string | null };
 /** 반성 요청 값(메시지에서 되읽음). */
-export type ReflectView = { role: "reflect"; memory_kind: "list" | "fsm"; memory: unknown; observation_text: string; action_summary: string; feedback: string | null };
+export type ReflectView = { role: "reflect"; memory_kind: "list" | "fsm_candidates"; memory: unknown; observation_text: string; action_summary: string; feedback: string | null };
 export type PamView = PredictView | ReflectView;
 export interface FakePamLlm {
   /** 서버의 PAM_LLM_BASE_URL(…/v1). */
@@ -75,7 +75,8 @@ export function pamView(body: { messages: { content: string | { text: string }[]
       const s = t.indexOf(REFLECT_SUMMARY);
       const rest = t.substring(s + REFLECT_SUMMARY.length);
       const f = rest.indexOf(REFLECT_FEEDBACK);
-      return { role: "reflect", memory_kind: kind, memory: JSON.parse(t.substring(REFLECT_MEMORY.length, s)), observation_text: parts[0]!.substring(REFLECT_LOG.length),
+      // fsm 반성 프롬프트는 후보 FSM 반성(fsm_candidates)이 쓴다
+      return { role: "reflect", memory_kind: kind === "fsm" ? "fsm_candidates" : kind, memory: JSON.parse(t.substring(REFLECT_MEMORY.length, s)), observation_text: parts[0]!.substring(REFLECT_LOG.length),
         action_summary: f < 0 ? rest : rest.substring(0, f), feedback: f < 0 ? null : rest.substring(f + REFLECT_FEEDBACK.length) };
     }
   }

@@ -521,9 +521,9 @@
     {
       "id": "r-fsm",
       "request": {
-        "contract": "pam-reflect/2",
+        "contract": "pam-reflect/3",
         "day": "2026-11-07",
-        "memory_kind": "fsm",
+        "memory_kind": "fsm_candidates",
         "memory": {
           "initial_state": "away",
           "states": [
@@ -534,18 +534,8 @@
                 "drinking",
                 "eating"
               ],
-              "next": [
-                {
-                  "to": "*",
-                  "on": "사용자가 먹거나 마시기를 끝내고 다른 일로 넘어간다.",
-                  "action": "사용자에게 물어보기"
-                },
-                {
-                  "to": "drinking",
-                  "on": "사용자가 마시던 것을 다 마시고 계속 먹는다.",
-                  "action": "컵에 물 채워 주기"
-                }
-              ]
+              "next": [],
+              "rules": []
             },
             {
               "id": "watching_tv",
@@ -553,25 +543,8 @@
               "activity": [
                 "watching_tv"
               ],
-              "next": [
-                {
-                  "to": "watching_tv",
-                  "on": "사용자가 TV를 보며 마시던 것을 다 마신다.",
-                  "when": "같이 마시는 중이었다.",
-                  "action": "컵에 콜라 따라 주기"
-                },
-                {
-                  "to": "watching_tv",
-                  "on": "사용자가 덥다고 말하거나 더워서 부채질을 한다.",
-                  "action": "에어컨 켜기"
-                },
-                {
-                  "to": "*",
-                  "on": "사용자가 TV 보기를 끝내고 다른 일로 넘어간다.",
-                  "when": "같이 마시는 중이었다.",
-                  "action": "사용자에게 물어보기"
-                }
-              ]
+              "next": [],
+              "rules": []
             },
             {
               "id": "cooking",
@@ -581,20 +554,11 @@
               ],
               "next": [
                 {
-                  "to": "cooking",
-                  "on": "사용자가 라면 끓이는 법을 알려 달라고 말했거나, 라면을 끓이다 무엇을 해야 할지 모르겠다고 말한다.",
-                  "action": "라면 끓이기 알려 주기"
-                },
-                {
-                  "to": "cooking",
-                  "on": "사용자가 전자레인지 쓰는 법을 묻거나 이거 어떻게 하냐고 말한다.",
-                  "action": "전자레인지로 데우기 알려 주기"
-                },
-                {
                   "to": "drinking",
                   "on": "사용자가 요리를 마치고 먹기 시작한다."
                 }
-              ]
+              ],
+              "rules": []
             },
             {
               "id": "away",
@@ -613,7 +577,8 @@
                   "to": "cooking",
                   "on": "사용자가 돌아와 요리를 시작한다."
                 }
-              ]
+              ],
+              "rules": []
             }
           ]
         },
@@ -625,9 +590,9 @@
     {
       "id": "r-null",
       "request": {
-        "contract": "pam-reflect/2",
+        "contract": "pam-reflect/3",
         "day": "2026-11-07",
-        "memory_kind": "fsm",
+        "memory_kind": "fsm_candidates",
         "memory": {
           "initial_state": "away",
           "states": [
@@ -638,18 +603,8 @@
                 "drinking",
                 "eating"
               ],
-              "next": [
-                {
-                  "to": "*",
-                  "on": "사용자가 먹거나 마시기를 끝내고 다른 일로 넘어간다.",
-                  "action": "사용자에게 물어보기"
-                },
-                {
-                  "to": "drinking",
-                  "on": "사용자가 마시던 것을 다 마시고 계속 먹는다.",
-                  "action": "컵에 물 채워 주기"
-                }
-              ]
+              "next": [],
+              "rules": []
             },
             {
               "id": "watching_tv",
@@ -657,25 +612,8 @@
               "activity": [
                 "watching_tv"
               ],
-              "next": [
-                {
-                  "to": "watching_tv",
-                  "on": "사용자가 TV를 보며 마시던 것을 다 마신다.",
-                  "when": "같이 마시는 중이었다.",
-                  "action": "컵에 콜라 따라 주기"
-                },
-                {
-                  "to": "watching_tv",
-                  "on": "사용자가 덥다고 말하거나 더워서 부채질을 한다.",
-                  "action": "에어컨 켜기"
-                },
-                {
-                  "to": "*",
-                  "on": "사용자가 TV 보기를 끝내고 다른 일로 넘어간다.",
-                  "when": "같이 마시는 중이었다.",
-                  "action": "사용자에게 물어보기"
-                }
-              ]
+              "next": [],
+              "rules": []
             },
             {
               "id": "cooking",
@@ -685,20 +623,11 @@
               ],
               "next": [
                 {
-                  "to": "cooking",
-                  "on": "사용자가 라면 끓이는 법을 알려 달라고 말했거나, 라면을 끓이다 무엇을 해야 할지 모르겠다고 말한다.",
-                  "action": "라면 끓이기 알려 주기"
-                },
-                {
-                  "to": "cooking",
-                  "on": "사용자가 전자레인지 쓰는 법을 묻거나 이거 어떻게 하냐고 말한다.",
-                  "action": "전자레인지로 데우기 알려 주기"
-                },
-                {
                   "to": "drinking",
                   "on": "사용자가 요리를 마치고 먹기 시작한다."
                 }
-              ]
+              ],
+              "rules": []
             },
             {
               "id": "away",
@@ -717,7 +646,8 @@
                   "to": "cooking",
                   "on": "사용자가 돌아와 요리를 시작한다."
                 }
-              ]
+              ],
+              "rules": []
             }
           ]
         },
@@ -729,9 +659,9 @@
     {
       "id": "r-empty",
       "request": {
-        "contract": "pam-reflect/2",
+        "contract": "pam-reflect/3",
         "day": "2026-11-07",
-        "memory_kind": "fsm",
+        "memory_kind": "fsm_candidates",
         "memory": {
           "initial_state": "away",
           "states": [
@@ -742,18 +672,8 @@
                 "drinking",
                 "eating"
               ],
-              "next": [
-                {
-                  "to": "*",
-                  "on": "사용자가 먹거나 마시기를 끝내고 다른 일로 넘어간다.",
-                  "action": "사용자에게 물어보기"
-                },
-                {
-                  "to": "drinking",
-                  "on": "사용자가 마시던 것을 다 마시고 계속 먹는다.",
-                  "action": "컵에 물 채워 주기"
-                }
-              ]
+              "next": [],
+              "rules": []
             },
             {
               "id": "watching_tv",
@@ -761,25 +681,8 @@
               "activity": [
                 "watching_tv"
               ],
-              "next": [
-                {
-                  "to": "watching_tv",
-                  "on": "사용자가 TV를 보며 마시던 것을 다 마신다.",
-                  "when": "같이 마시는 중이었다.",
-                  "action": "컵에 콜라 따라 주기"
-                },
-                {
-                  "to": "watching_tv",
-                  "on": "사용자가 덥다고 말하거나 더워서 부채질을 한다.",
-                  "action": "에어컨 켜기"
-                },
-                {
-                  "to": "*",
-                  "on": "사용자가 TV 보기를 끝내고 다른 일로 넘어간다.",
-                  "when": "같이 마시는 중이었다.",
-                  "action": "사용자에게 물어보기"
-                }
-              ]
+              "next": [],
+              "rules": []
             },
             {
               "id": "cooking",
@@ -789,20 +692,11 @@
               ],
               "next": [
                 {
-                  "to": "cooking",
-                  "on": "사용자가 라면 끓이는 법을 알려 달라고 말했거나, 라면을 끓이다 무엇을 해야 할지 모르겠다고 말한다.",
-                  "action": "라면 끓이기 알려 주기"
-                },
-                {
-                  "to": "cooking",
-                  "on": "사용자가 전자레인지 쓰는 법을 묻거나 이거 어떻게 하냐고 말한다.",
-                  "action": "전자레인지로 데우기 알려 주기"
-                },
-                {
                   "to": "drinking",
                   "on": "사용자가 요리를 마치고 먹기 시작한다."
                 }
-              ]
+              ],
+              "rules": []
             },
             {
               "id": "away",
@@ -821,7 +715,8 @@
                   "to": "cooking",
                   "on": "사용자가 돌아와 요리를 시작한다."
                 }
-              ]
+              ],
+              "rules": []
             }
           ]
         },
@@ -833,7 +728,7 @@
     {
       "id": "r-list",
       "request": {
-        "contract": "pam-reflect/2",
+        "contract": "pam-reflect/3",
         "day": "2026-11-07",
         "memory_kind": "list",
         "memory": {
@@ -852,9 +747,9 @@
     {
       "id": "r-odd",
       "request": {
-        "contract": "pam-reflect/2",
+        "contract": "pam-reflect/3",
         "day": "2026-11-07",
-        "memory_kind": "fsm",
+        "memory_kind": "fsm_candidates",
         "memory": {
           "initial_state": "away",
           "states": [
@@ -862,11 +757,16 @@
               "id": "away",
               "description": "{tasks_block} $& \\ \"따옴표\" 🍜",
               "activity": [],
-              "next": [
+              "next": [],
+              "rules": [
                 {
                   "to": "away",
-                  "on": "{fsm_block} $1",
-                  "action": "컵 치우기"
+                  "action": "컵 치우기",
+                  "candidates": [
+                    {
+                      "on": "{fsm_block} $1"
+                    }
+                  ]
                 }
               ]
             }
@@ -5282,9 +5182,9 @@
       "id": "reflect-ok",
       "route": "reflect",
       "body": {
-        "contract": "pam-reflect/2",
+        "contract": "pam-reflect/3",
         "day": "2026-11-07",
-        "memory_kind": "fsm",
+        "memory_kind": "fsm_candidates",
         "memory": {
           "initial_state": "away",
           "states": [
@@ -5295,18 +5195,8 @@
                 "drinking",
                 "eating"
               ],
-              "next": [
-                {
-                  "to": "*",
-                  "on": "사용자가 먹거나 마시기를 끝내고 다른 일로 넘어간다.",
-                  "action": "사용자에게 물어보기"
-                },
-                {
-                  "to": "drinking",
-                  "on": "사용자가 마시던 것을 다 마시고 계속 먹는다.",
-                  "action": "컵에 물 채워 주기"
-                }
-              ]
+              "next": [],
+              "rules": []
             },
             {
               "id": "watching_tv",
@@ -5314,25 +5204,8 @@
               "activity": [
                 "watching_tv"
               ],
-              "next": [
-                {
-                  "to": "watching_tv",
-                  "on": "사용자가 TV를 보며 마시던 것을 다 마신다.",
-                  "when": "같이 마시는 중이었다.",
-                  "action": "컵에 콜라 따라 주기"
-                },
-                {
-                  "to": "watching_tv",
-                  "on": "사용자가 덥다고 말하거나 더워서 부채질을 한다.",
-                  "action": "에어컨 켜기"
-                },
-                {
-                  "to": "*",
-                  "on": "사용자가 TV 보기를 끝내고 다른 일로 넘어간다.",
-                  "when": "같이 마시는 중이었다.",
-                  "action": "사용자에게 물어보기"
-                }
-              ]
+              "next": [],
+              "rules": []
             },
             {
               "id": "cooking",
@@ -5342,20 +5215,11 @@
               ],
               "next": [
                 {
-                  "to": "cooking",
-                  "on": "사용자가 라면 끓이는 법을 알려 달라고 말했거나, 라면을 끓이다 무엇을 해야 할지 모르겠다고 말한다.",
-                  "action": "라면 끓이기 알려 주기"
-                },
-                {
-                  "to": "cooking",
-                  "on": "사용자가 전자레인지 쓰는 법을 묻거나 이거 어떻게 하냐고 말한다.",
-                  "action": "전자레인지로 데우기 알려 주기"
-                },
-                {
                   "to": "drinking",
                   "on": "사용자가 요리를 마치고 먹기 시작한다."
                 }
-              ]
+              ],
+              "rules": []
             },
             {
               "id": "away",
@@ -5374,7 +5238,8 @@
                   "to": "cooking",
                   "on": "사용자가 돌아와 요리를 시작한다."
                 }
-              ]
+              ],
+              "rules": []
             }
           ]
         },
@@ -5388,7 +5253,7 @@
           "choices": [
             {
               "message": {
-                "content": "{\"initial_state\":\"away\",\"states\":[{\"id\":\"drinking\",\"description\":\"사용자가 먹거나 마시는 중이다.\",\"activity\":[\"drinking\",\"eating\"],\"next\":[{\"to\":\"*\",\"on\":\"사용자가 먹거나 마시기를 끝내고 다른 일로 넘어간다.\",\"action\":\"사용자에게 물어보기\"},{\"to\":\"drinking\",\"on\":\"사용자가 마시던 것을 다 마시고 계속 먹는다.\",\"action\":\"컵에 물 채워 주기\"}]},{\"id\":\"watching_tv\",\"description\":\"사용자가 TV를 보는 중이다.\",\"activity\":[\"watching_tv\"],\"next\":[{\"to\":\"watching_tv\",\"on\":\"사용자가 TV를 보며 마시던 것을 다 마신다.\",\"when\":\"같이 마시는 중이었다.\",\"action\":\"컵에 콜라 따라 주기\"},{\"to\":\"watching_tv\",\"on\":\"사용자가 덥다고 말하거나 더워서 부채질을 한다.\",\"action\":\"에어컨 켜기\"},{\"to\":\"*\",\"on\":\"사용자가 TV 보기를 끝내고 다른 일로 넘어간다.\",\"when\":\"같이 마시는 중이었다.\",\"action\":\"사용자에게 물어보기\"}]},{\"id\":\"cooking\",\"description\":\"사용자가 요리하는 중이다.\",\"activity\":[\"cooking\"],\"next\":[{\"to\":\"cooking\",\"on\":\"사용자가 라면 끓이는 법을 알려 달라고 말했거나, 라면을 끓이다 무엇을 해야 할지 모르겠다고 말한다.\",\"action\":\"라면 끓이기 알려 주기\"},{\"to\":\"cooking\",\"on\":\"사용자가 전자레인지 쓰는 법을 묻거나 이거 어떻게 하냐고 말한다.\",\"action\":\"전자레인지로 데우기 알려 주기\"},{\"to\":\"drinking\",\"on\":\"사용자가 요리를 마치고 먹기 시작한다.\"}]},{\"id\":\"away\",\"description\":\"사용자가 카메라에 보이지 않는다.\",\"activity\":[],\"next\":[{\"to\":\"drinking\",\"on\":\"사용자가 돌아와 먹거나 마신다.\"},{\"to\":\"watching_tv\",\"on\":\"사용자가 돌아와 TV를 본다.\"},{\"to\":\"cooking\",\"on\":\"사용자가 돌아와 요리를 시작한다.\"}]}]}"
+                "content": "{\"initial_state\":\"away\",\"states\":[{\"id\":\"drinking\",\"description\":\"사용자가 먹거나 마시는 중이다.\",\"activity\":[\"drinking\",\"eating\"],\"next\":[],\"rules\":[]},{\"id\":\"watching_tv\",\"description\":\"사용자가 TV를 보는 중이다.\",\"activity\":[\"watching_tv\"],\"next\":[],\"rules\":[]},{\"id\":\"cooking\",\"description\":\"사용자가 요리하는 중이다.\",\"activity\":[\"cooking\"],\"next\":[{\"to\":\"drinking\",\"on\":\"사용자가 요리를 마치고 먹기 시작한다.\"}],\"rules\":[]},{\"id\":\"away\",\"description\":\"사용자가 카메라에 보이지 않는다.\",\"activity\":[],\"next\":[{\"to\":\"drinking\",\"on\":\"사용자가 돌아와 먹거나 마신다.\"},{\"to\":\"watching_tv\",\"on\":\"사용자가 돌아와 TV를 본다.\"},{\"to\":\"cooking\",\"on\":\"사용자가 돌아와 요리를 시작한다.\"}],\"rules\":[]}]}"
               },
               "finish_reason": "stop"
             }
@@ -5400,9 +5265,9 @@
       "id": "reflect-null-feedback",
       "route": "reflect",
       "body": {
-        "contract": "pam-reflect/2",
+        "contract": "pam-reflect/3",
         "day": "2026-11-07",
-        "memory_kind": "fsm",
+        "memory_kind": "fsm_candidates",
         "memory": {
           "initial_state": "away",
           "states": [
@@ -5413,18 +5278,8 @@
                 "drinking",
                 "eating"
               ],
-              "next": [
-                {
-                  "to": "*",
-                  "on": "사용자가 먹거나 마시기를 끝내고 다른 일로 넘어간다.",
-                  "action": "사용자에게 물어보기"
-                },
-                {
-                  "to": "drinking",
-                  "on": "사용자가 마시던 것을 다 마시고 계속 먹는다.",
-                  "action": "컵에 물 채워 주기"
-                }
-              ]
+              "next": [],
+              "rules": []
             },
             {
               "id": "watching_tv",
@@ -5432,25 +5287,8 @@
               "activity": [
                 "watching_tv"
               ],
-              "next": [
-                {
-                  "to": "watching_tv",
-                  "on": "사용자가 TV를 보며 마시던 것을 다 마신다.",
-                  "when": "같이 마시는 중이었다.",
-                  "action": "컵에 콜라 따라 주기"
-                },
-                {
-                  "to": "watching_tv",
-                  "on": "사용자가 덥다고 말하거나 더워서 부채질을 한다.",
-                  "action": "에어컨 켜기"
-                },
-                {
-                  "to": "*",
-                  "on": "사용자가 TV 보기를 끝내고 다른 일로 넘어간다.",
-                  "when": "같이 마시는 중이었다.",
-                  "action": "사용자에게 물어보기"
-                }
-              ]
+              "next": [],
+              "rules": []
             },
             {
               "id": "cooking",
@@ -5460,20 +5298,11 @@
               ],
               "next": [
                 {
-                  "to": "cooking",
-                  "on": "사용자가 라면 끓이는 법을 알려 달라고 말했거나, 라면을 끓이다 무엇을 해야 할지 모르겠다고 말한다.",
-                  "action": "라면 끓이기 알려 주기"
-                },
-                {
-                  "to": "cooking",
-                  "on": "사용자가 전자레인지 쓰는 법을 묻거나 이거 어떻게 하냐고 말한다.",
-                  "action": "전자레인지로 데우기 알려 주기"
-                },
-                {
                   "to": "drinking",
                   "on": "사용자가 요리를 마치고 먹기 시작한다."
                 }
-              ]
+              ],
+              "rules": []
             },
             {
               "id": "away",
@@ -5492,7 +5321,8 @@
                   "to": "cooking",
                   "on": "사용자가 돌아와 요리를 시작한다."
                 }
-              ]
+              ],
+              "rules": []
             }
           ]
         },
@@ -5506,7 +5336,7 @@
           "choices": [
             {
               "message": {
-                "content": "{\"initial_state\":\"away\",\"states\":[{\"id\":\"drinking\",\"description\":\"사용자가 먹거나 마시는 중이다.\",\"activity\":[\"drinking\",\"eating\"],\"next\":[{\"to\":\"*\",\"on\":\"사용자가 먹거나 마시기를 끝내고 다른 일로 넘어간다.\",\"action\":\"사용자에게 물어보기\"},{\"to\":\"drinking\",\"on\":\"사용자가 마시던 것을 다 마시고 계속 먹는다.\",\"action\":\"컵에 물 채워 주기\"}]},{\"id\":\"watching_tv\",\"description\":\"사용자가 TV를 보는 중이다.\",\"activity\":[\"watching_tv\"],\"next\":[{\"to\":\"watching_tv\",\"on\":\"사용자가 TV를 보며 마시던 것을 다 마신다.\",\"when\":\"같이 마시는 중이었다.\",\"action\":\"컵에 콜라 따라 주기\"},{\"to\":\"watching_tv\",\"on\":\"사용자가 덥다고 말하거나 더워서 부채질을 한다.\",\"action\":\"에어컨 켜기\"},{\"to\":\"*\",\"on\":\"사용자가 TV 보기를 끝내고 다른 일로 넘어간다.\",\"when\":\"같이 마시는 중이었다.\",\"action\":\"사용자에게 물어보기\"}]},{\"id\":\"cooking\",\"description\":\"사용자가 요리하는 중이다.\",\"activity\":[\"cooking\"],\"next\":[{\"to\":\"cooking\",\"on\":\"사용자가 라면 끓이는 법을 알려 달라고 말했거나, 라면을 끓이다 무엇을 해야 할지 모르겠다고 말한다.\",\"action\":\"라면 끓이기 알려 주기\"},{\"to\":\"cooking\",\"on\":\"사용자가 전자레인지 쓰는 법을 묻거나 이거 어떻게 하냐고 말한다.\",\"action\":\"전자레인지로 데우기 알려 주기\"},{\"to\":\"drinking\",\"on\":\"사용자가 요리를 마치고 먹기 시작한다.\"}]},{\"id\":\"away\",\"description\":\"사용자가 카메라에 보이지 않는다.\",\"activity\":[],\"next\":[{\"to\":\"drinking\",\"on\":\"사용자가 돌아와 먹거나 마신다.\"},{\"to\":\"watching_tv\",\"on\":\"사용자가 돌아와 TV를 본다.\"},{\"to\":\"cooking\",\"on\":\"사용자가 돌아와 요리를 시작한다.\"}]}]}"
+                "content": "{\"initial_state\":\"away\",\"states\":[{\"id\":\"drinking\",\"description\":\"사용자가 먹거나 마시는 중이다.\",\"activity\":[\"drinking\",\"eating\"],\"next\":[],\"rules\":[]},{\"id\":\"watching_tv\",\"description\":\"사용자가 TV를 보는 중이다.\",\"activity\":[\"watching_tv\"],\"next\":[],\"rules\":[]},{\"id\":\"cooking\",\"description\":\"사용자가 요리하는 중이다.\",\"activity\":[\"cooking\"],\"next\":[{\"to\":\"drinking\",\"on\":\"사용자가 요리를 마치고 먹기 시작한다.\"}],\"rules\":[]},{\"id\":\"away\",\"description\":\"사용자가 카메라에 보이지 않는다.\",\"activity\":[],\"next\":[{\"to\":\"drinking\",\"on\":\"사용자가 돌아와 먹거나 마신다.\"},{\"to\":\"watching_tv\",\"on\":\"사용자가 돌아와 TV를 본다.\"},{\"to\":\"cooking\",\"on\":\"사용자가 돌아와 요리를 시작한다.\"}],\"rules\":[]}]}"
               },
               "finish_reason": "stop"
             }
@@ -5518,9 +5348,9 @@
       "id": "reflect-no-feedback-key",
       "route": "reflect",
       "body": {
-        "contract": "pam-reflect/2",
+        "contract": "pam-reflect/3",
         "day": "2026-11-07",
-        "memory_kind": "fsm",
+        "memory_kind": "fsm_candidates",
         "memory": {
           "initial_state": "away",
           "states": [
@@ -5531,18 +5361,8 @@
                 "drinking",
                 "eating"
               ],
-              "next": [
-                {
-                  "to": "*",
-                  "on": "사용자가 먹거나 마시기를 끝내고 다른 일로 넘어간다.",
-                  "action": "사용자에게 물어보기"
-                },
-                {
-                  "to": "drinking",
-                  "on": "사용자가 마시던 것을 다 마시고 계속 먹는다.",
-                  "action": "컵에 물 채워 주기"
-                }
-              ]
+              "next": [],
+              "rules": []
             },
             {
               "id": "watching_tv",
@@ -5550,25 +5370,8 @@
               "activity": [
                 "watching_tv"
               ],
-              "next": [
-                {
-                  "to": "watching_tv",
-                  "on": "사용자가 TV를 보며 마시던 것을 다 마신다.",
-                  "when": "같이 마시는 중이었다.",
-                  "action": "컵에 콜라 따라 주기"
-                },
-                {
-                  "to": "watching_tv",
-                  "on": "사용자가 덥다고 말하거나 더워서 부채질을 한다.",
-                  "action": "에어컨 켜기"
-                },
-                {
-                  "to": "*",
-                  "on": "사용자가 TV 보기를 끝내고 다른 일로 넘어간다.",
-                  "when": "같이 마시는 중이었다.",
-                  "action": "사용자에게 물어보기"
-                }
-              ]
+              "next": [],
+              "rules": []
             },
             {
               "id": "cooking",
@@ -5578,20 +5381,11 @@
               ],
               "next": [
                 {
-                  "to": "cooking",
-                  "on": "사용자가 라면 끓이는 법을 알려 달라고 말했거나, 라면을 끓이다 무엇을 해야 할지 모르겠다고 말한다.",
-                  "action": "라면 끓이기 알려 주기"
-                },
-                {
-                  "to": "cooking",
-                  "on": "사용자가 전자레인지 쓰는 법을 묻거나 이거 어떻게 하냐고 말한다.",
-                  "action": "전자레인지로 데우기 알려 주기"
-                },
-                {
                   "to": "drinking",
                   "on": "사용자가 요리를 마치고 먹기 시작한다."
                 }
-              ]
+              ],
+              "rules": []
             },
             {
               "id": "away",
@@ -5610,7 +5404,8 @@
                   "to": "cooking",
                   "on": "사용자가 돌아와 요리를 시작한다."
                 }
-              ]
+              ],
+              "rules": []
             }
           ]
         },
@@ -5623,7 +5418,7 @@
           "choices": [
             {
               "message": {
-                "content": "{\"initial_state\":\"away\",\"states\":[{\"id\":\"drinking\",\"description\":\"사용자가 먹거나 마시는 중이다.\",\"activity\":[\"drinking\",\"eating\"],\"next\":[{\"to\":\"*\",\"on\":\"사용자가 먹거나 마시기를 끝내고 다른 일로 넘어간다.\",\"action\":\"사용자에게 물어보기\"},{\"to\":\"drinking\",\"on\":\"사용자가 마시던 것을 다 마시고 계속 먹는다.\",\"action\":\"컵에 물 채워 주기\"}]},{\"id\":\"watching_tv\",\"description\":\"사용자가 TV를 보는 중이다.\",\"activity\":[\"watching_tv\"],\"next\":[{\"to\":\"watching_tv\",\"on\":\"사용자가 TV를 보며 마시던 것을 다 마신다.\",\"when\":\"같이 마시는 중이었다.\",\"action\":\"컵에 콜라 따라 주기\"},{\"to\":\"watching_tv\",\"on\":\"사용자가 덥다고 말하거나 더워서 부채질을 한다.\",\"action\":\"에어컨 켜기\"},{\"to\":\"*\",\"on\":\"사용자가 TV 보기를 끝내고 다른 일로 넘어간다.\",\"when\":\"같이 마시는 중이었다.\",\"action\":\"사용자에게 물어보기\"}]},{\"id\":\"cooking\",\"description\":\"사용자가 요리하는 중이다.\",\"activity\":[\"cooking\"],\"next\":[{\"to\":\"cooking\",\"on\":\"사용자가 라면 끓이는 법을 알려 달라고 말했거나, 라면을 끓이다 무엇을 해야 할지 모르겠다고 말한다.\",\"action\":\"라면 끓이기 알려 주기\"},{\"to\":\"cooking\",\"on\":\"사용자가 전자레인지 쓰는 법을 묻거나 이거 어떻게 하냐고 말한다.\",\"action\":\"전자레인지로 데우기 알려 주기\"},{\"to\":\"drinking\",\"on\":\"사용자가 요리를 마치고 먹기 시작한다.\"}]},{\"id\":\"away\",\"description\":\"사용자가 카메라에 보이지 않는다.\",\"activity\":[],\"next\":[{\"to\":\"drinking\",\"on\":\"사용자가 돌아와 먹거나 마신다.\"},{\"to\":\"watching_tv\",\"on\":\"사용자가 돌아와 TV를 본다.\"},{\"to\":\"cooking\",\"on\":\"사용자가 돌아와 요리를 시작한다.\"}]}]}"
+                "content": "{\"initial_state\":\"away\",\"states\":[{\"id\":\"drinking\",\"description\":\"사용자가 먹거나 마시는 중이다.\",\"activity\":[\"drinking\",\"eating\"],\"next\":[],\"rules\":[]},{\"id\":\"watching_tv\",\"description\":\"사용자가 TV를 보는 중이다.\",\"activity\":[\"watching_tv\"],\"next\":[],\"rules\":[]},{\"id\":\"cooking\",\"description\":\"사용자가 요리하는 중이다.\",\"activity\":[\"cooking\"],\"next\":[{\"to\":\"drinking\",\"on\":\"사용자가 요리를 마치고 먹기 시작한다.\"}],\"rules\":[]},{\"id\":\"away\",\"description\":\"사용자가 카메라에 보이지 않는다.\",\"activity\":[],\"next\":[{\"to\":\"drinking\",\"on\":\"사용자가 돌아와 먹거나 마신다.\"},{\"to\":\"watching_tv\",\"on\":\"사용자가 돌아와 TV를 본다.\"},{\"to\":\"cooking\",\"on\":\"사용자가 돌아와 요리를 시작한다.\"}],\"rules\":[]}]}"
               },
               "finish_reason": "stop"
             }
@@ -5635,9 +5430,9 @@
       "id": "reflect-photos",
       "route": "reflect",
       "body": {
-        "contract": "pam-reflect/2",
+        "contract": "pam-reflect/3",
         "day": "2026-11-07",
-        "memory_kind": "fsm",
+        "memory_kind": "fsm_candidates",
         "memory": {
           "initial_state": "away",
           "states": [
@@ -5648,18 +5443,8 @@
                 "drinking",
                 "eating"
               ],
-              "next": [
-                {
-                  "to": "*",
-                  "on": "사용자가 먹거나 마시기를 끝내고 다른 일로 넘어간다.",
-                  "action": "사용자에게 물어보기"
-                },
-                {
-                  "to": "drinking",
-                  "on": "사용자가 마시던 것을 다 마시고 계속 먹는다.",
-                  "action": "컵에 물 채워 주기"
-                }
-              ]
+              "next": [],
+              "rules": []
             },
             {
               "id": "watching_tv",
@@ -5667,25 +5452,8 @@
               "activity": [
                 "watching_tv"
               ],
-              "next": [
-                {
-                  "to": "watching_tv",
-                  "on": "사용자가 TV를 보며 마시던 것을 다 마신다.",
-                  "when": "같이 마시는 중이었다.",
-                  "action": "컵에 콜라 따라 주기"
-                },
-                {
-                  "to": "watching_tv",
-                  "on": "사용자가 덥다고 말하거나 더워서 부채질을 한다.",
-                  "action": "에어컨 켜기"
-                },
-                {
-                  "to": "*",
-                  "on": "사용자가 TV 보기를 끝내고 다른 일로 넘어간다.",
-                  "when": "같이 마시는 중이었다.",
-                  "action": "사용자에게 물어보기"
-                }
-              ]
+              "next": [],
+              "rules": []
             },
             {
               "id": "cooking",
@@ -5695,20 +5463,11 @@
               ],
               "next": [
                 {
-                  "to": "cooking",
-                  "on": "사용자가 라면 끓이는 법을 알려 달라고 말했거나, 라면을 끓이다 무엇을 해야 할지 모르겠다고 말한다.",
-                  "action": "라면 끓이기 알려 주기"
-                },
-                {
-                  "to": "cooking",
-                  "on": "사용자가 전자레인지 쓰는 법을 묻거나 이거 어떻게 하냐고 말한다.",
-                  "action": "전자레인지로 데우기 알려 주기"
-                },
-                {
                   "to": "drinking",
                   "on": "사용자가 요리를 마치고 먹기 시작한다."
                 }
-              ]
+              ],
+              "rules": []
             },
             {
               "id": "away",
@@ -5727,7 +5486,8 @@
                   "to": "cooking",
                   "on": "사용자가 돌아와 요리를 시작한다."
                 }
-              ]
+              ],
+              "rules": []
             }
           ]
         },
@@ -5742,7 +5502,7 @@
           "choices": [
             {
               "message": {
-                "content": "{\"initial_state\":\"away\",\"states\":[{\"id\":\"drinking\",\"description\":\"사용자가 먹거나 마시는 중이다.\",\"activity\":[\"drinking\",\"eating\"],\"next\":[{\"to\":\"*\",\"on\":\"사용자가 먹거나 마시기를 끝내고 다른 일로 넘어간다.\",\"action\":\"사용자에게 물어보기\"},{\"to\":\"drinking\",\"on\":\"사용자가 마시던 것을 다 마시고 계속 먹는다.\",\"action\":\"컵에 물 채워 주기\"}]},{\"id\":\"watching_tv\",\"description\":\"사용자가 TV를 보는 중이다.\",\"activity\":[\"watching_tv\"],\"next\":[{\"to\":\"watching_tv\",\"on\":\"사용자가 TV를 보며 마시던 것을 다 마신다.\",\"when\":\"같이 마시는 중이었다.\",\"action\":\"컵에 콜라 따라 주기\"},{\"to\":\"watching_tv\",\"on\":\"사용자가 덥다고 말하거나 더워서 부채질을 한다.\",\"action\":\"에어컨 켜기\"},{\"to\":\"*\",\"on\":\"사용자가 TV 보기를 끝내고 다른 일로 넘어간다.\",\"when\":\"같이 마시는 중이었다.\",\"action\":\"사용자에게 물어보기\"}]},{\"id\":\"cooking\",\"description\":\"사용자가 요리하는 중이다.\",\"activity\":[\"cooking\"],\"next\":[{\"to\":\"cooking\",\"on\":\"사용자가 라면 끓이는 법을 알려 달라고 말했거나, 라면을 끓이다 무엇을 해야 할지 모르겠다고 말한다.\",\"action\":\"라면 끓이기 알려 주기\"},{\"to\":\"cooking\",\"on\":\"사용자가 전자레인지 쓰는 법을 묻거나 이거 어떻게 하냐고 말한다.\",\"action\":\"전자레인지로 데우기 알려 주기\"},{\"to\":\"drinking\",\"on\":\"사용자가 요리를 마치고 먹기 시작한다.\"}]},{\"id\":\"away\",\"description\":\"사용자가 카메라에 보이지 않는다.\",\"activity\":[],\"next\":[{\"to\":\"drinking\",\"on\":\"사용자가 돌아와 먹거나 마신다.\"},{\"to\":\"watching_tv\",\"on\":\"사용자가 돌아와 TV를 본다.\"},{\"to\":\"cooking\",\"on\":\"사용자가 돌아와 요리를 시작한다.\"}]}]}"
+                "content": "{\"initial_state\":\"away\",\"states\":[{\"id\":\"drinking\",\"description\":\"사용자가 먹거나 마시는 중이다.\",\"activity\":[\"drinking\",\"eating\"],\"next\":[],\"rules\":[]},{\"id\":\"watching_tv\",\"description\":\"사용자가 TV를 보는 중이다.\",\"activity\":[\"watching_tv\"],\"next\":[],\"rules\":[]},{\"id\":\"cooking\",\"description\":\"사용자가 요리하는 중이다.\",\"activity\":[\"cooking\"],\"next\":[{\"to\":\"drinking\",\"on\":\"사용자가 요리를 마치고 먹기 시작한다.\"}],\"rules\":[]},{\"id\":\"away\",\"description\":\"사용자가 카메라에 보이지 않는다.\",\"activity\":[],\"next\":[{\"to\":\"drinking\",\"on\":\"사용자가 돌아와 먹거나 마신다.\"},{\"to\":\"watching_tv\",\"on\":\"사용자가 돌아와 TV를 본다.\"},{\"to\":\"cooking\",\"on\":\"사용자가 돌아와 요리를 시작한다.\"}],\"rules\":[]}]}"
               },
               "finish_reason": "stop"
             }
@@ -5754,9 +5514,9 @@
       "id": "reflect-long-feedback",
       "route": "reflect",
       "body": {
-        "contract": "pam-reflect/2",
+        "contract": "pam-reflect/3",
         "day": "2026-11-07",
-        "memory_kind": "fsm",
+        "memory_kind": "fsm_candidates",
         "memory": {
           "initial_state": "away",
           "states": [
@@ -5767,18 +5527,8 @@
                 "drinking",
                 "eating"
               ],
-              "next": [
-                {
-                  "to": "*",
-                  "on": "사용자가 먹거나 마시기를 끝내고 다른 일로 넘어간다.",
-                  "action": "사용자에게 물어보기"
-                },
-                {
-                  "to": "drinking",
-                  "on": "사용자가 마시던 것을 다 마시고 계속 먹는다.",
-                  "action": "컵에 물 채워 주기"
-                }
-              ]
+              "next": [],
+              "rules": []
             },
             {
               "id": "watching_tv",
@@ -5786,25 +5536,8 @@
               "activity": [
                 "watching_tv"
               ],
-              "next": [
-                {
-                  "to": "watching_tv",
-                  "on": "사용자가 TV를 보며 마시던 것을 다 마신다.",
-                  "when": "같이 마시는 중이었다.",
-                  "action": "컵에 콜라 따라 주기"
-                },
-                {
-                  "to": "watching_tv",
-                  "on": "사용자가 덥다고 말하거나 더워서 부채질을 한다.",
-                  "action": "에어컨 켜기"
-                },
-                {
-                  "to": "*",
-                  "on": "사용자가 TV 보기를 끝내고 다른 일로 넘어간다.",
-                  "when": "같이 마시는 중이었다.",
-                  "action": "사용자에게 물어보기"
-                }
-              ]
+              "next": [],
+              "rules": []
             },
             {
               "id": "cooking",
@@ -5814,20 +5547,11 @@
               ],
               "next": [
                 {
-                  "to": "cooking",
-                  "on": "사용자가 라면 끓이는 법을 알려 달라고 말했거나, 라면을 끓이다 무엇을 해야 할지 모르겠다고 말한다.",
-                  "action": "라면 끓이기 알려 주기"
-                },
-                {
-                  "to": "cooking",
-                  "on": "사용자가 전자레인지 쓰는 법을 묻거나 이거 어떻게 하냐고 말한다.",
-                  "action": "전자레인지로 데우기 알려 주기"
-                },
-                {
                   "to": "drinking",
                   "on": "사용자가 요리를 마치고 먹기 시작한다."
                 }
-              ]
+              ],
+              "rules": []
             },
             {
               "id": "away",
@@ -5846,7 +5570,8 @@
                   "to": "cooking",
                   "on": "사용자가 돌아와 요리를 시작한다."
                 }
-              ]
+              ],
+              "rules": []
             }
           ]
         },
@@ -5860,7 +5585,7 @@
           "choices": [
             {
               "message": {
-                "content": "{\"initial_state\":\"away\",\"states\":[{\"id\":\"drinking\",\"description\":\"사용자가 먹거나 마시는 중이다.\",\"activity\":[\"drinking\",\"eating\"],\"next\":[{\"to\":\"*\",\"on\":\"사용자가 먹거나 마시기를 끝내고 다른 일로 넘어간다.\",\"action\":\"사용자에게 물어보기\"},{\"to\":\"drinking\",\"on\":\"사용자가 마시던 것을 다 마시고 계속 먹는다.\",\"action\":\"컵에 물 채워 주기\"}]},{\"id\":\"watching_tv\",\"description\":\"사용자가 TV를 보는 중이다.\",\"activity\":[\"watching_tv\"],\"next\":[{\"to\":\"watching_tv\",\"on\":\"사용자가 TV를 보며 마시던 것을 다 마신다.\",\"when\":\"같이 마시는 중이었다.\",\"action\":\"컵에 콜라 따라 주기\"},{\"to\":\"watching_tv\",\"on\":\"사용자가 덥다고 말하거나 더워서 부채질을 한다.\",\"action\":\"에어컨 켜기\"},{\"to\":\"*\",\"on\":\"사용자가 TV 보기를 끝내고 다른 일로 넘어간다.\",\"when\":\"같이 마시는 중이었다.\",\"action\":\"사용자에게 물어보기\"}]},{\"id\":\"cooking\",\"description\":\"사용자가 요리하는 중이다.\",\"activity\":[\"cooking\"],\"next\":[{\"to\":\"cooking\",\"on\":\"사용자가 라면 끓이는 법을 알려 달라고 말했거나, 라면을 끓이다 무엇을 해야 할지 모르겠다고 말한다.\",\"action\":\"라면 끓이기 알려 주기\"},{\"to\":\"cooking\",\"on\":\"사용자가 전자레인지 쓰는 법을 묻거나 이거 어떻게 하냐고 말한다.\",\"action\":\"전자레인지로 데우기 알려 주기\"},{\"to\":\"drinking\",\"on\":\"사용자가 요리를 마치고 먹기 시작한다.\"}]},{\"id\":\"away\",\"description\":\"사용자가 카메라에 보이지 않는다.\",\"activity\":[],\"next\":[{\"to\":\"drinking\",\"on\":\"사용자가 돌아와 먹거나 마신다.\"},{\"to\":\"watching_tv\",\"on\":\"사용자가 돌아와 TV를 본다.\"},{\"to\":\"cooking\",\"on\":\"사용자가 돌아와 요리를 시작한다.\"}]}]}"
+                "content": "{\"initial_state\":\"away\",\"states\":[{\"id\":\"drinking\",\"description\":\"사용자가 먹거나 마시는 중이다.\",\"activity\":[\"drinking\",\"eating\"],\"next\":[],\"rules\":[]},{\"id\":\"watching_tv\",\"description\":\"사용자가 TV를 보는 중이다.\",\"activity\":[\"watching_tv\"],\"next\":[],\"rules\":[]},{\"id\":\"cooking\",\"description\":\"사용자가 요리하는 중이다.\",\"activity\":[\"cooking\"],\"next\":[{\"to\":\"drinking\",\"on\":\"사용자가 요리를 마치고 먹기 시작한다.\"}],\"rules\":[]},{\"id\":\"away\",\"description\":\"사용자가 카메라에 보이지 않는다.\",\"activity\":[],\"next\":[{\"to\":\"drinking\",\"on\":\"사용자가 돌아와 먹거나 마신다.\"},{\"to\":\"watching_tv\",\"on\":\"사용자가 돌아와 TV를 본다.\"},{\"to\":\"cooking\",\"on\":\"사용자가 돌아와 요리를 시작한다.\"}],\"rules\":[]}]}"
               },
               "finish_reason": "stop"
             }
@@ -5872,9 +5597,9 @@
       "id": "reflect-long-obs",
       "route": "reflect",
       "body": {
-        "contract": "pam-reflect/2",
+        "contract": "pam-reflect/3",
         "day": "2026-11-07",
-        "memory_kind": "fsm",
+        "memory_kind": "fsm_candidates",
         "memory": {
           "initial_state": "away",
           "states": [
@@ -5885,18 +5610,8 @@
                 "drinking",
                 "eating"
               ],
-              "next": [
-                {
-                  "to": "*",
-                  "on": "사용자가 먹거나 마시기를 끝내고 다른 일로 넘어간다.",
-                  "action": "사용자에게 물어보기"
-                },
-                {
-                  "to": "drinking",
-                  "on": "사용자가 마시던 것을 다 마시고 계속 먹는다.",
-                  "action": "컵에 물 채워 주기"
-                }
-              ]
+              "next": [],
+              "rules": []
             },
             {
               "id": "watching_tv",
@@ -5904,25 +5619,8 @@
               "activity": [
                 "watching_tv"
               ],
-              "next": [
-                {
-                  "to": "watching_tv",
-                  "on": "사용자가 TV를 보며 마시던 것을 다 마신다.",
-                  "when": "같이 마시는 중이었다.",
-                  "action": "컵에 콜라 따라 주기"
-                },
-                {
-                  "to": "watching_tv",
-                  "on": "사용자가 덥다고 말하거나 더워서 부채질을 한다.",
-                  "action": "에어컨 켜기"
-                },
-                {
-                  "to": "*",
-                  "on": "사용자가 TV 보기를 끝내고 다른 일로 넘어간다.",
-                  "when": "같이 마시는 중이었다.",
-                  "action": "사용자에게 물어보기"
-                }
-              ]
+              "next": [],
+              "rules": []
             },
             {
               "id": "cooking",
@@ -5932,20 +5630,11 @@
               ],
               "next": [
                 {
-                  "to": "cooking",
-                  "on": "사용자가 라면 끓이는 법을 알려 달라고 말했거나, 라면을 끓이다 무엇을 해야 할지 모르겠다고 말한다.",
-                  "action": "라면 끓이기 알려 주기"
-                },
-                {
-                  "to": "cooking",
-                  "on": "사용자가 전자레인지 쓰는 법을 묻거나 이거 어떻게 하냐고 말한다.",
-                  "action": "전자레인지로 데우기 알려 주기"
-                },
-                {
                   "to": "drinking",
                   "on": "사용자가 요리를 마치고 먹기 시작한다."
                 }
-              ]
+              ],
+              "rules": []
             },
             {
               "id": "away",
@@ -5964,7 +5653,8 @@
                   "to": "cooking",
                   "on": "사용자가 돌아와 요리를 시작한다."
                 }
-              ]
+              ],
+              "rules": []
             }
           ]
         },
@@ -5978,7 +5668,7 @@
           "choices": [
             {
               "message": {
-                "content": "{\"initial_state\":\"away\",\"states\":[{\"id\":\"drinking\",\"description\":\"사용자가 먹거나 마시는 중이다.\",\"activity\":[\"drinking\",\"eating\"],\"next\":[{\"to\":\"*\",\"on\":\"사용자가 먹거나 마시기를 끝내고 다른 일로 넘어간다.\",\"action\":\"사용자에게 물어보기\"},{\"to\":\"drinking\",\"on\":\"사용자가 마시던 것을 다 마시고 계속 먹는다.\",\"action\":\"컵에 물 채워 주기\"}]},{\"id\":\"watching_tv\",\"description\":\"사용자가 TV를 보는 중이다.\",\"activity\":[\"watching_tv\"],\"next\":[{\"to\":\"watching_tv\",\"on\":\"사용자가 TV를 보며 마시던 것을 다 마신다.\",\"when\":\"같이 마시는 중이었다.\",\"action\":\"컵에 콜라 따라 주기\"},{\"to\":\"watching_tv\",\"on\":\"사용자가 덥다고 말하거나 더워서 부채질을 한다.\",\"action\":\"에어컨 켜기\"},{\"to\":\"*\",\"on\":\"사용자가 TV 보기를 끝내고 다른 일로 넘어간다.\",\"when\":\"같이 마시는 중이었다.\",\"action\":\"사용자에게 물어보기\"}]},{\"id\":\"cooking\",\"description\":\"사용자가 요리하는 중이다.\",\"activity\":[\"cooking\"],\"next\":[{\"to\":\"cooking\",\"on\":\"사용자가 라면 끓이는 법을 알려 달라고 말했거나, 라면을 끓이다 무엇을 해야 할지 모르겠다고 말한다.\",\"action\":\"라면 끓이기 알려 주기\"},{\"to\":\"cooking\",\"on\":\"사용자가 전자레인지 쓰는 법을 묻거나 이거 어떻게 하냐고 말한다.\",\"action\":\"전자레인지로 데우기 알려 주기\"},{\"to\":\"drinking\",\"on\":\"사용자가 요리를 마치고 먹기 시작한다.\"}]},{\"id\":\"away\",\"description\":\"사용자가 카메라에 보이지 않는다.\",\"activity\":[],\"next\":[{\"to\":\"drinking\",\"on\":\"사용자가 돌아와 먹거나 마신다.\"},{\"to\":\"watching_tv\",\"on\":\"사용자가 돌아와 TV를 본다.\"},{\"to\":\"cooking\",\"on\":\"사용자가 돌아와 요리를 시작한다.\"}]}]}"
+                "content": "{\"initial_state\":\"away\",\"states\":[{\"id\":\"drinking\",\"description\":\"사용자가 먹거나 마시는 중이다.\",\"activity\":[\"drinking\",\"eating\"],\"next\":[],\"rules\":[]},{\"id\":\"watching_tv\",\"description\":\"사용자가 TV를 보는 중이다.\",\"activity\":[\"watching_tv\"],\"next\":[],\"rules\":[]},{\"id\":\"cooking\",\"description\":\"사용자가 요리하는 중이다.\",\"activity\":[\"cooking\"],\"next\":[{\"to\":\"drinking\",\"on\":\"사용자가 요리를 마치고 먹기 시작한다.\"}],\"rules\":[]},{\"id\":\"away\",\"description\":\"사용자가 카메라에 보이지 않는다.\",\"activity\":[],\"next\":[{\"to\":\"drinking\",\"on\":\"사용자가 돌아와 먹거나 마신다.\"},{\"to\":\"watching_tv\",\"on\":\"사용자가 돌아와 TV를 본다.\"},{\"to\":\"cooking\",\"on\":\"사용자가 돌아와 요리를 시작한다.\"}],\"rules\":[]}]}"
               },
               "finish_reason": "stop"
             }
@@ -5990,9 +5680,9 @@
       "id": "reflect-long-summary",
       "route": "reflect",
       "body": {
-        "contract": "pam-reflect/2",
+        "contract": "pam-reflect/3",
         "day": "2026-11-07",
-        "memory_kind": "fsm",
+        "memory_kind": "fsm_candidates",
         "memory": {
           "initial_state": "away",
           "states": [
@@ -6003,18 +5693,8 @@
                 "drinking",
                 "eating"
               ],
-              "next": [
-                {
-                  "to": "*",
-                  "on": "사용자가 먹거나 마시기를 끝내고 다른 일로 넘어간다.",
-                  "action": "사용자에게 물어보기"
-                },
-                {
-                  "to": "drinking",
-                  "on": "사용자가 마시던 것을 다 마시고 계속 먹는다.",
-                  "action": "컵에 물 채워 주기"
-                }
-              ]
+              "next": [],
+              "rules": []
             },
             {
               "id": "watching_tv",
@@ -6022,25 +5702,8 @@
               "activity": [
                 "watching_tv"
               ],
-              "next": [
-                {
-                  "to": "watching_tv",
-                  "on": "사용자가 TV를 보며 마시던 것을 다 마신다.",
-                  "when": "같이 마시는 중이었다.",
-                  "action": "컵에 콜라 따라 주기"
-                },
-                {
-                  "to": "watching_tv",
-                  "on": "사용자가 덥다고 말하거나 더워서 부채질을 한다.",
-                  "action": "에어컨 켜기"
-                },
-                {
-                  "to": "*",
-                  "on": "사용자가 TV 보기를 끝내고 다른 일로 넘어간다.",
-                  "when": "같이 마시는 중이었다.",
-                  "action": "사용자에게 물어보기"
-                }
-              ]
+              "next": [],
+              "rules": []
             },
             {
               "id": "cooking",
@@ -6050,20 +5713,11 @@
               ],
               "next": [
                 {
-                  "to": "cooking",
-                  "on": "사용자가 라면 끓이는 법을 알려 달라고 말했거나, 라면을 끓이다 무엇을 해야 할지 모르겠다고 말한다.",
-                  "action": "라면 끓이기 알려 주기"
-                },
-                {
-                  "to": "cooking",
-                  "on": "사용자가 전자레인지 쓰는 법을 묻거나 이거 어떻게 하냐고 말한다.",
-                  "action": "전자레인지로 데우기 알려 주기"
-                },
-                {
                   "to": "drinking",
                   "on": "사용자가 요리를 마치고 먹기 시작한다."
                 }
-              ]
+              ],
+              "rules": []
             },
             {
               "id": "away",
@@ -6082,7 +5736,8 @@
                   "to": "cooking",
                   "on": "사용자가 돌아와 요리를 시작한다."
                 }
-              ]
+              ],
+              "rules": []
             }
           ]
         },
@@ -6096,7 +5751,7 @@
           "choices": [
             {
               "message": {
-                "content": "{\"initial_state\":\"away\",\"states\":[{\"id\":\"drinking\",\"description\":\"사용자가 먹거나 마시는 중이다.\",\"activity\":[\"drinking\",\"eating\"],\"next\":[{\"to\":\"*\",\"on\":\"사용자가 먹거나 마시기를 끝내고 다른 일로 넘어간다.\",\"action\":\"사용자에게 물어보기\"},{\"to\":\"drinking\",\"on\":\"사용자가 마시던 것을 다 마시고 계속 먹는다.\",\"action\":\"컵에 물 채워 주기\"}]},{\"id\":\"watching_tv\",\"description\":\"사용자가 TV를 보는 중이다.\",\"activity\":[\"watching_tv\"],\"next\":[{\"to\":\"watching_tv\",\"on\":\"사용자가 TV를 보며 마시던 것을 다 마신다.\",\"when\":\"같이 마시는 중이었다.\",\"action\":\"컵에 콜라 따라 주기\"},{\"to\":\"watching_tv\",\"on\":\"사용자가 덥다고 말하거나 더워서 부채질을 한다.\",\"action\":\"에어컨 켜기\"},{\"to\":\"*\",\"on\":\"사용자가 TV 보기를 끝내고 다른 일로 넘어간다.\",\"when\":\"같이 마시는 중이었다.\",\"action\":\"사용자에게 물어보기\"}]},{\"id\":\"cooking\",\"description\":\"사용자가 요리하는 중이다.\",\"activity\":[\"cooking\"],\"next\":[{\"to\":\"cooking\",\"on\":\"사용자가 라면 끓이는 법을 알려 달라고 말했거나, 라면을 끓이다 무엇을 해야 할지 모르겠다고 말한다.\",\"action\":\"라면 끓이기 알려 주기\"},{\"to\":\"cooking\",\"on\":\"사용자가 전자레인지 쓰는 법을 묻거나 이거 어떻게 하냐고 말한다.\",\"action\":\"전자레인지로 데우기 알려 주기\"},{\"to\":\"drinking\",\"on\":\"사용자가 요리를 마치고 먹기 시작한다.\"}]},{\"id\":\"away\",\"description\":\"사용자가 카메라에 보이지 않는다.\",\"activity\":[],\"next\":[{\"to\":\"drinking\",\"on\":\"사용자가 돌아와 먹거나 마신다.\"},{\"to\":\"watching_tv\",\"on\":\"사용자가 돌아와 TV를 본다.\"},{\"to\":\"cooking\",\"on\":\"사용자가 돌아와 요리를 시작한다.\"}]}]}"
+                "content": "{\"initial_state\":\"away\",\"states\":[{\"id\":\"drinking\",\"description\":\"사용자가 먹거나 마시는 중이다.\",\"activity\":[\"drinking\",\"eating\"],\"next\":[],\"rules\":[]},{\"id\":\"watching_tv\",\"description\":\"사용자가 TV를 보는 중이다.\",\"activity\":[\"watching_tv\"],\"next\":[],\"rules\":[]},{\"id\":\"cooking\",\"description\":\"사용자가 요리하는 중이다.\",\"activity\":[\"cooking\"],\"next\":[{\"to\":\"drinking\",\"on\":\"사용자가 요리를 마치고 먹기 시작한다.\"}],\"rules\":[]},{\"id\":\"away\",\"description\":\"사용자가 카메라에 보이지 않는다.\",\"activity\":[],\"next\":[{\"to\":\"drinking\",\"on\":\"사용자가 돌아와 먹거나 마신다.\"},{\"to\":\"watching_tv\",\"on\":\"사용자가 돌아와 TV를 본다.\"},{\"to\":\"cooking\",\"on\":\"사용자가 돌아와 요리를 시작한다.\"}],\"rules\":[]}]}"
               },
               "finish_reason": "stop"
             }
@@ -6108,9 +5763,9 @@
       "id": "reflect-empty-summary",
       "route": "reflect",
       "body": {
-        "contract": "pam-reflect/2",
+        "contract": "pam-reflect/3",
         "day": "2026-11-07",
-        "memory_kind": "fsm",
+        "memory_kind": "fsm_candidates",
         "memory": {
           "initial_state": "away",
           "states": [
@@ -6121,18 +5776,8 @@
                 "drinking",
                 "eating"
               ],
-              "next": [
-                {
-                  "to": "*",
-                  "on": "사용자가 먹거나 마시기를 끝내고 다른 일로 넘어간다.",
-                  "action": "사용자에게 물어보기"
-                },
-                {
-                  "to": "drinking",
-                  "on": "사용자가 마시던 것을 다 마시고 계속 먹는다.",
-                  "action": "컵에 물 채워 주기"
-                }
-              ]
+              "next": [],
+              "rules": []
             },
             {
               "id": "watching_tv",
@@ -6140,25 +5785,8 @@
               "activity": [
                 "watching_tv"
               ],
-              "next": [
-                {
-                  "to": "watching_tv",
-                  "on": "사용자가 TV를 보며 마시던 것을 다 마신다.",
-                  "when": "같이 마시는 중이었다.",
-                  "action": "컵에 콜라 따라 주기"
-                },
-                {
-                  "to": "watching_tv",
-                  "on": "사용자가 덥다고 말하거나 더워서 부채질을 한다.",
-                  "action": "에어컨 켜기"
-                },
-                {
-                  "to": "*",
-                  "on": "사용자가 TV 보기를 끝내고 다른 일로 넘어간다.",
-                  "when": "같이 마시는 중이었다.",
-                  "action": "사용자에게 물어보기"
-                }
-              ]
+              "next": [],
+              "rules": []
             },
             {
               "id": "cooking",
@@ -6168,20 +5796,11 @@
               ],
               "next": [
                 {
-                  "to": "cooking",
-                  "on": "사용자가 라면 끓이는 법을 알려 달라고 말했거나, 라면을 끓이다 무엇을 해야 할지 모르겠다고 말한다.",
-                  "action": "라면 끓이기 알려 주기"
-                },
-                {
-                  "to": "cooking",
-                  "on": "사용자가 전자레인지 쓰는 법을 묻거나 이거 어떻게 하냐고 말한다.",
-                  "action": "전자레인지로 데우기 알려 주기"
-                },
-                {
                   "to": "drinking",
                   "on": "사용자가 요리를 마치고 먹기 시작한다."
                 }
-              ]
+              ],
+              "rules": []
             },
             {
               "id": "away",
@@ -6200,7 +5819,8 @@
                   "to": "cooking",
                   "on": "사용자가 돌아와 요리를 시작한다."
                 }
-              ]
+              ],
+              "rules": []
             }
           ]
         },
@@ -6214,7 +5834,7 @@
           "choices": [
             {
               "message": {
-                "content": "{\"initial_state\":\"away\",\"states\":[{\"id\":\"drinking\",\"description\":\"사용자가 먹거나 마시는 중이다.\",\"activity\":[\"drinking\",\"eating\"],\"next\":[{\"to\":\"*\",\"on\":\"사용자가 먹거나 마시기를 끝내고 다른 일로 넘어간다.\",\"action\":\"사용자에게 물어보기\"},{\"to\":\"drinking\",\"on\":\"사용자가 마시던 것을 다 마시고 계속 먹는다.\",\"action\":\"컵에 물 채워 주기\"}]},{\"id\":\"watching_tv\",\"description\":\"사용자가 TV를 보는 중이다.\",\"activity\":[\"watching_tv\"],\"next\":[{\"to\":\"watching_tv\",\"on\":\"사용자가 TV를 보며 마시던 것을 다 마신다.\",\"when\":\"같이 마시는 중이었다.\",\"action\":\"컵에 콜라 따라 주기\"},{\"to\":\"watching_tv\",\"on\":\"사용자가 덥다고 말하거나 더워서 부채질을 한다.\",\"action\":\"에어컨 켜기\"},{\"to\":\"*\",\"on\":\"사용자가 TV 보기를 끝내고 다른 일로 넘어간다.\",\"when\":\"같이 마시는 중이었다.\",\"action\":\"사용자에게 물어보기\"}]},{\"id\":\"cooking\",\"description\":\"사용자가 요리하는 중이다.\",\"activity\":[\"cooking\"],\"next\":[{\"to\":\"cooking\",\"on\":\"사용자가 라면 끓이는 법을 알려 달라고 말했거나, 라면을 끓이다 무엇을 해야 할지 모르겠다고 말한다.\",\"action\":\"라면 끓이기 알려 주기\"},{\"to\":\"cooking\",\"on\":\"사용자가 전자레인지 쓰는 법을 묻거나 이거 어떻게 하냐고 말한다.\",\"action\":\"전자레인지로 데우기 알려 주기\"},{\"to\":\"drinking\",\"on\":\"사용자가 요리를 마치고 먹기 시작한다.\"}]},{\"id\":\"away\",\"description\":\"사용자가 카메라에 보이지 않는다.\",\"activity\":[],\"next\":[{\"to\":\"drinking\",\"on\":\"사용자가 돌아와 먹거나 마신다.\"},{\"to\":\"watching_tv\",\"on\":\"사용자가 돌아와 TV를 본다.\"},{\"to\":\"cooking\",\"on\":\"사용자가 돌아와 요리를 시작한다.\"}]}]}"
+                "content": "{\"initial_state\":\"away\",\"states\":[{\"id\":\"drinking\",\"description\":\"사용자가 먹거나 마시는 중이다.\",\"activity\":[\"drinking\",\"eating\"],\"next\":[],\"rules\":[]},{\"id\":\"watching_tv\",\"description\":\"사용자가 TV를 보는 중이다.\",\"activity\":[\"watching_tv\"],\"next\":[],\"rules\":[]},{\"id\":\"cooking\",\"description\":\"사용자가 요리하는 중이다.\",\"activity\":[\"cooking\"],\"next\":[{\"to\":\"drinking\",\"on\":\"사용자가 요리를 마치고 먹기 시작한다.\"}],\"rules\":[]},{\"id\":\"away\",\"description\":\"사용자가 카메라에 보이지 않는다.\",\"activity\":[],\"next\":[{\"to\":\"drinking\",\"on\":\"사용자가 돌아와 먹거나 마신다.\"},{\"to\":\"watching_tv\",\"on\":\"사용자가 돌아와 TV를 본다.\"},{\"to\":\"cooking\",\"on\":\"사용자가 돌아와 요리를 시작한다.\"}],\"rules\":[]}]}"
               },
               "finish_reason": "stop"
             }
@@ -6226,9 +5846,9 @@
       "id": "reflect-bad-day",
       "route": "reflect",
       "body": {
-        "contract": "pam-reflect/2",
+        "contract": "pam-reflect/3",
         "day": "2026-13-01",
-        "memory_kind": "fsm",
+        "memory_kind": "fsm_candidates",
         "memory": {
           "initial_state": "away",
           "states": [
@@ -6239,18 +5859,8 @@
                 "drinking",
                 "eating"
               ],
-              "next": [
-                {
-                  "to": "*",
-                  "on": "사용자가 먹거나 마시기를 끝내고 다른 일로 넘어간다.",
-                  "action": "사용자에게 물어보기"
-                },
-                {
-                  "to": "drinking",
-                  "on": "사용자가 마시던 것을 다 마시고 계속 먹는다.",
-                  "action": "컵에 물 채워 주기"
-                }
-              ]
+              "next": [],
+              "rules": []
             },
             {
               "id": "watching_tv",
@@ -6258,25 +5868,8 @@
               "activity": [
                 "watching_tv"
               ],
-              "next": [
-                {
-                  "to": "watching_tv",
-                  "on": "사용자가 TV를 보며 마시던 것을 다 마신다.",
-                  "when": "같이 마시는 중이었다.",
-                  "action": "컵에 콜라 따라 주기"
-                },
-                {
-                  "to": "watching_tv",
-                  "on": "사용자가 덥다고 말하거나 더워서 부채질을 한다.",
-                  "action": "에어컨 켜기"
-                },
-                {
-                  "to": "*",
-                  "on": "사용자가 TV 보기를 끝내고 다른 일로 넘어간다.",
-                  "when": "같이 마시는 중이었다.",
-                  "action": "사용자에게 물어보기"
-                }
-              ]
+              "next": [],
+              "rules": []
             },
             {
               "id": "cooking",
@@ -6286,20 +5879,11 @@
               ],
               "next": [
                 {
-                  "to": "cooking",
-                  "on": "사용자가 라면 끓이는 법을 알려 달라고 말했거나, 라면을 끓이다 무엇을 해야 할지 모르겠다고 말한다.",
-                  "action": "라면 끓이기 알려 주기"
-                },
-                {
-                  "to": "cooking",
-                  "on": "사용자가 전자레인지 쓰는 법을 묻거나 이거 어떻게 하냐고 말한다.",
-                  "action": "전자레인지로 데우기 알려 주기"
-                },
-                {
                   "to": "drinking",
                   "on": "사용자가 요리를 마치고 먹기 시작한다."
                 }
-              ]
+              ],
+              "rules": []
             },
             {
               "id": "away",
@@ -6318,7 +5902,8 @@
                   "to": "cooking",
                   "on": "사용자가 돌아와 요리를 시작한다."
                 }
-              ]
+              ],
+              "rules": []
             }
           ]
         },
@@ -6332,7 +5917,7 @@
           "choices": [
             {
               "message": {
-                "content": "{\"initial_state\":\"away\",\"states\":[{\"id\":\"drinking\",\"description\":\"사용자가 먹거나 마시는 중이다.\",\"activity\":[\"drinking\",\"eating\"],\"next\":[{\"to\":\"*\",\"on\":\"사용자가 먹거나 마시기를 끝내고 다른 일로 넘어간다.\",\"action\":\"사용자에게 물어보기\"},{\"to\":\"drinking\",\"on\":\"사용자가 마시던 것을 다 마시고 계속 먹는다.\",\"action\":\"컵에 물 채워 주기\"}]},{\"id\":\"watching_tv\",\"description\":\"사용자가 TV를 보는 중이다.\",\"activity\":[\"watching_tv\"],\"next\":[{\"to\":\"watching_tv\",\"on\":\"사용자가 TV를 보며 마시던 것을 다 마신다.\",\"when\":\"같이 마시는 중이었다.\",\"action\":\"컵에 콜라 따라 주기\"},{\"to\":\"watching_tv\",\"on\":\"사용자가 덥다고 말하거나 더워서 부채질을 한다.\",\"action\":\"에어컨 켜기\"},{\"to\":\"*\",\"on\":\"사용자가 TV 보기를 끝내고 다른 일로 넘어간다.\",\"when\":\"같이 마시는 중이었다.\",\"action\":\"사용자에게 물어보기\"}]},{\"id\":\"cooking\",\"description\":\"사용자가 요리하는 중이다.\",\"activity\":[\"cooking\"],\"next\":[{\"to\":\"cooking\",\"on\":\"사용자가 라면 끓이는 법을 알려 달라고 말했거나, 라면을 끓이다 무엇을 해야 할지 모르겠다고 말한다.\",\"action\":\"라면 끓이기 알려 주기\"},{\"to\":\"cooking\",\"on\":\"사용자가 전자레인지 쓰는 법을 묻거나 이거 어떻게 하냐고 말한다.\",\"action\":\"전자레인지로 데우기 알려 주기\"},{\"to\":\"drinking\",\"on\":\"사용자가 요리를 마치고 먹기 시작한다.\"}]},{\"id\":\"away\",\"description\":\"사용자가 카메라에 보이지 않는다.\",\"activity\":[],\"next\":[{\"to\":\"drinking\",\"on\":\"사용자가 돌아와 먹거나 마신다.\"},{\"to\":\"watching_tv\",\"on\":\"사용자가 돌아와 TV를 본다.\"},{\"to\":\"cooking\",\"on\":\"사용자가 돌아와 요리를 시작한다.\"}]}]}"
+                "content": "{\"initial_state\":\"away\",\"states\":[{\"id\":\"drinking\",\"description\":\"사용자가 먹거나 마시는 중이다.\",\"activity\":[\"drinking\",\"eating\"],\"next\":[],\"rules\":[]},{\"id\":\"watching_tv\",\"description\":\"사용자가 TV를 보는 중이다.\",\"activity\":[\"watching_tv\"],\"next\":[],\"rules\":[]},{\"id\":\"cooking\",\"description\":\"사용자가 요리하는 중이다.\",\"activity\":[\"cooking\"],\"next\":[{\"to\":\"drinking\",\"on\":\"사용자가 요리를 마치고 먹기 시작한다.\"}],\"rules\":[]},{\"id\":\"away\",\"description\":\"사용자가 카메라에 보이지 않는다.\",\"activity\":[],\"next\":[{\"to\":\"drinking\",\"on\":\"사용자가 돌아와 먹거나 마신다.\"},{\"to\":\"watching_tv\",\"on\":\"사용자가 돌아와 TV를 본다.\"},{\"to\":\"cooking\",\"on\":\"사용자가 돌아와 요리를 시작한다.\"}],\"rules\":[]}]}"
               },
               "finish_reason": "stop"
             }
@@ -6344,9 +5929,9 @@
       "id": "reflect-over-context",
       "route": "reflect",
       "body": {
-        "contract": "pam-reflect/2",
+        "contract": "pam-reflect/3",
         "day": "2026-11-07",
-        "memory_kind": "fsm",
+        "memory_kind": "fsm_candidates",
         "memory": {
           "initial_state": "away",
           "states": [
@@ -6357,18 +5942,8 @@
                 "drinking",
                 "eating"
               ],
-              "next": [
-                {
-                  "to": "*",
-                  "on": "사용자가 먹거나 마시기를 끝내고 다른 일로 넘어간다.",
-                  "action": "사용자에게 물어보기"
-                },
-                {
-                  "to": "drinking",
-                  "on": "사용자가 마시던 것을 다 마시고 계속 먹는다.",
-                  "action": "컵에 물 채워 주기"
-                }
-              ]
+              "next": [],
+              "rules": []
             },
             {
               "id": "watching_tv",
@@ -6376,25 +5951,8 @@
               "activity": [
                 "watching_tv"
               ],
-              "next": [
-                {
-                  "to": "watching_tv",
-                  "on": "사용자가 TV를 보며 마시던 것을 다 마신다.",
-                  "when": "같이 마시는 중이었다.",
-                  "action": "컵에 콜라 따라 주기"
-                },
-                {
-                  "to": "watching_tv",
-                  "on": "사용자가 덥다고 말하거나 더워서 부채질을 한다.",
-                  "action": "에어컨 켜기"
-                },
-                {
-                  "to": "*",
-                  "on": "사용자가 TV 보기를 끝내고 다른 일로 넘어간다.",
-                  "when": "같이 마시는 중이었다.",
-                  "action": "사용자에게 물어보기"
-                }
-              ]
+              "next": [],
+              "rules": []
             },
             {
               "id": "cooking",
@@ -6404,20 +5962,11 @@
               ],
               "next": [
                 {
-                  "to": "cooking",
-                  "on": "사용자가 라면 끓이는 법을 알려 달라고 말했거나, 라면을 끓이다 무엇을 해야 할지 모르겠다고 말한다.",
-                  "action": "라면 끓이기 알려 주기"
-                },
-                {
-                  "to": "cooking",
-                  "on": "사용자가 전자레인지 쓰는 법을 묻거나 이거 어떻게 하냐고 말한다.",
-                  "action": "전자레인지로 데우기 알려 주기"
-                },
-                {
                   "to": "drinking",
                   "on": "사용자가 요리를 마치고 먹기 시작한다."
                 }
-              ]
+              ],
+              "rules": []
             },
             {
               "id": "away",
@@ -6436,7 +5985,8 @@
                   "to": "cooking",
                   "on": "사용자가 돌아와 요리를 시작한다."
                 }
-              ]
+              ],
+              "rules": []
             }
           ]
         },
@@ -6450,7 +6000,7 @@
           "choices": [
             {
               "message": {
-                "content": "{\"initial_state\":\"away\",\"states\":[{\"id\":\"drinking\",\"description\":\"사용자가 먹거나 마시는 중이다.\",\"activity\":[\"drinking\",\"eating\"],\"next\":[{\"to\":\"*\",\"on\":\"사용자가 먹거나 마시기를 끝내고 다른 일로 넘어간다.\",\"action\":\"사용자에게 물어보기\"},{\"to\":\"drinking\",\"on\":\"사용자가 마시던 것을 다 마시고 계속 먹는다.\",\"action\":\"컵에 물 채워 주기\"}]},{\"id\":\"watching_tv\",\"description\":\"사용자가 TV를 보는 중이다.\",\"activity\":[\"watching_tv\"],\"next\":[{\"to\":\"watching_tv\",\"on\":\"사용자가 TV를 보며 마시던 것을 다 마신다.\",\"when\":\"같이 마시는 중이었다.\",\"action\":\"컵에 콜라 따라 주기\"},{\"to\":\"watching_tv\",\"on\":\"사용자가 덥다고 말하거나 더워서 부채질을 한다.\",\"action\":\"에어컨 켜기\"},{\"to\":\"*\",\"on\":\"사용자가 TV 보기를 끝내고 다른 일로 넘어간다.\",\"when\":\"같이 마시는 중이었다.\",\"action\":\"사용자에게 물어보기\"}]},{\"id\":\"cooking\",\"description\":\"사용자가 요리하는 중이다.\",\"activity\":[\"cooking\"],\"next\":[{\"to\":\"cooking\",\"on\":\"사용자가 라면 끓이는 법을 알려 달라고 말했거나, 라면을 끓이다 무엇을 해야 할지 모르겠다고 말한다.\",\"action\":\"라면 끓이기 알려 주기\"},{\"to\":\"cooking\",\"on\":\"사용자가 전자레인지 쓰는 법을 묻거나 이거 어떻게 하냐고 말한다.\",\"action\":\"전자레인지로 데우기 알려 주기\"},{\"to\":\"drinking\",\"on\":\"사용자가 요리를 마치고 먹기 시작한다.\"}]},{\"id\":\"away\",\"description\":\"사용자가 카메라에 보이지 않는다.\",\"activity\":[],\"next\":[{\"to\":\"drinking\",\"on\":\"사용자가 돌아와 먹거나 마신다.\"},{\"to\":\"watching_tv\",\"on\":\"사용자가 돌아와 TV를 본다.\"},{\"to\":\"cooking\",\"on\":\"사용자가 돌아와 요리를 시작한다.\"}]}]}"
+                "content": "{\"initial_state\":\"away\",\"states\":[{\"id\":\"drinking\",\"description\":\"사용자가 먹거나 마시는 중이다.\",\"activity\":[\"drinking\",\"eating\"],\"next\":[],\"rules\":[]},{\"id\":\"watching_tv\",\"description\":\"사용자가 TV를 보는 중이다.\",\"activity\":[\"watching_tv\"],\"next\":[],\"rules\":[]},{\"id\":\"cooking\",\"description\":\"사용자가 요리하는 중이다.\",\"activity\":[\"cooking\"],\"next\":[{\"to\":\"drinking\",\"on\":\"사용자가 요리를 마치고 먹기 시작한다.\"}],\"rules\":[]},{\"id\":\"away\",\"description\":\"사용자가 카메라에 보이지 않는다.\",\"activity\":[],\"next\":[{\"to\":\"drinking\",\"on\":\"사용자가 돌아와 먹거나 마신다.\"},{\"to\":\"watching_tv\",\"on\":\"사용자가 돌아와 TV를 본다.\"},{\"to\":\"cooking\",\"on\":\"사용자가 돌아와 요리를 시작한다.\"}],\"rules\":[]}]}"
               },
               "finish_reason": "stop"
             }
@@ -6462,9 +6012,9 @@
       "id": "reflect-invalid-answer",
       "route": "reflect",
       "body": {
-        "contract": "pam-reflect/2",
+        "contract": "pam-reflect/3",
         "day": "2026-11-07",
-        "memory_kind": "fsm",
+        "memory_kind": "fsm_candidates",
         "memory": {
           "initial_state": "away",
           "states": [
@@ -6475,18 +6025,8 @@
                 "drinking",
                 "eating"
               ],
-              "next": [
-                {
-                  "to": "*",
-                  "on": "사용자가 먹거나 마시기를 끝내고 다른 일로 넘어간다.",
-                  "action": "사용자에게 물어보기"
-                },
-                {
-                  "to": "drinking",
-                  "on": "사용자가 마시던 것을 다 마시고 계속 먹는다.",
-                  "action": "컵에 물 채워 주기"
-                }
-              ]
+              "next": [],
+              "rules": []
             },
             {
               "id": "watching_tv",
@@ -6494,25 +6034,8 @@
               "activity": [
                 "watching_tv"
               ],
-              "next": [
-                {
-                  "to": "watching_tv",
-                  "on": "사용자가 TV를 보며 마시던 것을 다 마신다.",
-                  "when": "같이 마시는 중이었다.",
-                  "action": "컵에 콜라 따라 주기"
-                },
-                {
-                  "to": "watching_tv",
-                  "on": "사용자가 덥다고 말하거나 더워서 부채질을 한다.",
-                  "action": "에어컨 켜기"
-                },
-                {
-                  "to": "*",
-                  "on": "사용자가 TV 보기를 끝내고 다른 일로 넘어간다.",
-                  "when": "같이 마시는 중이었다.",
-                  "action": "사용자에게 물어보기"
-                }
-              ]
+              "next": [],
+              "rules": []
             },
             {
               "id": "cooking",
@@ -6522,20 +6045,11 @@
               ],
               "next": [
                 {
-                  "to": "cooking",
-                  "on": "사용자가 라면 끓이는 법을 알려 달라고 말했거나, 라면을 끓이다 무엇을 해야 할지 모르겠다고 말한다.",
-                  "action": "라면 끓이기 알려 주기"
-                },
-                {
-                  "to": "cooking",
-                  "on": "사용자가 전자레인지 쓰는 법을 묻거나 이거 어떻게 하냐고 말한다.",
-                  "action": "전자레인지로 데우기 알려 주기"
-                },
-                {
                   "to": "drinking",
                   "on": "사용자가 요리를 마치고 먹기 시작한다."
                 }
-              ]
+              ],
+              "rules": []
             },
             {
               "id": "away",
@@ -6554,7 +6068,8 @@
                   "to": "cooking",
                   "on": "사용자가 돌아와 요리를 시작한다."
                 }
-              ]
+              ],
+              "rules": []
             }
           ]
         },
@@ -6580,9 +6095,9 @@
       "id": "reflect-wrong-kind-answer",
       "route": "reflect",
       "body": {
-        "contract": "pam-reflect/2",
+        "contract": "pam-reflect/3",
         "day": "2026-11-07",
-        "memory_kind": "fsm",
+        "memory_kind": "fsm_candidates",
         "memory": {
           "initial_state": "away",
           "states": [
@@ -6593,18 +6108,8 @@
                 "drinking",
                 "eating"
               ],
-              "next": [
-                {
-                  "to": "*",
-                  "on": "사용자가 먹거나 마시기를 끝내고 다른 일로 넘어간다.",
-                  "action": "사용자에게 물어보기"
-                },
-                {
-                  "to": "drinking",
-                  "on": "사용자가 마시던 것을 다 마시고 계속 먹는다.",
-                  "action": "컵에 물 채워 주기"
-                }
-              ]
+              "next": [],
+              "rules": []
             },
             {
               "id": "watching_tv",
@@ -6612,25 +6117,8 @@
               "activity": [
                 "watching_tv"
               ],
-              "next": [
-                {
-                  "to": "watching_tv",
-                  "on": "사용자가 TV를 보며 마시던 것을 다 마신다.",
-                  "when": "같이 마시는 중이었다.",
-                  "action": "컵에 콜라 따라 주기"
-                },
-                {
-                  "to": "watching_tv",
-                  "on": "사용자가 덥다고 말하거나 더워서 부채질을 한다.",
-                  "action": "에어컨 켜기"
-                },
-                {
-                  "to": "*",
-                  "on": "사용자가 TV 보기를 끝내고 다른 일로 넘어간다.",
-                  "when": "같이 마시는 중이었다.",
-                  "action": "사용자에게 물어보기"
-                }
-              ]
+              "next": [],
+              "rules": []
             },
             {
               "id": "cooking",
@@ -6640,20 +6128,11 @@
               ],
               "next": [
                 {
-                  "to": "cooking",
-                  "on": "사용자가 라면 끓이는 법을 알려 달라고 말했거나, 라면을 끓이다 무엇을 해야 할지 모르겠다고 말한다.",
-                  "action": "라면 끓이기 알려 주기"
-                },
-                {
-                  "to": "cooking",
-                  "on": "사용자가 전자레인지 쓰는 법을 묻거나 이거 어떻게 하냐고 말한다.",
-                  "action": "전자레인지로 데우기 알려 주기"
-                },
-                {
                   "to": "drinking",
                   "on": "사용자가 요리를 마치고 먹기 시작한다."
                 }
-              ]
+              ],
+              "rules": []
             },
             {
               "id": "away",
@@ -6672,7 +6151,8 @@
                   "to": "cooking",
                   "on": "사용자가 돌아와 요리를 시작한다."
                 }
-              ]
+              ],
+              "rules": []
             }
           ]
         },

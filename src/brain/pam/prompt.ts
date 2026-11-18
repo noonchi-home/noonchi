@@ -52,7 +52,8 @@ export function buildReflectMessages(r: ReflectRequest): Built {
   if (r.feedback) text += REFLECT_FEEDBACK + r.feedback;
   return {
     messages: [
-      { role: "system", content: adaptedTemplate(`reflector_${r.memory_kind}_update`) },
+      // 후보 FSM 반성은 fsm 반성 프롬프트(노닌치 바꾸기가 후보 FSM 답 모양으로 바꾼다)
+      { role: "system", content: adaptedTemplate(r.memory_kind === "list" ? "reflector_list_update" : "reflector_fsm_update") },
       { role: "user", content: [{ type: "text", text: REFLECT_LOG + r.observation_text }, { type: "text", text }] },
     ],
     generation: generation("reflector"),

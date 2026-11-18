@@ -22,7 +22,7 @@ export function checkBudget(ms: PamMessage[], maxTokens: number, maxModelLen: nu
 export function pamLimits(s: BudgetSettings): PamLimits {
   const empty = { initial_state: "away", states: [{ id: "away", description: "d", activity: [], next: [] }] };
   const p = buildPredictMessages(predictRequest({ contract: "pam-predict/3", final_time: "2026-01-01T00:00:00+09:00", observation_text: "x", memory_kind: "fsm", memory: empty, tasks: ["t"], last_state: null })).messages;
-  const r = buildReflectMessages(reflectRequest({ contract: "pam-reflect/2", day: "2026-01-01", memory_kind: "fsm", memory: empty, observation_text: "x", action_summary: "x", feedback: null })).messages;
+  const r = buildReflectMessages(reflectRequest({ contract: "pam-reflect/3", day: "2026-01-01", memory_kind: "fsm_candidates", memory: { ...empty, states: empty.states.map((s) => ({ ...s, rules: [] })) }, observation_text: "x", action_summary: "x", feedback: null })).messages;
   const room = (ms: PamMessage[], role: "predictor" | "reflector") => Math.max(0, (s.maxModelLen - s.maxTokens[role] - estimateTokens(ms) - RESERVE) * 3);
   return { max_model_len: s.maxModelLen, predict_input_bytes: room(p, "predictor"), reflect_input_bytes: room(r, "reflector") };
 }

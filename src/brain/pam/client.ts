@@ -1,7 +1,8 @@
-// 판단(pam-predict/3)·반성(pam-reflect/2)을 서버 안 함수로 한다. 계약은 docs/pam-interface.md(사진 칸 없음).
+// 판단(pam-predict/3)·반성(pam-reflect/3)을 서버 안 함수로 한다. 계약은 docs/pam-interface.md(사진 칸 없음).
 // 차례(Python PAM과 같다): 사진 칸 검사 → 요청 모양(PamRequestError) → 메시지 → 문맥 길이(PamBudgetError) → LLM(PamLinkError) → 답 검사(PamAnswerError).
-import type { PamPredictContract, PamPredictRequest, PamReflectContract, PamReflectRequest, Prediction } from "../../contract/pam.js";
-import { checkInput, validateMemory, type DecisionInput, type DecisionModel, type PamMemory } from "../decision.js";
+import type { CandidateFsm, PamPredictContract, PamPredictRequest, PamReflectContract, PamReflectRequest, Prediction } from "../../contract/pam.js";
+import { ContractError, CUP_FSM_MEMORY, checkInput, validateCandidateFsm, validateMemory, type DecisionInput, type DecisionModel, type ListMemory, type PamMemory } from "../decision.js";
+import { PyJsonFail, readPyJson } from "./pyjson.js";
 import { parseMemory, parsePrediction } from "./answer.js";
 import { pamLimits, type PamLimits } from "./budget.js";
 import { PamAnswerError, PamRequestError } from "./errors.js";
@@ -11,7 +12,7 @@ import { predictRequest, reflectRequest } from "./request.js";
 import type { PamSettings } from "./settings.js";
 
 export const PAM_PREDICT: PamPredictContract = "pam-predict/3";
-export const PAM_REFLECT: PamReflectContract = "pam-reflect/2";
+export const PAM_REFLECT: PamReflectContract = "pam-reflect/3";
 const IMAGE_KEY = /^(image|images|frames|image_url|base64|jpeg|png)$/i;
 
 /** 어느 깊이든 사진 칸이나 data:image 값이 있으면 막는다. */
@@ -56,15 +57,26 @@ export class PamClient {
     return parsed.prediction;
   }
 
-  async reflect(r: Omit<PamReflectRequest, "contract">, kind: "list" | "fsm", call: CallOptions = {}): Promise<PamMemory> {
+  /** 반성. fsm_candidates면 답은 후보 FSM이고 seed 상태(CUP_FSM_MEMORY)를 지켰는지까지 본다(validateCandidateFsm). 모양 오류는 PamAnswerError. */
+  async reflect(r: Omit<PamReflectRequest, "contract">, kind: "fsm_candidates", call?: CallOptions): Promise<CandidateFsm>;
+  async reflect(r: Omit<PamReflectRequest, "contract">, kind: "list", call?: CallOptions): Promise<ListMemory>;
+  async reflect(r: Omit<PamReflectRequest, "contract">, kind: "list" | "fsm_candidates", call: CallOptions = {}): Promise<CandidateFsm | ListMemory> {
     assertTextOnly(r);
     const req = reflectRequest({ contract: PAM_REFLECT, ...r });
     const built = buildReflectMessages(req);
     assertTextOnly(built.messages);
     const raw = await this.llm.complete(built.messages, built.generation, "reflector", this.o.settings.timeoutMs, call);
-    const parsed = parseMemory(raw, req.memory_kind);
-    if (!parsed.ok) throw new PamAnswerError(`PAM 반성 실패: ${parsed.error}`);
-    return validateMemory(parsed.memory, kind);
+    if (kind === "list") {
+      const parsed = parseMemory(raw, "list");
+      if (!parsed.ok) throw new PamAnswerError(`PAM 반성 실패: ${parsed.error}`);
+      return validateMemory(parsed.memory, "list") as ListMemory;
+    }
+    try {
+      return validateCandidateFsm(readPyJson(raw), CUP_FSM_MEMORY);
+    } catch (e) {
+      if (e instanceof PyJsonFail || e instanceof ContractError) throw new PamAnswerError(`PAM 반성 실패: ${e.message}`);
+      throw e;
+    }
   }
 }
 

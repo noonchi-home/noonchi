@@ -13,7 +13,7 @@ import dotenv from "dotenv";
 import { LessonStore, lessonsPath } from "../src/act/lessons.js";
 import { ApprovalStore, approvalsPath } from "../src/agent/approval.js";
 import { CUP_FSM_MEMORY, type FsmMemory } from "../src/brain/decision.js";
-import { learnedRules } from "../src/brain/history/habits.js";
+import { learnedEdges, type EdgeLine } from "../src/brain/history/habits.js";
 import { HistoryDb, historyTzMinutes } from "../src/brain/history/db.js";
 import { REFLECT_TEXT } from "../src/brain/history/labels.js";
 import { isDay } from "../src/brain/history/summary.js";
@@ -36,9 +36,8 @@ const RAMEN_RUN = [
   { label: "인덕션으로 가기", alone: true }, { label: "냄비 올리기", alone: false }, { label: "인덕션 켜기", alone: false }, { label: "면과 스프 넣기", alone: false },
   { label: "인덕션 끄기", alone: false },
 ];
-/** 말없이 에어컨을 켜는 규칙인가: 에어컨 켜기 규칙 가운데 seed 덥다 규칙이 아닌 것. */
-const SEED_RULES = CUP_FSM_MEMORY.states.flatMap((s) => s.rules);
-export const silentAircon = (r: { trigger: string; action: string }) => r.action === "에어컨 켜기" && !SEED_RULES.some((x) => x.trigger === r.trigger && x.action === r.action);
+/** 말없이 에어컨을 켜는 화살표인가: 자리에 없음 → TV 보는 중 진입 화살표의 에어컨 켜기(배운 것). 덥다·부채질 화살표(정한 습관)는 아니다. */
+export const silentAircon = (r: EdgeLine) => r.action === "에어컨 켜기" && r.from === "away" && r.to === "watching_tv";
 
 /** 멈춤: 까닭을 찍고 끝낸다(종료 코드 1). */
 export class DemoStop extends Error {}
@@ -53,7 +52,6 @@ export interface DemoDeps {
   writeMarker?: (path: string, text: string) => void;
 }
 
-type RuleLine = { state: string; trigger: string; action: string };
 type MemoryDay = { ok: true; day: string; pinned: number | null; uses: { version: number; source: string; appliesDay: string | null; day: string | null } | null; latest: number | null };
 
 const addDays = (day: string, n: number) => new Date(Date.parse(`${day}T00:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10);
@@ -187,11 +185,11 @@ export async function demoSetup(argv: string[], deps: DemoDeps): Promise<void> {
     throw new DemoStop(`서버가 꺼졌는지 알 수 없어요(${api}: ${why}). 서버를 끈 뒤 다시 하세요`);
   };
   const lastReflection = async () => {
-    const r = await call<{ rows: { data: { learned?: RuleLine[]; active?: RuleLine[] } | null }[] }>("GET", "/api/history?kinds=reflection&limit=1");
+    const r = await call<{ rows: { data: { learned?: EdgeLine[]; active?: EdgeLine[] } | null }[] }>("GET", "/api/history?kinds=reflection&limit=1");
     const data = r.rows.at(-1)?.data ?? {};
     return { learned: data.learned ?? [], active: data.active ?? [] };
   };
-  const rulesLine = (rs: RuleLine[]) => (rs.length ? rs.map((x) => `${x.state}: ${x.trigger} → ${x.action}`).join(" / ") : "없음");
+  const rulesLine = (rs: EdgeLine[]) => (rs.length ? rs.map((x) => `${x.from} → ${x.to}: ${x.on} → ${x.action}`).join(" / ") : "없음");
 
   const [cmd, scene] = argv;
   if (cmd === "day1" || cmd === "week") {
@@ -275,9 +273,9 @@ export async function demoSetup(argv: string[], deps: DemoDeps): Promise<void> {
         scratch.close();
       }
       const before = (db.memoryFor(today)?.memory as FsmMemory | undefined) ?? CUP_FSM_MEMORY;
-      const keep = (rs: RuleLine[]) => rs.filter((x) => !TASKS[x.action]?.coach);
-      const learned = keep(learnedRules(before, memory));
-      const active = keep(learnedRules(CUP_FSM_MEMORY, memory));
+      const keep = (rs: EdgeLine[]) => rs.filter((x) => !TASKS[x.action]?.coach);
+      const learned = keep(learnedEdges(before, memory));
+      const active = keep(learnedEdges(CUP_FSM_MEMORY, memory));
       const version = db.saveMemory({ kind: "fsm", memory, day: yesterday, appliesDay: today, source: "synthetic" });
       db.add("reflection", now(), REFLECT_TEXT.done(version, today), { data: { day: yesterday, ok: true, version, applies_day: today, synthetic: true, learned, active, dropped: [] } });
       log(`합성 판본 ${version}판을 ${today}부터 쓰게 넣었어요. 영상 자막: 합성 기록으로 만든 습관`);

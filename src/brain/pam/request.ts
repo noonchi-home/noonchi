@@ -1,7 +1,7 @@
-// pam-predict/3·pam-reflect/2 요청 모양(zod). 모르는 칸(사진 칸 포함)은 거절한다. 글 길이는 Python처럼 코드 포인트로 센다.
+// pam-predict/3·pam-reflect/3 요청 모양(zod). 모르는 칸(사진 칸 포함)은 거절한다. 글 길이는 Python처럼 코드 포인트로 센다.
 // 시각은 Python datetime.isoformat() 꼴로 바꿔 둔다: 메시지의 시각 줄이 Python과 같아야 한다.
 import { z } from "zod";
-import { ContractError, validateMemory, validateTasks } from "../decision.js";
+import { ContractError, validateCandidateFsm, validateMemory, validateTasks } from "../decision.js";
 import { PamRequestError } from "./errors.js";
 
 const ISO = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2})(?:\.(\d{1,6})\d*)?)?(?:(Z)|([+-])(\d{2}):(\d{2}))$/;
@@ -39,9 +39,9 @@ const PredictSchema = z.strictObject({
   last_state: z.string().min(1).nullable(),
 });
 const ReflectSchema = z.strictObject({
-  contract: z.literal("pam-reflect/2"),
+  contract: z.literal("pam-reflect/3"),
   day: z.string().refine((s) => { const m = DAY.exec(s); return !!m && realDay(+m[1]!, +m[2]!, +m[3]!); }, { message: "YYYY-MM-DD여야 합니다" }),
-  memory_kind: kind,
+  memory_kind: z.enum(["list", "fsm_candidates"]),
   memory,
   observation_text: text(1, 100_000),
   action_summary: text(1, 50_000),
@@ -65,6 +65,6 @@ function parse<T>(schema: z.ZodType<T>, body: unknown, check: (r: T) => void): T
 /** 판단 요청: 모양 → 행동 목록 → 기억(Python build_predict_messages와 같은 차례). */
 export const predictRequest = (body: unknown): PredictRequest =>
   parse(PredictSchema, body, (r) => { validateTasks(r.tasks); validateMemory(r.memory, r.memory_kind); });
-/** 반성 요청: 모양 → 기억. */
+/** 반성 요청: 모양 → 기억(후보 FSM은 모양만, seed 상태는 답에서 본다). */
 export const reflectRequest = (body: unknown): ReflectRequest =>
-  parse(ReflectSchema, body, (r) => { validateMemory(r.memory, r.memory_kind); });
+  parse(ReflectSchema, body, (r) => { if (r.memory_kind === "list") validateMemory(r.memory, "list"); else validateCandidateFsm(r.memory); });

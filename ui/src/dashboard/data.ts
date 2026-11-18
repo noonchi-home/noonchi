@@ -55,16 +55,16 @@ function addThoughts(list: ThoughtMessage[], more: ThoughtMessage[]): ThoughtMes
   return [...list, ...fresh].map((m, i) => [m, i] as const).sort((a, b) => a[0].at_ms - b[0].at_ms || a[1] - b[1]).map(([m]) => m).slice(-THOUGHT_KEPT);
 }
 
-/** 반성 규칙의 트리거 글 → 메시지 한 줄(끝 마침표를 뗀다). */
+/** 반성 화살표의 조건(없으면 사건) 글 → 메시지 한 줄(끝 마침표를 뗀다). */
 const sentence = (t: string) => t.trim().replace(/[.。]+$/, "");
 
-/** 성공한 반성의 메시지 둘: 새로 배운(없으면 쓰고 있는) 첫 규칙의 상황 → 「새로 배운 습관이에요」·「전에 배운 습관이에요」. 규칙이 없으면 없다. */
+/** 성공한 반성의 메시지 둘: 새로 배운(없으면 쓰고 있는) 첫 화살표의 상황 → 「새로 배운 습관이에요」·「전에 배운 습관이에요」. 화살표가 없으면 없다. */
 function reflectionThoughts(r: Reflection): ThoughtMessage[] {
   const rule = r.learned?.[0] ?? r.active?.[0];
   if (!rule) return [];
   const id = `reflection@${r.at_ms}`;
   return [
-    { id: `${id}:0`, text: sentence(rule.trigger), at_ms: r.at_ms, decision: "" },
+    { id: `${id}:0`, text: sentence(rule.when ?? rule.on), at_ms: r.at_ms, decision: "" },
     { id: `${id}:1`, text: r.learned?.[0] ? WORDS.newHabit : WORDS.oldHabit, at_ms: r.at_ms, decision: "" },
   ];
 }

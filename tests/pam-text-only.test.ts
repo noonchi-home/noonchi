@@ -13,7 +13,7 @@ describe("사진 없는 PAM", () => {
     const ok: PamPredictRequest = { contract: "pam-predict/3", final_time: "2026-11-07T21:00:08.000+09:00", observation_text: "t", memory_kind: "fsm", memory: {}, tasks: ["a"], last_state: null };
     // @ts-expect-error 사진 칸은 계약에 없다
     const bad: PamPredictRequest = { ...ok, frames: [{ image: { base64: "AAAA" } }] };
-    const reflect: PamReflectRequest = { contract: "pam-reflect/2", day: "2026-11-07", memory_kind: "fsm", memory: {}, observation_text: "t", action_summary: "a", feedback: null };
+    const reflect: PamReflectRequest = { contract: "pam-reflect/3", day: "2026-11-07", memory_kind: "fsm_candidates", memory: {}, observation_text: "t", action_summary: "a", feedback: null };
     // @ts-expect-error 반성 계약에도 사진 칸이 없다
     const badReflect: PamReflectRequest = { ...reflect, images: ["data:image/jpeg;base64,AAAA"] };
     expect(bad && badReflect).toBeTruthy();

@@ -4,7 +4,7 @@
     "limits": {
       "max_model_len": 32768,
       "predict_input_bytes": 86508,
-      "reflect_input_bytes": 42123
+      "reflect_input_bytes": 39498
     }
   },
   {
@@ -14,7 +14,7 @@
     "limits": {
       "max_model_len": 32768,
       "predict_input_bytes": 86508,
-      "reflect_input_bytes": 42123
+      "reflect_input_bytes": 39498
     }
   },
   {
@@ -25,7 +25,7 @@
     "limits": {
       "max_model_len": 20000,
       "predict_input_bytes": 48204,
-      "reflect_input_bytes": 3819
+      "reflect_input_bytes": 1194
     }
   },
   {
@@ -36,7 +36,7 @@
     "limits": {
       "max_model_len": 24576,
       "predict_input_bytes": 61932,
-      "reflect_input_bytes": 17547
+      "reflect_input_bytes": 14922
     }
   }
 ]

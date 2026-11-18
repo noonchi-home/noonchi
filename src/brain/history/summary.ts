@@ -31,8 +31,13 @@ export function isDay(day: string): boolean {
 }
 
 export function daySummary(db: HistoryDb, day: string, o: { maxBytes?: number; caps?: { observation: number; action: number } } = {}): DaySummary {
+  // 판단 줄에는 그 판단의 사람 상태(판단 기록 fsm.state, 임시 상태 포함)를 붙인다: 반성이 기억에 없던 활동을 본다
+  const stateOf = (data: unknown) => (data as { fsm?: { state?: unknown } | null } | null)?.fsm?.state;
   const lines = (kinds: HistoryKind[]) =>
-    collapseLines(db.list({ day, kinds, limit: 10_000_000 }).map((r) => ({ atMs: r.at_ms, text: `${PREFIX[r.kind] ?? ""}${r.text}` })), db.offsetMinutes);
+    collapseLines(db.list({ day, kinds, limit: 10_000_000 }).map((r) => {
+      const state = r.kind === "decision" ? stateOf(r.data) : undefined;
+      return { atMs: r.at_ms, text: `${PREFIX[r.kind] ?? ""}${r.text}${typeof state === "string" ? SUMMARY_TEXT.state(state) : ""}` };
+    }), db.offsetMinutes);
   const observed = lines(OBSERVED);
   const acted = lines(ACTED);
   const counts = db.counts(day);

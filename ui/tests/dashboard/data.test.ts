@@ -96,13 +96,14 @@ describe("대시보드 자료", () => {
     expect(Object.keys(s).sort()).toEqual(["decision", "eye", "goal", "mode", "plan", "reflection", "safety", "say", "says", "talk", "thoughts"]);
   });
   describe("반성 뒤 메시지 상자", () => {
-    const NIGHT = { state: "left_cup", trigger: "밤에 사용자가 식탁을 떠난다.", action: "컵 치우기" };
-    const AIRCON = { state: "watching_tv", trigger: "사용자가 TV를 보러 소파에 앉는다.", action: "에어컨 켜기" };
+    const NIGHT = { from: "drinking", to: "*", on: "밤에 사용자가 식탁을 떠난다.", when: null as string | null, action: "컵 치우기" };
+    const AIRCON = { from: "away", to: "watching_tv", on: "사용자가 TV를 보러 소파에 앉는다.", when: null as string | null, action: "에어컨 켜기" };
     const reflected = (at: number, learned: typeof NIGHT[], active: typeof NIGHT[], replay = false): ServerMessage => ({
       type: "brain", ...(replay ? { replay: true as const } : {}),
       event: { type: "reflection", at_ms: at, day: "2026-11-08", ok: true, version: 3, applies_day: "2026-11-09", text: "반성 완료", learned, active, dropped: [] },
     });
-    it("새로 배운 규칙이 있으면 그 규칙의 상황 → 「새로 배운 습관이에요」 두 줄, 쓰는 습관뿐이면 「전에 배운 습관이에요」다. 규칙이 비면 줄이 없다", () => {
+    it("새로 배운 화살표가 있으면 그 화살표의 상황(조건, 없으면 사건) → 「새로 배운 습관이에요」 두 줄, 쓰는 습관뿐이면 「전에 배운 습관이에요」다. 화살표가 비면 줄이 없다", () => {
+      expect(textsOf(feed([reflected(2000, [{ ...NIGHT, when: "같이 TV를 보던 중이었다." }], [])]))).toEqual(["같이 TV를 보던 중이었다", "새로 배운 습관이에요"]);
       expect(textsOf(feed([reflected(2000, [NIGHT], [AIRCON, NIGHT])]))).toEqual(["밤에 사용자가 식탁을 떠난다", "새로 배운 습관이에요"]);
       expect(textsOf(feed([reflected(2000, [], [AIRCON], true)]))).toEqual(["사용자가 TV를 보러 소파에 앉는다", "전에 배운 습관이에요"]);
       expect(talkOf(feed([reflected(2000, [], [])]))).toBeNull();

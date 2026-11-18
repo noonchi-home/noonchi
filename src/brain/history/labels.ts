@@ -14,6 +14,8 @@ export const SUMMARY_TEXT = {
   execution: "클로이드 실행: ",
   feedback: "사용자: ",
   dropped: (n: number) => `앞선 기록 ${n}줄 생략`,
+  /** 판단 줄 끝에 붙이는 그 판단의 사람 상태(임시 상태 ~<하는 일 값> 포함). */
+  state: (s: string) => ` · 사람 상태 ${s}`,
   tally: (vlm: number, vlmMissing: number, yoloMissing: number) => `[하루] VLM 분석 ${vlm}장 · VLM 분석 없음 ${vlmMissing}장 · YOLO 분석 없음 ${yoloMissing}장`,
 };
 
@@ -30,7 +32,7 @@ export const REFLECT_TEXT = {
   cancelled: "서버를 끄느라 반성을 멈췄어요",
   noObservation: "관찰 없음",
   noAction: "행동 없음",
-  learned: (n: number) => `새 규칙 ${n}개를 배웠어요`,
+  learned: (n: number) => `새 화살표 ${n}개를 배웠어요`,
 };
 
 /** 기억 판본 글(서버 로그). */

@@ -1,6 +1,6 @@
-// PamClient(src/brain/pam/) 입력 모양(pam-predict/3·pam-reflect/2, 타입만). 사진 칸이 없다. 형식 설명은 docs/pam-interface.md.
+// PamClient(src/brain/pam/) 입력 모양(pam-predict/3·pam-reflect/3, 타입만). 사진 칸이 없다. 형식 설명은 docs/pam-interface.md.
 export type PamPredictContract = "pam-predict/3";
-export type PamReflectContract = "pam-reflect/2";
+export type PamReflectContract = "pam-reflect/3";
 
 export interface PamPredictRequest {
   contract: PamPredictContract;
@@ -19,7 +19,8 @@ export interface PamReflectRequest {
   contract: PamReflectContract;
   /** 반성하는 날(YYYY-MM-DD). */
   day: string;
-  memory_kind: "list" | "fsm";
+  /** fsm_candidates: 지금까지의 후보 FSM을 보내고 후보 FSM을 받는다(로봇 FSM은 채택 검사를 지난 후보로 서버가 만든다). */
+  memory_kind: "list" | "fsm_candidates";
   memory: unknown;
   /** 하루 관찰 텍스트. */
   observation_text: string;

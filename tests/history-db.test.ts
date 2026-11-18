@@ -10,6 +10,8 @@ import type { DeviceState } from "../src/contract/devices.js";
 import { HISTORY_KINDS, HistoryDb, historyTzMinutes, type HistoryKind } from "../src/brain/history/db.js";
 import { attachRecorder, type DeviceNote } from "../src/brain/history/recorder.js";
 import { daySummary } from "../src/brain/history/summary.js";
+import { CUP_FSM_MEMORY } from "../src/brain/decision.js";
+import { candidateFsmOf } from "../src/brain/pam/adopt.js";
 
 describe("기록 DB", () => {
   it("폴더를 만들고 WAL·잠금 대기 5초로 연다", () => {
@@ -237,5 +239,20 @@ describe("한 번만 쓰기(기록 노드)", () => {
     db.setDeviceLast("tv", { on: true });
     db.setDeviceLast("tv", { on: false });
     expect(db.deviceLast("tv")).toEqual({ on: false });
+  });
+});
+
+describe("기억 종류 나누기", () => {
+  it("후보 판본(fsm_candidates)은 실행 기억으로 뽑히지 않고 candidatesFor로만 읽는다", () => {
+    const db = HistoryDb.open(":memory:");
+    const robot = db.saveMemory({ kind: "fsm", memory: CUP_FSM_MEMORY, day: "2026-11-10", appliesDay: "2026-11-11", source: "reflection" });
+    const cand = db.saveMemory({ kind: "fsm_candidates", memory: candidateFsmOf(CUP_FSM_MEMORY), day: "2026-11-10", appliesDay: "2026-11-11", source: "reflection" });
+    expect(cand).toBeGreaterThan(robot);
+    expect(db.memoryFor("2026-11-11")!.version).toBe(robot);
+    expect(db.latestMemoryVersion()).toBe(robot);
+    expect(db.memoryVersions().map((v) => v.kind)).toEqual(["fsm"]);
+    expect(db.candidatesFor("2026-11-11")).toMatchObject({ version: cand, kind: "fsm_candidates" });
+    expect(db.candidatesFor("2026-11-10")).toBeNull();
+    expect(() => db.pinMemory("2026-11-11", cand)).toThrow(/not an execution memory/);
   });
 });

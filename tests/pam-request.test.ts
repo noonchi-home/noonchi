@@ -1,4 +1,4 @@
-// pam-predict/3·pam-reflect/2 요청 모양: 사진 칸이 없고, 논문 판단 규칙 문장은 그대로 두고 사진 자리에 관찰 텍스트를 넣는다.
+// pam-predict/3·pam-reflect/3 요청 모양: 사진 칸이 없고, 논문 판단 규칙 문장은 그대로 두고 사진 자리에 관찰 텍스트를 넣는다.
 import { describe, expect, it } from "vitest";
 import { PREDICT_STATE, PamRequestError, buildPredictMessages, buildReflectMessages, predictRequest, pyIsoformat, reflectRequest } from "../src/brain/pam/index.js";
 
@@ -8,7 +8,10 @@ const MEMORY = { initial_state: "away", states: [
 const LIST = { rules: [{ trigger: "빈 컵이 식탁에 남음", action: "컵 치우기" }] };
 const P = { contract: "pam-predict/3", final_time: "2026-11-07T21:00:08.000+09:00", observation_text: "21:00:00 사람 보임\n21:00:04 사람 안 보임",
   memory_kind: "fsm", memory: MEMORY, tasks: ["컵 치우기", "사용자에게 물어보기"], last_state: null };
-const R = { contract: "pam-reflect/2", day: "2026-11-07", memory_kind: "fsm", memory: MEMORY, observation_text: "07:58:02 사람 보임",
+const CANDIDATES = { initial_state: "away", states: [
+  { id: "drinking", description: "마시는 중", activity: ["drinking"], next: [], rules: [{ to: "*", action: "컵 치우기", candidates: [{ on: "컵을 두고 떠남" }] }] },
+  { id: "away", description: "자리에 없음", activity: [], next: [{ to: "drinking", on: "돌아와 마심" }], rules: [] }] };
+const R = { contract: "pam-reflect/3", day: "2026-11-07", memory_kind: "fsm_candidates", memory: CANDIDATES, observation_text: "07:58:02 사람 보임",
   action_summary: "08:10:40 컵 치우기 부탁", feedback: "다 마신 뒤에만 치워 줘" };
 const texts = (b: ReturnType<typeof buildReflectMessages>) => (b.messages[1]!.content as { text: string }[]).map((p) => p.text).join("\n");
 
