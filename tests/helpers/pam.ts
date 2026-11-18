@@ -1,7 +1,7 @@
 // 시험용 PAM LLM 자리(OpenAI 호환 /v1/chat/completions, GET /v1/models): 서버 안 PamClient(src/brain/pam/)가 보낸 판단·반성 메시지를 되읽어
 // 요청 값(관찰 텍스트·기억·행동 목록 등)으로 기록하고, 정해진 답 글을 낸다. 서버에는 PAM_LLM_BASE_URL=url(pamLlmEnv)로 붙인다.
 import { createServer, type ServerResponse } from "node:http";
-import { adaptedTemplate, PamClient, pamSettings, PREDICT_LOG, PREDICT_STATE, PREDICT_TIME, REFLECT_FEEDBACK, REFLECT_LOG, REFLECT_MEMORY, REFLECT_SUMMARY } from "../../src/brain/pam/index.js";
+import { adaptedTemplate, MEMORY_CHECK_HEAD, MEMORY_CHECK_PROMPT, PamClient, pamSettings, PREDICT_LOG, PREDICT_STATE, PREDICT_TIME, REFLECT_FEEDBACK, REFLECT_LOG, REFLECT_MEMORY, REFLECT_SUMMARY } from "../../src/brain/pam/index.js";
 import { ANY_STATE, AWAY_STATE, type FsmMemory } from "../../src/brain/decision.js";
 import { listenRetry } from "../../src/shared/net.js";
 
@@ -11,7 +11,9 @@ type Pred = { observation: string; reasoning: string; task_index?: number; state
 export type PredictView = { role: "predict"; final_time: string; observation_text: string; memory_kind: "list" | "fsm"; memory: unknown; tasks: string[]; last_state: string | null };
 /** 반성 요청 값(메시지에서 되읽음). */
 export type ReflectView = { role: "reflect"; memory_kind: "list" | "fsm_candidates"; memory: unknown; observation_text: string; action_summary: string; feedback: string | null };
-export type PamView = PredictView | ReflectView;
+/** 기억 뜻 검사 요청 값(src/brain/pam/memoryCheck.ts): 검사할 후보 FSM. */
+export type CheckView = { role: "check"; memory: { initial_state: string; states: { id: string; [k: string]: unknown }[] }; observation_text?: undefined };
+export type PamView = PredictView | ReflectView | CheckView;
 export interface FakePamLlm {
   /** 서버의 PAM_LLM_BASE_URL(…/v1). */
   url: string;
@@ -28,6 +30,8 @@ export interface FakePamLlmOptions {
   predict?: (v: PredictView) => Pred | string;
   /** 반성 답(기본은 받은 기억 그대로). 문자열이면 답 글 그대로. */
   reflect?: (v: ReflectView) => unknown;
+  /** 기억 뜻 검사 답(기본 통과 { ok: true, items: [] }). 문자열이면 답 글 그대로. */
+  check?: (v: CheckView) => unknown;
   /** 갈래별 HTTP 상태(예: { predict: 500 }). */
   status?: Partial<Record<PamView["role"], number>>;
 }
@@ -62,6 +66,7 @@ function unrender(template: string, text: string): Record<string, string> | null
 export function pamView(body: { messages: { content: string | { text: string }[] }[] }): PamView {
   const system = body.messages[0]!.content as string;
   const parts = (body.messages[1]!.content as { text: string }[]).map((p) => p.text);
+  if (system === MEMORY_CHECK_PROMPT) return { role: "check", memory: JSON.parse(parts[0]!.substring(MEMORY_CHECK_HEAD.length)) };
   for (const kind of ["fsm", "list"] as const) {
     const v = unrender(adaptedTemplate(`predictor_${kind}`), system);
     if (v) {
@@ -80,7 +85,7 @@ export function pamView(body: { messages: { content: string | { text: string }[]
         action_summary: f < 0 ? rest : rest.substring(0, f), feedback: f < 0 ? null : rest.substring(f + REFLECT_FEEDBACK.length) };
     }
   }
-  throw new Error("PAM 판단·반성 메시지가 아닙니다");
+  throw new Error("PAM 판단·반성·뜻 검사 메시지가 아닙니다");
 }
 
 /** fsm 요청에 행동 번호(task_index)로 낸 시험 답을 pam-predict/3 답(state·from·next_index)으로 바꾼다(시험 도우미만 찾는다):
@@ -208,7 +213,7 @@ export async function startFakePamLlm(o: FakePamLlmOptions = {}): Promise<FakePa
     calls.push(v.role);
     const status = o.status?.[v.role];
     if (status && status !== 200) return send(res, status, { error: { message: "시험 오류" } });
-    const answer = v.role === "predict" ? fsmAnswerOf(v, o.predict?.(v) ?? WAIT) : (o.reflect?.(v) ?? v.memory);
+    const answer = v.role === "predict" ? fsmAnswerOf(v, o.predict?.(v) ?? WAIT) : v.role === "check" ? (o.check?.(v) ?? { ok: true, items: [] }) : (o.reflect?.(v) ?? v.memory);
     const content = typeof answer === "string" ? answer : JSON.stringify(answer);
     send(res, 200, { id: "fake", object: "chat.completion", created: 0, model: body.model,
       choices: [{ index: 0, message: { role: "assistant", content }, finish_reason: "stop" }], usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 } });

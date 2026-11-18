@@ -33,6 +33,10 @@ export const REFLECT_TEXT = {
   noObservation: "관찰 없음",
   noAction: "행동 없음",
   learned: (n: number) => `새 화살표 ${n}개를 배웠어요`,
+  /** 반성이 낸 기억이 코드 검사·뜻 검사를 두 번 다 지나지 못해 새 판본을 저장하지 않음. */
+  rejected: (why: string) => `반성 기억을 쓰지 않아요 · ${why}`,
+  /** 다시 반성할 때 피드백 끝에 붙이는 까닭. */
+  retry: (why: string) => `기억 검사 까닭: ${why}`,
 };
 
 /** 기억 판본 글(서버 로그). */

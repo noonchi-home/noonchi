@@ -7,4 +7,5 @@ export { loadPaperConfig, loadPrompt, PAM_DIR, PROMPT_IDS, render, type PromptId
 export { predictRequest, pyIsoformat, reflectRequest, type PredictRequest, type ReflectRequest } from "./request.js";
 export { assertTextOnly, PAM_PREDICT, PAM_REFLECT, PamClient, PamDecision } from "./client.js";
 export { PamLlm, type CallOptions } from "./llm.js";
+export { MEMORY_CHECK_HEAD, MEMORY_CHECK_PROMPT, parseVerdict, type MemoryVerdict } from "./memoryCheck.js";
 export { pamSettings, type PamSettings } from "./settings.js";

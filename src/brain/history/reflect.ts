@@ -3,10 +3,12 @@
 // 다음 날 판단이 이미 판본을 정했으면 그다음 날부터 쓴다. 보내기 전에 PamClient.limits()의 입력 한도(reflect_input_bytes)에서
 // 기억 JSON·피드백 크기를 빼고 그 안으로 하루 요약을 줄인다. 칸마다 pam-reflect/3 상한도 넘지 않게 하고, 피드백은 최근 것부터 담는다.
 // 결과는 기록 DB(reflection)와 판단 기록(brain)에 남긴다.
-// fsm 기억: 반성은 후보 FSM(fsm_candidates)을 받고 → 배우지 않는 행동 후보 빼기(settingsGuard) → 로봇 FSM(seed 화살표 + 채택 검사를 지난 배우는 행동 후보, adoptedFsm)
+// fsm 기억: 반성은 후보 FSM(fsm_candidates)을 받고(코드 모양 검사) → 배우지 않는 행동 후보 빼기(settingsGuard) → 기억 뜻 검사(LLM). 거절이면 까닭을 피드백에 붙여
+// 한 번 다시 반성하고, 그래도 거절이면 새 판본을 저장하지 않는다(전날 기억을 쓴다). → 로봇 FSM(seed 화살표 + 채택 검사를 지난 배우는 행동 후보, adoptedFsm)
 // → 습관 거르기(배운 화살표만 뺄 수 있음, 기본 모두 남기기) → 모양 검사 → 로봇 판본(fsm)과 후보 판본(fsm_candidates) 저장. 후보 판본은 다음 밤 반성의 입력이다.
 import { TASKS } from "../../act/tasks.js";
-import { CUP_FSM_MEMORY, MAX_REFLECT_TEXT, isOldFsm, validateMemory, type FsmMemory, type PamMemory } from "../decision.js";
+import { CUP_FSM_MEMORY, ContractError, MAX_REFLECT_TEXT, isOldFsm, validateMemory, type FsmMemory, type PamMemory } from "../decision.js";
+import { headWithin } from "../../shared/cut.js";
 import type { PamClient } from "../pam/index.js";
 import { adoptKey, adoptedFsm, candidateFsmOf } from "../pam/adopt.js";
 import type { BrainLog, PamUsage } from "../../contract/events.js";
@@ -16,6 +18,8 @@ import { edgeKey, learnedEdges, settingsGuard, type EdgeLine, type HabitFilter, 
 import { MEMORY_TEXT, REFLECT_TEXT } from "./labels.js";
 import { daySummary } from "./summary.js";
 
+/** 다시 반성할 때 피드백에 붙이는 까닭의 길이 상한(글자). 하루 요약 한도에서 그만큼 미리 뺀다. */
+const RETRY_WHY_MAX = 1_000;
 const nextDay = (day: string) => new Date(Date.parse(`${day}T00:00:00Z`) + 86_400_000).toISOString().slice(0, 10);
 const bytes = (s: string) => Buffer.byteLength(s, "utf8");
 
@@ -99,7 +103,7 @@ function dayMemory(db: HistoryDb, day: string, o: { log?: (line: string) => void
 export async function runReflection(db: HistoryDb, pam: PamClient, day: string, o: { now?: () => number; emit?: (l: BrainLog) => void; filter?: HabitFilter; windowDays?: number; signal?: AbortSignal } = {}): Promise<ReflectResult> {
   const now = o.now ?? (() => Date.now());
   let usage: PamUsage | undefined;
-  const done = (ok: boolean, text: string, version: number | null, appliesDay: string | null, found?: { learned: EdgeLine[]; active: EdgeLine[]; dropped: HabitRuleNote[] }) => {
+  const done = (ok: boolean, text: string, version: number | null, appliesDay: string | null, found?: { learned?: EdgeLine[]; active?: EdgeLine[]; dropped?: HabitRuleNote[]; rejected?: string | null }) => {
     const at = now();
     const used = usage ? { usage } : {};
     db.add("reflection", at, text, { data: { day, ok, version, applies_day: appliesDay, ...found, ...used } });
@@ -117,7 +121,9 @@ export async function runReflection(db: HistoryDb, pam: PamClient, day: string, 
     const input: PamMemory | CandidateFsm = cur.kind === "fsm" ? (db.candidatesFor(day)?.memory as CandidateFsm | undefined) ?? candidateFsmOf(cur.memory as FsmMemory) : cur.memory;
     const limits = await pam.limits();
     // 요약이 비면 대신 보내는 글(관찰 없음·행동 없음)도 한도 안에 들게 미리 뺀다
-    const maxBytes = limits.reflect_input_bytes - bytes(JSON.stringify(input, null, 2)) - bytes(feedback ?? "") - bytes(REFLECT_TEXT.noObservation) - bytes(REFLECT_TEXT.noAction);
+    // fsm은 다시 반성할 때 피드백에 붙는 까닭(RETRY_WHY_MAX 글자, UTF-8 3바이트까지)도 미리 뺀다
+    const retryRoom = cur.kind === "fsm" ? bytes(REFLECT_TEXT.retry("")) + 1 + RETRY_WHY_MAX * 3 : 0;
+    const maxBytes = limits.reflect_input_bytes - bytes(JSON.stringify(input, null, 2)) - bytes(feedback ?? "") - retryRoom - bytes(REFLECT_TEXT.noObservation) - bytes(REFLECT_TEXT.noAction);
     if (maxBytes <= 0) throw new Error(REFLECT_TEXT.tooBig);
     const summary = daySummary(db, day, { maxBytes, caps: MAX_REFLECT_TEXT });
     const req = {
@@ -133,11 +139,33 @@ export async function runReflection(db: HistoryDb, pam: PamClient, day: string, 
       memory = await pam.reflect({ ...req, memory_kind: "list" }, "list", call);
       if (o.signal?.aborted) return { ok: false, error: REFLECT_TEXT.cancelled };
     } else {
-      const raw = await pam.reflect({ ...req, memory_kind: "fsm_candidates" }, "fsm_candidates", call);
+      // 반성 한 번(후보 FSM 종류) + 배우지 않는 행동 후보 빼기 + 뜻 검사. 거절이면 까닭 글
+      const attempt = async (fb: string | null): Promise<{ candidates: CandidateFsm; notes: HabitRuleNote[]; why: null } | { candidates: null; notes: HabitRuleNote[]; why: string }> => {
+        let raw: CandidateFsm;
+        try {
+          // 반성 답은 후보 FSM 종류로 받는다: PamClient.reflect가 validateCandidateFsm(raw, seed)로 보고 모양 오류는 PamAnswerError(Codex 2966378 P2).
+          // 모양 오류도 까닭으로 받아 한 번 다시 반성한다(Codex 8ab2d06 P2). 연결 오류(PamLinkError)는 그대로 던진다
+          raw = await pam.reflect({ ...req, feedback: fb, memory_kind: "fsm_candidates" }, "fsm_candidates", call);
+        } catch (e) {
+          if (e instanceof ContractError) return { candidates: null, notes: [], why: e.message };
+          throw e;
+        }
+        const guarded = settingsGuard(raw);
+        const verdict = await pam.checkMemory(guarded.candidates, call);
+        return verdict.ok ? { candidates: guarded.candidates, notes: guarded.notes, why: null }
+          : { candidates: null, notes: [], why: verdict.items.filter((x) => !x.ok).map((x) => `${x.ref}: ${x.why}`).join(" / ") };
+      };
+      let got = await attempt(feedback);
       if (o.signal?.aborted) return { ok: false, error: REFLECT_TEXT.cancelled };
+      if (got.why !== null) got = await attempt([feedback, REFLECT_TEXT.retry(headWithin(got.why, RETRY_WHY_MAX))].filter(Boolean).join("\n"));
+      if (o.signal?.aborted) return { ok: false, error: REFLECT_TEXT.cancelled };
+      if (got.candidates === null) {
+        done(false, REFLECT_TEXT.rejected(got.why!), null, null, { rejected: got.why });
+        return { ok: false, error: got.why! };
+      }
       const previous = cur.memory as FsmMemory;
-      // 배우지 않는 행동 후보 빼기 → 로봇 FSM(seed 화살표 + 채택 검사를 지난 배우는 행동 후보. 셈은 밤 흐름이 채운다)
-      const guarded = settingsGuard(raw);
+      // 로봇 FSM(seed 화살표 + 채택 검사를 지난 배우는 행동 후보. 셈은 밤 흐름이 채운다)
+      const guarded = got;
       candidates = guarded.candidates;
       let passed = new Set<string>();
       let robot = adoptedFsm(candidates, passed, CUP_FSM_MEMORY);
@@ -170,7 +198,7 @@ export async function runReflection(db: HistoryDb, pam: PamClient, day: string, 
     const version = db.saveMemory({ kind: cur.kind, memory, day, appliesDay, source: "reflection" });
     if (candidates) db.saveMemory({ kind: "fsm_candidates", memory: candidates, day, appliesDay, source: "reflection" });
     const text = REFLECT_TEXT.done(version, appliesDay) + (learned.length ? ` · ${REFLECT_TEXT.learned(learned.length)}` : "");
-    done(true, text, version, appliesDay, { learned, active, dropped });
+    done(true, text, version, appliesDay, { learned, active, dropped, ...(candidates ? { rejected: null } : {}) });
     return { ok: true, version, appliesDay, learned, active, dropped };
   } catch (e) {
     // 서버를 끄느라 끊었으면 기록하지 않는다(닫히는 DB에 쓰지 않는다)

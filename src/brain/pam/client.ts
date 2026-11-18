@@ -7,7 +7,8 @@ import { parseMemory, parsePrediction } from "./answer.js";
 import { pamLimits, type PamLimits } from "./budget.js";
 import { PamAnswerError, PamRequestError } from "./errors.js";
 import { PamLlm, type CallOptions } from "./llm.js";
-import { buildPredictMessages, buildReflectMessages } from "./prompt.js";
+import { buildPredictMessages, buildReflectMessages, generation } from "./prompt.js";
+import { UNREADABLE, memoryCheckMessages, parseVerdict, type MemoryVerdict } from "./memoryCheck.js";
 import { predictRequest, reflectRequest } from "./request.js";
 import type { PamSettings } from "./settings.js";
 
@@ -75,6 +76,19 @@ export class PamClient {
       return validateCandidateFsm(readPyJson(raw), CUP_FSM_MEMORY);
     } catch (e) {
       if (e instanceof PyJsonFail || e instanceof ContractError) throw new PamAnswerError(`PAM 반성 실패: ${e.message}`);
+      throw e;
+    }
+  }
+
+  /** 기억 뜻 검사(LLM): 같은 PAM LLM 통로로 한 번(반성 생성 설정·시간 제한). 답을 읽을 수 없으면 거절 판정이다. 연결 오류(PamLinkError)는 그대로 던진다. */
+  async checkMemory(memory: CandidateFsm, call: CallOptions = {}): Promise<MemoryVerdict> {
+    const messages = memoryCheckMessages(memory);
+    assertTextOnly(messages);
+    const raw = await this.llm.complete(messages, generation("reflector"), "reflector", this.o.settings.timeoutMs, call);
+    try {
+      return parseVerdict(raw);
+    } catch (e) {
+      if (e instanceof PyJsonFail || e instanceof ContractError) return UNREADABLE;
       throw e;
     }
   }

@@ -24,7 +24,8 @@ const adapt = (id: PromptId) => adapted.get(id) ?? adapted.set(id, adaptPrompt(l
 /** 노닌치 바꾸기를 적용한 프롬프트(가짜 LLM 서버가 요청을 되읽을 때도 쓴다). */
 export const adaptedTemplate = (id: PromptId): string => adapt(id).text;
 export const adaptation = (id: PromptId): Adaptation => adapt(id).adaptation;
-const generation = (role: "predictor" | "reflector"): Generation => {
+/** 그 역할의 생성 설정(논문 config/paper.json). 기억 뜻 검사는 반성 값을 쓴다. */
+export const generation = (role: "predictor" | "reflector"): Generation => {
   const c = loadPaperConfig()[role];
   return { temperature: c.temperature, enable_thinking: c.enable_thinking };
 };
