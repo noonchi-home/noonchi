@@ -132,6 +132,28 @@ export class HistoryDb {
     return r ? memoryRow<CandidateVersion>(r as RawMemory) : null;
   }
 
+  /** 밤 저장 하나(BEGIN IMMEDIATE): 로봇 판본·후보 판본·반성 기록을 함께 쓰고, 어느 하나라도 던지면 모두 되돌린 뒤 다시 던진다.
+   *  reflection은 로봇 판본 번호로 반성 기록 줄(시각·글·data)을 만든다. */
+  saveNight(o: { day: string; appliesDay: string; robot: unknown; candidates: unknown; reflection: (robot: number) => { atMs: number; text: string; data: unknown } }): { robot: number; candidates: number } {
+    this.db.exec("BEGIN IMMEDIATE");
+    try {
+      const robot = this.saveMemory({ kind: "fsm", memory: o.robot, day: o.day, appliesDay: o.appliesDay, source: "reflection" });
+      const candidates = this.saveMemory({ kind: "fsm_candidates", memory: o.candidates, day: o.day, appliesDay: o.appliesDay, source: "reflection" });
+      const r = o.reflection(robot);
+      this.add("reflection", r.atMs, r.text, { data: r.data });
+      this.db.exec("COMMIT");
+      return { robot, candidates };
+    } catch (e) {
+      this.db.exec("ROLLBACK");
+      throw e;
+    }
+  }
+
+  /** 그날까지 기록이 있는 날(차례). kinds가 없으면 모든 종류. */
+  daysUpTo(day: string, kinds: readonly HistoryKind[] = ["detection", "world", "device", "vlm", "yolo", "decision", "execution", "feedback"]): string[] {
+    return (this.db.prepare(`SELECT DISTINCT day FROM events WHERE day <= ? AND kind IN (${kinds.map(() => "?").join(",")}) ORDER BY day`).all(day, ...kinds) as { day: string }[]).map((r) => r.day);
+  }
+
   /** 그날 판단에 고정한 판본(meta memory_day:<날짜>). */
   pinnedMemory(day: string): number | null {
     const r = this.db.prepare("SELECT value FROM meta WHERE key = ?").get(`memory_day:${day}`) as { value: string } | undefined;

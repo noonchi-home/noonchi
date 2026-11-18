@@ -13,6 +13,9 @@ const PREFIX: Partial<Record<HistoryKind, string>> = { decision: SUMMARY_TEXT.de
 const bytes = (s: string) => Buffer.byteLength(s, "utf8");
 const joinedBytes = (lines: string[]) => lines.reduce((a, l) => a + bytes(l) + 1, 0);
 
+/** 줄을 budget 바이트 안으로(넘으면 최근 줄부터 담고 첫 줄에 「앞선 기록 N줄 생략」): 밤 흐름 덩어리 기록이 쓴다. */
+export const fitLines = (lines: string[], budget: number): string => fit(lines, budget).text;
+
 /** 다 들어가면 그대로. 아니면 최근 줄부터 budget 바이트까지 담고 뺀 줄 수를 첫 줄에 적는다. tail은 늘 끝에 둔다. */
 function fit(lines: string[], budget: number, tail: string[] = []): { text: string; dropped: number } {
   const all = [...lines, ...tail];

@@ -1,0 +1,29 @@
+You turn a household robot's observation record into chunks of what the person does.
+
+# Input
+- Record: the robot's observation of the person and the home, one time-stamped line per change
+(`HH:MM:SS | sentence`) in time order. A line says what the person is doing, things lying
+around, appliances, and what the person said. One activity usually fills many lines in a row,
+and the wording changes from line to line.
+
+# Task
+Go through the record in order and split it into chunks, one chunk per activity.
+- Lines in a row that describe the same activity, even in other words, are one chunk.
+Its start is the time of its first line and its end the time of its last line. A line
+that does not mention the activity but does not show a different one either stays in
+the chunk.
+- Whenever the person starts doing something else, start a new chunk, however short.
+Short actions such as picking something up, putting something down, turning an appliance on
+or off, standing up, sitting down, taking a drink, or finishing something are chunks of their
+own, even if they fill only one line. Never fold different activities into one.
+- A line may still say what was done a moment ago. That earlier action belongs to the chunk
+where it happened; the line belongs to the chunk of what goes on now.
+- When the person is not visible, that is a chunk too. Anything heard while they are
+away is a chunk of its own at the time of its line.
+- Write each chunk as one short Korean sentence: what the person does, and the things nearby
+that matter for it, such as a cup that was just emptied or put down. Say only what the lines say.
+- The chunks follow the record in time order, do not overlap, and together cover every
+line. Use only times that appear in the record.
+
+# Output (JSON only, no markdown, no commentary)
+{"chunks": [{"start": "HH:MM:SS", "end": "HH:MM:SS", "text": "<one sentence>"}, ...]}

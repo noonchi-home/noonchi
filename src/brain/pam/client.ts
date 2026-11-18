@@ -9,6 +9,8 @@ import { PamAnswerError, PamRequestError } from "./errors.js";
 import { PamLlm, type CallOptions } from "./llm.js";
 import { buildPredictMessages, buildReflectMessages, generation } from "./prompt.js";
 import { UNREADABLE, memoryCheckMessages, parseVerdict, type MemoryVerdict } from "./memoryCheck.js";
+import { chunkMessages, markMessages, type MarkInput } from "./night.js";
+import { validateChunks, validateMarks, type Chunks, type Marks } from "./marks.js";
 import { predictRequest, reflectRequest } from "./request.js";
 import type { PamSettings } from "./settings.js";
 
@@ -76,6 +78,32 @@ export class PamClient {
       return validateCandidateFsm(readPyJson(raw), CUP_FSM_MEMORY);
     } catch (e) {
       if (e instanceof PyJsonFail || e instanceof ContractError) throw new PamAnswerError(`PAM 반성 실패: ${e.message}`);
+      throw e;
+    }
+  }
+
+  /** 덩어리 기록(밤 흐름): 그날 기록 줄(`HH:MM:SS | 글`) → 하는 일 덩어리. 시각은 그 줄 시각만 받는다. 답이 틀리면 PamAnswerError. */
+  async chunk(lines: string[], call: CallOptions = {}): Promise<Chunks> {
+    const messages = chunkMessages(lines);
+    assertTextOnly(messages);
+    const raw = await this.llm.complete(messages, generation("reflector"), "reflector", this.o.settings.timeoutMs, call);
+    try {
+      return validateChunks(readPyJson(raw), lines.map((l) => l.substring(0, 8)));
+    } catch (e) {
+      if (e instanceof PyJsonFail || e instanceof ContractError) throw new PamAnswerError(`PAM 덩어리 기록 실패: ${e.message}`);
+      throw e;
+    }
+  }
+
+  /** 시각 찾기(밤 흐름): 물은 (상태, 후보)·행동마다 그날 일어난 때와 사람이 안 보인 구간. 시각은 그날 줄 시각만 받는다. 답이 틀리면 PamAnswerError. */
+  async mark(i: MarkInput, call: CallOptions = {}): Promise<Marks> {
+    const { messages, asked } = markMessages(i);
+    assertTextOnly(messages);
+    const raw = await this.llm.complete(messages, generation("reflector"), "reflector", this.o.settings.timeoutMs, call);
+    try {
+      return validateMarks(readPyJson(raw), asked, i.actions, i.lines.map((l) => l.substring(0, 8)));
+    } catch (e) {
+      if (e instanceof PyJsonFail || e instanceof ContractError) throw new PamAnswerError(`PAM 시각 찾기 실패: ${e.message}`);
       throw e;
     }
   }

@@ -1,0 +1,181 @@
+// 밤 흐름(src/brain/history/night.ts): 덩어리 기록 → 반성(후보 FSM) → 검사 → 시각 찾기(모르는 것만) → 채택 검사 → 로봇 FSM → 한 트랜잭션 저장.
+// 셈하기: 「치워 주세요」 답은 따라온 것, 「그대로 둬요」 답은 안 보였어도 본 것(따라오지 않음), 로봇이 그 일을 한 구간은 못 봄(사용자 결정 2026-11-18).
+// 가짜 PAM LLM(같은 주소 자리)이 덩어리·반성·뜻 검사·시각 찾기에 답한다. 시각은 서울 시간대 HH:MM:SS.
+import { existsSync, mkdtempSync, readFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { describe, expect, it } from "vitest";
+import { CUP_FSM_MEMORY, type FsmMemory } from "../src/brain/decision.js";
+import { candidateFsmOf } from "../src/brain/pam/adopt.js";
+import { HistoryDb } from "../src/brain/history/db.js";
+import { answerActions, answerTimes, robotSpans, runNight, type NightResult } from "../src/brain/history/night.js";
+import { memoryForDay } from "../src/brain/history/reflect.js";
+import type { CandidateFsm } from "../src/contract/pam.js";
+import { pamClientFor, startFakePamLlm, type ChunkView, type MarkView } from "./helpers/pam.js";
+
+const LEAVE_ON = "사용자가 먹거나 마시기를 끝내고 다른 일로 넘어간다.";
+const t = (s: string) => { const [h, m, x] = s.split(":").map(Number); return h! * 3600 + m! * 60 + x!; };
+const at = (day: string, time: string) => Date.parse(`${day}T${time}+09:00`);
+const tmp = () => mkdtempSync(join(tmpdir(), "night-"));
+/** 후보 FSM: seed 모양 + 마시는 중에서 떠나는 컵 치우기 후보 하나(seed 묻기 화살표와 같은 on). */
+const CANDIDATES_ASK_THEN_CLEAR: CandidateFsm = (() => {
+  const c = candidateFsmOf(CUP_FSM_MEMORY);
+  c.states.find((s) => s.id === "drinking")!.rules.push({ to: "*", action: "컵 치우기", candidates: [{ on: LEAVE_ON }] });
+  return c;
+})();
+/** 덩어리: 기록 줄마다 한 덩어리. */
+const oneChunkPerLine = (v: ChunkView) => ({ chunks: v.lines.map((l) => ({ start: l.substring(0, 8), end: l.substring(0, 8), text: l.substring(11) })) });
+/** 시각 찾기: 물은 후보는 그 시각 줄이 있으면 그 시각, 행동은 사람이 한 때 없음, 안 보인 구간 없음. */
+const markLeaveAt = (time: string) => (v: MarkView) => ({
+  candidates: v.candidates.map(([state, candidate]) => ({ state, candidate, times: v.lines.some((l) => l.startsWith(time)) ? [time] : [] })),
+  actions: v.actions.map((action) => ({ action, times: [] })), unseen: [],
+});
+
+let n = 0;
+/** 마시는 중(07:50) → 떠남(leave, 묻기 판단) → 답(answer: 「치워 주세요」면 말 부탁 판단도). */
+function drinkAndLeave(db: HistoryDb, day: string, leave: string): string {
+  db.add("detection", at(day, "07:50:00"), "사람 보임");
+  db.add("world", at(day, "07:50:04"), "사람 마시는 중");
+  db.add("decision", at(day, "07:50:04"), "대기", { subject: `pam-${++n}`, data: { fsm: { state: "drinking", from: null, next_index: -1, to: null, on: null, when: null, action: null, learned: false } } });
+  db.add("detection", at(day, leave), "사람 안 보임");
+  return `pam-${++n}`;
+}
+function leaveAndAnswer(db: HistoryDb, day: string, leave: string, answer: string, choice: "clear" | "keep"): void {
+  const id = drinkAndLeave(db, day, leave);
+  db.add("decision", at(day, leave), "사용자에게 물어보기", { subject: id, data: { fsm: { state: "away", from: "drinking", next_index: 0, to: "*", on: LEAVE_ON, when: null, action: "사용자에게 물어보기", learned: false } } });
+  db.add("feedback", at(day, answer), `${choice === "clear" ? "치워 주세요" : "그대로 둬요"} · 질문: 컵을 치울까요?`, { subject: `plan:${id}`, data: { choice, via: "button" } });
+  if (choice === "clear") db.add("decision", at(day, answer), "컵 치우기", { subject: `say-${++n}`, data: { source: "speech", via: "answer" } });
+}
+function leaveAndRobotClears(db: HistoryDb, day: string, leave: string, running: string, finished: string): void {
+  const id = drinkAndLeave(db, day, leave);
+  db.add("decision", at(day, leave), "컵 치우기", { subject: id, data: { fsm: { state: "away", from: "drinking", next_index: 0, to: "*", on: LEAVE_ON, when: null, action: "컵 치우기", learned: true } } });
+  db.add("execution", at(day, running), "실행 중", { subject: `plan:${id}`, data: { state: "running" } });
+  db.add("execution", at(day, finished), "완료", { subject: `plan:${id}`, data: { state: "done" } });
+}
+const fake = () => startFakePamLlm({ chunk: oneChunkPerLine, reflect: () => CANDIDATES_ASK_THEN_CLEAR, check: () => ({ ok: true, items: [] }), mark: markLeaveAt("08:00:00") });
+
+describe("밤 흐름: 채택 검사", () => {
+  it("「치워 주세요」 답은 따라온 것으로 센다: 하루 한 번 떠남 + 답이면 둘째 밤에 통과해 로봇 FSM에 그 화살표가 생긴다", async () => {
+    const pam = await fake();
+    try {
+      const db = HistoryDb.open(":memory:");
+      for (const d of ["2026-11-10", "2026-11-11"]) leaveAndAnswer(db, d, "08:00:00", "08:01:30", "clear");   // 08:00 떠남, 08:01:30 「치워 주세요」
+      const first = await runNight(db, pamClientFor(pam), "2026-11-10", { dir: tmp() });
+      expect(first.passed).toEqual([]);
+      const second = await runNight(db, pamClientFor(pam), "2026-11-11", { dir: tmp() });
+      expect(second.passed).toEqual([{ state: "drinking", action: "컵 치우기", on: LEAVE_ON }]);
+      // 반성 답은 후보 FSM 종류로 받아 정상 후보 rules가 답 오류 없이 채택까지 간다(Codex 2966378 P2)
+      expect(pam.bodies.filter((b) => b.role === "reflect").every((b) => b.memory_kind === "fsm_candidates")).toBe(true);
+      expect((memoryForDay(db, "2026-11-12").memory as FsmMemory).states.find((s) => s.id === "drinking")!.next.some((e) => e.action === "컵 치우기" && e.on === LEAVE_ON)).toBe(true);
+    } finally {
+      await pam.close();
+    }
+  });
+
+  it("채택 뒤 로봇이 바로 치운 날(사람이 하지도 답하지도 않음)은 못 봄이라 셈이 늘지 않고 채택이 이어진다", async () => {
+    const pam = await fake();
+    try {
+      const db = HistoryDb.open(":memory:");
+      const dir = tmp();
+      for (const d of ["2026-11-10", "2026-11-11"]) leaveAndAnswer(db, d, "08:00:00", "08:01:30", "clear");
+      leaveAndRobotClears(db, "2026-11-12", "08:00:00", "08:00:03", "08:01:40");   // 08:00 떠남, 08:00:03 로봇 컵 치우기 running, 08:01:40 done, 답 없음
+      await runNight(db, pamClientFor(pam), "2026-11-10", { dir });
+      await runNight(db, pamClientFor(pam), "2026-11-11", { dir });
+      const third = await runNight(db, pamClientFor(pam), "2026-11-12", { dir });
+      expect(robotSpans(db, "2026-11-12", "컵 치우기")).toEqual([[t("08:00:03"), t("08:01:40")]]);
+      expect(third.checks).toContainEqual(expect.objectContaining({ state: "drinking", action: "컵 치우기", on: LEAVE_ON, n: 2, k: 2, unknown: 1, passed: true }));
+    } finally {
+      await pam.close();
+    }
+  });
+
+  it("「그대로 둬요」 답은 사람이 떠나 안 보였어도 셈에 든다: 치워·둬요·둬요·치워면 n=4·k=2로 통과하지 않고 떠날 때는 계속 묻는다", async () => {
+    const pam = await fake();
+    try {
+      const db = HistoryDb.open(":memory:");
+      const dir = tmp();
+      const days = ["2026-11-10", "2026-11-11", "2026-11-12", "2026-11-13"];
+      (["clear", "keep", "keep", "clear"] as const).forEach((a, i) => leaveAndAnswer(db, days[i]!, "08:00:00", "08:01:30", a));
+      let last: NightResult | null = null;
+      for (const d of days) last = await runNight(db, pamClientFor(pam), d, { dir });
+      expect(last!.checks).toContainEqual(expect.objectContaining({ state: "drinking", action: "컵 치우기", on: LEAVE_ON, n: 4, k: 2, unknown: 0, passed: false }));
+      expect((memoryForDay(db, "2026-11-14").memory as FsmMemory).states.find((s) => s.id === "drinking")!.next[0]!.action).toBe("사용자에게 물어보기");
+    } finally {
+      await pam.close();
+    }
+  });
+
+  it("후보 판본(fsm_candidates)은 실행 기억으로 뽑히지 않는다: 밤 흐름이 후보를 로봇 FSM과 함께 저장해도 다음 날 판단 기억·/api/memory/day·가장 새 판본은 로봇 FSM이다", async () => {
+    const pam = await fake();
+    try {
+      const db = HistoryDb.open(":memory:");
+      leaveAndAnswer(db, "2026-11-10", "08:00:00", "08:01:30", "clear");
+      await runNight(db, pamClientFor(pam), "2026-11-10", { dir: tmp() });
+      const uses = db.memoryFor("2026-11-11")!;
+      expect(uses.kind).toBe("fsm");
+      expect(db.memoryVersion(db.latestMemoryVersion()!)!.kind).toBe("fsm");
+      expect(db.candidatesFor("2026-11-11")!.kind).toBe("fsm_candidates");
+      expect(() => db.pinMemory("2026-11-11", db.candidatesFor("2026-11-11")!.version)).toThrow(/not an execution memory/);
+    } finally {
+      await pam.close();
+    }
+  });
+
+  it("밤 저장은 하나로 한다: 로봇 판본 뒤 후보 판본 저장이 실패하면 둘 다 없고 다음 날은 전날 기억, 반성 기록은 실패다. 검사 파일 쓰기가 실패해도 기억과 반성 기록 checks는 남는다", async () => {
+    const pam = await fake();
+    try {
+      const db = HistoryDb.open(":memory:");
+      for (const d of ["2026-11-10", "2026-11-11"]) leaveAndAnswer(db, d, "08:00:00", "08:01:30", "clear");
+      await runNight(db, pamClientFor(pam), "2026-11-10", { dir: tmp() });
+      const before = db.memoryFor("2026-11-12")!.version;
+      const save = db.saveMemory.bind(db);
+      db.saveMemory = (m) => { if (m.kind === "fsm_candidates") throw new Error("disk full"); return save(m); };
+      const failed = await runNight(db, pamClientFor(pam), "2026-11-11", { dir: tmp() });
+      expect(failed.ok).toBe(false);
+      expect(db.memoryFor("2026-11-12")!.version).toBe(before);
+      expect(db.list({ kinds: ["reflection"], latest: true, limit: 1 })[0]).toMatchObject({ data: { ok: false } });
+      db.saveMemory = save;
+      const dir = tmp();
+      const ok = await runNight(db, pamClientFor(pam), "2026-11-11", { dir, writeFile: () => { throw new Error("disk full"); } });
+      expect(ok.ok).toBe(true);
+      expect(db.memoryFor("2026-11-12")!.version).toBeGreaterThan(before);
+      expect(existsSync(join(dir, "check-2026-11-11.json"))).toBe(false);
+      expect(db.list({ kinds: ["reflection"], limit: 5 }).at(-1)!.data).toMatchObject({ ok: true, checks: expect.arrayContaining([expect.objectContaining({ action: "컵 치우기", passed: true })]) });
+    } finally {
+      await pam.close();
+    }
+  });
+
+  it("「두세요」 답·아무 일 없음은 따라오지 않은 것, 안 보인 창은 못 봄", () => {
+    const db = HistoryDb.open(":memory:");
+    leaveAndAnswer(db, "2026-11-10", "08:00:00", "08:01:30", "keep");
+    expect(answerActions(db, "2026-11-10")).toEqual([]);
+    expect(answerTimes(db, "2026-11-10", "컵 치우기")).toEqual([t("08:01:30")]);   // 답은 본 것: 떠나서 안 보였어도 n
+    leaveAndAnswer(db, "2026-11-11", "08:00:00", "08:01:30", "clear");
+    expect(answerActions(db, "2026-11-11")).toEqual([{ action: "컵 치우기", times: [t("08:01:30")] }]);
+  });
+
+  it("시각 찾기는 날마다 모르는 (상태, 후보)·행동만 묻고, 덩어리 기록에 사람 상태가 붙는다. 시각 찾기 결과는 그날 사본으로 남는다", async () => {
+    const pam = await fake();
+    try {
+      const db = HistoryDb.open(":memory:");
+      const dir = tmp();
+      for (const d of ["2026-11-10", "2026-11-11"]) leaveAndAnswer(db, d, "08:00:00", "08:01:30", "clear");
+      await runNight(db, pamClientFor(pam), "2026-11-10", { dir });
+      await runNight(db, pamClientFor(pam), "2026-11-11", { dir });
+      const marks = pam.bodies.filter((b): b is MarkView => b.role === "mark");
+      // 첫 밤에 11-10을 물었고, 둘째 밤에는 11-11만 묻는다(11-10은 사본에 있다)
+      expect(marks).toHaveLength(2);
+      expect(marks.map((m) => m.candidates)).toEqual([[["drinking", LEAVE_ON]], [["drinking", LEAVE_ON]]]);
+      expect(JSON.parse(readFileSync(join(dir, "marks-2026-11-10.json"), "utf8"))).toMatchObject({ day: "2026-11-10", actions: { "컵 치우기": [] } });
+      // 반성 입력은 사람 상태가 붙은 덩어리 기록이다
+      const reflected = pam.bodies.filter((b) => b.role === "reflect").at(-1)!;
+      expect(reflected.observation_text).toContain("07:50:04~07:50:04 [drinking] 사람 마시는 중");
+      expect(reflected.observation_text).toContain("08:00:00~08:00:00 [away] 사람 안 보임");
+      // 둘째 밤 반성은 첫 밤 검사 결과(후보마다 n·k·통과)를 받는다
+      expect(reflected.action_summary).toContain("drinking | 사용자가 먹거나 마시기를 끝내고 다른 일로 넘어간다. | 컵 치우기 | n=1 k=1 not passed");
+    } finally {
+      await pam.close();
+    }
+  });
+});

@@ -8,4 +8,6 @@ export { predictRequest, pyIsoformat, reflectRequest, type PredictRequest, type 
 export { assertTextOnly, PAM_PREDICT, PAM_REFLECT, PamClient, PamDecision } from "./client.js";
 export { PamLlm, type CallOptions } from "./llm.js";
 export { MEMORY_CHECK_HEAD, MEMORY_CHECK_PROMPT, parseVerdict, type MemoryVerdict } from "./memoryCheck.js";
+export { CHUNKING_PROMPT, MARKING_PROMPT, NIGHT_HEAD, NONE, candidateText, type MarkInput } from "./night.js";
+export { validateChunks, validateMarks, type Chunk, type Chunks, type Marks } from "./marks.js";
 export { pamSettings, type PamSettings } from "./settings.js";

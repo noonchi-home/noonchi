@@ -1,50 +1,17 @@
-// 하루 끝 반성: 그날 관찰 텍스트 + 행동 요약 + 사용자 피드백 + 지금까지의 후보 FSM → pam-reflect/3 → 새 후보 판본과 로봇 판본.
+// 기억 판본(그날 판단이 쓰는 판본 고르기·고정, 옛 모양 기억이면 새 seed로 다시 시작)과 하루 끝 반성의 입구.
 // 새 판본은 다음 날부터 쓴다. 그날 판단은 그날 처음 정한 판본만 쓴다(논문 memory_lifecycle: fixed_during_day, following_day).
-// 다음 날 판단이 이미 판본을 정했으면 그다음 날부터 쓴다. 보내기 전에 PamClient.limits()의 입력 한도(reflect_input_bytes)에서
-// 기억 JSON·피드백 크기를 빼고 그 안으로 하루 요약을 줄인다. 칸마다 pam-reflect/3 상한도 넘지 않게 하고, 피드백은 최근 것부터 담는다.
-// 결과는 기록 DB(reflection)와 판단 기록(brain)에 남긴다.
-// fsm 기억: 반성은 후보 FSM(fsm_candidates)을 받고(코드 모양 검사) → 배우지 않는 행동 후보 빼기(settingsGuard) → 기억 뜻 검사(LLM). 거절이면 까닭을 피드백에 붙여
-// 한 번 다시 반성하고, 그래도 거절이면 새 판본을 저장하지 않는다(전날 기억을 쓴다). → 로봇 FSM(seed 화살표 + 채택 검사를 지난 배우는 행동 후보, adoptedFsm)
-// → 습관 거르기(배운 화살표만 뺄 수 있음, 기본 모두 남기기) → 모양 검사 → 로봇 판본(fsm)과 후보 판본(fsm_candidates) 저장. 후보 판본은 다음 밤 반성의 입력이다.
-import { TASKS } from "../../act/tasks.js";
-import { CUP_FSM_MEMORY, ContractError, MAX_REFLECT_TEXT, isOldFsm, validateMemory, type FsmMemory, type PamMemory } from "../decision.js";
-import { headWithin } from "../../shared/cut.js";
+// 하루 끝 반성은 밤 흐름(src/brain/history/night.ts runNight)이다: 덩어리 기록 → 반성(후보 FSM) → 코드·뜻 검사 → 시각 찾기 → 채택 검사 → 로봇 FSM → 한 트랜잭션 저장.
+import { CUP_FSM_MEMORY, isOldFsm, validateMemory, type PamMemory } from "../decision.js";
 import type { PamClient } from "../pam/index.js";
-import { adoptKey, adoptedFsm, candidateFsmOf } from "../pam/adopt.js";
-import type { BrainLog, PamUsage } from "../../contract/events.js";
-import type { CandidateFsm } from "../../contract/pam.js";
 import type { HistoryDb } from "./db.js";
-import { edgeKey, learnedEdges, settingsGuard, type EdgeLine, type HabitFilter, type HabitRuleNote } from "./habits.js";
-import { MEMORY_TEXT, REFLECT_TEXT } from "./labels.js";
-import { daySummary } from "./summary.js";
-
-/** 다시 반성할 때 피드백에 붙이는 까닭의 길이 상한(글자). 하루 요약 한도에서 그만큼 미리 뺀다. */
-const RETRY_WHY_MAX = 1_000;
-const nextDay = (day: string) => new Date(Date.parse(`${day}T00:00:00Z`) + 86_400_000).toISOString().slice(0, 10);
-const bytes = (s: string) => Buffer.byteLength(s, "utf8");
-
-/** 최근 줄부터 max 바이트까지 담는다(시각 순으로 돌려줌). */
-function latestWithin(lines: string[], max: number): string[] {
-  const out: string[] = [];
-  let used = 0;
-  for (let i = lines.length - 1; i >= 0; i--) {
-    const b = bytes(lines[i]!) + (out.length ? 1 : 0);
-    if (used + b > max) break;
-    out.unshift(lines[i]!);
-    used += b;
-  }
-  return out;
-}
-/** 그날 기록이 있다고 보는 종류. */
-const DAY_KINDS = ["detection", "world", "device", "vlm", "yolo", "decision", "execution", "feedback"] as const;
+import type { EdgeLine, HabitRuleNote } from "./habits.js";
+import { MEMORY_TEXT } from "./labels.js";
+import { runNight, type NightOptions } from "./night.js";
 
 export interface DayMemory { memory: PamMemory; kind: "list" | "fsm"; version: number }
 /** ok면 learned(이번에 새로 더한 화살표)·active(새 로봇 판본의 화살표 가운데 seed에 없는 것)·dropped(반성 뒤 검사가 뺀 후보)를 함께 준다. learned·active는 코치 행동을 뺀다.
  *  version은 새 로봇 판본(fsm) 번호다. */
 export type ReflectResult = { ok: true; version: number; appliesDay: string; learned: EdgeLine[]; active: EdgeLine[]; dropped: HabitRuleNote[] } | { ok: false; error: string; empty?: true };
-
-/** 습관 거르기에 넘기는 기록 종류. */
-const HABIT_KINDS = ["world", "device", "decision", "execution", "feedback"] as const;
 
 /** 그날 고정한 판본. 없으면 그날 쓸 수 있는 가장 새 판본을 고정하고, 판본이 하나도 없으면 컵 FSM 기억을 seed로 저장한다.
  *  seed 판본 올리기: 그날 쓸 판본이 seed인데 내용이 지금 코드의 seed(CUP_FSM_MEMORY)와 다르고(JSON 글 비교) DB에서 가장 새 판본도 seed면,
@@ -56,7 +23,7 @@ export function memoryForDay(db: HistoryDb, day: string, o: { log?: (line: strin
 }
 
 /** 반성이 읽는 그날 기억: 고정·저장하지 않는다. 그날 고정 판본 → 그날 쓸 판본 → 지금 seed 차례(dayMemory와 같은 골라내기). */
-function readDayMemory(db: HistoryDb, day: string): { memory: PamMemory; kind: "list" | "fsm" } {
+export function readDayMemory(db: HistoryDb, day: string): { memory: PamMemory; kind: "list" | "fsm" } {
   const pinned = db.pinnedMemory(day);
   const m = pinned !== null ? db.memoryVersion(pinned) : db.memoryFor(day);
   if (!m) return { memory: CUP_FSM_MEMORY, kind: "fsm" };
@@ -98,115 +65,13 @@ function dayMemory(db: HistoryDb, day: string, o: { log?: (line: string) => void
   return { memory: CUP_FSM_MEMORY, kind: "fsm", version };
 }
 
-/** filter: 습관 거르기(기본 keepAll, 기록 줄을 읽지 않고 rows는 빈 목록). windowDays: 따로 넘긴 거르기에 주는 지난 기록 날 수(기본 30, 반성한 날 포함). */
-/** signal로 끊으면(서버를 끌 때) PAM 요청을 끊고 기록 DB에 아무것도 쓰지 않는다. */
-export async function runReflection(db: HistoryDb, pam: PamClient, day: string, o: { now?: () => number; emit?: (l: BrainLog) => void; filter?: HabitFilter; windowDays?: number; signal?: AbortSignal } = {}): Promise<ReflectResult> {
-  const now = o.now ?? (() => Date.now());
-  let usage: PamUsage | undefined;
-  const done = (ok: boolean, text: string, version: number | null, appliesDay: string | null, found?: { learned?: EdgeLine[]; active?: EdgeLine[]; dropped?: HabitRuleNote[]; rejected?: string | null }) => {
-    const at = now();
-    const used = usage ? { usage } : {};
-    db.add("reflection", at, text, { data: { day, ok, version, applies_day: appliesDay, ...found, ...used } });
-    o.emit?.({ type: "reflection", at_ms: at, day, ok, version, applies_day: appliesDay, text, ...found, ...used });
-  };
-  if (!db.list({ day, kinds: [...DAY_KINDS], limit: 1 }).length) {
-    done(false, REFLECT_TEXT.failed(REFLECT_TEXT.empty), null, null);
-    return { ok: false, empty: true, error: REFLECT_TEXT.empty };
-  }
-  try {
-    // 그날 판본을 읽기만 한다(날 고정·seed 판본을 남기지 않는다: 끊긴 반성이 다른 반성의 적용일을 밀지 않게)
-    const cur = readDayMemory(db, day);
-    const feedback = latestWithin(db.list({ day, kinds: ["feedback"] }).map((r) => r.text), MAX_REFLECT_TEXT.feedback).join("\n") || null;
-    // 반성 입력 기억: fsm이면 지금까지의 후보 FSM(지난 밤 후보 판본, 없으면 그날 로봇 FSM을 후보 모양으로)
-    const input: PamMemory | CandidateFsm = cur.kind === "fsm" ? (db.candidatesFor(day)?.memory as CandidateFsm | undefined) ?? candidateFsmOf(cur.memory as FsmMemory) : cur.memory;
-    const limits = await pam.limits();
-    // 요약이 비면 대신 보내는 글(관찰 없음·행동 없음)도 한도 안에 들게 미리 뺀다
-    // fsm은 다시 반성할 때 피드백에 붙는 까닭(RETRY_WHY_MAX 글자, UTF-8 3바이트까지)도 미리 뺀다
-    const retryRoom = cur.kind === "fsm" ? bytes(REFLECT_TEXT.retry("")) + 1 + RETRY_WHY_MAX * 3 : 0;
-    const maxBytes = limits.reflect_input_bytes - bytes(JSON.stringify(input, null, 2)) - bytes(feedback ?? "") - retryRoom - bytes(REFLECT_TEXT.noObservation) - bytes(REFLECT_TEXT.noAction);
-    if (maxBytes <= 0) throw new Error(REFLECT_TEXT.tooBig);
-    const summary = daySummary(db, day, { maxBytes, caps: MAX_REFLECT_TEXT });
-    const req = {
-      day, memory: input, observation_text: summary.observation_text || REFLECT_TEXT.noObservation, action_summary: summary.action_summary || REFLECT_TEXT.noAction, feedback,
-    };
-    const call = { signal: o.signal, onUsage: (u: PamUsage) => { usage = u; } };
-    let memory: PamMemory;
-    let candidates: CandidateFsm | null = null;
-    let learned: EdgeLine[] = [];
-    let active: EdgeLine[] = [];
-    let dropped: HabitRuleNote[] = [];
-    if (cur.kind === "list") {
-      memory = await pam.reflect({ ...req, memory_kind: "list" }, "list", call);
-      if (o.signal?.aborted) return { ok: false, error: REFLECT_TEXT.cancelled };
-    } else {
-      // 반성 한 번(후보 FSM 종류) + 배우지 않는 행동 후보 빼기 + 뜻 검사. 거절이면 까닭 글
-      const attempt = async (fb: string | null): Promise<{ candidates: CandidateFsm; notes: HabitRuleNote[]; why: null } | { candidates: null; notes: HabitRuleNote[]; why: string }> => {
-        let raw: CandidateFsm;
-        try {
-          // 반성 답은 후보 FSM 종류로 받는다: PamClient.reflect가 validateCandidateFsm(raw, seed)로 보고 모양 오류는 PamAnswerError(Codex 2966378 P2).
-          // 모양 오류도 까닭으로 받아 한 번 다시 반성한다(Codex 8ab2d06 P2). 연결 오류(PamLinkError)는 그대로 던진다
-          raw = await pam.reflect({ ...req, feedback: fb, memory_kind: "fsm_candidates" }, "fsm_candidates", call);
-        } catch (e) {
-          if (e instanceof ContractError) return { candidates: null, notes: [], why: e.message };
-          throw e;
-        }
-        const guarded = settingsGuard(raw);
-        const verdict = await pam.checkMemory(guarded.candidates, call);
-        return verdict.ok ? { candidates: guarded.candidates, notes: guarded.notes, why: null }
-          : { candidates: null, notes: [], why: verdict.items.filter((x) => !x.ok).map((x) => `${x.ref}: ${x.why}`).join(" / ") };
-      };
-      let got = await attempt(feedback);
-      if (o.signal?.aborted) return { ok: false, error: REFLECT_TEXT.cancelled };
-      if (got.why !== null) got = await attempt([feedback, REFLECT_TEXT.retry(headWithin(got.why, RETRY_WHY_MAX))].filter(Boolean).join("\n"));
-      if (o.signal?.aborted) return { ok: false, error: REFLECT_TEXT.cancelled };
-      if (got.candidates === null) {
-        done(false, REFLECT_TEXT.rejected(got.why!), null, null, { rejected: got.why });
-        return { ok: false, error: got.why! };
-      }
-      const previous = cur.memory as FsmMemory;
-      // 로봇 FSM(seed 화살표 + 채택 검사를 지난 배우는 행동 후보. 셈은 밤 흐름이 채운다)
-      const guarded = got;
-      candidates = guarded.candidates;
-      let passed = new Set<string>();
-      let robot = adoptedFsm(candidates, passed, CUP_FSM_MEMORY);
-      let filtered: HabitRuleNote[] = [];
-      if (o.filter) {
-        const windowDays = o.windowDays ?? 30;
-        const dayStart = Date.parse(`${day}T00:00:00Z`) - db.offsetMinutes * 60_000;
-        // 기록 줄은 따로 넘긴 거르기만 읽는다(기본은 쓰지 않으니 30일 기록을 올리지 않는다: 기록 DB가 커도 서버를 멈추지 않게)
-        const rows = db.list({ since: dayStart - (windowDays - 1) * 86_400_000, until: dayStart + 86_400_000 - 1, kinds: [...HABIT_KINDS], limit: Number.MAX_SAFE_INTEGER });
-        const out = await o.filter({ day, windowDays, offsetMinutes: db.offsetMinutes, previous, proposed: robot, rows });
-        if (o.signal?.aborted) return { ok: false, error: REFLECT_TEXT.cancelled };
-        // 거르기는 배운 화살표만 뺄 수 있다: 뺀 배운 화살표의 후보를 통과에서 지우고 로봇 FSM을 다시 만든다(정한 습관 화살표는 seed 그대로)
-        const kept = new Set(learnedEdges(CUP_FSM_MEMORY, validateMemory(out.memory, "fsm") as FsmMemory).map(edgeKey));
-        const removed = learnedEdges(CUP_FSM_MEMORY, robot).filter((e) => !kept.has(edgeKey(e))).map((e) => adoptKey(e.from, e.action, { on: e.on, ...(e.when ? { when: e.when } : {}) }));
-        passed = new Set([...passed].filter((k) => !removed.includes(k)));
-        robot = adoptedFsm(candidates, passed, CUP_FSM_MEMORY);
-        filtered = out.notes;
-      }
-      memory = validateMemory(robot, "fsm");
-      dropped = [...guarded.notes, ...filtered].filter((n) => !n.kept);
-      learned = learnedEdges(previous, memory as FsmMemory).filter((r) => !TASKS[r.action]?.coach);
-      active = learnedEdges(CUP_FSM_MEMORY, memory as FsmMemory).filter((r) => !TASKS[r.action]?.coach);
-    }
-    // 저장 바로 전에도 끊겼는지 본다(끊긴 반성은 날 고정·새 판본·성공 기록을 남기지 않는다)
-    if (o.signal?.aborted) return { ok: false, error: REFLECT_TEXT.cancelled };
-    // 끝난 반성만 그날 판본을 고정한다(판본이 없으면 seed를 저장한다). 읽을 때는 고정하지 않았다
-    memoryForDay(db, day);
-    let appliesDay = nextDay(day);
-    while (db.pinnedMemory(appliesDay) !== null) appliesDay = nextDay(appliesDay);
-    const version = db.saveMemory({ kind: cur.kind, memory, day, appliesDay, source: "reflection" });
-    if (candidates) db.saveMemory({ kind: "fsm_candidates", memory: candidates, day, appliesDay, source: "reflection" });
-    const text = REFLECT_TEXT.done(version, appliesDay) + (learned.length ? ` · ${REFLECT_TEXT.learned(learned.length)}` : "");
-    done(true, text, version, appliesDay, { learned, active, dropped, ...(candidates ? { rejected: null } : {}) });
-    return { ok: true, version, appliesDay, learned, active, dropped };
-  } catch (e) {
-    // 서버를 끄느라 끊었으면 기록하지 않는다(닫히는 DB에 쓰지 않는다)
-    if (o.signal?.aborted) return { ok: false, error: REFLECT_TEXT.cancelled };
-    const error = (e as Error).message;
-    done(false, REFLECT_TEXT.failed(error), null, null);
-    return { ok: false, error };
-  }
+/** 하루 끝 반성 = 밤 흐름(src/brain/history/night.ts runNight): 덩어리 기록 → 반성 → 검사 → 시각 찾기 → 채택 검사 → 로봇 FSM → 한 트랜잭션 저장.
+ *  filter: 습관 거르기(기본 keepAll, 기록 줄을 읽지 않는다). windowDays: 따로 넘긴 거르기에 주는 지난 기록 날 수(기본 30, 반성한 날 포함).
+ *  dir: 시각 찾기·검사 결과 사본 폴더(runtime/homes/<집>/habit). signal로 끊으면(서버를 끌 때) PAM 요청을 끊고 기록 DB에 아무것도 쓰지 않는다. */
+export async function runReflection(db: HistoryDb, pam: PamClient, day: string, o: NightOptions = {}): Promise<ReflectResult> {
+  const r = await runNight(db, pam, day, o);
+  if (!r.ok) return { ok: false, error: r.error, ...(r.empty ? { empty: true as const } : {}) };
+  return { ok: true, version: r.version, appliesDay: r.appliesDay, learned: r.learned, active: r.active, dropped: r.dropped };
 }
 
 /** REFLECT_AT: 매일 반성할 시각 HH:MM(기록 시간대). 비우면 23:30, off면 끔. 틀린 값이면 시작을 막는다. */

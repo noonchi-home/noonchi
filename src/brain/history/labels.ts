@@ -42,6 +42,14 @@ export const REFLECT_TEXT = {
 /** 기억 판본 글(서버 로그). */
 export const MEMORY_TEXT = { restart: (version: number) => `옛 모양 기억 ${version}판이라 새 seed로 다시 시작해요` };
 
+/** 밤 흐름 글: 반성 입력에 붙이는 지난 검사 결과(모델이 읽는 영어 머리, 후보 줄), 서버 로그 줄. */
+export const NIGHT_TEXT = {
+  checksHead: "Check results:",
+  check: (state: string, candidate: string, action: string, n: number, k: number, passed: boolean) => `${state} | ${candidate} | ${action} | n=${n} k=${k} ${passed ? "passed" : "not passed"}`,
+  chunkFailed: (why: string) => `덩어리 기록 실패라 하루 요약으로 반성해요 · ${why}`,
+  copyFailed: (why: string) => `밤 흐름 사본을 쓰지 못했어요 · ${why}`,
+};
+
 /** 폰 부탁·질문의 답과 그동안의 말(반성 피드백). */
 export const FEEDBACK_TEXT = {
   answer: (said: string, kind: "command" | "ask", asked: string) => `${said} · ${kind === "ask" ? "질문" : "부탁"}: ${asked}`,

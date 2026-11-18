@@ -160,6 +160,8 @@ export type BrainLog =
     dropped?: { from: string; to: string; on: string; action: string; kept: boolean; reason: "habit" | "chance" | "too_few" | "coach" | "unchanged" | "settings"; seen?: number; fired?: number; p?: number; conditions?: string[] }[];
     /** 반성이 낸 기억을 쓰지 않은 까닭(코드 검사·뜻 검사를 두 번 다 지나지 못함). fsm 반성에서 통과했으면 null. 예전 기록에는 없다. */
     rejected?: string | null;
+    /** 채택 검사 결과(후보마다 n·k·못 봄·비율·p0·p·통과, src/brain/pam/adopt.ts). 검사한 후보가 있을 때만. */
+    checks?: { state: string; action: string; on: string; when: string | null; n: number; k: number; unknown: number; rate: number; base_rate: number; p0: number; p_value: number; passed: boolean }[];
   }
   /** 관찰 모드가 고른 것 하나(src/act/look.ts): 까닭(A 멈춘 단계·B 판단 전 보기), 대상 id, 고른 도구와 모델이 댄 까닭, 기록 글, 결과(가까이 보기 결과·부탁을 보냈는가, 기다리기는 null).
    *  A면 그 계획·단계 id가 있다. */
