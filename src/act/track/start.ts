@@ -48,6 +48,8 @@ export class Starter extends Part {
   onDecision(d: DecisionRecord): void {
     const core = this.core;
     if (core.stopped) return;
+    // 판단이 버린 늦은 답(풀린 화살표를 다시 낸 답): 기록만
+    if (d.late) return this.note(d, EXEC_TEXT.late);
     // 말 부탁은 PAM 판단 번호와 섞지 않는다: seq 검사를 건너뛰고 받은 때까지 보낸 PAM 요청 번호만 둔다(순서는 밀리초가 아니라 번호로 본다)
     if (d.source === "speech") this.lastSpeechSeq = d.afterSeq ?? 0;
     else {

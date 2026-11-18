@@ -97,26 +97,26 @@ export const MESSAGES = [
   { id: "pam-1@1794214809000:0", text: "컵을 두고 자리를 뜨면 치워도 된다고 하셨어요" },
   { id: "say#1", text: "식탁 컵을 치울게요." },
 ];
-/** 컵 치우기 규칙대로 고른 판단의 알약 셋(상태 이름·트리거·액션). */
-export const PILLS = { state: "컵을 두고 자리를 뜸", trigger: "사용자가 컵을 식탁 등에 두고 자리를 비웠고, 아무도 컵을 들거나 만지지 않는다.", action: "컵 치우기" };
-/** 대기 판단의 알약 셋(처음 상태, 트리거·액션은 대기). */
-export const WAIT_PILLS = { state: "먹거나 마시는 중", trigger: "대기", action: "대기" };
+/** 배운 컵 치우기 화살표대로 고른 판단의 알약 셋(지금 상태 이름·화살표 사건·액션). */
+export const PILLS = { state: "자리에 없음", trigger: "사용자가 먹거나 마시기를 끝내고 다른 일로 넘어간다.", action: "컵 치우기" };
+/** 화살표 없는 판단의 알약 셋(지금 상태, 트리거 「화살표 없음」·액션 「대기」). */
+export const WAIT_PILLS = { state: "먹거나 마시는 중", trigger: "화살표 없음", action: "대기" };
 /** 계획 단계의 메시지 상자(다듬은 생각 두 줄과 알약 셋). */
 export const TALK: Talk = { lines: MESSAGES, fsm: PILLS };
 /** 지켜보기의 메시지 상자(말풍선 카드 말 한 줄과 대기 알약). */
 export const WATCH_TALK: Talk = { lines: [{ id: "say@0:0", text: "지켜보고 있어요." }], fsm: WAIT_PILLS };
 
-/** 컵 갈래 판단 고정 자료: 행동, 그 규칙이 있는 FSM 상태 id·트리거(src/brain/decision.ts CUP_FSM_MEMORY와 같다, data.test.ts가 견준다), PAM의 생각 한 문장. */
-export interface Branch { action: string; state: string; trigger: string; reasoning: string }
+/** 컵 갈래 판단 고정 자료: 행동, 일어난 화살표(출발 상태 from·번호 index·도착 to·사건 on·조건 when, 배운 뒤 기억 src/brain/decision.ts CUP_FSM_MEMORY와 같은 글),
+ *  그 뒤 사람 상태(state), seed에 없던 화살표인가(learned), PAM의 생각 한 문장. */
+export interface Branch { action: string; state: string; from: string; index: number; to: string; on: string; when?: string; learned?: boolean; reasoning: string }
 export const BRANCHES = {
-  clear: { action: CLEAR_CUP, state: "left_cup", trigger: "사용자가 컵을 식탁 등에 두고 자리를 비웠고, 아무도 컵을 들거나 만지지 않는다.", reasoning: REASON },
-  leave: { action: "컵 그대로 두기", state: "left_cup", trigger: "사용자가 자리를 비웠지만 컵에 음료가 남아 있다.", reasoning: "컵에 음료가 남아 있어 돌아와서 마실 수 있어요." },
-  water: { action: "컵에 물 채워 주기", state: "drinking", trigger: "사용자가 식탁에서 먹는 중이고 식탁 위 컵이 비어 있으며 컵을 들거나 만지지 않는다.", reasoning: "식사 중인데 컵이 비어 있어요." },
-  cola: { action: "컵에 콜라 따라 주기", state: "watching_tv", trigger: "사용자가 TV를 보는 중이고 곁의 컵이 비어 있으며 컵을 들거나 만지지 않는다.", reasoning: "TV를 보는 중인데 컵이 비어 있어요." },
+  clear: { action: CLEAR_CUP, state: "away", from: "drinking", index: 0, to: "*", on: "사용자가 먹거나 마시기를 끝내고 다른 일로 넘어간다.", learned: true, reasoning: REASON },
+  water: { action: "컵에 물 채워 주기", state: "drinking", from: "drinking", index: 1, to: "drinking", on: "사용자가 마시던 것을 다 마시고 계속 먹는다.", reasoning: "식사 중인데 컵이 비어 있어요." },
+  cola: { action: "컵에 콜라 따라 주기", state: "watching_tv", from: "watching_tv", index: 0, to: "watching_tv", on: "사용자가 TV를 보며 마시던 것을 다 마신다.", when: "같이 마시는 중이었다.", reasoning: "TV를 보는 중인데 컵이 비어 있어요." },
 } as const satisfies Record<string, Branch>;
 /** 코치 판단 고정 자료(라면 끓이기 알려 주기, FSM 상태 cooking)와 13단계 계획(사람 단계·알림·기다리기). */
 export const COACH: Branch = {
-  action: "라면 끓이기 알려 주기", state: "cooking", trigger: "사용자가 라면 끓이는 법을 알려 달라고 말했거나, 주방에서 라면을 끓이려다 무엇을 해야 할지 모르겠다고 말한다.",
+  action: "라면 끓이기 알려 주기", state: "cooking", from: "cooking", index: 0, to: "cooking", on: "사용자가 라면 끓이는 법을 알려 달라고 말했거나, 라면을 끓이다 무엇을 해야 할지 모르겠다고 말한다.",
   reasoning: "라면 끓이는 법을 물어봤어요.",
 };
 const COACH_STEPS: [PlanStep["kind"], string][] = [
@@ -144,7 +144,9 @@ export function branchDecision(b: Branch | null, seq: number): ServerMessage {
     event: {
       type: "decision", at_ms: 1_794_214_804_000 + seq * 5000, id: `pam-${seq}`, seq, text_sent: "관찰", status: "valid",
       prediction: { observation: "관찰", reasoning: b?.reasoning ?? "할 일이 없어요.", task_index: b ? BRANCH_TASKS.indexOf(b.action) : -1 },
-      action: b?.action ?? null, fsm: b ? { state: b.state, trigger: b.trigger, learned: false, matched: true } : { state: "drinking", trigger: null, learned: false, matched: false },
+      action: b?.action ?? null,
+      fsm: b ? { state: b.state, from: b.from, next_index: b.index, to: b.to, on: b.on, when: b.when ?? null, action: b.action, learned: b.learned ?? false }
+        : { state: "drinking", from: null, next_index: -1, to: null, on: null, when: null, action: null, learned: false },
       assist: b ? (taskOf(b.action)?.coach ? "coach" : "noonchi") : null, memory_version: 1,
       world: { objects: [], person_visible: false, vlm_missing: 0, yolo_missing: 0 },
     },

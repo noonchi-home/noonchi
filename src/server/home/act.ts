@@ -129,6 +129,8 @@ export function startAct(core: HomeCore): (event: BrainLog) => void {
     core.app?.broadcast({ type: "brain", event });
     history.brain(event);
     if (event.type === "decision") feed.decision(event);
+    // 실행 기록: 기다리던 화살표의 행동이 시작되면 판단의 직전 상태를 넘긴다(src/brain/decide.ts onExecution)
+    if (event.type === "execution") core.decider?.onExecution(event.plan_id, event.state);
   };
   // 판단 호출(src/brain/decide.ts): World State 관찰 텍스트 + 기억 + 행동 목록으로 PAM(src/brain/pam/)을 부른다.
   // 기억은 그날 처음 정한 판본(src/brain/history/reflect.ts). 관찰 텍스트 시각은 기록 DB와 같은 시간대

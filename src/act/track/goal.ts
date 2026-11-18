@@ -18,7 +18,7 @@ import type { GoalDrop, PendingGoal } from "../../contract/goal.js";
 import type { ObjClass, WorldObject, WorldView } from "../../contract/world.js";
 import { surfacePlace, type PlaneSurface } from "../../world/index.js";
 import type { AgentPlan, PlanResult } from "../../agent/index.js";
-import { decisionWorld, fsmRuleOf, goalAhead, type GoalPick } from "../../brain/index.js";
+import { decisionWorld, goalAhead, type GoalPick } from "../../brain/index.js";
 import { ruleIf } from "../../world/labels.js";
 import { GOAL_LOG, GOAL_TEXT } from "../labels.js";
 import { emergencyOf } from "../mode.js";
@@ -88,7 +88,7 @@ export class GoalWatch extends Part {
       const objectId = h.id ?? targetOf({ target: h.cls as ObjClass }, world, this.core.steps.placed())?.id ?? null;
       if (!pick) continue;
       const id = `goal-${++this.n}`;
-      const learned = fsmRuleOf(habit.memory, habit.kind, pick.action)?.learned ?? false;
+      const learned = false;
       const will = TASK_SAY[pick.action]?.will;
       const text = will ? GOAL_TEXT.armed(ruleIf({ trigger: pick.trigger, action: pick.action, learned }), will) : null;
       this.goal = {
@@ -107,10 +107,9 @@ export class GoalWatch extends Part {
   /** 계획 모드에 넘기는 목표 기록(판단 기록 모양, PAM 판단이 아니라 prediction이 없다). 계획 id는 plan:goal-n이고, 쓸 때 PAM 판단 id로 다시 낸다(resubmit). */
   private record(g: Goal, world: WorldView, now: number): DecisionRecord {
     const habit = this.o.habit?.();
-    const rule = habit ? fsmRuleOf(habit.memory, habit.kind, g.view.action) : null;
     return {
       id: g.view.id, seq: 0, atMs: now, textSent: "", finalTime: new Date(now).toISOString(), status: "valid", prediction: null, action: g.view.action,
-      fsm: { state: g.view.state, trigger: g.view.trigger, learned: rule?.learned ?? false, matched: true }, memoryVersion: habit?.version ?? 0,
+      fsm: { state: g.view.state, from: g.view.state, next_index: -1, to: null, on: g.view.trigger, when: null, action: g.view.action, learned: false }, memoryVersion: habit?.version ?? 0,
       tasks: [...(this.o.tasks?.() ?? TASK_NAMES)], world: decisionWorld(world),
     };
   }

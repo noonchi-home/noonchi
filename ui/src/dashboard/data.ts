@@ -3,7 +3,7 @@
 import type { BrainLog, EyeEvent, ServerMessage, ThoughtMessage } from "../../../src/contract/events.ts";
 import type { PendingGoal } from "../../../src/contract/goal.ts";
 import type { PlanStep, PlanView } from "../../../src/contract/plan.ts";
-import { FSM_STATE_TEXT } from "../../../src/world/labels.ts";
+import { FSM_STATE_TEXT, STATE_TEXT } from "../../../src/world/labels.ts";
 import { WORDS } from "./words";
 
 type Decision = Extract<BrainLog, { type: "decision" }>;
@@ -151,9 +151,12 @@ export interface Talk {
 
 /**
  * 메시지 상자: 다듬은 생각 메시지(반성 메시지 포함)와 말풍선 카드 말을 받은 차례로 섞은 최근 TALK_SHOWN줄과 마지막 유효 판단의 알약 셋. 둘 다 없으면 null.
- * 알약은 서버가 판단 기록에 실은 지금 FSM(src/brain/decision.ts fsmNow)이다: 상태는 기억 상태 이름(FSM_STATE_TEXT, 없으면 상태 id), 트리거는 맞은 규칙의 트리거
- * (대기면 「대기」, 규칙 없이 고른 행동이면 「규칙 없음」, 그 행동 규칙이 여럿이면 「규칙 여럿」), 액션은 고른 행동(대기면 「대기」). 판단의 FSM을 모르면(list 기억·판단 전) 알약이 없다.
+ * 알약은 서버가 판단 기록에 실은 PAM 답의 사람 상태·화살표(src/brain/decision.ts fsmStep)다: 상태는 기억 상태 이름(FSM_STATE_TEXT, 임시 상태 ~<값>은 그 하는 일 이름,
+ * 없으면 상태 id), 트리거는 일어난 화살표의 사건(화살표 없음이면 「화살표 없음」), 액션은 그 화살표의 행동(없으면 「대기」). 판단의 FSM을 모르면(list 기억·판단 전) 알약이 없다.
  */
+/** 사람 상태 이름: 기억 상태 이름, 임시 상태(~<하는 일 값>, 기억에 없는 활동)는 그 하는 일 이름, 모르면 id 그대로. */
+const stateName = (id: string) => (id.startsWith("~") ? STATE_TEXT[id.slice(1)] : FSM_STATE_TEXT[id]) ?? id;
+
 export function talkOf(s: DashData): Talk | null {
   // 안전 알림이 유효한 동안 최신 줄은 늘 그 알림이고, 지난 줄은 그 밖의 가장 새 줄이다
   const safety = s.safety;
@@ -161,9 +164,9 @@ export function talkOf(s: DashData): Talk | null {
   const d = s.decision;
   const f = d?.fsm;
   const fsm = d && f ? {
-    state: f.state ? FSM_STATE_TEXT[f.state] ?? f.state : WORDS.unknown,
-    trigger: f.trigger ?? (d.action ? (f.matched ? WORDS.manyRules : WORDS.noRule) : WORDS.idle),
-    action: d.action ?? WORDS.idle,
+    state: stateName(f.state),
+    trigger: f.on ?? WORDS.noTransition,
+    action: f.action ?? WORDS.idle,
   } : null;
   const goal = s.goal && GOAL_SHOWN.has(s.goal.status) ? s.goal.action : null;
   return lines.length || fsm || goal ? { lines, fsm, ...(goal ? { goal } : {}) } : null;

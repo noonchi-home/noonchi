@@ -241,7 +241,7 @@ describe("가짜 단계(?debug=steps)", () => {
     const img = phonePane().querySelector<HTMLImageElement>('img[alt="폰 카메라 영상"]')!;
     expect(img.getAttribute("src")).toBe("/debug-eye/eye-table-near.webp");
     expect(document.querySelector("[data-mode-text]")).toHaveTextContent(/^눈치 모드$/);
-    expect([...talk().querySelectorAll("[data-talk-pill]")].map((p) => p.textContent)).toEqual(["상태 · 컵을 두고 자리를 뜸", expect.stringMatching(/^트리거 · /), "액션 · 컵 치우기"]);
+    expect([...talk().querySelectorAll("[data-talk-pill]")].map((p) => p.textContent)).toEqual(["상태 · 자리에 없음", expect.stringMatching(/^트리거 · /), "액션 · 컵 치우기"]);
     expect([...phonePane().querySelectorAll("[data-detection-label]")].map((t) => t.textContent?.split(" ")[0])).toEqual(["컵"]);
     expect(phonePane().querySelector("canvas[data-masks]")).not.toBeNull();
   });

@@ -104,7 +104,7 @@ export function modeOf(action: string | null): "noonchi" | "coach" | null {
  *  「컵을 치울게요.」). 표에 없는 행동은 「<행동>을 해도」·「<행동>을 할게요」. 행동 목록에 없는 일은 문장에 나오지 않는다. */
 export const TASK_SAY: Readonly<Record<string, { may: string; will: string }>> = {
   "컵 치우기": { may: "치워도", will: "컵을 치울게요" },
-  "사용자에게 물어보기": { may: "여쭤봐도", will: "폰으로 여쭤볼게요" },
+  "사용자에게 물어보기": { may: "여쭤봐도", will: "컵을 치울지 여쭤볼게요" },
   "세탁물 건조기로 옮기기": { may: "세탁물을 건조기로 옮겨도", will: "세탁물을 건조기로 옮길게요" },
   "에어컨 켜기": { may: "에어컨을 켜도", will: "에어컨을 켤게요" },
   "컵 그대로 두기": { may: "그대로 둬도", will: "컵을 그대로 둘게요" },

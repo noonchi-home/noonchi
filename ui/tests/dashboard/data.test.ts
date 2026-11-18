@@ -5,7 +5,8 @@ import type { ServerMessage } from "../../../src/contract/events.ts";
 import type { PendingGoal } from "../../../src/contract/goal.ts";
 import { EMPTY_DASH, modeNow, reduceDash, stepIndex, TALK_SHOWN, talkOf } from "../../src/dashboard/data";
 import run from "../../src/dashboard/fake-run.json";
-import { CUP_FSM_MEMORY, fsmRuleOf } from "../../../src/brain/decision.ts";
+import type { FsmStep } from "../../../src/contract/pam.ts";
+import { STATE_TEXT } from "../../../src/world/labels.ts";
 import { BRANCHES, COACH, LEFT_SAY, MESSAGES, PLAN, REASON, branchDecision, type Branch } from "./fixtures";
 
 const feed = (ms: ServerMessage[], now = 0) => ms.reduce((s, m) => reduceDash(s, m, now), EMPTY_DASH);
@@ -30,19 +31,19 @@ describe("대시보드 자료", () => {
     expect(textsOf(reduceDash(s, said("pam-2", 1, "컵을 찾았어요"), 0))).toEqual(["컵이 비어 보여요", "컵을 치울게요.", "컵을 찾았어요"]);
     expect(JSON.stringify(talkOf(feed([branchDecision(BRANCHES.clear, 1), said("pam-1", 10, "컵을 두고 자리를 뜨면 치워도 된다고 하셨어요")]))!)).not.toContain(REASON);
   });
-  it("알약 셋(상태·트리거·액션)은 서버 판단의 FSM으로 정한다: 규칙대로 고르면 상태 이름·트리거·행동, 대기면 트리거·액션 「대기」, 규칙 없는 행동은 트리거 「규칙 없음」, 규칙이 여럿이면 「규칙 여럿」. 판단 전·FSM 없음이면 없다", () => {
+  it("알약 셋(상태·트리거·액션)은 서버 판단의 화살표(fsm)로 정한다: 지금 사람 상태 이름, 일어난 화살표의 사건(on), 그 화살표의 행동. 화살표 없음이면 「화살표 없음」·「대기」, 임시 상태는 하는 일 이름. 판단 전·FSM 없음이면 없다", () => {
     const one = said("pam-1", 10, "컵을 살피고 있어요");
-    const withFsm = (fsm: { state: string | null; trigger: string | null; learned: boolean; matched?: boolean } | null) => {
+    const withFsm = (fsm: FsmStep | null) => {
       const m = branchDecision(BRANCHES.clear, 1) as Extract<ServerMessage, { type: "brain" }>;
       const e = m.event as Extract<typeof m.event, { type: "decision" }>;
       return { ...m, event: { ...e, fsm } } as ServerMessage;
     };
-    expect(talkOf(feed([branchDecision(BRANCHES.clear, 1), one]))!.fsm).toEqual({ state: "컵을 두고 자리를 뜸", trigger: BRANCHES.clear.trigger, action: "컵 치우기" });
-    expect(talkOf(feed([branchDecision(BRANCHES.clear, 1), one, branchDecision(null, 2)]))!.fsm).toEqual({ state: "먹거나 마시는 중", trigger: "대기", action: "대기" });
-    expect(talkOf(feed([withFsm({ state: "left_cup", trigger: null, learned: false, matched: false }), one]))!.fsm).toEqual({ state: "컵을 두고 자리를 뜸", trigger: "규칙 없음", action: "컵 치우기" });
-    expect(talkOf(feed([withFsm({ state: "left_cup", trigger: null, learned: true, matched: true }), one]))!.fsm!.trigger).toBe("규칙 여럿");
-    // 상태를 정할 수 없으면(그 행동 규칙이 여러 상태) 「모름」
-    expect(talkOf(feed([withFsm({ state: null, trigger: null, learned: true, matched: true }), one]))!.fsm).toEqual({ state: "모름", trigger: "규칙 여럿", action: "컵 치우기" });
+    const none = (state: string): FsmStep => ({ state, from: null, next_index: -1, to: null, on: null, when: null, action: null, learned: false });
+    expect(talkOf(feed([branchDecision(BRANCHES.clear, 1), one]))!.fsm).toEqual({ state: "자리에 없음", trigger: BRANCHES.clear.on, action: "컵 치우기" });
+    expect(talkOf(feed([branchDecision(BRANCHES.clear, 1), one, branchDecision(null, 2)]))!.fsm).toEqual({ state: "먹거나 마시는 중", trigger: "화살표 없음", action: "대기" });
+    expect(talkOf(feed([branchDecision(COACH, 1), one]))!.fsm).toEqual({ state: "요리하는 중", trigger: COACH.on, action: COACH.action });
+    // 기억에 없는 활동(임시 상태 ~<하는 일 값>)은 그 하는 일 이름
+    expect(talkOf(feed([withFsm(none("~reading")), one]))!.fsm).toEqual({ state: STATE_TEXT.reading!, trigger: "화살표 없음", action: "대기" });
     expect(talkOf(feed([withFsm(null), one]))!.fsm).toBeNull();
     expect(talkOf(feed([one]))!.fsm).toBeNull();
     expect(JSON.stringify(talkOf(feed([branchDecision(BRANCHES.clear, 1), one])))).not.toContain("배운 습관");

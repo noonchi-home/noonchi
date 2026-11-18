@@ -9,7 +9,7 @@ import type { ControlMode } from "./setup.js";
 import type { CameraView, Mask, SceneObservation } from "./observe.js";
 import type { DetLabel } from "../world/vocab.js";
 import type { VlmMissing, WorldChangeKind, WorldView, YoloMissing } from "./world.js";
-import type { Prediction, FsmAt } from "./pam.js";
+import type { Prediction, FsmStep } from "./pam.js";
 import type { ServiceKind } from "./service.js";
 
 // 좌표
@@ -133,10 +133,11 @@ export type BrainLog =
     type: "decision"; at_ms: number; id: string; seq: number; text_sent: string; status: "valid" | "failed";
     /** 이번 판단의 PAM LLM 사용량(답을 받았을 때만, 틀린 답·잘린 답이어도). 예전 기록에는 없다. */
     usage?: PamUsage;
-    prediction: { observation: string; reasoning: string; task_index: number } | null; action: string | null;
-    /** 판단 때 지금 FSM(src/brain/decision.ts fsmNow): 고른 행동의 규칙이 있으면(matched) 그 상태·트리거, 대기·규칙 없는 행동이면 직전 상태(처음이면 기억의 처음 상태)에
-     *  트리거 없음. seed에 없는 규칙이 있으면 learned. 실패·list 기억이면 null. 예전 기록에는 없거나 matched가 없다. */
-    fsm?: { state: string | null; trigger: string | null; learned: boolean; matched?: boolean } | null;
+    prediction: Prediction | null; action: string | null;
+    /** PAM 답의 사람 상태와 일어난 화살표(src/brain/decision.ts fsmStep). 실패·list 기억·말 부탁이면 null. 예전 기록에는 없거나 옛 모양이다. */
+    fsm?: FsmStep | null;
+    /** 판단이 버린 늦은 답(풀린 화살표를 다시 낸 답, src/brain/decide.ts): 행동 없이 기록만 한다. */
+    late?: true;
     /** 고른 행동이 어느 모드로 하는 행동인가(TaskSpec.coach, src/act/tasks.ts): 코치 행동이면 coach, 아니면 noonchi. 대기·실패는 null.
      *  대시보드 메시지 상자 머리(「코치 모드」·「눈치 모드」, 대기면 없음)가 이 값만 쓴다. 예전 기록에는 없다. */
     assist?: "noonchi" | "coach" | null;
@@ -336,8 +337,10 @@ export interface DecisionRecord {
   prediction: Prediction | null;
   /** 고른 행동(대기·실패면 null). */
   action: string | null;
-  /** 고른 행동의 FSM 규칙 자리(그때 보낸 기억에서 찾는다). 대기·실패·못 찾으면 null. */
-  fsm?: FsmAt | null;
+  /** PAM 답의 사람 상태와 일어난 화살표(src/brain/decision.ts fsmStep). 실패·list 기억이면 null. */
+  fsm?: FsmStep | null;
+  /** 판단이 버린 늦은 답(풀린 화살표를 같은 번호 이하 요청이 다시 낸 답): action은 null이고 실행 추적은 「앞선 판단이라 쓰지 않음」으로 기록만 한다. */
+  late?: true;
   error?: string;
   /** 이번 판단의 PAM LLM 사용량(답을 받았을 때만). */
   usage?: PamUsage;

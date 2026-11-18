@@ -3,7 +3,7 @@
 // 판단 모델은 무엇을 도울지만 정한다. 언제 부를지는 판단 호출 시점(src/world/trigger.ts)이 정한다. 답 글 읽기는 src/brain/pam/answer.ts.
 // 검사 메시지는 PAM 원문(영어)과 같게 두어 두 쪽 기록을 대조하기 쉽게 한다.
 
-import type { Prediction, FsmAt, FsmRuleAt } from "../contract/pam.js";
+import type { Prediction, FsmStep } from "../contract/pam.js";
 import { PAM_TEXT_MAX } from "../world/browser.js";
 import { STATES } from "../world/vocab.js";
 import { TASKS, TASK_NAMES } from "../act/tasks.js";
@@ -281,28 +281,21 @@ export const isOldFsm = (v: unknown): boolean =>
   !!v && typeof v === "object" && Array.isArray((v as { states?: unknown }).states)
   && (v as { states: unknown[] }).states.some((s) => !!s && typeof s === "object" && "rules" in s);
 
-/** 대기(null)·list 기억·기억에 없는 행동이면 null. */
-export function fsmRuleOf(memory: PamMemory, kind: "list" | "fsm", action: string | null): FsmRuleAt | null {
-  if (action === null || kind !== "fsm" || !("states" in memory)) return null;
-  // 행동은 화살표에만 있다(PAM 답의 화살표로 바꾸면 이 거꾸로 찾기를 지운다)
-  const hits = memory.states.flatMap((s) => s.next.filter((e) => e.action === action).map((e) => ({ state: s.id, trigger: e.on })));
-  if (hits.length === 0) return null;
-  const seed = CUP_FSM_MEMORY.states.flatMap((s) => s.next.map((e) => ({ trigger: e.on, action: e.action })));
-  return {
-    state: new Set(hits.map((h) => h.state)).size === 1 ? hits[0]!.state : null,
-    trigger: hits.length === 1 ? hits[0]!.trigger : null,
-    learned: hits.some((h) => !seed.some((r) => r.trigger === h.trigger && r.action === action)),
-  };
+/** seed에 같은 출발·사건·행동 화살표가 없으면 배운 화살표다(묻기 자리를 바꾼 컵 치우기도 배운 것). */
+export function edgeLearned(from: string, edge: Pick<FsmEdge, "on" | "action">): boolean {
+  return !CUP_FSM_MEMORY.states.find((s) => s.id === from)?.next.some((e) => e.on === edge.on && e.action === edge.action);
 }
-
-/** 판단 때 지금 FSM(대시보드 메시지 상자 알약): 고른 행동의 규칙이 있으면 그 상태(규칙이 여러 상태에 흩어졌으면 정할 수 없어 null)·트리거, 대기·규칙 없는 행동이면
- *  직전 상태에 트리거 없음. 직전 상태 last: undefined 직전 없음(기억의 처음 상태), null 정할 수 없었음(그대로 null), 지금 기억에 없는 상태(반성으로 지워짐)는 처음 상태.
- *  list 기억이면 null. PAM 답에는 지금 상태가 없어 FSM은 마지막으로 맞은 규칙의 상태에 머문다고 본다. */
-export function fsmNow(memory: PamMemory, kind: "list" | "fsm", action: string | null, last?: string | null): FsmAt | null {
-  if (kind !== "fsm" || !("states" in memory)) return null;
-  const rule = fsmRuleOf(memory, kind, action);
-  const prev = last === null ? null : last !== undefined && memory.states.some((s) => s.id === last) ? last : memory.initial_state;
-  return { state: rule ? rule.state : prev, trigger: rule?.trigger ?? null, learned: rule?.learned ?? false, matched: !!rule };
+/** seed 그 상태에 같은 트리거(on, when)가 있는가: 묻기 자리를 바꾼 배운 컵 치우기도 사용자가 정한 짧은 꼴(RULE_IF)로 쓴다. */
+export function seedTrigger(from: string, on: string, when: string | null): boolean {
+  return !!CUP_FSM_MEMORY.states.find((s) => s.id === from)?.next.some((e) => e.on === on && (e.when ?? null) === when);
+}
+/** PAM 답 → 판단 기록 fsm(답을 그대로, 화살표는 기억에서 그 번호). 거꾸로 찾지 않는다. */
+export function fsmStep(memory: FsmMemory, p: Prediction): FsmStep {
+  const edge = p.from ? memory.states.find((s) => s.id === p.from)?.next[p.next_index ?? -1] ?? null : null;
+  return {
+    state: p.state!, from: edge ? p.from! : null, next_index: edge ? p.next_index! : -1, to: edge?.to ?? null, on: edge?.on ?? null, when: edge?.when ?? null, action: edge?.action ?? null,
+    learned: edge ? edgeLearned(p.from!, edge) : false,
+  };
 }
 
 /** PAM 판단 관찰 텍스트 상한(글자 수). pam-predict/3과 같다. 관찰 텍스트를 만드는 World State(world/text.ts)와 한 값이다. */
