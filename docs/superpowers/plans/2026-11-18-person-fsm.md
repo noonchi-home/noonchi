@@ -383,7 +383,7 @@ export interface CandidateFsm { initial_state: string; states: CandidateState[] 
 
 **Interfaces:**
 - Produces:
-  - `export const ANY_STATE = "*"; export const AWAY_STATE = "away"; export const MAX_STATES = 12;`
+  - `export const ANY_STATE = "*"; export const AWAY_STATE = "away"; export const MAX_STATES = 12; export const TEMP_STATE = "~";`(임시 상태 앞글자. 검사가 상태 id로 막는다. 임시 상태 판단은 Task 3 `isTempState`)
   - `export interface FsmEdge { to: string; on: string; when?: string; action?: string }`
   - `export interface FsmState { id: string; description: string; activity: string[]; next: FsmEdge[] }`
   - `export interface FsmMemory { initial_state: string; states: FsmState[] }`
@@ -470,6 +470,8 @@ import { TASKS, TASK_NAMES } from "../act/tasks.js";
 
 export const ANY_STATE = "*";
 export const AWAY_STATE = "away";
+/** 임시 상태(기억에 없는 활동) 앞글자. 기억 상태 id로는 쓸 수 없다. */
+export const TEMP_STATE = "~";
 /** 상태 수 상한(사용자 결정 2026-11-18). */
 export const MAX_STATES = 12;
 /** 상태 activity에 쓸 수 있는 World State 사람 하는 일 값(모름·다른 일 빼고). */
@@ -750,8 +752,7 @@ Expected: FAIL
 
 ```ts
 // src/brain/decision.ts
-/** 기억에 없는 활동의 임시 상태(~<하는 일 값>): 그 값이 World State 하는 일 값이고 기억의 어느 상태도 갖지 않았다. */
-export const TEMP_STATE = "~";
+/** 기억에 없는 활동의 임시 상태(~<하는 일 값>): 그 값이 World State 하는 일 값이고 기억의 어느 상태도 갖지 않았다(TEMP_STATE는 Task 1). */
 export const isTempState = (memory: FsmMemory, id: string): boolean =>
   id.startsWith(TEMP_STATE) && PERSON_ACTIVITIES.includes(id.slice(1)) && !memory.states.some((s) => s.activity.includes(id.slice(1)));
 
@@ -824,16 +825,18 @@ PAM은 Task 3부터 기억 화살표의 행동만 고른다. 그래서 기억에
 
 **Files:**
 - Modify: `src/agent/tools.ts` (도구 `request_task`), `src/agent/agent.ts`·`src/agent/prompts.ts`(말 요청 에이전트 지시문 한 줄)
+- Modify: `src/brain/decide.ts` (`Decider.sentSeq()`: 말 부탁 `afterSeq`. Task 4보다 먼저라 여기서 만든다)
 - Modify: `src/act/track/tracker.ts`·`src/act/track/start.ts` (`onRequest`), `src/act/track/answers.ts`·`src/act/prompts.ts` (묻기 답 → 말 부탁, `ASK_FOLLOW`)
 - Modify: `src/server/home/agent.ts` (도구 → `core.tracker.onRequest`)
 - Modify: `src/contract/events.ts` (판단 기록 `source?: "speech"`, `via?: "answer"`)
 - Test: `tests/agent.test.ts`, `tests/speech-request.test.ts`(새)
 
 **Interfaces:**
-- Consumes: Task 3(PAM은 화살표 행동만), 지금 `Starter.onDecision`(들은 말이 든 판단은 충전 복귀 중에도 받음, 손대는 단계 중이면 그 단계 뒤로 미룸).
+- Consumes: Task 1 `ASK_ACTION`, Task 3(PAM은 화살표 행동만), 지금 `Starter.onDecision`(들은 말이 든 판단은 충전 복귀 중에도 받음, 손대는 단계 중이면 그 단계 뒤로 미룸).
 - Produces:
   - 도구 `request_task({ task: string }) → { ok: true } | { ok: false; error: string }` — `task`는 행동 목록(`TASK_NAMES`) 이름 그대로. 모드와 상관없이 받는다(코치 행동이면 계획이 열린 동안 모드가 코치, `modeNow` 그대로).
   - `ExecutionTracker.onRequest(r: { task: string; heard: string; atMs: number; afterSeq: number; via?: "answer" }): void` — `afterSeq`는 말 부탁을 받은 때까지 판단이 보낸 마지막 PAM 요청 번호(`Decider.sentSeq()`, 서버가 넣는다). 들은 말 부탁을 판단 기록 꼴(`id: say-<번호>`, `source: "speech"`, `seq: 0`, `textSent`에 「사람이 말함: 「…」」, `prediction: { observation: "사람이 말로 부탁함", reasoning: "사람이 말로 부탁함", task_index }`, `action: task`, `tasks: TASK_NAMES`)로 만들어 지금 판단 받기 길(`onDecision`)에 넣는다. 그래서 계획 전 검사·계획 모드·승인·실행이 PAM 판단과 같다.
+  - `Decider.sentSeq(): number` — 지금까지 보낸 마지막 PAM 요청 번호(말 부탁 `afterSeq`, 지금 판단 번호 `seq` 그대로).
   - **묻기 답 → 말 부탁**(Codex b115d69 P2: 지금 답 처리는 질문만 끝내서 처음 이틀에 치우기가 시작되지 않았다): 「사용자에게 물어보기」 판단의 계획이 묻기 단계 답으로 끝나면, 답 id가 `ASK_FOLLOW`(`src/act/prompts.ts`, `{ clear: "컵 치우기" }`)에 있을 때 그 계획을 `done`(지금 「답함」 기록)으로 닫은 뒤 `onRequest({ task: ASK_FOLLOW[id], heard: picked.label, atMs: now, afterSeq: o.sentSeq(), via: "answer" })`를 부른다. 「그대로 둬요」(`keep`)는 부르지 않는다. 판단 기록은 `source: "speech"`, `via: "answer"`이고 말 부탁과 같은 길·같은 순서 규칙이다(목표가 없으니 계획 모드). `ExecutionTracker` 옵션에 `sentSeq: () => number`(서버가 `Decider.sentSeq`를 넘긴다). 시각 찾기의 「치워 주세요」 답 때(`answerActions`)는 이 답 기록에서 읽는다.
   - 순서는 밀리초가 아니라 PAM 요청 번호(`seq`, 단조 증가)로 정한다(Codex 6802be0: 시각 비교는 같은 밀리초 가장자리가 생긴다). 말 부탁은 PAM 판단 번호와 섞지 않는다: `onDecision`은 `source === "speech"`면 seq 검사를 건너뛰고 `lastSeq`를 바꾸지 않으며 `afterSeq`를 `lastSpeechSeq`에 둔다. PAM 판단은 지금처럼 seq로 늦은 답을 거르고, 그에 더해 말 부탁을 받은 때부터 그 계획을 만드는 중이거나 열려 있는 동안 `seq <= lastSpeechSeq`인 판단(말 부탁 전에 보낸 요청의 답)은 「앞선 판단이라 쓰지 않음」으로 기록만 한다.
 
@@ -912,7 +915,7 @@ it("request_task 도구는 행동 목록 이름만 받는다", async () => {
 - [ ] **Step 3: 구현** — `tools.ts`에 `request_task`(입력 zod `{ task: z.enum(TASK_NAMES) }`, 결과는 `onRequest` 콜백 결과), 말 요청 에이전트 지시문에 「사람이 로봇 할 일 목록의 일을 부탁하면 request_task로 넘긴다(가전 하나를 켜고 끄는 말은 지금처럼 가전 도구)」, 서버가 `onRequest`를 `core.tracker.onRequest`에 잇는다. `onRequest`는 위 판단 기록 꼴을 만들어 `this.core.start.onDecision(d)`. `Starter.onDecision` 맨 앞은:
 
 ```ts
-if (d.late) return this.note(d, EXEC_TEXT.late);          // 판단이 버린 늦은 답(아래 Decider): 기록만
+// (판단이 버린 늦은 답 d.late를 먼저 거르는 줄은 Task 4가 이 맨 앞에 더한다)
 if (d.source === "speech") this.lastSpeechSeq = d.afterSeq!;   // 말 부탁: PAM 번호와 섞지 않는다
 else {
   if (d.seq < this.lastSeq) return this.note(d, EXEC_TEXT.late);
@@ -933,6 +936,7 @@ else {
 **Files:**
 - Create: `src/brain/person.ts` (`stateOfWorld`)
 - Modify: `src/brain/decide.ts` (거꾸로 찾기 지움, `last_state` 넘김, 판단 기록 `fsm`)
+- Modify: `src/act/track/start.ts` (`Starter.onDecision` 맨 앞 `if (d.late) return this.note(d, EXEC_TEXT.late);`)
 - Modify: `src/brain/decision.ts` (`fsmRuleOf`·`fsmNow` 지움, `edgeLearned`)
 - Modify: `src/contract/pam.ts` (`FsmAt`·`FsmRuleAt` → `FsmStep`), `src/contract/events.ts:137-139,338`
 - Modify: `src/brain/thought.ts:27-32`, `src/world/labels.ts:10` (`FSM_STATE_TEXT`), `src/act/tasks.ts`(`TASK_SAY` 묻기 말), `ui/src/dashboard/data.ts:150-170`, `ui/src/dashboard/words.ts`
@@ -950,7 +954,7 @@ else {
   - `Decider.fsmState(): string | null` — 마지막 유효 판단의 `state`(판단 전 null).
   - `Decider.onExecution(planId: string, state: ExecState): void` — 실행 기록을 받아 「아직 시작 안 된 화살표」(`pending`)를 푼다.
   - `PENDING_EDGE_MS = 15_000` — 행동이 시작되지 않은 화살표를 다시 켤 수 있게 두는 시간(목표 `fireWaitMs`와 같다).
-  - `Decider.sentSeq(): number` — 지금까지 보낸 마지막 PAM 요청 번호(말 부탁 `afterSeq`).
+  - (`Decider.sentSeq()`는 Task 12가 만들었다.)
   - 판단 기록 `late?: true`(`src/contract/events.ts`) — 판단이 버린 늦은 답. `action`은 null이고 실행 추적은 「앞선 판단이라 쓰지 않음」으로 기록만 한다.
 
 - [ ] **Step 1: 실패하는 시험 쓰기**
@@ -1302,7 +1306,8 @@ git commit -m "feat(goal): arm the goal from the transitions leaving the current
 - Modify: `src/brain/history/habits.ts` (규칙 줄 → 화살표 줄, `settingsGuard`는 후보 FSM을 거른다)
 - Modify: `src/contract/pam.ts`·`src/brain/pam/request.ts`·`src/brain/pam/client.ts` (반성 `memory_kind: "fsm_candidates"`, 답은 `validateCandidateFsm`)
 - Modify: `src/brain/history/reflect.ts:160-200`, `src/contract/events.ts:153`(반성 기록 `learned`·`active`·`dropped`), `ui/src/dashboard/data.ts:58-70`, `src/server/home/index.ts:153`, `scripts/demo-setup.ts:56,194`
-- Test: `tests/history-habits.test.ts`, `tests/history-reflect.test.ts`, `tests/pam-golden.test.ts`(`r-fsm` 정답), `ui/tests/dashboard/data.test.ts`
+- Modify: `src/brain/history/db.ts` (기억 종류 `fsm_candidates`, 실행 기억과 나누기, `candidatesFor`. 밤 흐름 Task 14보다 먼저 여기서 만든다, Codex e4f78e4 P2)
+- Test: `tests/history-habits.test.ts`, `tests/history-reflect.test.ts`, `tests/history-db.test.ts`, `tests/pam-golden.test.ts`(`r-fsm` 정답), `ui/tests/dashboard/data.test.ts`
 
 **Interfaces:**
 - Consumes: Task 1 `FsmMemory`·`FsmEdge`, Task 13 `adoptedFsm`·`candidateFsmOf`.
@@ -1311,6 +1316,7 @@ git commit -m "feat(goal): arm the goal from the transitions leaving the current
   - 반성 답은 후보 FSM(`CandidateFsm`, 「후보 FSM과 채택 검사」 절)이고 `validateCandidateFsm`(석준 님 `validate_candidate_memory`를 화살표 모양으로: 후보 1~3개·서로 다름, (출발, 행동)마다 규칙 하나, (출발·사건·조건) 하나, 나머지는 Task 1 코드 검사와 같음)이 본다. 더해서 seed 상태(id)는 모두 있고 하는 일 값(`activity`)이 seed와 같아야 하며, 새 상태는 seed 상태가 가진 하는 일 값을 가질 수 없다(정한 습관이 붙는 상태가 바뀌지 않게, Codex b115d69 P2). 어기면 까닭을 반성 피드백으로 한 번 다시. 로봇 FSM은 Task 13 `adoptedFsm`이 만든다.
   - `interface EdgeLine { from: string; to: string; on: string; when: string | null; action: string }`(행동 있는 화살표 한 줄)
   - `learnedEdges(previous: FsmMemory, proposed: FsmMemory): EdgeLine[]`
+  - 기억 종류 나누기(Codex b115d69 P2, e4f78e4 P2로 여기 앞당김): `memoryFor(day)`·`latestMemoryVersion()`·`memoryVersions()`·`pinMemory`·`/api/memory/day`는 실행 기억(`fsm`·`list`)만 본다. `pinMemory`에 후보 판본 번호를 주면 `not an execution memory` 오류. 후보는 `candidatesFor(day): MemoryVersion | null`(그날 이전에 저장한 가장 새 후보 판본, 다음 밤 반성 입력)로만 읽는다. `saveMemory`의 `kind`에 `"fsm_candidates"`를 더한다.
   - `settingsGuard(c: CandidateFsm): { candidates: CandidateFsm; notes: HabitRuleNote[] }` — 배우는 행동(`LEARNED_ACTIONS`)이 아닌 후보 규칙을 빼고 기록한다(까닭은 코치 행동이면 `coach`, 그 밖은 `settings`). 사용자가 정한 습관 화살표는 `adoptedFsm`이 seed 상태 화살표를 seed에서 가져와 지킨다(지금 코치만 지키던 `coachGuard`를 이것으로 바꾼다).
   - `HabitInput`·`HabitOutput`·`HabitFilter`는 이름 그대로, 기억은 새 모양. `HabitRuleNote`는 `{ from; to; on; action; kept; reason; seen?; fired?; p?; conditions? }`.
 
@@ -1320,7 +1326,7 @@ git commit -m "feat(goal): arm the goal from the transitions leaving the current
    "The memory is a FINITE-STATE MACHINE of the PERSON's activities.\n- A STATE is one thing the person is doing that the camera can see (drinking, watching TV, using a laptop, cooking). It is never an object situation (a cup left behind, contents), a place alone, a robot action, or a time of day. When the person is not visible the state is `away`; `away` is also the `initial_state`. If the person does two things at once, the main one is the state and the other is a \"doing together\" condition. Add a new state only for a different activity, merge states that are the same activity, and keep at most 12 states. A state written as '~<activity value>' in today's decisions is an activity not in memory yet: add it as a new state if it is a different activity. `activity` lists the matching person activity values of the observation log; one value belongs to one state.\n- A TRANSITION in a state's `next` is (to, on, when, action): `on` is the person's change of activity, or a person event (speech, gesture) during the same activity for a self-transition; `when` is a person-side fact only (what the person was doing together, what the person said); `action` is the one task the robot does then. Object or home conditions (a cup remains, nobody touches it, contents) never go into the memory: the task's own checks handle them. `to: \"*\"` is moving to any other state and needs an action. In the instructions below, a RULE means a transition with an action, and its trigger is `on` plus `when`.\n- In one state, two transitions never share the same (`on`, `when`): one trigger has one action. Doing nothing (waiting, leaving an object as it is) is not an action: leave the transition out."
 3. 「# Output」 JSON 블록 → 후보 FSM 모양(「후보 FSM과 채택 검사」 절 `CandidateFsm`, 값은 `<snake_case>`·`<one-sentence>`·`[<activity value>, ...]`, `next`: `[{"to": "<state_id>", "on": "<NL event>"}]`, `rules`: `[{"to": "<state_id or *>", "action": "<task name>", "candidates": [{"on": "<NL event>", "when": "<NL condition, optional>"}, ...1-3]}]`).
 5. 석준 님 `reflector_text_update.txt`의 더한 줄을 옮긴다: (출발 상태, 행동)마다 후보 1~3개, 후보는 행동 전 검사 창 안의 사람 순간 하나; 있던 상태 id는 글자 그대로 두고 오늘 본 일이 이미 있는 상태면 그 상태를 쓴다; 있던 후보 문구는 절대 바꾸지 않는다(바꾸면 새 후보라 지난 날을 다시 찾아야 한다); 후보가 3개 미만이면 새 후보를 더한다; 검사 결과(후보마다 n·k·통과)를 입력으로 받고, 3번 이상 나왔는데 75% 미만인 후보만 바꿔도 된다.
-6. 입력: 줄 기록 대신 덩어리 기록(Task 14), 지금까지의 후보 FSM, 검사 결과, 피드백.
+6. 입력: 지금까지의 후보 FSM과 피드백(이 작업). 줄 기록 대신 덩어리 기록, 검사 결과(후보마다 n·k·통과)는 Task 14가 더한다(그 전에는 지금 하루 요약 줄, 검사 결과 없음).
 4. "- Ensure `initial_state` names one of the states, and every `next.to` references an\nexisting state id." → 끝에 " or \"*\""를 더한다.
 
 - [ ] **Step 1: 실패하는 시험 쓰기**
@@ -1379,11 +1385,26 @@ it("정상 후보 FSM 반성 답(rules에 컵 치우기 후보)은 답 오류 �
 it("반성 답을 로봇 FSM 모양(fsm)으로 내면 후보 FSM 모양 오류로 거절하고 까닭을 붙여 한 번 다시 반성한다", async () => { /* 첫 답 CUP_FSM_MEMORY → incorrect fields, 둘째 답 candidateFsmOf(CUP_FSM_MEMORY) → 통과 */ });
 ```
 
-(`dayWithLog`·`DAY`·`nextDay`는 이 파일의 지금 도우미다. 반성 기록 `learned`는 로봇 FSM 사이의 `learnedEdges`다.) 옛 모양(상태 안 `rules[{trigger, action}]`)을 내면 후보 FSM 모양 오류(「incorrect fields」)로 실패로 남는다.
+```ts
+// tests/history-db.test.ts
+it("후보 판본(fsm_candidates)은 실행 기억으로 뽑히지 않고 candidatesFor로만 읽는다", () => {
+  const db = HistoryDb.open(":memory:");
+  const robot = db.saveMemory({ kind: "fsm", memory: CUP_FSM_MEMORY, day: "2026-11-10", appliesDay: "2026-11-11", source: "reflection" });
+  const cand = db.saveMemory({ kind: "fsm_candidates", memory: candidateFsmOf(CUP_FSM_MEMORY), day: "2026-11-10", appliesDay: "2026-11-11", source: "reflection" });
+  expect(cand).toBeGreaterThan(robot);
+  expect(db.memoryFor("2026-11-11")!.version).toBe(robot);
+  expect(db.latestMemoryVersion()).toBe(robot);
+  expect(db.memoryVersions().map((v) => v.kind)).toEqual(["fsm"]);
+  expect(db.candidatesFor("2026-11-11")).toMatchObject({ version: cand, kind: "fsm_candidates" });
+  expect(() => db.pinMemory("2026-11-11", cand)).toThrow(/not an execution memory/);
+});
+```
+
+(`dayWithLog`·`DAY`·`nextDay`는 이 파일의 지금 도우미다. 반성 기록 `learned`는 로봇 FSM 사이의 `learnedEdges`다. Task 2의 「반성은 옛 모양 판본을 읽지 않는다」 시험은 보낸 기억이 `candidateFsmOf(CUP_FSM_MEMORY)`가 되게 고친다.) 옛 모양(상태 안 `rules[{trigger, action}]`)을 내면 후보 FSM 모양 오류(「incorrect fields」)로 실패로 남는다.
 
 - [ ] **Step 2: 실패 확인**
 
-Run: `npm run heavy -- npx vitest run tests/history-habits.test.ts tests/history-reflect.test.ts`
+Run: `npm run heavy -- npx vitest run tests/history-habits.test.ts tests/history-reflect.test.ts tests/history-db.test.ts`
 Expected: FAIL
 
 - [ ] **Step 3: 구현**
@@ -1579,6 +1600,7 @@ git commit -m "feat(reflect): check the reflected memory's meaning with the PAM 
 
 **Files:**
 - Create: `src/brain/pam/adopt.ts`
+- Modify: `src/contract/pam.ts` (`Candidate`·`CandidateRule`·`CandidateState`·`CandidateFsm`, 「후보 FSM과 채택 검사」 절 그대로. Task 6보다 먼저라 여기서 만든다)
 - Test: `tests/pam-adopt.test.ts`(석준 님 `tests/test_trigger_check.py`의 경우를 그대로)
 
 **Interfaces:**
@@ -1805,7 +1827,7 @@ seed 상태는 후보 FSM에 늘 같은 id·같은 하는 일 값으로 있으�
 
 **Files:**
 - Create: `src/brain/pam/scenarios/noonchi/chunking.txt`, `marking.txt`(석준 님 `prompts/text/` 글을 집·기록 모양에 맞춘 것, 이 저장소 글이라 논문 해시 대상이 아님), `src/brain/history/night.ts`(밤 흐름), `src/brain/pam/marks.ts`(`validateChunks`·`validateMarks`, 석준 님 `contracts.py` 그대로)
-- Modify: `src/brain/pam/client.ts`(`PamClient.chunk`·`PamClient.mark`: PAM LLM 통로 한 번씩), `src/brain/history/reflect.ts`(`runReflection` → 밤 흐름), `src/brain/history/db.ts`(기억 종류 `fsm_candidates`와 종류 나누기, `saveNight` 한 트랜잭션), `tests/helpers/pam.ts`(가짜 PAM LLM이 덩어리·시각 찾기에 답함)
+- Modify: `src/brain/pam/client.ts`(`PamClient.chunk`·`PamClient.mark`: PAM LLM 통로 한 번씩), `src/brain/history/reflect.ts`(`runReflection` → 밤 흐름), `src/brain/history/db.ts`(`saveNight` 한 트랜잭션. 기억 종류 나누기는 Task 6), `tests/helpers/pam.ts`(가짜 PAM LLM이 덩어리·시각 찾기에 답함)
 - Test: `tests/pam-marks.test.ts`(새), `tests/history-night.test.ts`(새), `tests/history-reflect.test.ts`
 
 **Interfaces:**
@@ -1816,7 +1838,7 @@ seed 상태는 후보 FSM에 늘 같은 id·같은 하는 일 값으로 있으�
   - `answerTimes(db, day, action): number[]` — 그 행동을 물은 질문에 답한 때(「치워 주세요」·「그대로 둬요」 모두). `CheckDay.answered`에 넣는다.
   - `robotSpans(db, day, action): [number, number][]` — 로봇이 그 행동을 실행한 구간(그 행동 계획의 실행 기록 `running` → `done`·`failed`, 끝이 없으면 그날 끝까지). `CheckDay.unseen`에 더한다(사용자 답: 로봇이 습관대로 한 때는 못 봄).
   - `runNight(db, pam, day, o): Promise<NightResult>` — 덩어리 → 반성 → 코드 검사 → 뜻 검사(→ 한 번 다시) → 시각 찾기(지난 날, 모르는 것만, `runtime/homes/<집>/habit/marks-<날>.json`) → 채택 검사 → 로봇 FSM → 코드 검사 → 저장(`saveNight`: 로봇 FSM `fsm`·후보 FSM `fsm_candidates`·반성 기록(`data.checks`에 검사 결과)을 한 트랜잭션으로. 그 뒤 `habit/check-<날>.json` 사본). 옵션 `o.writeFile`은 파일 쓰기(시험이 실패를 넣는다).
-  - 기억 종류 나누기(Codex b115d69 P2): `memoryFor(day)`·`latestMemoryVersion()`·`memoryVersions()`·`pinMemory`·`/api/memory/day`는 실행 기억(`fsm`·`list`)만 본다. `pinMemory`에 후보 판본 번호를 주면 `not an execution memory` 오류. 후보는 `candidatesFor(day): MemoryVersion | null`(그날까지 가장 새 후보 판본, 다음 밤 반성 입력)로만 읽는다. `saveMemory`의 `kind`에 `"fsm_candidates"`를 더한다.
+  - 기억 종류 나누기와 후보 저장·조회(`candidatesFor`)는 Task 6이 만들었다. 밤 흐름은 그것을 쓰고, 아래 시험은 밤 흐름에서도 그대로인지 본다.
   - `saveNight(o: { day: string; appliesDay: string; robot: FsmMemory; candidates: CandidateFsm; reflection: { text: string; data: unknown } }): { robot: number; candidates: number }` — `BEGIN IMMEDIATE` 안에서 두 판본(안에서 `saveMemory`를 로봇·후보 차례로 부른다)·반성 기록·`appliesDay` 고정을 저장하고 `COMMIT`, 어느 하나라도 던지면 `ROLLBACK`하고 다시 던진다(Codex b115d69 P2: 뒤 저장이 실패하면 새 로봇 판본만 남아 「실패하면 전날 기억」이 깨졌다). 시각 찾기 사본(`marks-<날>.json`)은 트랜잭션 전에 임시 파일 → 이름 바꾸기로 쓴다(그날 사실의 사본이라 기억이 저장되지 않아도 다음 밤에 다시 쓴다). `check-<날>.json`은 커밋 뒤 임시 파일 → 이름 바꾸기로 쓰는 사본이고, 실패하면 로그 한 줄만 남긴다(검사 결과는 반성 기록 `data.checks`에 있다).
   - `NightResult = { ok: boolean; passed: { state: string; action: string; on: string; when?: string }[]; checks: (CheckResult & { state: string; action: string; on: string; when: string | null })[] }`
 
