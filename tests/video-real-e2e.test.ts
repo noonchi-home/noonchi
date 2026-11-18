@@ -18,6 +18,7 @@ import { ScriptedDetector, det } from "./helpers/detectors.js";
 import { startFakePamLlm, type FakePamLlm, pamLlmEnv } from "./helpers/pam.js";
 import { CUP_SCRIPTS, plannerRespond } from "./helpers/planner.js";
 import { heardAtOf, openPhone, openWebSocket } from "./helpers/ws.js";
+import { useLearnedMemory } from "./helpers/memory.js";
 
 type Msg = Record<string, any>;
 let srv: RunningServer | undefined;
@@ -53,6 +54,8 @@ async function cupRun(query: string, videoDir: string) {
   pam = await startFakePamLlm({ predict: (b) => (/컵 cup_\d/.test(String(b.observation_text))
     ? { observation: "빈 컵이 식탁에 남음", reasoning: "자리를 비워 컵을 치운다", task_index: 0 } : { observation: "컵 없음", reasoning: "할 일 없음", task_index: -1 }) });
   const runtimeDir = mkdtempSync(join(tmpdir(), "rt-"));
+  // 치우기를 보는 시험은 배운 뒤 기억(합성 3일째부터의 로봇 FSM)으로 돈다. seed 기억이면 떠날 때 묻는다
+  useLearnedMemory(runtimeDir);
   mkdirSync(join(runtimeDir, "homes", "apartment"), { recursive: true });
   writeFileSync(join(runtimeDir, "homes", "apartment", "approvals.json"), JSON.stringify({ always: { "task:컵 치우기": "2026-11-09T00:00:00.000Z" }, never: {} }));
   srv = await startServer({

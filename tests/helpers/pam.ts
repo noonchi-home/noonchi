@@ -1,12 +1,14 @@
 // 시험용 PAM LLM 자리(OpenAI 호환 /v1/chat/completions, GET /v1/models): 서버 안 PamClient(src/brain/pam/)가 보낸 판단·반성 메시지를 되읽어
 // 요청 값(관찰 텍스트·기억·행동 목록 등)으로 기록하고, 정해진 답 글을 낸다. 서버에는 PAM_LLM_BASE_URL=url(pamLlmEnv)로 붙인다.
 import { createServer, type ServerResponse } from "node:http";
-import { adaptedTemplate, PamClient, pamSettings, PREDICT_LOG, PREDICT_TIME, REFLECT_FEEDBACK, REFLECT_LOG, REFLECT_MEMORY, REFLECT_SUMMARY } from "../../src/brain/pam/index.js";
+import { adaptedTemplate, PamClient, pamSettings, PREDICT_LOG, PREDICT_STATE, PREDICT_TIME, REFLECT_FEEDBACK, REFLECT_LOG, REFLECT_MEMORY, REFLECT_SUMMARY } from "../../src/brain/pam/index.js";
+import { ANY_STATE, AWAY_STATE, type FsmMemory } from "../../src/brain/decision.js";
 import { listenRetry } from "../../src/shared/net.js";
 
-type Pred = { observation: string; reasoning: string; task_index: number };
-/** 판단 요청 값(메시지에서 되읽음). final_time은 메시지에 쓴 Python isoformat 꼴이다. */
-export type PredictView = { role: "predict"; final_time: string; observation_text: string; memory_kind: "list" | "fsm"; memory: unknown; tasks: string[] };
+/** 시험 판단 답: list 기억은 task_index, fsm 기억은 state·from·next_index(pam-predict/3). fsm 요청에 task_index로 내면 fsmAnswer가 화살표로 바꾼다. */
+type Pred = { observation: string; reasoning: string; task_index?: number; state?: string; from?: string | null; next_index?: number };
+/** 판단 요청 값(메시지에서 되읽음). final_time은 메시지에 쓴 Python isoformat 꼴이다. last_state는 직전 사람 상태(unknown이면 null). */
+export type PredictView = { role: "predict"; final_time: string; observation_text: string; memory_kind: "list" | "fsm"; memory: unknown; tasks: string[]; last_state: string | null };
 /** 반성 요청 값(메시지에서 되읽음). */
 export type ReflectView = { role: "reflect"; memory_kind: "list" | "fsm"; memory: unknown; observation_text: string; action_summary: string; feedback: string | null };
 export type PamView = PredictView | ReflectView;
@@ -63,9 +65,10 @@ export function pamView(body: { messages: { content: string | { text: string }[]
   for (const kind of ["fsm", "list"] as const) {
     const v = unrender(adaptedTemplate(`predictor_${kind}`), system);
     if (v) {
+      const last = parts[0]!.substring(PREDICT_STATE.length);
       return { role: "predict", memory_kind: kind, memory: JSON.parse(v[kind === "fsm" ? "fsm_block" : "rules_block"]!),
         tasks: v.tasks_block!.split("\n").map((l, i) => l.substring(`${i}: `.length)),
-        final_time: parts[0]!.substring(PREDICT_TIME.length), observation_text: parts[1]!.substring(PREDICT_LOG.length) };
+        final_time: parts[1]!.substring(PREDICT_TIME.length), observation_text: parts[2]!.substring(PREDICT_LOG.length), last_state: last === "unknown" ? null : last };
     }
     if (system === adaptedTemplate(`reflector_${kind}_update`)) {
       const t = parts[1]!;
@@ -77,6 +80,25 @@ export function pamView(body: { messages: { content: string | { text: string }[]
     }
   }
   throw new Error("PAM 판단·반성 메시지가 아닙니다");
+}
+
+/** fsm 요청에 행동 번호(task_index)로 낸 시험 답을 pam-predict/3 답(state·from·next_index)으로 바꾼다(시험 도우미만 찾는다):
+ *  요청에 실린 기억에서 그 행동의 화살표를 찾는다. 직전 상태(last_state)에 있으면 그것, 없으면 그 행동 화살표가 있는 첫 상태. state는 화살표 도착("*"면 away).
+ *  대기이거나 기억에 그 행동 화살표가 없으면 화살표 없음(-1, state는 직전 상태, 모르면 처음 상태): seed 기억으로 도는 시험이 몰래 치우지 않는다.
+ *  이미 state를 낸 답과 list 요청은 그대로다. */
+export function fsmAnswer(v: PredictView, a: Pred): Pred {
+  if (v.memory_kind !== "fsm" || a.task_index === undefined || "state" in a) return a;
+  const m = v.memory as FsmMemory;
+  const { task_index, ...rest } = a;
+  const action = task_index >= 0 ? v.tasks[task_index] : undefined;
+  const known = v.last_state !== null && m.states.some((x) => x.id === v.last_state) ? v.last_state : m.initial_state;
+  const edgeOf = (st: FsmMemory["states"][number]) => st.next.findIndex((e) => action !== undefined && e.action === action);
+  const order = [...m.states.filter((x) => x.id === v.last_state), ...m.states.filter((x) => x.id !== v.last_state)];
+  const from = order.find((x) => edgeOf(x) >= 0);
+  if (!from) return { ...rest, state: known, from: null, next_index: -1 };
+  const i = edgeOf(from);
+  const to = from.next[i]!.to;
+  return { ...rest, state: to === ANY_STATE ? AWAY_STATE : to, from: from.id, next_index: i };
 }
 
 /** 관찰 텍스트 [지속] 물건 줄(면 줄 하나 + 사실마다 한 줄)을 컵마다 한 글로 묶어, 싱크대 안이 아닌 첫 컵의 글(없으면 빈 글). */
@@ -162,6 +184,8 @@ export function demoReflect(body: Record<string, unknown>): unknown {
   return memory;
 }
 
+const fsmAnswerOf = (v: PredictView, a: Pred | string): Pred | string => (typeof a === "string" ? a : fsmAnswer(v, a));
+
 export async function startFakePamLlm(o: FakePamLlmOptions = {}): Promise<FakePamLlm> {
   const bodies: PamView[] = [];
   const calls: PamView["role"][] = [];
@@ -183,7 +207,7 @@ export async function startFakePamLlm(o: FakePamLlmOptions = {}): Promise<FakePa
     calls.push(v.role);
     const status = o.status?.[v.role];
     if (status && status !== 200) return send(res, status, { error: { message: "시험 오류" } });
-    const answer = v.role === "predict" ? (o.predict?.(v) ?? WAIT) : (o.reflect?.(v) ?? v.memory);
+    const answer = v.role === "predict" ? fsmAnswerOf(v, o.predict?.(v) ?? WAIT) : (o.reflect?.(v) ?? v.memory);
     const content = typeof answer === "string" ? answer : JSON.stringify(answer);
     send(res, 200, { id: "fake", object: "chat.completion", created: 0, model: body.model,
       choices: [{ index: 0, message: { role: "assistant", content }, finish_reason: "stop" }], usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 } });

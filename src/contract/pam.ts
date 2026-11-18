@@ -1,5 +1,5 @@
-// PamClient(src/brain/pam/) 입력 모양(pam-predict/2·pam-reflect/2, 타입만). 사진 칸이 없다. 형식 설명은 docs/pam-interface.md.
-export type PamPredictContract = "pam-predict/2";
+// PamClient(src/brain/pam/) 입력 모양(pam-predict/3·pam-reflect/2, 타입만). 사진 칸이 없다. 형식 설명은 docs/pam-interface.md.
+export type PamPredictContract = "pam-predict/3";
 export type PamReflectContract = "pam-reflect/2";
 
 export interface PamPredictRequest {
@@ -11,6 +11,8 @@ export interface PamPredictRequest {
   memory_kind: "list" | "fsm";
   memory: unknown;
   tasks: string[];
+  /** 직전 판단의 사람 상태 id(처음이면 null). */
+  last_state: string | null;
 }
 
 export interface PamReflectRequest {
@@ -26,7 +28,9 @@ export interface PamReflectRequest {
   feedback: string | null;
 }
 
-export interface Prediction { observation: string; reasoning: string; task_index: number }
+/** PAM 판단 답. fsm 기억이면 state(지금 사람 상태)·from(일어난 화살표가 나간 상태, 없으면 null)·next_index(그 상태 next 번호, 없으면 -1)가 늘 있고
+ *  task_index는 서버가 그 화살표 행동으로 만든 값이다(답에는 task_index 칸이 없다). list 기억이면 task_index가 답이다. */
+export interface Prediction { observation: string; reasoning: string; task_index: number; state?: string; from?: string | null; next_index?: number }
 
 /** 고른 행동의 FSM 자리(행동 단위). PAM 답에는 어느 규칙이 불렸는지가 없어 기억에서 그 행동의 규칙을 모아 본다.
  *  state: 그 행동의 규칙이 모두 한 상태에 있으면 그 상태 id, 여러 상태에 흩어졌으면 null.

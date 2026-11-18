@@ -16,6 +16,7 @@ import { startFakePamLlm, type FakePamLlm, pamLlmEnv } from "./helpers/pam.js";
 import { CUP_SCRIPTS, plannerRespond } from "./helpers/planner.js";
 import { heardAtOf, openPhone, openWebSocket } from "./helpers/ws.js";
 import { alignOnServer } from "./helpers/align.js";
+import { useLearnedMemory } from "./helpers/memory.js";
 
 type Msg = Record<string, any>;
 let srv: RunningServer | undefined;
@@ -64,6 +65,8 @@ describe("한양목련 처음부터 끝까지", () => {
     pam = await startFakePamLlm({ predict: (b) => (/컵 cup_\d/.test(String(b.observation_text))
       ? { observation: "빈 컵이 식탁에 남음", reasoning: "자리를 비워 컵을 치운다", task_index: 0 } : { observation: "컵 없음", reasoning: "할 일 없음", task_index: -1 }) });
     const runtimeDir = mkdtempSync(join(tmpdir(), "rt-"));
+    // 치우기를 보는 시험은 배운 뒤 기억(합성 3일째부터의 로봇 FSM)으로 돈다. seed 기억이면 떠날 때 묻는다
+    useLearnedMemory(runtimeDir);
     srv = await startServer({
       env: { HUB: "memory", PORT: "0", HOME_ID: "mokryeon_180b", RUNTIME_DIR: runtimeDir, PHONE_PORT: "0", PHONE_HOST: "127.0.0.1",
         BRAIN: "1", VLM_BASE_URL: `${fake.url}/v1`, ...pamLlmEnv(pam), OPENAI_API_KEY: "fake-key", OPENAI_BASE_URL: `${fake.url}/v1` },

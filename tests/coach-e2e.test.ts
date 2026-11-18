@@ -150,7 +150,7 @@ describe("코치 모드: 라면 끓이기 알려 주기", () => {
     expect(s.dash.find((m) => m.type === "brain" && m.event.type === "decision" && m.event.action === RAMEN)!.event).toMatchObject({ assist: "coach" });
     await s.pump(() => s.modes().at(-1) === "coach", "코치 모드");
     expect(s.modes()[0]).toBe("noonchi");
-    expect(Object.keys(chosen).sort()).toEqual(["final_time", "memory", "memory_kind", "observation_text", "role", "tasks"]);
+    expect(Object.keys(chosen).sort()).toEqual(["final_time", "last_state", "memory", "memory_kind", "observation_text", "role", "tasks"]);
     const during = s.predicts();
 
     // 2 「완료」·VLM 답(사람이 물건을 들고 있음)·말 「다 했어」로 단계를 넘긴다

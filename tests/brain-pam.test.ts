@@ -12,7 +12,7 @@ const input = (over: Partial<DecisionInput> = {}): DecisionInput => ({
   text: "21:00:00 사람 보임\n21:00:04 사람 안 보임", finalTime: "2026-11-07T21:00:08.000+09:00",
   memory: CUP_FSM_MEMORY, memoryKind: "fsm", tasks: [...CUP_TASKS], facts: { contents: "unknown" }, ...over,
 });
-const predictArgs = () => ({ final_time: "2026-11-07T21:00:08.000+09:00", observation_text: "t", memory_kind: "fsm" as const, memory: CUP_FSM_MEMORY, tasks: [...CUP_TASKS] });
+const predictArgs = () => ({ final_time: "2026-11-07T21:00:08.000+09:00", observation_text: "t", memory_kind: "fsm" as const, memory: CUP_FSM_MEMORY, tasks: [...CUP_TASKS], last_state: null });
 const reflectArgs = { day: "2026-11-07", memory_kind: "fsm" as const, memory: CUP_FSM_MEMORY, observation_text: "07:58:02 사람 보임", action_summary: "08:10:40 컵 치우기 부탁", feedback: null };
 
 describe("컵 FSM 기억", () => {
@@ -23,13 +23,14 @@ describe("컵 FSM 기억", () => {
 
 describe("PamDecision ↔ PAM LLM", () => {
   it("관찰 텍스트·최종 시각·기억·작업 목록을 판단 메시지로 보낸다", async () => {
-    pam = await startFakePamLlm({ predict: () => ({ observation: "o", reasoning: "r", task_index: 0 }) });
+    pam = await startFakePamLlm({ predict: () => ({ observation: "o", reasoning: "r", state: "away", from: "drinking", next_index: 0 }) });
     const p = await new PamDecision(pamClientFor(pam)).decide(input());
-    expect(p).toEqual({ observation: "o", reasoning: "r", task_index: 0 });
+    // 화살표(마시는 중 → 떠남)의 행동(seed는 묻기)을 서버가 행동 번호로 만든다
+    expect(p).toEqual({ observation: "o", reasoning: "r", task_index: CUP_TASKS.indexOf("사용자에게 물어보기"), state: "away", from: "drinking", next_index: 0 });
     expect(pam.calls).toEqual(["predict"]);
     expect(pam.bodies[0]).toEqual({
       role: "predict", final_time: "2026-11-07T21:00:08+09:00", observation_text: "21:00:00 사람 보임\n21:00:04 사람 안 보임",
-      memory_kind: "fsm", memory: CUP_FSM_MEMORY, tasks: [...CUP_TASKS],
+      memory_kind: "fsm", memory: CUP_FSM_MEMORY, tasks: [...CUP_TASKS], last_state: null,
     });
   });
 
@@ -51,12 +52,12 @@ describe("PamDecision ↔ PAM LLM", () => {
 });
 
 describe("PamClient 답 검사", () => {
-  it("칸이 더 있거나 번호가 범위 밖인 답은 PamAnswerError", async () => {
-    pam = await startFakePamLlm({ predict: () => JSON.stringify({ observation: "o", reasoning: "r", task_index: 0, task_index2: 1 }) });
+  it("칸이 더 있거나 화살표 번호가 범위 밖인 답은 PamAnswerError", async () => {
+    pam = await startFakePamLlm({ predict: () => JSON.stringify({ observation: "o", reasoning: "r", state: "away", from: null, next_index: -1, task_index: 0 }) });
     await expect(pamClientFor(pam).predict(predictArgs())).rejects.toBeInstanceOf(PamAnswerError);
     await pam.close();
-    pam = await startFakePamLlm({ predict: () => ({ observation: "o", reasoning: "r", task_index: 9 }) });
-    await expect(pamClientFor(pam).predict(predictArgs())).rejects.toThrow(/expected an integer from -1 to 1/);
+    pam = await startFakePamLlm({ predict: () => ({ observation: "o", reasoning: "r", state: "away", from: "drinking", next_index: 9 }) });
+    await expect(pamClientFor(pam).predict(predictArgs())).rejects.toThrow(/state 'drinking' has 2 transitions/);
   });
 
   it("계약 밖 요청은 PamRequestError이고 LLM에 보내지 않는다", async () => {

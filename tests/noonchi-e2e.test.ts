@@ -18,6 +18,7 @@ import { ScriptedDetector, det } from "./helpers/detectors.js";
 import { startFakePamLlm, type FakePamLlm, pamLlmEnv } from "./helpers/pam.js";
 import { CUP_SCRIPTS, plannerRespond } from "./helpers/planner.js";
 import { heardAtOf, openPhone, openWebSocket } from "./helpers/ws.js";
+import { useLearnedMemory } from "./helpers/memory.js";
 
 type Msg = Record<string, any>;
 const RULE_LINE = "컵을 두고 자리를 뜨면 치워도 된다고 하셨어요";
@@ -61,6 +62,8 @@ describe("NOONCHI 처음부터 끝까지", () => {
     // 처음 하는 컵 치우기도 승인을 묻지 않고 첫 명령부터(2026-11-18 사용자 결정: 처음 하는 일 묻기 끔, 기본 집 apartment). 승인 기억 파일도 쓰지 않는다.
     // 묻는 길은 tests/mokryeon-e2e.test.ts·tests/act-track.test.ts가 askFirst로 켜서 본다
     const runtimeDir = mkdtempSync(join(tmpdir(), "rt-"));
+    // 치우기를 보는 시험은 배운 뒤 기억(합성 3일째부터의 로봇 FSM)으로 돈다. seed 기억이면 떠날 때 묻는다
+    useLearnedMemory(runtimeDir);
     srv = await startServer({
       env: { HUB: "memory", PORT: "0", RUNTIME_DIR: runtimeDir, PHONE_PORT: "0", PHONE_HOST: "127.0.0.1",
         BRAIN: "1", VLM_BASE_URL: `${fake.url}/v1`, ...pamLlmEnv(pam), OPENAI_API_KEY: "fake-key", OPENAI_BASE_URL: `${fake.url}/v1` },
@@ -196,6 +199,8 @@ describe("NOONCHI 처음부터 끝까지", () => {
     pam = await startFakePamLlm({ predict: (b) => (/컵 cup_\d/.test(String(b.observation_text))
       ? { observation: "빈 컵이 식탁에 남음", reasoning: "자리를 비워 컵을 치운다", task_index: 0 } : { observation: "컵 없음", reasoning: "할 일 없음", task_index: -1 }) });
     const runtimeDir = mkdtempSync(join(tmpdir(), "rt-"));
+    // 치우기를 보는 시험은 배운 뒤 기억(합성 3일째부터의 로봇 FSM)으로 돈다. seed 기억이면 떠날 때 묻는다
+    useLearnedMemory(runtimeDir);
     mkdirSync(join(runtimeDir, "homes", "apartment"), { recursive: true });
     writeFileSync(join(runtimeDir, "homes", "apartment", "approvals.json"), JSON.stringify({ always: { "task:컵 치우기": "2026-11-09T00:00:00.000Z" }, never: {} }));
     srv = await startServer({

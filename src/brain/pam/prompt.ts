@@ -8,6 +8,7 @@ export type PamMessage = { role: "system"; content: string } | { role: "user"; c
 export interface Generation { temperature: number; enable_thinking: boolean }
 export interface Built { messages: PamMessage[]; generation: Generation }
 
+export const PREDICT_STATE = "Person state at the previous decision: ";
 export const PREDICT_TIME = "Wall-clock time of the final observation: ";
 export const PREDICT_LOG = "Observation log (oldest to newest):\n";
 export const REFLECT_LOG = "Today's observations, provided as a chronological time-stamped log:\n";
@@ -40,7 +41,7 @@ export function buildPredictMessages(r: PredictRequest): Built {
   return {
     messages: [
       { role: "system", content: render(template, Object.fromEntries(Object.entries(values).filter(([k]) => needed.has(k)))) },
-      { role: "user", content: [{ type: "text", text: PREDICT_TIME + r.final_time }, { type: "text", text: PREDICT_LOG + r.observation_text }] },
+      { role: "user", content: [{ type: "text", text: PREDICT_STATE + (r.last_state ?? "unknown") }, { type: "text", text: PREDICT_TIME + r.final_time }, { type: "text", text: PREDICT_LOG + r.observation_text }] },
     ],
     generation: generation("predictor"),
   };

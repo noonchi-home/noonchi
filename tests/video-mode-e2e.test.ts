@@ -17,6 +17,7 @@ import { ScriptedDetector, det } from "./helpers/detectors.js";
 import { startFakePamLlm, type FakePamLlm, pamLlmEnv } from "./helpers/pam.js";
 import { CUP_SCRIPTS, plannerRespond } from "./helpers/planner.js";
 import { openPhone, openWebSocket } from "./helpers/ws.js";
+import { useLearnedMemory } from "./helpers/memory.js";
 
 type Msg = Record<string, any>;
 let srv: RunningServer | undefined;
@@ -70,6 +71,8 @@ describe("영상 모드 처음부터 끝까지", () => {
         : { observation: "사람이 식탁에 있음", reasoning: "기다린다", task_index: -1 };
     } });
     const runtimeDir = mkdtempSync(join(tmpdir(), "rt-video-"));
+    // 치우기를 보는 시험은 배운 뒤 기억(합성 3일째부터의 로봇 FSM)으로 돈다. seed 기억이면 떠날 때 묻는다
+    useLearnedMemory(runtimeDir);
     mkdirSync(join(runtimeDir, "homes", "mokryeon_180b"), { recursive: true });
     writeFileSync(join(runtimeDir, "homes", "mokryeon_180b", "approvals.json"), JSON.stringify({ always: { "task:컵 치우기": "2026-11-11T00:00:00.000Z" }, never: {} }));
     let calls = 0;

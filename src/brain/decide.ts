@@ -117,7 +117,7 @@ export class Decider {
     const job: Promise<void> = Promise.resolve()
       .then(() => {
         checkInput({ text: textSent, finalTime, memory: mem.memory, memoryKind: mem.kind, tasks });
-        return this.o.pam.predict({ final_time: finalTime, observation_text: textSent, memory_kind: mem.kind, memory: mem.memory, tasks },
+        return this.o.pam.predict({ final_time: finalTime, observation_text: textSent, memory_kind: mem.kind, memory: mem.memory, tasks, last_state: null },
           { signal: this.cancel.signal, onUsage: (u) => { usage = u; } });
       })
       .then(

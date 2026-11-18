@@ -13,7 +13,7 @@
         },
         {
           "type": "text",
-          "text": "Current memory:\n{\n  \"initial_state\": \"s\",\n  \"states\": [\n    {\n      \"id\": \"s\",\n      \"description\": \"{tasks_block} $& \\\\ \\\"따옴표\\\" 🍜\",\n      \"rules\": [\n        {\n          \"trigger\": \"{fsm_block} $1\",\n          \"action\": \"컵 치우기\"\n        }\n      ],\n      \"next\": []\n    }\n  ]\n}\n\nSummary:\nSummary:\n$& \\\n\nHuman feedback:\n다 마신 뒤에만 치워 줘"
+          "text": "Current memory:\n{\n  \"initial_state\": \"away\",\n  \"states\": [\n    {\n      \"id\": \"away\",\n      \"description\": \"{tasks_block} $& \\\\ \\\"따옴표\\\" 🍜\",\n      \"activity\": [],\n      \"next\": [\n        {\n          \"to\": \"away\",\n          \"on\": \"{fsm_block} $1\",\n          \"action\": \"컵 치우기\"\n        }\n      ]\n    }\n  ]\n}\n\nSummary:\nSummary:\n$& \\\n\nHuman feedback:\n다 마신 뒤에만 치워 줘"
         }
       ]
     }

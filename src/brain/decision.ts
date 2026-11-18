@@ -146,6 +146,36 @@ export function validateMemory(value: Json, kind: "list" | "fsm"): PamMemory {
   return validateFsm(value);
 }
 
+/** 기억에 없는 활동의 임시 상태(~<하는 일 값>): 그 값이 World State 하는 일 값이고 기억의 어느 상태도 갖지 않았다. */
+export const isTempState = (memory: FsmMemory, id: string): boolean =>
+  id.startsWith(TEMP_STATE) && PERSON_ACTIVITIES.includes(id.slice(TEMP_STATE.length)) && !memory.states.some((s) => s.activity.includes(id.slice(TEMP_STATE.length)));
+
+/** fsm 기억의 판단 답(pam-predict/3): 지금 사람 상태(state), 일어난 화살표(from·next_index, 없으면 null·-1). 행동(task_index)은 그 화살표 action이
+ *  지금 행동 목록에 있으면 그 번호, 아니면 -1(서버가 만든다). "*" 화살표는 출발 상태를 떠나기만 하면 켜지고(임시 상태로 떠나도), 이름 있는 도착 화살표는 state가 그 상태다. */
+export function validateFsmPrediction(value: Json, memory: FsmMemory, tasks: string[]): Prediction {
+  validateTasks(tasks);
+  const p = object(value, ["observation", "reasoning", "state", "from", "next_index"], "prediction");
+  text(p.observation, "prediction.observation");
+  text(p.reasoning, "prediction.reasoning");
+  const state = text(p.state, "prediction.state");
+  const byId = (id: string) => memory.states.find((s) => s.id === id);
+  if (!byId(state) && !isTempState(memory, state)) throw new ContractError(`prediction.state: unknown state identifier ${pyRepr(state)}`);
+  const index = p.next_index;
+  if (typeof index !== "number" || !Number.isInteger(index) || index < -1) throw new ContractError("prediction.next_index: expected an integer from -1");
+  if (index === -1) {
+    if (p.from !== null) throw new ContractError("prediction.from: expected null when next_index is -1");
+    return { observation: p.observation as string, reasoning: p.reasoning as string, task_index: -1, state, from: null, next_index: -1 };
+  }
+  const fromId = text(p.from, "prediction.from");
+  const from = byId(fromId);
+  if (!from) throw new ContractError(`prediction.from: unknown state identifier ${pyRepr(fromId)}`);
+  const edge = from.next[index];
+  if (!edge) throw new ContractError(`prediction.next_index: state ${pyRepr(from.id)} has ${from.next.length} transitions`);
+  if (edge.to === ANY_STATE ? state === from.id : edge.to !== state) throw new ContractError(`prediction.state: transition ${from.id}[${index}] goes to ${pyRepr(edge.to)}`);
+  const task = edge.action ? tasks.indexOf(edge.action) : -1;
+  return { observation: p.observation as string, reasoning: p.reasoning as string, task_index: task, state, from: from.id, next_index: index };
+}
+
 export function validatePrediction(value: Json, tasks: string[]): Prediction {
   validateTasks(tasks);
   const p = object(value, ["observation", "reasoning", "task_index"], "prediction");
@@ -175,7 +205,7 @@ export type Contents = "empty" | "not_empty" | "unknown";
 /** 우리 쪽 관찰 사실. PAM은 관찰 텍스트와 기억만 보고, 시험용 판단 모델과 기록은 이것을 쓴다. */
 export interface DecisionFacts { contents: Contents }
 
-/** PAM 판단 입력(pam-predict/2 칸과 같다). 사진 칸이 없다. */
+/** PAM 판단 입력(pam-predict/3 칸과 같다). 사진 칸이 없다. */
 export interface DecisionInput {
   /** World State 관찰 텍스트(src/world/text.ts buildPamText). */
   text: string;
@@ -275,7 +305,7 @@ export function fsmNow(memory: PamMemory, kind: "list" | "fsm", action: string |
   return { state: rule ? rule.state : prev, trigger: rule?.trigger ?? null, learned: rule?.learned ?? false, matched: !!rule };
 }
 
-/** PAM 판단 관찰 텍스트 상한(글자 수). PAM 서비스 pam-predict/2와 같다. 관찰 텍스트를 만드는 World State(world/text.ts)와 한 값이다. */
+/** PAM 판단 관찰 텍스트 상한(글자 수). pam-predict/3과 같다. 관찰 텍스트를 만드는 World State(world/text.ts)와 한 값이다. */
 export const MAX_OBSERVATION_TEXT = PAM_TEXT_MAX;
 
 /** PAM 반성 칸 상한(글자 수). PAM 서비스 pam-reflect/2와 같다. UTF-8 바이트로 이 안에 맞추면 글자 수도 넘지 않는다. */

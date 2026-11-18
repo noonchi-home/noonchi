@@ -1,4 +1,4 @@
-// pam-predict/2·pam-reflect/2 요청 모양(zod). 모르는 칸(사진 칸 포함)은 거절한다. 글 길이는 Python처럼 코드 포인트로 센다.
+// pam-predict/3·pam-reflect/2 요청 모양(zod). 모르는 칸(사진 칸 포함)은 거절한다. 글 길이는 Python처럼 코드 포인트로 센다.
 // 시각은 Python datetime.isoformat() 꼴로 바꿔 둔다: 메시지의 시각 줄이 Python과 같아야 한다.
 import { z } from "zod";
 import { ContractError, validateMemory, validateTasks } from "../decision.js";
@@ -30,12 +30,13 @@ const kind = z.enum(["list", "fsm"]);
 const memory = z.record(z.string(), z.unknown());
 
 const PredictSchema = z.strictObject({
-  contract: z.literal("pam-predict/2"),
+  contract: z.literal("pam-predict/3"),
   final_time: z.string().transform((s, ctx) => pyIsoformat(s) ?? (ctx.addIssue({ code: "custom", message: "시간대가 있는 ISO 시각이어야 합니다" }), z.NEVER)),
   observation_text: text(1, 20_000),
   memory_kind: kind,
   memory,
   tasks: z.array(z.string()).min(1),
+  last_state: z.string().min(1).nullable(),
 });
 const ReflectSchema = z.strictObject({
   contract: z.literal("pam-reflect/2"),
