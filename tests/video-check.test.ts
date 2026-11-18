@@ -381,6 +381,8 @@ describe("video-check", () => {
       command(3, "go", "sink_counter_kitchen", "주방·식당 싱크대"), command(4, "place", "sink_counter_kitchen", "주방·식당 싱크대"),
     ];
     const sunk = world(9000, null, [cup("cup_3", "in_sink", { surface: "sink_counter_kitchen", surface_label: "싱크대", surface_part: "basin" })]);
+    /** 그 계획의 사람 단계(기록의 계획 단계, 명령 단계 id와 같다). */
+    const PLAN_STEPS = [["move", "식탁으로 가기"], ["act", "컵 집기"], ["move", "싱크대로 가기"], ["act", "컵 내려놓기"]].map(([kind, label], i) => ({ id: `plan:pam-3:${i + 1}`, kind: kind!, label: label! }));
     it("각 --step의 자리(go:table 식탁, pick:cup 컵, go:sink·place:sink 싱크대)와 실제로 나간 명령의 대상이 맞고 치운 컵이 싱크대 안이면 통과다", () => {
       expect(stepPlaces(STEPS, RIGHT, sunk, { cupClear: true })).toEqual({ ok: true, text: "단계 자리: 4/4 맞음 · 치운 컵 싱크대 안", problems: [] });
     });
@@ -394,10 +396,32 @@ describe("video-check", () => {
     it("그 단계의 명령이 없거나 치운 컵이 싱크대 안이 아니면 실패다. 계획 밖 명령(충전 자리·끄기 안내·질문)은 세지 않는다", () => {
       const extra = [...RIGHT.slice(0, 3), { video_ms: 9000, id: "dock:1", step: "dock:1:1", text: "충전 자리로 가 주세요", kind: "go", target: { id: "dock", label: "충전 자리" } }];
       const onTable = world(9000, null, [cup("cup_3", "on_table")]);
-      const r = stepPlaces(STEPS, extra, onTable, { cupClear: true });
+      const r = stepPlaces(STEPS, extra, onTable, { cupClear: true, planSteps: PLAN_STEPS });
       expect(r.ok).toBe(false);
-      expect(r.problems).toEqual(["단계 명령 없음: place:sink", "치운 컵이 싱크대 안이 아님: 식탁 위"]);
+      expect(r.problems).toEqual(["단계 명령 없음: 컵 내려놓기", "치운 컵이 싱크대 안이 아님: 식탁 위"]);
       expect(stepPlaces(STEPS, RIGHT, null, { cupClear: true }).problems).toEqual(["치운 컵이 싱크대 안이 아님: 컵 모름"]);
+    });
+
+    // 2026-11-18 wide-tall q3(Redis 4c1d66e) 거짓 실패: 명령 넷이 모두 맞고 cup_3이 cup_1로 이어져 싱크대 안인데, 찾기용 단계 영상 go:cup이 「싱크대로 가 주세요」를
+    // 먹어 「단계 자리 2/5 · 주방·식당 싱크대 ≠ 컵 · pick:cup 명령 없음」으로 실패했다. 계획 단계와 명령을 차례로 맞추고, 계획에 없는 --step은 선택이다
+    it("wide-tall q3: 계획 단계 넷과 명령이 차례로 맞으면 통과다. 찾기에만 쓰는 --step(go:cup)은 선택이라 세지 않는다", () => {
+      const steps = ["go:table:wide-tall-go-table.mp4", "go:cup:wide-tall-go-cup.mp4", "pick:cup:wide-tall-pick-cup.mp4", "go:sink:wide-tall-go-sink.mp4", "place:sink:wide-tall-place-sink.mp4"];
+      const P = "plan:pam-9";
+      const planSteps = PLAN_STEPS.map((x, i) => ({ ...x, id: `${P}:${i + 1}` }));
+      const commands: VideoCommand[] = [
+        { video_ms: 29_400, id: P, step: `${P}:1`, text: "식탁으로 가 주세요", kind: "go", target: { id: "dining_table_978b20c7", label: "거실·복도 식탁" } },
+        { video_ms: 29_700, id: P, step: `${P}:2`, text: "컵을 들어 주세요", kind: "pick", target: { id: "cup_1", label: "컵" } },
+        { video_ms: 54_500, id: P, step: `${P}:3`, text: "싱크대로 가 주세요", kind: "go", target: { id: "sink_counter_kitchen", label: "주방·식당 싱크대" } },
+        { video_ms: 64_800, id: P, step: `${P}:4`, text: "컵을 싱크대에 넣어 주세요", kind: "place", target: { id: "sink_counter_kitchen", label: "주방·식당 싱크대" } },
+      ];
+      const end = world(79_200, null, [
+        cup("cup_3", "in_sink", { status: "gone", surface: "sink_counter_kitchen", surface_part: "basin", followed_by: "cup_1" }),
+        cup("cup_1", "in_sink", { surface: "sink_counter_kitchen", surface_label: "싱크대", surface_part: "basin" }),
+      ]);
+      expect(stepPlaces(steps, commands, end, { plan: P, cupClear: true, planSteps })).toEqual({ ok: true, text: "단계 자리: 4/4 맞음 · 치운 컵 싱크대 안", problems: [] });
+      // 계획의 첫 명령이 다른 곳(세탁기)이면 여전히 틀림이다(tall q1)
+      const wrong = [{ ...commands[0]!, target: { id: "washer_balcony", label: "세탁기" } }, ...commands.slice(1)];
+      expect(stepPlaces(steps, wrong, end, { plan: P, cupClear: true, planSteps }).problems).toEqual(["단계 자리 틀림: 세탁기 ≠ 식탁"]);
     });
 
     // Codex(2705c21 video-check.ts:335): 모든 --step 판에 컵이 싱크대에 있기를 요구해 정상으로 끝난 전자레인지·라면 시연도 실패했다
@@ -420,7 +444,7 @@ describe("video-check", () => {
       ]);
       expect(stepPlaces(STEPS, RIGHT, unrelated, { cupClear: true }).problems).toEqual(["치운 컵이 싱크대 안이 아님: 식탁 위"]);
       const noPick = RIGHT.filter((c) => c.kind !== "pick");
-      expect(stepPlaces(STEPS, noPick, unrelated, { cupClear: true }).problems).toEqual(["단계 명령 없음: pick:cup", "치운 컵이 싱크대 안이 아님: 컵 모름"]);
+      expect(stepPlaces(STEPS, noPick, unrelated, { cupClear: true, planSteps: PLAN_STEPS }).problems).toEqual(["단계 명령 없음: 컵 집기", "치운 컵이 싱크대 안이 아님: 컵 모름"]);
     });
   });
 
