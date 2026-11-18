@@ -271,6 +271,9 @@ export function planTargetId(plan: PlanView): string | null {
   return plan.steps.find((s) => s.kind === "act" && s.target?.objectId)?.target?.objectId ?? null;
 }
 
+/** 집는 것이 대상 자신인 행동인가(컵 치우기: 나르는 것이 없거나 대상 종류). 그 행동의 계획 대상은 id 꼴이 달라도 지금 종류로 본다(planObjectsOf oneKind, 2be5e3d). */
+export const carriesTarget = (spec: Pick<TaskSpec, "target" | "carry"> | null | undefined): boolean => !!spec?.target && (spec.carry ?? spec.target) === spec.target;
+
 /** 계획 단계 대상(objectId) 가운데 그 종류인 물건 id 전부(단계 차례, 겹치지 않게): World State에서 그 종류인 것과,
  *  World State에 없지만 그 종류 id 꼴(cup_2)인 것(없어진 물건을 「없음」으로 막으려고).
  *  oneKind(집는 것이 대상 자신인 행동, 컵 치우기)면 id 꼴이 달라도 지금 종류가 그 종류인 물건도 대상이다(키 큰 컵 m1: 처음 병으로 생긴 유리잔 bottle_1이

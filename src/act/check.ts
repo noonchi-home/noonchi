@@ -14,7 +14,7 @@ import { sameDrinkware } from "../world/vocab.js";
 import type { WorldObject, WorldView } from "../contract/world.js";
 import { CHECK_TEXT } from "./labels.js";
 import type { DecisionRecord } from "../contract/events.js";
-import { holdsTarget, planObjectsOf, putAway, taskOf, wantOf, type Placed } from "./tasks.js";
+import { carriesTarget, holdsTarget, planObjectsOf, putAway, taskOf, wantOf, type Placed } from "./tasks.js";
 
 export type CheckFail = keyof typeof CHECK_TEXT;
 /** carried: in_hand가 대상 물건의 들고 감 보호(World State 물건 carried)에서만 왔다. 실행 추적은 이때 보호가 풀릴 때까지 다시 보기 기한을 세지 않는다. */
@@ -75,7 +75,7 @@ export function checkPlan(i: CheckInput): CheckResult {
   if (spec.target) {
     const target = spec.target;
     // 계획이 다루는 그 종류 물건마다(따르기 단계 대상이 여럿일 수 있다) 있음·치움·낡음·들고 있음을 본다. 계획에 그 종류 대상이 없으면 없음이다
-    const ids = planObjectsOf(i.plan, i.world, target, (spec.carry ?? target) === target);
+    const ids = planObjectsOf(i.plan, i.world, target, carriesTarget(spec));
     const all: WorldObject[] = [];
     for (const id of ids.length ? ids : [null]) {
       const o = i.world.objects.find((x) => x.id === id);
