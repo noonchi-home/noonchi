@@ -98,6 +98,18 @@ describe("실행 전 검사", () => {
     const pour = { ...base().plan!, steps: [...base().plan!.steps, { id: "s3", kind: "act" as const, label: "l", target: { objectId: "bottle_1" }, status: "pending" as const }] };
     expect(planObjectsOf(pour, { ...base().world, objects: [obj(), obj({ id: "bottle_1", cls: "cup" })] }, "cup")).toEqual(["cup_1"]);
   });
+  // 키 큰 컵 m1(2026-11-18 14:28): VLM이 키 큰 유리잔을 처음 두 장 병으로 답해 bottle_1로 생겼고, 그 뒤 컵 답으로 종류는 컵이 됐지만 id 꼴(cup_n)이 아니라
+  // 컵 치우기 계획이 「대상 물건이 보이지 않아」로 실패했다
+  it("컵 치우기(집는 것이 대상 자신)는 계획 대상 id가 bottle_1이어도 지금 종류가 컵이면 대상이다. 지금도 병(진짜 물병)이면 대상이 아니다", () => {
+    const plan = { ...base().plan!, steps: base().plan!.steps.map((x) => (x.target?.objectId === "cup_1" ? { ...x, target: { objectId: "bottle_1" } } : x)) };
+    const withObj = (cls: "cup" | "bottle") => base({ plan, world: { ...base().world, objects: [obj({ id: "bottle_1", cls })] } });
+    expect(checkPlan(withObj("cup"))).toEqual({ ok: true });
+    expect(checkPlan(withObj("bottle"))).toMatchObject({ reason: "no_target" });
+    // 따르기(집는 것이 병)는 그대로: 원료 bottle_1이 컵이 돼도 컵 대상이 아니다
+    const fillPlan = { ...plan, steps: [...base().plan!.steps, { id: "s3", kind: "act" as const, label: "l", target: { objectId: "bottle_1" }, status: "pending" as const }] };
+    expect(planObjectsOf(fillPlan, { ...base().world, objects: [obj(), obj({ id: "bottle_1", cls: "cup" })] }, "cup", false)).toEqual(["cup_1"]);
+  });
+
   it("대상 물건이 World State에 없거나 사라짐: 막은 물건 id를 싣는다", () => {
     expect(checkPlan(base({ world: { ...base().world, objects: [] } }))).toEqual({ ok: false, reason: "no_target", text: CHECK_TEXT.no_target, object: "cup_1" });
     expect(checkPlan(base({ world: { ...base().world, objects: [obj({ status: "gone" })] } }))).toEqual({ ok: false, reason: "no_target", text: CHECK_TEXT.no_target, object: "cup_1" });

@@ -245,8 +245,10 @@ export function planTargetId(plan: PlanView): string | null {
 }
 
 /** 계획 단계 대상(objectId) 가운데 그 종류인 물건 id 전부(단계 차례, 겹치지 않게): World State에서 그 종류인 것과,
- *  World State에 없지만 그 종류 id 꼴(cup_2)인 것(없어진 물건을 「없음」으로 막으려고). */
-export function planObjectsOf(plan: PlanView, world: WorldView, cls: ObjClass): string[] {
+ *  World State에 없지만 그 종류 id 꼴(cup_2)인 것(없어진 물건을 「없음」으로 막으려고).
+ *  oneKind(집는 것이 대상 자신인 행동, 컵 치우기)면 id 꼴이 달라도 지금 종류가 그 종류인 물건도 대상이다(키 큰 컵 m1: 처음 병으로 생긴 유리잔 bottle_1이
+ *  컵 답으로 컵이 됐다). 지금도 병인 물건(진짜 물병)은 대상이 아니다. */
+export function planObjectsOf(plan: PlanView, world: WorldView, cls: ObjClass, oneKind = false): string[] {
   const shaped = new RegExp(`^${cls}_\\d+$`);
   const out: string[] = [];
   for (const s of plan.steps) {
@@ -255,7 +257,7 @@ export function planObjectsOf(plan: PlanView, world: WorldView, cls: ObjClass): 
     const o = world.objects.find((x) => x.id === id);
     // 계획이 정한 역할은 id 꼴(cls_n)로 지킨다: 같은 물건의 종류는 마시는 그릇 무리 안에서 VLM 답으로 바뀌어도 id는 그대로다(cup_1이 병이 돼도 컵 대상,
     // 따르기 원료 bottle_1이 컵이 돼도 컵 대상이 아니다)
-    if (shaped.test(id) && (!o || sameDrinkware(o.cls, cls))) out.push(id);
+    if ((shaped.test(id) && (!o || sameDrinkware(o.cls, cls))) || (oneKind && o?.cls === cls)) out.push(id);
   }
   return out;
 }
