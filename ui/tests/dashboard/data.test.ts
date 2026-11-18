@@ -27,7 +27,7 @@ describe("대시보드 자료", () => {
     expect(textsOf(s)).toEqual(["사람이 컵을 두고 떠났어요", "컵이 비어 보여요", "컵을 치울게요."]);
     expect(textsOf(reduceDash(s, said("pam-1", 10, "사람이 컵을 두고 떠났어요"), 0))).toEqual(["사람이 컵을 두고 떠났어요", "컵이 비어 보여요", "컵을 치울게요."]);
     expect(textsOf(reduceDash(s, said("pam-2", 1, "컵을 찾았어요"), 0))).toEqual(["컵이 비어 보여요", "컵을 치울게요.", "컵을 찾았어요"]);
-    expect(JSON.stringify(talkOf(feed([branchDecision(BRANCHES.clear, 1), said("pam-1", 10, "컵을 식탁 등에 두고 자리를 비웠고 아무도 컵을 들거나 만지지 않으면 치워도 된다고 하셨어요")]))!)).not.toContain(REASON);
+    expect(JSON.stringify(talkOf(feed([branchDecision(BRANCHES.clear, 1), said("pam-1", 10, "컵을 두고 자리를 뜨면 치워도 된다고 하셨어요")]))!)).not.toContain(REASON);
   });
   it("알약 셋(상태·트리거·액션)은 서버 판단의 FSM으로 정한다: 규칙대로 고르면 상태 이름·트리거·행동, 대기면 트리거·액션 「대기」, 규칙 없는 행동은 트리거 「규칙 없음」, 규칙이 여럿이면 「규칙 여럿」. 판단 전·FSM 없음이면 없다", () => {
     const one = said("pam-1", 10, "컵을 살피고 있어요");

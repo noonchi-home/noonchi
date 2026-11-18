@@ -20,7 +20,7 @@ import { CUP_SCRIPTS, plannerRespond } from "./helpers/planner.js";
 import { heardAtOf, openPhone, openWebSocket } from "./helpers/ws.js";
 
 type Msg = Record<string, any>;
-const RULE_LINE = "컵을 식탁 등에 두고 자리를 비웠고 아무도 컵을 들거나 만지지 않으면 치워도 된다고 하셨어요";
+const RULE_LINE = "컵을 두고 자리를 뜨면 치워도 된다고 하셨어요";
 let srv: RunningServer | undefined;
 let fake: FakeServer | undefined;
 let pam: FakePamLlm | undefined;
