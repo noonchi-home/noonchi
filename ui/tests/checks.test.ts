@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { AgentAction, BrainLog, PendingView, ServerMessage } from "../../src/contract/events.ts";
 import type { PlanStatus, PlanStep, PlanView } from "../../src/contract/plan.ts";
-import { checkList, checksReducer, EMPTY_CHECKS, type ChecksState } from "../src/dashboard/checks/checks";
+import type { WorldObject, WorldView } from "../../src/contract/world.ts";
+import { checkList, checksReducer, EMPTY_CHECKS, spotOf, type ChecksState, type Spot } from "../src/dashboard/checks/checks";
 
 const act = (tool: string, deviceId: string | undefined, extra: Partial<AgentAction> = {}): AgentAction =>
   ({ tool, args: {}, ok: true, deviceId, deviceLabel: deviceId, at: "t", ...extra });
@@ -115,7 +116,7 @@ describe("checksReducer · 관찰 흐름", () => {
     const replayed: ServerMessage[] = [{ type: "brain", event: decision, replay: true }, { type: "brain", event: observe, replay: true }];
     const s = run(replayed);
     expect(s).toBe(EMPTY_CHECKS);
-    expect(checkList(s, "table_1")).toEqual([]);
+    expect(checkList(s, { id: "table_1" })).toEqual([]);
     const watching = run([yolo("사람 0.90")], EMPTY_CHECKS, 5000);
     expect(run(replayed, watching, 9000)).toBe(watching);
   });
@@ -128,10 +129,67 @@ describe("checksReducer · 관찰 흐름", () => {
 });
 
 describe("checkList", () => {
-  it("에이전트 목록 뒤에 두뇌 목록. 두뇌 줄은 식탁 id에 붙고, 식탁이 없으면 빠진다", () => {
+  it("에이전트 목록 뒤에 두뇌 줄 하나. 두뇌 줄은 지금 자리(spotOf)에 붙고, 자리가 없으면 빠진다", () => {
     const s = run([yolo("사람 0.90 · 컵 0.80"), acted(act("turn_on", "ac"))]);
-    expect(checkList(s, "table_1").map((c) => [c.deviceId ?? c.objectId, c.verb])).toEqual([["ac", "바꿈"], ["table_1", "지켜봄"]]);
+    expect(checkList(s, { id: "table_1" }).map((c) => [c.deviceId ?? c.objectId, c.verb])).toEqual([["ac", "바꿈"], ["table_1", "지켜봄"]]);
+    expect(checkList(s, { id: "spot:eye", at: [3, 0.9, 4], label: "주방·식당" })).toContainEqual(expect.objectContaining({ objectId: "spot:eye", pos: [3, 0.9, 4], label: "주방·식당", verb: "지켜봄" }));
     expect(checkList(s, null).map((c) => c.deviceId)).toEqual(["ac"]);
+  });
+});
+
+// 2026-11-18 사용자 지적: 컵을 들고 싱크대까지 왔는데 트윈 판단 표시(점·「거실·복도 식탁 · 지켜봄」)는 식탁에 남아 있었다
+describe("판단·확인 표시 자리(spotOf): 판단을 내린 자리가 아니라 지금 그 대상이 있는 자리", () => {
+  const eye = { position: [6, 1] as [number, number], height_m: 1.4, yaw_deg: 0, pitch_deg: 0, tracking: "ok" as const, at: "t" };
+  const scene = (id: string) => ["table_1", "sink_1", "dishwasher"].includes(id);
+  const cup = (over: Partial<WorldObject> = {}): WorldObject => ({
+    id: "cup_1", cls: "cup", position: [2, 0.75, 3], surface: "table_1", surface_label: "식탁", room: "living", error_m: 0.1, status: "present",
+    first_seen_ms: 0, last_seen_ms: 9_000, last_in_view_ms: 9_000, facts: {}, answered_ms: null, devices: [], closer_hold: false, followed_by: null, ...over,
+  } as WorldObject);
+  const world = (objects: WorldObject[], room: string | null = "주방·식당"): WorldView => ({
+    at_ms: 0, objects, person: { visible: false, since_ms: 0, last_seen_ms: null, count: 0, room: null, room_label: null, position: null, near: [], holding: [], position_ms: null, answered_ms: null, facts: {} },
+    fixtures: [], devices: [], eye: room ? { position: eye.position, height_m: 1.4, yaw_deg: 0, pitch_deg: 0, room: "kitchen", room_label: room, at_ms: 0 } : null, frame_ms: null, vlm_missing: 0, yolo_missing: 0,
+  } as unknown as WorldView);
+  const inHand = cup({ facts: { place: { value: "in_hand", at_ms: 9_000, since_ms: 9_000, certainty: "confirmed" } } });
+  const inSink = cup({ position: [5, 0.9, 1.1], surface: "sink_1", surface_label: "싱크대", surface_part: "basin" });
+  const plan = (active: number): PlanView => ({
+    id: "plan:pam-1", revision: 1, source: "brain", goal: "컵 치우기", judgment: "", dryRun: true, robot: { position: null, room: null }, path: [], legs: [], status: "running", updatedAt: "t",
+    steps: [
+      { id: "s1", kind: "move", label: "식탁으로 가기", target: { objectId: "table_1" } },
+      { id: "s2", kind: "act", label: "컵 집기", target: { objectId: "cup_1" } },
+      { id: "s3", kind: "move", label: "싱크대로 가기", target: { objectId: "sink_1" } },
+      { id: "s4", kind: "act", label: "컵을 싱크대에 넣기", target: { objectId: "sink_1" } },
+      { id: "s5", kind: "ask", label: "물어보기" },
+    ].map((x, i) => ({ ...x, status: i < active ? "done" : i === active ? "active" : "pending" })) as PlanStep[],
+  });
+  const at = (o: Partial<Parameters<typeof spotOf>[0]>): Spot | null => spotOf({ plan: null, world: world([]), eye, scene, targets: [], action: null, ...o });
+  const EYE: Spot = { id: "spot:eye", at: [6, 0.9, 1], label: "주방·식당" };
+
+  it("계획이 진행 중이면 지금 단계의 자리: 가는 곳, 집는 물건(손에 있으면 폰 눈), 넣는 곳. 대상이 없는 단계는 폰 눈", () => {
+    expect(at({ plan: plan(0) })).toEqual({ id: "table_1" });
+    expect(at({ plan: plan(1), world: world([cup()]) })).toEqual({ id: "table_1" });
+    expect(at({ plan: plan(1), world: world([inHand]) })).toEqual({ ...EYE, label: "컵" });
+    expect(at({ plan: plan(2), world: world([inHand]) })).toEqual({ id: "sink_1" });
+    expect(at({ plan: plan(3), world: world([inHand]) })).toEqual({ id: "sink_1" });
+    expect(at({ plan: plan(4) })).toEqual(EYE);
+  });
+
+  it("계획이 없으면 지켜보는 대상(마지막 계획의 대상, 없으면 마지막 판단 행동의 대상 종류)의 지금 자리: 손에 있으면 폰 눈, 놓였으면 그 면", () => {
+    expect(at({ world: world([inSink]), targets: ["table_1", "cup_1"] })).toEqual({ id: "sink_1" });
+    expect(at({ world: world([inHand]), targets: ["cup_1"] })).toEqual({ ...EYE, label: "컵" });
+    expect(at({ world: world([cup({ surface: null, surface_label: null, position: [4, 0, 4] })]), targets: ["cup_1"] })).toEqual({ id: "spot:cup_1", at: [4, 0, 4], label: "컵" });
+    expect(at({ world: world([inSink]), action: "컵 치우기" })).toEqual({ id: "sink_1" });
+  });
+
+  it("대상이 없는 대기 판단이면 폰 눈 자리이고, 폰 눈을 모르면 표시하지 않는다", () => {
+    expect(at({})).toEqual(EYE);
+    expect(at({ world: world([], null) })).toEqual({ id: "spot:eye", at: [6, 0.9, 1] });
+    expect(at({ eye: null })).toBeNull();
+  });
+
+  it("두뇌 계획이 오면 대상(act 단계 물건)을 남기고 유효 판단의 행동을 남긴다", () => {
+    const decided = brain({ type: "decision", at_ms: 0, id: "pam-2", seq: 2, text_sent: "", status: "valid", prediction: null, action: "컵 치우기", memory_version: 1, world: { objects: [], person_visible: false, vlm_missing: 0, yolo_missing: 0 } } as BrainLog);
+    const s = run([{ type: "plan", plan: plan(1) }, decided]);
+    expect([s.targets, s.action]).toEqual([["cup_1", "sink_1"], "컵 치우기"]);
   });
 });
 
@@ -145,16 +203,17 @@ describe("checksReducer · 지금 계획의 대상", () => {
     { id: "s3", kind: "device", label: "식기세척기 시작", target: { deviceId: "dishwasher" }, status: "pending" },
   ];
 
-  it("열린 판단 계획의 집기 대상 물건과 가전을 확인 목록에 넣고, 계획이 끝나면 뺀다", () => {
+  it("열린 판단 계획이면 지금 단계 자리(spotOf)에 「확인」 한 줄이고, 계획이 끝나면 뺀다", () => {
     const s = run([plan("running", cupSteps)]);
-    expect(checkList(s, null).map((c) => [c.objectId ?? c.deviceId, c.verb])).toEqual([["cup_1", "확인"], ["dishwasher", "확인"]]);
-    expect(checkList(run([plan("done", cupSteps)], s), null)).toEqual([]);
-    expect(checkList(run([{ type: "plan", plan: null }], s), null)).toEqual([]);
+    expect(checkList(s, { id: "table_1" }).map((c) => [c.objectId ?? c.deviceId, c.verb])).toEqual([["table_1", "확인"]]);
+    expect(checkList(s, { id: "dishwasher", device: true }).map((c) => [c.deviceId, c.verb])).toEqual([["dishwasher", "확인"]]);
+    expect(checkList(run([plan("done", cupSteps)], s), { id: "table_1" })).toEqual([]);
+    expect(checkList(run([{ type: "plan", plan: null }], s), { id: "table_1" })).toEqual([]);
   });
 
   it("에이전트 기기 계획은 넣지 않는다(에이전트 행동 줄이 이미 있다). 같은 기기가 에이전트 줄에 있으면 한 번만", () => {
-    expect(checkList(run([plan("planned", cupSteps, { source: "agent" })]), null)).toEqual([]);
+    expect(checkList(run([plan("planned", cupSteps, { source: "agent" })]), { id: "table_1" })).toEqual([]);
     const s = run([acted(act("turn_on", "dishwasher")), plan("running", cupSteps)]);
-    expect(checkList(s, null).map((c) => c.objectId ?? c.deviceId)).toEqual(["dishwasher", "cup_1"]);
+    expect(checkList(s, { id: "dishwasher", device: true }).map((c) => c.objectId ?? c.deviceId)).toEqual(["dishwasher"]);
   });
 });

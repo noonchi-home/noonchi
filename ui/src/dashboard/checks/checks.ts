@@ -1,12 +1,15 @@
-// 트윈 위 말풍선 목록(순수 리듀서). 에이전트가 판단하면서 확인한 기기와 클로이드가 지켜보는 식탁만 담는다.
+// 트윈 위 말풍선 목록(순수 리듀서). 에이전트가 판단하면서 확인한 기기와 클로이드가 지금 보는 자리만 담는다.
 // 에이전트: 이번 요청에서 다룬 기기마다 한 줄(번호는 처음 다룬 차례). 새 요청이 시작되면 지운다.
-// 관찰 흐름: 관찰 기록이 오는 동안 식탁에 「지켜봄」 한 줄(메모는 마지막 YOLO 글). 마지막 기록 뒤 30초가 지나면 지운다. 접속 때 다시 온 옛 기록(replay)은 넣지 않는다.
-// 계획: 열린 판단 계획의 집기 대상 물건·가전마다 「확인」 한 줄. 계획이 끝나면 지운다.
+// 판단·확인 표시(두뇌 줄 하나)는 판단을 내린 자리가 아니라 지금 그 대상이 있는 자리(spotOf)를 따라간다(2026-11-18 사용자 지적):
+// 열린 판단 계획이면 지금 단계의 자리에 「확인」, 계획이 없으면 관찰 기록이 오는 동안 지켜보는 대상의 지금 자리에 「지켜봄」(메모는 마지막 YOLO 글).
+// 마지막 기록 뒤 30초가 지나면 「지켜봄」을 지운다. 접속 때 다시 온 옛 기록(replay)은 넣지 않는다.
 import type { AgentAction, BrainLog, PendingView, ServerMessage } from "../../../../src/contract/events.ts";
 import type { PlanView } from "../../../../src/contract/plan.ts";
-import type { WorldView } from "../../../../src/contract/world.ts";
+import type { EyeEvent } from "../../../../src/contract/events.ts";
+import type { WorldObject, WorldView } from "../../../../src/contract/world.ts";
 import { STATE_TEXT } from "../../../../src/world/labels.ts";
 import { CLASSES } from "../../../../src/world/vocab.ts";
+import { TASKS } from "../../../../src/act/tasks.ts";
 
 export type CheckVerb = "확인" | "바꿈" | "승인 대기" | "실패" | "취소" | "지켜봄";
 
@@ -16,8 +19,12 @@ export type Check = {
   order: number;
   source: "agent" | "brain";
   deviceId?: string;
-  /** 물건 id. 두뇌 줄은 checkList가 식탁 id를 채운다. */
+  /** 물건 id. 두뇌 줄은 checkList가 지금 자리(spotOf) id를 채운다(장면 물건 id 또는 spot:로 시작하는 자리). */
   objectId?: string;
+  /** 장면 물건이 아닌 자리(폰 눈·World State 물건)의 트윈 자리 [x, 높이, y]. 있으면 이 자리에 붙는다. */
+  pos?: [number, number, number];
+  /** 장면 이름이 없는 자리의 이름(물건 종류·폰 눈 방). */
+  label?: string;
   verb: CheckVerb;
   /** 관찰 기록 YOLO 글(확신 숫자 포함, 개발용 보기에서만 보인다). */
   note?: string;
@@ -30,8 +37,12 @@ export type Check = {
 
 export interface ChecksState {
   turn: Check[];
-  /** 지금 열린 판단·task planner 계획의 대상(집기 대상 물건·가전). 계획이 끝나면 지운다. */
+  /** 지금 열린 판단·task planner 계획이 있으면 그 「확인」 줄 하나(자리는 checkList가 지금 단계 자리로 채운다). 계획이 끝나면 지운다. */
   plan: Check[];
+  /** 마지막 두뇌 계획의 act 단계 대상 id(장면 물건이나 World State 물건). 계획이 없을 때 지켜보는 대상이다. */
+  targets?: string[];
+  /** 마지막 유효 판단의 행동(대기면 null). 대상이 없을 때 그 행동의 대상 종류를 본다. */
+  action?: string | null;
   brain: Check[];
   brainAt: number | null;
   /** 진행 중인 요청의 세션. null이면 다음 에이전트 이벤트가 새 요청이다. */
@@ -107,6 +118,7 @@ export function beliefOf(yolo: string | undefined, world: WorldView | null | und
 }
 
 function onBrain(s: ChecksState, e: BrainLog, now: number): ChecksState {
+  if (e.type === "decision" && e.status === "valid") s = { ...s, action: e.action };
   const prev = s.brain[0];
   const note = noteOf(e) ?? prev?.note;
   const belief = beliefOf(note, s.world);
@@ -137,19 +149,63 @@ function onAgent(s: ChecksState, m: Extract<ServerMessage, { type: "agent" }>, n
   }
 }
 
-/** 열린 판단·task planner 계획의 act·device 단계 대상. 에이전트 기기 계획은 에이전트 줄이 이미 있어 넣지 않는다. */
+/** 열린 판단·task planner 계획이면 「확인」 줄 하나(자리는 지금 단계 자리), 두뇌 계획의 act 단계 대상을 지켜보는 대상으로 남긴다.
+ *  에이전트 기기 계획은 에이전트 줄이 이미 있어 넣지 않는다. */
 function onPlan(s: ChecksState, p: PlanView | null, now: number): ChecksState {
-  const open = p && p.source !== "agent" && (p.status === "planned" || p.status === "running");
-  if (!open) return s.plan.length ? { ...s, plan: [] } : s;
-  const plan: Check[] = [];
-  for (const step of p.steps) {
-    if (step.kind !== "act" && step.kind !== "device") continue;
-    const { objectId, deviceId } = step.target ?? {};
-    const id = deviceId ?? objectId;
-    if (!id || plan.some((c) => (c.deviceId ?? c.objectId) === id)) continue;
-    plan.push({ key: `plan:${id}`, order: plan.length + 1, source: "brain", ...(deviceId ? { deviceId } : { objectId }), verb: "확인", at: now });
+  const brainPlan = !!p && p.source !== "agent";
+  const targets = brainPlan ? [...new Set(p.steps.flatMap((x) => (x.kind === "act" && x.target?.objectId ? [x.target.objectId] : [])))] : s.targets;
+  const open = brainPlan && (p.status === "planned" || p.status === "running");
+  const next = targets === s.targets ? s : { ...s, targets };
+  if (!open) return next.plan.length ? { ...next, plan: [] } : next;
+  return { ...next, plan: [{ key: "plan", order: 1, source: "brain", verb: "확인", at: s.plan[0]?.at ?? now }] };
+}
+
+/** 판단·확인 표시가 붙을 자리: 장면 물건·가전 id(device면 가전)이거나, 트윈 자리 at(폰 눈 spot:eye, World State 물건 spot:<id>)과 이름. */
+export interface Spot { id: string; device?: true; at?: [number, number, number]; label?: string }
+
+/** 폰 눈 자리 표시 높이(m): 손에 든 물건 높이쯤. */
+const EYE_MARK_H = 0.9;
+
+/**
+ * 판단·확인 표시 자리(2026-11-18 사용자 지적: 컵을 들고 싱크대에 왔는데 표시는 판단을 내린 식탁에 남았다). 판단을 내린 자리가 아니라 지금 그 대상이 있는 자리다.
+ * - 열린 계획: 지금 단계(active, 없으면 첫 pending)의 대상: 가는 곳·넣는 곳(장면 물건), 가전, 집는 물건(World State 물건이면 그 물건의 지금 자리).
+ *   대상이 없는 단계(묻기·기다리기)는 폰 눈.
+ * - 계획이 없으면: 지켜보는 대상(마지막 두뇌 계획의 act 대상 가운데 World State 물건, 없으면 마지막 판단 행동의 대상 종류 중 가장 최근에 본 물건)의 지금 자리.
+ *   대상이 없는 대기 판단이면 폰 눈.
+ * - World State 물건의 지금 자리: 손에 있으면(확인됨) 폰 눈, 장면 면 위면 그 면, 아니면 그 물건 자리. 폰 눈을 모르면 null(표시 없음).
+ * scene: 장면 물건·가전 id인가(트윈 고리가 있다).
+ */
+export function spotOf(o: {
+  plan: PlanView | null; world: WorldView | null | undefined; eye: Pick<EyeEvent, "position"> | null; scene: (id: string) => boolean;
+  targets: readonly string[]; action: string | null;
+}): Spot | null {
+  const eye: Spot | null = o.eye
+    ? { id: "spot:eye", at: [o.eye.position[0], EYE_MARK_H, o.eye.position[1]], ...(o.world?.eye?.room_label ? { label: o.world.eye.room_label } : {}) }
+    : null;
+  const objects = (o.world?.objects ?? []).filter((x) => x.status !== "gone");
+  const thingAt = (x: WorldObject): Spot | null => {
+    const label = CLASSES[x.cls as keyof typeof CLASSES]?.label ?? x.cls;
+    if (x.facts.place?.value === "in_hand" && x.facts.place.certainty === "confirmed") return eye && { ...eye, label };
+    if (x.surface && o.scene(x.surface)) return { id: x.surface };
+    if (x.position) return { id: `spot:${x.id}`, at: [...x.position] as [number, number, number], label };
+    return eye && { ...eye, label };
+  };
+  const plan = o.plan && (o.plan.status === "planned" || o.plan.status === "running") ? o.plan : null;
+  if (plan) {
+    const step = plan.steps.find((x) => x.status === "active") ?? plan.steps.find((x) => x.status === "pending");
+    const t = step?.target;
+    if (t?.deviceId) return { id: t.deviceId, device: true };
+    if (t?.objectId && o.scene(t.objectId)) return { id: t.objectId };
+    const thing = t?.objectId ? objects.find((x) => x.id === t.objectId) : undefined;
+    if (thing) return thingAt(thing);
+    if (t?.position) return { id: `spot:${step!.id}`, at: [t.position[0], 0, t.position[1]], label: step!.label };
+    return eye;
   }
-  return { ...s, plan };
+  const kept = o.targets.map((id) => objects.find((x) => x.id === id)).find((x): x is WorldObject => !!x);
+  const cls = o.action ? TASKS[o.action]?.target : undefined;
+  const latest = cls ? objects.filter((x) => x.cls === cls).sort((a, b) => b.last_seen_ms - a.last_seen_ms)[0] : undefined;
+  const thing = kept ?? latest;
+  return thing ? thingAt(thing) : eye;
 }
 
 export function checksReducer(s: ChecksState, e: ChecksEvent): ChecksState {
@@ -171,11 +227,17 @@ export function checksReducer(s: ChecksState, e: ChecksEvent): ChecksState {
   return s;
 }
 
-/** 그릴 목록: 이번 요청의 기기들, 지금 계획의 대상(이미 있는 기기는 뺀다), 두뇌 줄. 두뇌 줄은 식탁 id에 붙이고, 식탁이 없으면 뺀다. */
-export function checkList(s: ChecksState, tableId: string | null): Check[] {
+/** 그릴 목록: 이번 요청의 기기들, 판단·확인 표시 하나(열린 계획이면 「확인」, 아니면 「지켜봄」)를 지금 자리 spot(spotOf)에 붙인 것.
+ *  자리가 없으면 표시를 뺀다. 같은 가전이 에이전트 줄에 있으면 한 번만. */
+export function checkList(s: ChecksState, spot: Spot | null): Check[] {
+  const row = s.plan[0] ?? s.brain[0];
+  if (!row || !spot) return [...s.turn];
+  const placed: Check = {
+    ...row, ...(spot.device ? { deviceId: spot.id, objectId: undefined } : { objectId: spot.id }),
+    ...(spot.at ? { pos: spot.at } : {}), ...(spot.label ? { label: spot.label } : {}),
+  };
   const known = new Set(s.turn.map((c) => c.deviceId));
-  const plan = s.plan.filter((c) => !c.deviceId || !known.has(c.deviceId));
-  return [...s.turn, ...plan, ...(tableId ? s.brain.map((c) => ({ ...c, objectId: tableId })) : [])];
+  return [...s.turn, ...(placed.deviceId && known.has(placed.deviceId) ? [] : [placed])];
 }
 
 /** 대시보드에 그릴 목록: 승인 대기 줄을 뺀다. 대시보드에는 승인을 기다리는 것을 보이지 않는다(승인은 실제 폰에서 한다). */

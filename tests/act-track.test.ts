@@ -22,6 +22,7 @@ import { APPROVAL_TEXT, CAUTION_TEXT, CHECK_TEXT, DOCK_TEXT, EXEC_TEXT, CAUTION_
 import { CONTENTS_HOLD, PEEK } from "../src/act/track/contents.js";
 import { FIND } from "../src/act/track/find.js";
 import { DOCK } from "../src/act/track/dock.js";
+import { POSE_FALL } from "../src/world/vocab.js";
 import { PHONE_PROTOCOL } from "../src/phone/protocol.js";
 /** 인덕션 켜기 전 질문(서버 글). */
 const ASK_ON = "냄비와 상판이 뜨거워져요. 인덕션을 켤까요?";
@@ -3445,8 +3446,17 @@ describe("실행 추적: 놓기 단계를 끝낸 물건(이미 치운 것)", () 
     const held: WorldObject = { ...onSink("cup_29", now), facts: { place: { value: "in_hand", at_ms: clock.t, since_ms: clock.t, certainty: "confirmed" } } };
     w = { ...world([onSink("cup_28", now), held, onSink("cup_33", clock.t)]), frame_ms: clock.t };
     expect([...t.placed().keys()].sort()).toEqual(["cup_28", "cup_33"]);
+    // Codex(c23fe16 steps.ts:87): 무리의 컵을 다시 집어 쓰면(손에 있음 확인) 같은 면에 도로 내려놓아도 무리로 돌아가지 않는다
+    clock.t += 600;
+    w = { ...world([onSink("cup_28", now), { ...onSink("cup_33", clock.t), facts: { place: { value: "in_hand", at_ms: clock.t, since_ms: clock.t, certainty: "confirmed" } } }]), frame_ms: clock.t };
+    t.onWorld();
+    expect([...t.placed().keys()]).toEqual(["cup_28"]);
+    clock.t += 600;
+    w = { ...world([onSink("cup_28", now), { ...onSink("cup_33", clock.t), last_seen_ms: clock.t }]), frame_ms: clock.t };
+    t.onWorld();
+    expect([...t.placed().keys()]).toEqual(["cup_28"]);
     // 무리만 보이면 새 치우기 계획을 세우지 않는다
-    w = { ...world([onSink("cup_28", now), onSink("cup_33", clock.t)]), frame_ms: clock.t };
+    w = { ...world([onSink("cup_28", now)]), frame_ms: clock.t };
     await decide({ ...decision, id: "pam-2", seq: 2, atMs: clock.t });
     expect(exec().at(-1)).toMatchObject({ plan_id: "plan:pam-2", state: "failed", text: CHECK_TEXT.in_sink });
   });
@@ -4818,6 +4828,43 @@ describe("실행 추적: 계획이 끝나면 충전 자리로", () => {
       await s.decide({ ...decision, id: "pam-2", seq: 2, atMs: s.clock.t });
       expect(s.plans.current(), how).toMatchObject({ id: "plan:pam-2", status: "running" });
     }
+  });
+
+  // Codex(db7c9d8 dock.ts:107): 쓰러짐 의심을 막힘으로 보지 않아 충전 자리로 계속 보냈고, 그 판단도 「복귀 중」으로 버렸다
+  it("충전 자리로 가는 중(확인 포함) 비상(쓰러짐 의심)이 오면 복귀를 바로 거두고, 그 뒤 판단은 미루지 않는다", async () => {
+    for (const phase of ["look", "go"] as const) {
+      let w = withPerson(world([cup("present")]), false, "거실");
+      const s = dockSetup(() => w);
+      s.t.onEye([5, 1]);
+      await finishCup(s);
+      if (phase === "go") {
+        s.at(5, 1, DOCK.lookMs);
+        expect(s.last()).toMatchObject({ id: "dock:1" });
+      }
+      w = { ...w, person: { ...w.person, visible: true, facts: { posture: { value: POSE_FALL, at_ms: s.clock.t, since_ms: s.clock.t, certainty: "confirmed" } } } };
+      s.at(5, 1);
+      if (phase === "go") expect(s.last(), phase).toEqual({ type: "command_clear", id: "dock:1" });
+      s.at(5, 1, DOCK.lookMs);
+      expect(s.docks().filter((c) => c.speak).length, phase).toBe(phase === "go" ? 1 : 0);
+      await s.decide({ ...decision, id: "pam-2", seq: 2, atMs: s.clock.t });
+      expect(s.exec().some((e) => e.plan_id === "plan:pam-2" && e.text === EXEC_TEXT.docking), phase).toBe(false);
+      expect(s.plans.current(), phase).toMatchObject({ id: "plan:pam-2", status: "running" });
+    }
+  });
+
+  // Codex(db7c9d8 start.ts:39): 복귀 중 판단을 버리는데 Decider는 그 판단에 쓴 들은 말을 지워, 말로 한 부탁이 도착 뒤 사라졌다
+  it("충전 자리로 가는 중 사람이 말로 한 부탁(관찰 텍스트에 들은 말이 든 판단)은 복귀를 멈추고 바로 받는다. 들은 말 없는 판단은 미룬다", async () => {
+    const w = withPerson(world([cup("present")]), false, "거실");
+    const s = dockSetup(() => w);
+    s.t.onEye([5, 1]);
+    await finishCup(s);
+    s.at(5, 1, DOCK.lookMs);
+    expect(s.last()).toMatchObject({ id: "dock:1" });
+    await s.decide({ ...decision, id: "pam-2", seq: 2, atMs: s.clock.t, textSent: "[지금] 컵 cup_1 보임" });
+    expect(s.exec().at(-1)).toMatchObject({ plan_id: "plan:pam-2", text: EXEC_TEXT.docking });
+    await s.decide({ ...decision, id: "pam-3", seq: 3, atMs: s.clock.t, textSent: "[지금] 컵 cup_1 보임\n사람이 말함: 「컵 좀 치워 줘」" });
+    expect(s.phone.some((m) => m.type === "command_clear" && m.id === "dock:1")).toBe(true);
+    expect(s.plans.current()).toMatchObject({ id: "plan:pam-3", status: "running" });
   });
 
   it("명령을 낸 적 없이 닫힌 계획(실행 전 검사에서 멈춤)과 충전 자리를 모르는 집에서는 충전 자리로 가지 않는다", async () => {

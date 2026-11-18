@@ -8,8 +8,23 @@ export const OBJECT_NAME: Record<string, string> = Object.fromEntries(Object.ent
 /** PAM FSM 기억의 상태 id → 대시보드 생각 말풍선 「상태」 칩 글. 여기 없는 상태는 칩을 보이지 않는다.
  *  열쇠는 FSM 상태 id(src/brain/decision.ts CUP_FSM_MEMORY)다. 낱말 표 값과 이름이 같은 것이 있어도 다른 것이라, 낱말 목록 검사(tests/world-vocab.test.ts)와 헷갈리지 않게 따옴표로 쓴다. */
 export const FSM_STATE_TEXT: Record<string, string> = { "drinking": "먹거나 마시는 중", "watching_tv": "TV 보는 중", "left_cup": "컵을 두고 자리를 뜸", "cooking": "주방에서 할 일을 찾음" };
-/** 메시지 상자 문장(src/brain/thought.ts 「<조건> <허락> 된다고 하셨어요」)의 상태 조건형. 표에 없는 상태는 「<상태 글> 때는」(FSM_STATE_TEXT, 없으면 상태 id). */
-export const FSM_STATE_IF: Record<string, string> = { "drinking": "먹거나 마실 때", "watching_tv": "TV를 볼 때", "left_cup": "컵을 두고 자리를 뜨면", "cooking": "주방에서 할 일을 찾을 때" };
+/** 메시지 상자 문장(src/brain/thought.ts 「<조건> <허락> 된다고 하셨어요」)의 조건형: 시연 FSM 기억(src/brain/decision.ts CUP_FSM_MEMORY)의 규칙(행동마다 하나)
+ *  트리거 뜻을 다 담은 조건형. 열쇠는 그 규칙의 행동이다. 반성으로 배운 규칙(트리거가 시연 기억과 다름)은 ruleIf가 그 트리거를 줄이지 않고 그대로 쓴다. */
+export const RULE_IF: Record<string, string> = {
+  "컵 치우기": "컵을 식탁 등에 두고 자리를 비웠고 아무도 컵을 들거나 만지지 않으면",
+  "컵에 물 채워 주기": "식탁에서 먹는 중이고 식탁 위 컵이 비어 있으며 컵을 들거나 만지지 않으면",
+  "컵에 콜라 따라 주기": "TV를 보는 중이고 곁의 컵이 비어 있으며 컵을 들거나 만지지 않으면",
+  "에어컨 켜기": "덥다고 말하거나 더워서 부채질을 하면",
+  "라면 끓이기 알려 주기": "라면 끓이는 법을 알려 달라고 말했거나 주방에서 라면을 끓이려다 무엇을 해야 할지 모르겠다고 말하면",
+  "전자레인지로 데우기 알려 주기": "전자레인지 앞에서 쓰는 법을 묻거나 이거 어떻게 하냐고 말하면",
+};
+/** 맞은 규칙 → 조건형: 시연 기억의 규칙(learned 아님)이면 RULE_IF의 그 행동 글, 아니면 트리거를 줄이지 않고 끝 마침표만 떼어 「~다면」(평서문 끝 「다」), 그 밖은 「「<트리거>」일 때」. */
+export function ruleIf(rule: { trigger: string; action: string; learned: boolean }): string {
+  const known = rule.learned ? undefined : RULE_IF[rule.action];
+  if (known) return known;
+  const t = rule.trigger.trim().replace(/[.。]+$/, "");
+  return t.endsWith("다") ? `${t}면` : `「${t}」일 때`;
+}
 
 /** YOLO 기록 글: 이 프레임에 찾은 것이 없음, 감지기가 없어 VLM만 돎. */
 export const YOLO_TEXT = { none: "감지 없음", noDetector: "감지기 없음" };
