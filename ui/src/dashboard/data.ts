@@ -32,20 +32,22 @@ export interface DashData {
   goal: PendingGoal | null;
   /** 마지막으로 받은 습관 FSM 그림 자료(habit 메시지, src/brain/habit.ts). 시간 줄 사람 줄의 상태 이름이 쓴다. 받기 전이면 null. */
   habit: HabitFsm | null;
-  /** 사람 상태가 바뀐 때들(유효한 판단의 습관 FSM 상태 fsm.state와 그 판단 시각, 오래된 것부터 최근 PEOPLE_KEPT개). 시간 줄 사람 줄이 쓴다.
-   *  사람 상태 FSM이 들어오면 그 상태로 바꾼다. 상태를 모르는 판단(null)은 더하지 않는다. */
+  /** 사람 상태가 바뀐 때들(오래된 것부터 최근 PEOPLE_KEPT개). 시간 줄 사람 줄이 쓴다. 서버 사람 상태(person 메시지: 판단 PAM 답과 판단 사이 World State 하는 일,
+   *  이름은 서버가 붙임)를 받으면 그것만 쓰고, 받기 전에는 유효한 판단의 fsm.state와 그 판단 시각으로 잇는다. 상태를 모르는 판단(null)은 더하지 않는다. */
   people: PersonAt[];
+  /** person 메시지를 받았는가(그 뒤로는 판단 상태로 사람 줄을 잇지 않는다). */
+  personFed: boolean;
   /** 최근 계획(id마다 마지막 판본, 받은 차례로 최근 PLANS_KEPT개). 시간 줄 로봇 줄이 단계 시각(started_ms·ended_ms)을 쓴다. */
   plans: PlanView[];
 }
 
-/** 사람 상태 하나: 상태 id와 그 상태가 된 판단 시각(서버 at_ms). */
-export interface PersonAt { state: string; at_ms: number }
+/** 사람 상태 하나: 상태 id와 그 상태가 된 때(서버 시각), 서버가 붙인 이름(person 메시지만, 판단에서 온 것은 습관 그림 이름을 쓴다). */
+export interface PersonAt { state: string; at_ms: number; name?: string }
 const PEOPLE_KEPT = 8;
 const PLANS_KEPT = 4;
 
 export const EMPTY_DASH: DashData = {
-  plan: null, eye: null, decision: null, thoughts: [], reflection: null, say: null, mode: null, says: 0, safety: null, talk: [], goal: null, habit: null, people: [], plans: [],
+  plan: null, eye: null, decision: null, thoughts: [], reflection: null, say: null, mode: null, says: 0, safety: null, talk: [], goal: null, habit: null, people: [], personFed: false, plans: [],
 };
 
 /** 유효한 판단 하나로 사람 상태 줄을 잇는다: 상태(서버 fsmNow)를 모르면(null) 그대로, 마지막과 같으면 그대로. */
@@ -123,6 +125,10 @@ export function reduceDash(s: DashData, m: ServerMessage, now: number): DashData
       const safety = safe ? (changed ? { id, text: m.text! } : s.safety ?? { id, text: m.text! }) : null;
       return { ...s, say: m.text, safety, talk, says: changed && m.text ? s.says + 1 : s.says };
     }
+    case "person": {
+      const people = s.people.at(-1)?.state === m.state ? s.people : [...s.people, { state: m.state, at_ms: m.since_ms, name: m.name }].slice(-PEOPLE_KEPT);
+      return { ...s, people, personFed: true };
+    }
     case "thought": {
       const thoughts = addThoughts(s.thoughts, m.messages);
       if (thoughts === s.thoughts) return s;
@@ -134,7 +140,7 @@ export function reduceDash(s: DashData, m: ServerMessage, now: number): DashData
       if (e.type === "decision") {
         // 동시에 나간 판단의 늦은 응답(seq가 더 작음)은 쓰지 않는다
         if (e.status !== "valid" || (s.decision && e.seq < s.decision.seq)) return s;
-        return { ...s, decision: e, people: peopleNext(s.people, e) };
+        return { ...s, decision: e, people: s.personFed ? s.people : peopleNext(s.people, e) };
       }
       if (e.type === "reflection") {
         if (!e.ok) return s;

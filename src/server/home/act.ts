@@ -3,7 +3,7 @@
 import { ExecutionTracker, LessonStore, Looker, PlanHub, checkDecision, checkPlan, deviceRunner, lessonsPath, loadActConfig, pamTasks } from "../../act/index.js";
 import { lookTargets, taskOf, type TaskSpec } from "../../act/tasks.js";
 import { deviceViews, placesOf, resubmit, type PlaceInfo, type PlanAhead, type PlanContext } from "../../agent/index.js";
-import { Decider, PamClient, habitView, lastStoredThoughts, memoryForDay, pamSettings, storeThought, thoughtFeed } from "../../brain/index.js";
+import { Decider, PamClient, PersonLane, habitView, lastStoredThoughts, memoryForDay, pamSettings, storeThought, thoughtFeed, type FsmMemory } from "../../brain/index.js";
 import type { BrainLog, DecisionRecord } from "../../contract/events.js";
 import type { PendingGoal } from "../../contract/goal.js";
 import type { HabitFsm } from "../../contract/habit.js";
@@ -154,10 +154,21 @@ export function startAct(core: HomeCore): (event: BrainLog) => void {
     // 행동 중 기다리기·기기 단계 동안은 PAM을 부르지 않는다(실행 추적이 조건을 본다)
     hold: () => (core.tracker?.waiting() ?? false) || (core.tracker?.coaching() ?? false),
     keepHeard: () => core.keepHeard,
-    // 판단 → 계획 → 실행 전 검사 → 실행 추적(src/act/)
-    onDecision: (d) => core.tracker?.onDecision(d),
+    // 판단 → 시간 줄 사람 줄 → 계획 → 실행 전 검사 → 실행 추적(src/act/)
+    onDecision: (d) => {
+      core.person?.onDecision(d);
+      core.tracker?.onDecision(d);
+    },
   });
   core.decider = decide;
+  // 시간 줄 사람 줄(src/brain/person.ts): 판단의 PAM 답 상태와 판단 사이 World State 하는 일(판단이 쓰는 기억으로)로 지금 사람 상태를 갖고 바뀔 때만 대시보드로 보낸다
+  core.person = new PersonLane({
+    emit: (m) => core.app?.broadcast(m),
+    memory: () => {
+      const h = decide.habit();
+      return h && h.kind === "fsm" && "states" in h.memory ? (h.memory as FsmMemory) : null;
+    },
+  });
   // 실행 전 검사(src/act/check.ts): 시험 모드에서는 짝지은 실제 가전 단계를 막는다
   const deviceSteps = (p: PlanView) => p.steps.flatMap((s) => (s.target?.deviceId
     ? [{ deviceId: s.target.deviceId, paired: signals.sources()[s.target.deviceId]?.kind === "thinq" }] : []));

@@ -55,6 +55,22 @@ describe("시간 줄 자료(timelineOf)", () => {
     ]);
   });
 
+  // 사람 상태 FSM(2026-11-19): 서버가 사람 상태가 바뀔 때마다 person 메시지(판단 PAM 답과 판단 사이 World State 하는 일, 이름은 서버가 붙임)를 보낸다
+  it("사람 줄: person 메시지를 받으면 그 상태 이름·때(since_ms)로 구간을 잇고, 그 뒤로는 판단 상태로 잇지 않는다(임시 상태도 서버 이름 그대로)", () => {
+    const person = (state: string, name: string, at: number, source: "decision" | "world" = "world"): ServerMessage =>
+      ({ type: "person", state, name, since_ms: at, source, decision_id: source === "decision" ? "pam-9" : null });
+    const t = timelineOf(feed([
+      habit, decision(1, s(1), "watching_tv"), person("drinking", "먹거나 마시는 중", s(2)), decision(2, s(3), "watching_tv"),
+      person("~reading", "읽는 중", s(9)), person("away", "자리에 없음", s(15.8), "decision"),
+    ]))!;
+    expect(t.spans.filter((x) => x.row === "person").map(({ from, to, text }) => ({ from, to, text }))).toEqual([
+      { from: s(1), to: s(2), text: "TV 보는 중" },
+      { from: s(2), to: s(9), text: "먹거나 마시는 중" },
+      { from: s(9), to: s(15.8), text: "읽는 중" },
+      { from: s(15.8), to: null, text: "자리에 없음" },
+    ]);
+  });
+
   // 사용자 결정(2026-11-19): 「예상을 없애자」. 줄은 사람 · 로봇 둘이고 목표 글(「… · 준비됨」·「N초 먼저」)이 없다
   it("예상 줄이 없다: 목표가 서도 구간은 사람·로봇 줄뿐이고 목표 글 칸(caption)이 없다", () => {
     const used = { ...GOAL, status: "used" as const, gone_ms: s(15.8), fired_ms: s(15.8) };

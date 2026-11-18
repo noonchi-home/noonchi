@@ -172,6 +172,7 @@ function startApp(core: HomeCore): void {
     actMode: () => core.mode(),
     goalLast: () => core.goal,
     habitLast: () => core.habit,
+    personLast: () => core.person?.last() ?? null,
   });
   core.speak();
 }

@@ -2,7 +2,7 @@
 // 다른 도메인은 이 입구로만 가져온다(도메인 나누기 설계 2.4).
 export { Decider, decisionWorld } from "./decide.js";
 export { type FsmMemory, type PamMemory, edgeLearned, isoWithOffset, seedTrigger } from "./decision.js";
-export { stateOfWorld } from "./person.js";
+export { PersonLane, stateOfWorld } from "./person.js";
 export { type GoalPick, goalAhead } from "./goal.js";
 export { habitView } from "./habit.js";
 export { HISTORY_KINDS, HistoryDb, historyTzMinutes } from "./history/db.js";

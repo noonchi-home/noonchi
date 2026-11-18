@@ -304,6 +304,11 @@ export interface PhotoRecord {
   pose_note?: "not_aligned";
 }
 
+/** 시간 줄 사람 줄 자료(src/brain/person.ts PersonLane): 사람 상태가 바뀔 때만 하나. state는 사람 상태 FSM 상태 id(임시 상태 ~<값>),
+ *  name은 화면 이름(FSM_STATE_TEXT, 임시 상태는 STATE_TEXT), since_ms는 그 상태가 된 때(판단 시각이거나 World State를 받은 때),
+ *  source는 정한 곳(판단의 PAM 답·판단 사이 World State 하는 일), decision_id는 판단 id(World State면 null). */
+export interface PersonMessage { type: "person"; state: string; name: string; since_ms: number; source: "decision" | "world"; decision_id: string | null }
+
 /** /events로 화면이 받는 메시지 전체. 서버의 send·broadcast와 같은 모양이다(src/server/app.ts·home/, src/observe/pipeline.ts, src/phone/feed.ts). */
 export type ServerMessage =
   | { type: "hello"; devices: number; provider: string | null; hub: string; home: string | null }
@@ -331,7 +336,9 @@ export type ServerMessage =
   /** 미리 세운 목표(src/act/track/goal.ts): 바뀔 때마다, 그리고 접속 때 마지막 것. 대시보드는 세움·떠남인 동안 메시지 상자 알약으로 보인다. */
   | { type: "goal"; goal: PendingGoal }
   /** 습관 FSM 그림 자료(src/brain/habit.ts): 판단이 PAM에 보낸 기억 판본이 바뀔 때, 그리고 접속 때 마지막 것. 대시보드 메시지 상자 FSM 카드가 그린다. */
-  | { type: "habit"; habit: HabitFsm };
+  | { type: "habit"; habit: HabitFsm }
+  /** 시간 줄 사람 줄: 사람 상태가 바뀔 때, 그리고 접속 때 마지막 것. */
+  | PersonMessage;
 
 export interface DecisionRecord {
   id: string;
