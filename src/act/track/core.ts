@@ -125,6 +125,13 @@ export class TrackCore {
     return r.plan.steps[r.at];
   }
 
+  /** 손대는 단계인가: 진행 중 계획의 집기·내려놓기 단계이거나 집은 물건을 들고 가는 중(2026-11-18 wide-mug q3). 이때 보이는 사람은 폰을 든 사람일 수 있다. */
+  touching(r: Run | null = this.open()): boolean {
+    if (this.stopped || !r || r.state !== "running") return false;
+    const kind = this.stepOf(r)?.kind;
+    return kind === "pick" || kind === "place" || r.carried.size > 0;
+  }
+
   /** 실제 폰에 명령·질문을 띄운 계획: 진행 중이거나 승인 답을 기다리는 중. */
   shown(): (Run & { sent: PlannedCommand }) | null {
     const r = this.run;
@@ -162,9 +169,9 @@ export class TrackCore {
     this.emit(r.plan.view.id, state, text);
   }
 
-  emit(planId: string, state: ExecState, text?: string): void {
+  emit(planId: string, state: ExecState, text?: string, reason?: string): void {
     if (this.stopped) return;
-    this.o.emit({ type: "execution", at_ms: this.clock.now(), plan_id: planId, state, text: text ?? EXEC_TEXT[state] });
+    this.o.emit({ type: "execution", at_ms: this.clock.now(), plan_id: planId, state, text: text ?? EXEC_TEXT[state], ...(reason ? { reason } : {}) });
   }
 }
 

@@ -49,6 +49,8 @@ export class UseWatch extends Part {
       this.presence = p.visible ? p.since_ms : null;
       if (!p.visible) return;
     }
+    // 손대는 단계 중 보이는 사람은 폰을 든 사람일 수 있다: 그 사람으로 쓰는 중을 새로 붙잡지 않는다(2026-11-18 wide-mug q3)
+    if (this.core.touching()) return;
     for (const cls of this.classes()) {
       const use = usingNow(world, cls);
       if (!use) continue;
