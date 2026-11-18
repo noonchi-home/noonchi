@@ -21,7 +21,8 @@ export interface ClassEntry {
   facets: readonly Facet[];
   /** 같은 물체로 볼 거리(m). 없으면 World State 기본값(0.25). */
   identityM?: number;
-  /** VLM 종류 기준(프롬프트에 「종류 = 이 글」로 그대로 싣는다). VLM이 상자로 찾는 물건(VLM_FIND)만 있다. */
+  /** VLM 종류 기준(프롬프트에 「종류 = 이 글」로 그대로 싣는다). 이 글이 있는 물건이 VLM이 상자로 찾는 물건(VLM_FIND)이다.
+   *  행동이 쓰는 종류(src/act/tasks.ts 대상·집는 것·코치 물건)는 모두 있어야 한다(tests/act-tasks.test.ts). */
   vlm?: string;
 }
 
@@ -60,6 +61,9 @@ export const CLASSES = {
   pizza: { label: "피자", role: "object", coco: { 53: "pizza" }, minScore: 0.5, facets: ["place"] },
   donut: { label: "도넛", role: "object", coco: { 54: "donut" }, minScore: 0.5, facets: ["place"] },
   cake: { label: "케이크", role: "object", coco: { 55: "cake" }, minScore: 0.5, facets: ["place"] },
+  // 코치 물건(라면 끓이기): YOLO 종류가 없어 VLM으로만 찾는다
+  pot: { label: "냄비", role: "object", coco: {}, minScore: 0.5, facets: ["place", "open", "use"], vlm: "a cooking pot or saucepan for boiling water or noodles" },
+  ramen: { label: "라면", role: "object", coco: {}, minScore: 0.5, facets: ["place", "open"], vlm: "an instant noodle (ramen) packet, opened or not" },
   cat: { label: "고양이", role: "object", coco: { 15: "cat" }, minScore: 0.5, facets: ["place"], identityM: 1.5 },
   dog: { label: "개", role: "object", coco: { 16: "dog" }, minScore: 0.5, facets: ["place"], identityM: 1.5 },
   tv: { label: "TV", role: "fixture", coco: { 62: "tv" }, minScore: 0.5, facets: ["screen"] },
@@ -163,9 +167,11 @@ export type StateKey = keyof typeof STATES;
 export type StateOf<F extends Facet> = { [K in StateKey]: (typeof STATES)[K]["facet"] extends F ? K : never }[StateKey];
 export type Activity = StateOf<"activity">;
 
-/** VLM이 장면·가까이 본 사진에서 상자와 함께 찾아 답하는 물건 종류(VLM 물건 목록): 안 내용 면이 있는 물건(컵·병·그릇).
- *  YOLO가 놓쳐도 VLM이 본 물건을 World State에 넣는다(사용자 결정 2026-11-18 「VLM 무조건 우선」, src/world/merge.ts). */
-export const VLM_FIND = (Object.keys(CLASSES) as ClassKey[]).filter((k) => CLASSES[k].role === "object" && (CLASSES[k].facets as readonly Facet[]).includes("contents")) as ObjClass[];
+/** VLM이 장면·가까이 본 사진에서 상자와 함께 찾아 답하는 물건 종류(VLM 물건 목록): 낱말 표에 VLM 종류 기준(vlm)이 있는 물건. World State 물건은 이 답으로만 생긴다
+ *  (사용자 결정 2026-11-18). 행동이 쓰는 종류만 둔다: 답에 물건 하나가 늘 때마다 VLM 답이 약 0.25초 늦다(2026-11-18 실제 판 530장 중앙값). */
+export const VLM_FIND = (Object.keys(CLASSES) as ClassKey[]).filter((k) => CLASSES[k].role === "object" && "vlm" in CLASSES[k]) as ObjClass[];
+/** VLM 물건 목록에서 빼는 것: 컵·병·그릇 모양 장식품(0af95a1·키 큰 컵 q1·q2: 창턱·선반의 트로피 모양 잔을 컵으로 답해 식탁 위 컵이 여러 id로 갈라졌다). */
+export const VLM_SKIP = "Leave out decorations even when shaped like a cup, bottle or bowl: trophies, vases, figurines, candle holders and decorative glassware displayed on a window ledge or shelf.";
 
 /** 마시는 그릇 무리: 같은 물건을 VLM·YOLO가 서로 다른 종류로 볼 수 있다(투명한 유리컵 ↔ 병). 찾기는 같은 자리면 이 무리를 찾던 대상으로 잇는다(src/act/track/find.ts). */
 export const DRINKWARE = ["cup", "bottle"] as const satisfies readonly ClassKey[];

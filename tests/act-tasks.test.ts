@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { WorldObject, WorldView } from "../src/contract/world.js";
 import { holdsTarget, lookTargets, opaqueBody, planTargetId, putAway, sureValue, targetOf, TASK_NAMES, TASKS, taskOf, tasksFor, modeOf, touchTarget, usingNow, wantOf } from "../src/act/tasks.js";
 import type { WorldFact } from "../src/contract/world.js";
+import { VLM_FIND } from "../src/world/vocab.js";
 import { smallFloor } from "./helpers/floor.js";
 import { cupPlan } from "./helpers/cup-plan.js";
 
@@ -23,7 +24,7 @@ describe("행동 목록", () => {
       const t = TASKS[name]!;
       expect(t.name).toBe(name);
       expect(t.description.length).toBeGreaterThan(5);
-      const more = [...(t.coach ? ["coach"] : []), ...(t.maxSteps ? ["maxSteps"] : []), ...(t.target ? ["target"] : []), ...(t.look ? ["look"] : []), ...(t.want ? ["want"] : []), ...(t.plan === false ? ["plan"] : []), ...(t.carry ? ["carry"] : []), ...(t.carryUnseen ? ["carryUnseen"] : []), ...(t.touch ? ["touch"] : [])];
+      const more = [...(t.coach ? ["coach"] : []), ...(t.maxSteps ? ["maxSteps"] : []), ...(t.target ? ["target"] : []), ...(t.look ? ["look"] : []), ...(t.want ? ["want"] : []), ...(t.plan === false ? ["plan"] : []), ...(t.carry ? ["carry"] : []), ...(t.carryUnseen ? ["carryUnseen"] : []), ...(t.touch ? ["touch"] : []), ...(t.uses ? ["uses"] : [])];
       expect(Object.keys(t).sort()).toEqual(["allow", "description", "name", ...more].sort());
       if (t.plan !== false) expect(t.allow.kinds.length).toBeGreaterThan(0);
     }
@@ -33,6 +34,16 @@ describe("행동 목록", () => {
     expect(TASKS["에어컨 켜기"]!.allow.devices).toEqual({ kinds: ["aircon"], tools: ["turn_on"] });
     expect(taskOf("춤추기")).toBeNull();
     expect(taskOf(null)).toBeNull();
+  });
+
+  // VLM 물건 목록은 행동이 쓰는 종류 전부다: 새 행동이 새 종류를 쓰면 낱말 표에 VLM 종류 기준(vlm)을 더해야 이 시험이 통과한다
+  it("행동이 쓰는 물건 종류(대상·집는 것·코치 물건)는 모두 VLM이 상자로 찾는 종류(VLM_FIND)다. 라면은 냄비·라면·그릇, 전자레인지는 그릇", () => {
+    for (const name of TASK_NAMES) {
+      const t = TASKS[name]!;
+      for (const cls of [t.target, t.carry, ...(t.uses ?? [])]) if (cls) expect(VLM_FIND, `${name} ${cls}`).toContain(cls);
+    }
+    expect(TASKS["라면 끓이기 알려 주기"]!.uses).toEqual(["pot", "ramen", "bowl"]);
+    expect(TASKS["전자레인지로 데우기 알려 주기"]!.uses).toEqual(["bowl"]);
   });
 
   it("눈치 모드 행동 목록은 일곱이고 앞 넷의 순서는 그대로다(task_index를 지킨다). 코치 행동은 없다", () => {

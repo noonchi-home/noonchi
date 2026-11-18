@@ -22,6 +22,8 @@ export interface TaskSpec {
   plan?: false;
   /** 집는 물건 종류. 없으면 target이다. */
   carry?: ObjClass;
+  /** 코치 행동이 다루는 물건 종류(VLM이 상자로 찾아 World State에 넣는다, src/world/vocab.ts VLM_FIND). */
+  uses?: readonly ObjClass[];
   /** true면 집는 물건이 안 보여도(냉장고 안) 평면도 자리에서 집는 단계를 받는다. */
   carryUnseen?: true;
   /** 코치 모드에서만 PAM에 보내는 행동(사람이 하는 일을 단계마다 알려 준다. 가전을 조작하지 않는다). */
@@ -67,13 +69,13 @@ export const TASKS: Record<string, TaskSpec> = {
   },
   // 코치 행동(2026-11-13): 단계 목록은 에이전트 계획 모드가 만든다. 여기에는 설명과 쓸 수 있는 단계만 둔다(device 없음)
   "라면 끓이기 알려 주기": {
-    name: "라면 끓이기 알려 주기", coach: true, maxSteps: 14,
+    name: "라면 끓이기 알려 주기", coach: true, maxSteps: 14, uses: ["pot", "ramen", "bowl"],
     description: "사람이 라면을 끓이려 하거나 방법을 물으면 냄비 꺼내기부터 불 끄기까지 사람이 할 일을 단계마다 알려 준다. 클로이드는 가전을 조작하지 않는다.",
     allow: { kinds: ["go", "pick", "place", "do", "wait", "say"], need: ["do"] },
   },
   // 저절로 꺼지는 가전(등록부 selfStop): 켠 뒤 끄기 do 대신 그 가전의 꺼짐을 기다리는 wait를 둔다(src/agent/planTools.ts finish, 실행 추적 cycleEnded)
   "전자레인지로 데우기 알려 주기": {
-    name: "전자레인지로 데우기 알려 주기", coach: true, maxSteps: 12,
+    name: "전자레인지로 데우기 알려 주기", coach: true, maxSteps: 12, uses: ["bowl"],
     description: "사람이 전자레인지 앞에서 쓰는 법을 묻거나 막히면 문 열기부터 꺼내기까지 사람이 할 일을 단계마다 천천히 알려 준다. 클로이드는 가전을 조작하지 않는다.",
     allow: { kinds: ["go", "pick", "place", "do", "wait", "say"], need: ["do", "wait"] },
   },

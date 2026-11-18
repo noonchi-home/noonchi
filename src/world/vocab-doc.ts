@@ -19,6 +19,8 @@ export const CLASS_DOC: Record<ClassKey, string | null> = {
   toothbrush: "칫솔이 바닥에 있다.",
   hair_drier: "드라이어를 쓰는 중이 10분 넘게 이어진다.",
   teddy_bear: "인형이 바닥에 있다.",
+  pot: "냄비가 인덕션 위에 있고 사람이 주방을 떠났다.",
+  ramen: "라면 봉지가 열린 채 조리대 위에 있다.",
   backpack: "배낭이 열린 채 바닥에 있다.",
   handbag: "사람이 집을 나서는데 가방이 소파 위에 있다.",
   suitcase: "여행 가방이 보이고 사람이 집을 나선다.",
