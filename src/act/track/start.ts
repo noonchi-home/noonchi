@@ -19,7 +19,7 @@ export class Starter extends Part {
   private readonly planAt = new Map<string, number>();
   private gen = 0;
   private lastSeq = 0;
-  /** 마지막 말 부탁을 받은 때까지 보낸 PAM 요청 번호(afterSeq). 말 부탁 계획을 만드는 중이거나 열려 있는 동안 이 번호 이하 PAM 판단은 쓰지 않는다. */
+  /** 마지막 말 부탁을 받은 때까지 보낸 PAM 요청 번호(afterSeq). 말 부탁의 대상을 찾는 중이거나 계획을 만드는 중이거나 열려 있는 동안 이 번호 이하 PAM 판단은 쓰지 않는다. */
   private lastSpeechSeq = 0;
   private speechN = 0;
   /** 말 부탁을 판단 기록 꼴(id say-<번호>, source speech, seq 0, 들은 말 한 줄)로 만들어 판단 받기 길(onDecision)에 넣는다. */
@@ -47,8 +47,9 @@ export class Starter extends Part {
       if (d.seq < this.lastSeq) return this.note(d, EXEC_TEXT.late);
       // 받은 가장 새 판단 번호: 기록만 한 판단(같은 행동 등)보다 먼저 보낸 판단이 늦게 와도 쓰지 않는다
       this.lastSeq = d.seq;
-      // 말 부탁을 받은 때부터(그 계획을 만드는 중이어도) 그 전에 보낸 요청의 PAM 판단은 쓰지 않는다
-      const speech = core.planning?.decision.source === "speech" || core.open()?.decision.source === "speech";
+      // 말 부탁을 받은 때부터(그 대상을 계획 전에 찾는 중이거나 계획을 만드는 중이어도) 그 전에 보낸 요청의 PAM 판단은 쓰지 않는다
+      const speech = core.planning?.decision.source === "speech" || core.open()?.decision.source === "speech"
+        || core.finding?.first.source === "speech" || core.finding?.decision.source === "speech";
       if (speech && d.seq <= this.lastSpeechSeq) return this.note(d, EXEC_TEXT.late);
     }
     core.lastDecision = d.id;

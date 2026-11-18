@@ -4052,6 +4052,22 @@ describe("실행 추적: 안 보이는 대상은 마지막으로 본 자리로 �
     expect(s.last()).toMatchObject({ text: "식탁으로 가 주세요", target: { label: "식탁" }, vision: expect.stringMatching(/^식탁까지 /) });
   });
 
+  // Codex(1b07d3e2 P2): 말 부탁이 계획 전 찾기 중이면 보호 대상에서 빠져, 부탁 전에 보낸 요청의 PAM 답이 찾기를 다른 계획으로 갈아 치웠다
+  it("말 부탁이 계획 전 찾기 중이어도 그 부탁 전에 보낸 요청의 PAM 판단은 늦은 답으로 기록만 하고 찾기를 바꾸지 않는다. 뒤에 보낸 요청의 판단은 받는다", async () => {
+    const s = findSetup();
+    s.t.onRequest({ task: "컵 치우기", heard: "컵 치워 줘", atMs: s.clock.t, afterSeq: 3 });
+    await s.t.idle();
+    const say = s.decisions().find((d) => d.source === "speech")!;
+    expect(s.exec().at(-1)).toMatchObject({ plan_id: `plan:${say.id}`, state: "decided", text: "컵을 찾으러 가요" });
+    expect(s.last()).toMatchObject({ id: "find:1", text: "식탁으로 가 주세요" });
+    await s.decide({ ...ask("pam-3", 3), atMs: s.clock.t });
+    expect(s.exec().at(-1)).toMatchObject({ plan_id: "plan:pam-3", text: EXEC_TEXT.late });
+    expect(s.t.openCommand()).toMatchObject({ planId: "find:1", text: "식탁으로 가 주세요" });
+    expect(s.plans.current()).toBeNull();
+    await s.decide({ ...decision, id: "pam-4", seq: 4, atMs: s.clock.t });
+    expect(s.exec().at(-1)).toMatchObject({ plan_id: "plan:pam-4", text: EXEC_TEXT.findingSame("컵") });
+  });
+
   // Codex(c5d3e6a): 다른 계획이 진행 중이거나 승인 질문 중이어도 계획 전 찾기를 시작해 그 계획의 폰 줄을 찾기 명령이 덮었다
   it("다른 계획이 열려 있으면(질문 중 포함) 계획 전 찾기를 시작하지 않고 지금처럼 닫는다: 그 계획의 폰 줄을 덮지 않는다", async () => {
     const s = findSetup();
