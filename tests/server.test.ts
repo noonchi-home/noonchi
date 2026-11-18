@@ -158,6 +158,19 @@ describe("REST 명령 + WS 이벤트", () => {
     expect(tail).toEqual([{ type: "world", world }, { type: "brain", event: decision, replay: true }, { ...seen, replay: true }, { type: "say", text: "컵을 들게요." }]);
   });
 
+  it("WS에 붙으면 마지막 미리 세운 목표를 {type:\"goal\"}로 보낸다(없으면 보내지 않는다)", async () => {
+    const home = makeHome();
+    const goal = {
+      id: "goal-1", action: "컵 치우기", state: "left_cup", trigger: "t", object: "cup_1", cls: "cup", status: "armed" as const, prep: "ready" as const, reason: null,
+      text: "컵을 두고 자리를 뜨면 컵을 치울게요", armed_ms: 1, ready_ms: 2, gone_ms: null, fired_ms: null, plan: null,
+    };
+    const app = createApp({ hub: home.hub, policy: home.policy, rooms: ROOMS, log: () => {}, say: () => ({ text: null }), goalLast: () => goal });
+    const { url } = await app.listen(0, "127.0.0.1");
+    cleanups.push(() => app.close());
+    const { waitFor } = await listen(url);
+    expect(await waitFor((m) => m.type === "goal")).toEqual({ type: "goal", goal });
+  });
+
   it("마지막 판단·말풍선 글이 없으면 brain 없이 say null", async () => {
     const { url } = await start();
     const { waitFor, messages } = await listen(url);

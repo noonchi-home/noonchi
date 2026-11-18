@@ -1,10 +1,11 @@
 // 집 실행 묶음의 판단·검사·실행 잇기(src/act·src/brain 판단 호출): 클로이드 계획(PlanHub), 실행 설정·수업 기록, 생각 메시지·판단 호출(PAM)·실행 추적, 보기 담당(관찰 모드).
 // 판단 → 계획(에이전트 계획 모드) → 실행 전 검사 → 실행 추적이 실제 폰에 명령을 낸다. 생각 메시지는 판단 기록 뒤에 따로 만들어 대시보드로 보내고 기록 DB(thought)에 남긴다.
 import { ExecutionTracker, LessonStore, Looker, PlanHub, checkDecision, checkPlan, deviceRunner, lessonsPath, loadActConfig, pamTasks } from "../../act/index.js";
-import { lookTargets, taskOf } from "../../act/tasks.js";
-import { deviceViews, placesOf, type PlaceInfo } from "../../agent/index.js";
+import { lookTargets, taskOf, type TaskSpec } from "../../act/tasks.js";
+import { deviceViews, placesOf, resubmit, type PlaceInfo, type PlanAhead, type PlanContext } from "../../agent/index.js";
 import { Decider, PamClient, lastStoredThoughts, memoryForDay, pamSettings, storeThought, thoughtFeed } from "../../brain/index.js";
-import type { BrainLog } from "../../contract/events.js";
+import type { BrainLog, DecisionRecord } from "../../contract/events.js";
+import type { PendingGoal } from "../../contract/goal.js";
 import type { WorldInput, WorldView } from "../../contract/world.js";
 import type { SignalHub } from "../../devices/index.js";
 import type { PlanView } from "../../contract/plan.js";
@@ -43,6 +44,15 @@ function liveDevices(v: WorldView, hub: SignalHub): WorldView {
 /** 실행 추적이 World State에 넣는 것(보기 지킴·따르기 창)은 /world/input으로 낸다(거울 노드 act, 집 상태 노드가 넣는다). */
 function worldInput(core: HomeCore, i: WorldInput): void {
   core.out.act?.push("/world/input", i);   // 차례대로, 실패하면 같은 봉투로 다시(src/bus/outbox.ts)
+}
+
+/** 미리 세운 목표(src/act/track/goal.ts)를 보낸다: 전환은 /brain/goal_changes(RELIABLE, 녹화·재생에 하나하나), 최신 보기는 /brain/goal(STATE, 늦게 붙은 노드),
+ *  대시보드에는 {type:"goal"}. 접속한 대시보드에 다시 보내려고 마지막 것을 둔다. 거울 노드(act)의 차례대로 보내기 줄로 낸다(src/bus/outbox.ts). */
+export function publishGoal(core: Pick<HomeCore, "out" | "app" | "goal">, g: PendingGoal): void {
+  core.goal = g;
+  core.out.act?.push("/brain/goal_changes", { goal: g });
+  core.out.act?.push("/brain/goal", { goal: g });
+  core.app?.broadcast({ type: "goal", goal: g });
 }
 
 /** 클로이드 계획(src/act/hub.ts): 장면·평면도·부르는 이름과 계획 묶음(PlanHub). 계획 방송은 대시보드·기록·말풍선 카드로 간다. */
@@ -119,20 +129,31 @@ export function startAct(core: HomeCore): (event: BrainLog) => void {
   const devices = deviceRunner(signals, policy, twin.rooms);
   // 명령 대상 자리는 배치(면이면 윗면 가운데, 싱크볼이 있으면 싱크볼)에서
   const placeAt = placeLocator(layout?.editor, core.surfaces);
+  // 계획 입력: 계획 모드·미리 만든 계획 다시 내기가 같은 맥락을 쓴다(이미 치운 물건 placed는 그때 것)
+  const planCtx = (d: DecisionRecord, task: TaskSpec, ahead?: PlanAhead): PlanContext => ({
+    decision: d, task, world: view(), floor: plans.floor(), places: core.places(), names: placeNames, rooms: twin.rooms, devices: deviceViews(signals), nowIso: new Date(now()).toISOString(),
+    placed: new Map(core.tracker?.placed() ?? []), ...(task.coach ? { lesson: lessons.get(task.name) } : {}), ...(ahead ? { ahead } : {}),
+  });
   core.tracker = new ExecutionTracker({
     plans, floor: () => plans.floor(), world: view, emit, clock: ctx.brain?.clock, approvals, devices, offsetMinutes: history.db.offsetMinutes,
     // 계획 전 검사(LLM 없음) → 에이전트 계획 모드 한 번. 손 자리는 맞춘 눈(PlanHub 평면도의 로봇 자리)
     // 실행 추적이 놓기 단계를 끝낸 물건(placed)도 이미 치운 것으로 본다
     precheck: (d) => checkDecision({ decision: d, tasks: d.tasks ?? pamTasks(core.mode(), false), world: view(), nowMs: now(), placed: core.tracker?.placed() }),
     // 계획 입력·제출 검사도 이미 치운 물건(placed, 이 계획을 만들 때 것)을 안다: 입력 줄에 「이미 치움」, 그 물건을 대상으로 한 계획은 버린다
-    planner: (d, signal) => {
+    planner: (d, signal, ahead) => {
       const task = taskOf(d.action);
       if (!task) return { ok: false, error: "행동 목록에 없는 행동" };
-      return planner.plan({
-        decision: d, task, world: view(), floor: plans.floor(), places: core.places(), names: placeNames, rooms: twin.rooms, devices: deviceViews(signals), nowIso: new Date(now()).toISOString(),
-        placed: new Map(core.tracker?.placed() ?? []), ...(task.coach ? { lesson: lessons.get(task.name) } : {}),
-      }, signal);
+      return planner.plan(planCtx(d, task, ahead), signal);
     },
+    // 미리 세운 목표(src/act/track/goal.ts): 그날 습관 기억과 판단이 마지막으로 맞은 상태로 목표를 세우고, 미리 만든 계획은 PAM 판단으로 다시 검사해 쓴다.
+    // 목표는 /brain/goal_changes·/brain/goal과 대시보드로 보내고, 사람이 떠나면 판단을 다음 타이머(250ms)에 바로 부른다
+    habit: () => ({ ...memoryForDay(history.db, history.db.dayOf(now())), state: decide.fsmState() }),
+    reuse: (d, plan) => {
+      const task = taskOf(d.action);
+      return task ? resubmit(plan, planCtx(d, task)) : { ok: false, error: "행동 목록에 없는 행동" };
+    },
+    onGoal: (g) => publishGoal(core, g),
+    nudge: () => decide.nudge(),
     // 실제 폰 명령(src/contract/phone.ts). 폰 서버가 지금 명령을 기억해 새로 붙은 폰에도 보낸다. 명령 대상 자리는 배치(면이면 윗면 가운데)에서
     toPhone: (m) => {
       if (m.type === "command") core.command = m;
@@ -145,9 +166,9 @@ export function startAct(core: HomeCore): (event: BrainLog) => void {
     locate: placeAt, names: placeNames,
     // 계획이 끝나면 사용자 위치를 확인하고 이 집의 충전 자리(장면과 함께 읽은 dock.json)로 돌아간다
     dock: () => core.scene?.dock ?? null,
-    check: (d, p) => checkPlan({
+    check: (d, p, seenSince) => checkPlan({
       decision: d, tasks: d.tasks ?? pamTasks(core.mode(), false), plan: p, world: view(), nowMs: now(), staleMs: core.act.staleMs, mode: ctx.mode?.() ?? "test", deviceSteps: deviceSteps(p),
-      placed: core.tracker?.placed(),
+      placed: core.tracker?.placed(), ...(seenSince !== undefined ? { seenSince } : {}),
     }),
     lessons,
     // 손으로 켜는 단계가 위험 목록 가전인지(켜기 전에 묻는다)와 묻는 글의 가전 이름
