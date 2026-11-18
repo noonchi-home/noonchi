@@ -51,7 +51,7 @@
       },
       {
         "old": "- Use the memory holistically as structured context –- you do not need to commit to\na single state; rather, use the state descriptions, per-state rules, and transitions\n together to judge whether any rule from the memory fires for the current scene.",
-        "new": "- First decide the person's current state from the latest observations (use the previous state given in the input; when it is unknown, it is the initial_state). If the person is doing an activity that no state has, answer the state as '~' followed by that activity value from the observation log (for example ~using_laptop). Then decide whether exactly one transition of the previous state happened now: its `on` happened and its `when` holds in the latest observations. If none happened, answer no transition.",
+        "new": "- First decide the person's current state from the latest observations (use the previous state given in the input; when it is unknown, it is the initial_state). If the person is doing an activity that no state has, answer the state as '~' followed by that activity value from the observation log (for example ~using_laptop). Then decide whether exactly one transition of the previous state happened now: its `on` happened and its `when` holds in the latest observations. When the current state differs from the previous state, the person's activity changed, so a transition of the previous state happened: answer the one whose `to` is the current state or '*' (the person left the previous activity for any other) and whose `when` holds. When the current state is the same as the previous state, answer a transition only when its `on` clearly happened in the latest observations. If none happened, answer no transition.",
         "reason": "사람 상태 FSM: 지금 상태를 정하고 직전 상태에서 일어난 화살표 하나를 고른다(2026-11-18).",
         "occurrences": 1
       },
@@ -63,7 +63,7 @@
       },
       {
         "old": "fire now, referencing the relevant phase or rule of the memory.\n- `task_index` should be either `-1` for no action or the index of a task from\nAvailable Tasks.",
-        "new": "fire now, referencing the relevant phase or rule of the memory.\n- `state` is the current person state id, or '~' followed by an activity value for an activity no state has.\n- `from` and `next_index` name the one transition that happened now (`from` is the previous state, `next_index` its index in that state's `next`), or `null` and `-1` for no transition. Do not answer a task index: the robot action comes from the transition.",
+        "new": "fire now, referencing the relevant phase or rule of the memory.\n- `state` is the current person state id, or '~' followed by an activity value for an activity no state has.\n- `from` and `next_index` name the one transition that happened now (`from` is the previous state, `next_index` its index in that state's `next`). When no transition happened, `from` is null (not the previous state) and `next_index` is -1. Do not answer a task index: the robot action comes from the transition.",
         "reason": "사람 상태 FSM 판단 답 칸 설명(pam-predict/3). list 프롬프트에는 맞지 않게 fsm 줄 앞 문장과 함께 바꾼다.",
         "occurrences": 1
       },
@@ -80,7 +80,7 @@
         "occurrences": 1
       }
     ],
-    "adapted_template_sha256": "788f3b9dbf8d2f77b2acbc89158b9f7dc1a631eef3b04fdc62e7212f7edf95e1"
+    "adapted_template_sha256": "aa2243e0f0a3669bf23f0987a3bb1b5b7845e1548b95f87ff9b8afa5f7b24339"
   },
   "predictor_list": {
     "applied": [
