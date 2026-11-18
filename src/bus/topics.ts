@@ -126,6 +126,7 @@ const pendingGoal = z.strictObject({
   status: z.enum(["armed", "fired", "used", "dropped"]), prep: z.enum(["waiting", "planning", "ready", "failed"]),
   reason: z.enum(["took", "back", "moved", "other", "safety", "mode", "dock", "expired", "pam", "stale", "stop"]).nullable(),
   text: z.string().nullable(), armed_ms: at, ready_ms: at.nullable(), gone_ms: at.nullable(), fired_ms: at.nullable(), plan: planView.nullable(),
+  error: z.string().min(1).optional(),
 });
 const brainGoal = z.strictObject({ goal: pendingGoal });
 /** 목표 전환의 열쇠: 목표 id(세대). */

@@ -56,3 +56,24 @@ describe("미리 세운 목표 기록(기록 DB goal 줄, 영상 판정 시각�
     expect(rows[0]).toMatchObject({ subject: "goal-1", data: { status: "armed", prep: "waiting", object: "cup_1" } });
   });
 });
+
+describe("미리 세운 목표 기록: 준비한 계획을 버린 까닭", () => {
+  it("까닭(error)이 있으면 버림은 「준비한 계획 버림 · <까닭>」, 미리 만들기 실패는 「계획 못 만듦 · <까닭>」이고, data의 까닭(reason)은 실행 기록과 같은 칸에 글로 싣는다(버린 종류는 drop)", () => {
+    const db = HistoryDb.open(":memory:");
+    const record = goalRecorder(db);
+    record(GOAL, 1);
+    record({ ...GOAL, prep: "failed", error: "모델 차례 3번 안에 맞는 계획을 내지 못함" }, 2);
+    record({ ...GOAL, id: "goal-2" }, 3);
+    record({ ...GOAL, id: "goal-2", status: "dropped", reason: "stale", error: "1번 단계: 계획 검사 까닭" }, 4);
+    record({ ...GOAL, id: "goal-3" }, 5);
+    record({ ...GOAL, id: "goal-3", status: "dropped", reason: "took" }, 6);
+    const rows = db.list({ kinds: ["goal"] });
+    expect(rows.map((r) => r.text)).toEqual([
+      "세움 · 컵 치우기", "계획 못 만듦 · 모델 차례 3번 안에 맞는 계획을 내지 못함", "세움 · 컵 치우기", "준비한 계획 버림 · 1번 단계: 계획 검사 까닭", "세움 · 컵 치우기", "버림 · 들고 나감",
+    ]);
+    expect(rows[1]!.data).toMatchObject({ prep: "failed", reason: "모델 차례 3번 안에 맞는 계획을 내지 못함" });
+    expect(rows[3]!.data).toMatchObject({ status: "dropped", drop: "stale", reason: "1번 단계: 계획 검사 까닭" });
+    expect(rows[5]!.data).toMatchObject({ status: "dropped", drop: "took" });
+    expect(rows[5]!.data).not.toHaveProperty("reason");
+  });
+});

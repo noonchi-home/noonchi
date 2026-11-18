@@ -129,9 +129,19 @@ export const GOAL_LOG = {
   armed: (action: string) => `세움 · ${action}`,
   planning: "계획 미리 만드는 중", ready: "계획 준비됨", failed: "계획 못 만듦", fired: "사람 떠남 · 판단 부름", used: "준비한 계획으로 시작",
   dropped: (why: string) => `버림 · ${why}`,
+  /** 까닭 글이 있는 미리 만들기 실패와, 준비한 계획을 버리고 계획 모드로 넘어감. */
+  failedWhy: (why: string) => `계획 못 만듦 · ${why}`,
+  dropPlan: (why: string) => `준비한 계획 버림 · ${why}`,
   why: {
     took: "들고 나감", back: "다시 나타남", moved: "컵이 옮겨지거나 사라짐", other: "다른 일이 맡음", safety: "안전 알림", mode: "코치 모드", dock: "충전 자리로 가는 중",
     expired: "30분 지남", pam: "PAM이 고르지 않음", stale: "준비한 계획이 지금과 안 맞음", stop: "그만",
+  },
+  /** 계획 검사 글이 없는 까닭: 받은 계획이 목표 물건이 아닌 같은 종류 물건을 다룸, 목표 물건이 미리 만든 때와 다른 면에 있음, 미리 만든 계획이 없음. */
+  error: { notMine: "목표 물건이 아닌 물건을 다루는 계획", surface: "목표 물건이 다른 면으로 옮겨짐", none: "미리 만든 계획 없음" },
+  /** 서버 로그 줄(src/act/track/start.ts 「계획 버림」 줄과 같은 꼴). */
+  log: {
+    failed: (id: string, action: string, why: string) => `[실행 추적] ${id} 계획 못 만듦(${action}): ${why}`,
+    dropPlan: (id: string, action: string, why: string) => `[실행 추적] ${id} 준비한 계획 버림(${action}): ${why}`,
   },
 } as const;
 

@@ -16,6 +16,7 @@ import { Trigger } from "../src/world/trigger.js";
 import { pamClientFor, startFakePamLlm } from "./helpers/pam.js";
 import { ApprovalStore } from "../src/agent/approval.js";
 import { resubmit, type PlanAhead } from "../src/agent/planTools.js";
+import type { PlanResult } from "../src/agent/index.js";
 import { CUP_FSM_MEMORY } from "../src/brain/decision.js";
 import type { BrainLog, DecisionRecord } from "../src/contract/events.js";
 import type { PendingGoal } from "../src/contract/goal.js";
@@ -580,5 +581,85 @@ describe("미리 세운 목표: 실제 영상 g1에서 드러난 것(2026-11-18)
     await s.decide(pam("pam-1", 1, s.clock.t, "컵 그대로 두기", true));
     expect(s.t.goal()).toMatchObject({ status: "armed", prep: "ready" });
     expect(s.goals.some((g) => g.status === "dropped")).toBe(false);
+  });
+});
+
+// 2026-11-18 g1 glass: 미리 만든 계획을 받아 쓰다 계획 모드로 넘어갔는데 「계획이 맞지 않아 버림」만 남고 까닭이 없었다
+describe("미리 세운 목표: 준비한 계획을 버린 까닭", () => {
+  const E_PRE = "모델 차례 3번 안에 맞는 계획을 내지 못함";
+  const E_PLAN = "2번 집기: 집을 물건(cup_9)이 World State에 없습니다";
+  const E_REUSE = "2번 단계: 보이는 World State 물건이 아닙니다: cup_1";
+
+  it("받아 쓰던 미리 만들기가 실패하면 목표는 「준비한 계획 버림」(stale, 까닭 error)과 서버 로그를 남기고 계획 모드로 넘어간다(씀은 내지 않는다). 계획 모드도 실패하면 실행 기록 「계획이 맞지 않아 버림」에 그 까닭(reason)", async () => {
+    let release: (r: PlanResult) => void = () => {};
+    const logged: string[] = [];
+    const s = goalSetup({
+      over: {
+        log: (line) => logged.push(line),
+        planner: (_d, _signal, ahead) => (ahead ? new Promise<PlanResult>((r) => { release = r; }) : Promise.resolve({ ok: false as const, error: E_PLAN })),
+      },
+    });
+    s.person({ act: "drinking" });
+    s.tick();
+    expect(s.t.goal()?.prep).toBe("planning");
+    s.gone();
+    s.t.onDecision(pam("pam-1", 1, s.clock.t));
+    release({ ok: false, error: E_PRE });
+    await s.t.idle();
+    expect(s.goals.at(-1)).toMatchObject({ id: "goal-1", status: "dropped", reason: "stale", error: E_PRE });
+    expect(s.goals.some((g) => g.status === "used")).toBe(false);
+    expect(logged).toContain(`[실행 추적] goal-1 준비한 계획 버림(컵 치우기): ${E_PRE}`);
+    expect(s.logs.filter((l) => l.type === "execution").at(-1)).toMatchObject({ plan_id: "plan:pam-1", state: "failed", text: EXEC_TEXT.badPlan, reason: E_PLAN });
+    expect(logged.some((l) => l.includes("plan:pam-1") && l.includes(E_PLAN))).toBe(true);
+  });
+
+  it("받아 쓰던 미리 만들기가 끝났지만 지금 판단으로 다시 검사해 못 넘으면 그 까닭으로 버리고 계획 모드로 새로 만든다. 받아 쓰면 끝난 뒤에 씀(used)을 낸다", async () => {
+    const s = goalSetup({ over: { reuse: () => ({ ok: false, error: E_REUSE }) } });
+    s.person({ act: "drinking" });
+    s.tick();
+    s.gone();
+    await s.decide(pam("pam-2", 2, s.clock.t));
+    expect(s.goals.at(-1)).toMatchObject({ status: "dropped", reason: "stale", error: E_REUSE });
+    expect(s.commands()[0]).toMatchObject({ id: "plan:pam-2", text: "식탁으로 가 주세요" });
+    const ok = goalSetup();
+    ok.person({ act: "drinking" });
+    ok.tick();
+    ok.gone();
+    ok.t.onDecision(pam("pam-3", 3, ok.clock.t));
+    expect(ok.goals.at(-1)?.status).not.toBe("used");
+    await ok.t.idle();
+    expect(ok.goals.at(-1)).toMatchObject({ status: "used", reason: null });
+    expect(ok.goals.at(-1)).not.toHaveProperty("error");
+  });
+
+  it("준비된 계획을 지금 판단으로 다시 검사해 못 넘으면 그 까닭으로 「준비한 계획 버림」을 남기고 계획 모드로 만든다", async () => {
+    const logged: string[] = [];
+    const s = goalSetup({ over: { log: (line) => logged.push(line), reuse: () => ({ ok: false, error: E_REUSE }) } });
+    s.person({ act: "drinking" });
+    s.tick();
+    await s.t.idle();
+    expect(s.t.goal()?.prep).toBe("ready");
+    s.tick();
+    s.gone();
+    s.tick();
+    const before = s.planCalls();
+    await s.decide(pam("pam-4", 4, s.clock.t));
+    expect(s.goals.at(-1)).toMatchObject({ status: "dropped", reason: "stale", error: E_REUSE });
+    expect(logged).toContain(`[실행 추적] goal-1 준비한 계획 버림(컵 치우기): ${E_REUSE}`);
+    expect(s.planCalls() - before).toBe(1);
+  });
+
+  it("미리 만들기가 실패하면 그 까닭을 목표(error)와 서버 로그에 남긴다. 뒤에 다른 까닭으로 버리면 앞 까닭은 지운다", async () => {
+    const logged: string[] = [];
+    const s = goalSetup({ over: { log: (line) => logged.push(line), planner: (_d, _signal, ahead) => Promise.resolve({ ok: false as const, error: ahead ? E_PRE : "x" }) } });
+    s.person({ act: "drinking" });
+    s.tick();
+    await s.t.idle();
+    expect(s.t.goal()).toMatchObject({ prep: "failed", error: E_PRE });
+    expect(logged).toContain(`[실행 추적] goal-1 계획 못 만듦(컵 치우기): ${E_PRE}`);
+    s.setObjects(() => []);
+    s.gone();
+    expect(s.goals.at(-1)).toMatchObject({ status: "dropped", reason: "took" });
+    expect(s.goals.at(-1)).not.toHaveProperty("error");
   });
 });

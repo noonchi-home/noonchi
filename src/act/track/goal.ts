@@ -6,6 +6,9 @@
 // - 미리 만들기(prep): 대상 물건이 면 위에 놓여 있고(손에 있으면 놓을 때까지 기다린다) 계획 모드가 비어 있을 때, 같은 계획 모드(o.planner)를 목표 기록으로 한 번 부른다.
 //   입력에 목표 물건을 싣고(계획 검사가 다른 물건 계획을 버린다), 받은 계획의 그 종류 물건이 목표 물건뿐일 때만 준비됨으로 둔다. 실패하면 다시 부르지 않는다.
 //   폰·대시보드 명령은 내지 않는다(관찰만). 진짜 판단의 계획이 시작되면 계획 모드(한 번에 하나)가 미리 만들기를 끊는다.
+//   실패하면 그 까닭(계획 모드 오류 글, 다른 물건 계획이면 GOAL_LOG.error.notMine)을 목표 error와 서버 로그에 남긴다.
+// - 준비한 계획을 쓰지 못하고 계획 모드로 넘어갈 때(take)도 까닭(다시 검사 오류 글 등)을 목표 error와 서버 로그 「준비한 계획 버림」에 남긴다
+//   (2026-11-18 g1 glass: 받아 쓰다 넘어간 계획 모드가 「계획이 맞지 않아 버림」만 남겨 왜 못 썼는지 몰랐다).
 // 상태(status: 세움·떠남·씀·버림)와 미리 만들기(prep)는 따로 바뀐다. 바뀔 때마다 o.onGoal로 낸다(서버가 /brain/goal_changes·/brain/goal과 대시보드로 보낸다).
 import type { DecisionRecord } from "../../contract/events.js";
 import type { GoalDrop, PendingGoal } from "../../contract/goal.js";
@@ -13,7 +16,7 @@ import type { ObjClass, WorldObject, WorldView } from "../../contract/world.js";
 import type { AgentPlan, PlanResult } from "../../agent/index.js";
 import { decisionWorld, fsmRuleOf, goalAhead, type GoalPick } from "../../brain/index.js";
 import { ruleIf } from "../../world/labels.js";
-import { GOAL_TEXT } from "../labels.js";
+import { GOAL_LOG, GOAL_TEXT } from "../labels.js";
 import { emergencyOf } from "../mode.js";
 import { followedId, planObjectsOf, putAway, TASK_NAMES, TASK_SAY, targetOf } from "../tasks.js";
 import { Part } from "./core.js";
@@ -122,7 +125,11 @@ export class GoalWatch extends Part {
       if (r.ok && this.mine(g, r.plan)) {
         g.plan = r.plan;
         this.set(g, { prep: "ready", ready_ms: this.clock.now(), plan: r.plan.view });
-      } else this.set(g, { prep: "failed" });
+      } else {
+        const error = r.ok ? GOAL_LOG.error.notMine : r.error;
+        this.o.log?.(GOAL_LOG.log.failed(g.view.id, g.view.action, error));
+        this.set(g, { prep: "failed", error });
+      }
     }).finally(() => { this.jobs.delete(p); });
     this.jobs.add(p);
   }
@@ -203,9 +210,10 @@ export class GoalWatch extends Part {
 
   /** 판단 받기(start.ts)가 계획 모드를 부르기 전에 묻는다. 사람이 떠난 목표(fired)와 같은 행동이고 떠난 것이 집 상태에 반영된 뒤 보낸 판단(afterLeave)이면:
    *  - 미리 만든 계획이 있으면 대상이 그때 면 그대로일 때 이 판단으로 다시 검사해(o.reuse) 그 결과. 면이 바뀌었으면 moved, 검사를 못 넘으면 stale로 버리고 null.
-   *  - 미리 만드는 중이면 그 호출을 받아 쓴다(새로 부르지 않는다): 끝나면 다시 검사하고, 못 넘으면 fallback(계획 모드). 판단 받기 신호가 끊겼으면 다시 검사도
-   *    fallback도 하지 않는다(계획 모드는 한 번에 하나라 fallback이 새 사람 요청의 계획을 끊는다).
+   *  - 미리 만드는 중이면 그 호출을 받아 쓴다(새로 부르지 않는다): 끝나면 다시 검사하고, 못 넘으면 stale로 버리고 fallback(계획 모드). 판단 받기 신호가 끊겼으면
+   *    다시 검사도 fallback도 하지 않고 other로 버린다(계획 모드는 한 번에 하나라 fallback이 새 사람 요청의 계획을 끊는다). 끝 상태(used·dropped)는 호출이 끝난 뒤 낸다.
    *  - 둘 다 없으면(미리 만들기 실패·아직) stale로 버리고 null. null이면 부르는 쪽이 계획 모드를 부른다. 쓰면 목표는 used로 끝난다.
+   *  준비한 계획을 버리고 계획 모드로 넘어가면 까닭 글(다시 검사·미리 만들기 오류 등)을 목표 error와 서버 로그에 남긴다.
    *  seenSince: 실행 전 검사가 대상을 다시 본 것으로 볼 기준(사람이 떠난 때). */
   take(d: DecisionRecord, signal: AbortSignal, fallback: () => PlanResult | Promise<PlanResult>): { out: PlanResult | Promise<PlanResult>; seenSince: number; goal: string } | null {
     const g = this.goal;
@@ -222,12 +230,12 @@ export class GoalWatch extends Part {
     };
     if (g.plan) {
       if (!sameSurface()) {
-        this.drop("moved");
+        this.drop("moved", GOAL_LOG.error.surface);
         return null;
       }
       const r = reuse(d, g.plan);
       if (!r.ok) {
-        this.drop("stale");
+        this.drop("stale", r.error);
         return null;
       }
       this.end(g, "used");
@@ -239,44 +247,70 @@ export class GoalWatch extends Part {
       if (signal.aborted) stop();
       else signal.addEventListener("abort", stop, { once: true });
       g.job = null;
-      this.end(g, "used");
+      // 지금 목표에서 떼어 둔다(그 등장에서 다시 세우지 않는다). 끝 상태는 호출 결과를 보고 낸다
+      this.leave(g);
       const cut: PlanResult = { ok: false, error: "새 판단으로 바뀜" };
       const out = job.done.then((r): PlanResult | Promise<PlanResult> => {
-        if (signal.aborted) return cut;
-        if (r.ok && this.mine(g, r.plan) && sameSurface()) {
-          const again = reuse(d, r.plan);
-          if (again.ok) return again;
+        if (signal.aborted) {
+          this.end(g, "dropped", "other");
+          return cut;
         }
+        let why: string;
+        if (!r.ok) why = r.error;
+        else if (!this.mine(g, r.plan)) why = GOAL_LOG.error.notMine;
+        else if (!sameSurface()) why = GOAL_LOG.error.surface;
+        else {
+          const again = reuse(d, r.plan);
+          if (again.ok) {
+            this.end(g, "used");
+            return again;
+          }
+          why = again.error;
+        }
+        this.end(g, "dropped", "stale", why);
         return signal.aborted ? cut : fallback();
       });
       return { out, seenSince, goal: v.id };
     }
-    this.drop("stale");
+    this.drop("stale", v.error ?? GOAL_LOG.error.none);
     return null;
   }
 
-  /** 목표를 버린다(지금 길로 돌아간다). 없으면 아무것도 하지 않는다. */
-  drop(reason: GoalDrop): void {
-    if (this.goal) this.end(this.goal, "dropped", reason);
+  /** 목표를 버린다(지금 길로 돌아간다). 없으면 아무것도 하지 않는다. error: 준비한 계획을 버리고 계획 모드로 넘어가는 까닭 글(take). */
+  drop(reason: GoalDrop, error?: string): void {
+    if (this.goal) this.end(this.goal, "dropped", reason, error);
   }
 
-  /** 목표를 끝낸다(used·dropped): 마지막 상태를 내고, 그 등장에서는 다시 세우지 않는다. 버리면 미리 만드는 호출을 끊는다. */
-  private end(g: Goal, status: "used" | "dropped", reason: GoalDrop | null = null): void {
+  /** 목표를 끝낸다(used·dropped): 마지막 상태를 내고, 그 등장에서는 다시 세우지 않는다. 버리면 미리 만드는 호출을 끊는다.
+   *  까닭 글(error)은 이번 것만 싣고(앞 미리 만들기 실패 글은 지운다) 서버 로그에도 남긴다. */
+  private end(g: Goal, status: "used" | "dropped", reason: GoalDrop | null = null, error?: string): void {
     if (status === "dropped") g.job?.abort.abort();
     g.job = null;
+    this.leave(g);
+    if (error) this.o.log?.(GOAL_LOG.log.dropPlan(g.view.id, g.view.action, error));
+    const { error: _was, ...view } = g.view;
+    g.view = { ...view, status, reason, ...(error ? { error } : {}) };
+    this.emit(g.view);
+  }
+
+  /** 지금 목표에서 뗀다: 그 등장에서는 다시 세우지 않는다. 이미 뗐으면 아무것도 하지 않는다. */
+  private leave(g: Goal): void {
+    if (this.goal !== g) return;
     this.spent = g.presence;
-    this.set(g, { status, reason });
     this.goal = null;
   }
 
   private set(g: Goal, v: Partial<PendingGoal>): void {
     g.view = { ...g.view, ...v };
-    if (this.goal === g) this.publish();
+    if (this.goal === g) this.emit(g.view);
   }
 
   private publish(): void {
-    const g = this.goal;
-    if (g && !this.core.stopped) this.o.onGoal?.(g.view);
+    if (this.goal) this.emit(this.goal.view);
+  }
+
+  private emit(view: PendingGoal): void {
+    if (!this.core.stopped) this.o.onGoal?.(view);
   }
 
   /** 미리 만드는 호출이 끝날 때까지 기다린다(시험용). */

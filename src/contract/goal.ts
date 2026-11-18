@@ -33,6 +33,8 @@ export interface PendingGoal {
   fired_ms: number | null;
   /** 미리 만든 계획 보기(없으면 null). */
   plan: PlanView | null;
+  /** 까닭 글(계획 검사의 첫 틀린 단계와 이유 등): 미리 만들기 실패(prep failed)와 준비한 계획을 버리고 계획 모드로 넘어갈 때(dropped). 없으면 칸이 없다. */
+  error?: string;
 }
 
 /** /brain/goal·/brain/goal_changes 몸. */

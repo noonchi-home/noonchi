@@ -59,21 +59,22 @@ export function publishGoal(core: Pick<HomeCore, "out" | "app" | "goal">, g: Pen
 
 /** 목표 전환 한 줄: 바로 앞 상태(같은 목표)와 견줘 무엇이 바뀌었는지(세움·미리 만들기·사람 떠남·씀·버림). */
 function goalLine(prev: PendingGoal | null, g: PendingGoal): string {
-  if (g.status === "dropped") return GOAL_LOG.dropped(GOAL_LOG.why[g.reason ?? "stale"]);
+  if (g.status === "dropped") return g.error ? GOAL_LOG.dropPlan(g.error) : GOAL_LOG.dropped(GOAL_LOG.why[g.reason ?? "stale"]);
   if (g.status === "used") return GOAL_LOG.used;
   if (!prev) return GOAL_LOG.armed(g.action);
   if (g.status === "fired" && prev.status !== "fired") return GOAL_LOG.fired;
-  if (g.prep !== prev.prep && g.prep !== "waiting") return GOAL_LOG[g.prep];
+  if (g.prep !== prev.prep && g.prep !== "waiting") return g.prep === "failed" && g.error ? GOAL_LOG.failedWhy(g.error) : GOAL_LOG[g.prep];
   return GOAL_LOG.armed(g.action);
 }
 
-/** 미리 세운 목표 전환을 기록 DB goal 줄로 남기는 것(영상 판정 시각표 「목표」 줄, 반성 입력이 아니다). */
+/** 미리 세운 목표 전환을 기록 DB goal 줄로 남기는 것(영상 판정 시각표 「목표」 줄, 반성 입력이 아니다).
+ *  data: 상태·미리 만들기·버린 종류(drop)·물건과, 까닭 글이 있으면 reason(실행 기록 「계획이 맞지 않아 버림」의 reason과 같은 칸). */
 export function goalRecorder(db: Pick<HistoryDb, "add">): (g: PendingGoal, atMs: number) => void {
   let last: PendingGoal | null = null;
   return (g, atMs) => {
     const prev = last?.id === g.id ? last : null;
     last = g;
-    db.add("goal", atMs, goalLine(prev, g), { subject: g.id, data: { status: g.status, prep: g.prep, reason: g.reason, object: g.object } });
+    db.add("goal", atMs, goalLine(prev, g), { subject: g.id, data: { status: g.status, prep: g.prep, drop: g.reason, object: g.object, ...(g.error ? { reason: g.error } : {}) } });
   };
 }
 
