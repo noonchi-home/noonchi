@@ -52,7 +52,8 @@ import type { Detection } from "../src/contract/observe.js";
 import type { HistoryRow } from "../src/contract/history.js";
 import type { WorldObject, WorldView } from "../src/contract/world.js";
 import { EXEC_TEXT } from "../src/act/labels.js";
-import { STATES } from "../src/world/vocab.js";
+import { CLASSES, STATES } from "../src/world/vocab.js";
+import { KINDS, type DeviceKind } from "../src/devices/kinds.js";
 import { withTimeout } from "./twin3d/capture-lib.js";
 import { CHROME_GPU, chromePath, closeChrome, devtoolsPort, launchChrome, openPage, openTab, openWindow, type Chrome, type ChromeGpu, type Page } from "./twin3d/cdp.js";
 import { heldLock, withHeavy, type Lock } from "./twin3d/heavy.js";
@@ -296,11 +297,11 @@ export function stepVerdict(history: HistoryRow[], commands: VideoCommand[], cli
   return `단계: ${stepText} · 누른 단추 ${clicks}번 · 트윈 눈 ${eye} · 컵 ${cup ? `${cup.id} ${placeLabel(cup.facts.place?.value) ?? "놓인 곳 모름"}` : "없음"}`;
 }
 
-/** --step 낱말 → 단계 자리 이름(판정 줄). 없는 낱말은 그대로. */
-const PLACE_WORD: Record<string, string> = {
-  table: "식탁", sink: "싱크대", cup: "컵", bottle: "병", fridge: "냉장고", induction: "인덕션", cooktop: "인덕션", microwave: "전자레인지",
-  washer: "세탁기", dryer: "건조기", cabinet: "수납장",
-};
+/** --step 낱말 → 단계 자리 이름(판정 줄): World 낱말 표(CLASSES, 그 종류이거나 「_<낱말>」로 끝나는 종류: table → 식탁)나 가전 종류 등록부(KINDS)의 이름. 없으면 낱말 그대로. */
+function placeName(word: string): string {
+  const cls = Object.entries(CLASSES).find(([k]) => k === word || k.endsWith(`_${word}`));
+  return cls?.[1].label ?? (Object.hasOwn(KINDS, word) ? KINDS[word as DeviceKind].label : word);
+}
 
 /**
  * 단계 자리 판정(2026-11-18: tall q1에서 첫 명령이 「세탁기로 가 주세요」였는데 단계 영상이 차례로 돌아 「계획 끝남 · 4/4」로 거짓 통과했다).
@@ -330,7 +331,7 @@ export function stepPlaces(steps: readonly string[], commands: readonly VideoCom
     const target = pool[i]!.target;
     if (kind === "pick" && target?.id) picked = target.id;
     if (word && target?.id.includes(word)) right++;
-    else problems.push(`단계 자리 틀림: ${target?.label ?? "대상 없음"} ≠ ${PLACE_WORD[word] ?? word}`);
+    else problems.push(`단계 자리 틀림: ${target?.label ?? "대상 없음"} ≠ ${placeName(word)}`);
   }
   const head = `단계 자리: ${right}/${steps.length} 맞음`;
   if (!o.cupClear) return { ok: problems.length === 0, text: [head, ...problems].join(" · "), problems };
