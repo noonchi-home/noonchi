@@ -210,7 +210,7 @@ describe("대시보드 배치", () => {
         ["0", screenAt(0)], ["2", screenAt(2)], ["3", screenAt(3)], ["4", screenAt(4)],
         ["로봇 모름", screenAt(2, { robotKnown: false })], ["연결 끊김", screenAt(2, { connected: false })], ["모양 없음", screenAt(0, { seen: seenOf(null) })],
         ["긴 줄", screenAt(2, { talk: { ...TALK, lines: MESSAGES.map((m) => ({ ...m, text: m.text.repeat(5) })) } })],
-        ["긴 트리거", screenAt(2, { talk: { ...TALK, fsm: { ...PILLS, trigger: PILLS.trigger.repeat(4) } } })], ["줄 없음", screenAt(2, { talk: null })],
+        ["긴 트리거", screenAt(2, { talk: { ...TALK, fsm: { ...PILLS, trigger: PILLS.trigger.repeat(4) } } })], ["목표", screenAt(2, { talk: { ...TALK, goal: "컵 치우기" } })], ["줄 없음", screenAt(2, { talk: null })],
       ];
       for (const [name, p] of variants) expect(boxes(p), name).toEqual(first);
     } finally { rect.mockRestore(); }
@@ -249,6 +249,17 @@ describe("대시보드 메시지 상자(트윈 아래쪽 하나, 생각 말풍�
     expect(talk().querySelectorAll("[data-talk-pill]")).toHaveLength(3);
     expect(document.querySelector("[data-mode-text]")).toHaveTextContent(/^(눈치|코치) 모드$/);
     expect(document.body).not.toHaveTextContent("자동");
+  });
+
+  it("미리 세운 목표가 있으면 머리 알약 줄 끝에 「목표 · 컵 치우기」(Status)가 있고, 판단 FSM이 없어도 그 알약만 있다", () => {
+    const first = draw(screenAt(2, { talk: { ...TALK, goal: "컵 치우기" } }));
+    const pills = () => [...talk().querySelectorAll<HTMLElement>("[data-talk-pill]")];
+    expect(pills().map((p) => p.dataset.talkPill)).toEqual(["state", "trigger", "action", "goal"]);
+    expect(pills().at(-1)).toHaveTextContent("목표 · 컵 치우기");
+    expect(pills().at(-1)!.getAttribute("data-slot")).toBe("status");
+    first.unmount();
+    draw(screenAt(2, { talk: { ...TALK, fsm: null, goal: "컵 치우기" } }));
+    expect(pills().map((p) => [p.dataset.talkPill, p.textContent])).toEqual([["goal", "목표 · 컵 치우기"]]);
   });
 
   it("판단의 FSM을 모르면(talk.fsm null) 알약이 없고 빈 알약도 두지 않는다", () => {
