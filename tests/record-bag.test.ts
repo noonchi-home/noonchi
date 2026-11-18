@@ -40,7 +40,7 @@ describe("기록 노드", () => {
     const act = await sender("act", bus);
     const goal = {
       id: "goal-1", action: "컵 치우기", state: "left_cup", trigger: "t", object: "cup_1", cls: "cup", status: "armed" as const, prep: "waiting" as const, reason: null, text: null,
-      armed_ms: 1, ready_ms: null, gone_ms: null, fired_ms: null, plan: null,
+      armed_ms: 1, ready_ms: null, gone_ms: null, fired_ms: null, ended_ms: null, plan: null,
     };
     const steps = [
       { status: "armed", prep: "waiting" }, { status: "armed", prep: "planning" }, { status: "armed", prep: "ready" }, { status: "fired", prep: "ready" }, { status: "used", prep: "ready" },

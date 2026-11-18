@@ -189,11 +189,14 @@ describe("인식·집 상태 토픽 모양(묶음 2)", () => {
   it("/brain/goal(STATE, 최신 보기)과 /brain/goal_changes(RELIABLE, 전환마다)는 목표 하나({goal})만 받고, 모르는 상태·모르는 칸·사진 칸이면 거절한다", () => {
     const g = {
       id: "goal-1", action: "컵 치우기", state: "left_cup", trigger: "t", object: "cup_1", cls: "cup", status: "armed", prep: "ready", reason: null, text: "컵을 두고 자리를 뜨면 컵을 치울게요",
-      armed_ms: 1, ready_ms: 2, gone_ms: null, fired_ms: null, plan: { id: "plan:goal-1", steps: [] },
+      armed_ms: 1, ready_ms: 2, gone_ms: null, fired_ms: null, ended_ms: null, plan: { id: "plan:goal-1", steps: [] },
     };
     for (const t of ["/brain/goal", "/brain/goal_changes"] as const) {
       expect(ok(t, { goal: g }), t).toBe(true);
-      expect(ok(t, { goal: { ...g, status: "dropped", reason: "dock" } }), t).toBe(true);
+      expect(ok(t, { goal: { ...g, status: "dropped", reason: "dock", ended_ms: 3 } }), t).toBe(true);
+      // 끝난 때 칸(ended_ms)은 꼭 있다(서 있는 동안 null)
+      const { ended_ms: _e, ...noEnd } = g;
+      expect(ok(t, { goal: noEnd }), t).toBe(false);
       expect(ok(t, { goal: { ...g, status: "ready" } }), t).toBe(false);
       expect(ok(t, { goal: { ...g, prep: "done" } }), t).toBe(false);
       expect(ok(t, { goal: { ...g, jpeg_b64: "AA==" } }), t).toBe(false);

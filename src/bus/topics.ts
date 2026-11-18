@@ -125,7 +125,7 @@ const pendingGoal = z.strictObject({
   id, action: z.string().min(1), state: z.string().min(1), trigger: z.string(), object: id.nullable(), cls: z.string().min(1),
   status: z.enum(["armed", "fired", "used", "dropped"]), prep: z.enum(["waiting", "planning", "ready", "failed"]),
   reason: z.enum(["took", "back", "moved", "replaced", "safety", "mode", "dock", "expired", "pam", "stale", "stop"]).nullable(),
-  text: z.string().nullable(), armed_ms: at, ready_ms: at.nullable(), gone_ms: at.nullable(), fired_ms: at.nullable(), plan: planView.nullable(),
+  text: z.string().nullable(), armed_ms: at, ready_ms: at.nullable(), gone_ms: at.nullable(), fired_ms: at.nullable(), ended_ms: at.nullable(), plan: planView.nullable(),
   error: z.string().min(1).optional(),
 });
 const brainGoal = z.strictObject({ goal: pendingGoal });

@@ -16,7 +16,7 @@ const feed = (ms: ServerMessage[]) => ms.reduce((s, m) => reduceDash(s, m, 0), E
 const HABIT: ServerMessage = { type: "habit", habit: habitView(CUP_FSM_MEMORY, 1) };
 const GOAL: PendingGoal = {
   id: "goal-1", action: "컵 치우기", state: "left_cup", trigger: CUP_FSM_MEMORY.states[2]!.rules[0]!.trigger, object: "cup_1", cls: "cup", status: "armed", prep: "ready",
-  reason: null, text: "컵을 두고 자리를 뜨면 컵을 치울게요", armed_ms: 1, ready_ms: 2, gone_ms: null, fired_ms: null, plan: null,
+  reason: null, text: "컵을 두고 자리를 뜨면 컵을 치울게요", armed_ms: 1, ready_ms: 2, gone_ms: null, fired_ms: null, ended_ms: null, plan: null,
 };
 const BOX = { width: 460, height: 140 };
 const lineOf = (v: ReturnType<typeof fsmLayout>, from: string, to: string) => v.lines.filter((l) => l.from === from && l.to === to);

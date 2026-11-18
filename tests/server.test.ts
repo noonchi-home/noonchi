@@ -162,7 +162,7 @@ describe("REST 명령 + WS 이벤트", () => {
     const home = makeHome();
     const goal = {
       id: "goal-1", action: "컵 치우기", state: "left_cup", trigger: "t", object: "cup_1", cls: "cup", status: "armed" as const, prep: "ready" as const, reason: null,
-      text: "컵을 두고 자리를 뜨면 컵을 치울게요", armed_ms: 1, ready_ms: 2, gone_ms: null, fired_ms: null, plan: null,
+      text: "컵을 두고 자리를 뜨면 컵을 치울게요", armed_ms: 1, ready_ms: 2, gone_ms: null, fired_ms: null, ended_ms: null, plan: null,
     };
     const app = createApp({ hub: home.hub, policy: home.policy, rooms: ROOMS, log: () => {}, say: () => ({ text: null }), goalLast: () => goal });
     const { url } = await app.listen(0, "127.0.0.1");

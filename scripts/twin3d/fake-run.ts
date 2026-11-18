@@ -179,14 +179,18 @@ function build(): { moments: Moment[]; coach: Moment } {
   const goalText = GOAL_TEXT.armed(ruleIf({ ...clearRule, learned: false }), TASK_SAY[ACTION]!.will);
   const goal: PendingGoal = {
     id: "goal-1", action: ACTION, state: "left_cup", trigger: clearRule.trigger, object: cup.id, cls: "cup", status: "armed", prep: "ready", reason: null, text: goalText,
-    armed_ms: T0 - 10_000, ready_ms: T0 - 6_000, gone_ms: null, fired_ms: null, plan: null,
+    armed_ms: T0 - 10_000, ready_ms: T0 - 6_000, gone_ms: null, fired_ms: null, ended_ms: null, plan: null,
   };
 
   const moments = MOMENTS.map(({ eye, score }, n) => {
     const now = T0 + n * STEP_MS;
     const open: PlanView | null = n === 0 ? null : {
       ...plan, revision: n, status: "running", updatedAt: iso(now), judgment: "사람이 자리를 비운 뒤에도 컵이 식탁에 남아 있어요.",
-      steps: plan.steps.map((s, i) => ({ ...s, status: i < n - 1 ? "done" : i === n - 1 ? "active" : "pending" })),
+      // 단계 i는 순간 i+1에 시작해(그 단계 명령) 다음 순간에 끝난다(실행 추적 단계 시각)
+      steps: plan.steps.map((s, i) => ({
+        ...s, status: i < n - 1 ? "done" : i === n - 1 ? "active" : "pending",
+        ...(i < n ? { started_ms: T0 + (i + 1) * STEP_MS } : {}), ...(i < n - 1 ? { ended_ms: T0 + (i + 2) * STEP_MS } : {}),
+      })),
     };
     const step = open?.steps[n - 1];
     const key = step ? (Object.keys(STEP_COMMAND) as (keyof typeof STEP_COMMAND)[]).find((k) => STEP_LABEL[k] === step.label) ?? null : null;
@@ -223,7 +227,7 @@ function build(): { moments: Moment[]; coach: Moment } {
       // 지켜보기: 세운 목표와 그 줄(메시지 상자), 계획 순간: 떠난 뒤 판단이 같은 행동을 골라 씀
       ...(n === 0
         ? [{ type: "goal", goal } as ServerMessage, { type: "thought", messages: [{ id: `goal-1@${T0 - 10_000}`, text: goalText, at_ms: T0 - 10_000, decision: "goal-1" }] } as ServerMessage]
-        : [{ type: "goal", goal: { ...goal, status: "used", gone_ms: T0, fired_ms: T0 } } as ServerMessage]),
+        : [{ type: "goal", goal: { ...goal, status: "used", gone_ms: T0, fired_ms: T0, ended_ms: T0 + STEP_MS } } as ServerMessage]),
     ];
     return { index: n, eye, messages };
   });

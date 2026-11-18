@@ -200,7 +200,7 @@ export class Starter extends Part {
     core.contents.dropIdle();
     core.finder.drop(EXEC_TEXT.superseded);
     core.run = run;
-    this.o.plans.onDecision(r.plan.view);
+    this.o.plans.onDecision(r.plan.view, this.clock.now());
     core.step(run, "planned");
     this.tryStart(run, false);
   }

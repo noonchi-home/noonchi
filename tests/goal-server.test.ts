@@ -10,7 +10,7 @@ import { goalRecorder, publishGoal } from "../src/server/home/act.js";
 const EPOCH = { boot: "b1", home: "h#1" };
 const GOAL: PendingGoal = {
   id: "goal-1", action: "컵 치우기", state: "left_cup", trigger: "t", object: "cup_1", cls: "cup", status: "armed", prep: "waiting", reason: null, text: "컵을 두고 자리를 뜨면 컵을 치울게요",
-  armed_ms: 1, ready_ms: null, gone_ms: null, fired_ms: null, plan: null,
+  armed_ms: 1, ready_ms: null, gone_ms: null, fired_ms: null, ended_ms: null, plan: null,
 };
 
 describe("미리 세운 목표 잇기", () => {

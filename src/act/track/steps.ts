@@ -169,7 +169,7 @@ export class Steps extends Part {
       again: false, device: "idle", gen: r.gen + 1, looks: 0, lookAt: Number.NEGATIVE_INFINITY, stepEnd: new AbortController(),
       strays: 0, strayAt: Number.NEGATIVE_INFINITY, strayNear: null, told: null, helped: false, quietOn: false,
     });
-    this.o.plans.setSteps(r.plan.view.id, { ...(prev ? { [prev.id]: "done" as const } : {}), [step.id]: "active" });
+    this.o.plans.setSteps(r.plan.view.id, { ...(prev ? { [prev.id]: "done" as const } : {}), [step.id]: "active" }, now);
     this.window(r, windowOf(step));
     this.focus(r, step);
     if (step.kind === "wait" || step.kind === "device") this.core.quietFrom = now;
@@ -471,7 +471,7 @@ export class Steps extends Part {
       r.sent = null;
       this.core.answers.send({ type: "command_clear", id: r.plan.view.id });
     }
-    if (close) this.o.plans.close(r.plan.view.id, close);
+    if (close) this.o.plans.close(r.plan.view.id, close, this.clock.now());
     // 손으로 켠 위험 가전이 작동 끝남 확인 전에 닫혔다: 가전마다 끄기 안내 줄로 옮기고 차례로 띄운다(확인된 꺼짐으로만 하나씩 지운다)
     this.core.safety.handOver(r);
     r.ends.clear();
