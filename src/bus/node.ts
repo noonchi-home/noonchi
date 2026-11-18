@@ -176,17 +176,28 @@ export class BusNode {
     for (const settle of [...this.#parked]) settle(false);
   }
 
-  /** 닫기 전 비우기: 한 간격(SETTLE_GAP_MS) 동안 새로 처리한 일이 없고 줄이 비고 more()가 참일 때까지 기다린다
+  /** 닫기 전 비우기: 한 간격(SETTLE_GAP_MS) 동안 새로 처리한 일이 없고, 줄이 비고, 상태를 기다리며 내려놓은 메시지(defer)도 없고, more()가 참일 때까지 기다린다
    *  (메시지 사이 잠깐 빈 틈을 다 비었다고 보지 않는다: 통로로 오는 중인 메시지도 받는다).
-   *  ms쯤(간격 돌림 수로 센다: 시험 시계가 멈춰 있어도 걸리지 않는다) 지나면 기다리지 않고 false. 타이머는 노드 시계의 after를 쓴다. */
+   *  기한 ms(노드 시계의 after)가 지나면 줄이 아직 차 있어도 기다림을 끊고 false. */
   async settled(ms: number, more: () => boolean = () => true): Promise<boolean> {
-    for (let round = 0; round * SETTLE_GAP_MS < ms; round++) {
-      await this.idle();
-      const seen = this.#handled;
-      await new Promise<void>((r) => { this.#clock.after(SETTLE_GAP_MS, r); });
-      if (!this.busy() && more() && this.#handled === seen) return true;
+    let expired = false;
+    let wake!: () => void;
+    const deadline = new Promise<void>((r) => { wake = r; });
+    const timers = [this.#clock.after(ms, () => { expired = true; wake(); })];
+    const gap = () => new Promise<void>((r) => { timers.push(this.#clock.after(SETTLE_GAP_MS, r)); });
+    try {
+      while (!expired) {
+        await Promise.race([this.idle(), deadline]);
+        if (expired) break;
+        const seen = this.#handled;
+        await Promise.race([gap(), deadline]);
+        if (expired) break;
+        if (!this.busy() && this.#parked.size === 0 && more() && this.#handled === seen) return true;
+      }
+      return false;
+    } finally {
+      for (const cancel of timers) cancel();
     }
-    return false;
   }
 
   /** 시험·재생 장벽: 줄이 빌 때까지 기다린다. */

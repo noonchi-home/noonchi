@@ -28,7 +28,8 @@ describe("기록 DB 같음 시험의 모양", () => {
 
   it("주기 판단과 그 처리 메모(대기·같은 행동)는 몇 번·어디에 끼든 있는지만 본다", () => {
     const a = day([["decision", "대기", "pam-1"], ["execution", "대기", "plan:pam-1"], ...plan, ["decision", "컵 치우기", "pam-3"], ["execution", "같은 행동을 진행 중", "plan:pam-3"], ["execution", "완료", "plan:pam-2"]]);
-    const b = day([...plan, ["execution", "완료", "plan:pam-2"], ["decision", "대기", "pam-1"], ["execution", "대기", "plan:pam-1"], ["decision", "대기", "pam-4"], ["decision", "컵 치우기", "pam-3"], ["execution", "같은 행동을 진행 중", "plan:pam-3"]]);
+    // 같은 행동 판단(같은 행동을 진행 중)은 그 계획이 도는 동안에만 나온다: 대기 판단만 자리를 옮긴다
+    const b = day([...plan, ["decision", "대기", "pam-1"], ["execution", "대기", "plan:pam-1"], ["decision", "대기", "pam-4"], ["decision", "컵 치우기", "pam-3"], ["execution", "같은 행동을 진행 중", "plan:pam-3"], ["execution", "완료", "plan:pam-2"]]);
     expect(a).toEqual(b);
     expect(day(plan)).not.toEqual(a);
   });
@@ -41,6 +42,15 @@ describe("기록 DB 같음 시험의 모양", () => {
     expect(rows).not.toContain("[있음] decision 컵 치우기 valid");
     expect(rows).not.toContain("[있음] execution 같은 행동을 진행 중");
     expect(rows).toEqual(day([...plan, ["decision", "에어컨 켜기", "pam-4"], ["decision", "대기", "pam-5"]]));
+  });
+
+  it("같은 행동 주기 판단을 빼는 것은 그 계획이 진행 중인 구간뿐이다: 계획 전·끝난 뒤의 같은 행동 판단은 [있음]에 남는다(Codex cbdb6ec P3)", () => {
+    const before = day([["decision", "컵 치우기", "pam-1"], ...plan, ["execution", "완료", "plan:pam-2"]]);
+    expect(before).toContain("[있음] decision 컵 치우기 valid");
+    const after = day([...plan, ["execution", "완료", "plan:pam-2"], ["decision", "컵 치우기", "pam-4"]]);
+    expect(after).toContain("[있음] decision 컵 치우기 valid");
+    const during = day([...plan, ["decision", "컵 치우기", "pam-3"], ["execution", "완료", "plan:pam-2"]]);
+    expect(during).not.toContain("[있음] decision 컵 치우기 valid");
   });
 
   it("판단 id가 날마다 다시 1부터라 대기 판단이 다른 날 계획 id와 겹쳐도 대기 판단은 [있음]에 남는다(대기는 계획을 시작하지 않는다)", () => {

@@ -58,6 +58,8 @@ export class PamLlm {
   }
 
   async complete(messages: PamMessage[], g: Generation, role: Role, timeoutMs: number, call: CallOptions = {}): Promise<string> {
+    // 막힌 주소(OpenRouter)는 부르지 않는다: 판단·반성은 PAM 준비 안 됨(연결 오류)으로 끝난다
+    if (this.s.blocked) throw new PamLinkError(`PAM 준비 안 됨: ${this.s.blocked}`);
     const body = this.body(messages, g, role);
     checkBudget(messages, this.s.maxTokens[role], this.s.maxModelLen);
     let reply: unknown;
