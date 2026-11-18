@@ -333,11 +333,13 @@ export class PlanDraft {
     const steps: AgentStep[] = this.added.map((a, i) => ({ ...a.step, id: `${id}:${i + 1}` }));
     // 내려놓기 물건은 앞 집기의 World State 물건이다(없으면 그것으로 채움). 집기·내려놓기 조건의 물건도 그 물건이다
     for (const [i, s] of steps.entries()) {
-      // 보이는 물건 집기 앞 가기는 그 물건이 놓인 면(평면도 id)으로 간다(2026-11-19 tall plan1: 컵이 식탁 위인데 탁자로 가는 계획이 통과해 다시 검사도 넘고 판이 실패했다)
-      const laid = s.kind === "pick" && s.object ? worldObject(this.ctx.world, s.object)?.surface ?? null : null;
+      // 보이는 물건 집기 앞 가기는 그 물건이 놓인 자리(평면도 id)로 간다(2026-11-19 tall plan1: 컵이 식탁 위인데 탁자로 가는 계획이 통과해 다시 검사도 넘고 판이 실패했다).
+      // 자리는 계획 안에서 이어 간다: 그 물건을 앞 단계에서 놓았으면 그 놓은 자리, 아니면 World State 면(Codex P2: 전자레인지에 넣었다 꺼내는 계획을 처음 면으로 버렸다)
+      const put = s.kind === "pick" && s.object ? steps.slice(0, i).map((x, k) => ({ x, k })).reverse().find(({ x }) => x.kind === "place" && x.object === s.object) : undefined;
+      const laid = s.kind === "pick" && s.object ? put?.x.target ?? worldObject(this.ctx.world, s.object)?.surface ?? null : null;
       const go = laid && floor.objects.has(laid) ? steps.slice(0, i).map((x) => x.kind).lastIndexOf("go") : -1;
       if (go >= 0 && steps[go]!.target !== laid) {
-        return { ok: false, error: `${go + 1}번 go target(${steps[go]!.target})은 ${i + 1}번에서 집을 물건 ${s.object}이 놓인 면이 아닙니다. 그 면 ${laid}로 가세요.` };
+        return { ok: false, error: `${go + 1}번 go target(${steps[go]!.target})은 ${i + 1}번에서 집을 물건 ${s.object}이 놓인 자리가 아닙니다${put ? `(${put.k + 1}번에서 놓은 자리)` : ""}. 그 자리 ${laid}로 가세요.` };
       }
       // 보이는 물건 집기: 조건이 보는 물건과 들고 있음(person_holding) 물건은 그 물건 id나 그 종류만
       if (s.kind === "pick" && s.object && s.until && [...objectNames(s.until), ...heldNames(s.until)].some((n) => n !== s.object && n !== this.clsOf(s.object!))) {

@@ -55,7 +55,10 @@ describe("계획 검사: 한 차례에 틀린 단계를 모두 돌려준다", ()
 describe("plan1 차례 기록에서 찾은 첫 차례 실수", () => {
   const SCENE_TT = {
     ...SMALL_SCENE,
-    objects: [...SMALL_SCENE.objects.slice(0, 1), { id: "coffee_table_1", type: "coffee_table", room: "kitchen", plan: { position: [5, 3] } }, ...SMALL_SCENE.objects.slice(1)],
+    objects: [
+      ...SMALL_SCENE.objects.slice(0, 1), { id: "coffee_table_1", type: "coffee_table", room: "kitchen", plan: { position: [5, 3] } },
+      { id: "microwave_1", type: "microwave", room: "kitchen", plan: { position: [7.6, 0.2] } }, ...SMALL_SCENE.objects.slice(1),
+    ],
   };
   const ttCtx = (objects: WorldObject[] = [CUP]) => planContext({ decision: DECISION, world: { ...WORLD, objects }, floor: floorPlanFrom(structuredClone(SCENE_TT)), nowIso: "t" });
   /** plan1 glass 1차례(act 없음, item "cup")를 이 집 id로. */
@@ -111,17 +114,61 @@ describe("plan1 차례 기록에서 찾은 첫 차례 실수", () => {
     expect(r.ok ? "" : r.error).toMatch(/^1번 단계: go target은 평면도 물건 id여야 합니다\(방 id 아님\): kitchen\. 그 방 물건: table_1, /);
   });
 
-  it("집기 앞 가기는 그 물건이 놓인 면으로 간다: 다른 면으로 가는 계획은 버리고 그 면 id를 말한다(다시 내기 검사도 같다)", () => {
+  it("집기 앞 가기는 그 물건이 놓인 자리로 간다: 다른 면으로 가는 계획은 버리고 그 자리 id를 말한다(다시 내기 검사도 같다)", () => {
     const steps = cupSteps(IDS);
     const wrong = [{ ...steps[0]!, target: "coffee_table_1", until: { phone_near: "coffee_table_1" } }, ...steps.slice(1)];
     const r = new PlanDraft(ttCtx()).submit({ steps: wrong });
-    expect(r.ok ? "" : r.error).toMatch(/^1번 go target\(coffee_table_1\)은 2번에서 집을 물건 cup_1이 놓인 면이 아닙니다\. 그 면 table_1로 가세요\./);
+    expect(r.ok ? "" : r.error).toMatch(/^1번 go target\(coffee_table_1\)은 2번에서 집을 물건 cup_1이 놓인 자리가 아닙니다\. 그 자리 table_1로 가세요\./);
     expect(new PlanDraft(ttCtx()).submit({ steps }).ok).toBe(true);
     // 미리 만든 계획을 다시 낼 때 컵이 다른 면에 있으면 그 계획을 쓰지 않는다
     const made = new PlanDraft(ttCtx()).submit({ steps });
     if (!made.ok) throw new Error(made.error);
     const moved = resubmit(made.plan, ttCtx([{ ...CUP, surface: "coffee_table_1", surface_label: "탁자", position: [5, 0.45, 3] }]));
-    expect(moved.ok ? "" : moved.error).toMatch(/^1번 go target\(table_1\)은 2번에서 집을 물건 cup_1이 놓인 면이 아닙니다\. 그 면 coffee_table_1로 가세요\./);
+    expect(moved.ok ? "" : moved.error).toMatch(/^1번 go target\(table_1\)은 2번에서 집을 물건 cup_1이 놓인 자리가 아닙니다\. 그 자리 coffee_table_1로 가세요\./);
+  });
+
+  // Codex 검토(2fa3bbb..59d8570 P2): 처음 World State 면으로만 견줘, 앞 단계에서 옮긴 물건을 다시 집는 정상 계획을 「처음 면으로 가세요」로 버렸다
+  describe("계획 안에서 물건 자리를 이어 간다: 처음 집기는 World State 면, 다시 집기는 앞 놓기 자리", () => {
+    const steps = cupSteps(IDS);
+    const pick = steps[1]!;
+    const until = (to: string) => ({ phone_near: to });
+    /** 식탁 컵을 탁자에 옮겨 놓고, 탁자에서 다시 집어 싱크대에 넣기. */
+    const moveTwice = (repickFrom: string) => [
+      steps[0]!, pick,
+      { kind: "go", act: "가기", target: "coffee_table_1", until: until("coffee_table_1"), timeout_s: 120 },
+      { kind: "place", act: "올리기", target: "coffee_table_1", object: "cup_1", timeout_s: 120 },
+      ...(repickFrom === "coffee_table_1" ? [] : [{ kind: "go", act: "가기", target: repickFrom, until: until(repickFrom), timeout_s: 120 }]),
+      pick, steps[2]!, steps[3]!,
+    ];
+    /** 식탁 컵을 전자레인지에 넣었다가 꺼내 싱크대에 넣기. */
+    const inAndOut = [
+      steps[0]!, pick,
+      { kind: "go", act: "가기", target: "microwave_1", until: until("microwave_1"), timeout_s: 120 },
+      { kind: "place", act: "넣기", target: "microwave_1", object: "cup_1", timeout_s: 120 },
+      { ...pick, act: "꺼내기" }, steps[2]!, steps[3]!,
+    ];
+
+    it("옮겨 놓고 다시 옮기기: 탁자에서 다시 집는 계획은 받고, 다시 집으러 처음 면(식탁)으로 가면 앞 놓기 자리(탁자)를 말하며 버린다", () => {
+      expect(new PlanDraft(ttCtx()).submit({ steps: moveTwice("coffee_table_1") })).toMatchObject({ ok: true });
+      const r = new PlanDraft(ttCtx()).submit({ steps: moveTwice("table_1") });
+      expect(r.ok ? "" : r.error).toMatch(/^5번 go target\(table_1\)은 6번에서 집을 물건 cup_1이 놓인 자리가 아닙니다\(4번에서 놓은 자리\)\. 그 자리 coffee_table_1로 가세요\./);
+    });
+
+    it("넣었다 꺼내기: 전자레인지에 넣은 컵을 그 자리에서 꺼내는 계획은 받는다", () => {
+      const r = new PlanDraft(ttCtx()).submit({ steps: inAndOut });
+      expect(r.ok ? "" : r.error).toBe("");
+    });
+
+    it("다시 내기(resubmit)도 같은 규칙: 지금 World State로 처음 집기만 견주고, 다시 집기는 앞 놓기 자리와 견준다", () => {
+      for (const plan of [moveTwice("coffee_table_1"), inAndOut]) {
+        const made = new PlanDraft(ttCtx()).submit({ steps: plan });
+        if (!made.ok) throw new Error(made.error);
+        expect(resubmit(made.plan, ttCtx())).toMatchObject({ ok: true });
+        // 다시 낼 때 컵이 이미 탁자에 있으면 처음 가기(식탁)가 틀린다
+        const moved = resubmit(made.plan, ttCtx([{ ...CUP, surface: "coffee_table_1", surface_label: "탁자", position: [5, 0.45, 3] }]));
+        expect(moved.ok ? "" : moved.error).toMatch(/^1번 go target\(table_1\)은 2번에서 집을 물건 cup_1이 놓인 자리가 아닙니다\. 그 자리 coffee_table_1로 가세요\./);
+      }
+    });
   });
 });
 
