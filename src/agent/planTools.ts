@@ -92,8 +92,15 @@ export interface AgentStep {
 export interface AgentPlan { view: PlanView; steps: AgentStep[]; task: string; submitted?: unknown }
 
 /** 계획 입력의 미리 세운 목표(src/act/track/goal.ts): 사람이 아직 대상을 쓰는 동안 만드는 계획이다. trigger는 그 습관 규칙의 트리거,
- *  on은 지금 상태에서 그 상태로 가는 글(없으면 null), object는 목표 물건(World State id): 계획 검사가 같은 종류의 다른 물건을 쓰는 단계를 버린다. */
-export interface PlanAhead { trigger: string; on: string | null; object: string }
+ *  on은 지금 상태에서 그 상태로 가는 글(없으면 null), object는 목표 물건(World State id): 계획 검사가 같은 종류의 다른 물건을 쓰는 단계를 버린다.
+ *  stand: 목표 물건이 아직 면 위에 놓인 World State 물건이 아닐 때 사람이 다 쓰고 둘 자리에 둔 대신 물건(id는 object). 계획 모드가 World State 물건 맨 앞에 넣는다(withStand). */
+export interface PlanAhead { trigger: string; on: string | null; object: string; stand?: WorldObject }
+
+/** 대신 물건(ahead.stand)이 있으면 그 물건을 World State 물건 맨 앞에 넣은 계획 맥락(같은 id 물건은 뺀다). 없으면 그대로. */
+export function withStand(ctx: PlanContext): PlanContext {
+  const stand = ctx.ahead?.stand;
+  return stand ? { ...ctx, world: { ...ctx.world, objects: [stand, ...ctx.world.objects.filter((o) => o.id !== stand.id)] } } : ctx;
+}
 
 /** 계획 결과: 통과한 계획, 또는 버린 까닭. */
 export type PlanResult = { ok: true; plan: AgentPlan } | { ok: false; error: string };
@@ -600,12 +607,14 @@ export function planTools(draft: PlanDraft): ToolDef[] {
 /** 미리 만든 계획을 지금 맥락(새 판단·World State·평면도·손 자리·치운 물건)으로 다시 검사해 그 판단의 계획으로 낸다. 모델을 부르지 않는다.
  *  계획을 새로 만들지 않는다: 모델이 낸 submit_plan 인자를 그대로 다시 내고, 그 안에서 World State 물건 id와 똑같은 글만 옮김 표시(followed_by) 끝 id로 바꾼다.
  *  계획 id·단계 id는 새 판단 id로, 경로는 지금 손 자리에서 다시 잇는다. 검사를 못 넘으면 까닭을 낸다(부르는 쪽이 계획 모드로 돌아간다). */
-export function resubmit(plan: AgentPlan, ctx: PlanContext): PlanResult {
+export function resubmit(plan: AgentPlan, ctx: PlanContext, rename?: Readonly<Record<string, string>>): PlanResult {
   if (plan.submitted === undefined) return { ok: false, error: "다시 낼 submit_plan 인자가 없음" };
   if (plan.task !== ctx.task.name) return { ok: false, error: `다른 할 일의 계획: ${plan.task}` };
   const ids = new Set(ctx.world.objects.map((o) => o.id));
+  // rename: 미리 만든 계획의 물건 id → 지금 묶을 World State id(대신 물건 cup_0 → 확정된 컵, 같은 컵을 다른 id로 잡았을 때). 바꾼 뒤 옮김 표시를 따라간다
+  const named = (v: string) => (rename && Object.hasOwn(rename, v) ? rename[v]! : v);
   const swap = (v: unknown): unknown =>
-    typeof v === "string" ? (ids.has(v) ? followedId(ctx.world, v) : v)
+    typeof v === "string" ? (ids.has(named(v)) ? followedId(ctx.world, named(v)) : named(v))
       : Array.isArray(v) ? v.map(swap)
         : v && typeof v === "object" ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, swap(x)])) : v;
   const r = new PlanDraft(ctx).submit(swap(plan.submitted));

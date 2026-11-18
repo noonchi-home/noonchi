@@ -72,6 +72,7 @@ import { EXEC_TEXT, type TellMode } from "../labels.js";
 import { Steps, type Stall } from "./steps.js";
 import { HUMAN_KINDS, type AgentPlan, type ApprovalBook, type PlanAhead, type PlanResult, type ToolResult } from "../../agent/index.js";
 import type { PamMemory } from "../../brain/index.js";
+import type { PlaneSurface } from "../../world/index.js";
 import type { PendingGoal } from "../../contract/goal.js";
 import type { CheckResult } from "../check.js";
 import { QUIET_HINT_MS, type LessonBook } from "../lessons.js";
@@ -117,8 +118,11 @@ export interface TrackerOptions {
   /** 습관 FSM: 그날 기억(판본)과 판단이 마지막으로 맞은 상태(src/brain/decide.ts fsmState). 사람이 쓰는 것을 보면 한 걸음 앞 규칙으로 목표를 세운다(goal.ts).
    *  없으면 목표를 세우지 않는다. */
   habit?: () => { memory: PamMemory; kind: "list" | "fsm"; state: string | null | undefined; version: number } | null;
-  /** 미리 만든 계획을 지금 판단·World State로 다시 검사해 그 판단의 계획으로 낸다(src/agent/planTools.ts resubmit). 없으면 미리 만든 계획을 쓰지 않는다. */
-  reuse?: (d: DecisionRecord, plan: AgentPlan) => PlanResult;
+  /** 미리 만든 계획을 지금 판단·World State로 다시 검사해 그 판단의 계획으로 낸다(src/agent/planTools.ts resubmit). 없으면 미리 만든 계획을 쓰지 않는다.
+   *  rename: 계획의 물건 id → 지금 묶을 World State id(대신 물건·같은 컵의 다른 id, goal.ts take). */
+  reuse?: (d: DecisionRecord, plan: AgentPlan, rename?: Readonly<Record<string, string>>) => PlanResult;
+  /** 트윈 면(식탁·책상·조리대·싱크대). 미리 세운 목표가 컵이 놓이기 전에 사람 곁 면을 다 쓰고 둘 자리로 본다(goal.ts useSpot). 없으면 후보를 본 면만 쓴다. */
+  surfaces?: () => PlaneSurface[];
   /** 목표가 바뀔 때(세움·미리 만들기·사람 떠남·씀·버림): 서버가 /brain/goal_changes·/brain/goal과 대시보드로 보낸다. */
   onGoal?: (g: PendingGoal) => void;
   /** 목표의 사람이 떠났다: 판단을 다음 판단 타이머에 바로 부르게 한다(src/brain/decide.ts nudge). */

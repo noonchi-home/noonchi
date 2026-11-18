@@ -172,10 +172,12 @@ export function startAct(core: HomeCore): (event: BrainLog) => void {
     // 미리 세운 목표(src/act/track/goal.ts): PAM이 쓰는 습관 기억(마지막 판단 때 판본)과 마지막으로 맞은 상태로 목표를 세우고, 미리 만든 계획은 PAM 판단으로 다시 검사해 쓴다.
     // 목표는 /brain/goal_changes·/brain/goal과 대시보드로 보내고, 사람이 떠나면 판단을 다음 타이머(250ms)에 바로 부른다
     habit: () => decide.habit(),
-    reuse: (d, plan) => {
+    reuse: (d, plan, rename) => {
       const task = taskOf(d.action);
-      return task ? resubmit(plan, planCtx(d, task)) : { ok: false, error: "행동 목록에 없는 행동" };
+      return task ? resubmit(plan, planCtx(d, task), rename) : { ok: false, error: "행동 목록에 없는 행동" };
     },
+    // 컵이 놓이기 전 미리 만들 때 사람 곁 면을 다 쓰고 둘 자리로 본다(goal.ts useSpot)
+    surfaces: core.surfaces,
     onGoal: (g) => {
       publishGoal(core, g);
       recordGoal(g, now());

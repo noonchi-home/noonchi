@@ -21,7 +21,8 @@ import { CUP_FSM_MEMORY } from "../src/brain/decision.js";
 import type { BrainLog, DecisionRecord } from "../src/contract/events.js";
 import type { PendingGoal } from "../src/contract/goal.js";
 import type { PlannedCommandMessage } from "../src/contract/phone.js";
-import type { WorldObject, WorldView } from "../src/contract/world.js";
+import type { WorldObject, WorldSighting, WorldView } from "../src/contract/world.js";
+import type { PlaneSurface } from "../src/world/index.js";
 import { POSE_FALL } from "../src/world/vocab.js";
 import { smallFloor } from "./helpers/floor.js";
 import { planContext, planTurn, startFakePlanner, testPlanner, type FakePlanner } from "./helpers/planner.js";
@@ -51,19 +52,23 @@ const pam = (id: string, seq: number, atMs: number, action: string | null = "컵
 /** 실행 추적 + 미리 세운 목표. person(who)로 사람을 바꾸고(나타나면 since_ms, 사라지면 그때가 since_ms), setObjects로 물건을 바꾼다.
  *  tick은 시계를 ms 움직이고, 있는 물건을 지금 본 것으로 고친 뒤 tracker.tick을 부른다. gone은 World State 사람 사라짐 변화처럼 onWorld를 부른다.
  *  승인 기억은 비어 있다(처음 하는 일): 목표로 시작한 실행은 묻지 않는다. */
-function goalSetup(o: { over?: Partial<TrackerOptions>; state?: string | null } = {}) {
+function goalSetup(o: { over?: Partial<TrackerOptions>; state?: string | null; objects?: WorldObject[]; where?: [number, number] } = {}) {
   const clock = { t: 10_000, now() { return this.t; } };
   let who: Who = null;
   let since = 0;
   let goneAt = 0;
-  let objects: WorldObject[] = [cupOn({ seen: clock.t })];
+  let objects: WorldObject[] = o.objects ?? [cupOn({ seen: clock.t })];
+  let sightings: WorldSighting[] = [];
   const w = (): WorldView => {
     const facts = who
       ? { ...(who.act ? { activity: fact(who.act, clock.t) } : {}), ...(who.holding ? { holding: fact("holding_object", clock.t) } : {}), ...(who.posture ? { posture: fact(who.posture, clock.t) } : {}) }
       : {};
     return {
-      at_ms: clock.t, objects, fixtures: [], devices: [], eye: null, frame_ms: clock.t, vlm_missing: 0, yolo_missing: 0,
-      person: { visible: !!who, since_ms: who ? since : goneAt, last_seen_ms: who ? clock.t : null, count: who ? 1 : 0, room: null, room_label: null, position: null, near: [], holding: who?.holding ?? [], position_ms: null, answered_ms: null, facts },
+      at_ms: clock.t, objects, sightings, fixtures: [], devices: [], eye: null, frame_ms: clock.t, vlm_missing: 0, yolo_missing: 0,
+      person: {
+        visible: !!who, since_ms: who ? since : goneAt, last_seen_ms: who ? clock.t : null, count: who ? 1 : 0, room: null, room_label: null, position: o.where ?? null, near: [],
+        holding: who?.holding ?? [], position_ms: o.where ? clock.t : null, answered_ms: null, facts,
+      },
     };
   };
   const goals: PendingGoal[] = [];
@@ -79,7 +84,7 @@ function goalSetup(o: { over?: Partial<TrackerOptions>; state?: string | null } 
     plans, world: w, floor: () => plans.floor(), planGapMs: 0, approvals, clock, tasks: () => NOONCHI, locate: (id) => PLACES[id],
     planner: (d, signal, ahead) => planner.plan(ctx(d, ahead), signal),
     check: (d, p, seenSince) => checkPlan({ decision: d, tasks: NOONCHI, plan: p, world: w(), nowMs: clock.t, staleMs: 3000, mode: "test", ...(seenSince !== undefined ? { seenSince } : {}) }),
-    reuse: (d, plan) => resubmit(plan, ctx(d)),
+    reuse: (d, plan, rename) => resubmit(plan, ctx(d), rename),
     habit: () => ({ memory: CUP_FSM_MEMORY, kind: "fsm", state: o.state === undefined ? "drinking" : o.state, version: 1 }),
     onGoal: (g) => goals.push(g), nudge: () => { nudged++; }, thought: (text) => thoughts.push(text),
     toPhone: (m) => phone.push(m), emit: (l) => logs.push(l), ...o.over,
@@ -103,11 +108,12 @@ function goalSetup(o: { over?: Partial<TrackerOptions>; state?: string | null } 
     t.onWorld([{ kind: "person_gone", at_ms: clock.t, subject: "person", text: "사람 안 보임", meaningful: true }]);
   };
   const setObjects = (f: (xs: WorldObject[]) => WorldObject[]) => { objects = f(objects); };
+  const setSightings = (xs: WorldSighting[]) => { sightings = xs; };
   const decide = async (d: DecisionRecord) => { t.onDecision(d); await t.idle(); };
   const commands = () => phone.flatMap((m) => (m.type === "command" ? [m] : []));
   const planCalls = () => llm.bodies().length;
   const states = () => goals.map((g) => `${g.status}/${g.prep}`);
-  return { t, clock, tick, person, gone, setObjects, goals, states, thoughts, logs, phone, commands, decide, planCalls, nudged: () => nudged, world: w };
+  return { t, clock, tick, person, gone, setObjects, setSightings, goals, states, thoughts, logs, phone, commands, decide, planCalls, nudged: () => nudged, world: w, plans };
 }
 
 describe("미리 세운 목표: 세우기와 미리 만들기", () => {
@@ -661,5 +667,126 @@ describe("미리 세운 목표: 준비한 계획을 버린 까닭", () => {
     s.gone();
     expect(s.goals.at(-1)).toMatchObject({ status: "dropped", reason: "took" });
     expect(s.goals.at(-1)).not.toHaveProperty("error");
+  });
+});
+
+/** 식탁 면(test 물건 면 id t, 평면도 table_1 자리 [7, 3])과 싱크대 면. */
+const SURFACES: PlaneSurface[] = [
+  { id: "t", label: "식탁", center: [7, 3], top: 0.75, radius: 0.6, kind: "table" },
+  { id: "s", label: "싱크대", center: [5, 1], top: 0.9, radius: 0.5, kind: "sink" },
+];
+/** 진행 중 계획의 집기 단계 대상 물건 id. */
+const pickedOf = (s: ReturnType<typeof goalSetup>) => s.plans.current()?.steps.find((x) => x.label.includes("집기"))?.target?.objectId;
+
+// 2026-11-18 d1 세 판: 컵이 확정 물건(VLM 2장)이 된 뒤에야 미리 만들기를 시작해, 컵을 내려놓고 1~2초 안에 떠나는 판에서 사람이 떠나기 전에 계획이 없었다
+describe("미리 세운 목표: 컵이 놓이기 전 미리 만들기(대신 물건)", () => {
+  it("컵이 아직 World State 물건이 아니어도 사람 곁 면(식탁)에 둘 것으로 보고 세우자마자 미리 만든다. 사람이 떠난 뒤 그 면에 컵이 확정되면 계획 모드를 다시 부르지 않고 그 컵 id로 묶어 바로 시작한다", async () => {
+    const s = goalSetup({ objects: [], where: [7.8, 3.2], over: { surfaces: () => SURFACES } });
+    const before = s.planCalls();
+    s.person({ act: "drinking" });
+    s.tick();
+    expect(s.t.goal()).toMatchObject({ status: "armed", prep: "planning", object: null });
+    await s.t.idle();
+    expect(s.t.goal()).toMatchObject({ prep: "ready" });
+    s.gone();
+    expect(s.t.goal()?.status).toBe("armed");
+    s.setObjects(() => [cupOn({ id: "cup_3", seen: s.clock.t })]);
+    s.tick();
+    expect(s.t.goal()).toMatchObject({ status: "fired", object: "cup_3" });
+    await s.decide(pam("pam-2", 2, s.clock.t));
+    expect(s.planCalls() - before).toBe(1);
+    expect(s.commands()[0]).toMatchObject({ id: "plan:pam-2", text: "식탁으로 가 주세요" });
+    expect(pickedOf(s)).toBe("cup_3");
+    expect(s.goals.at(-1)).toMatchObject({ status: "used", object: "cup_3" });
+  });
+
+  it("사람 자리를 몰라도 이번 등장에서 그 종류 후보를 손 밖에서 본 면이 있으면 그 면으로 미리 만든다. 둘 다 없으면 기다린다", async () => {
+    const s = goalSetup({ objects: [], over: { surfaces: () => SURFACES } });
+    s.person({ act: "drinking" });
+    s.tick();
+    expect(s.t.goal()?.prep).toBe("waiting");
+    s.setSightings([{ cls: "cup", position: [7.1, 0.75, 3.1], surface: "t", surface_label: "식탁", at_ms: s.clock.t, in_hand: false }]);
+    s.tick();
+    expect(s.t.goal()?.prep).toBe("planning");
+  });
+
+  it("사람 곁 면이 싱크대뿐이거나 멀면 미리 만들지 않는다", async () => {
+    const s = goalSetup({ objects: [], where: [5.2, 1.1], over: { surfaces: () => SURFACES } });
+    s.person({ act: "drinking" });
+    s.tick();
+    expect(s.t.goal()?.prep).toBe("waiting");
+    const far = goalSetup({ objects: [], where: [12, 9], over: { surfaces: () => SURFACES } });
+    far.person({ act: "drinking" });
+    far.tick();
+    expect(far.t.goal()?.prep).toBe("waiting");
+  });
+
+  it("컵이 미리 만든 면이 아닌 곳에 놓이면 미리 만든 계획을 쓰지 않고 moved로 버리며 계획 모드로 만든다", async () => {
+    const s = goalSetup({ objects: [], where: [7.8, 3.2], over: { surfaces: () => SURFACES } });
+    s.person({ act: "drinking" });
+    s.tick();
+    await s.t.idle();
+    s.gone();
+    s.setObjects(() => [cupOn({ id: "cup_3", seen: s.clock.t, surface: "sofa" })]);
+    s.tick();
+    const before = s.planCalls();
+    await s.decide(pam("pam-2", 2, s.clock.t));
+    expect(s.goals.find((g) => g.status === "dropped")).toMatchObject({ reason: "moved" });
+    expect(s.planCalls() - before).toBe(1);
+  });
+});
+
+// 2026-11-18 mug d1: 한 머그를 cup_2(내려놓을 때)·cup_1(다시 볼 때)로 잡았고, 사람이 떠난 뒤 cup_2가 사라지자 머그는 식탁에 있는데 「버림 · 들고 나감」이 났다
+describe("미리 세운 목표: 목표 컵이 사라져도 같은 면에 같은 종류 컵이 있으면 들고 나감이 아니다", () => {
+  it("사람이 떠난 뒤 목표 컵(cup_2)이 사라져도 그 면에 다른 컵(cup_1)이 보이면 그 컵으로 이어 가고, 미리 만든 계획을 그 컵 id로 묶어 바로 시작한다", async () => {
+    const s = goalSetup({ objects: [] });
+    s.setObjects(() => [cupOn({ id: "cup_2", seen: s.clock.t })]);
+    const before = s.planCalls();
+    s.person({ act: "drinking" });
+    s.tick();
+    await s.t.idle();
+    expect(s.t.goal()).toMatchObject({ prep: "ready", object: "cup_2" });
+    s.setObjects((xs) => [...xs, cupOn({ id: "cup_1", seen: s.clock.t })]);
+    s.tick();
+    s.gone();
+    expect(s.t.goal()).toMatchObject({ status: "fired", object: "cup_2" });
+    s.setObjects(() => [cupOn({ id: "cup_2", seen: s.clock.t - 3000, status: "gone" }), cupOn({ id: "cup_1", seen: s.clock.t })]);
+    s.tick();
+    expect(s.t.goal()).toMatchObject({ status: "fired", object: "cup_1" });
+    await s.decide(pam("pam-2", 2, s.clock.t));
+    expect(s.goals.some((g) => g.reason === "took")).toBe(false);
+    expect(s.planCalls() - before).toBe(1);
+    expect(s.commands()[0]).toMatchObject({ id: "plan:pam-2", text: "식탁으로 가 주세요" });
+    expect(pickedOf(s)).toBe("cup_1");
+  });
+
+  it("그 면에 같은 종류 컵이 하나도 없으면 들고 나감(took)이다", async () => {
+    const s = goalSetup({ objects: [] });
+    s.setObjects(() => [cupOn({ id: "cup_2", seen: s.clock.t })]);
+    s.person({ act: "drinking" });
+    s.tick();
+    await s.t.idle();
+    s.gone();
+    s.setObjects(() => [cupOn({ id: "cup_2", seen: s.clock.t - 3000, status: "gone" }), cupOn({ id: "cup_1", seen: s.clock.t, surface: "sofa" })]);
+    s.tick();
+    expect(s.goals.at(-1)).toMatchObject({ status: "dropped", reason: "took" });
+  });
+});
+
+// 2026-11-18 glass d1: 사람이 떠난 뒤(집 상태에 사람 안 보임) 컵이 확정되기 직전에 보낸 컵 치우기 판단이, 목표가 컵을 본 뒤(fired) 와서 「다 쓰고 떠나면 할 일로 두었어요」로 기록만 됐다(1.6초 늦음)
+describe("미리 세운 목표: 사람이 떠난 것이 반영된 뒤 보낸 판단", () => {
+  it("사람 안 보임이 집 상태에 들어간 뒤 보낸 같은 행동 판단은 목표가 컵을 기다리다 그 뒤에 떠남을 내도 받아 바로 시작한다", async () => {
+    const s = goalSetup({ objects: [], where: [7.8, 3.2], over: { surfaces: () => SURFACES } });
+    s.person({ act: "drinking" });
+    s.tick();
+    await s.t.idle();
+    s.gone();
+    s.tick();
+    const sent = pam("pam-2", 2, s.clock.t);
+    s.setObjects(() => [cupOn({ id: "cup_3", seen: s.clock.t })]);
+    s.tick();
+    expect(s.t.goal()?.status).toBe("fired");
+    await s.decide(sent);
+    expect(s.commands()[0]).toMatchObject({ id: "plan:pam-2", text: "식탁으로 가 주세요" });
   });
 });

@@ -5,7 +5,7 @@
 // 시험은 같은 OpenAI 공급자를 OPENAI_BASE_URL의 가짜 서버에 붙인다(tests/helpers/planner.ts). 규칙으로 계획을 만드는 길은 없다.
 import { describeError, type LlmProvider, type ToolCallResult } from "./agent.js";
 import { PLANNER_PROMPT, planInput } from "./planInput.js";
-import { PlanDraft, SUBMIT_PLAN, planTools, type PlanContext, type PlanResult } from "./planTools.js";
+import { PlanDraft, SUBMIT_PLAN, planTools, withStand, type PlanContext, type PlanResult } from "./planTools.js";
 
 export interface PlannerOptions {
   provider: LlmProvider;
@@ -43,7 +43,7 @@ export class Planner {
     const timer = setTimeout(() => ac.abort(), this.cfg.timeoutMs);
     timer.unref?.();
     try {
-      return await this.loop(ctx, ac.signal);
+      return await this.loop(withStand(ctx), ac.signal);
     } catch (e) {
       return { ok: false, error: ac.signal.aborted ? "시간 안에 계획을 끝내지 못했거나 새 계획으로 바뀜" : `에이전트(LLM) 호출 실패: ${describeError(e)}` };
     } finally {

@@ -83,3 +83,27 @@ describe("미리 만든 계획 다시 내기", () => {
       .toContain("[미리 세운 목표] 목표 물건 cup_1. 사람이 아직 쓰는 중이다. 「사용자가 컵을 두고 자리를 떠나 보이지 않는다.」가 되면 할 일이다. 사람이 떠난 뒤를 생각해 계획하고, 물건은 cup_1만 쓴다.");
   });
 });
+
+// 2026-11-18 d1: 컵이 놓이기 전 미리 만든 계획은 대신 물건(cup_0)으로 만들고, 사람이 떠난 뒤 확정된 컵 id로 묶어 다시 낸다
+describe("미리 만든 계획 다시 내기: 대신 물건", () => {
+  it("계획 모드는 입력 World State에 대신 물건(ahead.stand)을 넣어 그 물건으로 계획하고, 입력에 그 물건이 사람이 쓰는 것을 둘 자리라고 적는다", async () => {
+    const stand = cupAt("cup_0");
+    const ctx = { ...planContext({ decision: decision("goal-1", null), world: view([]), floor: smallFloor() }), ahead: { ...AHEAD, object: "cup_0", stand } };
+    expect(planInput(ctx)).toContain("cup_0");
+    const r = await testPlanner(llm).plan(ctx);
+    if (!r.ok) throw new Error(r.error);
+    expect(r.plan.steps.find((s) => s.kind === "pick")!.object).toBe("cup_0");
+  });
+
+  it("다시 낼 때 rename으로 대신 물건 id를 확정된 컵 id로 바꿔 지금 World State로 검사한다", async () => {
+    const stand = cupAt("cup_0");
+    const pre = await testPlanner(llm).plan({ ...planContext({ decision: decision("goal-1", null), world: view([]), floor: smallFloor() }), ahead: { ...AHEAD, object: "cup_0", stand } });
+    if (!pre.ok) throw new Error(pre.error);
+    const w = view([cupAt("cup_4")]);
+    const r = resubmit(pre.plan, planContext({ decision: decision("pam-9"), world: w, floor: smallFloor() }), { cup_0: "cup_4" });
+    if (!r.ok) throw new Error(r.error);
+    expect(JSON.stringify(r.plan.steps)).not.toContain("cup_0");
+    expect(r.plan.steps.find((s) => s.kind === "pick")!.object).toBe("cup_4");
+    expect(resubmit(pre.plan, planContext({ decision: decision("pam-10"), world: w, floor: smallFloor() })).ok).toBe(false);
+  });
+});
