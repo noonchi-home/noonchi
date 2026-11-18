@@ -4837,6 +4837,39 @@ describe("실행 추적: 손대는 단계 중 다른 행동 판단", () => {
     expect(u.plans.current()).toMatchObject({ id: "plan:pam-2" });
   });
 
+  // Codex(79f25b8 start.ts:151): 가기 단계 중에 요청한 다른 계획이 집기·운반 중에 도착하면 기존 계획을 취소했다
+  it("가기 단계에서 만들기 시작한 다른 계획이 손대는 단계 중에 도착하면 그 새 계획은 미루고 기존 계획을 그대로 둔다. 말로 한 부탁이면 바꾼다", async () => {
+    for (const spoken of [false, true]) {
+      const plans = new PlanHub(smallFloor(), () => {}, () => "t");
+      const w = () => world([cup("present")]);
+      const real = testPlanner(llm);
+      let release: () => void = () => {};
+      const s = setup({
+        plans, w,
+        planner: (d, signal) => {
+          const made = real.plan(planContext({ decision: d, world: w(), floor: plans.floor() }), signal);
+          return d.id === "pam-2" ? new Promise((done) => { release = () => done(made); }) : made;
+        },
+      });
+      await s.decide(decision);
+      expect(s.last()).toMatchObject({ step: "plan:pam-1:1" });
+      // 1 가기 단계에서 다른 행동 판단: 계획을 만들기 시작한다(아직 손대는 단계가 아니다)
+      s.t.onDecision({ ...ask("pam-2", 2), ...(spoken ? { textSent: "사람이 말함: 「어떻게 할지 물어봐 줘」" } : {}) });
+      // 2 그 사이 집기 단계로 넘어간다
+      s.t.onAnswer("plan:pam-1", "plan:pam-1:1", "done");
+      expect(s.last()).toMatchObject({ step: "plan:pam-1:2" });
+      // 3 새 계획이 도착한다
+      release();
+      await s.t.idle();
+      if (spoken) {
+        expect(s.plans.current(), "말로 한 부탁").toMatchObject({ id: "plan:pam-2" });
+      } else {
+        expect(s.plans.current()).toMatchObject({ id: "plan:pam-1", status: "running" });
+        expect(s.exec().at(-1)).toMatchObject({ plan_id: "plan:pam-2", state: "failed", text: EXEC_TEXT.handling });
+      }
+    }
+  });
+
   it("손대는 단계 중 보이는 사람은 폰을 든 사람일 수 있어 쓰는 중 지킴을 그 사람으로 걸지 않는다", async () => {
     let w = world([cup("present")]);
     const said: string[] = [];
