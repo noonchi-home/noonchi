@@ -4583,7 +4583,7 @@ describe("실행 추적: 계획 대상이 안 보이면 그 마지막 자리에�
       return true;
     } } });
     await blocked(s);
-    s.objects([{ ...seenAt(5_000), status: "out_of_view" }, seenAt(s.clock.t, "cup_7", [2.3, 0.75, 1])]);
+    s.objects([{ ...seenAt(5_000), status: "out_of_view" }, { ...seenAt(s.clock.t, "cup_7", [2.3, 0.75, 1]), first_seen_ms: s.clock.t }]);
     s.tick();
     expect(links).toEqual([["cup_7", "cup_1"]]);
     s.tick();
@@ -4593,13 +4593,28 @@ describe("실행 추적: 계획 대상이 안 보이면 그 마지막 자리에�
     const b: [string, string][] = [];
     const t = runSetup({ objects: [seenAt(5_000)], over: { linkObject: (from, to) => { b.push([from, to]); return false; } } });
     await blocked(t);
-    const bottle = (id: string, at: [number, number, number]): WorldObject => ({ ...seenAt(t.clock.t, id, at), cls: "bottle" });
+    const bottle = (id: string, at: [number, number, number]): WorldObject => ({ ...seenAt(t.clock.t, id, at), cls: "bottle", first_seen_ms: t.clock.t });
     t.objects([{ ...seenAt(5_000), status: "gone" }, bottle("bottle_3", [2.6, 0.75, 1])]);
     t.tick();
     expect(b).toEqual([]);
     t.objects([{ ...seenAt(5_000), status: "gone" }, bottle("bottle_2", [2.3, 0.75, 1])]);
     t.tick();
     expect(b).toEqual([["bottle_2", "cup_1"]]);
+  });
+
+  // Codex P2(5f230c5): 계획 전부터 따로 있던 옆 컵도 0.5m 안이면 대상 id로 합쳐, 원래 대상이 없어지면 다른 컵에 기존 계획을 실행했다
+  it("찾기 전부터 있던 다른 물건(계획을 받을 때 있던 같은 종류, 찾기 시작 전에 처음 본 같은 무리)은 0.5m 안이어도 잇지 않고 「찾은 뒤 다시 판단」으로 닫는다", async () => {
+    for (const before of ["plan", "find"] as const) {
+      const links: [string, string][] = [];
+      const neighbor = (s: { clock: { t: number } }): WorldObject => ({ ...seenAt(s.clock.t, "cup_7", [2.3, 0.75, 1]), ...(before === "find" ? { cls: "bottle" as const, id: "bottle_7", first_seen_ms: 6_000 } : {}) });
+      const s = runSetup({ objects: [seenAt(5_000), ...(before === "plan" ? [{ ...seenAt(5_000, "cup_7", [2.3, 0.75, 1]), status: "out_of_view" as const }] : [])],
+        over: { linkObject: (from, to) => { links.push([from, to]); return true; } } });
+      await blocked(s);
+      s.objects([{ ...seenAt(5_000), status: "out_of_view" }, neighbor(s)]);
+      s.tick();
+      expect(links, before).toEqual([]);
+      expect(s.exec().find((l) => l.state === "failed"), before).toMatchObject({ plan_id: "plan:pam-1", text: EXEC_TEXT.foundNew });
+    }
   });
 
   it("그 자리 0.5m 안에 다른 id의 같은 종류 컵만 생기고 잇지 못하면(linkObject 없음·실패) 계획을 「찾은 뒤 다시 판단」으로 닫고 같은 행동 다시 계획 간격에서 뺀다", async () => {
