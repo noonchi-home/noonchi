@@ -8,7 +8,7 @@ import { describe, expect, it } from "vitest";
 import type { HistoryRow } from "../src/contract/history.js";
 import type { WorldEye, WorldObject, WorldView } from "../src/contract/world.js";
 import { dockId, isDockStep } from "../src/act/dock-step.js";
-import { SEND_SAY, clickChoice, clock, costLine, judgeInput, judgeState, markdown, parseArgs, phoneUrl, plannedClicks, sendStartPose, mainPlan, stepPlaces, stepVerdict, timeline, verdict, twinRows, usedServer, roomLabels, ownAssetFailures, videoClock, runTimeline, clipEnd, syncWarning, mustStop, openDashboard, waitLoaded, waitTwinReady, frameGapLine, type ClickRule, type Row, type VideoCommand } from "../scripts/video-check.js";
+import { SEND_SAY, clickChoice, clock, costLine, judgeInput, judgeState, markdown, parseArgs, phoneUrl, plannedClicks, sendStartPose, mainPlan, planState, stepPlaces, stepVerdict, timeline, verdict, twinRows, usedServer, roomLabels, ownAssetFailures, videoClock, runTimeline, clipEnd, syncWarning, mustStop, openDashboard, waitLoaded, waitTwinReady, frameGapLine, type ClickRule, type Row, type VideoCommand } from "../scripts/video-check.js";
 import { createServer, type Server } from "node:http";
 import { listenRetry } from "../src/shared/net.js";
 import type { SceneJson } from "../src/contract/layout.js";
@@ -361,7 +361,20 @@ describe("video-check", () => {
     it("찾기(find:)·충전 자리(dock:)는 계획이 아니고, 계획이 여럿이면 컵 치우기 계획이다", () => {
       expect(mainPlan(commands, history)).toBe("plan:pam-2");
       expect(mainPlan(commands.filter((c) => c.id !== "plan:pam-2"), history)).toBe("plan:pam-1");
-      expect(mainPlan(commands.filter((c) => c.id.startsWith("find") || c.id.startsWith("dock")), history)).toBeNull();
+      expect(mainPlan(commands.filter((c) => c.id.startsWith("find") || c.id.startsWith("dock")), [])).toBeNull();
+      // 계획 명령이 하나도 없으면 기록의 마지막 컵 치우기 계획(명령 없이 실패한 판도 판정한다)
+      expect(mainPlan([], history)).toBe("plan:pam-2");
+      expect(planState("plan:pam-2", history)).toBe("done");
+      expect(planState(null, history)).toBeNull();
+      // wide-glass c1: 「컵 치우기 계획됨」→ 실행 실패(대상 물건이 보이지 않아 실행하지 않아요) → 「컵 치우기 실패」, 명령 0개
+      const exec = (id: number, subject: string, state: string): HistoryRow => ({ id, at_ms: id * 1000, day: "2026-11-18", kind: "execution", subject, text: "대상 물건이 보이지 않아 실행하지 않아요", data: { state } });
+      const c1 = [row(32, "plan:pam-4", "컵 치우기 계획됨", "planned", 0), exec(35, "plan:pam-4", "failed"), row(36, "plan:pam-4", "컵 치우기 실패", "failed", 0)];
+      expect(mainPlan([], c1)).toBe("plan:pam-4");
+      expect(planState("plan:pam-4", c1)).toBe("failed");
+      // wide-tall m1: 「컵 치우기 계획됨」뒤 명령 없이 영상이 끝남
+      const m1 = [row(34, "plan:pam-6", "컵 치우기 계획됨", "planned", 0)];
+      expect(planState(mainPlan([], m1), m1)).toBe("planned");
+      expect(mainPlan([], [])).toBeNull();
     });
     it("판정 줄의 계획 끝남과 단계 판정 줄의 단계 수는 그 계획 하나로 센다(첫 명령 시각은 처음 나간 명령 그대로)", () => {
       const v = verdict([], commands, history, 36_300);
@@ -455,6 +468,24 @@ describe("video-check", () => {
       const cmd = (plan: string, n: number): VideoCommand => ({ video_ms: n, id: plan, step: `${plan}:1`, text: "식탁으로 가 주세요" });
       const row = (subject: string): HistoryRow => ({ id: 1, at_ms: 1, day: "2026-11-18", kind: "plan", subject, text: "컵 치우기 계획됨", data: { status: "planned", steps: [] } });
       expect(mainPlan([cmd("plan:pam-2", 1), cmd("plan:pam-5", 2)], [row("plan:pam-2"), row("plan:pam-5")])).toBe("plan:pam-5");
+    });
+
+    // 2026-11-18 wide-glass c1·wide-tall m1 거짓 통과: 컵 치우기 계획이 명령 없이 실패하거나(c1) 계획만 되고 명령이 없었는데(m1) 「판정 통과 · 단계 자리: 0/0 맞음」이었다
+    it("wide-glass c1·wide-tall m1: --step 판에서 단계 명령이 하나도 없거나 판정 기준 계획이 끝남이 아니면(실패·취소·안 끝남·없음) 실패다", () => {
+      const steps = ["go:table:a.mp4", "pick:cup:b.mp4", "go:sink:c.mp4", "place:sink:d.mp4"];
+      const end = world(35_500, null, [cup("bottle_1", "on_table", { cls: "bottle" })]);
+      // c1: 「대상 물건이 보이지 않아 실행하지 않아요 · 컵 치우기 실패」, 명령 0개
+      const c1 = stepPlaces(steps, [], end, { plan: "plan:pam-4", cupClear: true, planStatus: "failed" });
+      expect(c1.ok).toBe(false);
+      expect(c1.text).toBe("계획 실패 · 단계 자리: 0/0 맞음 · 단계 명령 없음 · 치운 컵이 싱크대 안이 아님: 컵 모름");
+      // m1: 「컵 치우기 계획됨」뒤 명령 없이 영상이 끝남
+      const m1 = stepPlaces(steps, [], end, { plan: "plan:pam-6", cupClear: true, planStatus: "planned" });
+      expect(m1.problems.slice(0, 2)).toEqual(["계획 안 끝남", "단계 명령 없음"]);
+      // 계획이 아예 없음
+      expect(stepPlaces(steps, [], end, { plan: null, planStatus: null }).problems).toEqual(["계획 없음", "단계 명령 없음"]);
+      // 취소
+      expect(stepPlaces(steps, RIGHT, sunk, { cupClear: true, planStatus: "cancelled" }).problems).toEqual(["계획 취소"]);
+      expect(stepPlaces(steps, RIGHT, sunk, { cupClear: true, planStatus: "done" }).ok).toBe(true);
     });
 
     // Codex(2705c21 video-check.ts:335): 모든 --step 판에 컵이 싱크대에 있기를 요구해 정상으로 끝난 전자레인지·라면 시연도 실패했다

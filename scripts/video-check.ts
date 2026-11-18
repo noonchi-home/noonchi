@@ -281,15 +281,25 @@ const CUP_RANK: Record<WorldObject["status"], number> = { present: 0, out_of_vie
 /** --step 판의 단계 판정 줄: 첫 명령 계획의 끝난 단계 수, 누른 단추 수, 마지막 World State의 눈 방과 컵(보이는 것 먼저, 그다음 마지막에 본 것) 놓인 곳. */
 /** 판정 기준 계획(2026-11-18 wide-glass q2: 첫 명령이 찾기라 끝난 컵 치우기 계획을 「안 끝남 · 0/0개」로 봤다): 명령을 낸 계획(plan:) 가운데
  *  기록의 목표가 컵 치우기인 마지막 계획(wide-mug g1: 마지막으로 실행된 것), 없으면 마지막 계획. 찾기(find:)·충전 자리(dock:)·끄기 안내(off:)·
- *  계획 밖 가까이 보기(peek:)는 계획이 아니다. 없으면 null. */
+ *  계획 밖 가까이 보기(peek:)는 계획이 아니다. 계획 명령이 하나도 없으면 기록의 마지막 컵 치우기 계획(wide-glass c1: 명령 없이 실패한 계획), 그것도 없으면 null. */
 export function mainPlan(commands: readonly VideoCommand[], history: readonly HistoryRow[]): string | null {
   const ids = [...new Set(commands.map((c) => c.id).filter((id) => id.startsWith("plan:")))];
-  const cup = ids.filter((id) => history.some((h) => h.kind === "plan" && h.subject === id && h.text.startsWith("컵 치우기")));
-  return cup.at(-1) ?? ids.at(-1) ?? null;
+  const cupPlan = (h: HistoryRow) => h.kind === "plan" && h.text.startsWith("컵 치우기");
+  const cup = ids.filter((id) => history.some((h) => cupPlan(h) && h.subject === id));
+  return cup.at(-1) ?? ids.at(-1) ?? [...history].sort((a, b) => a.at_ms - b.at_ms || a.id - b.id).filter(cupPlan).at(-1)?.subject ?? null;
+}
+
+/** 판정 기준 계획의 상태: 계획 줄이나 실행 줄 가운데 한 번이라도 끝남이면 done, 아니면 마지막 실패·취소, 그것도 없으면 마지막 상태. 계획이 없으면 null. */
+export function planState(plan: string | null, history: readonly HistoryRow[]): string | null {
+  if (!plan) return null;
+  const states = [...history].sort((a, b) => a.at_ms - b.at_ms || a.id - b.id).filter((h) => h.subject === plan && (h.kind === "plan" || h.kind === "execution"))
+    .map((h) => h.kind === "plan" ? (h.data as PlanData | null)?.status : (h.data as { state?: string } | null)?.state).filter((x): x is string => !!x);
+  return states.includes("done") ? "done" : states.findLast((x) => x === "failed" || x === "cancelled") ?? states.at(-1) ?? "planned";
 }
 
 export function stepVerdict(history: HistoryRow[], commands: VideoCommand[], clicks: number, world: WorldView | null): string {
-  const first = mainPlan(commands, history);
+  // 명령을 낸 계획만(명령 없이 기록에만 있는 계획은 「명령 없음」)
+  const first = commands.some((c) => c.id.startsWith("plan:")) ? mainPlan(commands, history) : null;
   const plan = first ? [...history].sort((a, b) => a.at_ms - b.at_ms || a.id - b.id).filter((h) => h.kind === "plan" && h.subject === first).at(-1) : undefined;
   const steps = (plan?.data as PlanData | null | undefined)?.steps ?? [];
   const stepText = first ? `${steps.filter((s) => s.status === "done").length}/${steps.length}개 끝남` : "명령 없음";
@@ -299,6 +309,9 @@ export function stepVerdict(history: HistoryRow[], commands: VideoCommand[], cli
 }
 
 /** --step 낱말 → 단계 자리 이름(판정 줄): World 낱말 표(CLASSES, 그 종류이거나 「_<낱말>」로 끝나는 종류: table → 식탁)나 가전 종류 등록부(KINDS)의 이름. 없으면 낱말 그대로. */
+/** 끝남이 아닌 판정 기준 계획 상태 → 판정 줄 낱말(그 밖의 상태는 「계획 안 끝남」). */
+const PLAN_FAIL: Record<string, string> = { none: "계획 없음", failed: "계획 실패", cancelled: "계획 취소" };
+
 function placeName(word: string): string {
   const cls = Object.entries(CLASSES).find(([k]) => k === word || k.endsWith(`_${word}`));
   return cls?.[1].label ?? (Object.hasOwn(KINDS, word) ? KINDS[word as DeviceKind].label : word);
@@ -311,11 +324,13 @@ function placeName(word: string): string {
  *   같은 종류가 있는데 낱말이 맞는 것이 없으면 「단계 자리 틀림: 세탁기 ≠ 식탁」(첫 같은 종류 --step을 쓴다). 같은 종류 --step이 없으면 볼 수 없어 세지 않는다.
  *   계획에 없는 --step(찾기가 생길 때만 쓰는 go:cup 등)은 선택이라 세지 않는다(wide-tall q3 거짓 실패).
  * 계획 밖 명령(충전 자리 dock:·끄기 안내 off:·내용물 보기 peek:·찾기 find:와 계획 줄의 찾기 :find:)과 질문(:approve·:hand·:again)은 세지 않고, 단계마다 마지막 명령으로 맞춘다.
+ * 단계 명령이 하나도 없으면 「단계 명령 없음」, 판정 기준 계획 상태(planStatus)를 주면 끝남이 아닐 때 맨 앞에 「계획 없음·실패·취소·안 끝남」으로 실패다
+ * (wide-glass c1: 명령 0개로 「컵 치우기 실패」, wide-tall m1: 「계획됨」뒤 명령 없음이 「0/0 맞음」으로 거짓 통과했다).
  * 컵 치우기 판(cupClear)이면 끝에 집은 컵이 싱크대 안이어야 한다: 집기 명령의 대상 컵에서 옮김 표시(followed_by)만 따라간 마지막 물건으로 보고,
  * 상관없는 다른 컵으로 대신하지 않는다(Codex 2705c21). 다른 판(라면·전자레인지)은 단계 자리만 본다.
  */
 export function stepPlaces(steps: readonly string[], commands: readonly VideoCommand[], world: WorldView | null,
-  o: { plan?: string | null; cupClear?: boolean; planSteps?: readonly { id: string; label: string; kind: string }[] } = {}): { ok: boolean; text: string; problems: string[] } {
+  o: { plan?: string | null; cupClear?: boolean; planSteps?: readonly { id: string; label: string; kind: string }[]; planStatus?: string | null } = {}): { ok: boolean; text: string; problems: string[] } {
   const plan = o.plan === undefined ? mainPlan(commands, []) : o.plan;
   // 그 계획의 단계 명령만, 단계마다 마지막 명령(찾기 앞뒤로 같은 단계가 다시 나간다). 계획 줄의 찾기(:find:)·질문·끄기 안내·충전 자리는 뺀다(wide-mug g1)
   const last = new Map<string, VideoCommand>();
@@ -333,7 +348,9 @@ export function stepPlaces(steps: readonly string[], commands: readonly VideoCom
   let right = 0;
   let checked = 0;
   let picked: string | null = null;
-  for (const r of required) {
+  const status = o.planStatus === undefined || o.planStatus === "done" ? null : PLAN_FAIL[o.planStatus ?? "none"] ?? "계획 안 끝남";
+  if (!pool.length) problems.push("단계 명령 없음");
+  for (const r of pool.length ? required : []) {
     const c = pool.find((x) => x.step === r.id);
     if (!c) { problems.push(`단계 명령 없음: ${r.label}`); continue; }
     if (c.kind === "pick" && c.target?.id) picked = c.target.id;
@@ -346,7 +363,9 @@ export function stepPlaces(steps: readonly string[], commands: readonly VideoCom
     next = same[0]!.i + 1;
   }
   const head = `단계 자리: ${right}/${checked} 맞음`;
-  if (!o.cupClear) return { ok: problems.length === 0, text: [head, ...problems].join(" · "), problems };
+  if (status) problems.unshift(status);
+  const line = (rest: readonly string[]) => (status ? [status, head, ...rest.slice(1)] : [head, ...rest]).join(" · ");
+  if (!o.cupClear) return { ok: problems.length === 0, text: line(problems), problems };
   // 집은 컵: 옮김 표시(followed_by)만 따라간다(사라진 컵을 상관없는 다른 컵으로 대신하지 않는다)
   const byId = new Map((world?.objects ?? []).map((x) => [x.id, x] as const));
   let cup = picked ? byId.get(picked) : undefined;
@@ -356,7 +375,7 @@ export function stepPlaces(steps: readonly string[], commands: readonly VideoCom
   }
   const sunk = !!cup && (cup.facts.place?.value === "in_sink" || cup.surface_part === "basin");
   const cupLine = sunk ? "치운 컵 싱크대 안" : `치운 컵이 싱크대 안이 아님: ${cup ? placeLabel(cup.facts.place?.value) ?? "놓인 곳 모름" : "컵 모름"}`;
-  return { ok: problems.length === 0 && sunk, text: [head, ...problems, cupLine].join(" · "), problems: sunk ? problems : [...problems, cupLine] };
+  return { ok: problems.length === 0 && sunk, text: line([...problems, cupLine]), problems: sunk ? problems : [...problems, cupLine] };
 }
 
 /** 판정 줄: 첫 명령 시각, expectMs 전 명령 수, 첫 명령의 계획이 끝났는지. */
@@ -365,7 +384,7 @@ export function verdict(rows: Row[], commands: VideoCommand[], history: HistoryR
   const early = commands.filter((c) => c.video_ms < expectMs).length;
   // 계획 끝남은 판정 기준 계획(컵 치우기, mainPlan) 하나로 본다: 앞에 찾기·뒤에 충전 자리 명령이 끼어도
   const plan = mainPlan(commands, history);
-  const done = !!plan && history.some((h) => h.subject === plan && ((h.kind === "plan" && (h.data as PlanData | null)?.status === "done") || (h.kind === "execution" && (h.data as { state?: string } | null)?.state === "done")));
+  const done = planState(plan, history) === "done";
   const at = (expectMs / 1000).toFixed(1);
   const text = first
     ? `판정: 첫 명령 ${clock(first.video_ms)} 「${first.text}」 · ${at}초 전 명령 ${early ? `${early}개 있음` : "없음"} · 계획 ${done ? "끝남" : "안 끝남"}`
@@ -1011,7 +1030,7 @@ async function main(): Promise<number> {
       // 판정 기준 계획의 사람 단계(기록의 마지막 계획 줄): 단계 명령이 빠졌는지 본다
       const planRow = judged ? history.filter((h) => h.kind === "plan" && h.subject === judged).sort((a, b) => a.at_ms - b.at_ms || a.id - b.id).at(-1) : undefined;
       const planSteps = ((planRow?.data as PlanData | null | undefined)?.steps ?? []).filter((x) => !!x.kind).map((x) => ({ id: x.id, label: x.label, kind: x.kind! }));
-      const places = steps.length ? stepPlaces(steps, commands, twin.last, { plan: judged, cupClear, ...(planSteps.length ? { planSteps } : {}) }) : null;
+      const places = steps.length ? stepPlaces(steps, commands, twin.last, { plan: judged, cupClear, planStatus: planState(judged, history), ...(planSteps.length ? { planSteps } : {}) }) : null;
       const pageErrors = errors.filter((e) => !/favicon/.test(e));
       const notes = [
         unfinished.length ? `끝까지 돌지 않음: ${unfinished.join(", ")}` : "",
