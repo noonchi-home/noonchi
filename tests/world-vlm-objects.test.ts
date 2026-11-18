@@ -365,3 +365,27 @@ it("다른 종류 같은 무리 답은 가장 가까운 물건이 둘째보다 3
   expect(w.view(3000).objects.map((o) => o.id)).toEqual(["cup_1", "cup_2"]);
 });
 
+// 키 큰 컵 m1·c1, 유리잔 c1(2026-11-18): 식탁 위 유리잔을 VLM이 한 장 「병」으로 답해 그 후보가 bottle_1이 됐고, 다음 「컵」 답으로 확정돼 id가 병 꼴로 남았다.
+// 컵 치우기 계획 대상이 컵 id 꼴이 아니라 「대상 물건이 보이지 않아」로 실패했다
+describe("마시는 그릇 종류: 병은 두 답이 이어야 한다", () => {
+  const bottleScene = (): SceneObservation => ({ scene: "k", summary: "s", observations: [], objects: [{ id: "v1", cls: "bottle", box: frac(CUP), det: null }] });
+  it("병 답으로 생긴 후보가 다음 장에 컵 답으로 확정되면 컵이고 id도 컵 꼴(cup_1)이다", () => {
+    const w = ws();
+    w.applyScene("e1", 1000, bottleScene(), new Map(), look);
+    const ids = new Map<string, string>();
+    w.applyScene("e2", 2000, cupScene(), ids, look);
+    expect(w.view(2000).objects.map((o) => [o.id, o.cls])).toEqual([["cup_1", "cup"]]);
+    expect(ids.get("v1")).toBe("cup_1");
+  });
+  it("두 장 다 병이면 병(bottle_1)이다. 컵으로 생긴 후보는 병 답 한 장으로 바뀌지 않는다", () => {
+    const w = ws();
+    w.applyScene("e1", 1000, bottleScene(), new Map(), look);
+    w.applyScene("e2", 2000, bottleScene(), new Map(), look);
+    expect(w.view(2000).objects.map((o) => [o.id, o.cls])).toEqual([["bottle_1", "bottle"]]);
+    const c = ws();
+    c.applyScene("e1", 1000, cupScene(), new Map(), look);
+    c.applyScene("e2", 2000, bottleScene(), new Map(), look);
+    expect(c.view(2000).objects.map((o) => [o.id, o.cls])).toEqual([["cup_1", "cup"]]);
+  });
+});
+

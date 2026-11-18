@@ -75,7 +75,7 @@ export function checkPlan(i: CheckInput): CheckResult {
   if (spec.target) {
     const target = spec.target;
     // 계획이 다루는 그 종류 물건마다(따르기 단계 대상이 여럿일 수 있다) 있음·치움·낡음·들고 있음을 본다. 계획에 그 종류 대상이 없으면 없음이다
-    const ids = planObjectsOf(i.plan, i.world, target);
+    const ids = planObjectsOf(i.plan, i.world, target, (spec.carry ?? target) === target);
     const all: WorldObject[] = [];
     for (const id of ids.length ? ids : [null]) {
       const o = i.world.objects.find((x) => x.id === id);

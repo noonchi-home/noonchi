@@ -11,7 +11,7 @@
 // - 쓴 사람이 떠남: 사람이 안 보이면(person_gone) 모두 푼다. World State는 사람을 한 묶음으로 세어 누가 나갔는지 가를 수 없으므로, 사람이 보이는 동안에는
 //   보인 사람 수가 줄어도(같이 있던 사람만 나갔을 수 있다) 지킨다. 다시 나타나면(since_ms가 바뀜) 새로 보고, 사라지기 전 사진의 늦은 답은 근거로 치지 않는다(usingNow).
 import { EXEC_TEXT, USE_THOUGHT } from "../labels.js";
-import { planObjectsOf, TASK_NAMES, touchTarget, usingNow, type UseWhy } from "../tasks.js";
+import { clearsAway, planObjectsOf, TASK_NAMES, taskOf, touchTarget, usingNow, type UseWhy } from "../tasks.js";
 import { OBJECT_NAME, STATE_TEXT } from "../../world/labels.js";
 import type { WorldView } from "../../contract/world.js";
 import { CONTENTS_HOLD } from "./contents.js";
@@ -93,7 +93,7 @@ export class UseWatch extends Part {
    *  미룬 적이 있으면 표시해 둔다(풀린 뒤 첫 명령을 폰 대화·승인 대기 동안 미룬다). 미룬 지 holdMs가 지나면 닫는다. 미루거나 닫았으면 true. */
   waits(r: Run): boolean {
     const cls = touchTarget(r.decision.action);
-    const ids = cls ? planObjectsOf(r.plan.view, this.o.world(), cls).map((id) => r.alias.get(id) ?? id) : [];
+    const ids = cls ? planObjectsOf(r.plan.view, this.o.world(), cls, clearsAway(taskOf(r.decision.action), cls)).map((id) => r.alias.get(id) ?? id) : [];
     const used = ids.length ? ids.some((id) => this.busy({ cls, id })) : this.busy({ cls, id: null });
     if (!used) {
       r.usedAt = null;

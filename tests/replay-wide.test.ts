@@ -88,7 +88,7 @@ export function replay(name: string, twin = true, trace?: (step: string, w: Worl
 describe("실제 판 재생(장면·가까이 본 VLM 답 + 카메라 + YOLO 감지 + 한양목련 트윈 면)", () => {
   const limit: Record<string, number> = {
     "wide-glass-r10": 4, "wide-tall-r4": 2, "wide-mug-r7": 3, "wide-tall-r5": 2, "wide-mug-r8": 2, "wide-glass-v1": 1, "wide-tall-v1": 3, "wide-mug-v1": 2,
-    "wide-tall-q1": 4, "wide-mug-q1": 2, "wide-tall-q2": 3, "wide-mug-q2": 1,
+    "wide-tall-q1": 4, "wide-mug-q1": 2, "wide-tall-q2": 3, "wide-mug-q2": 1, "wide-tall-m1": 2, "wide-glass-c1": 1, "wide-tall-c1": 3, "wide-mug-c1": 2,
   };
   for (const name of Object.keys(limit)) {
     it(`${name}: 마시는 그릇 id가 ${limit[name]}개를 넘지 않는다`, () => {
@@ -161,6 +161,31 @@ describe("실제 판 재생(장면·가까이 본 VLM 답 + 카메라 + YOLO 감
     // 「싱크대 안」은 내려놓기 시작 뒤 20초 안이다(그 판은 끝나지 않았다)
     expect(inSink).not.toBeNull();
     expect(inSink! - (69818 + 1000)).toBeLessThan(20000);
+  });
+
+  // 813f5ca 실제 판 m1(2026-11-18 14:28): VLM이 키 큰 유리잔을 처음 두 장(14.3·16.7초 사진) 병으로 답해 bottle_1이 됐다
+  it("키 큰 컵 m1: 처음 병으로 생긴 식탁 위 유리잔은 이어진 컵 답 두 장으로 컵이 되고(id는 bottle_1 그대로), 식탁 위에 있다", () => {
+    let cupAt: number | null = null;
+    const r = replay("wide-tall-m1", true, (_s, w, at) => {
+      if (cupAt === null && w.view(at).objects.find((o) => o.id === "bottle_1")?.cls === "cup") cupAt = at;
+    });
+    expect(cupAt).toBe(20762 + 1000);
+    expect(r.world.objects.find((o) => o.id === "bottle_1")).toMatchObject({ cls: "cup", surface: TABLE, status: "present" });
+  });
+
+  // 7541d94 실제 판 c1(2026-11-18 15:26~15:34): 유리잔 c1·키 큰 컵 c1에서 VLM이 식탁 위 유리잔을 한 장 「병」으로 답해 그 후보가 다음 「컵」 답으로 bottle_1로 확정됐고,
+  // 유리잔 c1은 컵 치우기가 「대상 물건이 보이지 않아」로 실패했다
+  it("유리잔·키 큰 컵·머그 c1: 마시는 그릇은 병 id 없이 처음부터 컵(cup_n)이고, 유리잔 c1의 식탁 위 잔은 13.3초 사진에서 한 id로 나타난다", () => {
+    for (const name of ["wide-glass-c1", "wide-tall-c1", "wide-mug-c1"]) {
+      const ids = new Set<string>();
+      replay(name, true, (_s, w, at) => { for (const o of w.view(at).objects) ids.add(`${o.id}/${o.cls}`); });
+      expect([...ids].filter((x) => x.startsWith("bottle_")), name).toEqual([]);
+    }
+    let first: number | null = null;
+    const r = replay("wide-glass-c1", true, (_s, w, at) => { if (first === null && w.view(at).objects.length) first = at; });
+    expect(first).toBe(12250 + 1000);
+    expect(r.world.objects).toEqual([expect.objectContaining({ cls: "cup", surface: TABLE, status: "present" })]);
+    expect(r.world.objects[0]!.id).toMatch(/^cup_\d+$/);
   });
 });
 
