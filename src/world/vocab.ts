@@ -27,8 +27,8 @@ export interface ClassEntry {
 }
 
 const OBJ = ["place", "use"] as const;
-/** 마시는 그릇: 안 내용과 몸통(옆면으로 안이 비치는가)이 있다. */
-const VESSEL = ["place", "contents", "body", "use"] as const;
+/** 마시는 그릇: 안 내용과 몸통(옆면으로 안이 비치는가), 사진들 사이에 그 그릇에 일어난 일(마심·따름)이 있다. */
+const VESSEL = ["place", "contents", "body", "use", "moment"] as const;
 
 /** 감지 종류. 순서가 감지 결과 순서다(사람 먼저). */
 export const CLASSES = {
@@ -145,6 +145,9 @@ export const STATES = {
   picking_up: { facet: "moment", label: "물건을 집어 듦", for: ["person"] },
   putting_down: { facet: "moment", label: "물건을 내려놓음", for: ["person"] },
   throwing_away: { facet: "moment", label: "버리는 중", for: ["person"] },
+  // 그릇의 순간 값: 확인된 내용물을 다시 연다(src/world/state/facts.ts moment). 사람의 「마시는 중」(하는 일)과 따로 답한다
+  drank: { facet: "moment", label: "마심", for: ["object"], hint: "a person drank from it between the photos" },
+  poured: { facet: "moment", label: "따름", for: ["object"], hint: "a drink was poured into it between the photos" },
   watching_tv: { facet: "activity", label: "TV 보는 중", for: ["person"] },
   using_phone: { facet: "activity", label: "휴대폰 쓰는 중", for: ["person"] },
   using_laptop: { facet: "activity", label: "노트북 쓰는 중", for: ["person"] },

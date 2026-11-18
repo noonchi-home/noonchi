@@ -117,6 +117,23 @@ describe("관찰 흐름", () => {
     await p.close();
   });
 
+  // 마시기·따르기 사건(Task 8): 사건 구간은 그 답이 본 가장 옛 사진 ~ 가장 새 사진이다
+  it("장면 VLM 답을 World State에 넣을 때 그 답과 함께 보낸 가장 옛 사진의 촬영 시각을 넘긴다", async () => {
+    const vlm = { model: "w", json: async () => ({ value: { scene: "k", observations: [], summary: "s" }, costUsd: 0, model: "w", attempts: 1 }) } as unknown as VlmClient;
+    const world = new WorldState({ evidenceStepMs: 1000, surfaces: () => [], floorAt: () => 0, roomAt: () => null, devices: () => [] });
+    const spans: [number, number | undefined][] = [];
+    const apply = world.applyScene.bind(world);
+    world.applyScene = (id, at, scene, ids, look, from) => { spans.push([at, from]); return apply(id, at, scene, ids, look, from); };
+    const p = new ObservationPipeline({ config: { engineMs: 2000, vlmMaxInflight: 1, vlmTimeoutMs: 5000, detectQueueMax: 8, keepMs: 20_000 }, detector: cupDet(), vlm, world, emit: () => {}, broadcastWorld: () => {} });
+    for (let i = 1; i <= 7; i++) {
+      p.onEngine(jpeg(i), head(i * 2000), null, null, i * 2000 + 5);
+      await p.idle();
+    }
+    // 창은 5장: 7번째 답(14초)은 6초 사진부터 본다
+    expect(spans).toEqual([[2000, 2000], [4000, 2000], [6000, 2000], [8000, 2000], [10000, 2000], [12000, 4000], [14000, 6000]]);
+    await p.close();
+  });
+
   it("붙잡은 장면(held)은 같은 사진이어도 VLM 간격(기본 2초)마다 새 관찰로 받는다. held가 없는 같은 사진은 그대로 버린다", async () => {
     const run = async (held: boolean) => {
       let sent = 0;

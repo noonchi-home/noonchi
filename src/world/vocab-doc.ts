@@ -87,6 +87,8 @@ export const STATE_DOC: Record<StateKey, { how?: string; example: string }> = {
   picking_up: { how: "5장 사이에 일어난 순간 동작", example: "사람이 물건을 집어 들었다." },
   putting_down: { how: "5장 사이에 일어난 순간 동작", example: "사람이 물건을 내려놓았다." },
   throwing_away: { how: "5장 사이에 일어난 순간 동작", example: "사람이 버리는 중이고 컵이 사라졌다." },
+  drank: { how: "5장 사이에 그 그릇에서 마심(그릇 번호에 단다). 확인된 내용물을 다시 연다", example: "컵 내용물이 확인된 뒤 사람이 그 컵으로 마셨다." },
+  poured: { how: "5장 사이에 그 그릇에 따름(그릇 번호에 단다). 확인된 내용물을 다시 연다", example: "빈 컵에 사람이 물을 따랐다." },
   watching_tv: { example: "사람이 소파 위에서 TV 보는 중이다." },
   using_phone: { example: "사람이 침대 위에서 휴대폰 쓰는 중이고 밤이다." },
   using_laptop: { example: "사람이 노트북 쓰는 중이 2시간째다." },

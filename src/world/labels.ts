@@ -18,7 +18,7 @@ export const STATE_TEXT: Record<string, string> = Object.fromEntries(Object.entr
 /** 카메라로 본 가전 상태 표시: 변화 줄·[지속] 줄 끝, 대시보드 말풍선 줄 끝. */
 export const SEEN_TEXT = "카메라로 봄";
 /** 내용물을 다시 연 까닭(변화 줄). */
-const AGAIN_WHY = { drink: "입에 댐", pour: "따르는 모습", step: "따르기 단계" } as const;
+const AGAIN_WHY = { drink: "마심", pour: "따름", step: "따르기 단계" } as const;
 
 /** World State 변화 글(관찰 텍스트 줄, 판단 기록 줄). */
 export const CHANGE_TEXT = {
