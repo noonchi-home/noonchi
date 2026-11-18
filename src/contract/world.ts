@@ -177,7 +177,8 @@ export interface WorldChange { kind: WorldChangeKind; at_ms: number; subject: st
  *  closer_end VLM 답 없이 끝난 가까이 보기(미룬 합치기를 YOLO만으로 넣는다), top 위에서 본 내용물 값.
  *  YOLO 임시 갈래(eye 눈 자리, frame 프레임 감지·관절, yolo_missing YOLO 분석 없음, closer_merge 가까이 본 장 합치기)는 VLM 답과 한 토픽이라 차례가 지켜지고 녹화·재생된다. */
 export type SceneInput =
-  | { kind: "scene"; frame_id: string; observed_ms: number; scene: SceneObservation; look?: SceneLookInput }
+  /** from_ms: 그 답이 본 가장 옛 사진의 촬영 시각(마시기·따르기 사건 구간 시작, 없으면 observed_ms). */
+  | { kind: "scene"; frame_id: string; observed_ms: number; from_ms?: number; scene: SceneObservation; look?: SceneLookInput }
   | { kind: "missing"; frame_id: string; observed_ms: number; missing: VlmMissing }
   | { kind: "closer_scene"; look: string; frame_id: string; observed_ms: number; scene: SceneObservation; at: CloserAtInput }
   | { kind: "closer_end"; look: string }

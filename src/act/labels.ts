@@ -164,9 +164,9 @@ export type StepAct = (typeof STEP_ACTS)[keyof typeof STEP_ACTS][number];
 export const ALL_ACTS = [...new Set(Object.values(STEP_ACTS).flat())] as [StepAct, ...StepAct[]];
 
 /** 시나리오에 쓰는 물건 이름(낱말 표 물건 이름 밖). 모델이 item으로 고를 수 있는 이름은 낱말 표 물건 이름과 이것이다. */
-export const EXTRA_ITEMS = ["냄비", "면과 스프", "물", "물병", "콜라", "라면", "세탁물"] as const;
+export const EXTRA_ITEMS = ["면과 스프", "물", "물병", "콜라", "세탁물"] as const;
 /** 시나리오 물건 이름이 가리키는 World State 물건 종류(보이는 병을 「물병」으로 불러도 같은 물건이다). 여기 없는 이름은 그 종류 이름과 같아야 한다. */
-export const ITEM_CLASS: Partial<Record<string, string>> = { "물병": "bottle", "콜라": "bottle" };
+export const ITEM_CLASS: Partial<Record<string, string>> = { "물병": "bottle", "콜라": "bottle", "면과 스프": "ramen" };
 
 /** 사람 단계 글 틀(단계 종류:동작). place는 자리·대상 이름, item은 물건 이름(없으면 null). 물건이 꼭 있어야 하는 틀은 item이 없으면 null을 낸다. */
 export const STEP_TEXT: Record<string, (o: { place: string; item: string | null }) => { label: string; command: string } | null> = {

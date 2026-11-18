@@ -3,7 +3,7 @@
 // 상태 enum과 프롬프트의 값 목록은 낱말 표(src/world/vocab.ts)에서 만든다. 사람은 여러 장 사이에 하는 일 하나를 고른다.
 import { z } from "zod";
 import type { VlmClient } from "../infer/vlm.js";
-import { CLASSES, SCENE_STATES, STATES, VLM_FIND, type Facet, type StateKey, type Target } from "../world/vocab.js";
+import { CLASSES, SCENE_STATES, STATES, VLM_FIND, VLM_SKIP, type Facet, type StateKey, type Target } from "../world/vocab.js";
 import type { EngineFrame, SceneObservation } from "../contract/observe.js";
 
 export { SCENE_STATES };
@@ -45,9 +45,9 @@ export const SCENE_PROMPT = [
   "You see one or more photos from a handheld phone camera in a home, oldest first, a few seconds apart. The line before each photo gives its capture time relative to the latest photo (t-0s).",
   "Detections lists the objects found in the latest photo, with ids and pixel boxes [x, y, w, h].",
   `objects: list every ${VLM_FIND.join(", ")} you can see in the latest photo, including ones missing from Detections. Give each an id v1, v2… and its box {x, y, w, h} as fractions of the latest photo width and height; set det to the matching detection id, or null. You may report facts for these ids in observations too.`,
-  `Kinds: ${VLM_FIND.map((c) => `${c} = ${(CLASSES[c] as { vlm?: string }).vlm}`).join("; ")}. A clear drinking glass is a cup, not a bottle.`,
+  `Kinds: ${VLM_FIND.map((c) => `${c} = ${(CLASSES[c] as { vlm?: string }).vlm}`).join("; ")}. A clear drinking glass is a cup, not a bottle. ${VLM_SKIP}`,
   "For each detected id, report only what is visible in the latest photo, one observation per fact, using the allowed states.",
-  `Objects. Place: ${values("place", "object")}; in_hand only when a hand holding it is visible in the latest photo (a person's hand, or the camera holder's hand reaching into the photo), never for an object resting on a surface. Contents, only if the inside is actually visible: ${values("contents", "object")}. Cup, bottle and bowl sides: ${values("body", "object")}. Lids, doors and covers: ${values("open", "object")}. Use: ${values("use", "fixture")}. Screens: ${values("screen", "object")}.`,
+  `Objects. Place: ${values("place", "object")}; in_hand only when a hand holding it is visible in the latest photo (a person's hand, or the camera holder's hand reaching into the photo), never for an object resting on a surface. Contents, only if the inside is actually visible: ${values("contents", "object")}. Cup, bottle and bowl sides: ${values("body", "object")}. Cup, bottle and bowl moment, at most one each, what happened to it between the photos: ${values("moment", "object")}. Lids, doors and covers: ${values("open", "object")}. Use: ${values("use", "fixture")}. Screens: ${values("screen", "object")}.`,
   `People. Posture: ${values("posture", "person")}. Place, when sitting or lying on it: ${values("place", "person")}. ${values("holding", "person")}. Activity, at most one per person, what they keep doing across the photos: ${values("activity", "person")}; other if none fits, unknown if you cannot tell. Moment, at most one per person, what they did between the photos: ${values("moment", "person")}. Use not_visible when the object is hidden.`,
   "scene: one short room word.",
   "summary: one or two short sentences on what visibly happens across the photos, in order: actions and changes such as a person picking up, drinking from, putting down or moving an object, wiping a surface, or walking out of view. With one photo or no change, describe only what is visible, without remarks about changes or the number of photos.",

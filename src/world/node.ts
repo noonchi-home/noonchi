@@ -59,7 +59,7 @@ export class WorldInputs {
       case "scene": {
         const ids = this.#idsOf.get(b.frame_id)?.ids ?? new Map<string, string>();
         this.#idsOf.delete(b.frame_id);
-        return { changes: this.world.applyScene(b.frame_id, b.observed_ms, b.scene, ids, b.look) };
+        return { changes: this.world.applyScene(b.frame_id, b.observed_ms, b.scene, ids, b.look, b.from_ms ?? b.observed_ms) };
       }
       case "missing":
         this.#idsOf.delete(b.frame_id);

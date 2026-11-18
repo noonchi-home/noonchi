@@ -8,7 +8,7 @@ const DISHES = ["dishwasher"];
 const FOOD = ["fridge"];
 /** 물건 종류 → 관련 가전 종류. 식기는 식기세척기, 음식은 냉장고. */
 export const RELATIONS: Record<ObjClass, string[]> = {
-  cup: DISHES, bottle: DISHES, bowl: DISHES, fork: DISHES, knife: DISHES, spoon: DISHES,
+  cup: DISHES, bottle: DISHES, bowl: DISHES, fork: DISHES, knife: DISHES, spoon: DISHES, pot: DISHES, ramen: [],
   banana: FOOD, apple: FOOD, orange: FOOD, broccoli: FOOD, carrot: FOOD, sandwich: FOOD, hot_dog: FOOD, pizza: FOOD, donut: FOOD, cake: FOOD,
   book: [], cell_phone: [], remote: [], laptop: [], scissors: [], toothbrush: [], hair_drier: [], teddy_bear: [], backpack: [], handbag: [], suitcase: [],
   umbrella: [], cat: [], dog: [],

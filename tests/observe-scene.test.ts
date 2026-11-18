@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { startFakeOpenAI, type FakeServer } from "../scripts/fake-openai.js";
 import { VlmClient } from "../src/infer/vlm.js";
 import { analyzeScene, CLOSER_NOTE, parseScene, SCENE_JSON_SCHEMA, SCENE_PROMPT } from "../src/observe/scene.js";
-import { CLASSES, VLM_FIND } from "../src/world/vocab.js";
+import { CLASSES, VLM_FIND, VLM_SKIP } from "../src/world/vocab.js";
 import { sha256 } from "../src/observe/ring.js";
 import type { EngineFrame } from "../src/contract/observe.js";
 
@@ -62,10 +62,19 @@ describe("VLM 장면 분석", () => {
     expect(CLASSES.bowl.vlm).toMatch(/never a bowl/);
   });
 
-  it("스키마 objects의 종류 enum은 낱말 표의 내용물 면이 있는 물건(VLM_FIND)이고, 프롬프트가 감지 목록에 없는 물건도 상자와 함께 답하라고 한다", () => {
+  // 0af95a1·키 큰 컵 q1·q2: 「모든 컵을 답하라」에 창턱·선반 장식(트로피 모양 잔 등)도 컵으로 답해 식탁 위 컵이 여러 id로 갈라졌다. VLM 답 시간도 물건 하나에 약 0.25초 늘었다
+  it("프롬프트는 컵·병·그릇 모양이어도 장식품(트로피·꽃병·장식 유리잔)은 물건 목록에 넣지 말라고 한다", () => {
+    expect(SCENE_PROMPT).toContain(VLM_SKIP);
+    expect(VLM_SKIP).toMatch(/trophies/);
+    expect(VLM_SKIP).toMatch(/vases/);
+    expect(VLM_SKIP).toMatch(/window ledge/);
+  });
+
+  it("스키마 objects의 종류 enum은 낱말 표에서 VLM 종류 기준(vlm)이 있는 물건(VLM_FIND)이고, 프롬프트가 감지 목록에 없는 물건도 상자와 함께 답하라고 한다", () => {
     const schema = JSON.stringify(SCENE_JSON_SCHEMA);
     for (const c of VLM_FIND) expect(schema).toContain(`"${c}"`);
-    expect([...VLM_FIND].sort()).toEqual(["bottle", "bowl", "cup"]);
+    expect([...VLM_FIND].sort()).toEqual(["bottle", "bowl", "cup", "pot", "ramen"]);
+    expect(VLM_FIND).toEqual((Object.keys(CLASSES) as (keyof typeof CLASSES)[]).filter((k) => CLASSES[k].role === "object" && "vlm" in CLASSES[k]));
     expect(SCENE_PROMPT).toContain("including ones missing from Detections");
   });
   it("감지 목록을 같이 보내고 보이는 사실만 받는다", async () => {

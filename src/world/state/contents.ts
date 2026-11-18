@@ -169,6 +169,16 @@ export class ContentsBook extends Part {
     return { changes, changed: this.settle(obj) };
   }
 
+  /** 확인 근거 시각(확인 값을 받친 가장 새 사진 촬영). 확인 값이 없으면 null. */
+  sureAt(obj: Obj): number | null {
+    return obj.contents?.sure?.atMs ?? null;
+  }
+
+  /** 내용물 세대(확인 값이 정해지거나 바뀌거나 거둬지거나 다시 열릴 때 오른다). 상태가 없으면 0. */
+  genOf(obj: Obj): number {
+    return obj.contents?.gen ?? 0;
+  }
+
   /** 사건(마시기·따르기)·따르기 단계: 확인 값을 보관하고 「다시 확인 필요」로 연다. 확인 값이 있다가 열렸을 때만 줄 하나(입에 댄 채 몇 장 이어져도 한 줄). */
   reopen(obj: Obj, atMs: number, why: AgainWhy): WorldChange[] {
     const s = this.state(obj);

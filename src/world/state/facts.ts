@@ -9,6 +9,12 @@ import { FACT_FRESH_MS, NOW_FACETS, POSE_HOLD, STATES, VLM_ONLY, type ClassKey, 
 import { PERSON, Part, fits, type Facts, type Obj } from "./core.js";
 import { inBasin, surfacePlace } from "../place.js";
 
+/** 그릇·순간 값마다 기억하는 마시기·따르기 사건 수. */
+const EVENT_KEEP = 4;
+/** 한 사건 구간의 최대 길이(ms): 보내는 5장 창(약 8초) 두 개. 넘으면 새 사건이다(되풀이된 마심을 끝없이 한 사건으로 합치지 않게). */
+const EVENT_SPAN_MS = 16_000;
+interface MomentEvent { from: number; to: number; gen: number }
+
 /** 트윈 면·싱크볼로 놓인 곳을 덮을 때 빼는 투영 오차 여유(m). */
 const TWIN_MARGIN_M = 0.15;
 
@@ -31,6 +37,39 @@ export class SceneFacts extends Part {
   private summaryAt = Number.NEGATIVE_INFINITY;
   /** 원본 프레임·대상·면(「e3|cup_1|place」)마다 넣은 VLM 답이 전체 사진(full)인지 잘라 본 사진(crop)인지(넣은 순서, 최근 ANSWERS_KEEP개). */
   private readonly answers = new Map<string, "full" | "crop">();
+  /** 그릇·순간 값(「cup_1|drank」)마다 낸 사건의 구간(가장 옛 사진 ~ 가장 새 사진 촬영)과 연 뒤 내용물 세대(최근 EVENT_KEEP개). */
+  private readonly events = new Map<string, MomentEvent[]>();
+
+  /** 마시기·따르기 사건: 같은 그릇·같은 값의 사건과 구간이 겹치고, 넓힌 구간이 EVENT_SPAN_MS 안이고, 연 뒤 내용물이 다시 확인되지 않았으면(세대 그대로)
+   *  한 사건이라 구간만 넓힌다(최근 5장을 보내 이웃 답의 구간이 겹친다). 새 사건이면 그 답의 가장 새 사진 촬영 시각으로 내용물을 다시 연다(그 뒤 사진만 새 값을 정한다).
+   *  확인 근거(가장 새 확인 사진)보다 옛 사건은 늦게 와도 열지 않는다(Codex P2 caf638f). */
+  private moment(obj: Obj, value: "drank" | "poured", from: number, to: number): WorldChange[] {
+    const book = this.core.contents;
+    const sureAt = book.sureAt(obj);
+    if (sureAt !== null && to < sureAt) return [];
+    const key = `${obj.id}|${value}`;
+    const list = this.events.get(key) ?? [];
+    const gen = book.genOf(obj);
+    const same = list.find((e) => from <= e.to && to >= e.from && e.gen === gen && Math.max(e.to, to) - Math.min(e.from, from) <= EVENT_SPAN_MS);
+    if (same) {
+      same.from = Math.min(same.from, from);
+      same.to = Math.max(same.to, to);
+      return [];
+    }
+    const changes = book.reopen(obj, to, value === "drank" ? "drink" : "pour");
+    this.events.set(key, [...list, { from, to, gen: book.genOf(obj) }].slice(-EVENT_KEEP));
+    return obj.confirmed && obj.status !== "gone" ? changes : [];
+  }
+
+  /** 잇기(WorldState.relink): 그 물건의 사건 기록을 대상 id로 옮긴다(내용물 갱신기 상태와 함께 옮겨 세대가 맞는다). */
+  moveEvents(fromId: string, toId: string): void {
+    for (const value of ["drank", "poured"]) {
+      const moved = this.events.get(`${fromId}|${value}`);
+      if (!moved) continue;
+      this.events.delete(`${fromId}|${value}`);
+      this.events.set(`${toId}|${value}`, [...(this.events.get(`${toId}|${value}`) ?? []), ...moved].slice(-EVENT_KEEP));
+    }
+  }
 
   /** 같은 면의 사실보다 오래된 답은 버린다. 값이 새로 생기거나 바뀌면 true.
    *  지금만 맞는 면(now)은 같은 값이어도 앞 답과 FACT_FRESH_MS 넘게 떨어지면 그 사이를 모르므로 처음 보인 시각을 새로 둔다.
@@ -129,7 +168,8 @@ export class SceneFacts extends Part {
     return fix ? { kind: "fixture", facts: fix.facts, cls: fix.cls } : null;
   }
 
-  applyScene(frameId: string, capturedAtMs: number, scene: SceneObservation, ids: Map<string, string>): WorldChange[] {
+  /** fromMs: 그 답이 본 가장 옛 사진의 촬영 시각(마시기·따르기 사건 구간의 시작). */
+  applyScene(frameId: string, capturedAtMs: number, scene: SceneObservation, ids: Map<string, string>, fromMs = capturedAtMs): WorldChange[] {
     const core = this.core;
     core.start(capturedAtMs);
     const changes: WorldChange[] = [];
@@ -165,6 +205,10 @@ export class SceneFacts extends Part {
       // 안 내용은 이 답의 몸통(불투명)을 넣은 뒤 갱신기로 넣는다(아래)
       if (target.kind === "object" && facet === "contents") {
         contents.push([core.objects.get(id)!, value as StateOf<"contents">]);
+        continue;
+      }
+      if (target.kind === "object" && facet === "moment") {
+        changes.push(...this.moment(core.objects.get(id)!, value as "drank" | "poured", fromMs, capturedAtMs));
         continue;
       }
       if (target.kind === "object" && facet === "body") bodies.add(id);
