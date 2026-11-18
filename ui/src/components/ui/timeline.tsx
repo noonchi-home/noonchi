@@ -10,9 +10,10 @@
 // 떨굴 구간(TimelineDropRegion)은 구간 표시(TimelineRegion: 두 끝 선·옅은 바탕·이름표)로 쓴다: 이름표는 구간 위 대신 아래 끝(bottom-1)에 두고, 카드 끝에 걸리면 그 끝에 맞추며, 끝 선 위에 그린다(맨 뒤 차례).
 // 줄 머리 글 자리 열 너비 기본 112 → 64. 머리 줄 열 이름(columnLabel) 기본 "Row" → 없음. 줄 이름(TimelineRowLabel)은 받은 예시 코드(demoCode)의 renderRowHeader 글(px-4 py-1, font-medium text-sm)이다.
 // 토큰 색: accent → brand, accent-foreground → on-brand, 지금 선·이름표 바탕 secondary → foreground(이름표 글 foreground → background), 판·머리 바탕 background → card(트윈 위에 얹는 카드), border·muted-foreground 그대로.
-// 칸 색은 tone(plain 카드 바탕·테, muted 옅은 바탕, ready brand 테, brand 빨강)이고 칸 글 tone brand(text-brand).
+// 칸 색은 tone(plain 카드 바탕·테, muted 옅은 바탕, ready brand 테, brand 빨강)이다.
 // 모서리·그림자: 판(timeline-grid)에 rounded-lg·shadow-sm(대시보드 카드 틀 Card와 같은 토큰)을 단다.
-// 사용자 허락 큰 글(2026-11-19 「만들기, 1.6초 크게」): 구간 이름표 size gap(text-[22px] 굵게)을 더했다.
+// 구간 이름표 size gap(굵게 font-bold, 글 크기는 받은 text-sm 그대로)을 더했다(2026-11-19 사용자 「글자가 너무 크더라 초나오는거」로 22px을 뺐다).
+// 예상 줄 글(TimelineCaption)을 더했다: 칸 글(TimelineSlotLabel)과 같은 글(font-medium text-xs)을 자르지 않고(truncate 없음, 한 줄) 카드 바탕(bg-card·rounded, px-1)으로 구간·지금 선 위(z-[16])에 둔다.
 // 원래 글 크기: text-sm(14px). 받은 코드의 머리 열 이름·떨굴 구간 이름표가 text-sm, 시 글·칸 글·지금 이름표가 text-xs다. 더 큰 글은 npm run lint(scripts/lint-ui-type.ts)가 막는다.
 import * as React from "react";
 import { createContext, useContext, useEffect, useRef, useState } from "react";
@@ -386,19 +387,27 @@ export function TimelineSlot({
  * TIMELINE SLOT PRIMITIVES (for content composition)
  * ========================================================================== */
 
-interface TimelineSlotLabelProps extends React.ComponentProps<"div"> {
-  tone?: "brand";
-}
+type TimelineSlotLabelProps = React.ComponentProps<"div">;
 
 export function TimelineSlotLabel({
-  tone,
   className,
   ...props
 }: TimelineSlotLabelProps) {
   return (
     <div
       data-slot="timeline-slot-label"
-      className={cn("font-medium truncate text-xs", tone === "brand" && "text-brand", className)}
+      className={cn("font-medium truncate text-xs", className)}
+      {...props}
+    />
+  );
+}
+
+/** 예상 줄 글: 칸 글과 같은 글을 자르지 않고 카드 바탕으로 구간·지금 선 위에 둔다. */
+export function TimelineCaption({ className, ...props }: React.ComponentProps<"div">) {
+  return (
+    <div
+      data-slot="timeline-caption"
+      className={cn("relative z-[16] whitespace-nowrap rounded bg-card px-1 font-medium text-xs text-brand", className)}
       {...props}
     />
   );
@@ -418,8 +427,8 @@ export function TimelineRowLabel({ className, ...props }: React.ComponentProps<"
  * ========================================================================== */
 
 const REGION_LABEL = {
-  default: "text-sm",
-  gap: "text-[22px] leading-7 font-bold",
+  default: "",
+  gap: "font-bold",
 } as const;
 
 interface TimelineRegionProps {
@@ -457,7 +466,7 @@ export function TimelineRegion({
       <div className="absolute inset-0 bg-brand/[0.07]" />
       <div className="absolute top-0 bottom-0 left-0 w-0.5 bg-brand" />
       <div className="absolute top-0 bottom-0 right-0 w-0.5 bg-brand" />
-      <div data-slot="timeline-region-label" className={cn("absolute bottom-1 bg-brand text-on-brand px-3 py-1.5 rounded font-semibold whitespace-nowrap shadow-md", align, REGION_LABEL[size])}>
+      <div data-slot="timeline-region-label" className={cn("absolute bottom-1 bg-brand text-on-brand px-3 py-1.5 rounded text-sm font-semibold whitespace-nowrap shadow-md", align, REGION_LABEL[size])}>
         {label}
       </div>
     </div>

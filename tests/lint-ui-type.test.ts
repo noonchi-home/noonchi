@@ -10,6 +10,14 @@ import { fileProblems, lintUiType, USER_SIZES } from "../scripts/lint-ui-type.js
 const head = (name: string, size: string) => `// 21st.dev「${name}」(id 1, a/b) 받은 코드.\n// 바꾼 것: 없음.\n// 원래 글 크기: ${size}\n`;
 const texts = (ps: { text: string }[]) => ps.map((p) => p.text);
 
+// 사용자 바로잡음(2026-11-19): 「글자가 너무 크더라 초나오는거」. 시간 줄 반응 간격 숫자의 22px 허락 줄을 뺐다
+describe("허락 줄에 시간 줄이 없다", () => {
+  it("USER_SIZES에 components/ui/timeline.tsx 줄이 없고, 그 부품에 원래 크기(text-sm 14px)보다 큰 글이 없다", () => {
+    expect(USER_SIZES.some((u) => (u.part as string) === "components/ui/timeline.tsx")).toBe(false);
+    expect(lintUiType().filter((p) => p.file.replaceAll("\\", "/").endsWith("components/ui/timeline.tsx"))).toEqual([]);
+  });
+});
+
 describe("부품 글 크기", () => {
   it("Item 제목의 허브 글 크기(body-sm)와 far를 잡고 원래 크기 text-sm(14px)을 알려 준다", () => {
     const src = `${head("Basic Item", "text-sm(14px)")}const t = cn("flex w-fit items-center gap-2 text-body-sm leading-snug font-medium group-data-[size=far]/item:text-far", className)`;

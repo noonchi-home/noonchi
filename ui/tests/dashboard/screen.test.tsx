@@ -294,6 +294,19 @@ describe("대시보드 메시지 상자(트윈 아래쪽 하나, 생각 말풍�
     } finally { rect.mockRestore(); }
   });
 
+  // 조정자(2026-11-19): 예상 줄 글이 막대 안에서 잘려 보였다(구간 끝 선이 글을 가로지름). 글은 자르지 않고 구간·지금 선 위에 카드 바탕으로 둔다
+  it("예상 줄 글은 자르지 않는다(말줄임·넘침 숨김 없음, 한 줄). 구간 선·지금 선보다 위에 카드 바탕으로 그려 선이 글을 가로지르지 않는다", () => {
+    draw(screenAt(2));
+    const caption = card().querySelector<HTMLElement>("[data-timeline-caption]")!;
+    const text = caption.querySelector<HTMLElement>("[data-slot=timeline-caption]")!;
+    expect(text).toHaveTextContent("컵을 두고 자리를 뜨면 컵 치우기 · 16초 먼저");
+    for (const el of [caption, text]) for (const c of ["truncate", "overflow-hidden", "text-ellipsis"]) expect(cls(el, c), c).toBe(false);
+    expect(cls(text, "whitespace-nowrap")).toBe(true);
+    expect(cls(text, "bg-card")).toBe(true);
+    expect(cls(text, "text-xs")).toBe(true);
+    expect(cls(text, "z-[16]")).toBe(true);
+  });
+
   it("구간: 사람 줄은 사람 상태, 예상 줄은 목표(준비됨은 brand 테)와 그 글, 로봇 줄은 계획 단계(지금 단계는 brand 빨강)와 지켜봄이다. 지금보다 앞 SPAN초 밖은 그리지 않는다", () => {
     draw(screenAt(2));
     const row = (id: string) => card().querySelector<HTMLElement>(`[data-slot=timeline-row][data-row=${id}]`)!;
@@ -309,12 +322,14 @@ describe("대시보드 메시지 상자(트윈 아래쪽 하나, 생각 말풍�
     unmount();
   });
 
-  it("사람이 떠난 때 → 첫 명령은 세 줄을 가로지르는 brand 구간과 큰 「N.N초」(22px 굵게, 사용자 허락 2026-11-19)다. 간격을 모르면 없다", () => {
+  // 사용자 바로잡음(2026-11-19): 「글자가 너무 크더라 초나오는거」. 22px을 빼고 부품 원래 크기(14px)에 굵기·LG 빨강으로만 띄운다
+  it("사람이 떠난 때 → 첫 명령은 세 줄을 가로지르는 brand 구간과 「N.N초」(부품 원래 크기 14px, 굵게, brand 바탕)다. 간격을 모르면 없다", () => {
     draw(screenAt(2));
     const region = card().querySelector<HTMLElement>("[data-slot=timeline-drop-region]")!;
     expect(region).toHaveTextContent(TIMELINE_CLEAR.gap!.text);
     const label = region.querySelector<HTMLElement>("[data-slot=timeline-region-label]")!;
-    expect(cls(label, "text-[22px]")).toBe(true);
+    expect(cls(label, "text-sm")).toBe(true);
+    expect(cls(label, "text-[22px]")).toBe(false);
     expect(cls(label, "font-bold")).toBe(true);
     expect(cls(label, "bg-brand")).toBe(true);
     const { unmount } = draw(screenAt(0));
@@ -795,18 +810,15 @@ describe("대시보드 글 크기", () => {
     (typeof el.className === "string" ? el.className : el.getAttribute("class") ?? "").split(/\s+/).map((c) => c.replace(/^.*:/, "")).filter((c) => SIZE.test(c))));
 
   // 사용자 허락(2026-11-18): 「메시지박스 글씨 키워」. 메시지 상자 문장 줄만 16px(Item talk), 그 밖은 부품 원래 크기
-  // 사용자 허락(2026-11-19): 「만들기, 1.6초 크게」. 시간 줄 반응 간격 숫자만 22px(Timeline 구간 이름표 gap)
-  it.each([0, 1, 2, 3, 4])("1920×1080 %i: 화면 글은 부품 원래 크기(text-xs 12px·text-sm 14px)다. 메시지 상자만 사용자가 허락한 16px(Item talk), 시간 줄 반응 간격 숫자만 22px가 있다. far·화면 너비로 커지는 글 크기가 없다", (n) => {
+  // 사용자 바로잡음(2026-11-19): 「글자가 너무 크더라 초나오는거」. 시간 줄 반응 간격 숫자도 부품 원래 크기
+  it.each([0, 1, 2, 3, 4])("1920×1080 %i: 화면 글은 부품 원래 크기(text-xs 12px·text-sm 14px)다. 메시지 상자만 사용자가 허락한 16px(Item talk)가 있다. far·화면 너비로 커지는 글 크기가 없다", (n) => {
     const rect = atScreen(1920, 1080);
     try {
       draw(screenAt(n, { robotKnown: n !== 2, connected: n === 3 ? false : true }));
       const box = talk();
-      const gap = document.querySelector("[data-slot=timeline-drop-region]");
-      const all = sizesIn(document.body, (el) => !box.contains(el) && !(gap?.contains(el) ?? false));
+      const all = sizesIn(document.body, (el) => !box.contains(el));
       expect(all.size).toBeGreaterThan(0);
       for (const c of all) expect(["text-xs", "text-sm"], c).toContain(c);
-      if (gap) for (const c of sizesIn(gap)) expect(["text-sm", "text-[22px]"], c).toContain(c);
-      expect(!!gap).toBe(n > 0);
       const inBox = sizesIn(box);
       for (const c of inBox) expect(["text-xs", "text-sm", "text-base"], c).toContain(c);
       expect(inBox.has("text-base")).toBe(true);
