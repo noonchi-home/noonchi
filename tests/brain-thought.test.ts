@@ -7,7 +7,8 @@ import * as thought from "../src/brain/thought.js";
 import { THOUGHT_KEEP, THOUGHT_KEEP_MS, decisionLines, lastStoredThoughts, storeThought, thoughtFeed } from "../src/brain/thought.js";
 import { SAY_TEXT } from "../src/act/labels.js";
 import { TASK_NAMES, TASK_SAY } from "../src/act/tasks.js";
-import { FSM_STATE_IF, FSM_STATE_TEXT } from "../src/world/labels.js";
+import { RULE_IF } from "../src/world/labels.js";
+import { CUP_FSM_MEMORY } from "../src/brain/decision.js";
 import type { BrainLog, ThoughtEvent, ThoughtMessage } from "../src/contract/events.js";
 
 type Decision = Extract<BrainLog, { type: "decision" }>;
@@ -22,35 +23,53 @@ const texts = (events: ThoughtEvent[]) => events.flatMap((e) => e.messages.map((
 const RULE_LINE = "컵을 두고 자리를 뜨면 치워도 된다고 하셨어요";
 
 describe("메시지 상자 문장(사실로만)", () => {
-  it("규칙대로 고른 행동은 「<상태 조건> <행동 허락> 된다고 하셨어요」 한 줄이다: 컵을 두고 자리를 뜸 + 컵 치우기", () => {
+  it("규칙대로 고른 행동은 「<맞은 규칙의 조건> <행동 허락> 된다고 하셨어요」 한 줄이다: 컵 치우기는 사용자가 정한 「컵을 두고 자리를 뜨면 치워도 된다고 하셨어요」", () => {
     expect(decisionLines(decision("pam-1", "컵 치우기", rule("left_cup")))).toEqual([RULE_LINE]);
+    // 사용자가 정한 짧은 꼴 그대로다(2026-11-18 사용자 바로잡음: 「아무도 안 만지면」 같은 덧조건은 넣지 않는다)
+    expect(decisionLines(decision("pam-1", "컵 치우기", rule("left_cup")))[0]).toBe("컵을 두고 자리를 뜨면 치워도 된다고 하셨어요");
   });
 
-  it("조건형 표에 없는 상태는 「<상태 글> 때는 <행동>을 해도 된다고 하셨어요」, 허락형 표에 없는 행동은 「<행동>을 해도」다. 상태 글도 없으면(배운 새 상태 id) 줄이 없다", () => {
-    FSM_STATE_TEXT["night_rest"] = "밤에 쉬는 중";
-    try {
-      expect(decisionLines(decision("pam-1", "컵 치우기", rule("night_rest")))).toEqual(["밤에 쉬는 중 때는 컵 치우기를 해도 된다고 하셨어요"]);
-    } finally {
-      delete FSM_STATE_TEXT["night_rest"];
+  // Codex(b78b518 thought.ts:30): 상태 이름(「컵을 두고 자리를 뜨면」)으로 써서 「아무도 만지지 않을 때」 같은 규칙 조건을 빼고 허락한 것처럼 말했다
+  /** 시연 기억 규칙마다 조건형에 있어야 하는 말(그 규칙의 상황). */
+  const MUST: Record<string, string[]> = {
+    "컵 치우기": ["컵", "자리를 뜨"],
+    "컵에 물 채워 주기": ["식사", "비면"],
+    "컵에 콜라 따라 주기": ["TV", "비면"],
+    "에어컨 켜기": ["덥다", "부채질"],
+    "라면 끓이기 알려 주기": ["라면", "묻거나", "막히"],
+    "전자레인지로 데우기 알려 주기": ["전자레인지", "묻거나", "어떻게"],
+  };
+
+  it("시연 기억의 규칙마다 사용자가 정한 짧은 꼴의 조건형이 있고 「아무도 안 만지면」 같은 덧조건은 없다. 표에 없는 트리거(배운 새 규칙)는 줄이지 않고 그대로 조건으로 쓴다", () => {
+    for (const st of CUP_FSM_MEMORY.states) for (const r of st.rules) {
+      const line = decisionLines(decision("pam-1", r.action, rule(st.id, r.trigger)))[0]!;
+      expect(RULE_IF[r.action], r.trigger).toBeTruthy();
+      expect(line, r.trigger).toBe(`${RULE_IF[r.action]} ${TASK_SAY[r.action]!.may} 된다고 하셨어요`);
+      // 짧은 꼴이다(메시지 상자 한 줄은 잘린다: 조건은 26자까지)
+      expect([...RULE_IF[r.action]!].length, r.action).toBeLessThanOrEqual(26);
+      for (const word of MUST[r.action] ?? []) expect(line, r.action).toContain(word);
+      // 덧조건(「아무도 안 만지면」·「들거나 만지지 않으면」)은 넣지 않는다
+      expect(line, r.action).not.toMatch(/아무도|만지/);
     }
-    expect(decisionLines(decision("pam-1", "춤추기", rule("left_cup")))).toEqual(["컵을 두고 자리를 뜨면 춤추기를 해도 된다고 하셨어요"]);
-    expect(decisionLines(decision("pam-1", "컵 치우기", rule("night_rest")))).toEqual([]);
+    expect(decisionLines(decision("pam-1", "컵 치우기", { ...rule("night_rest", "사용자가 밤 열한 시 넘어 거실 불을 끄고 컵을 소파 옆에 둔다."), learned: true })))
+      .toEqual(["사용자가 밤 열한 시 넘어 거실 불을 끄고 컵을 소파 옆에 둔다면 치워도 된다고 하셨어요"]);
+    expect(decisionLines(decision("pam-1", "춤추기", { ...rule("left_cup", "음악이 나옴"), learned: true }))).toEqual(["「음악이 나옴」일 때 춤추기를 해도 된다고 하셨어요"]);
   });
 
-  it("규칙 없이 고른 행동, 상태를 정할 수 없는 규칙, 대기·실패 판단은 줄이 없다", () => {
+  it("규칙을 특정하지 못하면(규칙 여럿: 트리거 없음, 규칙 없이 고른 행동) 허락 문장은 없고, 대기·실패 판단도 줄이 없다", () => {
+    expect(decisionLines(decision("pam-1", "컵 치우기", { state: "left_cup", trigger: null, learned: false, matched: true }))).toEqual([]);
+    expect(decisionLines(decision("pam-1", "컵 치우기", { state: null, trigger: null, learned: true, matched: true }))).toEqual([]);
     expect(decisionLines(decision("pam-1", "컵 치우기", { state: "left_cup", trigger: null, learned: false, matched: false }))).toEqual([]);
-    expect(decisionLines(decision("pam-1", "컵 치우기", rule(null)))).toEqual([]);
     expect(decisionLines(decision("pam-1", "컵 치우기", null))).toEqual([]);
     expect(decisionLines(decision("pam-1", null, { state: "drinking", trigger: null, learned: false, matched: false }))).toEqual([]);
     expect(decisionLines(decision("pam-1", "컵 치우기", rule("left_cup"), "failed"))).toEqual([]);
   });
 
-  it("FSM 상태마다 조건형이 있고, 행동 목록의 모든 행동은 허락형·클로이드 말(「~게요」)이 있다. 문장은 판단 기록의 사실(규칙·행동)로만 만들어 PAM 생각 글이나 목록에 없는 행동(물기 닦기)이 나오지 않는다", () => {
-    for (const state of Object.keys(FSM_STATE_TEXT)) expect(FSM_STATE_IF[state], state).toBeTruthy();
+  it("행동 목록의 모든 행동은 허락형·클로이드 말(「~게요」)이 있고, 문장은 판단 기록의 사실(규칙·행동)로만 만들어 PAM 생각 글이나 목록에 없는 행동(물기 닦기)이 나오지 않는다", () => {
     for (const action of TASK_NAMES) {
       expect(TASK_SAY[action]?.will, action).toMatch(/게요$/);
       const [line] = decisionLines(decision("pam-1", action, rule("left_cup")));
-      expect(line, action).toBe(`컵을 두고 자리를 뜨면 ${TASK_SAY[action]!.may} 된다고 하셨어요`);
+      expect(line, action).toBe(`${RULE_IF[action] ?? "사용자가 컵을 식탁 등에 두고 자리를 비웠고, 아무도 컵을 들거나 만지지 않는다면"} ${TASK_SAY[action]!.may} 된다고 하셨어요`);
       expect(`${line} ${SAY_TEXT.decided(action)}`, action).not.toMatch(/물기|닦/);
     }
   });

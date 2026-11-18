@@ -45,6 +45,8 @@ export class Steps extends Part {
   /** 치운 무리(2026-11-18): 놓기를 끝낸 넣은 곳(면, 싱크볼에 넣었으면 part basin)과 그 종류. 그 뒤 그 넣은 곳에 있는 같은 종류 물건은 넣은 기억이 없어도 치운 것이다.
    *  열쇠는 「넣은 곳|종류」. 한 번 넣은 곳은 잊지 않는다(그 자리에 다시 놓인 같은 종류도 치운 것). */
   private readonly putGroup = new Map<string, { target: string; part?: "basin"; cls: string; atMs: number }>();
+  /** 치운 무리에서 풀린 물건: 그 넣은 곳을 정한 뒤 손에 있음이 확인됐다(다시 집어 씀). 같은 면에 도로 놓여도 무리로 보지 않는다(풀림이 무리 판정보다 먼저). */
+  private readonly reused = new Set<string>();
 
   /** 찾기에서 뺄 물건(src/act/track/find.ts): 놓기를 끝낸 물건(placed)과 그 옛 id. 안 보이는 옛 id의 마지막 자리는 치우기 전 자리다. */
   awayIds(): ReadonlySet<string> {
@@ -85,11 +87,13 @@ export class Steps extends Part {
       if (o.facts.place?.value === "in_hand" && o.facts.place.certainty === "confirmed") continue;
       all.set(o.id, { target: o.surface, part: "basin", atMs: o.first_seen_ms });
     }
-    // 치운 무리: 끝낸 계획의 넣은 곳에 있는 같은 종류 물건(새 id로 둘 이상 잡혀 어느 것이 넣은 것인지 모를 때, 그 뒤 들어온 것). 손에 있음이 확인되면 아니다
+    // 치운 무리: 끝낸 계획의 넣은 곳에 있는 같은 종류 물건(새 id로 둘 이상 잡혀 어느 것이 넣은 것인지 모를 때, 그 뒤 들어온 것).
+    // 그 뒤 손에 있음이 확인된 물건(다시 집어 씀)은 풀리고, 같은 면에 도로 놓여도 무리로 돌아가지 않는다
     for (const g of this.putGroup.values()) {
       for (const o of objects) {
-        if (all.has(o.id) || o.status === "gone" || o.cls !== g.cls || o.surface !== g.target || (g.part && o.surface_part !== g.part)) continue;
-        if (o.facts.place?.value === "in_hand" && o.facts.place.certainty === "confirmed") continue;
+        const hand = o.facts.place;
+        if (o.cls === g.cls && hand?.value === "in_hand" && hand.certainty === "confirmed" && hand.at_ms > g.atMs) this.reused.add(o.id);
+        if (all.has(o.id) || this.reused.has(o.id) || o.status === "gone" || o.cls !== g.cls || o.surface !== g.target || (g.part && o.surface_part !== g.part)) continue;
         all.set(o.id, { target: g.target, ...(o.surface_part === "basin" ? { part: "basin" as const } : {}), atMs: g.atMs });
       }
     }

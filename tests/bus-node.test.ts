@@ -138,6 +138,44 @@ describe("BusNode 실행기", () => {
     await expect(n.spawn(async () => 1)).rejects.toThrow(/닫힌 노드/);
   });
 
+  it("settled는 줄이 비지 않아도(콜백이 끝나지 않음) 기한에 false로 끝난다(Codex cbdb6ec P2)", async () => {
+    const bus = new MemoryBus();
+    const n = node("act", bus);
+    const w = node("world", bus);
+    n.on("/world/changes", (_b, { signal }) => new Promise<void>((_, reject) => { signal.addEventListener("abort", () => reject(signal.reason)); }));
+    await n.prepare();
+    await w.prepare();
+    n.start();
+    w.start();
+    await w.publish("/world/changes", { rev: 1, changes: [] });
+    await tick(30);
+    expect(n.busy()).toBe(true);
+    const t0 = Date.now();
+    expect(await n.settled(200)).toBe(false);
+    expect(Date.now() - t0).toBeLessThan(1000);
+    await n.stop();
+  });
+
+  it("settled는 상태를 기다리며 내려놓은 변화가 남아 있으면 비었다고 보지 않는다(Codex cbdb6ec P2)", async () => {
+    const bus = new MemoryBus();
+    const n = node("act", bus);
+    const seen: number[] = [];
+    n.withState("/world/changes", "/world/state", (change) => { seen.push(change.rev as number); });
+    const w = node("world", bus);
+    await n.prepare();
+    await w.prepare();
+    n.start();
+    w.start();
+    await w.publish("/world/changes", { rev: 1, changes: [] });
+    await tick(50);
+    expect(n.busy()).toBe(false);
+    expect(await n.settled(200)).toBe(false);
+    await w.publish("/world/state", { rev: 1, view: VIEW });
+    expect(await n.settled(1000)).toBe(true);
+    expect(seen).toEqual([1]);
+    await n.stop();
+  });
+
   it("변화는 그 판본 이상의 상태를 가진 뒤에 처리한다", async () => {
     const bus = new MemoryBus();
     const n = node("act", bus);

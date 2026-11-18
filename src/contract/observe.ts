@@ -84,7 +84,9 @@ export interface SceneObservation {
 }
 
 /** 장면 VLM 답을 받은 사진의 카메라·크기와 그때 폰 눈 자리(트윈 [x, y], 없으면 null): 집 상태가 VLM 물건 상자를 트윈 자리로 옮긴다(src/world/state/sceneobjects.ts SceneLook). */
-export interface SceneLookInput { view: CameraView; width: number; height: number; eye?: [number, number] | null }
+export interface SceneLookInput { view: CameraView; width: number; height: number; eye?: [number, number] | null; dets?: LookDetInput[] }
+/** 그 사진의 YOLO 감지 하나(감지 번호 d1…, 엔진 프레임 픽셀 상자, 바닥 점): 이어진 VLM 물건은 자리를 감지 바닥 점으로 낸다(src/world/state/sceneobjects.ts LookDet). */
+export interface LookDetInput { id: string; box: [number, number, number, number]; foot?: [number, number] }
 /** 가까이 본 그 장의 카메라·크기·자른 자리(엔진 프레임 픽셀 [x, y, w, h], src/world/state/closer.ts CloserLookAt). */
 export interface CloserAtInput { view: CameraView; width: number; height: number; crop: [number, number, number, number] }
 

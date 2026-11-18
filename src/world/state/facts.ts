@@ -147,7 +147,7 @@ export class SceneFacts extends Part {
         continue;
       }
       if (target.kind === "object" && facet === "body") bodies.add(id);
-      if (core.people.poseHolds(target.facts[facet], capturedAtMs) || core.merge.carriedPlace(id, facet) || core.people.fallHeld(id, facet)) continue;
+      if (core.people.poseHolds(target.facts[facet], capturedAtMs) || core.scene.carriedPlace(id, facet) || core.people.fallHeld(id, facet)) continue;
       // 들려 있지 않은 물건의 놓인 곳은 트윈 면으로 정한다(식탁 위 잔을 VLM이 「선반 위」로 답했다, 가로 유리컵 r4·r6). VLM 말은 손에 있음·싱크대 안처럼 트윈 면으로 모르는 것에만 쓴다
       const placed = target.kind === "object" && facet === "place" ? this.twinPlace(core.objects.get(id)!, value) : value;
       if (placed === null) continue;

@@ -60,6 +60,12 @@ describe("트윈 순간", () => {
     expect(f.marks.map((m) => m.id).sort()).toEqual([SINK, TABLE].sort());
   });
 
+  it("장면 물건이 아닌 자리(폰 눈·World State 물건, pos)의 표시는 그 트윈 자리 그림 픽셀이다(고리를 찾지 않는다)", () => {
+    const here: Check = { key: "brain", order: 1, source: "brain", objectId: "spot:eye", pos: [7.5, 0.9, 2.5], label: "주방·식당", verb: "지켜봄", at: 0 };
+    const f = frameAt(3, [here], { anchor: () => null });
+    near(f.marks.find((m) => m.id === "spot:eye")?.px, px([7.5, 2.5], 0.9), 1e-6);
+  });
+
   it("자리를 모르는 것과 승인을 기다리는 기기는 표시하지 않는다", () => {
     const waiting: Check = { key: "device:fridge_bbc363a3", order: 3, source: "agent", deviceId: "fridge_bbc363a3", verb: "승인 대기", at: 0 };
     const f = frameAt(3, [...PLAN_CHECKS, waiting], { anchor: (id) => (id === SINK ? null : anchorOf(id)) });

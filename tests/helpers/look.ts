@@ -10,16 +10,16 @@ const textOf = (content: unknown): string => typeof content === "string" ? conte
 export const CLOSER_SUMMARY = "가까이 본 장면";
 
 /** 가짜 OpenAI reply: CLOSER_NOTE가 든 장면 요청이면 감지마다 state를 답하고(요약 CLOSER_SUMMARY), 아니면 null(기본 답).
- *  objects를 주면 그 VLM 물건을 함께 답하고 물건마다 같은 state를 단다. */
-export function closerVlmReply(state = "in_sink", objects: { id: string; cls: string; box: { x: number; y: number; w: number; h: number }; det: string | null }[] = []): (body: any) => string | null {
+ *  objects를 주면 그 VLM 물건을 함께 답하고 물건마다 같은 state를 단다. 주지 않으면 가짜 서버가 물건 감지마다 그 감지와 이은 물건을 더한다(scripts/fake-openai.ts). */
+export function closerVlmReply(state = "in_sink", objects?: { id: string; cls: string; box: { x: number; y: number; w: number; h: number }; det: string | null }[]): (body: any) => string | null {
   return (body) => {
     if (body?.response_format?.json_schema?.name !== "scene_observation") return null;
     const text = (Array.isArray(body.messages) ? body.messages : []).map((m: { content: unknown }) => textOf(m.content)).join("\n");
     if (!text.includes(CLOSER_NOTE)) return null;
     const m = /Detections: (\[.*\])/.exec(text);
     const dets: { id: string }[] = m ? JSON.parse(m[1]!) : [];
-    const said = [...dets.map((d) => d.id), ...objects.map((o) => o.id)];
-    return JSON.stringify({ scene: "kitchen", observations: said.map((object_id) => ({ object_id, state })), objects, summary: CLOSER_SUMMARY });
+    const said = [...dets.map((d) => d.id), ...(objects ?? []).map((o) => o.id)];
+    return JSON.stringify({ scene: "kitchen", observations: said.map((object_id) => ({ object_id, state })), ...(objects ? { objects } : {}), summary: CLOSER_SUMMARY });
   };
 }
 

@@ -1,4 +1,4 @@
-// World State(src/world/state/)의 안쪽 공유 객체 WorldCore: 부분(objects 감지 합치기·people 사람·관절·facts VLM 사실·closer 가까이 보기·devices 카메라로 본 가전)이
+// World State(src/world/state/)의 안쪽 공유 객체 WorldCore: 부분(objects YOLO 감지(사람·가전 설비·관절)·sceneobjects 장면 VLM 물건·people 사람·관절·facts VLM 사실·closer 가까이 보기·devices 카메라로 본 가전)이
 // 함께 쓰는 상태(물건·가전 설비·사람·등장 셈·관절이 붙인 사실·쓰러짐)와 작은 도우미(물건 만들기·잊기·이름·보임 판단·자리 고칠 촬영·지킴).
 // 부분은 이 객체를 받는 작은 클래스(Part)이고 서로를 이 객체의 칸으로 부른다. 부분끼리는 값 import가 없다(WorldState가 만들어 잇는다, world.ts).
 import type { Facet, FixtureClass, ObjClass, WorldFact, WorldObject, WorldSighting } from "../../contract/world.js";
@@ -99,8 +99,12 @@ export interface Obj {
   /** 종류 셈에 마지막으로 넣은 VLM 답의 촬영 시각·원본 프레임(같은 사진 재시도·늦게 온 옛 답은 세지 않는다). */
   clsAt: number;
   clsFrame: string | null;
-  /** 장면·가까이 보기 VLM이 이 물건을 본 마지막 촬영 시각(VLM_SEEN_HOLD_MS 동안 YOLO가 놓쳐도 사라짐을 세지 않는다). */
+  /** 장면·가까이 보기 VLM이 이 물건을 본 마지막 촬영 시각. 사라짐 셈(vlmMiss)은 이보다 새 촬영만 센다. */
   vlmSeen: number | null;
+  /** 마지막으로 본 촬영(vlmSeen) 뒤에 그 자리가 시야 안인데 장면 VLM 목록에 없던 사진(원본 프레임마다 하나). VLM_GONE_PHOTOS장이면 사라짐이다. */
+  vlmMiss: { frame: string; at: number }[];
+  /** 사라짐을 장면 VLM 사라짐 셈(vlmMiss)으로 정했다: 늦게 온 옛 사진이 그 뒤에 봤으면 셈을 다시 해 거둔다. */
+  missGone: boolean;
   /** 확인 전 후보를 본 VLM 답의 원본 프레임(VLM_CONFIRM_FRAMES장이면 확정). */
   vlmFrames: string[];
   /** 장면 VLM이 말한 다른 놓인 곳(place) 하나: 다음 원본 프레임의 더 새 촬영이 같은 값을 말하면 바꾼다(SceneFacts.steady). */
@@ -109,8 +113,6 @@ export interface Obj {
   heldSeen: boolean;
   /** 장면 VLM 후보를 처음 본 사진의 폰 눈(두 장의 폰 눈이 가까워야 확정한다). YOLO 후보는 null. */
   vlmEye: [number, number] | null;
-  /** 자리를 장면 VLM 상자로 정했다(YOLO가 자리를 고치면 false): YOLO 감지는 VLM_MATCH_M 안이면 이 물건으로 잇는다(투영 차이로 두 id가 되지 않게). */
-  vlmPlaced: boolean;
   /** 장면 VLM 상자로 낸 VLM_MOVE_M 넘게 떨어진 새 자리 하나: 다음 원본 프레임의 더 새 촬영이 그 근처를 말하면 옮긴다(sceneobjects.ts). */
   posVote: { position: V3; frame: string; at: number; surface: string | null; part: "basin" | null } | null;
   /** 내용물 갱신기의 상태(src/world/state/contents.ts). 내용물을 쌓은 적 없으면 null. */
@@ -129,8 +131,10 @@ export const dist = (a: V3, b: V3) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] 
 
 /** 물건 종류는 VLM이 서로 다른 원본 프레임의 더 새 촬영에서 이만큼 이어 다른 종류(마시는 그릇 무리 안)로 답해야 바뀐다. 흔들린 답(컵 → 병 → 컵)으로는 바뀌지 않는다. */
 export const CLASS_SWITCH_ANSWERS = 2;
-/** VLM이 본 물건은 그 촬영부터 이만큼(ms) YOLO가 놓쳐도 사라짐을 세지 않는다(VLM 무조건 우선: VLM 간격 2초 + 답 약 2초 + 여유). */
-export const VLM_SEEN_HOLD_MS = 6000;
+/** 확인된 물건은 그 자리가 시야 안인 장면 VLM 사진 이만큼(서로 다른 원본 프레임, 촬영 순서)이 이어 목록에 없으면 사라짐이다. */
+export const VLM_GONE_PHOTOS = 3;
+/** 사라진 물체를 이만큼 두었다가 잊는다(같은 자리에 다시 보이면 같은 id로 돌아온다). */
+export const GONE_KEEP_MS = 600_000;
 /** 장면 VLM 답 후보는 이만큼(ms) 다시 안 보이면 잊는다(VLM 두 장 사이 + 1초). */
 export const VLM_CANDIDATE_MS = 5000;
 /** 장면 VLM 답 후보는 서로 다른 원본 프레임 이만큼에서 보이면 확정한다. */
@@ -162,8 +166,8 @@ export class WorldCore {
     facts: Facts; answered: number | null;
   } = { visible: false, since_ms: null, last_seen_ms: null, count: 0, room: null, position: null, positionAt: null, facts: {}, answered: null };
   frameAt: number | null = null;
-  /** 관절로 마지막에 든 물건 id(확인 전 물건 포함). */
-  heldIds: string[] = [];
+  /** 카메라 자세가 있는 사진을 본 적이 있다(맞춘 뒤). 그 뒤 카메라 없는 장면 VLM 답은 물건 식별·사라짐 셈에 쓰지 않는다(자리 모름 유령 컵). */
+  sawCamera = false;
   /** 등장 확인 전에 끊긴 후보의 마지막 자리(오래된 것부터). */
   sightings: WorldSighting[] = [];
   /** 관절이 붙인 사실(그 사실 객체). VLM이 같은 면을 다시 쓰면 새 객체라 빠진다. */
@@ -193,8 +197,8 @@ export class WorldCore {
     this.fall = new FallWatch(this.fallCfg);
     this.identityM = o.identityM ?? 0.25;
     this.stepMs = o.evidenceStepMs ?? EVIDENCE_STEP_MS;
-    // 등장은 사람·물건 모두 2장(2초), 사라짐은 사람 2장(4초)·물건 3장(6초). 물건 등장을 4초에서 2초로 줄였다(흔들려 짧게 잡힌 물건은 사라짐 셈이 정리한다)
-    this.confirmer = new Confirmer((key) => (key === PERSON ? 2 : 3), this.stepMs, () => 2);
+    // 사람만 센다(YOLO 사람 감지): 등장 2장(2초), 사라짐 2장(4초). 물건 등장·사라짐은 장면 VLM 사진으로 센다(sceneobjects.ts)
+    this.confirmer = new Confirmer(() => 2, this.stepMs, () => 2);
   }
 
   /** 이 감지를 받는가(src/world/accept.ts accepts). */
@@ -213,7 +217,7 @@ export class WorldCore {
     const obj: Obj = {
       id: `${cls}_${n}`, cls, position: null, surface: null, surfaceLabel: null, part: null, room: null, errorM: null, confirmed: false, status: "present",
       firstSeen: atMs, lastSeen: atMs, lastInView: atMs, goneAt: null, facts: {}, answered: null, closerAt: null, peekGuard: null, sizes: [], posFrom: null,
-      posAt: Number.NEGATIVE_INFINITY, posCloser: false, judgedAt: atMs, judgedFrame: frameId, judgedCloser: false, followed: null, closerRev: {}, clsVote: null, clsAt: Number.NEGATIVE_INFINITY, clsFrame: null, vlmSeen: null, vlmFrames: [], placeVote: null, posVote: null, vlmPlaced: false, vlmEye: null, heldSeen: false,
+      posAt: Number.NEGATIVE_INFINITY, posCloser: false, judgedAt: atMs, judgedFrame: frameId, judgedCloser: false, followed: null, closerRev: {}, clsVote: null, clsAt: Number.NEGATIVE_INFINITY, clsFrame: null, vlmSeen: null, vlmMiss: [], missGone: false, vlmFrames: [], placeVote: null, posVote: null, vlmEye: null, heldSeen: false,
       movedAt: atMs, trail: [], carried: false, contents: null, free: null,
     };
     this.objects.set(obj.id, obj);
@@ -313,9 +317,15 @@ export class WorldCore {
     return this.focusOn?.id === obj.id;
   }
 
-  /** VLM이 이 물건을 VLM_SEEN_HOLD_MS 안에 봤다: YOLO가 놓쳐도 사라짐을 세지 않는다(VLM 무조건 우선). */
-  vlmHold(obj: Obj, atMs: number): boolean {
-    return obj.vlmSeen !== null && atMs - obj.vlmSeen <= VLM_SEEN_HOLD_MS;
+  /** 이 촬영(원본 프레임 frameId)은 이 물건 보임을 바꾸지 못하는가: 마지막 보임 판단보다 옛 촬영이거나(가까이 보기가 더 새 촬영으로 봤다),
+   *  같은 원본 프레임을 잘라 본 양성이 그 판단이다. 그런 사진은 사라짐 셈에도 넣지 않는다. */
+  staleJudge(obj: Obj, at: number, frameId: string): boolean {
+    return at < obj.judgedAt || (at === obj.judgedAt && obj.judgedCloser && obj.judgedFrame === frameId);
+  }
+
+  /** 사라짐을 세지 않는 물건: 가까이 보기 지킴·보기 지킴·실행 추적의 지금 대상·손에 있음·들고 감 보호. */
+  missHeld(obj: Obj, atMs: number): boolean {
+    return this.held(obj, atMs) || this.guarded(obj, atMs) || this.focusHold(obj) || obj.facts.place?.value === "in_hand" || obj.carried;
   }
 
   held(obj: Obj, atMs: number): boolean {
@@ -351,15 +361,13 @@ export class WorldCore {
     this.confirmer.forget(id);
   }
 
-  /** 등장 확인 전 후보를 잊는다: 트윈 자리가 있으면 그 마지막 자리를 후보 자리로 남긴다. 관절의 손에 든 채 끊겼으면 손에 없던 마지막 자리를,
-   *  그런 자리가 없으면 손에 든 자리를 in_hand로 남긴다. 종류마다 최근 SIGHTING_MAX개, atMs 기준 SIGHTING_KEEP_MS 안만 둔다. */
+  /** 등장 확인 전 후보를 잊는다: 트윈 자리가 있으면 그 마지막 자리를 후보 자리로 남긴다. 종류마다 최근 SIGHTING_MAX개, atMs 기준 SIGHTING_KEEP_MS 안만 둔다. */
   loseCandidate(obj: Obj, atMs: number): void {
     this.forget(obj.id);
-    const inHand = this.people.posedInHand(obj);
-    const spot: Spot | null = inHand && obj.free ? obj.free : obj.position ? { position: obj.position, surface: obj.surface, surfaceLabel: obj.surfaceLabel, at: obj.lastSeen } : null;
+    const spot: Spot | null = obj.position ? { position: obj.position, surface: obj.surface, surfaceLabel: obj.surfaceLabel, at: obj.lastSeen } : null;
     if (!spot) return;
     const kept = this.sightings.filter((s) => atMs - s.at_ms <= SIGHTING_KEEP_MS);
-    kept.push({ cls: obj.cls, position: spot.position, surface: spot.surface, surface_label: spot.surfaceLabel, at_ms: spot.at, in_hand: inHand && spot !== obj.free });
+    kept.push({ cls: obj.cls, position: spot.position, surface: spot.surface, surface_label: spot.surfaceLabel, at_ms: spot.at, in_hand: false });
     kept.sort((a, b) => a.at_ms - b.at_ms);
     const mine = kept.filter((s) => s.cls === obj.cls);
     this.sightings = kept.filter((s) => s.cls !== obj.cls || mine.indexOf(s) >= mine.length - SIGHTING_MAX);

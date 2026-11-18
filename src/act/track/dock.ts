@@ -6,10 +6,13 @@
 //   이미 그 안이면 명령 없이 지켜본다. DOCK.totalMs가 지나도 닿지 않으면 그만둔다. 명령 줄 막힘(폰 판본·끄기 안내·승인 대기·폰 대화)이면 거두었다가 다시 보낸다.
 // - 확인·가기 동안 새 행동 판단은 미룬다(start.ts, 새 일은 충전 자리에서 시작한다). 계획 밖 가까이 가서 보기도 하지 않고, 끝낸 대상과 그 무리는 치운 것이다(steps.ts placed).
 // - 「그만」은 충전 자리 가기도 그만둔다(answers.ts). 새 계획이 열리면 거둔다.
+// - 비상(쓰러짐 의심·끄기 안내, src/act/mode.ts emergencyOf)이 오면 바로 거둔다: 안전 일은 미루지 않는다(그 뒤 판단도 바로 받는다).
+// - 사람이 말로 한 부탁(관찰 텍스트에 들은 말이 든 판단)은 복귀를 멈추고 바로 받는다(start.ts): 판단에 쓴 들은 말은 다시 보내지 않으니 미루면 사라진다.
 import type { PlannedCommand } from "../../contract/phone.js";
 import type { WorldView } from "../../contract/world.js";
 import { dockId } from "../dock-step.js";
 import { DOCK_TEXT, VISION_TEXT } from "../labels.js";
+import { emergencyOf } from "../mode.js";
 import { STEP_DONE } from "../prompts.js";
 import { Part, type Run } from "./core.js";
 import { eyeNow, idleLine, refreshLine, sendLine, type IdleSlot } from "./phone-line.js";
@@ -47,7 +50,7 @@ export class Dock extends Part {
     const core = this.core;
     const q = core.docking;
     if (!q || core.stopped) return;
-    if (core.open() || core.planning) return this.drop();
+    if (core.open() || core.planning || this.emergency()) return this.drop();
     const now = this.clock.now();
     if (q.phase === "look") {
       if (now - q.since < DOCK.lookMs) return;
@@ -88,9 +91,17 @@ export class Dock extends Part {
     this.o.thought?.(DOCK_TEXT.docked, q.decision);
   }
 
-  /** 충전 자리로 가는 중(확인 포함)인가: 그동안 새 행동 판단을 미룬다. */
+  /** 충전 자리로 가는 중(확인 포함)인가: 그동안 새 행동 판단을 미룬다. 비상이면 거두고 아니라고 한다(안전 일은 미루지 않는다). */
   busy(): boolean {
-    return !!this.core.docking && !this.core.stopped;
+    if (!this.core.docking || this.core.stopped) return false;
+    if (!this.emergency()) return true;
+    this.drop();
+    return false;
+  }
+
+  /** 비상: 쓰러짐 의심이거나 끄기 안내가 떠 있거나 줄에서 기다린다. */
+  private emergency(): boolean {
+    return emergencyOf({ world: this.o.world(), offNotices: this.core.safety.offTrack().notices });
   }
 
   /** 「그만」·새 계획·멈춤: 명령을 거두고 칸을 비운다. */

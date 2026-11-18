@@ -2,7 +2,7 @@
 // 받는 것: /perception/scene(VLM 답, 집 상태 입력의 주인. 지금은 YOLO 임시 갈래도 같은 토픽으로 와서 차례가 지켜진다: VLM 전용으로 바뀔 자리), /world/input(실행 추적의 지킴·따르기 창), /phone/heard(들은 말), /device/changes(가전 상태).
 // 변화가 있으면 rev를 1 올리고 /world/state {rev, view}와 /world/changes {rev, changes}를 이 차례로 함께 낸다(대시보드는 한 번 지나기로 받는다).
 // 변화 없이 보기만 바뀌는 입력(지킴·따르기 창·가전 상태)은 같은 rev로 상태만 다시 낸다. 250ms마다 tick을 넣고 같은 rev로 상태를 다시 낸다.
-// 가까이 보기 합치기(closer_merge)는 VLM 답까지 미루고(VLM 무조건 우선, src/world/merge.ts), VLM 답(closer_scene)이나 답 없이 끝남(closer_end: YOLO만으로 넣음)을 넣은 뒤
+// 가까이 보기 묶음(closer_merge)은 VLM 답까지 들고 있고(물건은 VLM 답으로만, src/world/merge.ts), VLM 답(closer_scene)이나 답 없이 끝남(closer_end: 묶음을 버림)을 넣은 뒤
 // /world/closer {look, ids}로 VLM 합치기 뒤의 최종 id 표를 답한다.
 import { BusNode, msgId, realClock, type Bus, type Clock, type Envelope, type TopicName } from "../bus/index.js";
 import type { Detection, FrameMeta, Pose } from "../contract/observe.js";
@@ -27,7 +27,7 @@ export interface WorldNode {
  *  집 상태 노드와 관찰 흐름 시험 대역(tests/helpers/world-port.ts)이 같이 쓴다. */
 export class WorldInputs {
   readonly #idsOf = new Map<string, { at: number; ids: Map<string, string> }>();
-  readonly #looks = new Map<string, { at: number; ids: Map<string, string>; from: string; pending?: CloserPending }>();
+  readonly #looks = new Map<string, { at: number; ids: Map<string, string>; pending?: CloserPending }>();
   constructor(readonly world: WorldState, private readonly now: () => number) {}
 
   /** 한 프레임의 감지(VLM 전용으로 바뀔 자리). VLM 프레임(vlm이 false가 아님)이면 감지 번호 표를 그 VLM 답까지 둔다. */
@@ -36,10 +36,10 @@ export class WorldInputs {
     if (frame.vlm !== false) this.#idsOf.set(frame.id, { at: this.now(), ids: r.ids });
     return r.changes;
   }
-  /** 잘라 본 장의 YOLO 합치기(VLM 전용으로 바뀔 자리): VLM 답까지 미룬다(defer). look마다 VLM에 보낸 장(from)의 감지 번호 표와 미룬 후보를 둔다. */
-  closer(look: string, passes: readonly CloserPass[], from: string): WorldChange[] {
-    const r = this.world.applyCloser(passes, from, { defer: true });
-    this.#looks.set(look, { at: this.now(), ids: r.ids, from, pending: r.pending });
+  /** 잘라 본 장의 YOLO 묶기(VLM 전용으로 바뀔 자리): World State는 바꾸지 않고 VLM 답까지 들고 있는다. look마다 감지 번호 표와 묶음을 둔다. */
+  closer(look: string, passes: readonly CloserPass[]): WorldChange[] {
+    const r = this.world.applyCloser(passes);
+    this.#looks.set(look, { at: this.now(), ids: r.ids, pending: r.pending });
     return r.changes;
   }
 
@@ -55,7 +55,7 @@ export class WorldInputs {
       case "yolo_missing":
         return { changes: this.world.applyMissing(b.frame_id, b.observed_ms, { yolo: b.yolo, ...(b.vlm ? { vlm: b.vlm } : {}) }) };
       case "closer_merge":
-        return { changes: this.closer(b.look, b.passes, b.from) };
+        return { changes: this.closer(b.look, b.passes) };
       case "scene": {
         const ids = this.#idsOf.get(b.frame_id)?.ids ?? new Map<string, string>();
         this.#idsOf.delete(b.frame_id);
@@ -74,8 +74,8 @@ export class WorldInputs {
         const l = this.#looks.get(b.look);
         this.#looks.delete(b.look);
         const ids = l?.ids ?? new Map<string, string>();
-        // 미룬 합치기를 YOLO만으로 넣는다(VLM에 보낸 장의 감지 번호 표를 채운다)
-        const changes = l?.pending ? this.world.endCloser(l.pending, ids, l.from) : [];
+        // VLM 답 없이 끝났다: 묶음을 버린다(VLM 답 없이는 넣지 않는다)
+        const changes = l?.pending ? this.world.endCloser(l.pending) : [];
         return { changes, closer: { look: b.look, ids } };
       }
       case "top":
@@ -83,14 +83,14 @@ export class WorldInputs {
     }
   }
 
-  /** 넣은 지 KEEP_MS가 지나도 VLM 답이 오지 않은 표를 지운다. 가까이 보기 후보는 지우기 전에 끝낸다(미룬 합치기를 YOLO만으로 넣기, 지킴 풀기·옮김 잇기). 그 변화를 돌려준다. */
+  /** 넣은 지 KEEP_MS가 지나도 VLM 답이 오지 않은 표를 지운다. 가까이 보기 묶음은 지우기 전에 끝낸다(묶음 버리기). 그 변화를 돌려준다. */
   prune(): WorldChange[] {
     const old = this.now() - KEEP_MS;
     const changes: WorldChange[] = [];
     for (const [k, v] of this.#idsOf) if (v.at < old) this.#idsOf.delete(k);
     for (const [k, v] of this.#looks) {
       if (v.at >= old) continue;
-      if (v.pending) changes.push(...this.world.endCloser(v.pending, v.ids, v.from));
+      if (v.pending) changes.push(...this.world.endCloser(v.pending));
       this.#looks.delete(k);
     }
     return changes;

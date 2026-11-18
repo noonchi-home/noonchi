@@ -36,7 +36,8 @@ function shownOf(c: Check, devices: Map<string, DeviceView>, objects: Map<string
     const s = deviceSummary(d);
     return { id: d.id, title: s.title, line: s.line, tone: s.tone, order: c.order };
   }
-  const name = c.objectId ? objects.get(c.objectId) : undefined;
+  // 장면 이름이 없는 자리(폰 눈·World State 물건)는 그 자리 이름
+  const name = c.label ?? (c.objectId ? objects.get(c.objectId) : undefined);
   if (!c.objectId || !name) return null;
   // 줄은 로봇이 믿는 상태(숫자 없음). 개발용 보기(?scores=1)에서만 YOLO 글(확신 숫자)을 보인다
   return { id: c.objectId, title: name, line: SHOW_SCORES ? c.note : c.belief };

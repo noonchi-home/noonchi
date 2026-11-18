@@ -84,10 +84,12 @@ describe("인식 노드", () => {
     const r = await rig({ world: true });
     const port = r.perception.port;
     port.send({ kind: "closer_merge", look: "e2.c1", passes: [pass("e1", 1000, [cupIn]), pass("e2", 2000, [person, cupIn])], from: "e2" });
-    port.send({ kind: "closer_scene", look: "e2.c1", frame_id: "e2", observed_ms: 2000, scene: { scene: "k", observations: [{ object_id: "d2", state: "in_sink" }], summary: "s" }, at: { view: LOOK_VIEW, ...LOOK_SIZE, crop: [120, 60, 240, 180] } });
+    // 물건은 VLM 답으로만: 가까이 본 VLM 답이 d2와 이은 컵(v1)을 답한다
+    const objects = [{ id: "v1", cls: "cup", box: { x: 0.4, y: 0.4, w: 0.1, h: 0.1 }, det: "d2" }];
+    port.send({ kind: "closer_scene", look: "e2.c1", frame_id: "e2", observed_ms: 2000, scene: { scene: "k", observations: [{ object_id: "d2", state: "in_sink" }], objects, summary: "s" }, at: { view: LOOK_VIEW, ...LOOK_SIZE, crop: [120, 60, 240, 180] } });
     const ids = port.closerIds("e2.c1");
     await r.flush();
-    expect(await ids).toEqual(new Map([["d2", "cup_1"]]));
+    expect(await ids).toEqual(new Map([["d2", "cup_1"], ["v1", "cup_1"]]));
     expect(port.view()!.objects.map((o) => o.id)).toEqual(["cup_1"]);
   });
 

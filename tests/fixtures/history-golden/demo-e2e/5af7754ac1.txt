@@ -659,5 +659,6 @@
 [가전] device wall_ac_703d00ba power "off"→"on"
 [가전] device stand_ac_dc22b8f3 power "off"→"on"
 [있음] decision 대기 valid
+[있음] decision 에어컨 켜기 valid
 [있음] execution 대기
 [있음] vlm

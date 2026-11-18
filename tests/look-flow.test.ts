@@ -24,7 +24,7 @@ import { WorldState } from "../src/world/state/world.js";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { frameJpeg, LOOK_SIZE, LOOK_VIEW } from "./helpers/camera.js";
+import { frameJpeg, LOOK_EYE, LOOK_SIZE, LOOK_VIEW } from "./helpers/camera.js";
 import { seenDetector, det } from "./helpers/detectors.js";
 import { smallFloor } from "./helpers/floor.js";
 import { closerVlmReply } from "./helpers/look.js";
@@ -85,7 +85,7 @@ async function setup(o: { stalled: boolean }) {
     seen.set(sha256(jpeg), dets.full);
     seen.set(sha256(cropJpeg(jpeg, CROP, LOOK_SIZE)), dets.crop);
     clock.t = Math.max(clock.t, atMs + 5);
-    pipeline.onEngine(jpeg, { kind: "engine", width: 480, height: 360, captured_at: atMs, time_err_ms: 0 }, null, LOOK_VIEW, atMs + 5);
+    pipeline.onEngine(jpeg, { kind: "engine", width: 480, height: 360, captured_at: atMs, time_err_ms: 0 }, LOOK_EYE, LOOK_VIEW, atMs + 5);
     await pipeline.idle();
   };
   const exec = () => logs.flatMap((l) => (l.type === "execution" ? [l] : []));

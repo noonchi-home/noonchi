@@ -186,6 +186,7 @@ export type SceneInput =
   | { kind: "eye"; eye: EyePose | null; at_ms: number }
   | { kind: "frame"; frame: FrameMeta; dets: Detection[]; poses?: Pose[] }
   | { kind: "yolo_missing"; frame_id: string; observed_ms: number; yolo: YoloMissing; vlm?: VlmMissing }
+  /** from: VLM에 보낸 장(기록·재생에서 어느 장의 답인지 본다. 집 상태는 쓰지 않는다). */
   | { kind: "closer_merge"; look: string; passes: CloserPassInput[]; from: string };
 
 /** 실행 추적이 지금 집기·내려놓기·들고 가는 대상의 단계와 목적지(트윈 [x, y], 없으면 null). */

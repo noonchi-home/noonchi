@@ -12,6 +12,7 @@
 [집 상태] detection 컵 cup_1 보임
 [집 상태] detection 컵 cup_2 보임
 [있음] decision 대기 valid
+[있음] decision 컵 치우기 valid
 [있음] execution 대기
 [있음] execution 방금 계획한 일이라 잠시 뒤 다시 봄
 [있음] vlm

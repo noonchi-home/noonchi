@@ -21,6 +21,19 @@ function capture(reply: () => Response = () => Response.json(OK)) {
 let close: (() => void) | undefined;
 afterEach(() => { close?.(); close = undefined; });
 
+describe("OpenRouter 막기(Codex cbdb6ec P1)", () => {
+  it("PAM_LLM_BASE_URL이 OpenRouter 주소면 판단·반성 요청을 보내지 않고 「PAM 준비 안 됨」 연결 오류로 끝낸다", async () => {
+    const c = capture();
+    const llm = new PamLlm(pamSettings({ INFERENCE_MODE: "openai", OPENAI_API_KEY: "k", PAM_LLM_BASE_URL: "https://openrouter.ai/api/v1" }), c);
+    for (const role of ["predictor", "reflector"] as const) {
+      const e = await llm.complete(X, OFF, role, 5000).then(() => null, (err: unknown) => err);
+      expect(e).toBeInstanceOf(PamLinkError);
+      expect((e as Error).message).toBe("PAM 준비 안 됨: OpenRouter는 더 쓰지 않아요, PAM_LLM_BASE_URL을 지우세요");
+    }
+    expect(c.sent).toEqual([]);
+  });
+});
+
 describe("PAM LLM 전송", () => {
   it("모드 표: openai는 OpenAI(OPENAI_API_KEY), vllm은 같은 서버 vLLM. 전송 값은 config/transport.json", () => {
     const t = JSON.parse(readFileSync("src/brain/pam/config/transport.json", "utf8"));

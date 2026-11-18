@@ -38,8 +38,8 @@ const values = (facet: Facet, target: Target) => (Object.keys(STATES) as StateKe
   .filter((k) => STATES[k].facet === facet && (STATES[k].for as readonly Target[]).includes(target) && !("pose" in STATES[k]))
   .map((k) => { const h = (STATES[k] as { hint?: string }).hint; return h ? `${k} (${h})` : k; }).join(", ");
 
-/** VLM에 넘기는 감지 한 줄: 임시 번호(d1…), 종류, 픽셀 박스 [x, y, w, h], 신뢰도. */
-export interface SceneDetection { id: string; class: string; box: [number, number, number, number]; score: number }
+/** VLM에 넘기는 감지 한 줄: 임시 번호(d1…), 종류, 픽셀 박스 [x, y, w, h], 신뢰도. foot(바닥 점 픽셀)은 VLM에 보내지 않고 World State가 이어진 VLM 물건 자리에 쓴다. */
+export interface SceneDetection { id: string; class: string; box: [number, number, number, number]; score: number; foot?: [number, number] }
 
 export const SCENE_PROMPT = [
   "You see one or more photos from a handheld phone camera in a home, oldest first, a few seconds apart. The line before each photo gives its capture time relative to the latest photo (t-0s).",

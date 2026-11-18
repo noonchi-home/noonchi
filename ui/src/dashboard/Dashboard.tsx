@@ -2,7 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import type { DeviceView, EyeEvent, ServerMessage } from "../../../src/contract/events.ts";
 import type { PlanView } from "../../../src/contract/plan.ts";
 import { BubbleLayer } from "./bubbles/BubbleLayer";
-import { checkList, dashboardChecks, type ChecksState } from "./checks/checks";
+import { checkList, dashboardChecks, spotOf, type ChecksState } from "./checks/checks";
 import { useChecks } from "./checks/use-checks";
 import { useDevices } from "../lib/use-devices";
 import { useEvents } from "../lib/use-events";
@@ -33,7 +33,7 @@ const AVOID = "[data-talk], [data-mascot], [data-progress], [data-chips], [data-
 function Overlay({ devices, checks, focusId }: { devices: ReturnType<typeof useDevices>["devices"]; checks: ChecksState; focusId: string | null }) {
   const v = useViewer();
   const table = useMemo(() => v?.objects().find((o) => o.type === "dining_table") ?? null, [v]);
-  const list = useMemo(() => dashboardChecks(checkList(checks, table?.id ?? null)), [checks, table]);
+  const list = useMemo(() => dashboardChecks(checkList(checks, table ? { id: table.id } : null)), [checks, table]);
   const objects = useMemo(() => new Map<string, string>(table ? [[table.id, table.name ?? "식탁"]] : []), [table]);
   const points = useAnchors(list.map((c) => c.deviceId ?? c.objectId!));
   return <BubbleLayer checks={list} devices={devices} objects={objects} points={points} focusId={focusId} avoid={AVOID} />;
@@ -106,7 +106,12 @@ function BakedStage({ home, layout, plan, eye, checks, devices, onEngine: toLive
   const v = home ? BAKE_VIEWS[home] : undefined;
   const [engine, setEngine] = useState<TwinEngine | null>(null);
   const homeData = useHomeData(home);
-  const list = useMemo(() => dashboardChecks(checkList(checks, homeData?.tableId ?? null)), [checks, homeData]);
+  // 판단·확인 표시는 지금 그 대상이 있는 자리(지금 단계 자리, 손에 든 물건이면 폰 눈, 놓은 면)를 따라간다(checks.ts spotOf)
+  const spot = useMemo(() => (homeData ? spotOf({
+    plan, world: checks.world, eye: eye && !eye.estimated ? eye : null, scene: (id) => homeData.names.has(id) || devices.has(id),
+    targets: checks.targets ?? [], action: checks.action ?? null,
+  }) : null), [homeData, plan, checks.world, checks.targets, checks.action, eye, devices]);
+  const list = useMemo(() => dashboardChecks(checkList(checks, spot)), [checks, spot]);
   // 말풍선·이름표가 비킬 클로이드 자리는 원뿔을 그리는 자리(방 안·벽에서 떨어진 자리)다. 엔진에는 받은 눈을 그대로 넣는다
   const drawn = useMemo(() => (eye && engine && !eye.estimated ? { ...eye, position: engine.stand(eye.position) } : eye), [eye, engine]);
   const frame = useMemo(

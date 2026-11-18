@@ -1,14 +1,15 @@
 // 메시지 상자 문장(대시보드 생각 말풍선 줄): 모델 없이 판단 기록·실행 추적이 가진 사실로만 만든다(2026-11-18 사용자 결정: 작은 모델이 PAM 판단·계획에
 // 없는 「물기를 닦을게요」를 지어냈다). 말투는 채팅처럼 클로이드가 직접 하는 말이다(「컵을 치울게요」).
-// - 행동을 고른 판단: 맞은 FSM 규칙(판단 기록 fsm, matched)이면 「<상태 조건> <행동 허락> 된다고 하셨어요」 한 줄(표: src/world/labels.ts FSM_STATE_IF,
-//   src/act/tasks.ts TASK_SAY). 조건형 표에 없는 상태는 「<상태 글> 때는 <행동>을 해도 된다고 하셨어요」, 상태 글도 없거나 규칙 없이 고른 행동은 줄이 없다.
+// - 행동을 고른 판단: 맞은 FSM 규칙 하나(판단 기록 fsm, matched이고 트리거가 있음)면 「<그 규칙 조건> <행동 허락> 된다고 하셨어요」 한 줄.
+//   시연 기억 규칙은 사용자가 정한 짧은 조건형(src/world/labels.ts RULE_IF: 「컵을 두고 자리를 뜨면」, 덧조건 없음), 배운 규칙은 트리거를 줄이지 않고 ruleIf로 그대로. 허락형은 src/act/tasks.ts TASK_SAY.
+//   규칙을 특정하지 못하면(규칙 여럿이라 트리거 없음·규칙 없이 고른 행동) 줄이 없다(상태 이름으로 조건을 지어내지 않는다).
 // - 그다음 줄 「컵을 치울게요」와 단계 줄 「식탁으로 갈게요」는 말풍선 말(say, src/act/say.ts)이 잇는다.
 // - 대기·실패 판단은 줄을 만들지 않는다. 그동안의 줄은 실행 추적이 올리는 사실 줄(note: 쓰는 중 지킴·찾기)이다.
 // 이미 올린 말(최근 메시지)과 같은 줄은 다시 올리지 않는다. 새 줄은 id(판단 id@시각:차례)·판단 id·시각을 붙여 보내고(send) 기록 DB(thought, 집 id 포함)에
 // 하나씩 남긴다. 최근 것은 새로 붙은 대시보드·다시 띄운 서버에 다시 보낸다. 닫으면(close, 집·서버 종료) 보내지 않는다. 보내기·기록 오류는 받아 넘긴다.
 import { josa } from "../shared/korean.js";
 import { TASK_SAY } from "../act/tasks.js";
-import { FSM_STATE_IF, FSM_STATE_TEXT } from "../world/labels.js";
+import { ruleIf } from "../world/labels.js";
 import type { BrainLog, ThoughtEvent, ThoughtMessage } from "../contract/events.js";
 import type { HistoryDb } from "./history/db.js";
 
@@ -22,16 +23,12 @@ type Decision = Extract<BrainLog, { type: "decision" }>;
 /** 같은 말인가(빈칸·끝 마침표 차이는 같다). */
 const same = (a: string, b: string) => a.replace(/\s+/g, "").replace(/[.。]+$/, "") === b.replace(/\s+/g, "").replace(/[.。]+$/, "");
 
-/** 판단 기록 → 메시지 상자 문장(사실로만): 맞은 규칙의 허락 한 줄. 행동을 고른 유효 판단이 아니거나 규칙·상태 글이 없으면 빈 목록. */
+/** 판단 기록 → 메시지 상자 문장(사실로만): 맞은 규칙 하나의 허락 한 줄. 행동을 고른 유효 판단이 아니거나 규칙을 특정하지 못하면 빈 목록. */
 export function decisionLines(e: Decision): string[] {
   const action = e.action;
-  const state = e.status === "valid" && action && e.fsm?.matched ? e.fsm.state : null;
-  if (!action || !state) return [];
-  const cond = FSM_STATE_IF[state];
-  const may = TASK_SAY[action]?.may;
-  if (cond) return [`${cond} ${may ?? `${josa(action, "을/를")} 해도`} 된다고 하셨어요`];
-  const text = FSM_STATE_TEXT[state];
-  return text ? [`${text} 때는 ${josa(action, "을/를")} 해도 된다고 하셨어요`] : [];
+  const trigger = e.status === "valid" && action && e.fsm?.matched ? e.fsm.trigger : null;
+  if (!action || !trigger) return [];
+  return [`${ruleIf({ trigger, action, learned: e.fsm?.learned ?? false })} ${TASK_SAY[action]?.may ?? `${josa(action, "을/를")} 해도`} 된다고 하셨어요`];
 }
 
 export interface ThoughtFeed {

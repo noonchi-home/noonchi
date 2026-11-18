@@ -8,6 +8,8 @@ import type { WorldChange } from "../src/contract/world.js";
 import { WorldState, startWorldNode, type CloserPass } from "../src/world/index.js";
 import { engineFrame, LOOK_SIZE, LOOK_VIEW } from "./helpers/camera.js";
 import { det } from "./helpers/detectors.js";
+import { vlmObjects } from "./helpers/vlm-scene.js";
+import { accepts } from "../src/world/index.js";
 
 const cupIn = det("cup", 0.8, [230, 170, 20, 10], 41);
 const cupFar = det("cup", 0.8, [130, 100, 20, 10], 41);
@@ -28,29 +30,34 @@ describe("격리 재생", () => {
   it("녹화한 YOLO 갈래·VLM 답(/perception/scene, 사진 없음)을 흘려 집 상태 노드가 컵의 등장·사실·가까이 보기 결과를 바로 넣은 것과 같게 다시 만든다", async () => {
     expect(REPLAY_INPUTS).toContain("/perception/scene");
     const ws = () => new WorldState({ evidenceStepMs: 1000, surfaces: () => [], floorAt: () => 0, roomAt: () => ({ id: "kitchen", label: "주방" }), devices: () => [] });
-    const said = (id: string, state: string) => ({ scene: "k", observations: [{ object_id: id, state: state as never }], summary: "s" });
+    // 물건은 VLM 답으로만 생긴다: VLM 답은 감지와 이은 물건 목록을 싣고, 그 사진의 카메라·감지(바닥 점)를 함께 낸다
+    const said = (id: string, state: string, dets: Detection[]) => ({ scene: "k", observations: [{ object_id: id, state: state as never }], objects: vlmObjects(dets, LOOK_SIZE, accepts), summary: "s" });
+    const lookOf = (id: string, at: number, dets: Detection[]) => {
+      const m = meta(id, at);
+      return { view: m.view!, width: m.width, height: m.height, eye: [m.view!.origin[0], m.view!.origin[2]] as [number, number], dets: dets.map((d, i) => ({ id: `d${i + 1}`, box: d.box, foot: d.foot })) };
+    };
     const passes = [pass("e4", 4000, [cupFar]), pass("e5", 5000, [person, cupFar])];
     // 바로 넣은 것
     const direct = ws();
     const want: WorldChange[] = [];
     for (const [id, at] of [["e1", 1000], ["e2", 2000], ["e3", 3000]] as const) {
       const r1 = direct.applyDetections(meta(id, at), [cupIn, person]);
-      want.push(...r1.changes, ...direct.applyScene(id, at, said("d1", "in_sink"), r1.ids));
+      want.push(...r1.changes, ...direct.applyScene(id, at, said("d1", "in_sink", [cupIn, person]), r1.ids, lookOf(id, at, [cupIn, person])));
     }
     // 관찰 흐름이 내는 모양: 가까이 보기 합치기는 VLM 답까지 미루고, VLM 답은 그 장의 자리(at)를 싣는다
     const at = { view: LOOK_VIEW, ...LOOK_SIZE, crop: [120, 60, 240, 180] as [number, number, number, number] };
-    const rc = direct.applyCloser(passes, "e5", { defer: true });
-    want.push(...rc.changes, ...direct.applyCloserScene("e5", 5000, said("d2", "on_floor"), rc.ids, rc.pending, at));
+    const rc = direct.applyCloser(passes);
+    want.push(...rc.changes, ...direct.applyCloserScene("e5", 5000, said("d2", "on_floor", [person, cupFar]), rc.ids, rc.pending, at));
     // 녹화: 도착 차례대로
     const bag = Bag.open(":memory:");
     let seq = 0;
     const put = (body: Record<string, unknown>, at: number) => bag.write({ topic: "/perception/scene", key: "_", header: h(++seq, at), body } as never, at);
     for (const [id, at] of [["e1", 1000], ["e2", 2000], ["e3", 3000]] as const) {
       put({ kind: "frame", frame: meta(id, at), dets: [cupIn, person] }, at + 100);
-      put({ kind: "scene", frame_id: id, observed_ms: at, scene: said("d1", "in_sink") }, at + 900);
+      put({ kind: "scene", frame_id: id, observed_ms: at, scene: said("d1", "in_sink", [cupIn, person]), look: lookOf(id, at, [cupIn, person]) }, at + 900);
     }
     put({ kind: "closer_merge", look: "e5.c1", passes, from: "e5" }, 5100);
-    put({ kind: "closer_scene", look: "e5.c1", frame_id: "e5", observed_ms: 5000, scene: said("d2", "on_floor"), at }, 6900);
+    put({ kind: "closer_scene", look: "e5.c1", frame_id: "e5", observed_ms: 5000, scene: said("d2", "on_floor", [person, cupFar]), at }, 6900);
     expect(JSON.stringify(bag.range(0, 10_000))).not.toMatch(/jpeg|sha256/);
     const got: WorldChange[] = [];
     const closer: unknown[] = [];
@@ -68,7 +75,7 @@ describe("격리 재생", () => {
     });
     expect(want.map((c) => c.kind)).toContain("appeared");
     expect(got).toEqual(want);
-    expect(closer).toEqual([{ look: "e5.c1", ids: { d2: "cup_2" } }]);
+    expect(closer).toEqual([{ look: "e5.c1", ids: { d2: "cup_2", v1: "cup_2" } }]);
     const objects = (view as { objects: { id: string; facts: Record<string, { value: string }> }[] }).objects;
     expect(objects.map((o) => [o.id, o.facts.place?.value])).toEqual(direct.view(9000).objects.map((o) => [o.id, o.facts.place?.value]));
   });
