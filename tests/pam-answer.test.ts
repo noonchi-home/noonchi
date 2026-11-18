@@ -74,6 +74,13 @@ describe("사람 상태 FSM 판단 답", () => {
   it("화살표 없음(-1, from null)은 대기다", () => {
     expect(parsePrediction(ok({ state: "drinking", from: null, next_index: -1 }), tasks, CUP_FSM_MEMORY)).toMatchObject({ status: "valid", selected_action: null, prediction: { task_index: -1 } });
   });
+  // 2026-11-19 실제 모델(gpt-5.4-mini): 화살표가 없을 때 from에 직전 상태를 적어 「from drinking, -1」로 답하는 일이 잦았다(마시는 중 계속 요청 5번 중 3번 판단 실패).
+  // 답 모양을 너그럽게 읽을 뿐 화살표는 모델 답 그대로다(서버가 고르지 않는다): -1이면 from이 기억의 상태여도 화살표 없음이고, 기억에 없는 상태면 여전히 틀린 답이다
+  it("화살표 없음(-1)이면 from에 기억의 상태가 와도 화살표 없음(대기)으로 받고 from은 null로 남긴다. 기억에 없는 상태면 틀린 답이다", () => {
+    expect(parsePrediction(ok({ state: "drinking", from: "drinking", next_index: -1 }), tasks, CUP_FSM_MEMORY)).toMatchObject({ status: "valid", selected_action: null, prediction: { task_index: -1, state: "drinking", from: null, next_index: -1 } });
+    expect(parsePrediction(ok({ state: "away", from: "drinking", next_index: -1 }), tasks, LEARNED_FSM_MEMORY)).toMatchObject({ status: "valid", selected_action: null, prediction: { from: null, next_index: -1 } });
+    expect(parsePrediction(ok({ state: "drinking", from: "nap", next_index: -1 }), tasks, CUP_FSM_MEMORY).status).toBe("invalid");
+  });
   it("배운 뒤에도 식탁(마시는 중)에서 떠나면 치우고 TV 앞(같이 마시는 중)에서 떠나면 묻는다(사용자 답 2026-11-19)", () => {
     const tvLeave = LEARNED_FSM_MEMORY.states.find((s) => s.id === "watching_tv")!.next.findIndex((e) => e.to === "*");
     expect(parsePrediction(ok({ state: "away", from: "drinking", next_index: 0 }), tasks, LEARNED_FSM_MEMORY).selected_action).toBe("컵 치우기");

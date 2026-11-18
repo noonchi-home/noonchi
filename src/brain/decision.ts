@@ -245,7 +245,8 @@ export function validateFsmPrediction(value: Json, memory: FsmMemory, tasks: str
   const index = p.next_index;
   if (typeof index !== "number" || !Number.isInteger(index) || index < -1) throw new ContractError("prediction.next_index: expected an integer from -1");
   if (index === -1) {
-    if (p.from !== null) throw new ContractError("prediction.from: expected null when next_index is -1");
+    // 화살표 없음: from은 null이 맞지만 모델이 직전 상태를 적어 오는 일이 잦아(2026-11-19 gpt-5.4-mini) 기억의 상태면 화살표 없음으로 읽는다(화살표를 고르지 않는다)
+    if (p.from !== null && !(typeof p.from === "string" && byId(p.from))) throw new ContractError("prediction.from: expected null or a state id when next_index is -1");
     return { observation: p.observation as string, reasoning: p.reasoning as string, task_index: -1, state, from: null, next_index: -1 };
   }
   const fromId = text(p.from, "prediction.from");
