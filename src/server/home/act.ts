@@ -144,6 +144,7 @@ export function startAct(core: HomeCore): (event: BrainLog) => void {
     thought: (text, decisionId) => feed.note(text, decisionId),
     guardObject: (id, on) => world.guard(id, now(), on),
     focusObject: (id, f) => world.focus(id, f ?? null),
+    linkObject: (from, to) => world.relink(from, to, now()),
     // 따르기 단계 동안 그 컵의 창(그 뒤 사진만, 다 이어진 값이 확인 값을 바꿈)
     contentsAction: (id, on) => { world.contentsAction(id, now(), on); },
     // 실제 폰의 승인 대기와 폰 대화 사용(실행 추적이 그동안 사람을 움직이게 하지 않는다)

@@ -177,6 +177,30 @@ export class WorldState {
     d.followed = { id: t.id, at: d.lastSeen, frame: d.judgedFrame };
   }
 
+  /** 찾기가 겨눈 자리에서 찾은 다른 id의 같은 무리 물건(fromId)을 계획 대상(toId)으로 잇는다(src/act/track/find.ts): 대상이 그 자리·보임·더 새 사실·본 시각을 받고
+   *  확인된 물건이 되며, 그 물건은 사라짐과 옮김 표시(followed_by: 대상)를 남긴다. 대상 id가 유령이었어도 계획은 그 id로 이어 간다.
+   *  둘 중 하나가 없거나, 같은 무리가 아니거나, 그 물건이 사라졌으면 false. */
+  relink(fromId: string, toId: string, atMs: number): boolean {
+    const core = this.core;
+    const d = core.objects.get(fromId), t = core.objects.get(toId);
+    if (!d || !t || d === t || d.status === "gone" || !sameDrinkware(d.cls, t.cls)) return false;
+    Object.assign(t, { position: d.position, surface: d.surface, surfaceLabel: d.surfaceLabel, part: d.part, room: d.room, errorM: d.errorM, posAt: d.posAt, posCloser: d.posCloser, posFrom: d.posFrom });
+    for (const [facet, fact] of Object.entries(d.facts)) if (fact && (!t.facts[facet as keyof typeof t.facts] || fact.at_ms > t.facts[facet as keyof typeof t.facts]!.at_ms)) (t.facts as Record<string, unknown>)[facet] = fact;
+    t.confirmed = true;
+    t.status = d.status;
+    t.goneAt = null;
+    t.missGone = false;
+    t.vlmMiss = [];
+    t.lastSeen = Math.max(t.lastSeen, d.lastSeen);
+    t.lastInView = Math.max(t.lastInView, d.lastInView);
+    t.vlmSeen = Math.max(t.vlmSeen ?? d.vlmSeen ?? 0, d.vlmSeen ?? 0);
+    t.judgedAt = Math.max(t.judgedAt, d.judgedAt);
+    d.status = "gone";
+    d.goneAt = atMs;
+    d.followed = { id: t.id, at: atMs, frame: d.judgedFrame };
+    return true;
+  }
+
   /** 보기 지킴(가까이 가서 위에서 비추는 동안, 실행 추적이 건다): on이면 그 물건을 그동안(PEEK_GUARD_MS 한도) 사라짐으로 세지 않고, off면 푼다.
    *  확인된 관측의 지킴(closer_hold)과 다른 칸이다. 물건이 없으면 아무것도 하지 않는다. */
   guard(objectId: string, atMs: number, on: boolean): void {

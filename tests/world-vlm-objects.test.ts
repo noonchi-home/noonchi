@@ -236,3 +236,22 @@ describe("VLM 상자 바닥 점 자리", () => {
     expect(cup.facts.place?.value).toBe("on_table");
   });
 });
+
+// 찾기가 겨눈 자리에서 다른 id의 같은 무리 물건을 찾으면 계획 대상 id로 잇는다(src/act/track/find.ts)
+describe("계획 대상으로 잇기(relink)", () => {
+  it("그 물건의 자리·보임·사실을 대상 id가 받고, 그 물건은 사라짐과 옮김 표시(followed_by: 대상)를 남긴다. 같은 무리가 아니거나 없으면 잇지 않는다", () => {
+    const w = confirmed();
+    w.applyScene("e3", 3000, none, new Map(), { ...look, view: AWAY_VIEW });
+    // 다른 자리에 같은 무리 병(bottle_1)이 확정된다
+    const bottle: SceneObservation = { scene: "k", summary: "s", observations: [{ object_id: "v1", state: "empty" }], objects: [{ id: "v1", cls: "bottle", box: frac([300, 150, 20, 10]), det: null }] };
+    w.applyScene("e4", 4000, bottle, new Map(), { ...look, view: AWAY_VIEW });
+    w.applyScene("e5", 5000, bottle, new Map(), { ...look, view: AWAY_VIEW });
+    const b = w.view(5000).objects.find((o) => o.id === "bottle_1")!;
+    expect(w.relink("bottle_1", "cup_1", 5000)).toBe(true);
+    const v = w.view(5000).objects;
+    expect(v.find((o) => o.id === "cup_1")).toMatchObject({ status: "present", position: b.position, last_seen_ms: 5000, facts: { contents: { value: "empty" } } });
+    expect(v.find((o) => o.id === "bottle_1")).toMatchObject({ status: "gone", followed_by: "cup_1" });
+    expect(w.relink("cup_9", "cup_1", 5000)).toBe(false);
+  });
+});
+

@@ -175,6 +175,8 @@ export interface TrackerOptions {
   guardObject?: (objectId: string, on: boolean) => void;
   /** 지금 집기·내려놓기 하는 대상과 자리(집기는 그 물건 자리, 내려놓기는 목적지, 수평 [x, z])를 World State에 알린다(src/world/state/world.ts focus). null이면 푼다. */
   focusObject?: (objectId: string | null, f?: { step: "pick" | "place" | "carry"; spot: [number, number] | null }) => void;
+  /** 찾기가 겨눈 자리에서 찾은 다른 id의 같은 무리 물건(from)을 계획 대상 id(to)로 잇는다(src/world/state/world.ts relink). 이었으면 true. 없으면 잇지 않는다. */
+  linkObject?: (fromId: string, toId: string) => boolean;
   /** 실제 폰에 승인 대기(가전·외부 연락)가 떠 있는가. 그동안 가까이 가서 보라고 하지 않고 보류에서 풀린 첫 명령도 미룬다. 없으면 없다고 본다. */
   approvalsWaiting?: () => boolean;
   /** 실제 폰 대화를 쓰는 중인가(에이전트가 들은 말을 처리하는 중이거나 끝난 지 얼마 안 됨). 그동안 가까이 가서 보라고 하지 않고 보류에서 풀린 첫 명령도 미룬다.
