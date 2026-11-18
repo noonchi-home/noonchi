@@ -29,7 +29,7 @@ declare global {
 }
 
 /** 트윈 위에 얹힌 것: 말풍선이 덮지 않을 자리. */
-const AVOID = "[data-talk], [data-mascot], [data-progress], [data-chips], [data-phone]";
+const AVOID = "[data-talk], [data-talk-tail], [data-fsm-card], [data-mascot], [data-chips], [data-phone]";
 
 /** 확인 목록만 말풍선으로(승인 대기 줄은 뺀다). 두뇌 줄은 장면의 식탁(dining_table)에 붙는다. 자리는 확인한 것만 센다. 말풍선은 트윈 위에 얹힌 것(AVOID)을 비킨다. */
 function Overlay({ devices, checks, focusId }: { devices: ReturnType<typeof useDevices>["devices"]; checks: ChecksState; focusId: string | null }) {

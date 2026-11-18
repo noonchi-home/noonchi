@@ -12,6 +12,7 @@ import { PreDrawing, useFontsLoaded, usePredecode, usePreDraw } from "./motion";
 import { PhonePane, type PhoneSlot } from "./PhonePane";
 import type { Talk } from "./data";
 import type { FsmNow } from "./fsm";
+import { FsmCard } from "./FsmCard";
 import type { GoalLine } from "./goal-line";
 import { TalkBox } from "./TalkBox";
 import { TwinPane } from "./TwinPane";
@@ -84,7 +85,8 @@ export function DashboardScreen({ index, plan, step, robotKnown, connected, map,
         </PreDrawing.Provider>
       </LiquidGlass>
       <PhonePane slot={phone} seen={seen} box={L.video} connected={connected} onVideoSize={onVideoSize} />
-      <TalkBox talk={talk} fsm={fsm} goal={goal} box={L.bubble} />
+      <TalkBox talk={talk} goal={goal} box={L.bubble} />
+      <FsmCard fsm={fsm} box={{ width: L.fsm.width, height: L.fsm.height }} className="pointer-events-none absolute z-50" style={{ left: L.fsm.left, top: L.fsm.top }} />
       <Mascot image={MASCOT} hub={hub} box={L.mascot} imageBox={L.image} logoBox={L.logo} settingsOpen={settingsOpen} />
       <ModeBubble mode={mode} layout={L} mascot={MASCOT} />
     </main>

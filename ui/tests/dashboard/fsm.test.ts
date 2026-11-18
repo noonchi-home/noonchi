@@ -9,6 +9,7 @@ import { CUP_FSM_MEMORY } from "../../../src/brain/decision.ts";
 import { habitView } from "../../../src/brain/habit.ts";
 import { EMPTY_DASH, reduceDash } from "../../src/dashboard/data";
 import { FSM_R, fsmLayout, fsmOf, type FsmNow } from "../../src/dashboard/fsm";
+import { FSM } from "../../src/lib/tokens";
 import { BRANCHES, branchDecision, PLAN } from "./fixtures";
 
 const feed = (ms: ServerMessage[]) => ms.reduce((s, m) => reduceDash(s, m, 0), EMPTY_DASH);
@@ -74,6 +75,19 @@ describe("FSM 카드 그림 자리(fsmLayout)", () => {
     expect(new Set(v.nodes.map((n) => n.y)).size).toBe(1);
   });
 
+  it("카드가 크면 원·간격·선 굵기가 같은 배율로 커진다(글은 부품 원래 크기 그대로). 작은 카드(높이 140)는 반지름 FSM_R(44)이다", () => {
+    const small = fsmLayout(now(), BOX);
+    const big = fsmLayout(now(), { width: 560, height: 240 });
+    expect(small.r).toBe(FSM_R);
+    expect(big.r).toBeGreaterThan(small.r * 1.3);
+    expect(big.k).toBeCloseTo(big.r / FSM_R, 5);
+    const gap = (v: typeof small) => Math.abs(v.nodes[1]!.x - v.nodes[0]!.x);
+    expect(gap(big) / gap(small)).toBeCloseTo(big.k, 5);
+    expect(big.width(FSM.taken.width)).toBeCloseTo(FSM.taken.width * big.k, 5);
+    const taken = (v: typeof small) => fsmLayout({ ...now(), state: "left_cup", from: "drinking" }, v === small ? BOX : { width: 560, height: 240 }).lines.find((l) => l.kind === "taken")!;
+    expect(dist(taken(big).track[0]!, fsmLayout(now(), { width: 560, height: 240 }).nodes.find((n) => n.id === "drinking")!)).toBeCloseTo(big.r, 0);
+  });
+
   it("원 위는 이름, 아래는 그 상태에서 하는 일: 지금 상태는 하는 일(없으면 「지켜봄」), 다른 상태는 제자리 전이 행동(여럿이면 「외 N」, 없으면 「지켜봄」). 카드 가운데는 지금 상태다", () => {
     const v = fsmLayout(now(), BOX);
     const at = (id: string) => v.nodes.find((n) => n.id === id)!;
@@ -112,6 +126,29 @@ describe("FSM 카드 그림 자리(fsmLayout)", () => {
     const habit = { ...h, transitions: h.transitions.map((t) => (t.from === "drinking" && t.to === "left_cup" ? { ...t, action: "컵 치우기" } : t)) };
     const v = fsmLayout(now({ habit }), BOX);
     expect(lineOf(v, "drinking", "left_cup")[0]!.label).toMatchObject({ text: "컵을 두고 떠남", sub: "컵 치우기" });
+  });
+
+  // 사람 상태 FSM(feat/person-fsm): 원 = 사람이 하는 일, 화살표 = 다른 일로 넘어감, 화살표 위 = 「조건 / 로봇 행동」. 같은 자료 모양(상태·전이·지금 상태·막 일어난 전이)을 받는다
+  it("사람 상태 FSM 모양도 그린다: 제자리 전이 없이 행동이 붙은 전이만 있어도 지나온 선은 「조건 / 로봇 행동」 두 줄, 지금 원은 그 행동, 고리 없음", () => {
+    const person: FsmNow = {
+      habit: {
+        version: 7, initial: "drinking",
+        states: [{ id: "drinking", name: "마시는 중", learned: false }, { id: "tv", name: "TV 보는 중", learned: false }, { id: "away", name: "자리 비움", learned: false }],
+        transitions: [
+          { from: "drinking", to: "away", trigger: "컵 두고 떠남", action: "컵 치우기", learned: false },
+          { from: "away", to: "drinking", trigger: "돌아와 앉음", action: null, learned: false },
+          { from: "drinking", to: "tv", trigger: "TV를 켬", action: null, learned: false },
+          { from: "tv", to: "drinking", trigger: "식탁에 앉음", action: null, learned: false },
+        ],
+      },
+      state: "away", from: "drinking", doing: "컵 치우기",
+    };
+    const v = fsmLayout(person, { width: 560, height: 240 });
+    expect(lineOf(v, "drinking", "away")[0]).toMatchObject({ kind: "taken", label: { text: "컵 두고 떠남", sub: "컵 치우기" } });
+    expect(v.nodes.find((n) => n.id === "away")).toMatchObject({ now: true, does: "컵 치우기" });
+    expect(v.nodes.find((n) => n.id === "drinking")).toMatchObject({ prev: true });
+    expect(v.loop).toBeNull();
+    for (const t of texts(v)) expect(t).not.toMatch(INSIDE);
   });
 
   it("카드 선에는 목표 선·목표 글·점선이 없다: 선은 그 밖의 전이·나가는 전이·막 지나온 전이뿐이다", () => {

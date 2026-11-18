@@ -1,12 +1,12 @@
 import { useLayoutEffect, useRef, useState } from "react";
 import { Item, ItemActions, ItemContent, ItemDescription, ItemHeader, ItemTitle } from "../components/ui/item";
 import { LiquidGlass } from "../components/ui/liquid-glass";
+import { LineDrawSvg } from "../components/ui/line-draw-svg";
+import { TALK_TAIL } from "../lib/tokens";
 import { Status } from "../components/ui/status";
 import { TALK_SHOWN, type Talk } from "./data";
-import type { FsmNow } from "./fsm";
-import { FsmCard } from "./FsmCard";
 import type { GoalLine } from "./goal-line";
-import { fsmCardBox, type Rect } from "./layout";
+import type { Rect } from "./layout";
 import { useReducedMotionNow } from "./motion";
 import { WORDS } from "./words";
 
@@ -20,16 +20,22 @@ const TOP_FADE = 0.55;
 
 type Line = { id: string; text: string };
 
+/** 꼬리 크기(px)와 상자 높이에서 꼬리 가운데 자리(몫). */
+const TAIL = { w: 10, h: 16, at: 0.55 };
+/** 꼬리: 상자 오른쪽 끝에서 마스코트 쪽을 가리키는 삼각형(칠한 것과 바깥 두 변). */
+const TAIL_FILL = `M0 0L${TAIL.w} ${TAIL.h / 2}L0 ${TAIL.h}Z`;
+const TAIL_EDGE = `M0 0L${TAIL.w} ${TAIL.h / 2}L0 ${TAIL.h}`;
+
 /**
- * 트윈 아래쪽 메시지 상자 하나(마스코트 왼쪽, 마스코트가 옆에서 말하는 사람처럼 선다). 판은 LiquidGlass 불투명 판 + Item(sm, 부품 원래 글 크기).
- * 왼쪽 문장 칸은 최근 세 줄이 굴러가고(TalkLines) 그 오른쪽 아래에 이어짐 표시 ▼, 오른쪽은 습관 FSM 카드(FsmCard: 사람 상태와 전이). 알약은 없다.
- * 미리 세운 목표가 있으면 문장 칸 위에 목표 한 줄(Status brand, 「목표 · 컵 치우기 · 준비됨」, goal-line.ts)이 있다. 자리는 배치를 정할 때까지 임시다.
- * 모드는 마스코트 머리 위 모드 말풍선(ModeBubble)이 보인다. 크기·자리(layout.ts bubble·fsmCardBox)는 정해져 있어 글 길이가 바꾸지 않는다.
+ * 트윈 아래쪽 메시지 상자 하나(마스코트 바로 왼쪽, 마스코트가 옆에서 말하는 사람처럼 선다). 판은 LiquidGlass 불투명 판 + Item(sm, 부품 원래 글 크기).
+ * 맨 위 줄은 목표 한 줄 자리(Status brand, 「목표 · 컵 치우기 · 준비됨」, goal-line.ts, 목표가 없으면 빈 줄), 그 아래 최근 세 줄이 굴러가고(TalkLines) 오른쪽 아래에 이어짐 표시 ▼.
+ * 오른쪽 끝에 마스코트를 가리키는 꼬리(21st.dev Line Draw SVG: 판 색 칠한 삼각형과 판 바깥 선 색 두 변)가 상자 밖 형제로 붙는다. 알약은 없다.
+ * 모드는 마스코트 머리 위 모드 말풍선(ModeBubble)이 보인다. 크기·자리(layout.ts bubble)는 정해져 있어 글 길이가 바꾸지 않는다.
  * 원래 생각(추론)은 오지 않는다(data.ts talkOf). 트윈·폰 칸 가림판(z-40)보다 위(z-50)에 있다. 보기만 한다: 마우스를 받지 않는다.
  */
-export function TalkBox({ talk, fsm = null, goal = null, box }: { talk: Talk | null; fsm?: FsmNow | null; goal?: GoalLine | null; box: Rect }) {
-  const card = fsmCardBox(box);
+export function TalkBox({ talk, goal = null, box }: { talk: Talk | null; goal?: GoalLine | null; box: Rect }) {
   return (
+    <>
     <LiquidGlass
       mode="opaque"
       radius={16}
@@ -37,19 +43,24 @@ export function TalkBox({ talk, fsm = null, goal = null, box }: { talk: Talk | n
       className="pointer-events-none absolute z-50"
       style={{ left: box.left, top: box.top, width: box.width, height: box.height }}
     >
-      <Item size="sm" className="size-full flex-nowrap items-center">
+      <Item size="sm" className="size-full flex-nowrap items-start">
         <ItemContent className="min-w-0">
-          {goal && (
-            <ItemHeader className="min-w-0 justify-start">
-              <Status variant="brand" data-goal-line={goal.stage}>{goal.text}</Status>
-            </ItemHeader>
-          )}
+          <ItemHeader data-talk-goal className="h-6 min-w-0 justify-start">
+            {goal && <Status variant="brand" data-goal-line={goal.stage}>{goal.text}</Status>}
+          </ItemHeader>
           <TalkLines lines={talk?.lines ?? []} />
         </ItemContent>
         <ItemActions data-talk-more aria-hidden="true" className="self-end">{WORDS.more}</ItemActions>
-        <FsmCard fsm={fsm} box={card} className="shrink-0 self-center" />
       </Item>
     </LiquidGlass>
+    <div
+      data-talk-tail aria-hidden="true" className="pointer-events-none absolute z-50"
+      style={{ left: box.left + box.width - 1, top: box.top + box.height * TAIL.at - TAIL.h / 2, width: TAIL.w, height: TAIL.h }}
+    >
+      <LineDrawSvg tone="talkTail" path={TAIL_FILL} width={TAIL.w} height={TAIL.h} className="absolute left-0 top-0" />
+      <LineDrawSvg tone="talkTailEdge" path={TAIL_EDGE} strokeWidth={TALK_TAIL.edge.width} width={TAIL.w} height={TAIL.h} className="absolute left-0 top-0" />
+    </div>
+    </>
   );
 }
 

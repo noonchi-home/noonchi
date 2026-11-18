@@ -104,7 +104,7 @@ describe("대시보드 자료 연결", () => {
     send(moment(2));
     expect(document.querySelector("[data-progress]")).toBeNull();
     expect(sayLine()).toHaveTextContent("컵을 들게요.");
-    expect(talk().querySelector('[data-fsm-state="left_cup"]')).toHaveAttribute("data-now");
+    expect(document.querySelector('[data-fsm-card] [data-fsm-state="left_cup"]')).toHaveAttribute("data-now");
     expect(screen.getByRole("region", { name: "마스코트" }).querySelector<HTMLElement>("[data-mascot-turn]")!.style.transform).toBe("scaleX(-1)");
     expect(document.querySelector("main")).toHaveAttribute("data-step", "2");
   });
@@ -116,9 +116,9 @@ describe("대시보드 자료 연결", () => {
     expect(screen.getByRole("region", { name: "마스코트" }).querySelector<HTMLElement>("[data-mascot-turn]")!.style.transform).toBe("scaleX(-1)");
     expect(sayLine()).toHaveTextContent("컵을 두고 자리를 뜨면 컵을 치울게요");
     // 순간 0의 판단(seq 1)은 순간 2의 판단(seq 2)보다 늦게 온 옛 판단이라 지금 상태는 그대로다
-    expect(talk().querySelector('[data-fsm-state="left_cup"]')).toHaveAttribute("data-now");
+    expect(document.querySelector('[data-fsm-card] [data-fsm-state="left_cup"]')).toHaveAttribute("data-now");
     expect(talk().querySelector("[data-goal-line]")).toHaveTextContent("목표 · 컵 치우기 · 준비됨");
-    expect(talk().querySelector("[data-fsm-card]")).not.toHaveTextContent("목표");
+    expect(document.querySelector("[data-fsm-card]")).not.toHaveTextContent("목표");
   });
 
   it("판단 없이 반성 사건만 와도 메시지 상자에 그 규칙 두 줄이 쌓인다. 칩은 없다", async () => {
@@ -246,7 +246,7 @@ describe("가짜 단계(?debug=steps)", () => {
     expect(img.getAttribute("src")).toBe("/debug-eye/eye-table-near.webp");
     expect(document.querySelector("[data-mode-text]")).toHaveTextContent(/^눈치 모드$/);
     expect(talk().querySelector("[data-talk-pill]")).toBeNull();
-    expect(talk().querySelector('[data-fsm-state="left_cup"]')).toHaveAttribute("data-now");
+    expect(document.querySelector('[data-fsm-card] [data-fsm-state="left_cup"]')).toHaveAttribute("data-now");
     expect([...phonePane().querySelectorAll("[data-detection-label]")].map((t) => t.textContent?.split(" ")[0])).toEqual(["컵"]);
     expect(phonePane().querySelector("canvas[data-masks]")).not.toBeNull();
   });
@@ -275,7 +275,7 @@ describe("가짜 단계(?debug=steps)", () => {
     expect(phonePane().querySelector('img[alt="폰 카메라 영상"]')!.getAttribute("src")).toBe("/debug-eye/eye-sink.webp");
     act(() => window.__dash!.step(0));
     expect(document.querySelector("main")).toHaveAttribute("data-step", "0");
-    expect(talk().querySelector('[data-fsm-state="drinking"]')).toHaveAttribute("data-now");
+    expect(document.querySelector('[data-fsm-card] [data-fsm-state="drinking"]')).toHaveAttribute("data-now");
   });
 
   it("&play=MS면 지도가 준비된 뒤부터 MS마다 4→0→1 차례로 넘긴다", async () => {

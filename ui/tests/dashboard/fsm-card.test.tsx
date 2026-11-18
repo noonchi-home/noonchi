@@ -66,7 +66,7 @@ describe("FSM 카드 상태 바뀜", () => {
     expect([card.style.left, card.style.top, card.style.width, card.style.height]).toEqual(["24px", "300px", "520px", "200px"]);
     expect(card.querySelector('[data-fsm-state="drinking"]')).toHaveAttribute("data-now");
     const world = card.querySelector<HTMLElement>("[data-fsm-world]")!;
-    expect(world.style.transform).toMatch(/^translate\(\d+(\.\d+)?px, 100px\)$/);
+    expect(world.style.transform).toMatch(/^translate\(-?\d+(\.\d+)?px, 100px\)$/);
   });
 
   it("같은 상태면 움직이지 않고, 움직임 줄이기면 상태가 바뀌어도 바로 바뀐다", () => {

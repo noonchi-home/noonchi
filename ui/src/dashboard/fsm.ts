@@ -28,8 +28,11 @@ export function fsmOf(s: DashData): FsmNow | null {
   return { habit, state, from: from === state ? null : from, doing };
 }
 
-/** 상태 원 반지름(px, Avatar size state 88px의 반)과 한 줄 위 상태 사이(가운데 사이 px). */
+/** 높이 FSM_BASE_H 카드의 상태 원 반지름(px, Avatar size state 88px의 반)과 한 줄 위 상태 사이(가운데 사이 px).
+ *  카드가 더 높으면 원·사이·선 굵기·화살촉을 같은 배율 k(최대 FSM_K_MAX)로 키운다. 글은 부품 원래 크기 그대로다. */
 export const FSM_R = 44;
+export const FSM_BASE_H = 140;
+export const FSM_K_MAX = 1.4;
 const SPACING = 200;
 /** 한 칸 옆 선이 휘는 높이(조절점, px). 두 칸 넘게 떨어진 선은 사이 원을 넘어가게 더 휜다. */
 const BEND = 40;
@@ -49,7 +52,8 @@ export interface FsmNode { id: string; name: string; does: string; x: number; y:
 export interface FsmLabel { text: string; sub?: string; x: number; y: number; side: "above" | "below" | "left" }
 /** 선: edge 그 밖의 전이, out 지금 상태에서 나가는 전이, taken 막 지나온 전이. d는 선, arrow는 화살촉, track은 빨간 점이 지나는 자리. */
 export interface FsmLine { id: string; from: string; to: string; kind: "edge" | "out" | "taken"; d: string; arrow: string; label: FsmLabel | null; track: P[] }
-export interface FsmView { nodes: FsmNode[]; lines: FsmLine[]; loop: FsmLine | null; focus: { x: number; y: number } }
+/** r 원 반지름, k 배율(r / FSM_R), width 토큰 선 굵기 → 이 배율의 굵기. */
+export interface FsmView { nodes: FsmNode[]; lines: FsmLine[]; loop: FsmLine | null; focus: { x: number; y: number }; r: number; k: number; width: (w: number) => number }
 
 const fmt = (v: number) => (Math.round(v * 10) / 10).toString();
 const pt = ([x, y]: P) => `${fmt(x)} ${fmt(y)}`;
@@ -66,9 +70,9 @@ const quad = (a: P, c: P, b: P, t: number): P => add(add(mul(a, (1 - t) ** 2), m
 const cubic = (a: P, c1: P, c2: P, b: P, t: number): P =>
   add(add(mul(a, (1 - t) ** 3), mul(c1, 3 * (1 - t) ** 2 * t)), add(mul(c2, 3 * (1 - t) * t * t), mul(b, t ** 3)));
 
-/** 끝 자리 tip에 닿는 화살촉(날개 둘): 들어오는 방향 dir. */
-function arrowAt(tip: P, dir: P): string {
-  const back = mul(unit(dir), -WING);
+/** 끝 자리 tip에 닿는 화살촉(날개 둘): 들어오는 방향 dir, 배율 k. */
+function arrowAt(tip: P, dir: P, k: number): string {
+  const back = mul(unit(dir), -WING * k);
   return `M${pt(add(tip, rot(back, SPREAD)))}L${pt(tip)}L${pt(add(tip, rot(back, -SPREAD)))}`;
 }
 
@@ -112,11 +116,13 @@ function habitDoes(h: HabitFsm, id: string): string {
 
 export function fsmLayout(f: FsmNow, box: { width: number; height: number }): FsmView {
   const { habit } = f;
+  const k = Math.min(FSM_K_MAX, Math.max(1, box.height / FSM_BASE_H));
+  const r = FSM_R * k;
   const prev = f.from;
   const order = fsmOrder(habit);
   const cur = f.state;
   const slot = new Map(order.map((id, i) => [id, i]));
-  const center = (id: string): P => [(slot.get(id) ?? 0) * SPACING, 0];
+  const center = (id: string): P => [(slot.get(id) ?? 0) * SPACING * k, 0];
   const focus = { x: center(cur)[0], y: 0 };
   const inside = (l: FsmLabel) => Math.abs(l.x - focus.x) <= box.width / 2 - EDGE && Math.abs(l.y - focus.y) <= box.height / 2;
   const keep = (l: FsmLabel | null) => (l && inside(l) ? l : null);
@@ -138,17 +144,17 @@ export function fsmLayout(f: FsmNow, box: { width: number; height: number }): Fs
     const a = center(n.from), b = center(n.to);
     const span = Math.abs((slot.get(n.to) ?? 0) - (slot.get(n.from) ?? 0));
     const up = b[0] > a[0];
-    const h = span <= 1 ? BEND : BEND_FAR * span;
+    const h = (span <= 1 ? BEND : BEND_FAR * span) * k;
     const c: P = [(a[0] + b[0]) / 2, up ? -h : h];
-    const p0 = add(a, mul(unit(sub(c, a)), FSM_R));
-    const p2 = add(b, mul(unit(sub(c, b)), FSM_R + TIP_GAP));
+    const p0 = add(a, mul(unit(sub(c, a)), r));
+    const p2 = add(b, mul(unit(sub(c, b)), r + TIP_GAP * k));
     const track = Array.from({ length: TRACK + 1 }, (_, i) => quad(p0, c, p2, i / TRACK));
     const mid = quad(p0, c, p2, 0.5);
-    const at: P = [mid[0], mid[1] + (up ? -LABEL_OFF : LABEL_OFF)];
+    const at: P = [mid[0], mid[1] + (up ? -LABEL_OFF : LABEL_OFF) * k];
     const side = up ? "above" : "below";
     const kind: FsmLine["kind"] = n.to === cur && n.from === prev ? "taken" : n.from === cur ? "out" : "edge";
     const label: FsmLabel | null = kind === "out" || kind === "taken" ? { text: n.trigger, ...(n.action ? { sub: n.action } : {}), x: at[0], y: at[1], side } : null;
-    lines.push({ id, from: n.from, to: n.to, kind, d: `M${pt(p0)}Q${pt(c)} ${pt(p2)}`, arrow: arrowAt(p2, sub(p2, c)), label: keep(label), track });
+    lines.push({ id, from: n.from, to: n.to, kind, d: `M${pt(p0)}Q${pt(c)} ${pt(p2)}`, arrow: arrowAt(p2, sub(p2, c), k), label: keep(label), track });
   }
 
   // 지금 상태 제자리 고리(원 왼쪽 위): 하는 일이 아닌 첫 제자리 전이
@@ -157,20 +163,20 @@ export function fsmLayout(f: FsmNow, box: { width: number; height: number }): Fs
     const rule = habit.transitions.find((t) => t.from === cur && t.to === cur && t.action && t.action !== f.doing);
     if (rule) {
       const c0 = center(cur);
-      const p0 = add(c0, mul(dirAt(-100), FSM_R));
-      const p3 = add(c0, mul(dirAt(-160), FSM_R + TIP_GAP));
-      const c1 = add(c0, mul(dirAt(-95), FSM_R + 36));
-      const c2 = add(c0, mul(dirAt(-165), FSM_R + 36));
+      const p0 = add(c0, mul(dirAt(-100), r));
+      const p3 = add(c0, mul(dirAt(-160), r + TIP_GAP * k));
+      const c1 = add(c0, mul(dirAt(-95), r + 36 * k));
+      const c2 = add(c0, mul(dirAt(-165), r + 36 * k));
       const fine = Array.from({ length: 49 }, (_, i) => cubic(p0, c1, c2, p3, i / 48));
       // 글은 고리 왼쪽 끝보다 더 왼쪽에(고리를 가리지 않게), 높이는 고리 꼭대기(카드 위 끝 안쪽)
       const apex = cubic(p0, c1, c2, p3, 0.5);
       const left = Math.min(...fine.map((q) => q[0]));
-      const at: P = [left - LABEL_OFF, Math.max(apex[1], -box.height / 2 + 20)];
+      const at: P = [left - LABEL_OFF * k, Math.max(apex[1], -box.height / 2 + 20)];
       loop = {
-        id: `${cur}>${cur}`, from: cur, to: cur, kind: "edge", d: `M${pt(p0)}C${pt(c1)} ${pt(c2)} ${pt(p3)}`, arrow: arrowAt(p3, sub(p3, c2)),
+        id: `${cur}>${cur}`, from: cur, to: cur, kind: "edge", d: `M${pt(p0)}C${pt(c1)} ${pt(c2)} ${pt(p3)}`, arrow: arrowAt(p3, sub(p3, c2), k),
         label: { text: rule.trigger, sub: rule.action!, x: at[0], y: at[1], side: "left" }, track: fine,
       };
     }
   }
-  return { nodes, lines, loop, focus };
+  return { nodes, lines, loop, focus, r, k, width: (w) => w * k };
 }

@@ -21,5 +21,7 @@ export const paint = (r: Ref): Paint => ({ color: hex(r.ref), width: r.width ?? 
 export const TWIN = twin;
 /** 메시지 상자 FSM 카드 선·원 테·빨간 점 토큰(카드 바탕 위 한 겹). */
 export const FSM = viz.fsm;
+/** 메시지 상자 꼬리: 판 색 칠함과 판 바깥 선(LiquidGlass ring glass-edge와 같은 색). */
+export const TALK_TAIL = viz.talkTail;
 /** 트윈·지도 위 선 세 겹(바깥 숯색, 흰 테, 심) 규칙. */
 export const OVERLAY = overlayLine;
