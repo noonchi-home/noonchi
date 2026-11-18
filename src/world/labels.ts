@@ -9,11 +9,11 @@ export const OBJECT_NAME: Record<string, string> = Object.fromEntries(Object.ent
  *  열쇠는 FSM 상태 id(src/brain/decision.ts CUP_FSM_MEMORY)다. 낱말 표 값과 이름이 같은 것이 있어도 다른 것이라, 낱말 목록 검사(tests/world-vocab.test.ts)와 헷갈리지 않게 따옴표로 쓴다. */
 export const FSM_STATE_TEXT: Record<string, string> = { "drinking": "먹거나 마시는 중", "watching_tv": "TV 보는 중", "left_cup": "컵을 두고 자리를 뜸", "cooking": "주방에서 할 일을 찾음" };
 /** 메시지 상자 문장(src/brain/thought.ts 「<조건> <허락> 된다고 하셨어요」)의 조건형: 시연 FSM 기억(src/brain/decision.ts CUP_FSM_MEMORY)의 규칙(행동마다 하나)
- *  트리거 뜻을 다 담은 짧은 조건형(메시지 상자 한 줄은 잘려서 덧말은 뺀다). 열쇠는 그 규칙의 행동이다. 반성으로 배운 규칙(트리거가 시연 기억과 다름)은 ruleIf가 그 트리거를 줄이지 않고 그대로 쓴다. */
+ *  사용자가 정한 짧은 조건형(「컵을 두고 자리를 뜨면」, 「아무도 안 만지면」 같은 덧조건은 넣지 않는다, 2026-11-18 사용자 바로잡음). 열쇠는 그 규칙의 행동이다. 반성으로 배운 규칙(트리거가 시연 기억과 다름)은 ruleIf가 그 트리거를 줄이지 않고 그대로 쓴다. */
 export const RULE_IF: Record<string, string> = {
-  "컵 치우기": "컵을 두고 자리를 뜨고 아무도 안 만지면",
-  "컵에 물 채워 주기": "식사 중 컵이 비었고 아무도 안 만지면",
-  "컵에 콜라 따라 주기": "TV를 보다 컵이 비었고 아무도 안 만지면",
+  "컵 치우기": "컵을 두고 자리를 뜨면",
+  "컵에 물 채워 주기": "식사 중 컵이 비면",
+  "컵에 콜라 따라 주기": "TV를 보다 컵이 비면",
   "에어컨 켜기": "덥다고 하거나 부채질하면",
   "라면 끓이기 알려 주기": "라면 끓이는 법을 묻거나 끓이다 막히면",
   "전자레인지로 데우기 알려 주기": "전자레인지 쓰는 법을 묻거나 어떻게 하냐면",
