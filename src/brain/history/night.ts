@@ -112,6 +112,12 @@ export function robotSpans(db: HistoryDb, day: string, action: string): [number,
   return out.sort((a, b) => a[0] - b[0]);
 }
 
+/** 안 보인 구간(시각 찾기 답: 첫 줄 ~ 마지막 안 보인 줄)의 반열린 끝: 그 뒤 첫 기록 줄 시각, 없으면 그날 끝. 석준 님 daily_run.py가 끝에 줄 간격을 더하는 것과 같다
+ *  (그쪽 기록은 줄 간격이 고르고, 이 집 기록은 바뀔 때만 줄이 생긴다. Codex 1b07d3e2 P2: 마지막 줄 시각을 그대로 써 「사람 안 보임」 한 줄뿐이면 빈 구간이었다). times는 그날 줄 시각(초, 차례). */
+export function unseenEnd(times: readonly number[], last: number): number {
+  return times.find((x) => x > last) ?? DAY_MS / 1000;
+}
+
 /** 덩어리에 그 동안의 사람 상태(판단 기록 fsm.state, 가장 많이 나온 것, 없으면 그 앞 마지막 판단 상태)를 붙인 줄 `HH:MM:SS~HH:MM:SS [상태] 글`. */
 export function chunkLines(db: HistoryDb, day: string, chunks: readonly Chunk[]): string[] {
   const states = db.list({ day, kinds: ["decision"], limit: 10_000_000 }).flatMap((r) => {
@@ -299,11 +305,12 @@ export async function runNight(db: HistoryDb, pam: PamClient, day: string, o: Ni
         // 로봇이 그 일을 한 구간은 못 봄: 그 안의 행동 표시(폰 명령대로 사람이 한 일)는 행동으로 세지 않는다(Codex 1b07d3e2 P2: checkCandidate가 행동을 못 봄보다 먼저 센다)
         const robot = robotSpans(db, d, r.action);
         const byRobot = (a: number) => robot.some(([s, e]) => s <= a && a <= e);
+        const times = dl.map((l) => sec(l.time));
         return [{
-          start: sec(dl[0]!.time), end: sec(dl.at(-1)!.time) + 1,
+          start: times[0]!, end: times.at(-1)! + 1,
           candidate: (m.candidates[markKey(r.state, candidateText(r.cand))] ?? []).map(sec),
           action: [...(m.actions[r.action] ?? []).map(sec).filter((a) => !byRobot(a)), ...asked],
-          unseen: [...(m.unseen ?? []).map((u) => [sec(u.start), sec(u.end)] as [number, number]), ...robot],
+          unseen: [...(m.unseen ?? []).map((u) => [sec(u.start), unseenEnd(times, sec(u.end))] as [number, number]), ...robot],
           answered: answerTimes(db, d, r.action),
         }];
       });

@@ -110,6 +110,25 @@ describe("밤 흐름: 채택 검사", () => {
     }
   });
 
+  // Codex(1b07d3e2 P2): 안 보인 구간 끝(마지막 안 보인 줄)을 반열린 구간 끝으로 그대로 써, 「사람 안 보임」 한 줄뿐이면 빈 구간이 돼 못 봄을 따라오지 않은 것으로 셌다.
+  // 석준 님 daily_run.py는 끝에 줄 간격(step)을 더한다: 이 집 기록은 바뀔 때만 줄이 생기므로 다음 줄까지(없으면 그날 끝까지)가 안 보인 구간이다
+  it("안 보인 구간은 다음 기록 줄까지(마지막 줄이면 그날 끝까지) 이어진다: 「사람 안 보임」 한 줄뿐인 구간에 걸린 후보 창도 못 봄이다", async () => {
+    const pam = await startFakePamLlm({ chunk: oneChunkPerLine, reflect: () => CANDIDATES_ASK_THEN_CLEAR,
+      mark: (v) => ({ ...markLeaveAt("08:00:00")(v), unseen: v.lines.some((l) => l.startsWith("08:00:00")) ? [{ start: "08:00:00", end: "08:00:00" }] : [] }) });
+    try {
+      const db = HistoryDb.open(":memory:");
+      const dir = tmp();
+      drinkAndLeave(db, "2026-11-10", "08:00:00");
+      db.add("detection", at("2026-11-10", "09:00:00"), "사람 보임");   // 한 시간 뒤 돌아옴
+      drinkAndLeave(db, "2026-11-11", "08:00:00");                      // 떠난 줄이 그날 마지막 줄
+      for (const d of ["2026-11-10", "2026-11-11"]) await runNight(db, pamClientFor(pam), d, { dir });
+      const last = db.list({ kinds: ["reflection"], latest: true, limit: 1 })[0]!.data as { checks: NightCheckRow[] };
+      expect(last.checks).toContainEqual(expect.objectContaining({ state: "drinking", action: "컵 치우기", on: LEAVE_ON, n: 0, k: 0, unknown: 2 }));
+    } finally {
+      await pam.close();
+    }
+  });
+
   it("「그대로 둬요」 답은 사람이 떠나 안 보였어도 셈에 든다: 치워·둬요·둬요·치워면 n=4·k=2로 통과하지 않고 떠날 때는 계속 묻는다", async () => {
     const pam = await fake();
     try {
