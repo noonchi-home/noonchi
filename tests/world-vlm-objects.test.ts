@@ -256,6 +256,33 @@ describe("계획 대상으로 잇기(relink)", () => {
     expect(v.find((o) => o.id === "bottle_1")).toMatchObject({ status: "gone", followed_by: "cup_1" });
     expect(w.relink("cup_9", "cup_1", 5000)).toBe(false);
   });
+
+  /** 확인된 cup_1에 「비어 있음」 확인(3·5·8초)을 두고, 다른 자리에 내용물 있음으로 본 병 bottle_1(9·10초)을 확정한 뒤 bottle_1 → cup_1로 잇는다. */
+  const linked = () => {
+    const w = confirmed();
+    for (const t of [3000, 5000, 8000]) w.applyScene(`e${t}`, t, { ...cupScene(), observations: [{ object_id: "v1", state: "empty" }] }, new Map(), look);
+    expect(w.view(8000).objects[0]?.facts.contents).toMatchObject({ value: "empty", certainty: "confirmed" });
+    const bottle: SceneObservation = { scene: "k", summary: "s", observations: [{ object_id: "v1", state: "has_contents" }], objects: [{ id: "v1", cls: "bottle", box: frac([300, 150, 20, 10]), det: null }] };
+    for (const t of [9000, 10000]) w.applyScene(`e${t}`, t, bottle, new Map(), { ...look, view: AWAY_VIEW });
+    expect(w.relink("bottle_1", "cup_1", 10000)).toBe(true);
+    return { w, bottle };
+  };
+
+  // Codex P2(5f230c5): 잇기가 내용물 사실만 옮기고 대상의 내용물 갱신기 상태(옛 「비어 있음·확인됨」)를 남겨, 다음 답에서 옛 값이 되살아났다
+  it("대상의 옛 내용물 확인 값은 잇기 뒤 되살아나지 않는다: 내용물 갱신기 상태도 그 물건 것으로 옮긴다", () => {
+    const { w } = linked();
+    w.applyScene("e11", 11000, { scene: "k", summary: "s", objects: [], observations: [{ object_id: "d1", state: "has_contents" }] }, new Map([["d1", "cup_1"]]), { ...look, view: AWAY_VIEW });
+    expect(w.view(11000).objects.find((o) => o.id === "cup_1")?.facts.contents?.value).toBe("has_contents");
+  });
+
+  // Codex P2(5f230c5): 합친 원본 bottle_1이 식별 후보에 남아, 다음 병 답이 같은 종류 먼저인 자리 잇기로 bottle_1을 되살려 다시 둘이 됐다
+  it("합친 원본은 식별 후보에서 빠진다: 그 자리의 다음 병 답은 대상(cup_1)으로 이어진다", () => {
+    const { w, bottle } = linked();
+    const ids = new Map<string, string>();
+    w.applyScene("e11", 11000, bottle, ids, { ...look, view: AWAY_VIEW });
+    expect(ids.get("v1")).toBe("cup_1");
+    expect(w.view(11000).objects.map((o) => [o.id, o.status])).toEqual([["cup_1", "present"], ["bottle_1", "gone"]]);
+  });
 });
 
 // 머그 q2(2026-11-18 09:55): 한 머그를 VLM이 큰 상자와 그 안 작은 상자 둘로 답해(IoU 0.5 아래) cup_2 후보가 생겼고, 같은 사진의 가까이 보기가 그 후보를 확정했다.
