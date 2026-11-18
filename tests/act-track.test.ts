@@ -2957,7 +2957,8 @@ describe("실행 추적: 멈춘 집기·놓기 단계(관찰 모드 A)와 사람
     const ends: [string, (s: ReturnType<typeof stallSetup>) => void | Promise<void>][] = [
       ["시간 초과", (s) => { s.clock.t += 120_001; s.t.tick(); }],
       ["그만", (s) => { s.heard("그만"); }],
-      ["새 계획", (s) => s.decide(ask("pam-2", 2))],
+      // 손대는 단계(집기)라 다른 행동 판단은 말로 한 부탁일 때만 계획을 바꾼다
+      ["새 계획", (s) => s.decide({ ...ask("pam-2", 2), textSent: "사람이 말함: 「어떻게 할지 물어봐 줘」" })],
       ["멈춤", (s) => { s.t.stop(); }],
       ["계획 완료", (s) => { s.t.onAnswer("plan:pam-1", "plan:pam-1:2", "done"); s.t.onAnswer("plan:pam-1", "plan:pam-1:3", "done"); s.clock.t += 8000; s.t.tick(); s.t.onAnswer("plan:pam-1", "plan:pam-1:4", "done"); }],
     ];
@@ -4561,7 +4562,7 @@ describe("실행 추적: 계획 대상이 안 보이면 그 마지막 자리에�
       return true;
     } } });
     await blocked(s);
-    s.objects([{ ...seenAt(5_000), status: "out_of_view" }, seenAt(s.clock.t, "cup_7", [2.3, 0.75, 1])]);
+    s.objects([{ ...seenAt(5_000), status: "out_of_view" }, { ...seenAt(s.clock.t, "cup_7", [2.3, 0.75, 1]), first_seen_ms: s.clock.t }]);
     s.tick();
     expect(links).toEqual([["cup_7", "cup_1"]]);
     s.tick();
@@ -4571,13 +4572,28 @@ describe("실행 추적: 계획 대상이 안 보이면 그 마지막 자리에�
     const b: [string, string][] = [];
     const t = runSetup({ objects: [seenAt(5_000)], over: { linkObject: (from, to) => { b.push([from, to]); return false; } } });
     await blocked(t);
-    const bottle = (id: string, at: [number, number, number]): WorldObject => ({ ...seenAt(t.clock.t, id, at), cls: "bottle" });
+    const bottle = (id: string, at: [number, number, number]): WorldObject => ({ ...seenAt(t.clock.t, id, at), cls: "bottle", first_seen_ms: t.clock.t });
     t.objects([{ ...seenAt(5_000), status: "gone" }, bottle("bottle_3", [2.6, 0.75, 1])]);
     t.tick();
     expect(b).toEqual([]);
     t.objects([{ ...seenAt(5_000), status: "gone" }, bottle("bottle_2", [2.3, 0.75, 1])]);
     t.tick();
     expect(b).toEqual([["bottle_2", "cup_1"]]);
+  });
+
+  // Codex P2(5f230c5): 계획 전부터 따로 있던 옆 컵도 0.5m 안이면 대상 id로 합쳐, 원래 대상이 없어지면 다른 컵에 기존 계획을 실행했다
+  it("찾기 전부터 있던 다른 물건(계획을 받을 때 있던 같은 종류, 찾기 시작 전에 처음 본 같은 무리)은 0.5m 안이어도 잇지 않고 「찾은 뒤 다시 판단」으로 닫는다", async () => {
+    for (const before of ["plan", "find"] as const) {
+      const links: [string, string][] = [];
+      const neighbor = (s: { clock: { t: number } }): WorldObject => ({ ...seenAt(s.clock.t, "cup_7", [2.3, 0.75, 1]), ...(before === "find" ? { cls: "bottle" as const, id: "bottle_7", first_seen_ms: 6_000 } : {}) });
+      const s = runSetup({ objects: [seenAt(5_000), ...(before === "plan" ? [{ ...seenAt(5_000, "cup_7", [2.3, 0.75, 1]), status: "out_of_view" as const }] : [])],
+        over: { linkObject: (from, to) => { links.push([from, to]); return true; } } });
+      await blocked(s);
+      s.objects([{ ...seenAt(5_000), status: "out_of_view" }, neighbor(s)]);
+      s.tick();
+      expect(links, before).toEqual([]);
+      expect(s.exec().find((l) => l.state === "failed"), before).toMatchObject({ plan_id: "plan:pam-1", text: EXEC_TEXT.foundNew });
+    }
   });
 
   it("그 자리 0.5m 안에 다른 id의 같은 종류 컵만 생기고 잇지 못하면(linkObject 없음·실패) 계획을 「찾은 뒤 다시 판단」으로 닫고 같은 행동 다시 계획 간격에서 뺀다", async () => {
@@ -4774,6 +4790,114 @@ describe("실행 추적: 사람이 쓰는 물건은 그 사람이 사라질 때�
 });
 
 // 2026-11-18 사용자 결정: 계획이 끝나면(완료·그만·실패) 걷지 않고 아는 사실로 사용자 위치를 확인한 뒤 충전 자리로 돌아가 지켜본다. 새 일은 그 자리에서 시작한다
+// 2026-11-18 wide-glass q3: 「계획이 맞지 않아 버림」의 까닭이 기록에 없었고({"state":"failed"}), 그 뒤 「방금 계획한 일이라 잠시 뒤 다시 봄」으로 12초를 기다렸다
+describe("실행 추적: 계획 검사에서 버린 계획", () => {
+  it("버린 까닭(계획 검사의 첫 틀린 단계와 이유)을 실행 기록과 서버 로그에 남기고, 같은 행동을 다시 계획하는 간격 없이 바로 다시 짠다", async () => {
+    const plans = new PlanHub(smallFloor(), () => {}, () => "t");
+    const w = () => world([cup("present")]);
+    const real = testPlanner(llm);
+    const logged: string[] = [];
+    let n = 0;
+    const s = setup({
+      plans, w, planGapMs: 60_000, log: (line) => logged.push(line),
+      planner: (d, signal) => (n++ === 0
+        ? Promise.resolve({ ok: false as const, error: "2번 집기: 집을 물건(cup_9)이 World State에 없습니다" })
+        : real.plan(planContext({ decision: d, world: w(), floor: plans.floor() }), signal)),
+    });
+    await s.decide(decision);
+    expect(s.exec().at(-1)).toMatchObject({ plan_id: "plan:pam-1", state: "failed", text: EXEC_TEXT.badPlan, reason: "2번 집기: 집을 물건(cup_9)이 World State에 없습니다" });
+    expect(logged.some((l) => l.includes("plan:pam-1") && l.includes("2번 집기: 집을 물건(cup_9)이 World State에 없습니다"))).toBe(true);
+    await s.decide({ ...decision, id: "pam-2", seq: 2 });
+    expect(s.exec().some((e) => e.text === EXEC_TEXT.held)).toBe(false);
+    expect(s.plans.current()).toMatchObject({ id: "plan:pam-2", status: "running" });
+  });
+});
+
+// 2026-11-18 wide-mug q3: 「컵을 들어 주세요」 중에 폰 든 사람이 보여 PAM이 「컵에 콜라 따라 주기」를 골랐고, 「새 판단으로 바뀜」으로 컵 치우기가 취소됐다
+describe("실행 추적: 손대는 단계 중 다른 행동 판단", () => {
+  it("집기·내려놓기 단계와 집은 물건을 들고 가는 동안에는 다른 행동 판단으로 계획을 바꾸지 않고 기록만 한다(계획이 끝난 뒤 다시 판단). 가기 단계에서는 바꾼다", async () => {
+    const s = setup();
+    s.t.onEye([1, 2]);
+    await s.decide(decision);
+    // 1 가기 단계: 다른 행동 판단은 지금처럼 계획을 바꾼다
+    await s.decide(ask("pam-2", 2));
+    expect(s.plans.current()).toMatchObject({ id: "plan:pam-2" });
+    const t = setup();
+    await t.decide(decision);
+    t.t.onAnswer("plan:pam-1", "plan:pam-1:1", "done");
+    expect(t.last()).toMatchObject({ step: "plan:pam-1:2", text: "컵을 들어 주세요" });
+    // 2 집기 단계: 다른 행동 판단은 기록만 한다
+    await t.decide(ask("pam-2", 2));
+    expect(t.exec().at(-1)).toMatchObject({ plan_id: "plan:pam-2", text: EXEC_TEXT.handling });
+    expect(t.plans.current()).toMatchObject({ id: "plan:pam-1", status: "running" });
+    // 3 들고 싱크대로 가는 동안도
+    t.t.onAnswer("plan:pam-1", "plan:pam-1:2", "done");
+    await t.decide(ask("pam-3", 3));
+    expect(t.exec().at(-1)).toMatchObject({ plan_id: "plan:pam-3", text: EXEC_TEXT.handling });
+    expect(t.plans.current()).toMatchObject({ id: "plan:pam-1", status: "running" });
+  });
+
+  it("손대는 단계 중이어도 사람이 말로 한 부탁(들은 말이 든 판단)과 비상(쓰러짐 의심)은 계획을 바꾼다", async () => {
+    let w = world([cup("present")]);
+    const t = setup({ w: () => w });
+    await t.decide(decision);
+    t.t.onAnswer("plan:pam-1", "plan:pam-1:1", "done");
+    await t.decide({ ...ask("pam-2", 2), textSent: "사람이 말함: 「어떻게 할지 물어봐 줘」" });
+    expect(t.plans.current()).toMatchObject({ id: "plan:pam-2" });
+    const u = setup({ w: () => w });
+    await u.decide(decision);
+    u.t.onAnswer("plan:pam-1", "plan:pam-1:1", "done");
+    w = { ...w, person: { ...w.person, visible: true, facts: { posture: { value: POSE_FALL, at_ms: 9_000, since_ms: 9_000, certainty: "confirmed" } } } };
+    await u.decide(ask("pam-2", 2));
+    expect(u.plans.current()).toMatchObject({ id: "plan:pam-2" });
+  });
+
+  // Codex(79f25b8 start.ts:151): 가기 단계 중에 요청한 다른 계획이 집기·운반 중에 도착하면 기존 계획을 취소했다
+  it("가기 단계에서 만들기 시작한 다른 계획이 손대는 단계 중에 도착하면 그 새 계획은 미루고 기존 계획을 그대로 둔다. 말로 한 부탁이면 바꾼다", async () => {
+    for (const spoken of [false, true]) {
+      const plans = new PlanHub(smallFloor(), () => {}, () => "t");
+      const w = () => world([cup("present")]);
+      const real = testPlanner(llm);
+      let release: () => void = () => {};
+      const s = setup({
+        plans, w,
+        planner: (d, signal) => {
+          const made = real.plan(planContext({ decision: d, world: w(), floor: plans.floor() }), signal);
+          return d.id === "pam-2" ? new Promise((done) => { release = () => done(made); }) : made;
+        },
+      });
+      await s.decide(decision);
+      expect(s.last()).toMatchObject({ step: "plan:pam-1:1" });
+      // 1 가기 단계에서 다른 행동 판단: 계획을 만들기 시작한다(아직 손대는 단계가 아니다)
+      s.t.onDecision({ ...ask("pam-2", 2), ...(spoken ? { textSent: "사람이 말함: 「어떻게 할지 물어봐 줘」" } : {}) });
+      // 2 그 사이 집기 단계로 넘어간다
+      s.t.onAnswer("plan:pam-1", "plan:pam-1:1", "done");
+      expect(s.last()).toMatchObject({ step: "plan:pam-1:2" });
+      // 3 새 계획이 도착한다
+      release();
+      await s.t.idle();
+      if (spoken) {
+        expect(s.plans.current(), "말로 한 부탁").toMatchObject({ id: "plan:pam-2" });
+      } else {
+        expect(s.plans.current()).toMatchObject({ id: "plan:pam-1", status: "running" });
+        expect(s.exec().at(-1)).toMatchObject({ plan_id: "plan:pam-2", state: "failed", text: EXEC_TEXT.handling });
+      }
+    }
+  });
+
+  it("손대는 단계 중 보이는 사람은 폰을 든 사람일 수 있어 쓰는 중 지킴을 그 사람으로 걸지 않는다", async () => {
+    let w = world([cup("present")]);
+    const said: string[] = [];
+    const t = setup({ w: () => w, thought: (text) => said.push(text) });
+    await t.decide(decision);
+    t.t.onAnswer("plan:pam-1", "plan:pam-1:1", "done");
+    w = world([cup("present", "in_hand", 9_500)], "holding_object", 9_500);
+    w = { ...w, person: { ...w.person, visible: true, since_ms: 9_500, holding: ["cup_1"] } };
+    t.t.tick();
+    expect(said.some((x) => x.includes("지켜볼게요"))).toBe(false);
+  });
+});
+
 describe("실행 추적: 계획이 끝나면 충전 자리로", () => {
   const DOCK_AT: [number, number, number] = [11, 0, 11];
   const withPerson = (w: WorldView, visible: boolean, room: string | null): WorldView => ({ ...w, person: { ...w.person, visible, room: room && "living", room_label: room } });

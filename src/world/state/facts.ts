@@ -12,9 +12,12 @@ import { inBasin, surfacePlace } from "../place.js";
 /** 트윈 면·싱크볼로 놓인 곳을 덮을 때 빼는 투영 오차 여유(m). */
 const TWIN_MARGIN_M = 0.15;
 
-/** 트윈에 없는 면(선반)으로 답한 놓인 곳: 광선이 트윈 면 사각형 안에서 윗면에 닿았으면 끝 가까이여도 그 면이다(가로 키 큰 컵 r5·v1: 식탁 끝 컵을 VLM이
+/** 트윈에 없는 면(선반)으로 답한 놓인 곳: 광선이 트윈 면에 닿았으면(obj.surface) 끝 가까이여도 그 면이다(가로 키 큰 컵 r5·v1: 식탁 끝 컵을 VLM이
  *  「선반 위」로 답해 그대로 남았다). 다른 면·바닥으로 답한 것은 투영 오차 여유(TWIN_MARGIN_M)를 뺀 안쪽일 때만 덮는다(Codex 4e682c8 2·3). */
 const NOT_TWIN_SURFACE: ReadonlySet<string> = new Set(["on_shelf"]);
+
+/** 싱크대 면 위 물건을 VLM이 이렇게 답하면 다른 가구로 잘못 본 것이다(조리대 위로 바꾼다). */
+const OTHER_FURNITURE: ReadonlySet<string> = new Set(["on_table", "on_desk", "on_shelf"]);
 
 /** 트윈 면으로 알 수 없어 VLM 말을 그대로 쓰는 놓인 곳. */
 const KEEP_VLM_PLACE: ReadonlySet<string> = new Set(["in_hand", "in_sink", "in_dish_rack", "in_fridge"]);
@@ -102,11 +105,19 @@ export class SceneFacts extends Part {
     const at: [number, number] = [obj.position[0], obj.position[2]];
     // 내려놓기 대상이 목적지 면에 있으면 싱크볼 판정에 투영 오차 여유를 빼지 않는다(가로 머그 r6: 싱크볼 자리를 「바닥」으로 남겼다)
     const placing = this.core.focusOn?.step === "place" && this.core.focusOn.id === obj.id;
-    const margin = (placing && obj.part === "basin") || NOT_TWIN_SURFACE.has(value) ? 0 : Math.max(TWIN_MARGIN_M, obj.errorM ?? 0);
+    // 트윈에 없는 면(선반)이나 싱크대 면 위 다른 가구(식탁·책상·선반) 답은 틀린 말이다: 광선이 닿은 면(obj.surface)으로 바꾼다. 끝 가까이여도 그 면이다
+    // (자리는 mm로 반올림돼 면 끝에서 사각형 밖으로 조금 나갈 수 있다. 키 큰 컵 q2: 「싱크대 · 식탁 위」)
+    const wrong = NOT_TWIN_SURFACE.has(value) || (s.kind === "sink" && OTHER_FURNITURE.has(value));
+    const margin = (placing && obj.part === "basin") || wrong ? 0 : Math.max(TWIN_MARGIN_M, obj.errorM ?? 0);
     // 싱크볼 안은 「싱크대 안」이다: VLM이 다른 면 위(조리대 위 등)로 답해도 싱크볼 안쪽이면 싱크대 안으로 넣는다(가로 머그 r4). 2장 규칙은 그대로다
-    if (obj.part === "basin") return s.basin && inBasin(s.basin, at, margin) ? "in_sink" : value;
+    if (obj.part === "basin" && s.basin && inBasin(s.basin, at, margin)) return "in_sink";
+    // 싱크대 면(싱크볼 밖)은 조리대 위다
+    if (wrong) return s.kind === "sink" ? "on_counter" : surfacePlace(s) ?? value;
+    if (obj.part === "basin") return value;
     const inside = s.rect ? inBasin(s.rect, at, margin) : Math.hypot(at[0] - s.center[0], at[1] - s.center[1]) <= s.radius * 0.8 && (obj.errorM ?? 0) <= TWIN_MARGIN_M;
-    return inside ? surfacePlace(s) ?? value : value;
+    // 싱크대 면 위 싱크대 안·바닥 등은 VLM 말을 둔다
+    if (!inside || s.kind === "sink") return value;
+    return surfacePlace(s) ?? value;
   }
 
   /** VLM 대상: 사람·물건·가전 설비와 그 사실, 종류. */

@@ -100,18 +100,44 @@ export function placePoint(view: CameraView, point: [number, number], size: { wi
     const on = s.rect ? inBasin(s.rect, [x, y]) : Math.hypot(x - s.center[0], y - s.center[1]) <= s.radius;
     if (on && (!best || t < best.t)) best = { t, surface: s, top: s.top };
   }
+  let p: V3 | null = null;
   if (!best) {
     const t0 = (0 - o[1]) / d[1];
     const floor = floorAt([o[0] + d[0] * t0, o[2] + d[2] * t0]);
     best = { t: (floor - o[1]) / d[1], surface: null, top: floor };
+    // 속이 찬 장(조리대·싱크대)은 그 너머 바닥을 가린다: 광선이 윗면 높이 아래에서 장 바닥 사각형에 들어가면 바닥이 아니라 그 장 위다(들어간 자리).
+    // 싱크볼 위를 SINK_DEPTH_M 깊이까지 지나면 싱크볼 안이고, 자리는 그 깊이 안에서 광선이 싱크볼 위에 있는 가장 깊은 점(싱크볼 바닥, 아니면 먼 벽)이다
+    // (키 큰 컵 q2: 싱크볼 바닥 컵이 싱크대 너머 1.1m 바닥이 됐다)
+    for (const s of surfaces) {
+      if (!s.rect || !SOLID_KINDS.has(s.kind ?? "")) continue;
+      const tTop = (s.top - o[1]) / d[1];
+      if (tTop <= 0 || tTop >= best.t) continue;
+      const at = (t: number): [number, number] => [o[0] + d[0] * t, o[2] + d[2] * t];
+      const steps = Math.max(2, Math.ceil(Math.hypot(...minus(at(best.t), at(tTop))) / 0.02));
+      const ts = Array.from({ length: steps + 1 }, (_, k) => tTop + ((best!.t - tTop) * k) / steps);
+      const hit = ts.find((t) => inBasin(s.rect!, at(t))) ?? null;
+      const basinHit = s.basin ? ts.filter((t) => o[1] + d[1] * t >= s.top - SINK_DEPTH_M && inBasin(s.basin!, at(t))).at(-1) ?? null : null;
+      if (hit === null) continue;
+      const t = basinHit ?? hit;
+      const q = at(t);
+      p = [q[0], s.top, q[1]];
+      best = { t, surface: s, top: s.top };
+      break;
+    }
   }
-  const p: V3 = [o[0] + d[0] * best.t, best.top, o[2] + d[2] * best.t];
+  p ??= [o[0] + d[0] * best.t, best.top, o[2] + d[2] * best.t];
   const basin = best.surface?.basin;
   return {
     position: p.map((x) => Math.round(x * 1000) / 1000) as V3, surface: best.surface?.id ?? null, part: basin && inBasin(basin, [p[0], p[2]]) ? "basin" : null,
     errorM: Math.round((0.05 + 0.03 * best.t) * 100) / 100,
   };
 }
+
+/** 속이 찬 장(그 너머 바닥을 가린다). 식탁·책상은 다리 사이로 바닥이 보인다. */
+const SOLID_KINDS: ReadonlySet<string> = new Set(["sink", "counter"]);
+/** 싱크볼 깊이(m): 광선이 싱크대 윗면에서 이만큼 아래까지 싱크볼 위를 지나면 싱크볼 안이다(흔한 주방 싱크볼 0.2~0.25m). */
+const SINK_DEPTH_M = 0.25;
+const minus = (a: [number, number], b: [number, number]): [number, number] => [a[0] - b[0], a[1] - b[1]];
 
 /** 쉬는 가구 후보: 몸 점들(엉덩이·어깨 픽셀)마다 광선이 몸 점 높이(누울 면 top + REST_BODY_M)를 지나는 동안 가장자리에서 REST_INSET_M 안쪽을 지나면 그 가구.
  *  카메라 한 대의 광선으로는 높이와 거리를 가르지 못한다(가구 너머 바닥의 몸도 이 높이에서 가구 위로 비칠 수 있다). 그래서 이것은 후보일 뿐이고,

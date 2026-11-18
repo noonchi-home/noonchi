@@ -31,4 +31,21 @@ describe("트윈 윗면 사각형", () => {
     expect(off.surface).toBeNull();
     expect(off.position![1]).toBeCloseTo(0, 3);
   });
+
+  // 키 큰 컵 q2(2026-11-18 09:52): 싱크볼 바닥 컵의 광선이 윗면 높이에서 싱크대 앞 끝 바로 앞을 지나 싱크대 너머 바닥(1.1m 뒤)에 닿아 「바닥」이 됐다
+  it("조리대·싱크대는 속이 찬 장이라 그 너머 바닥은 안 보인다: 광선이 장 바닥 사각형을 지나 바닥에 닿으면 그 장 위(싱크볼을 지나면 싱크볼 안)다. 식탁 너머 바닥은 그대로 바닥", () => {
+    // 깊이(x) 0.6 · 폭(y) 2.0 장, 싱크볼 깊이 0.4 · 폭 0.7
+    const sink: PlaneSurface = { id: "sink_1", label: "싱크대", kind: "sink", center: [1, 0], top: 0.9, radius: 1, rect: { center: [1, 0], size: [2.0, 0.6], facing_deg: 0 }, basin: { center: [1, 0], size: [0.7, 0.4], facing_deg: 0 } };
+    const counter: PlaneSurface = { ...sink, id: "counter_1", kind: "counter", basin: undefined };
+    const table: PlaneSurface = { ...counter, id: "table_1", kind: "table" };
+    // 눈 (2.0, 1.15, 0), 윗면 높이에서 장 앞 끝(x 1.3) 바로 앞 x 1.35를 지나는 광선: 바닥 x 0.18(장 너머)
+    const at = (s: PlaneSurface) => placePoint(viewLooking([2.0, 1.15, 0], [1.35, 0.9, 0]), [LOOK_SIZE.width / 2, LOOK_SIZE.height / 2], LOOK_SIZE, [s], () => 0);
+    expect(at(sink)).toMatchObject({ surface: "sink_1", part: "basin" });
+    expect(at(sink).position![1]).toBeCloseTo(0.9, 3);
+    expect(at(counter)).toMatchObject({ surface: "counter_1", part: null });
+    expect(at(counter).position![0]).toBeCloseTo(1.3, 1);
+    expect(at(table)).toMatchObject({ surface: null });
+    expect(at(table).position![1]).toBeCloseTo(0, 3);
+  });
 });
+
