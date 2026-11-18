@@ -150,6 +150,26 @@ describe("판단 호출", () => {
       expect(s.sent()).toContain("사람이 말함: 「고마워」");
     });
 
+    it("말 부탁(request_task)으로 처리한 들은 말은 다음 판단의 관찰 텍스트에 다시 넣지 않는다(「그만」으로 그 계획을 끝낸 뒤 PAM이 남은 부탁으로 다시 시작하지 않게, Codex 1b07d3e2 P2)", async () => {
+      const s = await setup();
+      s.d.onChanges(s.world.heard(SAID, s.clock.t));
+      s.d.tick();
+      await s.d.idle();
+      expect(s.sent()).toContain(SAID);
+      s.clock.t += 1_000;
+      const say: DecisionRecord = { id: "say-1", seq: 0, atMs: s.clock.t, textSent: `사람이 말함: 「${SAID}」`, finalTime: "2026-11-13T12:00:01.000+09:00", status: "valid",
+        prediction: { observation: "o", reasoning: "r", task_index: 0 }, action: "라면 끓이기 알려 주기", memoryVersion: 0, tasks: [...TASK_NAMES], world: { objects: [], person_visible: true, vlm_missing: 0, yolo_missing: 0 }, source: "speech", afterSeq: 1 };
+      s.d.logSpeech(say);
+      // 20초 뒤 「그만」: 남은 들은 말은 그 뒤 말뿐이다
+      s.clock.t += 20_000;
+      s.d.onChanges(s.world.heard("그만", s.clock.t));
+      s.d.tick();
+      await s.d.idle();
+      expect(pam!.bodies).toHaveLength(2);
+      expect(s.sent()).not.toContain(SAID);
+      expect(s.sent()).toContain("사람이 말함: 「그만」");
+    });
+
     it("들은 말 남기기 설정을 켜면(기본 꺼짐) 기록에 남는 판단 줄에도 그 말이 그대로 있다", async () => {
       const s = await setup({ keepHeard: true });
       s.d.onChanges(s.world.heard(SAID, s.clock.t));

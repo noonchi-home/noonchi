@@ -113,8 +113,10 @@ export class Decider {
     return this.seq;
   }
 
-  /** 실행 추적이 만든 말 부탁 판단(source speech)을 판단 기록으로만 남긴다. PAM을 부르지 않았고 실행 추적에는 이미 넘어갔다. */
+  /** 실행 추적이 만든 말 부탁 판단(source speech)을 판단 기록으로만 남긴다. PAM을 부르지 않았고 실행 추적에는 이미 넘어갔다.
+   *  그 부탁까지 들은 말은 다음 관찰 텍스트에 다시 넣지 않는다(행동을 고른 PAM 판단과 같다. Codex 1b07d3e2 P2: 「그만」 뒤 PAM이 남은 부탁으로 같은 계획을 다시 시작했다). */
   logSpeech(r: DecisionRecord): void {
+    this.recent = this.recent.filter((c) => c.kind !== "heard" || c.at_ms > r.atMs);
     this.emitDecision(r);
   }
 
