@@ -215,6 +215,16 @@ export class WorldCore {
     if (this.person.since_ms === null) this.person.since_ms = atMs;
   }
 
+  /** 확인 전 후보의 종류를 바꾸고 그 종류 꼴의 새 id를 준다(후보는 World State 보기에 없어 아무도 옛 id를 쓰지 않았다). */
+  recast(obj: Obj, cls: ObjClass): Obj {
+    this.objects.delete(obj.id);
+    const n = (this.counters.get(cls) ?? 0) + 1;
+    this.counters.set(cls, n);
+    Object.assign(obj, { id: `${cls}_${n}`, cls });
+    this.objects.set(obj.id, obj);
+    return obj;
+  }
+
   create(cls: ObjClass, atMs: number, frameId: string): Obj {
     const n = (this.counters.get(cls) ?? 0) + 1;
     this.counters.set(cls, n);
