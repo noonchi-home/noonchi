@@ -70,7 +70,9 @@ import type { FloorPlan, PlaceNames } from "../../layout/index.js";
 import type { PlanHub } from "../hub.js";
 import { EXEC_TEXT, type TellMode } from "../labels.js";
 import { Steps, type Stall } from "./steps.js";
-import { HUMAN_KINDS, type ApprovalBook, type PlanResult, type ToolResult } from "../../agent/index.js";
+import { HUMAN_KINDS, type AgentPlan, type ApprovalBook, type PlanAhead, type PlanResult, type ToolResult } from "../../agent/index.js";
+import type { PamMemory } from "../../brain/index.js";
+import type { PendingGoal } from "../../contract/goal.js";
 import type { CheckResult } from "../check.js";
 import { QUIET_HINT_MS, type LessonBook } from "../lessons.js";
 import type { ActionChoice } from "../prompts.js";
@@ -84,6 +86,7 @@ import { Finder } from "./find.js";
 import { SafetyTracker, type Cycle, type CycleEnd } from "./safety.js";
 import { Starter } from "./start.js";
 import { UseWatch } from "./use.js";
+import { GoalWatch } from "./goal.js";
 import { Dock } from "./dock.js";
 
 export type { HeardResult } from "./answers.js";
@@ -106,10 +109,22 @@ export interface TrackerOptions {
   world: () => WorldView;
   /** 계획 전 검사(src/act/check.ts checkDecision). 에이전트를 부르기 전에 본다. 없으면 통과. */
   precheck?: (d: DecisionRecord) => CheckResult;
-  /** 실행 전 검사(src/act/check.ts checkPlan). */
-  check: (d: DecisionRecord, plan: PlanView) => CheckResult;
-  /** 에이전트 계획 모드(src/agent/planner.ts). 판단 하나에 한 번 부른다. 새 판단·「그만」·멈춤이면 signal을 끊는다. */
-  planner: (d: DecisionRecord, signal: AbortSignal) => PlanResult | Promise<PlanResult>;
+  /** 실행 전 검사(src/act/check.ts checkPlan). seenSince: 미리 만든 계획이면 사람이 떠난 때(CheckInput.seenSince, src/act/track/goal.ts). */
+  check: (d: DecisionRecord, plan: PlanView, seenSince?: number) => CheckResult;
+  /** 에이전트 계획 모드(src/agent/planner.ts). 판단 하나에 한 번 부른다. 새 판단·「그만」·멈춤이면 signal을 끊는다.
+   *  ahead가 있으면 미리 세운 목표의 계획이다(src/act/track/goal.ts, 계획 입력에 [미리 세운 목표] 줄, 목표 물건만 받는다). */
+  planner: (d: DecisionRecord, signal: AbortSignal, ahead?: PlanAhead) => PlanResult | Promise<PlanResult>;
+  /** 습관 FSM: 그날 기억(판본)과 판단이 마지막으로 맞은 상태(src/brain/decide.ts fsmState). 사람이 쓰는 것을 보면 한 걸음 앞 규칙으로 목표를 세운다(goal.ts).
+   *  없으면 목표를 세우지 않는다. */
+  habit?: () => { memory: PamMemory; kind: "list" | "fsm"; state: string | null | undefined; version: number } | null;
+  /** 미리 만든 계획을 지금 판단·World State로 다시 검사해 그 판단의 계획으로 낸다(src/agent/planTools.ts resubmit). 없으면 미리 만든 계획을 쓰지 않는다. */
+  reuse?: (d: DecisionRecord, plan: AgentPlan) => PlanResult;
+  /** 목표가 바뀔 때(세움·미리 만들기·사람 떠남·씀·버림): 서버가 /brain/goal_changes·/brain/goal과 대시보드로 보낸다. */
+  onGoal?: (g: PendingGoal) => void;
+  /** 목표의 사람이 떠났다: 판단을 다음 판단 타이머에 바로 부르게 한다(src/brain/decide.ts nudge). */
+  nudge?: () => void;
+  /** 목표를 세워 둘 수 있는 시간(ms). 없으면 GOAL_DEFAULTS.armMs(30분). */
+  goalArmMs?: number;
   floor: () => FloorPlan;
   /** 실제 폰으로 보낸다: 명령(command)·지우기(command_clear). 폰 서버가 명령 대상 자리를 AR 자리로 바꾼다. */
   toPhone: (msg: PlannedCommandMessage) => void;
@@ -222,6 +237,7 @@ export class ExecutionTracker {
     core.contents = new ContentsHold(core);
     core.finder = new Finder(core);
     core.use = new UseWatch(core);
+    core.goal = new GoalWatch(core);
     core.dock = new Dock(core);
     this.core = core;
   }
@@ -229,6 +245,11 @@ export class ExecutionTracker {
   current(): { planId: string; state: ExecState } | null {
     const r = this.core.run;
     return r && { planId: r.plan.view.id, state: r.state };
+  }
+
+  /** 미리 세운 목표(goal.ts). 없으면 null. */
+  goal(): PendingGoal | null {
+    return this.core.goal.current();
   }
 
   /** 마지막으로 「그대로 둠」을 기록한 시각(Date.now 시계, 계획 updatedAt과 같은 시계). 없으면 null. */
@@ -273,6 +294,8 @@ export class ExecutionTracker {
     core.steps.placed();
     core.safety.reminderTick();
     core.coach.see(changes);
+    // 미리 세운 목표: 사람이 떠남(사람 사라짐 변화)을 그 자리에서 본다(판단을 바로 부르게 한다, goal.ts)
+    if (!core.stopped) core.goal.update();
     const r = core.run;
     if (core.stopped || r?.state !== "running") return;
     const gen = r.gen;
@@ -315,6 +338,8 @@ export class ExecutionTracker {
     // 계획 전 찾기(대상이 안 보여 막은 판단)가 먼저, 계획 밖 가까이 가서 보기(판단 전 보기 B 뒤에도 모를 때)는 계획·찾기가 없을 때만 하고 막는 것이 생기면 거둔다
     // 사람이 손대는 행동 대상을 쓰는지 먼저 본다(쓰는 중이면 찾기·가까이 가서 보기가 그 종류로 사람을 보내지 않는다, use.ts)
     if (!core.stopped) core.use.update();
+    // 쓰는 것을 보면 습관 FSM 한 걸음 앞의 할 일을 목표로 세우고 계획을 미리 만든다. 사람이 떠나면 판단을 바로 부른다(goal.ts)
+    if (!core.stopped) core.goal.update();
     // 계획이 끝난 뒤 사용자 위치 확인·충전 자리 돌아가기(그동안 계획 밖 가까이 가서 보기는 하지 않는다)
     if (!core.stopped) core.dock.tick();
     if (!core.stopped) core.finder.idle();
@@ -364,6 +389,7 @@ export class ExecutionTracker {
   /** 멈추면 더 기록하지 않고 폰에도 보내지 않는다. 만들던 계획과 멈춘 단계 알림은 끊는다. */
   stop(): void {
     const core = this.core;
+    core.goal.stop();
     if (core.run) core.contents.release(core.run);
     if (core.run) core.finder.release(core.run);
     core.contents.dropIdle();
@@ -414,6 +440,6 @@ export class ExecutionTracker {
 
   /** 만들던 계획이 끝날 때까지 기다린다(시험용). */
   async idle(): Promise<void> {
-    await this.core.start.idle();
+    await Promise.all([this.core.start.idle(), this.core.goal.idle()]);
   }
 }

@@ -35,6 +35,8 @@ export interface CheckInput {
   deviceSteps?: { deviceId: string; paired: boolean }[];
   /** 실행 추적이 놓기 단계를 끝낸 물건(이미 치운 것, src/act/track/steps.ts placed). */
   placed?: Placed;
+  /** 미리 만든 계획(src/act/track/goal.ts)이면 사람이 떠난 때. */
+  seenSince?: number;
 }
 
 const fail = (reason: CheckFail): CheckResult => ({ ok: false, reason, text: CHECK_TEXT[reason] });

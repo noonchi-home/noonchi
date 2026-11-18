@@ -19,6 +19,7 @@ import type { ContentsHold, Hold, IdlePeek } from "./contents.js";
 import type { Find, Finder, FindSlot } from "./find.js";
 import type { Cycle, CycleEnd, SafetyTracker } from "./safety.js";
 import type { UseWatch } from "./use.js";
+import type { GoalWatch } from "./goal.js";
 import type { Dock, DockSlot } from "./dock.js";
 import type { Starter } from "./start.js";
 import type { Steps } from "./steps.js";
@@ -113,6 +114,7 @@ export class TrackCore {
   contents!: ContentsHold;
   finder!: Finder;
   use!: UseWatch;
+  goal!: GoalWatch;
   dock!: Dock;
 
   constructor(readonly o: TrackerOptions, readonly clock: { now(): number }, readonly cfg: TrackConfig) {}

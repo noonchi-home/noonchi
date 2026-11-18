@@ -76,6 +76,12 @@ export class UseWatch extends Part {
     return ids.some((id) => id === t.id || followsTo(world, id, t.id!));
   }
 
+  /** 붙잡은 것(종류와 물건 id, 종류 전체면 null). 지금 World State로 다시 보고 답한다. 미리 세운 목표(goal.ts)가 읽는다. */
+  holding(): { cls: string; id: string | null }[] {
+    this.update();
+    return [...this.held.values()].map((h) => ({ cls: h.cls, id: h.id }));
+  }
+
   /** 자동으로 그쪽으로 사람을 보내도 되는가(찾기·가까이 가서 보기 공통): 지금 행동 목록의 손대는 행동 대상 종류이고 사람이 쓰는 중이 아니다. */
   mayApproach(t: UseTarget): boolean {
     return !!t.cls && this.classes().has(t.cls) && !this.busy(t);

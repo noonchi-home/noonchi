@@ -119,6 +119,11 @@ export const USE_THOUGHT = {
   using: (item: string) => `사람이 ${josa(item, "을/를")} 쓰는 중이라 지켜볼게요`,
 } as const;
 
+/** 미리 세운 목표(src/act/track/goal.ts): 메시지 상자 줄(클로이드가 하는 말, 「<규칙 조건> <행동 말>」, 조건은 src/world/labels.ts ruleIf·행동 말은 src/act/tasks.ts TASK_SAY). */
+export const GOAL_TEXT = {
+  armed: (cond: string, will: string) => `${cond} ${will}`,
+} as const;
+
 /** 승인(src/act/track/approval.ts): 처음 하는 계획을 실제 폰에 묻는 글, 「거절」을 받은 계획의 실행 기록. */
 export const APPROVAL_TEXT = {
   ask: (task: string) => `${josa(task, "을/를")} 할까요?`,
@@ -236,6 +241,8 @@ export const EXEC_TEXT = {
   inUseLong: "사람이 쓰는 중이라 실행하지 않아요",
   /** 충전 자리 돌아가기(src/act/track/dock.ts): 계획이 끝난 뒤 사용자 위치 확인·충전 자리로 가는 동안 받은 행동 판단. */
   docking: "충전 자리로 가는 중이라 새 일을 미룸",
+  /** 미리 세운 목표(src/act/track/goal.ts)와 같은 행동을 사람이 떠나기 전에 고른 판단: 목표가 맡는다(사람이 떠나면 판단을 다시 부른다). */
+  goalWait: "다 쓰고 떠나면 할 일로 두었어요",
 } as const;
 
 /** 충전 자리 돌아가기(src/act/track/dock.ts): 실제 폰 명령(사람에게 「주세요」), 대상·비전 이름, 메시지 상자 줄(클로이드가 직접 하는 말). */

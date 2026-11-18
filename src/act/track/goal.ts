@@ -1,0 +1,153 @@
+// 실행 추적의 미리 세운 목표(GoalWatch, 2026-11-18 사용자 결정 「컵을 마시는 걸 볼 때 다 마시면 치워야겠다는 목표를 세우고, 사용자가 사라지면 관련된 행동을 계획하고 실행」).
+// - 세우기: 쓰는 중 지킴(use.ts)이 사람이 쓰는 종류를 붙잡으면 습관 FSM을 한 걸음 앞서 읽어(src/brain/goal.ts goalAhead) 사람이 떠난 뒤 할 일을 목표로 세운다.
+//   다른 계획이 열려 있거나 만드는 중이거나, 안전 알림이 있거나, 충전 자리로 돌아가는 중이면 세우지 않는다.
+//   한 등장(World State 사람 since_ms)에 한 번만 세운다(버리거나 쓴 뒤 같은 등장에서 다시 세우지 않아 계획 모드를 되풀이해 부르지 않는다).
+//   처음 세울 때 메시지 상자에 「<규칙 조건> <행동 말>」 한 줄(클로이드 말, 사실로만: 「컵을 두고 자리를 뜨면 컵을 치울게요」)을 올린다.
+// - 미리 만들기(prep): 대상 물건이 면 위에 놓여 있고(손에 있으면 놓을 때까지 기다린다) 계획 모드가 비어 있을 때, 같은 계획 모드(o.planner)를 목표 기록으로 한 번 부른다.
+//   입력에 목표 물건을 싣고(계획 검사가 다른 물건 계획을 버린다), 받은 계획의 그 종류 물건이 목표 물건뿐일 때만 준비됨으로 둔다. 실패하면 다시 부르지 않는다.
+//   폰·대시보드 명령은 내지 않는다(관찰만). 진짜 판단의 계획이 시작되면 계획 모드(한 번에 하나)가 미리 만들기를 끊는다.
+// 상태(status: 세움·떠남·씀·버림)와 미리 만들기(prep)는 따로 바뀐다. 바뀔 때마다 o.onGoal로 낸다(서버가 /brain/goal_changes·/brain/goal과 대시보드로 보낸다).
+import type { DecisionRecord } from "../../contract/events.js";
+import type { PendingGoal } from "../../contract/goal.js";
+import type { ObjClass, WorldView } from "../../contract/world.js";
+import type { AgentPlan, PlanResult } from "../../agent/index.js";
+import { decisionWorld, fsmRuleOf, goalAhead, type GoalPick } from "../../brain/index.js";
+import { ruleIf } from "../../world/labels.js";
+import { GOAL_TEXT } from "../labels.js";
+import { emergencyOf } from "../mode.js";
+import { followedId, planObjectsOf, TASK_NAMES, TASK_SAY, targetOf } from "../tasks.js";
+import { Part } from "./core.js";
+
+/** 목표를 세워 둘 수 있는 시간(ms, 사용자 답 30분)과, 사람이 떠난 뒤 PAM이 그 행동을 고르기를 기다리는 시간(ms, 사용자 답 15초). */
+export const GOAL_DEFAULTS = { armMs: 30 * 60_000, fireWaitMs: 15_000 } as const;
+
+interface Goal {
+  view: PendingGoal;
+  pick: GoalPick;
+  /** 지금 따라가는 대상 물건 id(옮김 표시로 바뀐다). */
+  objectId: string;
+  /** 세운 때 사람 등장(since_ms). */
+  presence: number | null;
+  /** 미리 만든 계획과 그때 대상이 놓인 면. */
+  plan: AgentPlan | null;
+  surface: string | null;
+  /** 미리 만드는 중인 계획 모드 호출. */
+  job: { abort: AbortController; done: Promise<PlanResult> } | null;
+}
+
+export class GoalWatch extends Part {
+  private goal: Goal | null = null;
+  private n = 0;
+  /** 목표를 버리거나 쓴 등장(그 등장에서는 다시 세우지 않는다). */
+  private spent: number | null | undefined = undefined;
+  private readonly jobs = new Set<Promise<unknown>>();
+
+  current(): PendingGoal | null {
+    return this.goal?.view ?? null;
+  }
+
+  /** tick·World State 변화마다(쓰는 중 지킴 뒤에) 부른다. */
+  update(): void {
+    if (this.core.stopped) return;
+    if (!this.goal) this.arm();
+    if (this.goal) this.preplan(this.goal);
+  }
+
+  private arm(): void {
+    const world = this.o.world();
+    const p = world.person;
+    const habit = this.o.habit?.();
+    if (!habit || !p.visible || p.since_ms === this.spent || this.core.open() || this.core.planning || this.core.dock.busy()) return;
+    if (emergencyOf({ world, offNotices: this.core.safety.offTrack().notices })) return;
+    const tasks = this.o.tasks?.() ?? TASK_NAMES;
+    for (const h of this.core.use.holding()) {
+      const pick = goalAhead({ memory: habit.memory, kind: habit.kind, state: habit.state, tasks, cls: h.cls });
+      const objectId = h.id ?? targetOf({ target: h.cls as ObjClass }, world, this.core.steps.placed())?.id ?? null;
+      if (!pick || !objectId) continue;
+      const id = `goal-${++this.n}`;
+      const learned = fsmRuleOf(habit.memory, habit.kind, pick.action)?.learned ?? false;
+      const will = TASK_SAY[pick.action]?.will;
+      const text = will ? GOAL_TEXT.armed(ruleIf({ trigger: pick.trigger, action: pick.action, learned }), will) : null;
+      this.goal = {
+        pick, objectId, presence: p.since_ms, plan: null, surface: null, job: null,
+        view: {
+          id, action: pick.action, state: pick.state, trigger: pick.trigger, object: objectId, cls: h.cls, status: "armed", prep: "waiting", reason: null, text,
+          armed_ms: this.clock.now(), ready_ms: null, gone_ms: null, fired_ms: null, plan: null,
+        },
+      };
+      this.publish();
+      if (text) this.o.thought?.(text, id);
+      return;
+    }
+  }
+
+  /** 계획 모드에 넘기는 목표 기록(판단 기록 모양, PAM 판단이 아니라 prediction이 없다). 계획 id는 plan:goal-n이고, 쓸 때 PAM 판단 id로 다시 낸다(resubmit). */
+  private record(g: Goal, world: WorldView, now: number): DecisionRecord {
+    const habit = this.o.habit?.();
+    const rule = habit ? fsmRuleOf(habit.memory, habit.kind, g.view.action) : null;
+    return {
+      id: g.view.id, seq: 0, atMs: now, textSent: "", finalTime: new Date(now).toISOString(), status: "valid", prediction: null, action: g.view.action,
+      fsm: { state: g.view.state, trigger: g.view.trigger, learned: rule?.learned ?? false, matched: true }, memoryVersion: habit?.version ?? 0,
+      tasks: [...(this.o.tasks?.() ?? TASK_NAMES)], world: decisionWorld(world),
+    };
+  }
+
+  private preplan(g: Goal): void {
+    if (g.view.prep !== "waiting" || g.view.status !== "armed" || this.core.open() || this.core.planning) return;
+    const world = this.o.world();
+    const o = world.objects.find((x) => x.id === followedId(world, g.objectId));
+    // 대상이 면 위에 놓였을 때 만든다: 손에 든 컵 자리로 만든 계획은 가기 단계 자리가 틀린다
+    if (!o || o.status !== "present" || !o.surface || o.facts.place?.value === "in_hand" || o.carried === true) return;
+    g.objectId = o.id;
+    g.surface = o.surface;
+    const now = this.clock.now();
+    const abort = new AbortController();
+    let out: PlanResult | Promise<PlanResult>;
+    try {
+      out = this.o.planner(this.record(g, world, now), abort.signal, { trigger: g.pick.trigger, on: g.pick.on, object: o.id });
+    } catch (e) {
+      out = { ok: false, error: (e as Error).message };
+    }
+    const done: Promise<PlanResult> = Promise.resolve(out).catch((e: unknown) => ({ ok: false as const, error: (e as Error).message }));
+    g.job = { abort, done };
+    this.set(g, { prep: "planning", object: o.id });
+    const p = done.then((r) => {
+      if (this.goal !== g || g.job?.done !== done) return;
+      g.job = null;
+      // 받은 계획의 그 종류 물건이 목표 물건뿐일 때만 둔다(컵이 둘이면 다른 컵 계획을 두지 않는다)
+      if (r.ok && this.mine(g, r.plan)) {
+        g.plan = r.plan;
+        this.set(g, { prep: "ready", ready_ms: this.clock.now(), plan: r.plan.view });
+      } else this.set(g, { prep: "failed" });
+    }).finally(() => { this.jobs.delete(p); });
+    this.jobs.add(p);
+  }
+
+  /** 계획이 다루는 그 종류 물건이 모두 목표 물건(옮김 표시로 이어진 것 포함)인가. 하나도 없어도 아니다. */
+  private mine(g: Goal, plan: AgentPlan): boolean {
+    const world = this.o.world();
+    const goal = followedId(world, g.objectId);
+    const ids = planObjectsOf(plan.view, world, g.view.cls as ObjClass);
+    return ids.length > 0 && ids.every((id) => followedId(world, id) === goal);
+  }
+
+  private set(g: Goal, v: Partial<PendingGoal>): void {
+    g.view = { ...g.view, ...v };
+    if (this.goal === g) this.publish();
+  }
+
+  private publish(): void {
+    const g = this.goal;
+    if (g && !this.core.stopped) this.o.onGoal?.(g.view);
+  }
+
+  /** 미리 만드는 호출이 끝날 때까지 기다린다(시험용). */
+  async idle(): Promise<void> {
+    while (this.jobs.size) await Promise.all([...this.jobs]);
+  }
+
+  /** 멈추면 미리 만드는 호출을 끊고 더 내지 않는다. */
+  stop(): void {
+    this.goal?.job?.abort.abort();
+  }
+}
