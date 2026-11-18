@@ -31,6 +31,9 @@ export interface TaskSpec {
    *  사람이 그 대상 종류를 쓰는 것을 보면 그 사람이 사라질 때까지 찾기·가까이 가서 보기·첫 명령을 미룬다(usingNow, src/act/track/use.ts).
    *  대상을 건드리지 않는 행동(그대로 두기)은 찾지 않는다. */
   touch?: true;
+  /** 사람이 대상(target)을 다 쓰고 떠난 뒤 하는 일(치우기): 사람이 그 종류를 쓰는 것을 보면 습관 FSM이 다음 규칙으로 고를 때 미리 목표로 세우고 계획을 만들어 둔다
+   *  (src/brain/goal.ts goalAhead, src/act/track/goal.ts). 사람이 있는 동안 하는 일(채우기·따르기)은 아니다. */
+  afterUse?: true;
 }
 
 const HAND = ["go", "pick", "place"] as const;
@@ -39,7 +42,7 @@ const FILL: TaskAllow = { kinds: ["go", "pick", "do", "place"], need: ["go", "pi
 
 export const TASKS: Record<string, TaskSpec> = {
   "컵 치우기": {
-    name: "컵 치우기", description: "사람이 자리를 비운 뒤 식탁 등에 남은 컵을 사람이 싱크대에 넣게 한다.", target: "cup", touch: true,
+    name: "컵 치우기", description: "사람이 자리를 비운 뒤 식탁 등에 남은 컵을 사람이 싱크대에 넣게 한다.", target: "cup", touch: true, afterUse: true,
     allow: { kinds: HAND, need: HAND },
   },
   "사용자에게 물어보기": { name: "사용자에게 물어보기", description: "컵 안을 확인할 수 없는 등 애매할 때 폰으로 사용자에게 어떻게 할지 묻는다.", allow: { kinds: ["ask", "say"], need: ["ask"] } },

@@ -56,7 +56,7 @@ export class Decider {
   private stopped = false;
   private link: boolean | null = null;
   /** 마지막으로 맞은 규칙의 FSM 상태(대기 판단의 지금 상태). undefined면 아직 없음(기억의 처음 상태), null이면 규칙이 여러 상태라 정할 수 없었음. */
-  private fsmState: string | null | undefined = undefined;
+  private lastState: string | null | undefined = undefined;
   private paused: TriggerPause | "acting" | null = null;
   private readonly clock: { now(): number };
 
@@ -69,6 +69,11 @@ export class Decider {
     const now = this.clock.now();
     this.recent = [...this.recent, ...changes].filter((c) => c.at_ms >= now - RECENT_KEEP_MS);
     this.o.trigger.onChanges(changes);
+  }
+
+  /** 판단이 마지막으로 맞은 규칙의 FSM 상태(미리 세울 목표가 읽는다, src/brain/goal.ts). undefined 아직 없음(기억의 처음 상태), null 규칙이 여러 상태라 정할 수 없었음. */
+  fsmState(): string | null | undefined {
+    return this.lastState;
   }
 
   /** 관찰 흐름이 엔진 프레임마다 부른다(주기 판단은 프레임이 오는 동안만 부른다). */
@@ -110,10 +115,10 @@ export class Decider {
           // PAM의 생각 글은 계획 이유·판단 기록·대시보드에 남는다: 들은 말을 그대로 옮겼으면 뺀다
           const said = this.o.keepHeard?.() ? [] : saidIn(textSent);
           const prediction = said.length ? { ...p, observation: redactSaid(p.observation, said), reasoning: redactSaid(p.reasoning, said) } : p;
-          const fsm = fsmNow(mem.memory, mem.kind, action, this.fsmState);
+          const fsm = fsmNow(mem.memory, mem.kind, action, this.lastState);
           // 맞은 규칙의 상태(정할 수 없으면 null)로 옮긴다. 대기·규칙 없는 행동이 직전 상태를 쓰지 못했으면(지금 기억에 없음) 처음으로 돌린다
-          if (fsm?.matched) this.fsmState = fsm.state;
-          else if (fsm && fsm.state !== this.fsmState) this.fsmState = undefined;
+          if (fsm?.matched) this.lastState = fsm.state;
+          else if (fsm && fsm.state !== this.lastState) this.lastState = undefined;
           this.finish({ ...base, status: "valid", prediction, action, fsm, ...(usage ? { usage } : {}) });
         },
         (e: unknown) => {

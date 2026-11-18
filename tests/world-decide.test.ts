@@ -40,6 +40,17 @@ describe("판단 호출", () => {
     expect(pam.bodies).toHaveLength(1);   // 이미 부른 변화로 다시 부르지 않는다
   });
 
+  it("fsmState는 판단이 마지막으로 맞은 규칙의 상태다(처음에는 undefined). 미리 세울 목표가 읽는다", async () => {
+    pam = await startFakePamLlm({ predict: (v) => ({ observation: "o", reasoning: "r", task_index: v.tasks.indexOf("컵 치우기") }) });
+    const d = new Decider({ pam: pamClientFor(pam), world: emptyWorld(), trigger: event(), tasks: () => [...CUP_TASKS], memory, emit: () => {}, offsetMinutes: 540 });
+    expect(d.fsmState()).toBeUndefined();
+    d.onChanges([{ kind: "person_gone", at_ms: 0, subject: "person", text: "사람 안 보임", meaningful: true }]);
+    d.tick();
+    await d.idle();
+    expect(d.fsmState()).toBe("left_cup");
+    d.stop();
+  });
+
   describe("들은 말", () => {
     const SAID = "라면 끓이는 법 알려 줘";
     const setup = async (over: { keepHeard?: boolean; predict?: Parameters<typeof startFakePamLlm>[0] } = {}) => {
