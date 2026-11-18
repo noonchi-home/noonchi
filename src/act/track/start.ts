@@ -47,9 +47,7 @@ export class Starter extends Part {
     if (open?.decision.action === d.action || core.planning?.decision.action === d.action) return this.note(d, EXEC_TEXT.same);
     // 손대는 단계(집기·내려놓기·들고 가기) 중에는 다른 행동 판단으로 계획을 바꾸지 않는다(계획이 끝난 뒤 다시 판단). 비상과 사람이 말로 한 부탁만 바꾼다
     // (2026-11-18 wide-mug q3: 집기 중 폰 든 사람이 보여 「컵에 콜라 따라 주기」가 컵 치우기를 갈아 치웠다)
-    if (open && core.touching(open) && !saidIn(d.textSent).length && !emergencyOf({ world: this.o.world(), offNotices: core.safety.offTrack().notices })) {
-      return this.note(d, EXEC_TEXT.handling);
-    }
+    if (this.handsOn(d)) return this.note(d, EXEC_TEXT.handling);
     // 그 행동 대상을 찾는 중이면 기록만 하고 가장 새 판단으로 바꿔 둔다(찾으면 그 판단으로 다시 본다, find.ts)
     if (core.finder.same(d)) return this.note(d, EXEC_TEXT.findingSame(core.finder.name()!));
     // 행동 중 기다리기·기기 단계에는 다른 판단으로 바꾸지 않는다(그동안 판단도 멈춘다, waiting)
@@ -107,6 +105,14 @@ export class Starter extends Part {
     }));
   }
 
+  /** 진행 중 계획이 손대는 단계(집기·내려놓기·들고 가기)라 이 판단으로 바꾸지 않는가: 다른 행동이고, 사람이 말로 한 부탁(들은 말이 든 판단)도 비상도 아니다. */
+  private handsOn(d: DecisionRecord): boolean {
+    const core = this.core;
+    const open = core.open();
+    return !!open && open.decision.action !== d.action && core.touching(open) && !saidIn(d.textSent).length
+      && !emergencyOf({ world: this.o.world(), offNotices: core.safety.offTrack().notices });
+  }
+
   /** 「가까이 본 뒤 다시 판단」으로 닫은 계획은 같은 행동 다시 계획 간격(planGapMs)에 넣지 않는다: 다음 판단이 새 사실로 바로 다시 고른다.
    *  그 판단이 적은 시각일 때만 지운다. */
   private ungap(d: DecisionRecord, at: number): void {
@@ -145,6 +151,11 @@ export class Starter extends Part {
     if (this.closerNewer(d)) {
       this.ungap(d, job.at);
       return core.emit(planIdOf(d.id), "failed", EXEC_TEXT.closerNewer);
+    }
+    // 만드는 사이 진행 중 계획이 손대는 단계에 들어갔으면 바꾸지 않는다(판단 받을 때와 같은 지킴, Codex 79f25b8). 다음 판단에서 다시 짠다
+    if (this.handsOn(d)) {
+      this.ungap(d, job.at);
+      return core.emit(planIdOf(d.id), "failed", EXEC_TEXT.handling);
     }
     const open = core.open();
     // 새 계획이 있으면 PlanHub.onDecision이 지금 계획을 취소로 닫고 supersedes를 단다
