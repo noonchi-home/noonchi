@@ -162,6 +162,17 @@ export const opaqueBody = (o: WorldObject): boolean => o.facts.body?.value === "
 /** 이미 치운 물건: World State 자리가 싱크대 안이거나, 실행 추적이 놓기 단계를 끝낸 물건(placed). */
 export const putAway = (o: WorldObject, placed?: Placed) => o.facts.place?.value === "in_sink" || !!placed?.has(o.id);
 
+/** 옮김 표시(World State followed_by)를 따라간 끝 물건 id(최대 5번). 표시가 없으면 그 id. 미리 만든 계획 다시 내기·미리 세운 목표가 쓴다. */
+export function followedId(world: Pick<WorldView, "objects">, id: string): string {
+  let at = id;
+  for (let i = 0; i < 5; i++) {
+    const next = world.objects.find((o) => o.id === at)?.followed_by ?? null;
+    if (!next || next === id) break;
+    at = next;
+  }
+  return at;
+}
+
 /** 사람이 물건을 들고 있고, 든 것을 모르거나 그 종류 물건이다(관절로 든 것이 책·리모컨 같은 다른 종류뿐이면 아니다).
  *  든 물건 id는 확인 전 물건도 들어 있어 종류를 id 앞(book_3 → book)으로 본다.
  *  known이면 든 것을 모를 때는 아니다(사람이 그 자리에서 다른 것을 들고 있는 일: 식사 중 숟가락). */
