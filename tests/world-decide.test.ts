@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { TASK_NAMES } from "../src/act/tasks.js";
-import { CUP_FSM_MEMORY, CUP_TASKS } from "../src/brain/decision.js";
+import { CUP_FSM_MEMORY, CUP_TASKS, type FsmMemory } from "../src/brain/decision.js";
+import type { Prediction } from "../src/contract/pam.js";
 import { LEARNED_FSM_MEMORY } from "../scripts/learned-memory.js";
 import { PamClient } from "../src/brain/pam/index.js";
 import type { BrainLog, DecisionRecord } from "../src/contract/events.js";
@@ -209,6 +210,34 @@ describe("판단 호출", () => {
     d.onExecution("plan:pam-5", "running");   // 처음 판단(pam-5)의 실행이 시작돼도 푼다
     await call();                       // pam-7
     expect((pam.bodies as { last_state: string | null }[]).map((b) => b.last_state)).toEqual([null, "drinking", "drinking", "away", "away", "drinking", "away"]);
+  });
+
+  it("동시에 나간 판단(PAM_MAX_INFLIGHT=2)의 답이 거꾸로 와도 받은 가장 큰 번호보다 작은 답은 직전 상태·기다리는 화살표를 바꾸지 않는다(Codex 1b07d3e2 P2)", async () => {
+    const mem: FsmMemory = { initial_state: "away", states: [
+      { id: "away", description: "안 보임", activity: [], next: [{ to: "drinking", on: "돌아와 마신다." }] },
+      { id: "drinking", description: "마시는 중", activity: ["drinking"], next: [{ to: "*", on: "떠난다.", action: "컵 치우기" }, { to: "watching_tv", on: "TV를 본다." }] },
+      { id: "watching_tv", description: "TV 보는 중", activity: ["watching_tv"], next: [] },
+    ] };
+    const out: { last: string | null; done: (p: Prediction) => void }[] = [];
+    const stub = { predict: (r: { last_state: string | null }) => new Promise<Prediction>((done) => out.push({ last: r.last_state, done })) } as unknown as PamClient;
+    const two = new Trigger({ mode: "event", minGapMs: 0, periodMs: 1000, idleStopMs: 1e9, liveMs: 10_000, maxInflight: 2 }, 0);
+    let now = 10_000;
+    const d = new Decider({ pam: stub, world: emptyWorld(), trigger: two, tasks: () => [...CUP_TASKS], memory: () => ({ memory: mem, kind: "fsm", version: 0 }), emit: () => {}, offsetMinutes: 540, clock: { now: () => now } });
+    const flush = () => new Promise((r) => setTimeout(r, 0));
+    const send = async () => { now += 100; d.onChanges([{ kind: "person_gone", at_ms: now, subject: "person", text: "사람 안 보임", meaningful: true }]); d.tick(); await flush(); };
+    const p = (state: string, from: string | null, next_index: number, task_index = -1): Prediction => ({ observation: "o", reasoning: "r", task_index, state, from, next_index });
+    await send();
+    out[0]!.done(p("drinking", "away", 0));                 // pam-1: away → drinking
+    await d.idle();
+    await send(); await send();                             // pam-2, pam-3이 함께 나감
+    out[2]!.done(p("watching_tv", "drinking", 1));          // pam-3 답이 먼저: drinking → watching_tv
+    await flush();
+    out[1]!.done(p("away", "drinking", 0, 0));              // pam-2 답이 늦게: 앞선 관찰의 drinking → * 컵 치우기
+    await d.idle();
+    expect(d.fsmState()).toBe("watching_tv");
+    await send();                                           // pam-4: 직전 상태는 pam-3의 watching_tv(pam-2의 기다리는 화살표 출발 drinking이 아님)
+    expect(out.map((o) => o.last)).toEqual([null, "drinking", "drinking", "watching_tv"]);
+    d.stop();
   });
 
   describe("풀린 화살표의 늦은 답은 번호로 버린다", () => {

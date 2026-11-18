@@ -1,5 +1,5 @@
 // 판단 호출: Trigger가 허락하면 World State 관찰 텍스트 + 기억 + 행동 목록으로 PAM을 부른다. 요청마다 번호(seq)를 붙인다.
-// 동시 상한을 넘으면 부르지 않는다(Trigger.due가 false). 결과는 기록(decision)과 onDecision으로 넘긴다. 늦게 온 답의 처리는 실행 추적이 seq로 한다.
+// 동시 상한을 넘으면 부르지 않는다(Trigger.due가 false). 결과는 기록(decision)과 onDecision으로 넘긴다. 늦게 온 답(받은 가장 큰 번호보다 작은 번호)은 상태를 바꾸지 않고, 행동은 실행 추적이 seq로 버린다.
 // PAM 연결 끊김·연결됨(link)과 주기 판단 멈춤(폰 사진 없음·사람 없음)·다시 시작(trigger)은 바뀔 때 한 번씩 기록한다.
 import type { BrainLog, DecisionWorld, DecisionRecord, ExecState, PamUsage } from "../contract/events.js";
 import type { WorldChange, WorldView } from "../contract/world.js";
@@ -69,6 +69,9 @@ export class Decider {
    *  pending도 되살리지 않고 행동도 실행 추적에 넘기지 않는다(판단 기록 late, 실행 기록 「앞선 판단」). 순서는 시각이 아니라 번호로 본다
    *  (Codex 26d2482·6802be0: 시각 비교는 같은 밀리초에서 놓치고, 계획이 끝나고 15초 뒤 온 늦은 답이 같은 일을 다시 시작할 수 있었다). */
   private released: { from: string; next: number; seq: number } | null = null;
+  /** 답을 받은 가장 큰 요청 번호(유효·실패 모두). 이보다 작은 번호의 답(동시에 나간 요청이 거꾸로 옴)은 직전 상태·기다리는 화살표·들은 말을 바꾸지 않는다
+   *  (실행 추적도 그 답을 늦은 답으로 버린다, src/act/track/start.ts. Codex 1b07d3e2 P2: 앞선 관찰의 답이 다음 요청의 직전 상태를 되돌렸다). */
+  private answered = 0;
   /** 마지막으로 PAM에 보낸 기억(판본). 판단 전이면 null. */
   private lastMem: { memory: PamMemory; kind: "list" | "fsm"; version: number } | null = null;
   private paused: TriggerPause | "acting" | null = null;
@@ -157,6 +160,8 @@ export class Decider {
       .then(
         (p) => {
           this.setLink(true);
+          const newest = base.seq > this.answered;
+          this.answered = Math.max(this.answered, base.seq);
           const action = p.task_index === -1 ? null : tasks[p.task_index] ?? null;
           // PAM의 생각 글은 계획 이유·판단 기록·대시보드에 남는다: 들은 말을 그대로 옮겼으면 뺀다
           const said = this.o.keepHeard?.() ? [] : saidIn(textSent);
@@ -167,6 +172,10 @@ export class Decider {
             const stale = this.released !== null && step.from === this.released.from && step.next_index === this.released.next && base.seq <= this.released.seq;
             // 늦은 답 전체를 버린다: 상태·pending을 바꾸지 않고 행동 없이 기록만(실행 추적은 late를 「앞선 판단」으로 남긴다)
             if (stale) return this.finish({ ...base, status: "valid", prediction, action: null, fsm: step, late: true, ...(usage ? { usage } : {}) });
+          }
+          // 더 뒤에 보낸 요청의 답을 이미 받았다: 앞선 관찰의 답이라 상태·기다리는 화살표·들은 말은 그대로 두고 기록만 넘긴다(실행 추적은 번호로 늦은 답이라 본다)
+          if (!newest) return this.finish({ ...base, status: "valid", prediction, action, fsm: step, ...(usage ? { usage } : {}) });
+          if (step) {
             this.lastState = step.state;
             const same = this.pending !== null && step.from === this.pending.from && step.next_index === this.pending.next;
             if (same) this.pending!.plans.add(planIdOf(base.id));
@@ -178,6 +187,7 @@ export class Decider {
           this.finish({ ...base, status: "valid", prediction, action, fsm: step, ...(usage ? { usage } : {}) });
         },
         (e: unknown) => {
+          this.answered = Math.max(this.answered, base.seq);
           if (e instanceof PamLinkError) this.setLink(false);
           this.finish({ ...base, status: "failed", prediction: null, action: null, fsm: null, error: (e as Error).message, ...(usage ? { usage } : {}) });
         },
