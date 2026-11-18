@@ -36,6 +36,8 @@ export interface TaskSpec {
   /** 사람이 대상(target)을 다 쓰고 떠난 뒤 하는 일(치우기): 사람이 그 종류를 쓰는 것을 보면 습관 FSM이 다음 규칙으로 고를 때 미리 목표로 세우고 계획을 만들어 둔다
    *  (src/brain/goal.ts goalAhead, src/act/track/goal.ts). 사람이 있는 동안 하는 일(채우기·따르기)은 아니다. */
   afterUse?: true;
+  /** 반성·채택 검사로 새 화살표를 배울 수 있는 행동(사용자 답: 컵 치우기, 말없이 TV 보기 시작 → 에어컨 켜기). seed 행동 화살표(묻기 빼고)는 이 칸과 상관없이 사용자가 정한 습관이라 늘 둔다. */
+  learn?: true;
 }
 
 const HAND = ["go", "pick", "place"] as const;
@@ -44,16 +46,16 @@ const FILL: TaskAllow = { kinds: ["go", "pick", "do", "place"], need: ["go", "pi
 
 export const TASKS: Record<string, TaskSpec> = {
   "컵 치우기": {
-    name: "컵 치우기", description: "사람이 자리를 비운 뒤 식탁 등에 남은 컵을 사람이 싱크대에 넣게 한다.", target: "cup", touch: true, afterUse: true,
+    name: "컵 치우기", description: "사람이 자리를 비운 뒤 식탁 등에 남은 컵을 사람이 싱크대에 넣게 한다.", target: "cup", touch: true, afterUse: true, learn: true,
     allow: { kinds: HAND, need: HAND },
   },
-  "사용자에게 물어보기": { name: "사용자에게 물어보기", description: "컵 안을 확인할 수 없는 등 애매할 때 폰으로 사용자에게 어떻게 할지 묻는다.", allow: { kinds: ["ask", "say"], need: ["ask"] } },
+  "사용자에게 물어보기": { name: "사용자에게 물어보기", description: "치울지 아직 모르는 때(배우기 전 습관, 컵 안이 안 보임 등) 폰으로 사용자에게 어떻게 할지 묻는다.", allow: { kinds: ["ask", "say"], need: ["ask"] } },
   "세탁물 건조기로 옮기기": {
     name: "세탁물 건조기로 옮기기", description: "세탁기가 멈추면 사람이 세탁물을 꺼내 건조기에 넣게 하고 건조기를 시작한다.",
     allow: { kinds: ["wait", ...HAND, "device", "ask", "say"], need: [...HAND, "device"], devices: { kinds: ["dryer"], tools: ["start"] } },
   },
   "에어컨 켜기": {
-    name: "에어컨 켜기", description: "더울 때 사람이 있는 방의 에어컨을 켠다.",
+    name: "에어컨 켜기", description: "더울 때 사람이 있는 방의 에어컨을 켠다.", learn: true,
     allow: { kinds: ["device", "say"], need: ["device"], devices: { kinds: ["aircon"], tools: ["turn_on"] } },
   },
   // 컵 갈래(2026-11-13): 끝에 더해 앞 넷의 task_index를 지킨다. 물·콜라를 가르는 사실(먹는 중·TV 보는 중)은 FSM 기억(src/brain/decision.ts CUP_FSM_MEMORY)에 있다
@@ -85,6 +87,11 @@ export const TASKS: Record<string, TaskSpec> = {
 
 /** 모든 행동 이름(검사·tasks.json 견주기). PAM에 보내는 목록은 지금 모드를 따른다(src/act/mode.ts pamTasks). */
 export const TASK_NAMES: readonly string[] = Object.keys(TASKS);
+
+/** 배우는 행동(TaskSpec.learn): 반성 후보는 이 행동만 받고, 채택 검사를 지난 후보만 로봇 FSM 화살표가 된다. */
+export const LEARNED_ACTIONS: readonly string[] = TASK_NAMES.filter((n) => TASKS[n]!.learn === true);
+/** 배우기 전 떠날 때 하는 행동(seed 묻기 화살표). */
+export const ASK_ACTION = "사용자에게 물어보기";
 
 /** 그 행동이 어느 모드로 하는 행동인가: 코치 행동(TaskSpec.coach)이면 coach, 그 밖의 목록 행동이면 noonchi, 대기(null)·목록 밖이면 null.
  *  판단 기록 assist와 대시보드 메시지 상자 머리(「코치 모드」·「눈치 모드」)의 기준은 이 하나다. */
