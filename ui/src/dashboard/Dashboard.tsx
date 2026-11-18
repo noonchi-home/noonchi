@@ -11,7 +11,7 @@ import { TwinStage, useAnchors, type TwinEngine, LiveQueue, attachLive, BAKE_VIE
 import { useViewer } from "../lib/twin-viewer";
 import { focusOf, homeCamera, homeKeep, livedOf, still, wholeOf, wideCamera, type Camera } from "./camera";
 import { currentStep, isOpen, modeNow, stepIndex, talkOf } from "./data";
-import { fsmOf } from "./fsm";
+import { timelineLast, timelineOf } from "./timeline";
 import { goalOf, type GoalNow } from "./goal";
 import { DashboardScreen } from "./DashboardScreen";
 import { debugPhone, debugQuery, useDebugSteps, type Moment } from "./debug";
@@ -28,8 +28,11 @@ declare global {
   interface Window { __twin3d?: { engine: TwinEngine | null; ready: boolean } }
 }
 
+/** 가짜 단계 화면 시간 줄의 지금: 그 순간 자료의 가장 늦은 때 뒤(ms). */
+const DEBUG_AFTER_MS = 2000;
+
 /** 트윈 위에 얹힌 것: 말풍선이 덮지 않을 자리. */
-const AVOID = "[data-talk], [data-talk-tail], [data-fsm-card], [data-mascot], [data-chips], [data-phone]";
+const AVOID = "[data-talk], [data-talk-tail], [data-timeline-card], [data-mascot], [data-chips], [data-phone]";
 
 /** 확인 목록만 말풍선으로(승인 대기 줄은 뺀다). 두뇌 줄은 장면의 식탁(dining_table)에 붙는다. 자리는 확인한 것만 센다. 말풍선은 트윈 위에 얹힌 것(AVOID)을 비킨다. */
 function Overlay({ devices, checks, focusId }: { devices: ReturnType<typeof useDevices>["devices"]; checks: ChecksState; focusId: string | null }) {
@@ -246,14 +249,17 @@ export function Dashboard() {
   const plan = isOpen(dash.plan) ? dash.plan : null;
   // talkOf가 읽는 것 모두: 판단·줄·안전 알림·계획(머리)·행동별 모드
   const talk = useMemo(() => talkOf(dash), [dash.decision, dash.talk, dash.safety]);
-  // FSM 카드가 읽는 것: 습관 그림·판단으로 쌓은 지금 상태. 목표(트윈 고리)는 목표·계획
-  const fsm = useMemo(() => fsmOf(dash), [dash.habit, dash.fsmAt]);
+  // 시간 줄 카드가 읽는 것: 사람 상태·습관 그림(이름)·목표·최근 계획. 목표(트윈 고리·미리 그린 길)는 목표·계획
+  const timeline = useMemo(() => timelineOf(dash), [dash.people, dash.habit, dash.goal, dash.plans, dash.plan]);
+  // 가짜 단계 화면은 그 순간 자료의 가장 늦은 때 DEBUG_AFTER_MS 뒤를 지금으로 멈춰 그린다(마지막 단계도 보이게)
+  const last = debug ? timelineLast(dash) : null;
+  const timelineNow = last === null ? undefined : last + DEBUG_AFTER_MS;
   const goal = useMemo(() => goalOf(dash), [dash.goal, dash.plan]);
   const mode = modeNow(dash);
   return (
     <DashboardScreen
       index={stepIndex(plan)} plan={plan} step={currentStep(plan)} robotKnown={dash.eye !== null} connected={online} map={map} mapReady={mapReady}
-      phone={phone} seen={seen} talk={talk} fsm={fsm}
+      phone={phone} seen={seen} talk={talk} timeline={timeline} timelineNow={timelineNow}
       mode={mode} hub={hub} settingsOpen={debug?.settings} onReady={onScreenReady} tzMinutes={health?.tz_minutes ?? null}
     />
   );

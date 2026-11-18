@@ -4,7 +4,6 @@ import type { BrainLog, EyeEvent, ServerMessage, ThoughtMessage } from "../../..
 import type { PendingGoal } from "../../../src/contract/goal.ts";
 import type { HabitFsm } from "../../../src/contract/habit.ts";
 import type { PlanStep, PlanView } from "../../../src/contract/plan.ts";
-import { taskOf } from "../../../src/act/tasks.ts";
 import { WORDS } from "./words";
 
 type Decision = Extract<BrainLog, { type: "decision" }>;
@@ -29,39 +28,37 @@ export interface DashData {
   safety: { id: string; text: string } | null;
   /** 메시지 상자 줄: 새로 온 생각 메시지(반성 메시지 포함)와 바뀐 말풍선 카드 말을 받은 차례로(시계가 다른 기기여도 차례가 맞다). 최근 THOUGHT_KEPT개. */
   talk: { id: string; text: string }[];
-  /** 마지막으로 받은 미리 세운 목표(goal 메시지, src/act/track/goal.ts). 세움·떠남인 동안만 FSM 카드에 목표 점선으로 보인다(fsm.ts). 받기 전이면 null. */
+  /** 마지막으로 받은 미리 세운 목표(goal 메시지, src/act/track/goal.ts). 시간 줄 예상 줄과 트윈 목표 고리·미리 그린 길이 쓴다. 받기 전이면 null. */
   goal: PendingGoal | null;
-  /** 마지막으로 받은 습관 FSM 그림 자료(habit 메시지, src/brain/habit.ts). 메시지 상자 FSM 카드가 그린다. 받기 전이면 null. */
+  /** 마지막으로 받은 습관 FSM 그림 자료(habit 메시지, src/brain/habit.ts). 시간 줄 사람 줄의 상태 이름과 예상 줄 조건 글이 쓴다. 받기 전이면 null. */
   habit: HabitFsm | null;
-  /** 판단으로 쌓은 습관 FSM 자리(fsmAtNext): 지금 상태, 막 일어난 전이의 앞 상태, 지금 하는 일. 판단 전이면 모두 null. */
-  fsmAt: FsmAt;
+  /** 사람 상태가 바뀐 때들(유효한 판단의 습관 FSM 상태 fsm.state와 그 판단 시각, 오래된 것부터 최근 PEOPLE_KEPT개). 시간 줄 사람 줄이 쓴다.
+   *  사람 상태 FSM이 들어오면 그 상태로 바꾼다. 상태를 모르는 판단(null)은 더하지 않는다. */
+  people: PersonAt[];
+  /** 최근 계획(id마다 마지막 판본, 받은 차례로 최근 PLANS_KEPT개). 시간 줄 로봇 줄이 단계 시각(started_ms·ended_ms)을 쓴다. */
+  plans: PlanView[];
 }
 
-/** 습관 FSM 자리: state 마지막으로 안 상태, from 막 일어난 전이(행동하는 판단이 상태를 바꿈)의 앞 상태, doing 지금 하는 행동(계획이 열려 있는 동안). */
-export interface FsmAt { state: string | null; from: string | null; doing: string | null }
-const NO_FSM: FsmAt = { state: null, from: null, doing: null };
+/** 사람 상태 하나: 상태 id와 그 상태가 된 판단 시각(서버 at_ms). */
+export interface PersonAt { state: string; at_ms: number }
+const PEOPLE_KEPT = 8;
+const PLANS_KEPT = 4;
 
 export const EMPTY_DASH: DashData = {
-  plan: null, eye: null, decision: null, thoughts: [], reflection: null, say: null, mode: null, says: 0, safety: null, talk: [], goal: null, habit: null, fsmAt: NO_FSM,
+  plan: null, eye: null, decision: null, thoughts: [], reflection: null, say: null, mode: null, says: 0, safety: null, talk: [], goal: null, habit: null, people: [], plans: [],
 };
 
-/** 행동하는 판단인가: 대기(null)와 계획 없는 행동(그대로 두기, TaskSpec.plan false)은 아니다. */
-const acts = (action: string | null) => action !== null && taskOf(action)?.plan !== false;
-
-/**
- * 유효한 판단 하나로 습관 FSM 자리를 옮긴다. 판단의 상태(서버 fsmNow)를 모르면(null) 마지막 상태를 그대로 둔다.
- * 상태가 바뀌면 행동하는 판단일 때만 막 일어난 전이(from)를 켜고, 대기·그대로 두기는 켜지 않는다(from null).
- * 하는 일은 규칙대로 고른(matched) 행동하는 판단의 행동이고, 그 밖의 판단에는 계획이 열려 있는 동안만 남는다.
- */
-function fsmAtNext(at: FsmAt, d: Decision, plan: PlanView | null): FsmAt {
-  const go = acts(d.action);
+/** 유효한 판단 하나로 사람 상태 줄을 잇는다: 상태(서버 fsmNow)를 모르면(null) 그대로, 마지막과 같으면 그대로. */
+function peopleNext(list: PersonAt[], d: Decision): PersonAt[] {
   const st = d.fsm?.state ?? null;
-  const moved = st !== null && st !== at.state;
-  return {
-    state: st ?? at.state,
-    from: moved ? (go ? at.state : null) : at.from,
-    doing: go && d.fsm?.matched ? d.action : isOpen(plan) ? at.doing : null,
-  };
+  if (st === null || list.at(-1)?.state === st) return list;
+  return [...list, { state: st, at_ms: d.at_ms }].slice(-PEOPLE_KEPT);
+}
+
+/** 최근 계획 줄에 계획 하나를 넣는다: 같은 id는 그 자리를 바꾸고, 새 id는 뒤에 더한다. */
+function plansNext(list: PlanView[], p: PlanView): PlanView[] {
+  const i = list.findIndex((x) => x.id === p.id);
+  return i >= 0 ? list.map((x, j) => (j === i ? p : x)) : [...list, p].slice(-PLANS_KEPT);
 }
 
 /** 메시지 상자 줄 더하기: 같은 id는 한 번만, 받은 차례로 최근 THOUGHT_KEPT개. */
@@ -104,8 +101,7 @@ export function reduceDash(s: DashData, m: ServerMessage, now: number): DashData
       const p = m.plan;
       // 같은 계획은 지금 것과 같거나 작은 번호를 버린다(계획 계약)
       if (p && s.plan && p.id === s.plan.id && p.revision <= s.plan.revision) return s;
-      // 계획이 끝나면 하는 일이 없다(지켜봄). 상태와 막 일어난 전이는 그대로다
-      return { ...s, plan: p, fsmAt: isOpen(p) || !s.fsmAt.doing ? s.fsmAt : { ...s.fsmAt, doing: null } };
+      return { ...s, plan: p, plans: p ? plansNext(s.plans, p) : s.plans };
     }
     case "eye":
       return m.eye.estimated ? s : { ...s, eye: m.eye };
@@ -136,7 +132,7 @@ export function reduceDash(s: DashData, m: ServerMessage, now: number): DashData
       if (e.type === "decision") {
         // 동시에 나간 판단의 늦은 응답(seq가 더 작음)은 쓰지 않는다
         if (e.status !== "valid" || (s.decision && e.seq < s.decision.seq)) return s;
-        return { ...s, decision: e, fsmAt: fsmAtNext(s.fsmAt, e, s.plan) };
+        return { ...s, decision: e, people: peopleNext(s.people, e) };
       }
       if (e.type === "reflection") {
         if (!e.ok) return s;
@@ -167,7 +163,7 @@ export function currentStep(p: PlanView | null): PlanStep | null {
 }
 
 /** 메시지 상자에 보이는 것: 최근 줄(오래된 것부터 TALK_SHOWN개, 다듬은 생각 메시지와 말풍선 카드 말을 받은 차례로). PAM의 원래 생각(reasoning)은 싣지 않는다.
- *  습관 FSM(지금 상태·목표)은 상자 오른쪽 FSM 카드가 보인다(fsm.ts). */
+ *  사람 상태·목표·계획 단계의 때는 상자 왼쪽 시간 줄 카드가 보인다(timeline.ts). */
 export interface Talk {
   lines: { id: string; text: string }[];
 }

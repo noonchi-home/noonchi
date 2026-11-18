@@ -12,7 +12,8 @@ import { MASCOT } from "../../src/lib/mascot-image";
 import { WORDS } from "../../src/dashboard/words";
 import { EMPTY_DASH, reduceDash, talkOf } from "../../src/dashboard/data";
 import { BRANCHES, branchDecision, coachPlanAt, type Branch } from "./fixtures";
-import { EYE_FRAMES, FSM_CLEAR, FSM_WATCH, HUB, imageSlot, MESSAGES, PHONE_URL, PLAN, REASON, screenAt, seenEvent, seenOf, TALK } from "./fixtures";
+import { EYE_FRAMES, HUB, imageSlot, MESSAGES, PHONE_URL, PLAN, REASON, screenAt, seenEvent, seenOf, TALK, TIMELINE_CLEAR, TIMELINE_NOW, TIMELINE_WATCH } from "./fixtures";
+import { TIMELINE_SPAN_S } from "../../src/dashboard/TimelineCard";
 import { createSeenStore } from "../../src/dashboard/masks";
 import { clockText } from "../../src/dashboard/clock";
 import { act } from "@testing-library/react";
@@ -33,7 +34,7 @@ const phonePane = () => screen.getByRole("region", { name: "폰 카메라" });
 const twinPane = () => screen.getByRole("region", { name: "트윈" });
 const mascot = () => screen.getByRole("region", { name: "마스코트" });
 const talk = () => document.querySelector<HTMLElement>("[data-talk]")!;
-const card = () => document.querySelector<HTMLElement>("[data-fsm-card]")!;
+const card = () => document.querySelector<HTMLElement>("[data-timeline-card]")!;
 /** class 하나가 있는지(변형 접두·대괄호 값 포함 그대로). */
 const cls = (el: Element, name: string) => el.className.split(/\s+/).includes(name);
 const before = (a: Element, b: Element) => (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
@@ -110,9 +111,9 @@ describe("대시보드 배치", () => {
     expect([...stage.children].filter((c) => c.tagName === "SECTION")).toEqual([twin]);
     expect(cls(twin, "flex-1")).toBe(true);
     expect(container.querySelector("[data-divider], [data-decision]")).toBeNull();
-    // FSM 카드(와 그 원 안 줄)는 트윈 판 밖, 메시지 상자 밖 main 바로 아래 독립 카드다
-    expect(stage.querySelector("[data-slot=separator], [data-fsm-card]")).toBeNull();
-    expect(talk().querySelector("[data-fsm-card]")).toBeNull();
+    // 시간 줄 카드는 트윈 판 밖, 메시지 상자 밖 main 바로 아래 독립 카드다
+    expect(stage.querySelector("[data-timeline-card]")).toBeNull();
+    expect(talk().querySelector("[data-timeline-card]")).toBeNull();
     expect(card().parentElement).toBe(main);
     for (const el of [phonePane(), talk(), mascot()]) {
       expect(el.parentElement, el.tagName).toBe(main);
@@ -216,7 +217,7 @@ describe("대시보드 배치", () => {
         ["0", screenAt(0)], ["2", screenAt(2)], ["3", screenAt(3)], ["4", screenAt(4)],
         ["로봇 모름", screenAt(2, { robotKnown: false })], ["연결 끊김", screenAt(2, { connected: false })], ["모양 없음", screenAt(0, { seen: seenOf(null) })],
         ["긴 줄", screenAt(2, { talk: { ...TALK, lines: MESSAGES.map((m) => ({ ...m, text: m.text.repeat(5) })) } })],
-        ["목표", screenAt(2, { fsm: FSM_WATCH })], ["FSM 없음", screenAt(2, { fsm: null })], ["줄 없음", screenAt(2, { talk: null })],
+        ["목표", screenAt(2, { timeline: TIMELINE_WATCH })], ["시간 줄 없음", screenAt(2, { timeline: null })], ["줄 없음", screenAt(2, { talk: null })],
       ];
       for (const [name, p] of variants) expect(boxes(p), name).toEqual(first);
     } finally { rect.mockRestore(); }
@@ -255,7 +256,7 @@ describe("대시보드 메시지 상자(트윈 아래쪽 하나, 생각 말풍�
     } finally { rect.mockRestore(); }
   });
 
-  // 사용자 결정(2026-11-18): 메시지 상자 알약(상태·트리거·액션)과 목표 알약을 뺀다. 습관 FSM은 상자 안 FSM 카드가 보인다
+  // 사용자 결정(2026-11-18): 메시지 상자 알약(상태·트리거·액션)과 목표 알약을 뺀다. 사람 상태·목표·단계의 때는 시간 줄 카드가 보인다(2026-11-19)
   it("알약(상태·트리거·액션·목표)이 없고 「배운 습관」 줄·칩·모드 글도 없다", () => {
     for (const p of [screenAt(0), screenAt(2)]) {
       const { unmount } = draw(p);
@@ -273,48 +274,65 @@ describe("대시보드 메시지 상자(트윈 아래쪽 하나, 생각 말풍�
     expect(document.body).not.toHaveTextContent("자동");
   });
 
-  it("FSM 카드는 메시지 상자 왼쪽 큰 자리(layout fsm)의 21st.dev Card 틀이고, 상태마다 원(Avatar)에 이름과 그 상태에서 하는 일이 있다. 지금 상태 원만 빨간(brand) 겹이 보이고 카드 판은 지금 상태를 가운데에 둔다", () => {
+  // 사용자 결정(2026-11-19): 「A+C가 그나마 낫네」, 「만들기, 1.6초 크게」. FSM 원 카드 자리를 시간 줄(21st.dev Timeline)이 쓴다
+  it("시간 줄 카드는 메시지 상자 왼쪽 큰 자리(layout timeline)의 21st.dev Timeline이고, 사람 · 예상 · 로봇 세 줄과 오른쪽 끝 「지금」 선, 초 눈금 「N초 전」이 있다. 보기만 한다", () => {
     const rect = atScreen(1920, 1080);
     try {
       draw(screenAt(2));
       const L = pageLayout({ width: 1920, height: 1080 }, MASCOT);
-      expect(close(boxOf(card()), L.fsm)).toBe(true);
+      expect(close(boxOf(card()), L.timeline)).toBe(true);
       expect(cls(card(), "pointer-events-none")).toBe(true);
+      expect(card().querySelector("[data-slot=timeline-grid]")).not.toBeNull();
+      expect([...card().querySelectorAll<HTMLElement>("[data-slot=timeline-row]")].map((r) => [r.dataset.row, r.querySelector("[data-slot=timeline-row-name]")!.textContent])).toEqual([
+        ["person", "사람"], ["guess", "예상"], ["robot", "로봇"],
+      ]);
+      const now = card().querySelector<HTMLElement>("[data-slot=timeline-current-time]")!;
+      expect(now).toHaveTextContent("지금");
+      expect([...card().querySelectorAll("[data-slot=timeline-hour-marker]")].map((m) => m.textContent)).toEqual(["10초 전", "20초 전"]);
+      // 끌어 옮기기·마우스 시각 표시가 없다
+      expect(card().querySelector("[data-slot=timeline-mouse-indicator], [data-slot=timeline-drag-overlay], [data-slot=timeline-drop-ghost]")).toBeNull();
     } finally { rect.mockRestore(); }
   });
 
-  it("FSM 카드 원·판: 지금 상태 원만 빨간(brand) 겹이 보이고 카드 판은 지금 상태를 가운데에 둔다", () => {
+  it("구간: 사람 줄은 사람 상태, 예상 줄은 목표(준비됨은 brand 테)와 그 글, 로봇 줄은 계획 단계(지금 단계는 brand 빨강)와 지켜봄이다. 지금보다 앞 SPAN초 밖은 그리지 않는다", () => {
     draw(screenAt(2));
-    const card = document.querySelector<HTMLElement>("[data-fsm-card]")!;
-    const node = (id: string) => card.querySelector<HTMLElement>(`[data-fsm-state="${id}"]`)!;
-    expect(card.querySelectorAll("[data-fsm-state]")).toHaveLength(FSM_CLEAR.habit.states.length);
-    expect(node("left_cup")).toHaveAttribute("data-now");
-    expect(node("left_cup")).toHaveTextContent("컵을 두고 자리를 뜸");
-    expect(node("left_cup")).toHaveTextContent("컵 치우기");
-    expect(node("left_cup").querySelector<HTMLElement>("[data-fsm-fill]")!.style.opacity).toBe("1");
-    expect(node("left_cup").querySelector("[data-fsm-fill] [data-tone=brand]")).not.toBeNull();
-    expect(node("drinking").querySelector<HTMLElement>("[data-fsm-fill]")!.style.opacity).toBe("0");
-    expect(node("drinking")).not.toHaveAttribute("data-now");
-    const world = card.querySelector<HTMLElement>("[data-fsm-world]")!;
-    const left = px(node("left_cup").style.left) + px(node("left_cup").style.width) / 2;
-    expect(world.style.transform).toBe(`translate(${px(card.style.width) / 2 - left}px, ${px(card.style.height) / 2}px)`);
+    const row = (id: string) => card().querySelector<HTMLElement>(`[data-slot=timeline-row][data-row=${id}]`)!;
+    const slots = (id: string) => [...row(id).querySelectorAll<HTMLElement>("[data-slot=timeline-slot]")];
+    expect(slots("person").map((s) => s.textContent)).toEqual(["먹거나 마시는 중", "컵을 두고 자리를 뜸"]);
+    expect(slots("guess").map((s) => s.dataset.tone)).toEqual(["muted", "ready"]);
+    expect(row("guess").querySelector("[data-timeline-caption]")).toHaveTextContent("컵을 두고 자리를 뜨면 컵 치우기 · 16초 먼저");
+    expect(slots("robot").map((s) => [s.textContent, s.dataset.tone])).toEqual([["지켜봄", "plain"], ["식탁으로 가기", "muted"], ["컵 집기", "brand"]]);
+    // 보이는 때(지금에서 SPAN초 앞까지) 밖만 있는 구간은 없다
+    const old = { id: "old", row: "robot" as const, from: TIMELINE_NOW - (TIMELINE_SPAN_S + 30) * 1000, to: TIMELINE_NOW - (TIMELINE_SPAN_S + 5) * 1000, text: "옛 단계", tone: "muted" as const };
+    const { unmount } = draw(screenAt(0, { timeline: { ...TIMELINE_WATCH, spans: [...TIMELINE_WATCH.spans, old] } }));
+    expect(document.querySelectorAll("[data-timeline-card]")[1]).not.toHaveTextContent("옛 단계");
+    unmount();
   });
 
-  // 사용자 결정(2026-11-18): 「목표는 왜 FSM에 표시되냐」, 그다음 메시지 상자 목표 칩도 뺀다(문장 「컵을 두고 자리를 뜨면 컵을 치울게요」가 목표를 말한다)
-  it("목표는 FSM 카드에도 메시지 상자에도 칩·글로 없다(목표 문장은 메시지 줄로만 온다). 트윈 글에도 목표가 없다", () => {
+  it("사람이 떠난 때 → 첫 명령은 세 줄을 가로지르는 brand 구간과 큰 「N.N초」(22px 굵게, 사용자 허락 2026-11-19)다. 간격을 모르면 없다", () => {
+    draw(screenAt(2));
+    const region = card().querySelector<HTMLElement>("[data-slot=timeline-drop-region]")!;
+    expect(region).toHaveTextContent(TIMELINE_CLEAR.gap!.text);
+    const label = region.querySelector<HTMLElement>("[data-slot=timeline-region-label]")!;
+    expect(cls(label, "text-[22px]")).toBe(true);
+    expect(cls(label, "font-bold")).toBe(true);
+    expect(cls(label, "bg-brand")).toBe(true);
+    const { unmount } = draw(screenAt(0));
+    expect(document.querySelectorAll("[data-timeline-card]")[1]!.querySelector("[data-slot=timeline-drop-region]")).toBeNull();
+    unmount();
+  });
+
+  it("목표는 메시지 상자에 칩·글로 없다(목표 문장은 메시지 줄로만 온다). 트윈 글에도 목표가 없다", () => {
     draw(screenAt(0));
-    const card = document.querySelector<HTMLElement>("[data-fsm-card]")!;
-    expect(card).not.toHaveTextContent("목표");
-    expect(card.querySelector('[data-fsm-line="goal"], [data-fsm-label="goal"]')).toBeNull();
     expect(talk().querySelector("[data-goal-line], [data-talk-goal]")).toBeNull();
     expect(talk()).not.toHaveTextContent("목표 ·");
     expect(twinPane()).not.toHaveTextContent("목표");
-    expect(card.querySelector('[data-fsm-state="drinking"]')).toHaveAttribute("data-now");
   });
 
-  it("습관 그림을 받기 전(fsm null, 첫 판단 전)이면 FSM 카드가 없다(빈 틀을 두지 않는다)", () => {
-    draw(screenAt(2, { fsm: null }));
-    expect(document.querySelector("[data-fsm-card]")).toBeNull();
+  it("첫 판단 전(timeline null)이면 시간 줄 카드가 없다(빈 틀을 두지 않는다). 옛 FSM 원 카드도 없다", () => {
+    draw(screenAt(2, { timeline: null }));
+    expect(document.querySelector("[data-timeline-card]")).toBeNull();
+    expect(document.querySelector("[data-fsm-card], [data-fsm-state]")).toBeNull();
   });
 
   it("자리·크기는 layout의 메시지 상자 자리이고 줄 길이·습관 줄과 상관없이 같다. 줄은 한 줄로 자른다. 보기만 하고(마우스 받지 않음) 트윈·폰 칸보다 위다", () => {
@@ -344,11 +362,11 @@ describe("대시보드 메시지 상자(트윈 아래쪽 하나, 생각 말풍�
     expect(talk().querySelector<HTMLElement>("[data-talk-lines]")!.parentElement!.style.height).toBe(`${3 * 24 + 2 * 4}px`);
   });
 
-  it("줄이 없으면(talk null) 상자는 그대로 두고 줄이 없다(FSM 카드는 그대로)", () => {
+  it("줄이 없으면(talk null) 상자는 그대로 두고 줄이 없다(시간 줄 카드는 그대로)", () => {
     draw(screenAt(2, { talk: null }));
     expect(talk().querySelector("[data-talk-mode], [data-talk-pill]")).toBeNull();
     expect(lines()).toEqual([]);
-    expect(document.querySelector("[data-fsm-card]")).not.toBeNull();
+    expect(document.querySelector("[data-timeline-card]")).not.toBeNull();
   });
 });
 
@@ -777,14 +795,18 @@ describe("대시보드 글 크기", () => {
     (typeof el.className === "string" ? el.className : el.getAttribute("class") ?? "").split(/\s+/).map((c) => c.replace(/^.*:/, "")).filter((c) => SIZE.test(c))));
 
   // 사용자 허락(2026-11-18): 「메시지박스 글씨 키워」. 메시지 상자 문장 줄만 16px(Item talk), 그 밖은 부품 원래 크기
-  it.each([0, 1, 2, 3, 4])("1920×1080 %i: 화면 글은 부품 원래 크기(text-xs 12px·text-sm 14px)다. 메시지 상자만 사용자가 허락한 16px(Item talk)가 있다. far·화면 너비로 커지는 글 크기가 없다", (n) => {
+  // 사용자 허락(2026-11-19): 「만들기, 1.6초 크게」. 시간 줄 반응 간격 숫자만 22px(Timeline 구간 이름표 gap)
+  it.each([0, 1, 2, 3, 4])("1920×1080 %i: 화면 글은 부품 원래 크기(text-xs 12px·text-sm 14px)다. 메시지 상자만 사용자가 허락한 16px(Item talk), 시간 줄 반응 간격 숫자만 22px가 있다. far·화면 너비로 커지는 글 크기가 없다", (n) => {
     const rect = atScreen(1920, 1080);
     try {
       draw(screenAt(n, { robotKnown: n !== 2, connected: n === 3 ? false : true }));
       const box = talk();
-      const all = sizesIn(document.body, (el) => !box.contains(el));
+      const gap = document.querySelector("[data-slot=timeline-drop-region]");
+      const all = sizesIn(document.body, (el) => !box.contains(el) && !(gap?.contains(el) ?? false));
       expect(all.size).toBeGreaterThan(0);
       for (const c of all) expect(["text-xs", "text-sm"], c).toContain(c);
+      if (gap) for (const c of sizesIn(gap)) expect(["text-sm", "text-[22px]"], c).toContain(c);
+      expect(!!gap).toBe(n > 0);
       const inBox = sizesIn(box);
       for (const c of inBox) expect(["text-xs", "text-sm", "text-base"], c).toContain(c);
       expect(inBox.has("text-base")).toBe(true);

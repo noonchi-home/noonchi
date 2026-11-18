@@ -30,7 +30,7 @@ describe("대시보드 자료", () => {
     expect(textsOf(reduceDash(s, said("pam-2", 1, "컵을 찾았어요"), 0))).toEqual(["컵이 비어 보여요", "컵을 치울게요.", "컵을 찾았어요"]);
     expect(JSON.stringify(talkOf(feed([branchDecision(BRANCHES.clear, 1), said("pam-1", 10, "컵을 두고 자리를 뜨면 치워도 된다고 하셨어요")]))!)).not.toContain(REASON);
   });
-  it("메시지 상자 자료는 줄만이다: 알약(상태·트리거·액션)·목표 알약이 없다(습관 FSM은 FSM 카드, fsm.ts)", () => {
+  it("메시지 상자 자료는 줄만이다: 알약(상태·트리거·액션)·목표 알약이 없다(사람 상태·목표·단계의 때는 시간 줄 카드, timeline.ts)", () => {
     const one = said("pam-1", 10, "컵을 살피고 있어요");
     expect(talkOf(feed([branchDecision(BRANCHES.clear, 1), one]))).toEqual({ lines: [{ id: "pam-1@10:0", text: "컵을 살피고 있어요" }] });
     expect(talkOf(feed([branchDecision(BRANCHES.clear, 1)]))).toBeNull();
@@ -81,7 +81,7 @@ describe("대시보드 자료", () => {
     const seen = (run.moments[1]!.messages as ServerMessage[]).find((m) => m.type === "seen")!;
     expect(seen).toMatchObject({ type: "seen", frame: { width: 405, height: 720 }, shapes: [{ label: "cup" }] });
     expect(reduceDash(s, seen, 5)).toBe(s);
-    expect(Object.keys(s).sort()).toEqual(["decision", "eye", "fsmAt", "goal", "habit", "mode", "plan", "reflection", "safety", "say", "says", "talk", "thoughts"]);
+    expect(Object.keys(s).sort()).toEqual(["decision", "eye", "goal", "habit", "mode", "people", "plan", "plans", "reflection", "safety", "say", "says", "talk", "thoughts"]);
   });
   describe("반성 뒤 메시지 상자", () => {
     const NIGHT = { state: "left_cup", trigger: "밤에 사용자가 식탁을 떠난다.", action: "컵 치우기" };

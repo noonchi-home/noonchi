@@ -5,7 +5,7 @@
 import { describe, expect, it } from "vitest";
 import tokens from "../../../src/design/tokens.json";
 import { mascotLogoBox } from "../../src/dashboard/bust";
-import { ASPECT_STEP, FSM_TOP_SHARE, LIFT, MASCOT_SHARE, mascotPoint, MINIMAP_ASPECT, MINIMAP_MAX_SHARE, MINIMAP_SHARE, nextAspect, pageLayout, RING, TALK_H, TALK_MIN_W, TALK_SHARE, type Rect } from "../../src/dashboard/layout";
+import { ASPECT_STEP, TIMELINE_TOP_SHARE, LIFT, MASCOT_SHARE, mascotPoint, MINIMAP_ASPECT, MINIMAP_MAX_SHARE, MINIMAP_SHARE, nextAspect, pageLayout, RING, TALK_H, TALK_MIN_W, TALK_SHARE, type Rect } from "../../src/dashboard/layout";
 import { MASCOT } from "../../src/lib/mascot-image";
 
 const M = MASCOT;
@@ -30,7 +30,7 @@ describe.each([[1920, 1080], [1440, 900], [1522, 722]])("%i×%i", (width, height
     expect([L.pad, L.gap]).toEqual([space.gutter, space.gap]);
   });
 
-  it("트윈은 화면 전체를 쓴다(여백 안). 오른쪽 칸·나눔선·FSM 카드가 없다", () => {
+  it("트윈은 화면 전체를 쓴다(여백 안). 오른쪽 칸·나눔선·시간 줄 카드가 없다", () => {
     expect(L.twin).toEqual({ left: L.pad, top: L.pad, width: width - 2 * L.pad, height: height - 2 * L.pad });
     for (const k of ["divider", "card"]) expect(k in L, k).toBe(false);
   });
@@ -110,21 +110,21 @@ describe.each([[1920, 1080], [1440, 900], [1522, 722]])("%i×%i", (width, height
     expect("map" in L).toBe(false);
   });
 
-  it("FSM 카드는 메시지 상자 왼쪽 남은 자리 전체를 쓰는 큰 카드다: 왼쪽은 트윈 안쪽 여백, 오른쪽은 상자에서 사이(gap)만큼, 바닥 줄은 상자와 같고 위는 화면 높이의 FSM_TOP_SHARE(아래에서 1/3)까지", () => {
-    expect(FSM_TOP_SHARE).toBeCloseTo(2 / 3, 5);
-    expect(L.fsm.left).toBe(L.twin.left + space.panelPadding);
-    expect(near(right(L.fsm), L.bubble.left - L.gap)).toBe(true);
-    expect(near(bottom(L.fsm), bottom(L.bubble))).toBe(true);
-    expect(near(L.fsm.top, height * FSM_TOP_SHARE, 1)).toBe(true);
-    expect(L.fsm.height).toBeGreaterThan(TALK_H);
-    expect(L.fsm.width).toBeGreaterThan(L.bubble.width * 0.8);
-    for (const r of [L.video, L.mascot, L.bubble]) expect(hit(L.fsm, r)).toBe(false);
+  it("시간 줄 카드는 메시지 상자 왼쪽 남은 자리 전체를 쓰는 큰 카드다: 왼쪽은 트윈 안쪽 여백, 오른쪽은 상자에서 사이(gap)만큼, 바닥 줄은 상자와 같고 위는 화면 높이의 TIMELINE_TOP_SHARE(아래에서 1/3)까지", () => {
+    expect(TIMELINE_TOP_SHARE).toBeCloseTo(2 / 3, 5);
+    expect(L.timeline.left).toBe(L.twin.left + space.panelPadding);
+    expect(near(right(L.timeline), L.bubble.left - L.gap)).toBe(true);
+    expect(near(bottom(L.timeline), bottom(L.bubble))).toBe(true);
+    expect(near(L.timeline.top, height * TIMELINE_TOP_SHARE, 1)).toBe(true);
+    expect(L.timeline.height).toBeGreaterThan(TALK_H);
+    expect(L.timeline.width).toBeGreaterThan(L.bubble.width * 0.8);
+    for (const r of [L.video, L.mascot, L.bubble]) expect(hit(L.timeline, r)).toBe(false);
   });
 
-  it("지도 위에 얹는 것(메시지 상자, 마스코트·초점 고리, 미니맵, FSM 카드)은 가린 자리(blocked)다. 생각 말풍선은 없다(트윈을 가리지 않는다)", () => {
+  it("지도 위에 얹는 것(메시지 상자, 마스코트·초점 고리, 미니맵, 시간 줄 카드)은 가린 자리(blocked)다. 생각 말풍선은 없다(트윈을 가리지 않는다)", () => {
     expect(L.blocked).toHaveLength(4);
     const [say, mascot, video, fsm] = L.blocked as [Rect, Rect, Rect, Rect];
-    expect(fsm).toEqual(L.fsm);
+    expect(fsm).toEqual(L.timeline);
     expect(say).toEqual(L.bubble);
     expect(near(mascot.left, L.mascot.left - RING)).toBe(true);
     expect(near(mascot.top, L.mascot.top - RING)).toBe(true);
@@ -140,9 +140,9 @@ describe.each([[1920, 1080], [1440, 900], [1522, 722]])("%i×%i", (width, height
     for (const b of L.blocked) expect(hit(f, b)).toBe(false);
     expect(right(f)).toBeLessThan(Math.min(L.video.left, L.mascot.left));
     expect(f.width).toBeGreaterThan(L.twin.width * 0.55);
-    // FSM 카드(아래에서 1/3)가 가린 자리 위가 카메라 칸이다
+    // 시간 줄 카드(아래에서 1/3)가 가린 자리 위가 카메라 칸이다
     expect(f.height).toBeGreaterThan(L.twin.height * 0.5);
-    expect(bottom(f)).toBeLessThanOrEqual(L.fsm.top);
+    expect(bottom(f)).toBeLessThanOrEqual(L.timeline.top);
     expect(L.camPad).toEqual({ left: f.left - L.twin.left, top: f.top - L.twin.top, right: right(L.twin) - right(f), bottom: bottom(L.twin) - bottom(f) });
   });
 
@@ -229,7 +229,7 @@ describe("크기(스케치 6안)", () => {
     expect(near(L.mascot.height, 320, 10)).toBe(true);
     expect(L.bubble.height).toBe(TALK_H);
     expect(TALK_H).toBe(128);
-    expect(near(L.fsm.top, 1080 * FSM_TOP_SHARE, 1)).toBe(true);
+    expect(near(L.timeline.top, 1080 * TIMELINE_TOP_SHARE, 1)).toBe(true);
   });
 });
 

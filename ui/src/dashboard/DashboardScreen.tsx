@@ -11,8 +11,8 @@ import { MASCOT } from "../lib/mascot-image";
 import { PreDrawing, useFontsLoaded, usePredecode, usePreDraw } from "./motion";
 import { PhonePane, type PhoneSlot } from "./PhonePane";
 import type { Talk } from "./data";
-import type { FsmNow } from "./fsm";
-import { FsmCard } from "./FsmCard";
+import type { TimelineData } from "./timeline";
+import { TimelineCard } from "./TimelineCard";
 import { TalkBox } from "./TalkBox";
 import { TwinPane } from "./TwinPane";
 import { WORDS } from "./words";
@@ -36,8 +36,10 @@ export interface ScreenProps {
   seen: SeenStore;
   /** 메시지 상자: 다듬은 생각·한 일 최근 세 줄(data.ts talkOf). 줄이 없으면 null. */
   talk: Talk | null;
-  /** 메시지 상자 오른쪽 FSM 카드: 습관 FSM·지금 상태·목표(fsm.ts fsmOf). 습관 그림을 받기 전이면 null(빈 카드). */
-  fsm?: FsmNow | null;
+  /** 메시지 상자 왼쪽 시간 줄 카드: 사람 · 예상 · 로봇 구간(timeline.ts timelineOf). 첫 판단 전이면 null(카드 없음). */
+  timeline?: TimelineData | null;
+  /** 시간 줄의 지금(ms). 없으면 브라우저 시계로 흐른다(가짜 단계 화면만 멈춘 때를 준다). */
+  timelineNow?: number;
   /** 지금 행동의 모드(data.ts modeNow). 모르면 null이고 모드 말풍선은 눈치 모드다. */
   mode: "noonchi" | "coach" | null;
   hub: HubState;
@@ -58,7 +60,7 @@ export interface ScreenProps {
  * 비율 차이가 ASPECT_STEP 안이면 그대로), 처음 그림부터 가짜 단계 그림 비율을 쓴다. 말풍선 말·생각은 opacity·transform으로 바뀐다(SayCard·ThoughtCard).
  * 글꼴 조각·마스코트 그림 풀기·지도 첫 그림이 다 되면 한 번 미리 그려 보고(usePreDraw, 단계가 바뀔 때는 하지 않는다) 그 뒤 main에 data-ready를 달고 onReady를 부른다.
  */
-export function DashboardScreen({ index, plan, step, robotKnown, connected, map, mapReady, phone, seen, talk, fsm = null, mode, hub, settingsOpen, onReady, tzMinutes = null }: ScreenProps) {
+export function DashboardScreen({ index, plan, step, robotKnown, connected, map, mapReady, phone, seen, talk, timeline = null, timelineNow, mode, hub, settingsOpen, onReady, tzMinutes = null }: ScreenProps) {
   const main = useRef<HTMLElement>(null);
   const view = useBoxSize(main);
   const [aspect, setAspect] = useState(() => nextAspect(MINIMAP_ASPECT, phone.kind === "image" ? phone : null));
@@ -66,7 +68,7 @@ export function DashboardScreen({ index, plan, step, robotKnown, connected, map,
   const L = useMemo(() => pageLayout(view, MASCOT, aspect), [view, aspect]);
   const decoded = usePredecode([MASCOT.src]);
   // 지금 화면 글이 쓰는 글꼴 조각을 받는다(처음 나오는 글자가 새 조각을 받으면 글을 다시 그린다)
-  const text = JSON.stringify([talk, fsm, plan?.goal, plan?.steps.map((s) => s.label), WORDS]);
+  const text = JSON.stringify([talk, timeline?.spans.map((s) => s.text), timeline?.caption?.text, timeline?.gap?.text, plan?.goal, plan?.steps.map((s) => s.label), WORDS, "0123456789"]);
   const fonts = useFontsLoaded("Noto Sans KR Variable", text);
   const phase = usePreDraw(fonts && decoded && mapReady);
   const ready = phase === "done";
@@ -83,7 +85,7 @@ export function DashboardScreen({ index, plan, step, robotKnown, connected, map,
       </LiquidGlass>
       <PhonePane slot={phone} seen={seen} box={L.video} connected={connected} onVideoSize={onVideoSize} />
       <TalkBox talk={talk} box={L.bubble} />
-      <FsmCard fsm={fsm} box={{ width: L.fsm.width, height: L.fsm.height }} className="pointer-events-none absolute z-50" style={{ left: L.fsm.left, top: L.fsm.top }} />
+      <TimelineCard data={timeline} box={{ width: L.timeline.width, height: L.timeline.height }} className="pointer-events-none absolute z-50" style={{ left: L.timeline.left, top: L.timeline.top }} now={timelineNow} />
       <Mascot image={MASCOT} hub={hub} box={L.mascot} imageBox={L.image} logoBox={L.logo} settingsOpen={settingsOpen} />
       <ModeBubble mode={mode} layout={L} mascot={MASCOT} />
     </main>

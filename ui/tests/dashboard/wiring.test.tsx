@@ -1,4 +1,4 @@
-// 대시보드가 서버 자료(/events·health)를 화면에 잇는다: 할 일 진행도·말풍선 카드·마스코트 방향·FSM 카드·대시보드 폰 칸 영상과 YOLO 상자·연결 끊김 칩.
+// 대시보드가 서버 자료(/events·health)를 화면에 잇는다: 할 일 진행도·말풍선 카드·마스코트 방향·시간 줄 카드·대시보드 폰 칸 영상과 YOLO 상자·연결 끊김 칩.
 // 승인 대기는 대시보드에 보이지 않는다(D37). 서버 메시지는 가짜 단계(fake-run.json) 순간 2(컵 집기)를 쓴다.
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from "vitest";
@@ -6,6 +6,8 @@ import type { DeviceView, HealthView, ServerMessage } from "../../../src/contrac
 import { Dashboard } from "../../src/dashboard/Dashboard";
 import { clockText } from "../../src/dashboard/clock";
 import run from "../../src/dashboard/fake-run.json";
+import { EMPTY_DASH, reduceDash } from "../../src/dashboard/data";
+import { timelineLast } from "../../src/dashboard/timeline";
 import { branchDecision, COACH, PLAN } from "./fixtures";
 
 const SPOT = new Map<string, { x: number; y: number; visible: boolean }>();
@@ -48,6 +50,10 @@ function stubServer(eye: boolean, twin = true) {
 }
 
 const moment = (n: number) => run.moments[n]!.messages as ServerMessage[];
+/** 그 순간 자료의 가장 늦은 때(시간 줄의 지금으로 쓴다). */
+const lastOf = (n: number) => timelineLast(moment(n).reduce((s, m) => reduceDash(s, m, 0), EMPTY_DASH))!;
+/** 시간 줄 줄 하나의 칸 글. */
+const rowText = (id: string) => [...document.querySelectorAll(`[data-timeline-card] [data-slot=timeline-row][data-row=${id}] [data-slot=timeline-slot]`)].map((s) => s.textContent);
 const turnedOn: ServerMessage = {
   type: "agent", event: "action", sessionId: "phone",
   action: { tool: "turn_on", args: {}, ok: true, deviceId: "lamp", deviceLabel: "플로어 스탠드", reason: "켜 달라고 해서", at: "t" },
@@ -99,26 +105,32 @@ describe("대시보드 자료 연결", () => {
     history.replaceState(null, "", "/");
   });
 
-  it("순간 2(컵 집기)를 받으면 단계 2, 말풍선 카드 말, FSM 카드 지금 상태는 컵을 두고 자리를 뜸, 마스코트는 늘 왼쪽을 본다", async () => {
+  it("순간 2(컵 집기)를 받으면 단계 2, 말풍선 카드 말, 시간 줄 사람 줄 지금 상태는 컵을 두고 자리를 뜸이고 로봇 줄 지금 단계는 컵 집기, 마스코트는 늘 왼쪽을 본다", async () => {
+    const clock = vi.spyOn(Date, "now").mockReturnValue(lastOf(2) + 1000);
     await mount(false);
     send(moment(2));
     expect(document.querySelector("[data-progress]")).toBeNull();
     expect(sayLine()).toHaveTextContent("컵을 들게요.");
-    expect(document.querySelector('[data-fsm-card] [data-fsm-state="left_cup"]')).toHaveAttribute("data-now");
+    expect(rowText("person").at(-1)).toBe("컵을 두고 자리를 뜸");
+    expect(rowText("robot").at(-1)).toBe("컵 집기");
+    expect(document.querySelector('[data-timeline-card] [data-row=robot] [data-tone=brand]')).toHaveTextContent("컵 집기");
+    clock.mockRestore();
     expect(screen.getByRole("region", { name: "마스코트" }).querySelector<HTMLElement>("[data-mascot-turn]")!.style.transform).toBe("scaleX(-1)");
     expect(document.querySelector("main")).toHaveAttribute("data-step", "2");
   });
 
   it("지켜보기(순간 0)는 사람이 마시는 중이고 목표가 서 있다: 최신 줄은 목표 문장이고 목표 칩은 없다, 마스코트는 늘 왼쪽을 본다", async () => {
+    const clock = vi.spyOn(Date, "now").mockReturnValue(lastOf(2) + 1000);
     await mount(false);
     send(moment(2));
     send(moment(0));
     expect(screen.getByRole("region", { name: "마스코트" }).querySelector<HTMLElement>("[data-mascot-turn]")!.style.transform).toBe("scaleX(-1)");
     expect(sayLine()).toHaveTextContent("컵을 두고 자리를 뜨면 컵을 치울게요");
-    // 순간 0의 판단(seq 1)은 순간 2의 판단(seq 2)보다 늦게 온 옛 판단이라 지금 상태는 그대로다
-    expect(document.querySelector('[data-fsm-card] [data-fsm-state="left_cup"]')).toHaveAttribute("data-now");
+    // 순간 0의 판단(seq 1)은 순간 2의 판단(seq 2)보다 늦게 온 옛 판단이라 사람 줄 지금 상태는 그대로다
+    expect(rowText("person").at(-1)).toBe("컵을 두고 자리를 뜸");
     expect(talk().querySelector("[data-goal-line], [data-talk-goal]")).toBeNull();
-    expect(document.querySelector("[data-fsm-card]")).not.toHaveTextContent("목표");
+    expect(document.querySelector("[data-timeline-card]")).not.toHaveTextContent("목표");
+    clock.mockRestore();
   });
 
   it("판단 없이 반성 사건만 와도 메시지 상자에 그 규칙 두 줄이 쌓인다. 칩은 없다", async () => {
@@ -238,7 +250,7 @@ describe("가짜 단계(?debug=steps)", () => {
     return render(<Dashboard />);
   };
 
-  it("&step=2면 서버 자료 없이 그 순간이다: 단계·말·대시보드 폰 칸 눈 그림·메시지 상자 FSM 카드·컵 이름표", async () => {
+  it("&step=2면 서버 자료 없이 그 순간이다: 단계·말·대시보드 폰 칸 눈 그림·시간 줄 카드(그 순간 때로 멈춤)·컵 이름표", async () => {
     open("&step=2");
     expect(document.querySelector("main")).toHaveAttribute("data-step", "2");
     expect(sayLine()).toHaveTextContent("컵을 들게요.");
@@ -246,7 +258,9 @@ describe("가짜 단계(?debug=steps)", () => {
     expect(img.getAttribute("src")).toBe("/debug-eye/eye-table-near.webp");
     expect(document.querySelector("[data-mode-text]")).toHaveTextContent(/^눈치 모드$/);
     expect(talk().querySelector("[data-talk-pill]")).toBeNull();
-    expect(document.querySelector('[data-fsm-card] [data-fsm-state="left_cup"]')).toHaveAttribute("data-now");
+    expect(rowText("person")).toEqual(["먹거나 마시는 중", "컵을 두고 자리를 뜸"]);
+    expect(rowText("robot")).toEqual(["지켜봄", "식탁으로 가기", "컵 집기"]);
+    expect(document.querySelector("[data-timeline-card] [data-slot=timeline-drop-region]")).toHaveTextContent("4.0초");
     expect([...phonePane().querySelectorAll("[data-detection-label]")].map((t) => t.textContent?.split(" ")[0])).toEqual(["컵"]);
     expect(phonePane().querySelector("canvas[data-masks]")).not.toBeNull();
   });
@@ -275,7 +289,9 @@ describe("가짜 단계(?debug=steps)", () => {
     expect(phonePane().querySelector('img[alt="폰 카메라 영상"]')!.getAttribute("src")).toBe("/debug-eye/eye-sink.webp");
     act(() => window.__dash!.step(0));
     expect(document.querySelector("main")).toHaveAttribute("data-step", "0");
-    expect(document.querySelector('[data-fsm-card] [data-fsm-state="drinking"]')).toHaveAttribute("data-now");
+    expect(rowText("person")).toEqual(["먹거나 마시는 중"]);
+    expect(rowText("robot")).toEqual(["지켜봄"]);
+    expect(document.querySelector("[data-timeline-card] [data-timeline-caption]")).toHaveTextContent("컵을 두고 자리를 뜨면 컵 치우기 · 준비됨");
   });
 
   it("&play=MS면 지도가 준비된 뒤부터 MS마다 4→0→1 차례로 넘긴다", async () => {

@@ -2,7 +2,7 @@
 // 트윈은 화면 전체(여백 안)를 쓰고 나머지는 그 위에 얹는다:
 //   비전 미니맵은 트윈 오른쪽 위 가로 16:9 칸(1280 너비에서 320×180, 화면 너비에 비례), 마스코트는 판 없이 트윈 오른쪽 아래(보이는 높이는 화면 높이의 0.3,
 //   단추 아래 끝이 화면 밑 선이고 그림은 그 아래로 이어진다), 생각 말풍선은 마스코트 위(크기 고정)이고 꼬리 점 둘이 마스코트로 이어진다.
-//   메시지 상자는 트윈 아래쪽 마스코트 바로 왼쪽, 남은 너비의 절반이다. 그 왼쪽 남은 자리 전체(위는 화면 아래에서 1/3)가 FSM 카드다.
+//   메시지 상자는 트윈 아래쪽 마스코트 바로 왼쪽, 남은 너비의 절반이다. 그 왼쪽 남은 자리 전체(위는 화면 아래에서 1/3)가 시간 줄 카드다.
 //   마스코트를 좌우로 뒤집어도(행동하는 동안, Mascot.tsx) 단추 가운데 축을 중심으로 뒤집어 단추 자리는 그대로다.
 // 지도 카메라는 그 단계에 중요한 것(길·목적지·클로이드·확인한 기기 말풍선·방 이름표)을 트윈 위쪽 여백 아래·메시지 상자 위·미니맵과 마스코트 왼쪽 칸(focus)에 맞춰,
 //   얹은 것(가린 자리 blocked) 밑에 깔리지 않게 한다.
@@ -29,7 +29,7 @@ export interface PageLayout {
   /** 지도 카메라가 그 단계에 중요한 것을 맞출 칸(트윈 위쪽 여백 아래·메시지 상자 위·미니맵과 마스코트 왼쪽)과, 그 칸의 트윈 기준 여백. */
   focus: Rect;
   camPad: Pad;
-  /** 지도 위에 얹어 지도를 가리는 자리: [메시지 상자, 마스코트 단추(초점 고리 포함), 미니맵, FSM 카드]. */
+  /** 지도 위에 얹어 지도를 가리는 자리: [메시지 상자, 마스코트 단추(초점 고리 포함), 미니맵, 시간 줄 카드]. */
   blocked: Rect[];
   /** 비전 미니맵(대시보드 폰 칸): 트윈 오른쪽 위. 너비는 화면 너비 몫이고 높이는 영상 비율을 따른다(영상이 없으면 16:9, 세로 영상은 높이 상한까지). */
   video: Rect;
@@ -43,8 +43,8 @@ export interface PageLayout {
   logo: Rect;
   /** 메시지 상자(트윈 아래쪽, 마스코트 바로 왼쪽, 남은 너비의 TALK_SHARE). 높이는 TALK_H로 정해져 있다. */
   bubble: Rect;
-  /** FSM 카드(메시지 상자 왼쪽 남은 자리 전체): 바닥 줄은 상자와 같고 위는 화면 높이의 FSM_TOP_SHARE. */
-  fsm: Rect;
+  /** 시간 줄 카드(메시지 상자 왼쪽 남은 자리 전체): 바닥 줄은 상자와 같고 위는 화면 높이의 TIMELINE_TOP_SHARE. */
+  timeline: Rect;
 }
 
 /** 이 너비부터 hub1920 토큰(여백·글 크기). tokens.css의 @media (min-width: 1680px)와 같다. */
@@ -82,8 +82,8 @@ export const TALK_H = 128;
 export const TALK_SHARE = 0.5;
 /** 메시지 상자 가장 작은 너비(px): 시연 기억 허락 줄 가운데 가장 긴 것(16px 글 약 552)과 상자 안 여백·▼ 자리(66)가 한 줄에 드는 너비. 좁은 화면(1280)만 절반보다 넓어진다. */
 export const TALK_MIN_W = 640;
-/** FSM 카드 위 끝: 화면 높이에 곱하는 몫(화면 아래에서 1/3 높이까지, 2026-11-18 사용자 결정 「FSM은 훨씬 더 크게」). */
-export const FSM_TOP_SHARE = 2 / 3;
+/** 시간 줄 카드 위 끝: 화면 높이에 곱하는 몫(화면 아래에서 1/3 높이까지, 2026-11-18 사용자 결정 「FSM은 훨씬 더 크게」의 자리를 2026-11-19 시간 줄이 이어 쓴다). */
+export const TIMELINE_TOP_SHARE = 2 / 3;
 /** 지도 카메라 칸: 위는 칩 줄(top-4 16 + 칩 28) 아래 4(할 일 진행도 알약은 없다), 왼쪽은 40, 얹은 것(메시지 상자·미니맵·마스코트)과는 FOCUS_GAP 떨어진다. */
 const FOCUS_TOP = 48;
 const FOCUS_LEFT = 40;
@@ -101,7 +101,7 @@ export function pageLayout(view: BoxSize, mascot: Pick<MascotImage, "width" | "h
   const pad = space.gutter;
   const gap = space.gap;
   if (view.width <= 0 || view.height <= 0) {
-    return { pad, gap, scale: 0, twin: ZERO, focus: ZERO, camPad: { top: 0, right: 0, bottom: 0, left: 0 }, blocked: [], video: ZERO, chipsRight: 0, mascot: ZERO, image: ZERO, logo: ZERO, bubble: ZERO, fsm: ZERO };
+    return { pad, gap, scale: 0, twin: ZERO, focus: ZERO, camPad: { top: 0, right: 0, bottom: 0, left: 0 }, blocked: [], video: ZERO, chipsRight: 0, mascot: ZERO, image: ZERO, logo: ZERO, bubble: ZERO, timeline: ZERO };
   }
   // 트윈: 여백 안 화면 전체
   const twin: Rect = { left: pad, top: pad, width: Math.max(0, view.width - 2 * pad), height: Math.max(0, view.height - 2 * pad) };
@@ -124,27 +124,27 @@ export function pageLayout(view: BoxSize, mascot: Pick<MascotImage, "width" | "h
   const bubbleRight = m.left - RING - gap;
   const bubbleW = Math.max(0, Math.min(bubbleRight - roomLeft, Math.max((bubbleRight - roomLeft) * TALK_SHARE, TALK_MIN_W)));
   const bubble: Rect = { left: bubbleRight - bubbleW, top: bottom(twin) - inset - bubbleH, width: bubbleW, height: bubbleH };
-  // FSM 카드: 상자 왼쪽 남은 자리 전체, 바닥 줄은 상자와 같고 위는 화면 높이의 FSM_TOP_SHARE(상자보다 낮지 않게)
-  const fsmTop = Math.min(bubble.top, view.height * FSM_TOP_SHARE);
-  const fsm: Rect = { left: roomLeft, top: fsmTop, width: Math.max(0, bubble.left - gap - roomLeft), height: bottom(bubble) - fsmTop };
+  // 시간 줄 카드: 상자 왼쪽 남은 자리 전체, 바닥 줄은 상자와 같고 위는 화면 높이의 TIMELINE_TOP_SHARE(상자보다 낮지 않게)
+  const lineTop = Math.min(bubble.top, view.height * TIMELINE_TOP_SHARE);
+  const timeline: Rect = { left: roomLeft, top: lineTop, width: Math.max(0, bubble.left - gap - roomLeft), height: bottom(bubble) - lineTop };
   const image = mascotImageBox(mascot, scale, HEAD_ROOM);
   const logo = mascotLogoBox(mascot, scale, image);
 
-  // 지도 위에 얹는 것: 메시지 상자, 마스코트 단추(초점 고리 포함), 미니맵, FSM 카드
+  // 지도 위에 얹는 것: 메시지 상자, 마스코트 단추(초점 고리 포함), 미니맵, 시간 줄 카드
   const blocked: Rect[] = [
     { ...bubble },
     { left: m.left - RING, top: m.top - RING, width: m.width + 2 * RING, height: m.height + RING },
     { ...video },
-    { ...fsm },
+    { ...timeline },
   ];
-  // 지도 카메라 칸: 칩 줄 아래, 메시지 상자·FSM 카드 위(트윈 칸 크기는 그대로, 카메라만 위쪽 빈 곳에 맞춘다), 미니맵·마스코트 왼쪽
+  // 지도 카메라 칸: 칩 줄 아래, 메시지 상자·시간 줄 카드 위(트윈 칸 크기는 그대로, 카메라만 위쪽 빈 곳에 맞춘다), 미니맵·마스코트 왼쪽
   const fx = twin.left + FOCUS_LEFT;
   const fy = twin.top + FOCUS_TOP;
   const edge = Math.min(video.left, m.left - RING);
-  const focus: Rect = { left: fx, top: fy, width: Math.max(0, edge - FOCUS_SIDE - fx), height: Math.max(0, Math.min(bubble.top, fsm.top) - FOCUS_GAP - fy) };
+  const focus: Rect = { left: fx, top: fy, width: Math.max(0, edge - FOCUS_SIDE - fx), height: Math.max(0, Math.min(bubble.top, timeline.top) - FOCUS_GAP - fy) };
   const camPad: Pad = { left: focus.left - twin.left, top: focus.top - twin.top, right: right(twin) - right(focus), bottom: bottom(twin) - bottom(focus) };
 
-  return { pad, gap, scale, twin, focus, camPad, blocked, video, chipsRight: right(twin) - video.left + gap, mascot: m, image, logo, bubble, fsm };
+  return { pad, gap, scale, twin, focus, camPad, blocked, video, chipsRight: right(twin) - video.left + gap, mascot: m, image, logo, bubble, timeline };
 }
 
 /** 마스코트 그림 픽셀 [x, y] → 화면 자리. */

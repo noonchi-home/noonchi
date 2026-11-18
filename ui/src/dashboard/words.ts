@@ -5,8 +5,16 @@ export const WORDS = {
   waiting: "기다리는 중",
   /** 메시지 상자 오른쪽 아래 이어짐 표시. */
   more: "▼",
-  /** 메시지 상자 FSM 카드: 하는 일이 없는 상태, 행동이 여럿일 때 「<첫 행동> 외 N」. */
-  fsm: { watch: "지켜봄", more: "외" },
+  /** 시간 줄 카드: 줄 이름, 계획 밖 로봇, 지금 선, 초 눈금 「N초 전」, 목표 단계, 떠난 뒤 「N초 먼저」, 반응 간격 「N.N초」. */
+  timeline: {
+    rows: { person: "사람", guess: "예상", robot: "로봇" },
+    watch: "지켜봄",
+    now: "지금",
+    ago: (sec: number) => `${sec}초 전`,
+    stage: { set: "세움", ready: "준비됨", started: "시작", done: "끝", dropped: "버림" },
+    lead: (sec: number) => `${sec}초 먼저`,
+    gap: (sec: string) => `${sec}초`,
+  },
   /** 트윈 위 사람 이름표 「사람 · …」: 하는 일·자세를 모를 때, 안 보일 때. */
   personSeen: "보임",
   personGone: "안 보임",

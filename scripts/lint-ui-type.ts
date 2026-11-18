@@ -44,6 +44,10 @@ export const USER_SIZES = [
     where: "대시보드 메시지 상자 문장 줄(Item size talk)", quote: "메시지박스 글씨 키워", date: "2026-11-18",
   },
   {
+    part: "components/ui/timeline.tsx", line: /^\s*gap\s*:/, size: "text-[22px]", px: 22,
+    where: "대시보드 시간 줄 반응 간격 숫자(TimelineRegion size gap: 사람이 떠난 때 → 첫 명령 「N.N초」, 굵게)", quote: "만들기, 1.6초 크게", date: "2026-11-19",
+  },
+  {
     part: "components/ui/item.tsx", line: /^\s*setup\s*:/, size: "text-base", px: 16,
     where: "설정 1~3단계 검색 결과 줄·ThinQ 짝 줄(Item size setup)", quote: "1,2,3 글씨 더 키워도될거같고", date: "2026-11-09",
   },
