@@ -173,14 +173,20 @@ export class GoalWatch extends Part {
     this.o.nudge?.();
   }
 
-  /** 목표와 같은 행동인데 사람이 떠난 뒤의 판단이 아닌가(아직 쓰는 중이거나, 떠나기 전에 보낸 판단): 판단 받기는 그 판단으로 계획을 만들지 않고 기록만 한다.
+  /** 목표와 같은 행동인데 사람이 떠난 뒤의 판단이 아닌가(아직 쓰는 중이거나, 떠난 것이 집 상태에 반영되기 전에 보낸 판단): 판단 받기는 그 판단으로 계획을 만들지 않고 기록만 한다.
    *  쓰는 동안 만든 계획은 쓰는 중 기다림 한도(30초)를 넘으면 닫히므로 목표가 맡고, 사람이 떠나면 목표가 판단을 다시 부른다. */
   holds(d: DecisionRecord): boolean {
     const v = this.goal?.view;
-    return !!v && d.action === v.action && (v.status !== "fired" || v.gone_ms === null || d.atMs < v.gone_ms);
+    return !!v && d.action === v.action && !this.afterLeave(d, v);
   }
 
-  /** 판단 받기(start.ts)가 계획 모드를 부르기 전에 묻는다. 사람이 떠난 목표(fired)와 같은 행동이고 떠난 뒤에 보낸 판단(atMs ≥ gone_ms)이면:
+  /** 떠난 것이 집 상태에 반영된 뒤 보낸 판단인가: 목표가 떠남을 본 뒤(fired_ms, 집 상태에 「사람 안 보임」이 들어온 때) 불렀고 그 관찰에 사람이 없다.
+   *  사람이 떠난 사진의 촬영 시각(gone_ms)으로 가르지 않는다: 그 사진을 찍은 뒤라도 VLM 답이 집 상태에 들어오기 전에 부른 판단은 사람이 보이던 관찰로 답한 것이다. */
+  private afterLeave(d: DecisionRecord, v: PendingGoal): boolean {
+    return v.status === "fired" && v.fired_ms !== null && d.atMs >= v.fired_ms && !d.world.person_visible;
+  }
+
+  /** 판단 받기(start.ts)가 계획 모드를 부르기 전에 묻는다. 사람이 떠난 목표(fired)와 같은 행동이고 떠난 것이 집 상태에 반영된 뒤 보낸 판단(afterLeave)이면:
    *  - 미리 만든 계획이 있으면 대상이 그때 면 그대로일 때 이 판단으로 다시 검사해(o.reuse) 그 결과. 면이 바뀌었으면 moved, 검사를 못 넘으면 stale로 버리고 null.
    *  - 미리 만드는 중이면 그 호출을 받아 쓴다(새로 부르지 않는다): 끝나면 다시 검사하고, 못 넘으면 fallback(계획 모드). 판단 받기 신호가 끊겼으면 다시 검사도
    *    fallback도 하지 않는다(계획 모드는 한 번에 하나라 fallback이 새 사람 요청의 계획을 끊는다).
@@ -190,7 +196,7 @@ export class GoalWatch extends Part {
     const g = this.goal;
     const reuse = this.o.reuse;
     const v = g?.view;
-    if (!g || !v || !reuse || v.status !== "fired" || d.action !== v.action || v.gone_ms === null || d.atMs < v.gone_ms) return null;
+    if (!g || !v || !reuse || d.action !== v.action || v.gone_ms === null || !this.afterLeave(d, v)) return null;
     const seenSince = v.gone_ms;
     const surface = g.surface;
     const objectId = g.objectId;

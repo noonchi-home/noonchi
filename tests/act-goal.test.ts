@@ -41,10 +41,10 @@ const cupOn = (o: { id?: string; place?: string; seen: number; surface?: string 
   followed_by: o.followed_by ?? null,
 });
 type Who = { act?: string; holding?: string[]; posture?: string } | null;
-/** PAM 판단(사람이 떠난 뒤 컵 치우기, action null이면 대기). */
-const pam = (id: string, seq: number, atMs: number, action: string | null = "컵 치우기"): DecisionRecord => ({
+/** PAM 판단(사람이 떠난 뒤 컵 치우기, action null이면 대기). visible: 판단 때 집 상태에 사람이 보였는가(기본 안 보임). */
+const pam = (id: string, seq: number, atMs: number, action: string | null = "컵 치우기", visible = false): DecisionRecord => ({
   id, seq, atMs, textSent: "t", finalTime: "x", status: "valid", prediction: { observation: "사람이 컵을 두고 자리를 비움", reasoning: "습관대로 치운다", task_index: action ? NOONCHI.indexOf(action) : -1 },
-  action, memoryVersion: 1, tasks: NOONCHI, world: { objects: [], person_visible: false, vlm_missing: 0, yolo_missing: 0 },
+  action, memoryVersion: 1, tasks: NOONCHI, world: { objects: [], person_visible: visible, vlm_missing: 0, yolo_missing: 0 },
 });
 
 /** 실행 추적 + 미리 세운 목표. person(who)로 사람을 바꾸고(나타나면 since_ms, 사라지면 그때가 since_ms), setObjects로 물건을 바꾼다.
@@ -95,8 +95,10 @@ function goalSetup(o: { over?: Partial<TrackerOptions>; state?: string | null } 
     if (!p && who) goneAt = clock.t;
     who = p;
   };
-  const gone = () => {
+  /** 사람 사라짐이 집 상태에 반영된다. capturedAt: 떠난 것을 찍은 사진의 촬영 시각(집 상태 since_ms, 없으면 지금). */
+  const gone = (capturedAt?: number) => {
     person(null);
+    if (capturedAt !== undefined) goneAt = capturedAt;
     t.onWorld([{ kind: "person_gone", at_ms: clock.t, subject: "person", text: "사람 안 보임", meaningful: true }]);
   };
   const setObjects = (f: (xs: WorldObject[]) => WorldObject[]) => { objects = f(objects); };
@@ -478,5 +480,59 @@ describe("미리 세운 목표: 맞지 않게 되면 버리고 지금 길로", (
     s.t.stop();
     await s.t.idle();
     expect(s.goals).toHaveLength(n);
+  });
+});
+
+describe("미리 세운 목표: Codex 검토(5c4961e) 고침", () => {
+  async function ready(o: Parameters<typeof goalSetup>[0] = {}) {
+    const s = goalSetup(o);
+    s.person({ act: "drinking" });
+    s.tick();
+    await s.t.idle();
+    expect(s.t.goal()?.prep).toBe("ready");
+    return s;
+  }
+
+  it("떠나는 사진을 찍은 뒤라도 집 상태에 「사람 안 보임」이 반영되기 전에 보낸 판단(사람이 보이던 관찰)은 받지 않고, 반영된 뒤 보낸 판단으로 시작한다(goal.ts:193)", async () => {
+    const s = await ready();
+    const shot = s.clock.t;
+    s.tick();
+    // 떠나는 사진 뒤(shot 이후)에 보냈지만 그때 집 상태에는 아직 사람이 보였다
+    const early = pam("pam-1", 1, s.clock.t, "컵 치우기", true);
+    s.tick();
+    s.gone(shot);
+    expect(s.t.goal()).toMatchObject({ status: "fired", gone_ms: shot });
+    const before = s.planCalls();
+    await s.decide(early);
+    expect(s.logs.at(-1)).toMatchObject({ type: "execution", plan_id: "plan:pam-1", state: "decided", text: EXEC_TEXT.goalWait });
+    expect(s.commands()).toEqual([]);
+    expect(s.t.goal()?.status).toBe("fired");
+    await s.decide(pam("pam-2", 2, s.clock.t));
+    expect(s.commands()[0]).toMatchObject({ id: "plan:pam-2", text: "식탁으로 가 주세요" });
+    expect(s.planCalls()).toBe(before);
+  });
+
+  it("「그만」이면 목표와 미리 만든 계획을 버린다(stop): 사람이 떠나도 판단을 바로 부르지 않고, 뒤에 온 판단은 계획 모드로 새로 만든다(answers.ts:89)", async () => {
+    const s = await ready();
+    expect(s.t.onHeard("그만")).toMatchObject({ kind: "answer", choice: { id: "stop" } });
+    expect(s.goals.at(-1)).toMatchObject({ status: "dropped", reason: "stop" });
+    expect(s.t.goal()).toBeNull();
+    s.tick();
+    s.gone();
+    expect(s.nudged()).toBe(0);
+    const before = s.planCalls();
+    await s.decide(pam("pam-3", 3, s.clock.t));
+    expect(s.planCalls() - before).toBe(1);
+  });
+
+  it("미리 만드는 중에 「그만」이면 그 호출을 끊고 목표를 버린다", async () => {
+    const s = goalSetup();
+    s.person({ act: "drinking" });
+    s.tick();
+    expect(s.t.goal()?.prep).toBe("planning");
+    expect(s.t.onHeard("그만")).toMatchObject({ kind: "answer" });
+    await s.t.idle();
+    expect(s.goals.at(-1)).toMatchObject({ status: "dropped", reason: "stop", prep: "planning" });
+    expect(s.goals.some((g) => g.prep === "ready")).toBe(false);
   });
 });

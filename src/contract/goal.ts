@@ -8,8 +8,8 @@ export type GoalStatus = "armed" | "fired" | "used" | "dropped";
 export type GoalPrep = "waiting" | "planning" | "ready" | "failed";
 /** 버린 까닭: took 들고 나감, back 다시 나타남, moved 물건이 사라지거나 다른 면으로 옮겨지거나 치워짐, other 다른 판단·계획, safety 안전 알림,
  *  mode 지금 행동 목록에 없음(코치 모드), dock 충전 자리 복귀 중, expired 세워 둘 수 있는 시간이 지남, pam 사람이 떠난 뒤 PAM이 그 행동을 고르지 않음,
- *  stale 미리 만든 계획이 없거나 지금 World State 검사를 못 넘음. */
-export type GoalDrop = "took" | "back" | "moved" | "other" | "safety" | "mode" | "dock" | "expired" | "pam" | "stale";
+ *  stale 미리 만든 계획이 없거나 지금 World State 검사를 못 넘음, stop 사용자가 「그만」이라고 함. */
+export type GoalDrop = "took" | "back" | "moved" | "other" | "safety" | "mode" | "dock" | "expired" | "pam" | "stale" | "stop";
 
 export interface PendingGoal {
   /** goal-<번호>(실행 추적 안에서 하나씩, 세대다). */

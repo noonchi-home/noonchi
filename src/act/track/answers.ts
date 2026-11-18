@@ -85,6 +85,9 @@ export class Answers extends Part {
     const core = this.core;
     if (core.stopped) return null;
     const open = core.open();
+    // 미리 세운 목표(미리 만든 계획·만드는 중 포함)에 「그만」: 목표를 버린다. 남겨 두면 사람이 떠날 때 그 계획을 실행한다(goal.ts)
+    const goal = !!core.goal.current() && matchChoice(text, [STOP]) !== null;
+    if (goal) core.goal.drop("stop");
     // 명령이 없는 단계(기다리기·기기)와 만드는 중인 계획에도 「그만」은 받는다
     if ((open || core.planning) && matchChoice(text, [STOP])) {
       core.start.dropPlanning(EXEC_TEXT.stopped);
@@ -105,6 +108,7 @@ export class Answers extends Part {
       core.dock.drop();
       return { kind: "answer", choice: STOP };
     }
+    if (goal) return { kind: "answer", choice: STOP };
     if (dock?.sent && matchChoice(text, [STEP_DONE])) {
       if (at?.kind !== "command" || at.id !== dock.id || at.step !== dock.sent.step) return { kind: "stale" };
       core.dock.arrived();
