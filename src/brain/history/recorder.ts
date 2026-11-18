@@ -92,7 +92,7 @@ export function attachRecorder(db: HistoryDb, o: RecorderSources): () => void {
       }
     }),
     o.onPlan((p) => db.add("plan", Date.parse(p.updatedAt) || now(), `${p.goal} ${PLAN_STATUS_TEXT[p.status]}`, {
-      subject: p.id, data: { revision: p.revision, status: p.status, steps: p.steps.map((s) => ({ id: s.id, label: s.label, status: s.status })) },
+      subject: p.id, data: { revision: p.revision, status: p.status, steps: p.steps.map((s) => ({ id: s.id, kind: s.kind, label: s.label, status: s.status })) },
     })),
     o.onMode((m) => db.add("mode", now(), MODE_TEXT[m], { data: { mode: m } })),
   ];
