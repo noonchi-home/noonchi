@@ -140,6 +140,8 @@ export type BrainLog =
     /** 고른 행동이 어느 모드로 하는 행동인가(TaskSpec.coach, src/act/tasks.ts): 코치 행동이면 coach, 아니면 noonchi. 대기·실패는 null.
      *  대시보드 메시지 상자 머리(「코치 모드」·「눈치 모드」, 대기면 없음)가 이 값만 쓴다. 예전 기록에는 없다. */
     assist?: "noonchi" | "coach" | null;
+    /** 말 부탁(말 요청 에이전트 request_task·묻기 답)으로 만든 판단: PAM을 부르지 않았다. via answer는 묻기 답에서 온 부탁. 예전 기록·PAM 판단에는 없다. */
+    source?: "speech"; via?: "answer";
     error?: string; memory_version: number; world: DecisionWorld;
   }
   /** reason: 그 실행 기록의 까닭(계획 검사에서 버린 계획이면 첫 틀린 단계와 이유). 없으면 칸이 없다. */
@@ -343,4 +345,10 @@ export interface DecisionRecord {
   /** 이 판단에 보낸 행동 목록(돕는 방식마다 다르다). 계획 전·실행 전 검사가 이 목록으로 본다. */
   tasks?: string[];
   world: DecisionWorld;
+  /** 말 부탁(말 요청 에이전트 request_task·묻기 답)으로 만든 판단(src/act/track/start.ts request): seq는 0이고 PAM 판단 번호와 섞지 않는다. */
+  source?: "speech";
+  /** 묻기 답(「치워 주세요」)에서 온 말 부탁. */
+  via?: "answer";
+  /** 말 부탁을 받은 때까지 판단이 보낸 마지막 PAM 요청 번호(src/brain/decide.ts sentSeq): 이 번호 이하 요청의 PAM 판단은 이 부탁의 계획을 바꾸지 않는다. */
+  afterSeq?: number;
 }

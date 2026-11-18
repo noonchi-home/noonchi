@@ -6,8 +6,10 @@ import type { DecisionRecord } from "../../contract/events.js";
 import { needsPhone, objectNames, type AgentStep, type PlanResult } from "../../agent/index.js";
 import { APPROVAL_TEXT, EXEC_TEXT } from "../labels.js";
 import { quietLabels } from "../lessons.js";
-import { carriesTarget, planIdOf, planObjectsOf, taskOf } from "../tasks.js";
-import { saidIn } from "../../world/labels.js";
+import { TASK_NAMES, carriesTarget, planIdOf, planObjectsOf, taskOf } from "../tasks.js";
+import { CHANGE_TEXT, saidIn } from "../../world/labels.js";
+import { decisionWorld, isoWithOffset } from "../../brain/index.js";
+import type { SpeechRequest } from "./tracker.js";
 import { emergencyOf } from "../mode.js";
 import { Part, clsOf, type Job, type Run } from "./core.js";
 
@@ -17,6 +19,9 @@ export class Starter extends Part {
   private readonly planAt = new Map<string, number>();
   private gen = 0;
   private lastSeq = 0;
+  /** 마지막 말 부탁을 받은 때까지 보낸 PAM 요청 번호(afterSeq). 말 부탁 계획을 만드는 중이거나 열려 있는 동안 이 번호 이하 PAM 판단은 쓰지 않는다. */
+  private lastSpeechSeq = 0;
+  private speechN = 0;
   /** 마지막으로 「그대로 둠」을 기록한 시각: 간격을 세는 실행 추적 시계(leftNoteAt)와 말풍선 카드가 보는 Date.now 시계(leftWallAt). */
   private leftNoteAt = Number.NEGATIVE_INFINITY;
   private leftWallAt: number | null = null;
@@ -26,12 +31,33 @@ export class Starter extends Part {
     return this.leftWallAt;
   }
 
+  /** 말 부탁을 판단 기록 꼴(id say-<번호>, source speech, seq 0, 들은 말 한 줄)로 만들어 판단 받기 길(onDecision)에 넣는다. */
+  request(r: SpeechRequest): void {
+    const core = this.core;
+    if (core.stopped) return;
+    const tasks = [...TASK_NAMES];
+    const d: DecisionRecord = {
+      id: `say-${++this.speechN}`, seq: 0, atMs: r.atMs, textSent: CHANGE_TEXT.heard(r.heard), finalTime: isoWithOffset(r.atMs, this.o.offsetMinutes ?? 540),
+      status: "valid", prediction: { observation: EXEC_TEXT.spoken, reasoning: EXEC_TEXT.spoken, task_index: tasks.indexOf(r.task) }, action: r.task,
+      memoryVersion: 0, tasks, world: decisionWorld(this.o.world()), source: "speech", afterSeq: r.afterSeq, ...(r.via ? { via: r.via } : {}),
+    };
+    this.o.onSpeech?.(d);
+    this.onDecision(d);
+  }
+
   onDecision(d: DecisionRecord): void {
     const core = this.core;
     if (core.stopped) return;
-    if (d.seq < this.lastSeq) return this.note(d, EXEC_TEXT.late);
-    // 받은 가장 새 판단 번호: 기록만 한 판단(같은 행동 등)보다 먼저 보낸 판단이 늦게 와도 쓰지 않는다
-    this.lastSeq = d.seq;
+    // 말 부탁은 PAM 판단 번호와 섞지 않는다: seq 검사를 건너뛰고 받은 때까지 보낸 PAM 요청 번호만 둔다(순서는 밀리초가 아니라 번호로 본다)
+    if (d.source === "speech") this.lastSpeechSeq = d.afterSeq ?? 0;
+    else {
+      if (d.seq < this.lastSeq) return this.note(d, EXEC_TEXT.late);
+      // 받은 가장 새 판단 번호: 기록만 한 판단(같은 행동 등)보다 먼저 보낸 판단이 늦게 와도 쓰지 않는다
+      this.lastSeq = d.seq;
+      // 말 부탁을 받은 때부터(그 계획을 만드는 중이어도) 그 전에 보낸 요청의 PAM 판단은 쓰지 않는다
+      const speech = core.planning?.decision.source === "speech" || core.open()?.decision.source === "speech";
+      if (speech && d.seq <= this.lastSpeechSeq) return this.note(d, EXEC_TEXT.late);
+    }
     core.lastDecision = d.id;
     // 기다리기·기기 단계 전에 보낸 판단이 그 뒤에 오면 낡은 관찰이라 쓰지 않는다(다시 부르는 판단이 새 관찰로 정한다)
     if (d.atMs < core.quietFrom && core.open()?.decision.action !== d.action) return this.note(d, EXEC_TEXT.late);

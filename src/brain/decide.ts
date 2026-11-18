@@ -84,6 +84,16 @@ export class Decider {
     return this.lastMem ? { ...this.lastMem, state: this.lastState } : null;
   }
 
+  /** 지금까지 보낸 마지막 PAM 요청 번호(말 부탁 afterSeq, src/act/track/start.ts request). 보내기 전이면 0. */
+  sentSeq(): number {
+    return this.seq;
+  }
+
+  /** 실행 추적이 만든 말 부탁 판단(source speech)을 판단 기록으로만 남긴다. PAM을 부르지 않았고 실행 추적에는 이미 넘어갔다. */
+  logSpeech(r: DecisionRecord): void {
+    this.emitDecision(r);
+  }
+
   /** 다음 판단 타이머에 기다림 없이 PAM을 부르게 한다(미리 세운 목표의 사람이 떠남, src/act/track/goal.ts). 동시 상한·쉼(hold)은 그대로다. */
   nudge(): void {
     if (!this.stopped) this.o.trigger.nudge();
@@ -155,13 +165,19 @@ export class Decider {
 
   private finish(r: DecisionRecord): void {
     if (this.stopped) return;
+    this.emitDecision(r);
+    this.o.onDecision?.(r);
+  }
+
+  private emitDecision(r: DecisionRecord): void {
+    if (this.stopped) return;
     this.o.emit({
       type: "decision", at_ms: this.clock.now(), id: r.id, seq: r.seq, text_sent: this.o.keepHeard?.() ? r.textSent : redactHeard(r.textSent), status: r.status, prediction: r.prediction, action: r.action, fsm: r.fsm ?? null,
       // 이 판단 뒤의 지금 모드(서버가 정하는 한 곳, src/act/mode.ts)
       assist: this.o.mode ? this.o.mode(r.action) : modeOf(r.action),
       ...(r.error ? { error: r.error } : {}), ...(r.usage ? { usage: r.usage } : {}), memory_version: r.memoryVersion, world: r.world,
+      ...(r.source ? { source: r.source } : {}), ...(r.via ? { via: r.via } : {}),
     });
-    this.o.onDecision?.(r);
   }
 
   /** 나가 있는 판단이 끝날 때까지 기다린다(시험용). */

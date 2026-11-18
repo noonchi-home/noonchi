@@ -160,6 +160,8 @@ export function startAct(core: HomeCore): (event: BrainLog) => void {
   });
   core.tracker = new ExecutionTracker({
     plans, floor: () => plans.floor(), world: view, emit, clock: ctx.brain?.clock, approvals, devices, offsetMinutes: history.db.offsetMinutes,
+    // 말 부탁(request_task·묻기 답): 그때까지 보낸 마지막 PAM 요청 번호로 앞선 PAM 판단을 가르고, 만든 판단은 판단 기록으로 남긴다
+    sentSeq: () => decide.sentSeq(), onSpeech: (d) => decide.logSpeech(d),
     // 계획 전 검사(LLM 없음) → 에이전트 계획 모드 한 번. 손 자리는 맞춘 눈(PlanHub 평면도의 로봇 자리)
     // 실행 추적이 놓기 단계를 끝낸 물건(placed)도 이미 치운 것으로 본다
     precheck: (d) => checkDecision({ decision: d, tasks: d.tasks ?? pamTasks(core.mode(), false), world: view(), nowMs: now(), placed: core.tracker?.placed() }),

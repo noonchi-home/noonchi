@@ -3,8 +3,8 @@
 import type { HeardAt, PlannedCommandMessage } from "../../contract/phone.js";
 import type { ApprovalAnswer } from "../../agent/index.js";
 import { EXEC_TEXT } from "../labels.js";
-import { STEP_DONE, STOP, type ActionChoice } from "../prompts.js";
-import { matchChoice } from "../tasks.js";
+import { ASK_FOLLOW, STEP_DONE, STOP, type ActionChoice } from "../prompts.js";
+import { ASK_ACTION, matchChoice } from "../tasks.js";
 import { talkGrade } from "../talk-grade.js";
 import { Part, choicesOf } from "./core.js";
 
@@ -71,8 +71,12 @@ export class Answers extends Part {
       if (picked.id === "continue") steps.resume(r);
       else steps.finish(r, "failed", EXEC_TEXT.stopped, "cancelled");
     } else if (step?.kind === "ask") {
-      if (r.at + 1 >= r.plan.steps.length || step.prompt?.ends.includes(picked.id)) steps.finish(r, "done", EXEC_TEXT.answered(picked.label));
-      else steps.advance(r);
+      if (r.at + 1 >= r.plan.steps.length || step.prompt?.ends.includes(picked.id)) {
+        steps.finish(r, "done", EXEC_TEXT.answered(picked.label));
+        // 묻기 답 → 말 부탁(「치워 주세요」면 컵 치우기를 말 부탁 길로 시작한다, 「그대로 둬요」는 하지 않는다)
+        const task = r.decision.action === ASK_ACTION ? ASK_FOLLOW[picked.id] : undefined;
+        if (task) core.start.request({ task, heard: picked.label, atMs: now, afterSeq: this.o.sentSeq?.() ?? 0, via: "answer" });
+      } else steps.advance(r);
     } else steps.advance(r);
     return true;
   }

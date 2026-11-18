@@ -15,6 +15,7 @@ import { compact } from "../shared/korean.js";
 import type { ServiceCall, ServiceKind } from "../contract/service.js";
 import { CALL_SERVICE, SERVICE_KINDS, SERVICE_KIND_IDS, SERVICE_RETRY_BROKEN, SERVICE_RISKY_PROBLEM, serviceCall, serviceText, type ServiceContacts } from "./service.js";
 import { riskyNames } from "./policy.js";
+import { TASK_NAMES } from "../act/tasks.js";
 
 export type { DeviceView } from "../contract/events.js";
 
@@ -34,6 +35,8 @@ export interface ToolBackend {
   layout?: LayoutTools;
   /** 외부 연락(서버 안 에이전트만): 종류마다 등록한 받는 이, 다시 보내기 기억을 읽을 수 없으면 그 까닭(blocked), 승인 대기 만들기(정책 askService). */
   service?: { contacts: ServiceContacts; blocked(): string | null; ask(call: ServiceCall): { token: string; reason: string } };
+  /** 할 일 부탁(서버 안 에이전트만): 행동 목록의 일 하나를 실행 추적의 말 부탁 길로 넘긴다(src/act/track/start.ts request). */
+  request?: (task: string) => ToolResult;
 }
 
 export interface ToolResult {
@@ -166,6 +169,8 @@ function commandTool(
 
 /** 넘기기: 가전 요청이 아닌 말에 말 요청 에이전트가 답하지 않게 하는 도구. */
 export const LEAVE_IT = "leave_it";
+/** 할 일 부탁: 로봇 할 일 목록의 일을 부탁하는 말을 계획 모드로 넘기는 도구. */
+export const REQUEST_TASK = "request_task";
 
 export const TOOLS: ToolDef[] = [
   {
@@ -277,8 +282,17 @@ export const TOOLS: ToolDef[] = [
     },
   },
   {
+    name: REQUEST_TASK, title: "할 일 부탁", agentOnly: true,
+    description: "사람이 로봇 할 일 목록의 일을 부탁하면(예: 컵 치워 줘, 라면 끓이는 법 알려 줘) 그 일 이름 하나로 부릅니다. 가전 하나를 켜고 끄는 말은 가전 도구를 씁니다.",
+    schema: z.object({ task: z.enum(TASK_NAMES as [string, ...string[]]).describe("할 일 이름(목록 글자 그대로)") }),
+    async run(backend, args) {
+      if (!backend.request) return { ok: false, error: "할 일 부탁은 서버 안 에이전트만 받습니다." };
+      return backend.request(String(args.task));
+    },
+  },
+  {
     name: LEAVE_IT, title: "넘기기", readOnly: true, agentOnly: true,
-    description: "가전 제어·배치·외부 연락 요청이 아닌 말(혼잣말, 하는 법을 묻는 말, 주변 대화)이면 이 도구 하나만 부릅니다. 그런 말은 판단 모델이 듣고 돕습니다. 답 글은 쓰지 않습니다.",
+    description: "가전 제어·배치·외부 연락·할 일 부탁이 아닌 말(혼잣말, 주변 대화)이면 이 도구 하나만 부릅니다. 그런 말은 판단 모델이 듣고 돕습니다. 답 글은 쓰지 않습니다.",
     schema: z.object({}),
     async run() {
       return { ok: true, message: "넘겼습니다. 답 글을 쓰지 마세요." };

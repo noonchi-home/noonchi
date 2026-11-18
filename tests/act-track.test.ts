@@ -11,6 +11,7 @@ import { ExecutionTracker, TRACK_DEFAULTS, type ContentsLook, type Stall, type S
 import type { TrackCore } from "../src/act/track/core.js";
 import { ApprovalStore, type ApprovalAnswer } from "../src/agent/approval.js";
 import type { AgentStep } from "../src/agent/planTools.js";
+import type { PlanResult } from "../src/agent/index.js";
 import { checkDecision, checkPlan, type CheckResult } from "../src/act/check.js";
 import { TASKS, clearsAway, putAway, targetOf } from "../src/act/tasks.js";
 import { PlanDraft } from "../src/agent/planTools.js";
@@ -110,16 +111,21 @@ function setup(over: Partial<TrackerOptions> & { w?: () => WorldView; check?: ()
   const approvals = over.approvals ?? store({ "task:컵 치우기": "approve" });
   const w = over.w ?? (() => world([cup("present")]));
   const planner = testPlanner(llm);
+  /** 실행 추적에 넘긴 판단(PAM 판단과 말 부탁·묻기 답으로 만든 판단, onSpeech). */
+  const decided: DecisionRecord[] = [];
   const t = new ExecutionTracker({
+    onSpeech: (d) => decided.push(d),
     plans, world: w, check: over.check ?? (() => ({ ok: true })), floor: () => plans.floor(), planGapMs: 0,
     planner: (d, signal) => planner.plan(planContext({ decision: d, world: w(), floor: plans.floor() }), signal),
     // 승인 질문 길을 보는 시험이 많아 처음 하는 일 묻기를 켜 둔다(기본 끔은 「기본(처음 하는 일 묻기 끔)」 시험이 askFirst: undefined로 본다)
     toPhone: (m) => phone.push(m), emit: (l) => logs.push(l), clock, locate: (id) => PLACES[id], askFirst: true, ...over, approvals,
   });
   const decide = async (d: DecisionRecord) => {
+    decided.push(d);
     t.onDecision(d);
     await t.idle();
   };
+  const decisions = () => decided;
   const exec = () => logs.flatMap((l) => (l.type === "execution" ? [l] : []));
   const commands = () => phone.flatMap((m) => (m.type === "command" ? [m] : []));
   /** 새로 읽은 명령(speak)만. */
@@ -131,7 +137,14 @@ function setup(over: Partial<TrackerOptions> & { w?: () => WorldView; check?: ()
     const r = t.onHeard(text, at);
     return r?.kind === "answer" ? r.choice : null;
   };
-  return { t, decide, logs, phone, clock, plans, exec, commands, spoken, last, steps, approvals, heard };
+  /** 그 계획의 지금 실제 폰 명령에 답 단추를 누른다. */
+  const answer = async (planId: string, choice: string) => {
+    const m = phone.findLast((x): x is PlannedCommand => x.type === "command" && x.id === planId);
+    expect(m, `${planId}의 명령`).toBeTruthy();
+    expect(t.onAnswer(planId, m!.step, choice)).toBe(true);
+    await t.idle();
+  };
+  return { t, decide, decisions, answer, logs, phone, clock, plans, exec, commands, spoken, last, steps, approvals, heard };
 }
 
 describe("실행 추적: 단계마다 실제 폰 명령", () => {
@@ -406,7 +419,8 @@ describe("실행 추적: 단계마다 실제 폰 명령", () => {
     const b = setup();
     await b.decide(ask("pam-1", 1));
     expect(b.t.onAnswer("plan:pam-1", "plan:pam-1:1", "clear")).toBe(true);
-    expect(b.exec().at(-1)).toMatchObject({ state: "done", text: "완료: 치워 주세요" });
+    // 「치워 주세요」는 묻기 계획을 닫고 컵 치우기를 말 부탁 길로 시작한다(아래 「말 부탁 → 계획 모드」)
+    expect(b.exec()).toContainEqual(expect.objectContaining({ plan_id: "plan:pam-1", state: "done", text: "완료: 치워 주세요" }));
     const c = setup();
     await c.decide(ask("pam-1", 1));
     c.clock.t += 120_001;
@@ -5077,5 +5091,54 @@ describe("실행 추적: 계획 검사에서 버린 계획", () => {
     await s.decide({ ...decision, id: "pam-2", seq: 2 });
     expect(s.exec().some((e) => e.text === EXEC_TEXT.held)).toBe(false);
     expect(s.plans.current()).toMatchObject({ id: "plan:pam-2", status: "running" });
+  });
+});
+
+describe("말 부탁 → 계획 모드(request_task, 묻기 답)", () => {
+  it("말 부탁은 PAM 판단 번호와 섞이지 않는다: PAM seq가 높아도 첫 말 부탁을 받고, 말 부탁보다 먼저 보낸 PAM 판단은 그 계획을 바꾸지 않으며, 뒤의 PAM 판단(다음 seq)은 그대로 받는다", async () => {
+    const t = coachSetup();
+    const pam = (id: string, seq: number, atMs: number, action: string): DecisionRecord => ({ ...decision, id, seq, atMs, action });
+    await t.decide(pam("pam-9", 9, 9_000, "사용자에게 물어보기"));            // PAM seq 9까지 받음
+    t.t.onRequest({ task: RAMEN, heard: "라면 끓이는 법 알려 줘", atMs: 10_000, afterSeq: 10 });   // pam-10은 이미 보냈고 답 전
+    await t.t.idle();
+    expect(t.exec().find((e) => /^plan:say-/.test(e.plan_id))).toMatchObject({ state: "decided" });
+    expect(t.plans.current()).toMatchObject({ id: expect.stringMatching(/^plan:say-/), goal: RAMEN });
+    await t.decide(pam("pam-10", 10, 10_000, "컵 치우기"));                  // 말 부탁 전에 보낸 요청의 답(같은 밀리초여도 번호로 가른다)
+    expect(t.exec().at(-1)).toMatchObject({ plan_id: "plan:pam-10", text: EXEC_TEXT.late });
+    await t.decide(pam("pam-11", 11, 10_000, RAMEN));                         // 뒤에 보낸 요청: 같은 행동이면 진행 중 기록
+    expect(t.exec().at(-1)).toMatchObject({ plan_id: "plan:pam-11", text: EXEC_TEXT.same });
+    // 말 부탁 판단은 들은 말이 든 판단 기록 꼴이다(계획 전 검사·계획 모드·승인·실행이 PAM 판단과 같다)
+    expect(t.decisions().find((d) => d.source === "speech")).toMatchObject({ id: expect.stringMatching(/^say-/), seq: 0, afterSeq: 10, action: RAMEN, textSent: "사람이 말함: 「라면 끓이는 법 알려 줘」", status: "valid" });
+  });
+
+  it("말 부탁 계획을 아직 만드는 중에 그보다 먼저 본 관찰의 PAM 판단이 와도 그 계획을 끊지 않는다", async () => {
+    let release: (r: PlanResult) => void = () => {};
+    const plans = new PlanHub(smallFloor(), () => {}, () => "t");
+    const w = () => world([cup("present")]);
+    const real = testPlanner(llm);
+    const t = setup({ plans, w, planner: (d, signal) => (d.source === "speech" ? new Promise<PlanResult>((r) => { release = r; }) : real.plan(planContext({ decision: d, world: w(), floor: plans.floor() }), signal)) });
+    t.t.onRequest({ task: "컵 치우기", heard: "컵 치워 줘", atMs: 10_000, afterSeq: 3 });
+    // 말 부탁 전에 보낸 요청의 답(만드는 중인 계획을 기다리지 않고 바로 본다)
+    t.t.onDecision({ ...decision, id: "pam-3", seq: 3, atMs: 10_000, action: "사용자에게 물어보기" });
+    expect(t.exec().at(-1)).toMatchObject({ plan_id: "plan:pam-3", text: EXEC_TEXT.late });
+    const say = t.decisions().find((d) => d.source === "speech")!;
+    release(await real.plan(planContext({ decision: say, world: w(), floor: plans.floor() })));
+    await t.t.idle();
+    expect(plans.current()).toMatchObject({ id: `plan:${say.id}`, status: "running" });
+  });
+
+  it("묻기 계획에 「치워 주세요」로 답하면 그 계획을 닫고 컵 치우기를 말 부탁 길로 시작한다. 「그대로 둬요」면 시작하지 않는다", async () => {
+    const t = setup({ sentSeq: () => 4 });
+    await t.decide({ ...ask("pam-4", 4), atMs: 10_000 });
+    await t.answer("plan:pam-4", "clear");
+    expect(t.exec()).toContainEqual(expect.objectContaining({ plan_id: "plan:pam-4", state: "done" }));
+    expect(t.decisions().at(-1)).toMatchObject({ source: "speech", via: "answer", action: "컵 치우기", afterSeq: 4 });
+    await t.t.idle();
+    expect(t.exec().at(-1)).toMatchObject({ plan_id: expect.stringMatching(/^plan:say-/) });
+    expect(t.plans.current()).toMatchObject({ id: expect.stringMatching(/^plan:say-/), goal: "컵 치우기" });
+    const k = setup({ sentSeq: () => 5 });
+    await k.decide({ ...ask("pam-5", 5), atMs: 10_000 });
+    await k.answer("plan:pam-5", "keep");
+    expect(k.decisions().filter((d) => d.source === "speech")).toEqual([]);
   });
 });

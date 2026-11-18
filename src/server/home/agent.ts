@@ -41,7 +41,14 @@ export function startAgent(core: HomeCore): void {
   const retries = new ServiceRetryStore(serviceRetryPath(runtimeDir, home.id));
   const retriesProblem = retries.problem();
   if (retriesProblem) log(`[경고] ${retriesProblem}. 고칠 때까지 외부 연락을 하지 않습니다.`);
-  const agent = new Agent({ hub: signals, policy, rooms: twin.rooms, provider, layout, keepHeard, service, onService, contacts, retries });
+  // 할 일 부탁(request_task): 말 요청 에이전트가 받은 부탁을 실행 추적의 말 부탁 길로 넘긴다(afterSeq는 그때까지 보낸 마지막 PAM 요청 번호)
+  const onRequest = (task: string, heard: string) => {
+    const tracker = core.tracker;
+    if (!tracker) return { ok: false, error: "판단·실행을 켜지 않아 할 일 부탁을 받지 못해요." };
+    tracker.onRequest({ task, heard, atMs: core.nowMs(), afterSeq: core.decider?.sentSeq() ?? 0 });
+    return { ok: true, message: "부탁을 받았어요. 짧게 답하세요." };
+  };
+  const agent = new Agent({ hub: signals, policy, rooms: twin.rooms, provider, layout, keepHeard, service, onService, contacts, retries, onRequest });
   // 에이전트 계획 모드(src/agent/planner.ts): PAM이 고른 행동 하나를 단계 계획으로. 말 요청 에이전트와 같은 공급자
   const planner = new Planner({ provider });
   // 에이전트 관찰 모드(src/agent/observer.ts): 잘 못 볼 때 가까이 보기·사람 부탁·기다리기 중 하나를 고른다. 말 요청·계획 모드와 같은 공급자

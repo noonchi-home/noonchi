@@ -105,8 +105,15 @@ export interface DeviceRunner {
   cancel(token: string): void;
 }
 
+/** 말 부탁(말 요청 에이전트 request_task·묻기 답): 행동 이름, 들은 말, 받은 때, 그때까지 보낸 마지막 PAM 요청 번호. */
+export interface SpeechRequest { task: string; heard: string; atMs: number; afterSeq: number; via?: "answer" }
+
 export interface TrackerOptions {
   plans: PlanHub;
+  /** 지금까지 보낸 마지막 PAM 요청 번호(src/brain/decide.ts sentSeq). 묻기 답 → 말 부탁이 afterSeq로 쓴다. 없으면 0. */
+  sentSeq?: () => number;
+  /** 말 부탁으로 만든 판단(source speech)을 받는다: 서버가 판단 기록으로 남긴다(src/brain/decide.ts logSpeech). */
+  onSpeech?: (d: DecisionRecord) => void;
   world: () => WorldView;
   /** 계획 전 검사(src/act/check.ts checkDecision). 에이전트를 부르기 전에 본다. 없으면 통과. */
   precheck?: (d: DecisionRecord) => CheckResult;
@@ -274,6 +281,11 @@ export class ExecutionTracker {
 
   onDecision(d: DecisionRecord): void {
     this.core.start.onDecision(d);
+  }
+
+  /** 말 부탁: 들은 말 부탁을 판단 기록 꼴(source speech)로 만들어 판단 받기 길에 넣는다(계획 전 검사·계획 모드·승인·실행이 PAM 판단과 같다). */
+  onRequest(r: SpeechRequest): void {
+    this.core.start.request(r);
   }
 
   /** 폰 눈(맞춘 자세)의 평면 자리 [x, z]. 맞추기 전 추정 눈은 쓰지 않는다. 이동 단계는 다음 tick에 본다. */

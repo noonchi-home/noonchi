@@ -119,6 +119,8 @@ export interface AgentOptions {
   contacts?: ServiceContacts;
   /** 외부 연락 다시 보내기 기억(src/agent/service.ts ServiceRetryStore, 집마다 파일). 없으면 이 프로세스 안에서만. */
   retries?: ServiceRetryBook;
+  /** 할 일 부탁(request_task): 행동 이름과 그 차례의 사람 말을 받아 실행 추적의 말 부탁 길로 넘긴다. 없으면 받지 않는다. */
+  onRequest?: (task: string, heard: string) => ToolResult;
 }
 
 /** 승인한 외부 연락을 보내는 곳(CallServiceClient). */
@@ -211,6 +213,7 @@ export class Agent {
   private readonly onService?: (r: ServiceResult) => void;
   private readonly contacts: ServiceContacts;
   private readonly retries: ServiceRetryBook;
+  private readonly onRequest?: (task: string, heard: string) => ToolResult;
   /** 이 에이전트가 승인해 보내기를 기다리거나 보내는 중인 외부 연락. 닫을 때 기다리는 것은 취소하고 보내는 중인 것은 끝날 때까지 기다린다. */
   private readonly sends = new Set<{ started: boolean; finish(r: ConfirmResult): boolean; cancel(): void; done: Promise<void> }>();
   /** 닫혔다(집을 닫음): 새로 승인된 외부 연락은 보내지 않고 취소로 끝낸다. */
@@ -229,6 +232,7 @@ export class Agent {
     this.onService = opts.onService;
     this.contacts = opts.contacts ?? {};
     this.retries = opts.retries ?? new ServiceRetryStore(null);
+    this.onRequest = opts.onRequest;
     this.maxRounds = opts.maxToolRounds ?? 6;
     this.maxSessions = opts.maxSessions ?? 200;
     this.keepHeard = opts.keepHeard === true;
@@ -388,8 +392,10 @@ export class Agent {
   }
 
   private async runModel(s: Session, message: string, actions: AgentAction[]): Promise<string> {
+    const onRequest = this.onRequest;
     const backend: ToolBackend = {
       ...localBackend(this.hub, this.policy, this.rooms, this.layout),
+      ...(onRequest ? { request: (task: string) => onRequest(task, message) } : {}),
       service: {
         contacts: this.contacts,
         blocked: () => this.retries.problem(),
