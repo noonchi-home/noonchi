@@ -28,6 +28,56 @@
 7. 규칙으로 계획을 만들지 않는다: 미리 만든 계획도 같은 계획 모드에서 나온다(`tests/same-structure.test.ts`).
 8. 트윈 성능(사건 → 행동 시간)이 먼저다. 새로 기다리는 시간을 넣지 않고, 증거 수(등장 2초, 사람 사라짐 4초, 내용물 3장)는 그대로 둔다.
 
+## 사용자 답과 Codex 검토 반영 (2026-11-18, 26bff0f 뒤)
+
+이 절이 아래 Task 글과 다르면 이 절이 맞다. 바탕은 `refactor/stage-queue` 0371f2a(VLM으로만 물건, 화면 최신)를 합친 d4aa515다.
+
+**사용자 답:**
+
+| 질문 | 답 | 계획에서 |
+|---|---|---|
+| 떠난 뒤 PAM 확인 | PAM이 한 번 더 확인한 뒤 실행(기본안) | 그대로(Task 5) |
+| 메시지 상자 문장 | 「컵을 두고 자리를 뜨면 컵을 치울게요」 | 조건은 합친 코드의 `ruleIf`(`src/world/labels.ts`, 시연 규칙은 `RULE_IF`)로 만든다. `FSM_STATE_IF`는 합친 코드에서 없어졌다 |
+| 목표를 들고 있는 시간 | 30분 | `GOAL_DEFAULTS.armMs` 30분 |
+| 떠난 뒤 PAM이 안 고르면 | 15초 뒤 버림 | `GOAL_DEFAULTS.fireWaitMs` 15초(대기 판단만 이어질 때). 다른 행동을 고르면 그 일이 맡으므로 바로 버린다 |
+| 처음 하는 일 승인 | 「proactive를 위해 알아서 판단하는 것 위주로 보여주자. 지금은 그냥 실행」 | 미리 세운 목표로 시작한 실행은 첫 단계 전 승인을 묻지 않는다(`Run.goal`이 있으면 `Approvals.need`가 null). 위험 목록(현관 잠금 해제, 인덕션·전자레인지 켜기 등)은 안전 규칙이라 그 단계에서 지금처럼 늘 묻는다. 일반 승인 규칙은 다른 에이전트가 바꾼다(그때 `CLAUDE.md` 승인 줄에 이 예외를 함께 적는다) |
+
+**Codex 검토(26bff0f, P2 일곱):**
+
+| # | 지적 | 반영 |
+|---|---|---|
+| Task 4:910 | 목표 컵 id를 계획 입력·반환 검사에 묶지 않아 컵 둘이면 다른 컵 계획을 저장할 수 있음 | `PlanAhead`에 `object`(목표 물건 id)를 싣고 계획 입력 줄에 넣는다. 계획 검사(`PlanDraft.finish`)는 `ahead`가 있으면 같은 종류의 다른 World State 물건을 쓰는 단계(물건·대상·끝 조건)를 「미리 세운 목표의 물건은 cup_1입니다」로 버린다(모델이 고쳐 다시 낸다). `GoalWatch`도 받은 계획의 그 종류 물건(`planObjectsOf`)이 목표 물건뿐인지 본 뒤에만 준비됨으로 둔다 |
+| Task 5:1252 | 떠나기 전에 보낸 PAM 답도 받아 씀 | `take`는 `d.atMs >= gone_ms`인 판단만 받는다. 그보다 앞선 같은 행동 판단은 `holds`가 맡아 기록만 한다(「다 쓰고 떠나면 할 일로 두었어요」). 목표 id가 세대다(버리면 새 목표는 새 id) |
+| Task 4:922 | 떠난 뒤 미리 만들기가 끝나면 fired를 ready로 되돌림 | 상태를 둘로 나눈다: `status`(armed·fired·used·dropped, 관찰 단계)와 `prep`(waiting·planning·ready·failed, 미리 만들기). 미리 만들기 결과는 `prep`만 바꾸고, fired와 PAM 부르기(`nudge`, fired로 바뀔 때 한 번)는 그대로다 |
+| Task 5:1275 | 취소된 호출도 fallback을 불러 새 계획까지 끊음 | 받아 쓰기(`take`)는 판단 받기 신호가 끊겼으면 다시 검사·fallback을 하지 않고 `{ ok: false }`만 낸다(`Planner.plan`이 지금 호출을 먼저 끊으므로 새 사람 요청 계획을 끊지 않는다) |
+| Task 4:862 | 충전 자리 복귀 중에도 목표를 세우고 미리 만듦(뒤 판단은 `dock.busy()`에 버려짐) | 복귀 중(`core.dock.busy()`)이면 세우지 않고, 있던 목표는 까닭 `dock`으로 버린다 |
+| Task 3:483 | STATE는 중간 값을 합쳐 모든 전환이 녹화된다는 보장이 없음 | 전환은 RELIABLE `/brain/goal_changes`(열쇠 목표 id, 순서 없음)로 하나씩 내고, `/brain/goal`(STATE)은 늦게 붙은 노드·대시보드용 최신 보기로만 쓴다. 녹화 시험은 RELIABLE 토픽으로 본다 |
+| Task 9:1896 | 시험 프레임에 카메라 자세·위치 맞춤이 없어 컵 면이 null이라 미리 만들기가 시작되지 않음 | e2e는 `tests/mokryeon-e2e.test.ts`처럼 위치를 맞추고(`alignOnServer`) 맞춘 카메라 자세를 실은 엔진 프레임을 보낸다. 가짜 VLM 답은 VLM 물건 목록(`objects`)을 싣고, 물건 확정 지연(VLM 2초 간격, 약 4.8초)을 지난 뒤 목표가 서는 것을 본다 |
+
+**바뀐 모양(코드 기준):**
+
+```ts
+// src/contract/goal.ts
+export type GoalStatus = "armed" | "fired" | "used" | "dropped";
+export type GoalPrep = "waiting" | "planning" | "ready" | "failed";
+export type GoalDrop = "took" | "back" | "moved" | "other" | "safety" | "mode" | "dock" | "expired" | "pam" | "stale";
+// PendingGoal: status·prep을 따로 싣는다(나머지 칸은 Task 3 그대로)
+
+// src/agent/planTools.ts
+export interface PlanAhead { trigger: string; on: string | null; object: string }
+
+// src/act/track/goal.ts
+//   holds(d): 같은 행동이고 (아직 떠나지 않음 또는 d.atMs < gone_ms)
+//   take(d, signal, fallback): fired이고 같은 행동이고 d.atMs >= gone_ms일 때만. 받아 쓰는 중 signal이 끊기면 { ok: false }(fallback 없음)
+//   watch: 안전 → mode → dock(복귀 중) → other → expired → (떠남 판단)
+// src/act/track/core.ts: Run.goal(목표 id, 아니면 null), Job.prepared { seenSince, goal }
+// src/act/track/approval.ts: need(r)는 r.goal이 있으면 null(위험 목록 가전 단계 질문은 따로 그대로)
+// 토픽: "/brain/goal"(STATE, 최신 보기), "/brain/goal_changes"(RELIABLE, 전환마다). publishGoal은 둘 다 낸다
+// 대시보드 알약: status가 armed·fired인 동안
+```
+
+**더하는 시험:** 컵 둘일 때 목표 컵이 아닌 컵 계획은 버림(Task 2·4), 떠나기 전 판단은 받지 않음(Task 5), 떠난 뒤 미리 만들기가 끝나도 fired 유지·PAM 다시 안 부름(Task 5), 끊긴 받아 쓰기는 계획 모드를 부르지 않음(Task 5), 복귀 중 세우지 않음·있던 목표 버림(Task 6), 전환 다섯이 RELIABLE로 다 녹화됨(Task 3), 목표 실행은 승인을 묻지 않고 위험 목록 가전 단계는 묻는다(Task 5), 맞춘 카메라 e2e(Task 9).
+
 ## 이 계획에서 정한 것 (지연에 주는 효과와 함께)
 
 1. **무엇을 목표로 세울지는 FSM이 정한다.** `goalAhead`는 지금 상태와 `next` 한 번으로 가는 상태의 규칙 가운데, 지금 행동 목록에 있고, 행동 목록의 새 칸 `afterUse`(사람이 대상을 다 쓰고 떠난 뒤 하는 일)이고, 그 행동이 손대는 종류가 지금 쓰는 종류인 규칙을 본다. 행동이 하나일 때만 고른다. 지금 상태는 판단이 마지막으로 맞은 규칙의 상태(`Decider` `fsmState`)이고, 아직 없으면 기억의 처음 상태, 정할 수 없으면 모든 상태를 본다. 지금 상태 자기 규칙도 본다: 앞 판에 치운 뒤 상태가 `left_cup`에 머물러 있어도 다음 판에 목표를 세운다. 지연 효과: 없음(LLM 없음, 마이크로초).
@@ -1966,20 +2016,13 @@ git commit -m "test(e2e): a pending goal prepares the cup plan while drinking an
 
 ---
 
-## 열린 질문 (사용자에게)
+## 정한 답 (2026-11-18, 사용자)
 
-1. 사람이 떠났을 때 PAM이 한 번 더 확인한 뒤 실행할까요(이 계획의 기본, 약 1.0~1.9초), 아니면 세운 목표를 바로 실행할까요(약 0.3초, PAM 확인 없음)?
-2. 목표를 얼마나 세워 둘까요? 기본 30분이고, 넘으면 버리고 지금 길로 가요.
-3. 사람이 떠난 뒤 PAM이 그 행동을 안 고르면 얼마나 기다릴까요? 기본 15초(바로 부름 한 번 + 주기 판단 두 번)예요.
-4. 메시지 상자 글은 습관 글 그대로 「컵을 두고 자리를 뜨면 컵을 치울게요」로 둘까요, 「다 마시면 컵을 치울게요」처럼 바꿀까요? 알약은 「목표 · 컵 치우기」예요.
-5. 처음 하는 일 승인은 지금처럼 사람이 떠난 뒤 첫 명령 자리에서 물을까요? (목표를 세울 때 미리 묻지 않아요. 쓰는 동안은 관찰만이라서요.)
-
-### 답에 따라 바뀌는 곳
-
-- 1번이 「바로 실행」이면: Task 5의 `take`를 판단 대신 fired 때 `GoalWatch`가 실행 추적에 바로 넘기는 길로 바꾸는 Task 하나를 더한다(목표 기록이 판단 자리를 맡아 실행 기록이 `plan:goal-n`이 되고 PAM 판단 줄이 없다. 반성 입력에 판단 없는 실행 줄이 생기므로 기록 모양도 함께 정한다). `nudge`는 빠진다.
-- 2·3번: `src/act/track/goal.ts` `GOAL_DEFAULTS` 값과 시험 숫자만.
-- 4번: `src/act/labels.ts` `GOAL_TEXT.armed`와 Task 4 시험 글만. 「다 마시면」은 쓰는 까닭(`UseWhy` 마시는 중)에서 만드는 표 하나를 더한다.
-- 5번이 「미리 묻기」면: 사람이 쓰는 동안 폰에 묻게 되어 「관찰만」 규칙과 부딪힌다. 그때는 규칙 표를 먼저 정한다.
+1. 떠난 뒤 PAM이 한 번 더 확인한 뒤 실행한다(약 1.0~1.9초).
+2. 목표는 30분까지 들고 있는다.
+3. 떠난 뒤 PAM이 그 행동을 고르지 않으면 15초 뒤 버린다.
+4. 메시지 상자 문장은 「컵을 두고 자리를 뜨면 컵을 치울게요」다.
+5. 목표로 미리 만든 계획은 승인을 묻지 않고 실행한다. 위험 목록은 그 단계에서 늘 묻는다(위 「사용자 답과 Codex 검토 반영」).
 
 ## 위험
 
