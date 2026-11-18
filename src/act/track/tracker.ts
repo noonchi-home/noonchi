@@ -122,9 +122,9 @@ export interface TrackerOptions {
   /** 에이전트 계획 모드(src/agent/planner.ts). 판단 하나에 한 번 부른다. 새 판단·「그만」·멈춤이면 signal을 끊는다.
    *  ahead가 있으면 미리 세운 목표의 계획이다(src/act/track/goal.ts, 계획 입력에 [미리 세운 목표] 줄, 목표 물건만 받는다). */
   planner: (d: DecisionRecord, signal: AbortSignal, ahead?: PlanAhead) => PlanResult | Promise<PlanResult>;
-  /** 습관 FSM: 그날 기억(판본)과 판단이 마지막으로 맞은 상태(src/brain/decide.ts fsmState). 사람이 쓰는 것을 보면 한 걸음 앞 규칙으로 목표를 세운다(goal.ts).
+  /** 사람 상태 FSM: 그날 기억(판본)과 마지막 판단의 사람 상태(src/brain/decide.ts fsmState). 사람이 쓰는 것을 보면 지금 상태에서 나가는 화살표로 목표를 세운다(goal.ts).
    *  없으면 목표를 세우지 않는다. */
-  habit?: () => { memory: PamMemory; kind: "list" | "fsm"; state: string | null | undefined; version: number } | null;
+  habit?: () => { memory: PamMemory; kind: "list" | "fsm"; state: string | null; version: number } | null;
   /** 미리 만든 계획을 지금 판단·World State로 다시 검사해 그 판단의 계획으로 낸다(src/agent/planTools.ts resubmit). 없으면 미리 만든 계획을 쓰지 않는다.
    *  rename: 계획의 물건 id → 지금 묶을 World State id(대신 물건·같은 컵의 다른 id, goal.ts take). */
   reuse?: (d: DecisionRecord, plan: AgentPlan, rename?: Readonly<Record<string, string>>) => PlanResult;

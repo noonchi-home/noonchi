@@ -17,7 +17,8 @@ import { pamClientFor, startFakePamLlm } from "./helpers/pam.js";
 import { ApprovalStore } from "../src/agent/approval.js";
 import { resubmit, type PlanAhead } from "../src/agent/planTools.js";
 import type { PlanResult } from "../src/agent/index.js";
-import { CUP_FSM_MEMORY } from "../src/brain/decision.js";
+import { CUP_FSM_MEMORY, type FsmMemory } from "../src/brain/decision.js";
+import { LEARNED_FSM_MEMORY } from "../scripts/learned-memory.js";
 import type { BrainLog, DecisionRecord } from "../src/contract/events.js";
 import type { PendingGoal } from "../src/contract/goal.js";
 import type { PlannedCommandMessage } from "../src/contract/phone.js";
@@ -52,7 +53,7 @@ const pam = (id: string, seq: number, atMs: number, action: string | null = "컵
 /** 실행 추적 + 미리 세운 목표. person(who)로 사람을 바꾸고(나타나면 since_ms, 사라지면 그때가 since_ms), setObjects로 물건을 바꾼다.
  *  tick은 시계를 ms 움직이고, 있는 물건을 지금 본 것으로 고친 뒤 tracker.tick을 부른다. gone은 World State 사람 사라짐 변화처럼 onWorld를 부른다.
  *  승인 기억은 비어 있다(처음 하는 일): 목표로 시작한 실행은 묻지 않는다. */
-function goalSetup(o: { over?: Partial<TrackerOptions>; state?: string | null; objects?: WorldObject[]; where?: [number, number] } = {}) {
+function goalSetup(o: { over?: Partial<TrackerOptions>; state?: string | null; memory?: FsmMemory; objects?: WorldObject[]; where?: [number, number] } = {}) {
   const clock = { t: 10_000, now() { return this.t; } };
   let who: Who = null;
   let since = 0;
@@ -85,7 +86,8 @@ function goalSetup(o: { over?: Partial<TrackerOptions>; state?: string | null; o
     planner: (d, signal, ahead) => planner.plan(ctx(d, ahead), signal),
     check: (d, p, seenSince) => checkPlan({ decision: d, tasks: NOONCHI, plan: p, world: w(), nowMs: clock.t, staleMs: 3000, mode: "test", ...(seenSince !== undefined ? { seenSince } : {}) }),
     reuse: (d, plan, rename) => resubmit(plan, ctx(d), rename),
-    habit: () => ({ memory: CUP_FSM_MEMORY, kind: "fsm", state: o.state === undefined ? "drinking" : o.state, version: 1 }),
+    // 목표는 배운 화살표에서만 선다: 기본은 배운 뒤 기억(배우기 전 seed는 「배우기 전(seed) 기억이면…」 시험이 본다)
+    habit: () => ({ memory: o.memory ?? LEARNED_FSM_MEMORY, kind: "fsm", state: o.state === undefined ? "drinking" : o.state, version: 1 }),
     onGoal: (g) => goals.push(g), nudge: () => { nudged++; }, thought: (text) => thoughts.push(text),
     toPhone: (m) => phone.push(m), emit: (l) => logs.push(l), ...o.over,
   });
@@ -122,11 +124,26 @@ function goalSetup(o: { over?: Partial<TrackerOptions>; state?: string | null; o
 }
 
 describe("미리 세운 목표: 세우기와 미리 만들기", () => {
+  it("처음 상태가 drinking이 아니어도(판단 전 null) 사람이 마시는 중이면(World State 하는 일) 세운다", () => {
+    const s = goalSetup({ state: null });
+    s.person({ act: "drinking" });
+    s.tick();
+    expect(s.goals[0]).toMatchObject({ action: "컵 치우기", state: "drinking", status: "armed" });
+  });
+
+  it("배우기 전(seed) 기억이면 마시는 중이어도 세우지 않는다(떠날 때 화살표가 묻기라 목표가 없다)", () => {
+    const s = goalSetup({ memory: CUP_FSM_MEMORY });
+    s.person({ act: "drinking" });
+    s.tick();
+    s.tick();
+    expect(s.goals).toEqual([]);
+  });
+
   it("사람이 컵으로 마시는 것을 보면 「컵 치우기」 목표를 세우고 메시지 상자에 「컵을 두고 자리를 뜨면 컵을 치울게요」를 한 번 올린다. 폰 명령은 없다", async () => {
     const s = goalSetup();
     s.person({ act: "drinking" });
     s.tick();
-    expect(s.goals[0]).toMatchObject({ id: "goal-1", action: "컵 치우기", state: "left_cup", object: "cup_1", cls: "cup", status: "armed", prep: "waiting", reason: null, text: "컵을 두고 자리를 뜨면 컵을 치울게요" });
+    expect(s.goals[0]).toMatchObject({ id: "goal-1", action: "컵 치우기", state: "drinking", trigger: "사용자가 먹거나 마시기를 끝내고 다른 일로 넘어간다.", object: "cup_1", cls: "cup", status: "armed", prep: "waiting", reason: null, text: "컵을 두고 자리를 뜨면 컵을 치울게요" });
     expect(s.thoughts).toEqual([USE_THOUGHT.act("마시는 중"), "컵을 두고 자리를 뜨면 컵을 치울게요"]);
     for (let i = 0; i < 20; i++) s.tick();
     await s.t.idle();
@@ -329,7 +346,7 @@ describe("미리 세운 목표: 사람이 떠나면 PAM 확인 뒤 바로 시작
       const s = goalSetup({ over: { nudge: () => decider?.nudge() } });
       decider = new Decider({
         pam: pamClientFor(pamLlm), world: { view: () => s.world() }, trigger: new Trigger({ mode: "periodic", minGapMs: 3000, periodMs: 5000, idleStopMs: 1_800_000, liveMs: 10_000, maxInflight: 1 }, 0),
-        tasks: () => NOONCHI, memory: () => ({ memory: CUP_FSM_MEMORY, kind: "fsm", version: 1 }), emit: () => {}, offsetMinutes: 540, clock: s.clock, onDecision: (d) => s.t.onDecision(d),
+        tasks: () => NOONCHI, memory: () => ({ memory: LEARNED_FSM_MEMORY, kind: "fsm", version: 1 }), emit: () => {}, offsetMinutes: 540, clock: s.clock, onDecision: (d) => s.t.onDecision(d),
       });
       /** 서버 판단 타이머(250ms)와 같은 차례: 판단 → 실행 추적. */
       const loop = async () => { s.clock.t += 250; decider!.onFrame(); decider!.tick(); await decider!.idle(); s.tick(0); await s.t.idle(); };

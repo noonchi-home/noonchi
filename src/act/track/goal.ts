@@ -1,5 +1,6 @@
 // 실행 추적의 미리 세운 목표(GoalWatch, 2026-11-18 사용자 결정 「컵을 마시는 걸 볼 때 다 마시면 치워야겠다는 목표를 세우고, 사용자가 사라지면 관련된 행동을 계획하고 실행」).
-// - 세우기: 쓰는 중 지킴(use.ts)이 사람이 쓰는 종류를 붙잡으면 습관 FSM을 한 걸음 앞서 읽어(src/brain/goal.ts goalAhead) 사람이 떠난 뒤 할 일을 목표로 세운다.
+// - 세우기: 쓰는 중 지킴(use.ts)이 사람이 쓰는 종류를 붙잡으면 사람 상태 FSM의 지금 상태(World State 하는 일로 정한 것이 먼저, 없으면 마지막 판단 상태)에서
+//   나가는 화살표를 읽어(src/brain/goal.ts goalAhead) 사람이 떠난 뒤 할 일을 목표로 세운다. 목표는 배운 화살표에서만 선다(배우기 전 떠날 때는 묻기라 목표가 없다).
 //   다른 계획이 열려 있거나 만드는 중이거나, 안전 알림이 있거나, 충전 자리로 돌아가는 중이면 세우지 않는다.
 //   한 등장(World State 사람 since_ms)에 한 번만 세운다(버리거나 쓴 뒤 같은 등장에서 다시 세우지 않아 계획 모드를 되풀이해 부르지 않는다).
 //   처음 세울 때 메시지 상자에 「<규칙 조건> <행동 말>」 한 줄(클로이드 말, 사실로만: 「컵을 두고 자리를 뜨면 컵을 치울게요」)을 올린다.
@@ -18,7 +19,7 @@ import type { GoalDrop, PendingGoal } from "../../contract/goal.js";
 import type { ObjClass, WorldObject, WorldView } from "../../contract/world.js";
 import { surfacePlace, type PlaneSurface } from "../../world/index.js";
 import type { AgentPlan, PlanResult } from "../../agent/index.js";
-import { decisionWorld, goalAhead, type GoalPick } from "../../brain/index.js";
+import { decisionWorld, edgeLearned, goalAhead, seedTrigger, stateOfWorld, type GoalPick } from "../../brain/index.js";
 import { ruleIf } from "../../world/labels.js";
 import { GOAL_LOG, GOAL_TEXT } from "../labels.js";
 import { emergencyOf } from "../mode.js";
@@ -83,18 +84,21 @@ export class GoalWatch extends Part {
     const habit = held.length ? this.o.habit() : null;
     if (!habit) return;
     const tasks = this.o.tasks?.() ?? TASK_NAMES;
+    // 지금 상태: World State 하는 일로 정한 것이 먼저(판단 전에도 목표가 4초쯤 선다), 없으면 마지막 판단의 상태
+    const state = ("states" in habit.memory ? stateOfWorld(habit.memory, world) : null) ?? habit.state;
     for (const h of held) {
-      const pick = goalAhead({ memory: habit.memory, kind: habit.kind, state: habit.state, tasks, cls: h.cls });
+      const pick = goalAhead({ memory: habit.memory, kind: habit.kind, state, tasks, cls: h.cls });
       const objectId = h.id ?? targetOf({ target: h.cls as ObjClass }, world, this.core.steps.placed())?.id ?? null;
       if (!pick) continue;
       const id = `goal-${++this.n}`;
-      const learned = false;
+      // 묻기 자리를 바꾼 배운 컵 치우기(seed와 같은 트리거)도 사용자가 정한 짧은 꼴
+      const learned = edgeLearned(pick.state, { on: pick.on, action: pick.action }) && !seedTrigger(pick.state, pick.on, pick.when);
       const will = TASK_SAY[pick.action]?.will;
-      const text = will ? GOAL_TEXT.armed(ruleIf({ trigger: pick.trigger, action: pick.action, learned }), will) : null;
+      const text = will ? GOAL_TEXT.armed(ruleIf({ trigger: pick.when ? `${pick.on} ${pick.when}` : pick.on, action: pick.action, learned }), will) : null;
       this.goal = {
         pick, objectId, presence: p.since_ms, plan: null, planObject: null, surface: null, job: null,
         view: {
-          id, action: pick.action, state: pick.state, trigger: pick.trigger, object: objectId, cls: h.cls, status: "armed", prep: "waiting", reason: null, text,
+          id, action: pick.action, state: pick.state, trigger: pick.on, object: objectId, cls: h.cls, status: "armed", prep: "waiting", reason: null, text,
           armed_ms: this.clock.now(), ready_ms: null, gone_ms: null, fired_ms: null, plan: null,
         },
       };
@@ -109,7 +113,11 @@ export class GoalWatch extends Part {
     const habit = this.o.habit?.();
     return {
       id: g.view.id, seq: 0, atMs: now, textSent: "", finalTime: new Date(now).toISOString(), status: "valid", prediction: null, action: g.view.action,
-      fsm: { state: g.view.state, from: g.view.state, next_index: -1, to: null, on: g.view.trigger, when: null, action: g.view.action, learned: false }, memoryVersion: habit?.version ?? 0,
+      fsm: {
+        state: g.view.state, from: g.view.state, next_index: g.pick.index, to: g.pick.to, on: g.pick.on, when: g.pick.when, action: g.view.action,
+        learned: edgeLearned(g.pick.state, { on: g.pick.on, action: g.pick.action }),
+      },
+      memoryVersion: habit?.version ?? 0,
       tasks: [...(this.o.tasks?.() ?? TASK_NAMES)], world: decisionWorld(world),
     };
   }
@@ -131,7 +139,7 @@ export class GoalWatch extends Part {
     const abort = new AbortController();
     let out: PlanResult | Promise<PlanResult>;
     try {
-      out = this.o.planner(this.record(g, world, now), abort.signal, { trigger: g.pick.trigger, on: g.pick.on, object: g.planObject, ...(stand ? { stand } : {}) });
+      out = this.o.planner(this.record(g, world, now), abort.signal, { trigger: g.pick.on, on: g.pick.when ?? g.pick.on, object: g.planObject, ...(stand ? { stand } : {}) });
     } catch (e) {
       out = { ok: false, error: (e as Error).message };
     }
