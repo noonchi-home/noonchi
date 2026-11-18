@@ -154,6 +154,8 @@ describe("집 상태 노드", () => {
     await r.perception.publish("/perception/scene", { kind: "closer_scene", look: "e2.c1", frame_id: "e2", observed_ms: 2000, scene: said(["d1", "in_sink"]), at: AT });
     await r.flush();
     expect(s.calls.find((c) => c.name === "applyScene")!.args[4]).toEqual(LOOK);
+    // 사건 구간 시작이 없으면 그 사진의 촬영 시각이다
+    expect(s.calls.find((c) => c.name === "applyScene")!.args[5]).toBe(1000);
     expect(s.calls.find((c) => c.name === "applyScene")!.args[2]).toEqual(withVlmObject(said(["d1", "in_sink"])));
     expect(s.calls.find((c) => c.name === "applyCloserScene")!.args[5]).toEqual(AT);
   });
@@ -177,6 +179,14 @@ describe("집 상태 노드", () => {
     expect(canRelink(undefined, cup)).toBe(false);
     expect(canRelink({ id: "cup_2", cls: "cup", status: "present" }, undefined)).toBe(false);
     expect(canRelink({ id: "remote_1", cls: "remote", status: "present" }, cup)).toBe(false);
+  });
+
+  it("장면 VLM 답의 사건 구간 시작(from_ms, 그 답이 본 가장 옛 사진)을 World State에 넘긴다(마시기·따르기 사건)", async () => {
+    const s = spy(ws());
+    const r = await rig(s.proxy);
+    await r.perception.publish("/perception/scene", { kind: "scene", frame_id: "e5", observed_ms: 5000, from_ms: 1000, scene: said(["d1", "drank"]) });
+    await r.flush();
+    expect(s.calls.find((c) => c.name === "applyScene")!.args[5]).toBe(1000);
   });
 
   it("/world/input focus(지금 단계 대상)는 world.focus를 그 값으로 부르고, id null이면 푼다", async () => {

@@ -220,6 +220,8 @@ export class ObservationPipeline {
   /** 위에서 보기로 보낸 잘라 키운 사진의 기록 id(그 VLM 요청은 TOP_NOTE를 단다). */
   private readonly topIds = new Set<string>();
   private readonly closerCount = { looks: 0, failed: 0, costUsd: 0 };
+  /** 장면 VLM에 보낸 프레임 id → 함께 보낸 가장 옛 장의 촬영 시각(답이 오면 지운다). */
+  private readonly spanOf = new Map<string, number>();
   /** 가까이 보기 VLM 답을 가격표에 없는 모델이 냈다(그 비용은 모름). */
   private closerUnpriced = false;
   private readonly closerVlm: VlmClient;
@@ -234,7 +236,7 @@ export class ObservationPipeline {
       // 잘라 키운 사진은 가까이 보기 VLM에 혼자, 그 사진이 장면 일부라는 한 줄과 보낸다
       analyze: (f, d, signal) => f.crop
         ? this.analyzeCloser(f, d, signal)
-        : analyzeScene(o.vlm, this.ring.window(f, windowFrames, windowFrames * vlmStepMs(o.config)), d, signal),
+        : this.analyzeWindow(f, d, signal, windowFrames),
       onResult: (r) => {
         if (this.closed) return;
         const dets = this.detsOf.get(r.frameId) ?? [];
@@ -244,8 +246,11 @@ export class ObservationPipeline {
         // 그 사진의 YOLO 감지(바닥 점 포함): 그 감지와 이어진 VLM 물건은 자리를 감지 바닥 점으로 낸다
         const look = f?.view ? { view: f.view, width: f.width, height: f.height, eye: f.eye ? f.eye.position : null, dets: dets.map(({ id, box, foot }) => ({ id, box, ...(foot ? { foot } : {}) })) } : undefined;
         const scene = r.scene && f ? linkDets(r.scene, dets, f.width, f.height) : r.scene;
+        // 그 답이 본 가장 옛 사진의 촬영 시각(마시기·따르기 사건 구간)
+        const fromMs = this.spanOf.get(r.frameId) ?? r.capturedAtMs;
+        this.spanOf.delete(r.frameId);
         o.world.send(scene
-          ? { kind: "scene", frame_id: r.frameId, observed_ms: r.capturedAtMs, scene, ...(look ? { look } : {}) }
+          ? { kind: "scene", frame_id: r.frameId, observed_ms: r.capturedAtMs, ...(fromMs !== r.capturedAtMs ? { from_ms: fromMs } : {}), scene, ...(look ? { look } : {}) }
           : { kind: "missing", frame_id: r.frameId, observed_ms: r.capturedAtMs, missing: r.missing! });
         o.emit({ type: "observe", at_ms: this.clock.now(), frame_id: r.frameId, captured_at_ms: r.capturedAtMs, yolo: null, vlm: r.scene?.summary ?? null, ...(r.missing ? { vlm_missing: r.missing } : {}), ...(r.scene ? { scene: r.scene, dets: dets.map((d) => ({ id: d.id, class: d.class, box: [...d.box] as [number, number, number, number], score: d.score })), ...(look ? { view: look.view, size: [look.width, look.height] as [number, number] } : {}) } : {}) });
       },
@@ -254,6 +259,13 @@ export class ObservationPipeline {
 
   get config(): ObserveConfig {
     return this.o.config;
+  }
+
+  /** 장면 VLM: 그 프레임까지 최근 장들을 보내고, 가장 옛 장의 촬영 시각을 답이 올 때까지 둔다(spanOf). */
+  private analyzeWindow(f: EngineFrame, d: SceneDetection[], signal: AbortSignal, count: number) {
+    const frames = this.ring.window(f, count, count * vlmStepMs(this.o.config));
+    this.spanOf.set(f.id, frames[0]?.capturedAtMs ?? f.capturedAtMs);
+    return analyzeScene(this.o.vlm, frames, d, signal);
   }
 
   private async analyzeCloser(f: EngineFrame, d: SceneDetection[], signal: AbortSignal) {

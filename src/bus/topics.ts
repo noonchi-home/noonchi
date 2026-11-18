@@ -70,7 +70,7 @@ const sceneLook = z.strictObject({
 const closerAt = z.strictObject({ view: camera, ...size, crop: box });
 /** /perception/scene: VLM 답 갈래 다섯(집 상태 입력의 주인)과 YOLO 임시 갈래 넷(VLM 전용으로 바뀔 자리). */
 const sceneInput = z.discriminatedUnion("kind", [
-  z.strictObject({ kind: z.literal("scene"), frame_id: id, observed_ms: at, scene, look: sceneLook.optional() }),
+  z.strictObject({ kind: z.literal("scene"), frame_id: id, observed_ms: at, from_ms: at.optional(), scene, look: sceneLook.optional() }),
   z.strictObject({ kind: z.literal("missing"), frame_id: id, observed_ms: at, missing: z.enum(VLM_MISSING) }),
   z.strictObject({ kind: z.literal("closer_scene"), look: id, frame_id: id, observed_ms: at, scene, at: closerAt }),
   z.strictObject({ kind: z.literal("closer_end"), look: id }),

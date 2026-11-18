@@ -121,6 +121,8 @@ describe("인식·집 상태 토픽 모양(묶음 2)", () => {
       { kind: "scene", frame_id: "e1", observed_ms: 1, scene: withObjects, look },
       { kind: "scene", frame_id: "e1", observed_ms: 1, scene: withObjects, look: { ...look, eye: null } },
       { kind: "scene", frame_id: "e1", observed_ms: 1, scene: withObjects, look: { view, width: 480, height: 360 } },
+      // 그 답이 본 가장 옛 사진의 촬영 시각(마시기·따르기 사건 구간)과 그릇의 순간 값(마심·따름)
+      { kind: "scene", frame_id: "e1", observed_ms: 9, from_ms: 1, scene: { ...withObjects, observations: [{ object_id: "v1", state: "drank" }, { object_id: "v2", state: "poured" }] } },
       { kind: "closer_scene", look: "e1.c1", frame_id: "e1", observed_ms: 1, scene: withObjects, at },
     ];
     for (const b of kinds) expect(ok("/perception/scene", b), JSON.stringify(b).slice(0, 80)).toBe(true);
