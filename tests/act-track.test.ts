@@ -113,7 +113,8 @@ function setup(over: Partial<TrackerOptions> & { w?: () => WorldView; check?: ()
   const t = new ExecutionTracker({
     plans, world: w, check: over.check ?? (() => ({ ok: true })), floor: () => plans.floor(), planGapMs: 0,
     planner: (d, signal) => planner.plan(planContext({ decision: d, world: w(), floor: plans.floor() }), signal),
-    toPhone: (m) => phone.push(m), emit: (l) => logs.push(l), clock, locate: (id) => PLACES[id], ...over, approvals,
+    // 승인 질문 길을 보는 시험이 많아 처음 하는 일 묻기를 켜 둔다(기본 끔은 「기본(처음 하는 일 묻기 끔)」 시험이 askFirst: undefined로 본다)
+    toPhone: (m) => phone.push(m), emit: (l) => logs.push(l), clock, locate: (id) => PLACES[id], askFirst: true, ...over, approvals,
   });
   const decide = async (d: DecisionRecord) => {
     t.onDecision(d);
@@ -3189,6 +3190,16 @@ describe("실행 추적: 판단 뒤 가까이 본 사실(B와 PAM)", () => {
 
 describe("실행 추적: 승인(처음 하는 PAM 계획)", () => {
   const APPROVE = [{ id: "approve", label: "승인" }, { id: "reject", label: "거절" }];
+
+  // 2026-11-18 사용자 결정: 처음 하는 일이라는 까닭만으로는 묻지 않고 바로 한다(알아서 판단하는 것을 보여 준다). 묻는 길은 askFirst로 켤 때만 아래 시험이 본다
+  it("기본(처음 하는 일 묻기 끔): 처음 컵 치우기도 묻지 않고 첫 명령 「식탁으로 가 주세요」부터 보내고, 승인 기억을 남기지 않는다", async () => {
+    const { decide, spoken, phone, plans, approvals } = setup({ approvals: store(), askFirst: undefined });
+    await decide(decision);
+    expect(spoken()).toEqual(["식탁으로 가 주세요"]);
+    expect(phone.some((m) => m.type === "command" && m.step.endsWith(":approve"))).toBe(false);
+    expect(plans.current()).toMatchObject({ status: "running" });
+    expect(approvals.memory()).toEqual({ always: {} });
+  });
 
   it("처음 컵 치우기는 실제 폰에 「컵 치우기를 할까요?」와 승인·거절 두 단추를 띄우고, 「승인」이면 기억하고 첫 명령을 보낸다", async () => {
     const { t, heard, decide, phone, plans, approvals, spoken, exec } = setup({ approvals: store() });

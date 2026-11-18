@@ -29,6 +29,7 @@
 // --step이 있으면 단계 판정 줄(첫 명령 계획의 끝난 단계 수, 누른 단추 수, 마지막 트윈 눈 방·컵 놓인 곳), 이번 판 비용 줄(GET /api/brain: VLM, 가까이 보기 횟수·모델,
 // 관찰 모드 호출과 비용(가격표에 없는 모델이면 비용 모름), PAM·계획 비용 빠짐).
 // 끝까지 돌지 않았으면(시간 넘김·중단) 판정 줄 위에 적고 끝 코드 1.
+// --step이 있으면 단계 자리 판정(stepPlaces: --step 자리와 실제 명령 대상, 끝에 치운 컵이 싱크대 안)을 시각표 위에 적고, 틀리면 끝 코드 1.
 // 끝에 같은 크롬 새 탭(1280×800)으로 대시보드 <api>/를 열어 8초 뒤 사진을 runtime/videos/<영상>.<시각 또는 fake>.twin.png에 남기고 markdown에 넣는다.
 // 사진을 못 남기면 판정 줄 위에 적기만 한다.
 // --record <폴더>: 폰 페이지를 연 뒤 같은 크롬 새 창(1280×800)으로 대시보드를 판정 내내 띄우고, 트윈이 다 뜬 뒤(waitTwinReady) 대시보드 한 화면
@@ -86,7 +87,8 @@ export type Kind = "사람 등장" | "사람 사라짐" | "물건 등장" | "물
 /** 표 한 줄. ms는 영상 시각, n은 묶은 줄 수. */
 export interface Row { ms: number; kind: Kind; text: string; n: number }
 /** 폰 페이지가 남긴 명령(window.__noonchiVideo.commands). */
-export interface VideoCommand { video_ms: number; id: string; step: string; text: string }
+/** 폰 페이지가 받은 명령 기록. kind·target은 명령의 단계 종류와 대상(단계 자리 판정 stepPlaces). 옛 기록에는 없다. */
+export interface VideoCommand { video_ms: number; id: string; step: string; text: string; kind?: string; target?: { id: string; label: string } | null }
 /** 폰 페이지가 바꿔 튼 단계 영상(window.__noonchiVideo.clips): 바꾼 영상 시각과 이름, 그 영상 길이(있으면). */
 export interface VideoClip { video_ms: number; clip: string; duration_ms?: number }
 
@@ -276,8 +278,16 @@ export function twinRows(prev: TwinSeen | null, world: WorldView, t0: number, ro
 const CUP_RANK: Record<WorldObject["status"], number> = { present: 0, out_of_view: 1, gone: 2 };
 
 /** --step 판의 단계 판정 줄: 첫 명령 계획의 끝난 단계 수, 누른 단추 수, 마지막 World State의 눈 방과 컵(보이는 것 먼저, 그다음 마지막에 본 것) 놓인 곳. */
+/** 판정 기준 계획(2026-11-18 wide-glass q2: 첫 명령이 찾기라 끝난 컵 치우기 계획을 「안 끝남 · 0/0개」로 봤다): 명령을 낸 계획(plan:) 가운데
+ *  기록의 목표가 컵 치우기인 계획, 없으면 처음 계획. 찾기(find:)·충전 자리(dock:)·끄기 안내(off:)·계획 밖 가까이 보기는 계획이 아니다. 없으면 null. */
+export function mainPlan(commands: readonly VideoCommand[], history: readonly HistoryRow[]): string | null {
+  const ids = [...new Set(commands.map((c) => c.id).filter((id) => id.startsWith("plan:")))];
+  const cup = ids.find((id) => history.some((h) => h.kind === "plan" && h.subject === id && h.text.startsWith("컵 치우기")));
+  return cup ?? ids[0] ?? null;
+}
+
 export function stepVerdict(history: HistoryRow[], commands: VideoCommand[], clicks: number, world: WorldView | null): string {
-  const first = commands[0]?.id;
+  const first = mainPlan(commands, history);
   const plan = first ? [...history].sort((a, b) => a.at_ms - b.at_ms || a.id - b.id).filter((h) => h.kind === "plan" && h.subject === first).at(-1) : undefined;
   const steps = (plan?.data as PlanData | null | undefined)?.steps ?? [];
   const stepText = first ? `${steps.filter((s) => s.status === "done").length}/${steps.length}개 끝남` : "명령 없음";
@@ -286,11 +296,56 @@ export function stepVerdict(history: HistoryRow[], commands: VideoCommand[], cli
   return `단계: ${stepText} · 누른 단추 ${clicks}번 · 트윈 눈 ${eye} · 컵 ${cup ? `${cup.id} ${placeLabel(cup.facts.place?.value) ?? "놓인 곳 모름"}` : "없음"}`;
 }
 
+/** --step 낱말 → 단계 자리 이름(판정 줄). 없는 낱말은 그대로. */
+const PLACE_WORD: Record<string, string> = {
+  table: "식탁", sink: "싱크대", cup: "컵", bottle: "병", fridge: "냉장고", induction: "인덕션", cooktop: "인덕션", microwave: "전자레인지",
+  washer: "세탁기", dryer: "건조기", cabinet: "수납장",
+};
+
+/**
+ * 단계 자리 판정(2026-11-18: tall q1에서 첫 명령이 「세탁기로 가 주세요」였는데 단계 영상이 차례로 돌아 「계획 끝남 · 4/4」로 거짓 통과했다).
+ * --step(<종류>:<낱말>:<영상>)마다 차례로, 첫 계획에서 실제로 나간 같은 종류 명령의 대상 id에 그 낱말이 들어야 맞음이다(go:table 식탁, pick:cup 컵, go:sink·place:sink 싱크대).
+ * 계획 밖 명령(충전 자리 dock:·끄기 안내 off:)과 질문(:approve·:hand·:again)은 세지 않는다. 끝에 집은 컵(그 컵이 없으면 가장 최근 컵)이 싱크대 안이어야 한다.
+ * 하나라도 틀리면 ok false이고 problems에 「단계 자리 틀림: 세탁기 ≠ 식탁」·「단계 명령 없음: place:sink」·「치운 컵이 싱크대 안이 아님: 식탁 위」를 둔다.
+ */
+export function stepPlaces(steps: readonly string[], commands: readonly VideoCommand[], world: WorldView | null, plan: string | null = mainPlan(commands, [])): { ok: boolean; text: string; problems: string[] } {
+  const seen = new Set<string>();
+  const pool = commands.filter((c) => {
+    if (c.id !== plan || !c.kind || /:(approve|hand|again)$/.test(c.step) || isOffStep(c.step) || isDockStep(c.step) || seen.has(c.step)) return false;
+    seen.add(c.step);
+    return true;
+  });
+  const problems: string[] = [];
+  let at = 0;
+  let right = 0;
+  let picked: string | null = null;
+  for (const raw of steps) {
+    const [kind = "", word = ""] = raw.split(":");
+    const i = pool.findIndex((c, k) => k >= at && c.kind === kind);
+    if (i < 0) { problems.push(`단계 명령 없음: ${kind}:${word}`); continue; }
+    at = i + 1;
+    const target = pool[i]!.target;
+    if (kind === "pick" && target?.id) picked = target.id;
+    if (word && target?.id.includes(word)) right++;
+    else problems.push(`단계 자리 틀림: ${target?.label ?? "대상 없음"} ≠ ${PLACE_WORD[word] ?? word}`);
+  }
+  const cups = (world?.objects ?? []).filter((o) => o.cls === "cup");
+  const cup = cups.find((o) => o.id === picked && o.status !== "gone")
+    ?? [...cups].sort((a, b) => CUP_RANK[a.status] - CUP_RANK[b.status] || b.last_seen_ms - a.last_seen_ms)[0];
+  const sunk = !!cup && (cup.facts.place?.value === "in_sink" || cup.surface_part === "basin");
+  const cupLine = sunk ? "치운 컵 싱크대 안" : `치운 컵이 싱크대 안이 아님: ${cup ? placeLabel(cup.facts.place?.value) ?? "놓인 곳 모름" : "컵 모름"}`;
+  if (!sunk) problems.push(cupLine);
+  const stepProblems = problems.filter((p) => p !== cupLine);
+  return { ok: problems.length === 0, text: [`단계 자리: ${right}/${steps.length} 맞음`, ...stepProblems, cupLine].join(" · "), problems };
+}
+
 /** 판정 줄: 첫 명령 시각, expectMs 전 명령 수, 첫 명령의 계획이 끝났는지. */
 export function verdict(rows: Row[], commands: VideoCommand[], history: HistoryRow[], expectMs: number): { text: string; early: number; firstMs: number | null; done: boolean } {
   const first = commands[0];
   const early = commands.filter((c) => c.video_ms < expectMs).length;
-  const done = !!first && history.some((h) => h.subject === first.id && ((h.kind === "plan" && (h.data as PlanData | null)?.status === "done") || (h.kind === "execution" && (h.data as { state?: string } | null)?.state === "done")));
+  // 계획 끝남은 판정 기준 계획(컵 치우기, mainPlan) 하나로 본다: 앞에 찾기·뒤에 충전 자리 명령이 끼어도
+  const plan = mainPlan(commands, history);
+  const done = !!plan && history.some((h) => h.subject === plan && ((h.kind === "plan" && (h.data as PlanData | null)?.status === "done") || (h.kind === "execution" && (h.data as { state?: string } | null)?.state === "done")));
   const at = (expectMs / 1000).toFixed(1);
   const text = first
     ? `판정: 첫 명령 ${clock(first.video_ms)} 「${first.text}」 · ${at}초 전 명령 ${early ? `${early}개 있음` : "없음"} · 계획 ${done ? "끝남" : "안 끝남"}`
@@ -930,6 +985,8 @@ async function main(): Promise<number> {
       const expect = fakeMode && !args.expectSet && personUntil !== null ? toVideo(personUntil) : expectMs;
       const v = verdict(rows, commands, history, expect);
       const stepLine = steps.length ? stepVerdict(history, commands, clicks, twin.last) : null;
+      // 단계 자리 판정: --step 자리와 실제 명령 대상, 끝에 치운 컵이 싱크대 안인지. 틀리면 시각표 위에 적고 실패다
+      const places = steps.length ? stepPlaces(steps, commands, twin.last, mainPlan(commands, history)) : null;
       const pageErrors = errors.filter((e) => !/favicon/.test(e));
       const notes = [
         unfinished.length ? `끝까지 돌지 않음: ${unfinished.join(", ")}` : "",
@@ -967,18 +1024,19 @@ async function main(): Promise<number> {
       for (const r of rows) console.log(`${clock(r.ms)} · ${r.kind} · ${rowText(r)}`);
       console.log("");
       for (const n of notes) console.log(n);
+      if (places) console.log(places.text);
       console.log(v.text);
       if (stepLine) console.log(stepLine);
       console.log(cost);
       mkdirSync(dirname(out), { recursive: true });
-      writeFileSync(out, markdown({ clip, mode: fakeMode ? "가짜 서버" : `실제 서버 ${api}`, ranAt: new Date().toLocaleString("sv-SE"), rows, notes, verdict: v.text, extra: stepLine ? [stepLine] : [], cost, image }));
+      writeFileSync(out, markdown({ clip, mode: fakeMode ? "가짜 서버" : `실제 서버 ${api}`, ranAt: new Date().toLocaleString("sv-SE"), rows, notes, verdict: v.text, extra: stepLine ? [stepLine] : [], cost, image, ...(places ? { warnings: [`${places.ok ? "판정 통과" : "판정 실패"} · ${places.text}`] } : {}) }));
       console.log(`[video-check] ${out}`);
 
       if (pageErrors.length) console.log(`[video-check] 페이지 오류\n${pageErrors.slice(0, 20).join("\n")}`);
-      if (!fakeMode) return unfinished.length ? 1 : 0;
+      if (!fakeMode) return unfinished.length || (places && !places.ok) ? 1 : 0;
       // 스스로 시험: 사람 사라짐 → PAM 컵 치우기 → 사람 사라짐 뒤 첫 명령 → 네 단계 끝 → 계획 끝, 트윈 눈·컵 줄
       const gone = rows.find((r) => r.kind === "사람 사라짐");
-      const firstPlan = commands[0]?.id;
+      const firstPlan = mainPlan(commands, history);
       const stepsDone = history.filter((h) => h.kind === "plan" && h.subject === firstPlan).at(-1);
       const missing = [
         !gone && "사람 사라짐 줄",

@@ -460,8 +460,8 @@ describe("계획 모드: 폰이 필요한 계획만 맞는 폰을 기다린다(n
     expect(phone.filter((m) => m.type === "command")).toEqual([]);
   });
 
-  it("처음 하는 일(승인 질문이 필요한) 가전 계획은 맞는 폰이 없으면 미룬다", async () => {
-    const { decide, settle, phone, hub, plans, exec } = rig({ approvals: store(), over: { phoneReady: () => false, handDevices: () => DEVICES } });
+  it("처음 하는 일 묻기를 켰으면(askFirst) 승인 질문이 필요한 가전 계획은 맞는 폰이 없으면 미룬다", async () => {
+    const { decide, settle, phone, hub, plans, exec } = rig({ approvals: store(), over: { askFirst: true, phoneReady: () => false, handDevices: () => DEVICES } });
     await decide(decision("에어컨 켜기"));
     await settle();
     expect(hub.get("ac_living")!.twin.power).toBe("off");
@@ -492,9 +492,19 @@ describe("계획 모드: 폰이 필요한 계획만 맞는 폰을 기다린다(n
 });
 
 describe("계획 모드: 기기 단계와 승인", () => {
-  it("에어컨 켜기는 처음이면 첫 단계 전에 묻고, 승인 뒤 기기 단계가 정책을 거쳐 켜고 상태가 켜짐이면 완료. 기기 단계는 실제 폰 명령이 없다", async () => {
+  it("기본(처음 하는 일 묻기 끔, 2026-11-18 사용자 결정): 처음 하는 에어컨 켜기도 묻지 않고 기기 단계가 정책을 거쳐 켠다. 승인 기억은 남기지 않는다", async () => {
     const approvals = store();
-    const { t, decide, settle, phone, hub, plans, exec } = rig({ approvals });
+    const { decide, settle, phone, hub } = rig({ approvals });
+    await decide(decision("에어컨 켜기"));
+    for (let i = 0; i < 20 && hub.get("ac_living")!.twin.power !== "on"; i++) await settle();
+    expect(phone.some((m) => m.type === "command" && m.step.endsWith(":approve"))).toBe(false);
+    expect(hub.get("ac_living")!.twin.power).toBe("on");
+    expect(approvals.memory()).toEqual({ always: {} });
+  });
+
+  it("처음 하는 일 묻기를 켰으면(askFirst) 에어컨 켜기는 처음이면 첫 단계 전에 묻고, 승인 뒤 기기 단계가 정책을 거쳐 켜고 상태가 켜짐이면 완료. 기기 단계는 실제 폰 명령이 없다", async () => {
+    const approvals = store();
+    const { t, decide, settle, phone, hub, plans, exec } = rig({ approvals, over: { askFirst: true } });
     await decide(decision("에어컨 켜기"));
     expect(plans.current()).toMatchObject({ goal: "에어컨 켜기", dryRun: false, steps: [{ kind: "device", label: "거실 에어컨 켜기", target: { deviceId: "ac_living" } }] });
     expect(phone).toEqual([{ type: "command", id: "plan:pam-1", step: "plan:pam-1:approve", text: APPROVAL_TEXT.ask("에어컨 켜기"), vision: null, choices: [{ id: "approve", label: "승인" }, { id: "reject", label: "거절" }], target: null, speak: true, grade: "question" }]);
@@ -1203,7 +1213,7 @@ describe("계획 모드: 코드 리뷰 2회차 고침", () => {
     expect(a.t.onAnswer("plan:pam-1", "plan:pam-1:1", "done")).toBe(false);
     expect(a.exec().at(-1)).toMatchObject({ state: "failed", text: EXEC_TEXT.timeout });
     const approvals = store();
-    const b = rig({ objects: () => [cup()], approvals });
+    const b = rig({ objects: () => [cup()], approvals, over: { askFirst: true } });
     await b.decide(decision("컵 치우기"));
     b.clock.t += 120_001;
     expect(b.t.onAnswer("plan:pam-1", "plan:pam-1:approve", "approve")).toBe(false);

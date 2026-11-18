@@ -57,7 +57,7 @@ export interface VideoAr extends PhoneAr {
   /** 서버 상태 sync마다: 재생 중 맞춤이 없고(none) 시작 자리가 있으면 start fixed를 다시 보낸다. */
   syncStatus(sync: { state: string; start: unknown } | null | undefined): void;
 }
-export interface VideoCommandEntry { video_ms: number; id: string; step: string; text: string }
+export interface VideoCommandEntry { video_ms: number; id: string; step: string; text: string; kind?: string; target?: { id: string; label: string } }
 /** 단계 영상으로 바꾼 영상 시각과 영상 이름, 그 영상 길이(알면). */
 export interface VideoClipEntry { video_ms: number; clip: string; duration_ms?: number }
 /** 판정 기록. t0: 재생 시작 순간의 서버 시계(ms, 시계를 맞추기 전에는 폰 시계). ended: 첫 영상이 끝남.
@@ -79,7 +79,7 @@ export function videoRecord(target?: object): VideoRecord;
 export const SYNC_MAX: number;
 /** [서버 시각, 영상 시각] 짝 기록: note마다 견줘 같은 직선 구간은 끝점만 둔다(모든 표본 오차 50ms 안). SYNC_MAX에 닿으면 onFull을 한 번 부르고 더 쌓지 않는다. */
 export function createSyncLog(sync: [number, number][], onFull?: () => void): { note(at: number, ms: number): void };
-export function logVideoCommand(videoMs: number, command: { id: string; step: string; text: string }): void;
+export function logVideoCommand(videoMs: number, command: { id: string; step: string; text: string; kind?: string; target?: { id: string; label: string } | null }): void;
 export function logVideoAt(at: HeardAt): void;
 export function createVideoAr(opts: { link: PhoneLink; params: URLSearchParams; hooks: ArHooks; deps: VideoArDeps }): VideoAr;
 

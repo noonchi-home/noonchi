@@ -143,6 +143,8 @@ export function startAct(core: HomeCore): (event: BrainLog) => void {
       if (m.type === "command") core.speak();
     },
     locate: placeAt, names: placeNames,
+    // 처음 하는 일 묻기: 시험이 켜 볼 때만 넘긴다(기본 src/agent/approval.ts ASK_FIRST_TIME 끔)
+    askFirst: ctx.askFirst,
     // 계획이 끝나면 사용자 위치를 확인하고 이 집의 충전 자리(장면과 함께 읽은 dock.json)로 돌아간다
     dock: () => core.scene?.dock ?? null,
     check: (d, p) => checkPlan({
