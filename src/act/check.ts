@@ -35,7 +35,8 @@ export interface CheckInput {
   deviceSteps?: { deviceId: string; paired: boolean }[];
   /** 실행 추적이 놓기 단계를 끝낸 물건(이미 치운 것, src/act/track/steps.ts placed). */
   placed?: Placed;
-  /** 미리 만든 계획(src/act/track/goal.ts)이면 사람이 떠난 때. */
+  /** 미리 만든 계획(src/act/track/goal.ts)이면 사람이 떠난 때: 대상을 그때나 그 뒤에 봤으면 판단 뒤에 다시 본 것으로 본다(PAM이 본 사람 없는 같은 사진).
+   *  없으면 판단 시각 뒤에 본 것만. 낡음 한도(staleMs)는 그대로 본다. */
   seenSince?: number;
 }
 
@@ -83,7 +84,8 @@ export function checkPlan(i: CheckInput): CheckResult {
         return id === null ? fail("no_target") : failOn("no_target", id);
       }
       if (putAway(o, i.placed)) return fail("in_sink");
-      if (o.last_seen_ms <= i.decision.atMs || i.nowMs - o.last_seen_ms > i.staleMs) return failOn("stale", o.id);
+      const unseen = i.seenSince === undefined ? o.last_seen_ms <= i.decision.atMs : o.last_seen_ms < i.seenSince;
+      if (unseen || i.nowMs - o.last_seen_ms > i.staleMs) return failOn("stale", o.id);
       const inUse = o.facts.use?.value === "in_use";
       const holds = holdsTarget(i.world, target, spec.carry !== undefined);
       if (o.facts.place?.value === "in_hand" || inUse || holds) {

@@ -24,6 +24,17 @@ const base = (over: Partial<CheckInput> = {}): CheckInput => ({
 });
 const fact = (value: string) => ({ value, at_ms: 9_000, since_ms: 9_000, certainty: "inferred" as const });
 
+describe("실행 전 검사: 미리 만든 계획의 기준(seenSince)", () => {
+  it("사람이 떠난 때나 그 뒤에 본 대상은 판단 전 사진이어도 다시 본 것으로 본다. 그 전에 본 대상·STALE_MS를 넘긴 대상은 낡음", () => {
+    // 대상 마지막 9_000. 보통은 판단(8_000) 뒤 사진이라 통과하고, 판단을 9_500으로 늦추면 낡음
+    const late = { ...base().decision, atMs: 9_500 };
+    expect(checkPlan(base({ decision: late }))).toMatchObject({ ok: false, reason: "stale" });
+    expect(checkPlan(base({ decision: late, seenSince: 9_000 }))).toEqual({ ok: true });
+    expect(checkPlan(base({ decision: late, seenSince: 9_001 }))).toMatchObject({ ok: false, reason: "stale" });
+    expect(checkPlan(base({ decision: late, seenSince: 9_000, nowMs: 12_500 }))).toMatchObject({ ok: false, reason: "stale" });
+  });
+});
+
 describe("행동 조건(내용물)", () => {
   type C = { value: string; certainty: "confirmed" | "inferred" };
   const fill = (contents?: C, over: Partial<WorldObject> = {}) => base({

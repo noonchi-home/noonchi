@@ -8,7 +8,7 @@
 //   폰·대시보드 명령은 내지 않는다(관찰만). 진짜 판단의 계획이 시작되면 계획 모드(한 번에 하나)가 미리 만들기를 끊는다.
 // 상태(status: 세움·떠남·씀·버림)와 미리 만들기(prep)는 따로 바뀐다. 바뀔 때마다 o.onGoal로 낸다(서버가 /brain/goal_changes·/brain/goal과 대시보드로 보낸다).
 import type { DecisionRecord } from "../../contract/events.js";
-import type { PendingGoal } from "../../contract/goal.js";
+import type { GoalDrop, PendingGoal } from "../../contract/goal.js";
 import type { ObjClass, WorldView } from "../../contract/world.js";
 import type { AgentPlan, PlanResult } from "../../agent/index.js";
 import { decisionWorld, fsmRuleOf, goalAhead, type GoalPick } from "../../brain/index.js";
@@ -49,6 +49,7 @@ export class GoalWatch extends Part {
   /** tick·World State 변화마다(쓰는 중 지킴 뒤에) 부른다. */
   update(): void {
     if (this.core.stopped) return;
+    if (this.goal) this.watch(this.goal);
     if (!this.goal) this.arm();
     if (this.goal) this.preplan(this.goal);
   }
@@ -129,6 +130,93 @@ export class GoalWatch extends Part {
     const goal = followedId(world, g.objectId);
     const ids = planObjectsOf(plan.view, world, g.view.cls as ObjClass);
     return ids.length > 0 && ids.every((id) => followedId(world, id) === goal);
+  }
+
+  /** 사람이 떠났는지 본다: 사람이 안 보이고(World State) 대상 물건(옮김 표시를 따라감)이 있고 손에 없으면 떠난 때를 실어 fired로 바꾸고 판단을 바로 부르게 한다(한 번).
+   *  손에 있음으로 남아 있으면 내려놓음이 보일 때까지 기다린다. 미리 만들기(prep)는 따로 이어진다. */
+  private watch(g: Goal): void {
+    const world = this.o.world();
+    const p = world.person;
+    if (g.view.status === "fired" || p.visible) return;
+    const o = world.objects.find((x) => x.id === followedId(world, g.objectId));
+    if (!o || o.status === "gone" || o.facts.place?.value === "in_hand" || o.carried === true) return;
+    g.objectId = o.id;
+    this.set(g, { status: "fired", object: o.id, gone_ms: p.since_ms, fired_ms: this.clock.now() });
+    this.o.nudge?.();
+  }
+
+  /** 목표와 같은 행동인데 사람이 떠난 뒤의 판단이 아닌가(아직 쓰는 중이거나, 떠나기 전에 보낸 판단): 판단 받기는 그 판단으로 계획을 만들지 않고 기록만 한다.
+   *  쓰는 동안 만든 계획은 쓰는 중 기다림 한도(30초)를 넘으면 닫히므로 목표가 맡고, 사람이 떠나면 목표가 판단을 다시 부른다. */
+  holds(d: DecisionRecord): boolean {
+    const v = this.goal?.view;
+    return !!v && d.action === v.action && (v.status !== "fired" || v.gone_ms === null || d.atMs < v.gone_ms);
+  }
+
+  /** 판단 받기(start.ts)가 계획 모드를 부르기 전에 묻는다. 사람이 떠난 목표(fired)와 같은 행동이고 떠난 뒤에 보낸 판단(atMs ≥ gone_ms)이면:
+   *  - 미리 만든 계획이 있으면 대상이 그때 면 그대로일 때 이 판단으로 다시 검사해(o.reuse) 그 결과. 면이 바뀌었으면 moved, 검사를 못 넘으면 stale로 버리고 null.
+   *  - 미리 만드는 중이면 그 호출을 받아 쓴다(새로 부르지 않는다): 끝나면 다시 검사하고, 못 넘으면 fallback(계획 모드). 판단 받기 신호가 끊겼으면 다시 검사도
+   *    fallback도 하지 않는다(계획 모드는 한 번에 하나라 fallback이 새 사람 요청의 계획을 끊는다).
+   *  - 둘 다 없으면(미리 만들기 실패·아직) stale로 버리고 null. null이면 부르는 쪽이 계획 모드를 부른다. 쓰면 목표는 used로 끝난다.
+   *  seenSince: 실행 전 검사가 대상을 다시 본 것으로 볼 기준(사람이 떠난 때). */
+  take(d: DecisionRecord, signal: AbortSignal, fallback: () => PlanResult | Promise<PlanResult>): { out: PlanResult | Promise<PlanResult>; seenSince: number; goal: string } | null {
+    const g = this.goal;
+    const reuse = this.o.reuse;
+    const v = g?.view;
+    if (!g || !v || !reuse || v.status !== "fired" || d.action !== v.action || v.gone_ms === null || d.atMs < v.gone_ms) return null;
+    const seenSince = v.gone_ms;
+    const surface = g.surface;
+    const objectId = g.objectId;
+    const sameSurface = () => {
+      const world = this.o.world();
+      return world.objects.find((x) => x.id === followedId(world, objectId))?.surface === surface;
+    };
+    if (g.plan) {
+      if (!sameSurface()) {
+        this.drop("moved");
+        return null;
+      }
+      const r = reuse(d, g.plan);
+      if (!r.ok) {
+        this.drop("stale");
+        return null;
+      }
+      this.end(g, "used");
+      return { out: r, seenSince, goal: v.id };
+    }
+    if (g.job) {
+      const job = g.job;
+      const stop = () => job.abort.abort();
+      if (signal.aborted) stop();
+      else signal.addEventListener("abort", stop, { once: true });
+      g.job = null;
+      this.end(g, "used");
+      const cut: PlanResult = { ok: false, error: "새 판단으로 바뀜" };
+      const out = job.done.then((r): PlanResult | Promise<PlanResult> => {
+        if (signal.aborted) return cut;
+        if (r.ok && this.mine(g, r.plan) && sameSurface()) {
+          const again = reuse(d, r.plan);
+          if (again.ok) return again;
+        }
+        return signal.aborted ? cut : fallback();
+      });
+      return { out, seenSince, goal: v.id };
+    }
+    this.drop("stale");
+    return null;
+  }
+
+  /** 목표를 버린다(지금 길로 돌아간다). 없으면 아무것도 하지 않는다. */
+  drop(reason: GoalDrop): void {
+    if (this.goal) this.end(this.goal, "dropped", reason);
+  }
+
+  /** 목표를 끝낸다(used·dropped): 마지막 상태를 내고, 그 등장에서는 다시 세우지 않는다. 버리면 미리 만드는 호출을 끊는다. */
+  private end(g: Goal, status: "used" | "dropped", reason: GoalDrop | null = null): void {
+    if (status === "dropped") g.job?.abort.abort();
+    g.job = null;
+    this.spent = g.presence;
+    this.set(g, { status, reason });
+    this.goal = null;
   }
 
   private set(g: Goal, v: Partial<PendingGoal>): void {

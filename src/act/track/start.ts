@@ -36,6 +36,8 @@ export class Starter extends Part {
     if (d.atMs < core.quietFrom && core.open()?.decision.action !== d.action) return this.note(d, EXEC_TEXT.late);
     if (d.status !== "valid") return this.note(d, EXEC_TEXT.decisionFailed);
     if (!d.action) return this.note(d, EXEC_TEXT.wait);
+    // 미리 세운 목표와 같은 행동인데 사람이 떠난 뒤의 판단이 아니면 목표가 맡는다(사람이 떠나면 판단을 다시 부른다, goal.ts)
+    if (core.goal.holds(d)) return this.note(d, EXEC_TEXT.goalWait);
     // 계획이 끝난 뒤 사용자 위치 확인·충전 자리로 가는 동안은 새 일을 미룬다(충전 자리에서 시작한다, dock.ts).
     // 비상이면 busy가 거두고, 사람이 말로 한 부탁(들은 말이 든 판단)은 복귀를 멈추고 바로 받는다(그 들은 말은 다시 판단에 가지 않는다)
     if (core.dock.busy()) {
@@ -76,7 +78,11 @@ export class Starter extends Part {
     core.emit(planIdOf(d.id), "decided");
     let out: PlanResult | Promise<PlanResult>;
     try {
-      out = this.o.planner(d, job.abort.signal);
+      const plan = () => this.o.planner(d, job.abort.signal);
+      // 사람이 떠난 목표와 같은 행동이면 미리 만든 계획을 이 판단으로 다시 검사해 쓴다(계획 모드를 다시 부르지 않는다, goal.ts take)
+      const ready = core.goal.take(d, job.abort.signal, plan);
+      if (ready) job.prepared = { goal: ready.goal, seenSince: ready.seenSince };
+      out = ready ? ready.out : plan();
     } catch (e) {
       out = { ok: false, error: (e as Error).message };
     }
@@ -152,7 +158,9 @@ export class Starter extends Part {
       asking: null, askAt: now, watch: null, others, alias: new Map([...ids].map((id) => [id, id])), carried: new Set(), placeAt: (id) => (id ? this.o.floor().objects.get(id)?.position ?? null : null), deadline: now, again: false, device: "idle", gen: 0,
       looks: 0, lookAt: Number.NEGATIVE_INFINITY, stepEnd: null, gapAt: job.at, onAt: new Map(), ends: new Map(), offAsked: -1, deferred: false, phoneWait: false, phone: false,
       strays: 0, strayAt: Number.NEGATIVE_INFINITY, strayNear: null, told: null, helped: false,
-      quiet: taskOf(r.plan.task)?.coach ? quietLabels(this.o.lessons?.get(r.plan.task) ?? null) : new Set(), quietOn: false, outcomes: [], hold: null, window: null, heldIds: new Set(), busyAt: null, usedAt: null, useHeld: false,
+      quiet: taskOf(r.plan.task)?.coach ? quietLabels(this.o.lessons?.get(r.plan.task) ?? null) : new Set(), quietOn: false, outcomes: [], hold: null, window: null, heldIds: new Set(), busyAt: null, usedAt: null,
+      // 미리 만든 계획은 쓰는 중이라 미룬 계획처럼 첫 명령을 폰 대화·승인 대기 동안 미룬다(사람 요청이 먼저)
+      useHeld: !!job.prepared, goal: job.prepared?.goal ?? null, seenSince: job.prepared?.seenSince ?? null,
       // 계획 전 찾기에서 찾은 뒤 만든 계획이면 찾기로 붙잡았던 계획처럼 첫 명령을 폰 대화·승인 대기 동안 미룬다
       find: null, findHeld: core.foundFor === d.id,
     };
@@ -177,7 +185,7 @@ export class Starter extends Part {
     }
     // 사람이 계획 대상을 쓰는 중이면 사람이 사라질 때까지 첫 명령·찾기·가까이 보기를 미룬다(holdMs 넘으면 닫음, src/act/track/use.ts)
     if (this.core.use.waits(r)) return;
-    const c = this.o.check(r.decision, r.plan.view);
+    const c = this.o.check(r.decision, r.plan.view, r.seenSince ?? undefined);
     if (!c.ok) {
       // 찾는 중에 대상이 안 보임이 아닌 까닭으로 막히면 찾기를 거둔다(그 까닭은 아래가 본다)
       if (r.find && c.reason !== "no_target" && c.reason !== "stale") this.core.finder.release(r, true);

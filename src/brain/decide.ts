@@ -76,6 +76,11 @@ export class Decider {
     return this.lastState;
   }
 
+  /** 다음 판단 타이머에 기다림 없이 PAM을 부르게 한다(미리 세운 목표의 사람이 떠남, src/act/track/goal.ts). 동시 상한·쉼(hold)은 그대로다. */
+  nudge(): void {
+    if (!this.stopped) this.o.trigger.nudge();
+  }
+
   /** 관찰 흐름이 엔진 프레임마다 부른다(주기 판단은 프레임이 오는 동안만 부른다). */
   onFrame(): void {
     if (!this.stopped) this.o.trigger.onFrame(this.clock.now());

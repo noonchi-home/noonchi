@@ -10,9 +10,10 @@ export type Asking = { why: "plan" } | { why: "device"; token: string } | { why:
 
 /** 승인 질문: 묻기, 답 받기(계획·기기·손으로 켜기), 묻는 계획인지. */
 export class Approvals extends Part {
-  /** 질문·알림만 있는 계획은 승인을 묻지 않는다. */
+  /** 질문·알림만 있는 계획은 승인을 묻지 않는다. 미리 세운 목표로 시작한 계획도 묻지 않는다(사용자 결정 2026-11-18: 알아서 판단해 실행하는 것을 보인다).
+   *  위험 목록 가전은 여기와 따로 그 단계에서 늘 묻는다(기기 단계 승인 토큰·손으로 켜기 risky). */
   need(r: Run): ReturnType<typeof approvalNeed> {
-    if (r.plan.steps.every((s) => s.kind === "ask" || s.kind === "say")) return null;
+    if (r.goal !== null || r.plan.steps.every((s) => s.kind === "ask" || s.kind === "say")) return null;
     return approvalNeed({ key: taskKey(r.plan.task), risky: false, requested: false, memory: this.o.approvals.memory() });
   }
 
