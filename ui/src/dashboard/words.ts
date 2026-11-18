@@ -7,8 +7,6 @@ export const WORDS = {
   more: "▼",
   /** 메시지 상자 FSM 카드: 하는 일이 없는 상태, 행동이 여럿일 때 「<첫 행동> 외 N」. */
   fsm: { watch: "지켜봄", more: "외" },
-  /** 목표 한 줄 「목표 · <행동> · <단계>」(goal-line.ts): 세움 → 준비됨 → 시작 → 끝/버림. */
-  goal: { head: "목표", stage: { set: "세움", ready: "준비됨", started: "시작", done: "끝", dropped: "버림" } },
   /** 트윈 위 사람 이름표 「사람 · …」: 하는 일·자세를 모를 때, 안 보일 때. */
   personSeen: "보임",
   personGone: "안 보임",

@@ -32,6 +32,17 @@ export const dimLayer = (d: string): Layer => ({ tone: "dimRoom", d, width: 0 })
 /** 밝힌 방 테두리. */
 export const roomEdgeLayer = (d: string, k: number): Layer => ({ tone: "roomEdge", d, width: paint(TWIN.roomEdge).width * k });
 
+/** 미리 세운 목표 고리(치울 물건 위, 글 없음): 세 겹(바깥 숯색, 흰 테, 빨간 심) 고리. */
+export function goalRingLayers(at: Px, k: number): Layer[] {
+  const w = TWIN.destination.ringWidth;
+  const casing = paint(TWIN.route.casing).width - TWIN.route.width;
+  return [
+    ring("routeEdge", at, 13 * k, (w + casing + 2) * k),
+    ring("routeCasing", at, 13 * k, (w + casing) * k),
+    ring("destinationRing", at, 13 * k, w * k),
+  ];
+}
+
 export function checkDotLayers(at: Px, mark: MarkTone, k: number): Layer[] {
   return [
     disk("checkDotCore", at, 8 * k),

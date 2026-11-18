@@ -28,6 +28,8 @@ export interface PlannedView {
   stops: { n: number; px: Px; status: StepStatus; now: boolean }[];
   step: { px: Px; text: string } | null;
   person: { px: Px; text: string } | null;
+  /** 미리 세운 목표가 선 동안 치울 물건 위 고리 자리. */
+  goal: { px: Px } | null;
 }
 
 export interface TwinFrame {
@@ -98,6 +100,8 @@ export function twinFrame(o: {
   cam: OrthoCamera;
   /** 지금 World State(사람 이름표·World State 물건 대상 자리). 없으면 사람 이름표가 없다. */
   world?: WorldView | null;
+  /** 미리 세운 목표(goal.ts): 선 동안 그 물건 위 고리. */
+  goal?: { object: string | null; standing: boolean } | null;
 }): TwinFrame {
   const { cam, home } = o;
   const plan = isOpen(o.plan) ? o.plan : null;
@@ -138,13 +142,14 @@ export function twinFrame(o: {
     const found = id ? o.anchor(id) ?? o.world?.objects.find((x) => x.id === id)?.position : null;
     return found ?? (t.position ? [t.position[0], 0, t.position[1]] : null);
   };
-  const pm = planMarks({ plan, robot: eye ? eye.position : null, world: o.world ?? null, at });
+  const pm = planMarks({ plan, robot: eye ? eye.position : null, world: o.world ?? null, at, goal: o.goal ?? null });
   const toPx = (v: Vec3): Px => planToPixel(cam, [v[0], v[2]], v[1]);
   const planned: PlannedView = {
     route: { done: pm.route.done.map(toPx), now: pm.route.now.map(toPx), ahead: pm.route.ahead.map(toPx) },
     stops: pm.stops.map((s) => ({ n: s.n, px: toPx(s.at), status: s.status, now: s.now })),
     step: pm.step ? { px: toPx(pm.step.at), text: pm.step.text } : null,
     person: pm.person ? { px: toPx(pm.person.at), text: pm.person.text } : null,
+    goal: pm.goal ? { px: toPx(pm.goal.at) } : null,
   };
 
   return {

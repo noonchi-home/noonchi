@@ -109,7 +109,7 @@ describe("대시보드 자료 연결", () => {
     expect(document.querySelector("main")).toHaveAttribute("data-step", "2");
   });
 
-  it("지켜보기(순간 0)는 사람이 마시는 중이고 목표가 서 있다: 최신 줄은 목표 줄, 목표 한 줄은 준비됨, 마스코트는 늘 왼쪽을 본다", async () => {
+  it("지켜보기(순간 0)는 사람이 마시는 중이고 목표가 서 있다: 최신 줄은 목표 문장이고 목표 칩은 없다, 마스코트는 늘 왼쪽을 본다", async () => {
     await mount(false);
     send(moment(2));
     send(moment(0));
@@ -117,7 +117,7 @@ describe("대시보드 자료 연결", () => {
     expect(sayLine()).toHaveTextContent("컵을 두고 자리를 뜨면 컵을 치울게요");
     // 순간 0의 판단(seq 1)은 순간 2의 판단(seq 2)보다 늦게 온 옛 판단이라 지금 상태는 그대로다
     expect(document.querySelector('[data-fsm-card] [data-fsm-state="left_cup"]')).toHaveAttribute("data-now");
-    expect(talk().querySelector("[data-goal-line]")).toHaveTextContent("목표 · 컵 치우기 · 준비됨");
+    expect(talk().querySelector("[data-goal-line], [data-talk-goal]")).toBeNull();
     expect(document.querySelector("[data-fsm-card]")).not.toHaveTextContent("목표");
   });
 

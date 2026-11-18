@@ -27,7 +27,7 @@ const person = (over: Partial<WorldView["person"]>): WorldView => ({
 
 describe("계획 표시 자료(planMarks)", () => {
   it("계획이 없으면 길·번호·단계 이름표가 없다", () => {
-    expect(planMarks({ plan: null, robot: [1, 1], world: null, at })).toEqual({ route: { done: [], now: [], ahead: [] }, stops: [], step: null, person: null });
+    expect(planMarks({ plan: null, robot: [1, 1], world: null, at })).toEqual({ route: { done: [], now: [], ahead: [] }, stops: [], step: null, person: null, goal: null });
   });
 
   it("단계마다 번호 자리: 이동은 그 구간 끝(바닥), 그 밖은 대상 자리. 상태는 단계 상태, 지금 단계는 now. 지금 단계 이름표는 「② 컵 집기」", () => {
@@ -63,8 +63,20 @@ describe("계획 표시 자료(planMarks)", () => {
     expect(planMarks({ plan: null, robot: null, world: person({ position: null }), at }).person).toBeNull();
   });
 
-  it("글에 목표가 없다(목표는 메시지 상자 FSM 카드에만)", () => {
+  it("글에 목표가 없다", () => {
     const m = planMarks({ plan: planAt(2), robot: [4, 0], world: person({}), at });
     expect(JSON.stringify(m)).not.toContain("목표");
+  });
+
+  // 사용자 결정(2026-11-18): 목표가 선 동안 치울 컵 위에 작은 빨간 고리 하나(동선·글 없음, 끝·버림이면 사라짐). AR에도 같은 자료를 쓴다
+  it("목표 고리: 목표가 선 동안 그 대상 물건 자리(World State position, 없으면 놓인 면의 자리), 글 없음. 목표가 없거나 섰지 않거나 대상을 모르면 없다", () => {
+    const cup = (over: object) => ({ ...person({}), objects: [{ id: "cup_1", cls: "cup", position: null, surface: "table", surface_label: "식탁", room: "living", error_m: null, status: "present", first_seen_ms: 0, last_seen_ms: 0, last_in_view_ms: 0, facts: {}, answered_ms: null, devices: [], closer_hold: false, followed_by: null, ...over }] }) as WorldView;
+    const standing = { object: "cup_1", standing: true };
+    expect(planMarks({ plan: null, robot: null, world: cup({ position: [4.4, 0.78, 0.3] }), at, goal: standing }).goal).toEqual({ at: [4.4, 0.78, 0.3] });
+    expect(planMarks({ plan: null, robot: null, world: cup({}), at, goal: standing }).goal).toEqual({ at: ANCHORS.table });
+    expect(planMarks({ plan: null, robot: null, world: cup({}), at, goal: { ...standing, standing: false } }).goal).toBeNull();
+    expect(planMarks({ plan: null, robot: null, world: cup({}), at, goal: { object: "cup_9", standing: true } }).goal).toBeNull();
+    expect(planMarks({ plan: null, robot: null, world: cup({}), at, goal: null }).goal).toBeNull();
+    expect(planMarks({ plan: null, robot: null, world: cup({}), at }).goal).toBeNull();
   });
 });

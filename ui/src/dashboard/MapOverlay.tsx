@@ -12,7 +12,7 @@ import type { BoxSize } from "./fit";
 import type { TwinFrame } from "./frame";
 import { otherRooms, roomsPath, type RoomShape } from "./home";
 import { PreDrawing, useFadeIn } from "./motion";
-import { checkDotLayers, dimLayer, lineLayers, roomEdgeLayer, type Layer, type MarkTone } from "./marks";
+import { checkDotLayers, dimLayer, goalRingLayers, lineLayers, roomEdgeLayer, type Layer, type MarkTone } from "./marks";
 import { toScreen, type Px } from "./camera";
 import { mapScene, type Box } from "./scene";
 
@@ -26,6 +26,7 @@ const DONE_FADE = 0.4;
 /**
  * 3D 트윈 위 표시 판. 구운 보기 그림 픽셀(image) 크기의 판(data-map-plate) 하나에 같은 그림 픽셀 그림(LineDrawSvg)으로
  * 밝히지 않는 방 어둡게 칠한 층, 밝힌 방 테두리, 계획 길(지나온 길 흐림·지금 구간·남은 길), 확인한 것 점을 겹쳐 놓는다.
+ * 미리 세운 목표가 선 동안 치울 물건 위에 작은 빨간 고리(세 겹, 글 없음)를 판에 그린다.
  * 단계 번호(①②③④, 21st.dev Avatar: 지금 단계 brand, 끝난 단계 흐림, 남은 단계 회색)·지금 단계 이름표·사람 이름표(Status)는 판 밖 상자 px에 둔다(frame.planned, plan-marks.ts).
  * 클로이드(맞춘 눈)는 판에 그리지 않고 엔진 장면의 3D 원뿔이 따른다. frame.robot은 카메라 맞춤·말풍선 비킬 자리에만 쓴다.
  * 판 transform은 엔진이 그림을 그릴 때마다 그 지도 카메라로 바꾼다(React 상태를 거치지 않아 3D 그림과 같은 그림에 움직인다).
@@ -131,6 +132,7 @@ export function MapOverlay({ frame, checks, shapes, roomSets, image, size, cam, 
         {litPath && <div data-room-edge className="absolute inset-0">{draw([roomEdgeLayer(litPath, k)])}</div>}
         {([["done", planned.route.done, "routePassed"], ["now", planned.route.now, "route"], ["ahead", planned.route.ahead, "routeAhead"]] as const).map(([id, pts, tone]) =>
           pts.length > 1 && <div key={id} data-line={id} className="absolute inset-0">{draw(lineLayers(tone, lineOf([...pts]), k))}</div>)}
+        {planned.goal && <div data-goal-ring className="absolute inset-0">{draw(goalRingLayers(planned.goal.px, k))}</div>}
         {frame.marks.map((m) => {
           // 상자 가장자리에 걸린 표시는 반쪽만 보이지 않게 흐리게 지운다
           const p = points.get(m.id);

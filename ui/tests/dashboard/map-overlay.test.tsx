@@ -47,14 +47,14 @@ function fakeEngine(start: MapCamera) {
   };
 }
 
-function propsAt(n: number, checks: Check[] = n > 0 ? PLAN_CHECKS : [], world: WorldView | null = null) {
-  const frame = twinFrame({ ...moment(n), checks, anchor: anchorOf, home: HOME, cam: CAM, world });
+function propsAt(n: number, checks: Check[] = n > 0 ? PLAN_CHECKS : [], world: WorldView | null = null, goal: { object: string | null; standing: boolean } | null = null) {
+  const frame = twinFrame({ ...moment(n), checks, anchor: anchorOf, home: HOME, cam: CAM, world, goal });
   const cam = wideCamera(IMAGE, SIZE, focusOf(frame, HOME.shapes), PAD);
   return { frame, checks, cam };
 }
 
-function overlay(n: number, engine: ReturnType<typeof fakeEngine> | null, roomSets = roomSetsOf(PLAN, HOME), checks?: Check[], world: WorldView | null = null) {
-  const p = propsAt(n, checks, world);
+function overlay(n: number, engine: ReturnType<typeof fakeEngine> | null, roomSets = roomSetsOf(PLAN, HOME), checks?: Check[], world: WorldView | null = null, goal: { object: string | null; standing: boolean } | null = null) {
+  const p = propsAt(n, checks, world, goal);
   return <MapOverlay {...p} shapes={HOME.shapes} roomSets={roomSets} image={IMAGE} size={SIZE} engine={engine} devices={devices} objects={objects} moveMs={0} blocked={[]} />;
 }
 
@@ -130,7 +130,7 @@ describe("트윈 위 표시 판", () => {
     const plate = container.querySelector("[data-map-plate]")!;
     expect(!!plate.querySelector("[data-line]")).toBe(n > 0);
     const kinds = [...plate.children].map((el) => (el as HTMLElement).dataset);
-    for (const d of kinds) expect(d.mapDim !== undefined || d.roomEdge !== undefined || d.line !== undefined || d.mark !== undefined, JSON.stringify(d)).toBe(true);
+    for (const d of kinds) expect(d.mapDim !== undefined || d.roomEdge !== undefined || d.line !== undefined || d.mark !== undefined || d.goalRing !== undefined, JSON.stringify(d)).toBe(true);
     expect(plate.querySelector("[data-target]")).toBeNull();
   });
 
@@ -153,6 +153,18 @@ describe("트윈 위 표시 판", () => {
     expect(container.querySelector("[data-person-tag]")).toHaveTextContent("사람 · 마시는 중");
     unmount();
     expect(render(overlay(0, null)).container.querySelector("[data-person-tag]")).toBeNull();
+  });
+
+  it("목표가 선 동안 치울 컵 자리에 작은 빨간 고리(Line Draw SVG 세 겹, 글 없음)를 판에 그린다. 목표가 서지 않았으면 없다", () => {
+    const world = (run.moments[0]!.messages as ServerMessage[]).flatMap((m) => (m.type === "world" ? [m.world] : []))[0]!;
+    const { container, unmount } = render(overlay(0, null, undefined, undefined, world, { object: "cup_1", standing: true }));
+    const ring = container.querySelector<HTMLElement>("[data-map-plate] [data-goal-ring]")!;
+    expect(ring).not.toBeNull();
+    expect(ring.querySelectorAll("svg")).toHaveLength(3);
+    for (const svg of ring.querySelectorAll("svg")) expect([...svg.children].map((c) => c.tagName.toLowerCase())).toEqual(["path"]);
+    expect(ring.textContent).toBe("");
+    unmount();
+    expect(render(overlay(0, null, undefined, undefined, world, { object: "cup_1", standing: false })).container.querySelector("[data-goal-ring]")).toBeNull();
   });
 
   it("표시는 21st.dev Line Draw SVG를 겹친 것이고, 한 장은 받은 코드처럼 path 하나만 그린다", () => {

@@ -1,6 +1,6 @@
 // 메시지 상자 FSM 카드 자료(순수 함수, ui/src/dashboard/fsm.ts): 서버가 보낸 습관 FSM 그림(habit: 상태 목록 + 전이 목록 from·to·trigger·action)·
 // 판단으로 쌓은 지금 상태와 막 일어난 전이(data.ts fsmAt) → 그릴 상태 원·선·글 자리. 카드는 지금 상태를 가운데에 둔다.
-// 카드에는 사람 상태와 전이만 있고 미리 세운 목표는 없다(목표 한 줄, goal-line.test.ts).
+// 카드에는 사람 상태와 전이만 있고 미리 세운 목표는 없다(목표는 트윈 고리, goal.test.ts).
 // 상태를 모르는 판단은 마지막 상태를 그대로 두고, 대기·그대로 두기(계획 없는 행동)는 화살표를 켜지 않는다. 카드에 안쪽 말(모름·규칙 여럿·규칙 없음·대기)은 없다.
 import { describe, expect, it } from "vitest";
 import type { ServerMessage } from "../../../src/contract/events.ts";

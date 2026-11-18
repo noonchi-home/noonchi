@@ -12,7 +12,7 @@ import { useViewer } from "../lib/twin-viewer";
 import { focusOf, homeCamera, homeKeep, livedOf, still, wholeOf, wideCamera, type Camera } from "./camera";
 import { currentStep, isOpen, modeNow, stepIndex, talkOf } from "./data";
 import { fsmOf } from "./fsm";
-import { goalLineOf } from "./goal-line";
+import { goalOf, type GoalNow } from "./goal";
 import { DashboardScreen } from "./DashboardScreen";
 import { debugPhone, debugQuery, useDebugSteps, type Moment } from "./debug";
 import { roomSetsOf, twinFrame } from "./frame";
@@ -93,11 +93,13 @@ function useHomeData(home: string | null): HomeData | null {
  * 바뀌면 CAMERA_MS 동안 옮긴다(움직임 줄이기면 바로). 종류를 정하기 전(home null)에는 캔버스 없이 틀만.
  * 엔진이 뜨고 버려질 때 onEngine, 첫 그림을 그리면 onReady.
  */
-function BakedStage({ home, layout, plan, eye, checks, devices, onEngine: toLive, onReady: toReady }: {
+function BakedStage({ home, layout, plan, eye, goal, checks, devices, onEngine: toLive, onReady: toReady }: {
   home: string | null;
   layout: PageLayout;
   plan: PlanView | null;
   eye: EyeEvent | null;
+  /** 미리 세운 목표(goal.ts): 선 동안 치울 물건 위 빨간 고리. */
+  goal: GoalNow | null;
   checks: ChecksState;
   devices: Map<string, DeviceView>;
   onEngine: (engine: TwinEngine | null) => void;
@@ -117,8 +119,8 @@ function BakedStage({ home, layout, plan, eye, checks, devices, onEngine: toLive
   // 말풍선·이름표가 비킬 클로이드 자리는 원뿔을 그리는 자리(방 안·벽에서 떨어진 자리)다. 엔진에는 받은 눈을 그대로 넣는다
   const drawn = useMemo(() => (eye && engine && !eye.estimated ? { ...eye, position: engine.stand(eye.position) } : eye), [eye, engine]);
   const frame = useMemo(
-    () => (v && homeData ? twinFrame({ plan, eye: drawn, checks: list, anchor: (id) => engine?.anchor(id) ?? null, home: homeData.index, cam: v, world: checks.world ?? null }) : null),
-    [v, homeData, plan, drawn, list, engine, checks.world],
+    () => (v && homeData ? twinFrame({ plan, eye: drawn, checks: list, anchor: (id) => engine?.anchor(id) ?? null, home: homeData.index, cam: v, world: checks.world ?? null, goal }) : null),
+    [v, homeData, plan, drawn, list, engine, checks.world, goal],
   );
   const roomSets = useMemo(() => (frame?.plan && homeData ? roomSetsOf(frame.plan, homeData.index) : []), [frame?.plan, homeData]);
   // 집 전체(모든 방)는 가장 먼 보기, 사람이 있는 방(거실·주방·식당)은 지켜보기 기본 보기가 얹은 것 밖에 두는 곳이다
@@ -239,19 +241,19 @@ export function Dashboard() {
       </TwinStage>
     )
     : (layout: PageLayout) => (
-      <BakedStage home={kind === "three" ? homeId : null} layout={layout} plan={dash.plan} eye={dash.eye} checks={checks} devices={devices} onEngine={onEngine} onReady={onBakedReady} />
+      <BakedStage home={kind === "three" ? homeId : null} layout={layout} plan={dash.plan} eye={dash.eye} goal={goal} checks={checks} devices={devices} onEngine={onEngine} onReady={onBakedReady} />
     );
   const plan = isOpen(dash.plan) ? dash.plan : null;
   // talkOf가 읽는 것 모두: 판단·줄·안전 알림·계획(머리)·행동별 모드
   const talk = useMemo(() => talkOf(dash), [dash.decision, dash.talk, dash.safety]);
-  // FSM 카드가 읽는 것: 습관 그림·판단으로 쌓은 지금 상태. 목표 한 줄은 목표·계획
+  // FSM 카드가 읽는 것: 습관 그림·판단으로 쌓은 지금 상태. 목표(트윈 고리)는 목표·계획
   const fsm = useMemo(() => fsmOf(dash), [dash.habit, dash.fsmAt]);
-  const goal = useMemo(() => goalLineOf(dash), [dash.goal, dash.plan]);
+  const goal = useMemo(() => goalOf(dash), [dash.goal, dash.plan]);
   const mode = modeNow(dash);
   return (
     <DashboardScreen
       index={stepIndex(plan)} plan={plan} step={currentStep(plan)} robotKnown={dash.eye !== null} connected={online} map={map} mapReady={mapReady}
-      phone={phone} seen={seen} talk={talk} fsm={fsm} goal={goal}
+      phone={phone} seen={seen} talk={talk} fsm={fsm}
       mode={mode} hub={hub} settingsOpen={debug?.settings} onReady={onScreenReady} tzMinutes={health?.tz_minutes ?? null}
     />
   );

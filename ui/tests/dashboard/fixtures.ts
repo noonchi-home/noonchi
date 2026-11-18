@@ -10,7 +10,6 @@ import { createSeenStore, type SeenStore } from "../../src/dashboard/masks";
 import type { PhoneSlot } from "../../src/dashboard/PhonePane";
 import type { Talk } from "../../src/dashboard/data";
 import type { FsmNow } from "../../src/dashboard/fsm";
-import type { GoalLine } from "../../src/dashboard/goal-line";
 import { CUP_FSM_MEMORY } from "../../../src/brain/decision.ts";
 import { habitView } from "../../../src/brain/habit.ts";
 import { taskOf } from "../../../src/act/tasks.ts";
@@ -109,8 +108,7 @@ export const WATCH_TALK: Talk = { lines: [{ id: "say@0:0", text: "지켜보고 �
 export const HABIT = habitView(CUP_FSM_MEMORY, 1);
 /** 지켜보기의 FSM 카드: 마시는 중(처음 상태), 하는 일 없음. */
 export const FSM_WATCH: FsmNow = { habit: HABIT, state: "drinking", from: null, doing: null };
-/** 지켜보기의 목표 한 줄: 컵 치우기 계획을 준비해 둠. */
-export const GOAL_READY: GoalLine = { stage: "ready", text: "목표 · 컵 치우기 · 준비됨" };
+
 /** 계획 단계의 FSM 카드: 마시는 중에서 넘어온 컵을 두고 자리를 뜸, 컵 치우기 중, 목표는 씀. */
 export const FSM_CLEAR: FsmNow = { habit: HABIT, state: "left_cup", from: "drinking", doing: CLEAR_CUP };
 
@@ -168,7 +166,7 @@ export function screenAt(n: number, over: Partial<ScreenProps> = {}): ScreenProp
   return {
     index: n, plan, step: plan ? plan.steps[n - 1]! : null, robotKnown: true, connected: true, map: MAP, mapReady: true,
     phone: imageSlot(), seen: seenOf([BOX]),
-    talk: n > 0 ? TALK : WATCH_TALK, fsm: n > 0 ? FSM_CLEAR : FSM_WATCH, goal: n > 0 ? null : GOAL_READY, mode: n > 0 ? "noonchi" : null, hub: HUB,
+    talk: n > 0 ? TALK : WATCH_TALK, fsm: n > 0 ? FSM_CLEAR : FSM_WATCH, mode: n > 0 ? "noonchi" : null, hub: HUB,
     ...over,
   };
 }

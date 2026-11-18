@@ -226,7 +226,7 @@ describe("대시보드 배치", () => {
 describe("대시보드 메시지 상자(트윈 아래쪽 하나, 생각 말풍선 없음)", () => {
   const lines = () => [...talk().querySelectorAll<HTMLElement>("[data-talk-line]")];
 
-  it("오른쪽 생각 말풍선은 없다. 메시지 상자 하나가 트윈 아래쪽 마스코트 옆에 있고, 맨 위 목표 줄 자리, 그 아래 줄(지난 줄은 흐리게 ItemDescription, 최신 줄은 진하게 ItemTitle)과 ▼다. 오른쪽 꼬리가 마스코트를 가리킨다", () => {
+  it("오른쪽 생각 말풍선은 없다. 메시지 상자 하나가 트윈 아래쪽 마스코트 옆에 있고, 줄(지난 줄은 흐리게 ItemDescription, 최신 줄은 진하게 ItemTitle)과 ▼다. 오른쪽 꼬리가 마스코트를 가리킨다", () => {
     draw(screenAt(2));
     expect(document.querySelector("[data-thought], [data-say-card], [data-slot=thought-bubble], [data-talk-who]")).toBeNull();
     expect(document.querySelectorAll("[data-talk]")).toHaveLength(1);
@@ -236,7 +236,6 @@ describe("대시보드 메시지 상자(트윈 아래쪽 하나, 생각 말풍�
     const more = talk().querySelector("[data-talk-more]")!;
     expect(more).toHaveTextContent("▼");
     expect(before(lines().at(-1)!, more)).toBe(true);
-    expect(talk().querySelector("[data-talk-goal]")).not.toBeNull();
     expect(talk()).not.toHaveTextContent(REASON);
   });
 
@@ -301,28 +300,16 @@ describe("대시보드 메시지 상자(트윈 아래쪽 하나, 생각 말풍�
     expect(world.style.transform).toBe(`translate(${px(card.style.width) / 2 - left}px, ${px(card.style.height) / 2}px)`);
   });
 
-  // 사용자 결정(2026-11-18): 「목표는 왜 FSM에 표시되냐」. 목표는 따로 된 상태 머신이라 FSM 카드에 그리지 않고 한 줄로 보인다
-  it("목표는 FSM 카드에 없고 메시지 상자 맨 위 줄 「목표 · 컵 치우기 · 준비됨」(Status brand)이다. 트윈에도 목표 글이 없다", () => {
+  // 사용자 결정(2026-11-18): 「목표는 왜 FSM에 표시되냐」, 그다음 메시지 상자 목표 칩도 뺀다(문장 「컵을 두고 자리를 뜨면 컵을 치울게요」가 목표를 말한다)
+  it("목표는 FSM 카드에도 메시지 상자에도 칩·글로 없다(목표 문장은 메시지 줄로만 온다). 트윈 글에도 목표가 없다", () => {
     draw(screenAt(0));
     const card = document.querySelector<HTMLElement>("[data-fsm-card]")!;
     expect(card).not.toHaveTextContent("목표");
     expect(card.querySelector('[data-fsm-line="goal"], [data-fsm-label="goal"]')).toBeNull();
-    const line = talk().querySelector<HTMLElement>("[data-goal-line]")!;
-    expect(line).toHaveAttribute("data-goal-line", "ready");
-    expect(line).toHaveTextContent("목표 · 컵 치우기 · 준비됨");
-    expect(line.querySelector("[data-slot=status]") ?? line).toHaveAttribute("data-variant", "brand");
-    expect(card.contains(line)).toBe(false);
+    expect(talk().querySelector("[data-goal-line], [data-talk-goal]")).toBeNull();
+    expect(talk()).not.toHaveTextContent("목표 ·");
     expect(twinPane()).not.toHaveTextContent("목표");
     expect(card.querySelector('[data-fsm-state="drinking"]')).toHaveAttribute("data-now");
-  });
-
-  it("목표가 없으면 맨 위 줄 자리는 비어 있다(자리는 그대로, 세 줄이 올라오지 않는다)", () => {
-    draw(screenAt(2));
-    expect(talk().querySelector("[data-goal-line]")).toBeNull();
-    const slot = talk().querySelector<HTMLElement>("[data-talk-goal]")!;
-    expect(slot).not.toBeNull();
-    expect(slot.textContent).toBe("");
-    expect(cls(slot, "h-6")).toBe(true);
   });
 
   it("습관 그림을 받기 전(fsm null, 첫 판단 전)이면 FSM 카드가 없다(빈 틀을 두지 않는다)", () => {

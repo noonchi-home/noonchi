@@ -3,7 +3,7 @@
 // - 길(바닥 높이 0): 지나온 길, 지금 이동 구간(로봇 자리에서 나눔), 남은 길.
 // - 번호: 단계마다 그 단계 자리(이동은 구간 끝 바닥, 그 밖은 대상 자리)와 상태. 지금 단계 이름표 「② 컵 집기」.
 // - 사람 이름표: 발 자리 위 머리 높이에 「사람 · 마시는 중」(하는 일, 없으면 자세, 그것도 없으면 보임), 안 보이면 「사람 · 안 보임」.
-// 목표는 여기 없다(메시지 상자 FSM 카드에만).
+// - 목표 고리: 미리 세운 목표가 선 동안 그 대상 물건 자리(World State position, 없으면 놓인 면의 자리). 글은 없다.
 import type { PlanTarget, PlanView, StepStatus, XZ } from "../../../src/contract/plan.ts";
 import type { WorldView } from "../../../src/contract/world.ts";
 import { STATE_TEXT } from "../../../src/world/labels.ts";
@@ -21,6 +21,7 @@ export interface PlanMarks {
   stops: { n: number; at: Vec3; status: StepStatus; now: boolean }[];
   step: { at: Vec3; text: string } | null;
   person: { at: Vec3; text: string } | null;
+  goal: { at: Vec3 } | null;
 }
 
 const len = (a: XZ, b: XZ) => Math.hypot(b[0] - a[0], b[1] - a[1]);
@@ -73,11 +74,24 @@ function personMark(w: WorldView | null): PlanMarks["person"] {
   return { at: [p.position[0], PERSON_H, p.position[1]], text: `${CLASSES.person!.label} · ${state}` };
 }
 
-/** plan 열린 계획, robot 맞춘 눈 평면 자리(모르면 null), world 지금 World State, at 단계 대상의 트윈 자리(모르면 null). */
-export function planMarks(o: { plan: PlanView | null; robot: XZ | null; world: WorldView | null; at: (t: PlanTarget) => Vec3 | null }): PlanMarks {
+/** 목표 고리 자리: 목표가 서 있으면 그 대상 World State 물건 자리, 자리를 모르면 놓인 면의 자리. */
+function goalMark(goal: { object: string | null; standing: boolean } | null | undefined, w: WorldView | null, at: (t: PlanTarget) => Vec3 | null): PlanMarks["goal"] {
+  if (!goal?.standing || !goal.object) return null;
+  const o = w?.objects.find((x) => x.id === goal.object);
+  if (!o) return null;
+  const spot = o.position ?? (o.surface ? at({ objectId: o.surface }) : null);
+  return spot ? { at: spot } : null;
+}
+
+/** plan 열린 계획, robot 맞춘 눈 평면 자리(모르면 null), world 지금 World State, at 단계 대상의 트윈 자리(모르면 null), goal 미리 세운 목표(goal.ts). */
+export function planMarks(o: {
+  plan: PlanView | null; robot: XZ | null; world: WorldView | null; at: (t: PlanTarget) => Vec3 | null;
+  goal?: { object: string | null; standing: boolean } | null;
+}): PlanMarks {
   const person = personMark(o.world);
+  const goal = goalMark(o.goal, o.world, o.at);
   const plan = isOpen(o.plan) ? o.plan : null;
-  if (!plan) return { route: { done: [], now: [], ahead: [] }, stops: [], step: null, person };
+  if (!plan) return { route: { done: [], now: [], ahead: [] }, stops: [], step: null, person, goal };
   const k = stepIndex(plan) - 1;
   const path = plan.path;
   const legs = plan.legs.map((l, i) => ({ stepId: l.stepId, from: i === 0 ? 0 : plan.legs[i - 1]!.end, to: l.end }));
@@ -109,5 +123,5 @@ export function planMarks(o: { plan: PlanView | null; robot: XZ | null; world: W
   });
   const cur = stops.find((s) => s.now);
   const step = cur ? { at: cur.at, text: `${circled(cur.n)} ${plan.steps[k]!.label}` } : null;
-  return { route, stops, step, person };
+  return { route, stops, step, person, goal };
 }
