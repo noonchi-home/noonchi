@@ -25,7 +25,7 @@ import type { WorldObject, WorldSighting, WorldView } from "../src/contract/worl
 import type { PlaneSurface } from "../src/world/index.js";
 import { POSE_FALL } from "../src/world/vocab.js";
 import { smallFloor } from "./helpers/floor.js";
-import { planContext, planTurn, startFakePlanner, testPlanner, type FakePlanner } from "./helpers/planner.js";
+import { cupSteps, idsFrom, planCalls, planContext, planTurn, startFakePlanner, testPlanner, type FakePlanner } from "./helpers/planner.js";
 
 let llm: FakePlanner;
 beforeAll(async () => { llm = await startFakePlanner(); });
@@ -883,5 +883,103 @@ describe("미리 세운 목표: 목표 동안 VLM 사진 간격", () => {
     expect(s.t.fastVlm()).toBe(true);
     expect(s.t.looking()).toBe(true);
     core.finder.looking = real;
+  });
+});
+
+// Codex 검토(59447ec, main 합치기 전): P1 goal.ts:317, P2 start.ts:312·goal.ts:207, P2 start.ts:314
+describe("미리 세운 목표: Codex 검토(59447ec) 고침", () => {
+  /** 컵 치우기 계획을 cup 대신 이 id로 짜는 가짜 계획 모드와 그 계획기를 쓰는 목표 실행 추적. steps: 단계 고르기(없으면 네 단계 그대로). */
+  async function withPlanner(cup: string | null, steps: (xs: Record<string, unknown>[]) => Record<string, unknown>[], o: Parameters<typeof goalSetup>[0] = {}) {
+    const fake = await startFakePlanner({ "컵 치우기": (input) => { const ids = idsFrom(input); return [planCalls(steps(cupSteps({ ...ids, cup: cup ?? ids.cup })))]; } });
+    const real = testPlanner(fake);
+    let s!: ReturnType<typeof goalSetup>;
+    s = goalSetup({
+      ...o,
+      over: {
+        ...o.over,
+        planner: (d, signal, ahead) => real.plan({ ...planContext({ decision: d, world: s.world(), floor: s.plans.floor() }), ...(ahead ? { ahead } : {}) }, signal),
+      },
+    });
+    return { s, close: () => fake.close() };
+  }
+  /** 컵을 떠나기 1초 앞에 마지막으로 본 채(그 뒤 사진에 안 잡힘) 사람이 떠나고 2.5초 지난 상태로 만든다(미리 만든 계획이 준비된 뒤). */
+  async function leave(s: ReturnType<typeof goalSetup>, cup: WorldObject) {
+    s.person({ act: "drinking" });
+    s.tick();
+    await s.t.idle();
+    expect(s.t.goal()?.prep).toBe("ready");
+    s.tick(1000);
+    s.freeze();
+    s.setObjects(() => [{ ...cup, last_seen_ms: s.clock.t, last_in_view_ms: s.clock.t }]);
+    s.tick(1000);
+    s.gone();
+    s.tick(2500);
+  }
+
+  it("P1: 받아 쓰던 미리 만들기를 기다리는 사이 쓰러짐 의심이 생기면 첫 명령을 보내지 않고, 목표는 안전 알림으로 버린다", async () => {
+    let release: (r: PlanResult) => void = () => {};
+    let pending: Promise<PlanResult> | null = null;
+    const s = goalSetup({
+      over: {
+        planner: (d, signal, ahead) => {
+          if (!ahead) return testPlanner(llm).plan(planContext({ decision: d, world: s.world(), floor: s.plans.floor() }), signal);
+          pending = new Promise<PlanResult>((r) => { release = r; });
+          return pending;
+        },
+      },
+    });
+    s.person({ act: "drinking" });
+    s.tick();
+    expect(s.t.goal()?.prep).toBe("planning");
+    s.gone();
+    s.t.onDecision(pam("pam-1", 1, s.clock.t));
+    // 목표는 받아 쓰기로 떼어졌다. 그사이 사람이 다시 보이고 쓰러짐 의심
+    s.person({ posture: POSE_FALL });
+    s.tick();
+    const done = await testPlanner(llm).plan({ ...planContext({ decision: { ...pam("goal-1", 0, s.clock.t), prediction: null }, world: s.world(), floor: s.plans.floor() }), ahead: { trigger: "t", on: null, object: "cup_1" } });
+    release(done);
+    await s.t.idle();
+    s.tick();
+    expect(s.commands().some((c) => c.text === "식탁으로 가 주세요")).toBe(false);
+    expect(s.logs.filter((l) => l.type === "execution" && l.plan_id === "plan:pam-1").at(-1)).toMatchObject({ state: "failed", text: EXEC_TEXT.goalSafety });
+    expect(s.goals.at(-1)).toMatchObject({ status: "dropped", reason: "safety" });
+  });
+
+  it("P2: 계획 대상이 지금 종류가 컵인 bottle_n이어도 목표 물건으로 받고(미리 만들기 준비됨), 떠나기 직전 사진으로 시작하면 집기 전에 다시 본다(없으면 찾기)", async () => {
+    const cup = { ...cupOn({ id: "bottle_1", seen: 10_000 }) };
+    const { s, close } = await withPlanner("bottle_1", (xs) => xs, { objects: [cup] });
+    try {
+      await leave(s, cup);
+      await s.decide(pam("pam-2", 2, s.clock.t));
+      expect(s.commands()[0]).toMatchObject({ id: "plan:pam-2", text: "식탁으로 가 주세요" });
+      s.setObjects((xs) => xs.map((x) => ({ ...x, status: "gone" as const })));
+      s.setEye([7, 3]);
+      for (let i = 0; i < 16; i++) s.tick();
+      expect(s.commands().some((c) => c.text === "컵을 들어 주세요")).toBe(false);
+      expect(s.commands().at(-1)).toMatchObject({ text: FIND_TEXT.aim("식탁") });
+    } finally { await close(); }
+  });
+
+  it("P3: 집기로 시작하는 계획은 떠나기 직전 사진만으로 집기를 시키지 않는다: 떠난 뒤 사진에 컵이 있으면 그때 「컵을 들어 주세요」, 없으면 찾기", async () => {
+    const pickFirst = (xs: Record<string, unknown>[]) => xs.slice(1);
+    const a = await withPlanner(null, pickFirst);
+    try {
+      await leave(a.s, cupOn({ seen: 10_000 }));
+      await a.s.decide(pam("pam-2", 2, a.s.clock.t));
+      expect(a.s.commands()).toEqual([]);
+      a.s.freeze(false);
+      a.s.tick();
+      a.s.tick();
+      expect(a.s.commands()[0]).toMatchObject({ id: "plan:pam-2", text: "컵을 들어 주세요" });
+    } finally { await a.close(); }
+    const b = await withPlanner(null, pickFirst);
+    try {
+      await leave(b.s, cupOn({ seen: 10_000 }));
+      await b.s.decide(pam("pam-3", 3, b.s.clock.t));
+      b.s.setObjects((xs) => xs.map((x) => ({ ...x, status: "gone" as const })));
+      for (let i = 0; i < 16; i++) b.s.tick();
+      expect(b.s.commands().some((c) => c.text === "컵을 들어 주세요")).toBe(false);
+      expect(b.s.commands().at(-1)?.text).toMatch(/식탁/);
+    } finally { await b.close(); }
   });
 });

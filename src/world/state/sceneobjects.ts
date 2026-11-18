@@ -13,7 +13,7 @@ import type { Plan2 } from "../../contract/events.js";
 import { CHANGE_TEXT, onSurface } from "../labels.js";
 import { vlmFirst } from "../merge.js";
 import { inView, pixelOf, placePoint, sizeOf, type PlaneSurface } from "../place.js";
-import { CLASSES, NEAR_M, NOW_FACETS, POSE_HOLD, sameDrinkware, VLM_ONLY, type ObjClass } from "../vocab.js";
+import { CLASSES, DRINKWARE, NEAR_M, NOW_FACETS, POSE_HOLD, sameDrinkware, VLM_ONLY, type ObjClass } from "../vocab.js";
 import { GONE_KEEP_MS, OBJ_CLASSES, Part, SIZE_SAMPLES, VLM_CANDIDATE_MS, VLM_CONFIRM_FRAMES, VLM_GONE_PHOTOS, VLM_MATCH_M, VLM_MOVE_M, dist, fromCamera, type Obj, type TrailSample, type V3 } from "./core.js";
 
 /** 그 사진의 YOLO 감지 하나: 감지 번호(d1…), 상자(엔진 프레임 픽셀 [x, y, w, h]), 바닥 점(픽셀, 없으면 상자 아랫변 가운데). */
@@ -122,6 +122,9 @@ export class SceneObjects extends Part {
         obj.vlmEye = eye;
       }
       if (!obj) continue;
+      // 확인 전 후보가 마시는 그릇 무리 안 다른 종류 답을 받으면 기본 종류(컵, DRINKWARE 첫째)이고 id도 그 꼴이다: 병은 두 답이 이어 병일 때만이다
+      // (키 큰 컵 m1·c1, 유리잔 c1: 유리잔이 한 장 「병」 답으로 bottle_1이 돼 컵 치우기 계획 대상이 「보이지 않아」로 막혔다)
+      if (!obj.confirmed && obj.cls !== cls && sameDrinkware(obj.cls, cls) && obj.cls !== DRINKWARE[0]) obj = core.recast(obj, DRINKWARE[0]);
       used.add(obj.id);
       ids.set(v.id, obj.id);
       if (v.det) ids.set(v.det, obj.id);

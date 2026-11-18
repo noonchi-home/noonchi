@@ -6,7 +6,7 @@ import type { DecisionRecord } from "../../contract/events.js";
 import { needsPhone, objectNames, type AgentStep, type PlanResult } from "../../agent/index.js";
 import { APPROVAL_TEXT, EXEC_TEXT } from "../labels.js";
 import { quietLabels } from "../lessons.js";
-import { planIdOf, planObjectsOf, taskOf } from "../tasks.js";
+import { carriesTarget, planIdOf, planObjectsOf, taskOf } from "../tasks.js";
 import { saidIn } from "../../world/labels.js";
 import { emergencyOf } from "../mode.js";
 import { Part, clsOf, type Job, type Run } from "./core.js";
@@ -214,9 +214,12 @@ export class Starter extends Part {
       this.ungap(r.decision, r.gapAt);
       return steps.finish(r, "failed", EXEC_TEXT.closerNewer, "cancelled");
     }
+    // 미리 세운 목표 실행은 첫 명령 전에 안전(쓰러짐 의심·끄기 안내)을 다시 보고, 비상이면 시작하지 않는다
+    // (받아 쓰던 미리 만들기를 기다리는 동안은 목표를 떼어 목표의 안전 버림이 보지 않는다, Codex 59447ec P1)
+    if (r.goal !== null && emergencyOf({ world: this.o.world(), offNotices: safety.offTrack().notices })) return steps.finish(r, "failed", EXEC_TEXT.goalSafety, "cancelled");
     // 사람이 계획 대상을 쓰는 중이면 사람이 사라질 때까지 첫 명령·찾기·가까이 보기를 미룬다(holdMs 넘으면 닫음, src/act/track/use.ts)
     if (this.core.use.waits(r)) return;
-    const c = this.o.check(r.decision, r.plan.view, r.seenSince ?? undefined);
+    const c = this.o.check(r.decision, r.plan.view, this.startSince(r));
     if (!c.ok) {
       // 찾는 중에 대상이 안 보임이 아닌 까닭으로 막히면 찾기를 거둔다(그 까닭은 아래가 본다)
       if (r.find && c.reason !== "no_target" && c.reason !== "stale") this.core.finder.release(r, true);
@@ -303,15 +306,29 @@ export class Starter extends Part {
     this.core.steps.activate(r, 0);
   }
 
-  /** 떠나기 직전 사진으로 시작한 목표 실행이면(대상을 사람이 떠난 뒤에 아직 못 봄) 그 대상을 다루는 단계 전에 다시 볼 것으로 둔다(held). */
+  /** 목표 실행의 대상 물건 id(실행 전 검사와 같은 기준: 집는 것이 대상 자신인 행동이면 지금 종류, Codex 59447ec P2). 목표 실행이 아니거나 없으면 null. */
+  private goalTarget(r: Run): string | null {
+    const spec = taskOf(r.plan.task);
+    if (r.leftAt === null || !spec?.target) return null;
+    return planObjectsOf(r.plan.view, this.o.world(), spec.target, carriesTarget(spec))[0] ?? null;
+  }
+
+  /** 실행 전 검사 기준: 목표 실행이면 떠나기 직전 GOAL_DEFAULTS.leaveSeenMs 앞(seenSince). 첫 단계가 그 대상을 다루면(집기로 시작) 떠난 때(leftAt):
+   *  떠나기 전 사진만으로 집기를 시키지 않고 떠난 뒤 사진을 기다리며, 없으면 실행 전 찾기로 간다(Codex 59447ec P2). 목표 실행이 아니면 없음. */
+  private startSince(r: Run): number | undefined {
+    if (r.seenSince === null) return undefined;
+    const id = this.goalTarget(r);
+    return id && r.leftAt !== null && touches(r.plan.steps[0], id) ? r.leftAt : r.seenSince;
+  }
+
+  /** 떠나기 직전 사진으로 시작한 목표 실행이면(대상을 사람이 떠난 뒤에 아직 못 봄) 그 대상을 다루는 단계 전에 다시 볼 것으로 둔다(held).
+   *  첫 단계가 그 대상을 다루면 실행 전 검사가 떠난 뒤 사진을 이미 봤다(startSince). */
   private verifyFrom(r: Run): void {
     const leftAt = r.leftAt;
-    const cls = taskOf(r.plan.task)?.target;
-    if (leftAt === null || !cls) return;
-    const world = this.o.world();
-    const id = planObjectsOf(r.plan.view, world, cls)[0];
-    const o = id ? world.objects.find((x) => x.id === id) : undefined;
-    if (id && o && o.last_seen_ms < leftAt && !touches(r.plan.steps[0], id)) r.verify = { objectId: id, since: leftAt, at: null };
+    const id = this.goalTarget(r);
+    if (leftAt === null || !id) return;
+    const o = this.o.world().objects.find((x) => x.id === id);
+    if (o && o.last_seen_ms < leftAt && !touches(r.plan.steps[0], id)) r.verify = { objectId: id, since: leftAt, at: null };
   }
 
   /** 다음 단계(next)가 떠난 뒤 다시 보지 못한 목표 대상(verify)을 다루면 그 전에 다시 본다: 떠난 뒤 사진에 그 대상이 있으면(실행 전 검사, 기준 = 떠난 때) 풀고 false.

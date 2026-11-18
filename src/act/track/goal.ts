@@ -22,7 +22,7 @@ import { decisionWorld, fsmRuleOf, goalAhead, type GoalPick } from "../../brain/
 import { ruleIf } from "../../world/labels.js";
 import { GOAL_LOG, GOAL_TEXT } from "../labels.js";
 import { emergencyOf } from "../mode.js";
-import { followedId, planObjectsOf, putAway, TASK_NAMES, TASK_SAY, targetOf } from "../tasks.js";
+import { carriesTarget, followedId, planObjectsOf, putAway, TASK_NAMES, TASK_SAY, targetOf, taskOf } from "../tasks.js";
 import { Part } from "./core.js";
 
 /** 목표를 세워 둘 수 있는 시간(ms, 사용자 답 30분)과, 사람이 떠난 뒤 PAM이 그 행동을 고르기를 기다리는 시간(ms, 사용자 답 15초),
@@ -199,12 +199,13 @@ export class GoalWatch extends Part {
     return near ? of(near.s) : null;
   }
 
-  /** 계획이 다루는 그 종류 물건이 모두 미리 만든 계획의 목표 물건(옮김 표시로 이어진 것 포함)인가. 하나도 없어도 아니다. */
+  /** 계획이 다루는 그 종류 물건이 모두 미리 만든 계획의 목표 물건(옮김 표시로 이어진 것 포함)인가. 하나도 없어도 아니다.
+   *  그 종류는 실행 전 검사와 같은 기준이다(집는 것이 대상 자신인 행동이면 지금 종류, 지금 컵인 bottle_1도 컵 대상, Codex 59447ec). */
   private mine(g: Goal, plan: AgentPlan): boolean {
     const world = this.o.world();
     if (!g.planObject) return false;
     const goal = followedId(world, g.planObject);
-    const ids = planObjectsOf(plan.view, world, g.view.cls as ObjClass);
+    const ids = planObjectsOf(plan.view, world, g.view.cls as ObjClass, carriesTarget(taskOf(g.view.action)));
     return ids.length > 0 && ids.every((id) => followedId(world, id) === goal);
   }
 
@@ -329,7 +330,9 @@ export class GoalWatch extends Part {
         else {
           const again = reuse(d, r.plan, rename(id));
           if (again.ok) {
-            this.end(g, "used");
+            // 목표를 뗀 뒤 기다리는 사이 안전 알림(쓰러짐 의심·끄기 안내)이 생겼으면 쓰지 않고 버린다: 실행 추적은 첫 명령 직전에 다시 보고 시작하지 않는다(start.ts tryStart, Codex 59447ec P1)
+            const unsafe = emergencyOf({ world: this.o.world(), offNotices: this.core.safety.offTrack().notices });
+            this.end(g, unsafe ? "dropped" : "used", unsafe ? "safety" : null);
             return again;
           }
           why = again.error;
