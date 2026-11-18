@@ -59,8 +59,9 @@ describe("영상 모드 처음부터 끝까지", () => {
         const parts = (body.messages as { role: string; content: unknown }[]).filter((m) => m.role === "user").flatMap((m) => (Array.isArray(m.content) ? m.content : [{ text: m.content }]));
         const text = parts.map((p: { text?: unknown }) => (typeof p.text === "string" ? p.text : "")).join("\n");
         const dets = JSON.parse(/Detections: (\[.*\])/.exec(text)?.[1] ?? "[]") as { id: string; class: string }[];
-        // 사람은 식탁에서 먹는 중이다(떠남 화살표 컵 치우기는 직전 상태 drinking(먹거나 마시는 중)에서만 나간다. 먹는 중은 컵을 쓰지 않아 미리 세운 목표가 서지 않는다)
-        return JSON.stringify({ scene: "kitchen", observations: dets.flatMap((d) => (d.class === "cup" ? [{ object_id: d.id, state: "on_table" }] : d.class === "person" ? [{ object_id: d.id, state: "eating" }] : [])), summary: "컵" });
+        // 사람은 식탁에서 컵으로 마시는 중이다(떠남 화살표 컵 치우기는 직전 상태 drinking에서만 나간다). 컵을 쓰는 중이라 미리 세운 목표로 시작하고,
+        // 고정 자세라 1단계는 폰 위치로 끝나지 않아 「완료」로 넘긴다(떠난 뒤 컵을 다시 보면 2단계로, 2026-11-19 여기서 멈췄다)
+        return JSON.stringify({ scene: "kitchen", observations: dets.flatMap((d) => (d.class === "cup" ? [{ object_id: d.id, state: "on_table" }] : d.class === "person" ? [{ object_id: d.id, state: "drinking" }] : [])), summary: "컵" });
       },
       respond: plannerRespond(CUP_SCRIPTS),
     });

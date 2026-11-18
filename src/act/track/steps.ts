@@ -246,6 +246,13 @@ export class Steps extends Part {
   look(r: Run): boolean {
     const step = this.core.stepOf(r);
     if (!step || r.state !== "running" || step.kind === "ask") return false;
+    // 지금 단계를 끝냈지만(「완료」·조건) 다음 단계 대상을 떠난 뒤 다시 보지 못해 붙잡혀 있으면(start.ts held, verify.at) World State 변화·tick마다 다시 넘겨 본다:
+    // 컵을 다시 보면 다음 단계로, 다시 보기 기한이 지나면 찾기로 간다. 붙잡힌 동안 지금 단계의 시간·되풀이는 보지 않는다
+    // (2026-11-19 영상 모드 고정 자세: 1단계를 「완료」로 넘기면 다시 부르는 곳이 없어 멈췄다)
+    if (r.verify?.at != null) {
+      this.advance(r);
+      return true;
+    }
     this.refocus(r, step);
     if (r.asking && r.asking.why !== "again") return false;
     // 시간 한도가 지난 뒤 온 관찰·기기 결과로는 넘기지 않는다(시간 초과가 먼저다)

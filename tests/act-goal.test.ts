@@ -865,6 +865,39 @@ describe("미리 세운 목표: 떠나기 직전에 본 컵으로 바로 시작"
     expect(s.commands().at(-1)).toMatchObject({ id: "plan:pam-2", text: "컵을 들어 주세요" });
   });
 
+  // 2026-11-19 영상 모드(고정 자세)에서 드러남: 1단계를 폰 위치가 아니라 「완료」로 넘기면 떠난 뒤 컵을 아직 다시 못 봤을 때 붙잡힌 뒤 다시 보는 길이 없어 멈췄다
+  describe("1단계를 「완료」로 넘겼는데(폰 위치로는 끝나지 않음) 떠난 뒤 컵을 아직 다시 못 봤으면 붙잡았다가", () => {
+    async function answered() {
+      const s = await leftWith(1000);
+      await s.decide(pam("pam-2", 2, s.clock.t));
+      const first = s.commands()[0]!;
+      expect(first).toMatchObject({ id: "plan:pam-2", text: "식탁으로 가 주세요" });
+      expect(s.t.onAnswer(first.id, first.step, "done")).toBe(true);
+      await s.t.idle();
+      expect(s.commands().some((c) => c.text === "컵을 들어 주세요")).toBe(false);
+      return s;
+    }
+    it("그 뒤 사진에 컵이 보이면 「컵을 들어 주세요」로 간다", async () => {
+      const s = await answered();
+      s.freeze(false);
+      s.tick();
+      s.tick();
+      expect(s.commands().at(-1)).toMatchObject({ id: "plan:pam-2", text: "컵을 들어 주세요" });
+    });
+    it("다시 보기 기한이 지나도 안 보이면 그 자리로 찾으러 가고(멀면 「식탁으로 가 주세요」, 가까우면 「식탁 위를 비춰 주세요」), 못 찾으면 대상이 없다고 닫는다", async () => {
+      const s = await answered();
+      s.setObjects((xs) => xs.map((x) => ({ ...x, status: "gone" as const })));
+      for (let i = 0; i < 16; i++) s.tick();
+      expect(s.commands().at(-1)).toMatchObject({ id: "plan:pam-2", text: "식탁으로 가 주세요" });
+      expect(s.commands().at(-1)!.step).not.toBe("plan:pam-2:1");
+      s.setEye([7, 3]);
+      for (let i = 0; i < 8; i++) s.tick();
+      expect(s.commands().at(-1)).toMatchObject({ text: FIND_TEXT.aim("식탁") });
+      for (let i = 0; i < 280; i++) s.tick();
+      expect(s.logs.filter((l) => l.type === "execution").at(-1)).toMatchObject({ plan_id: "plan:pam-2", state: "failed", text: CHECK_TEXT.no_target });
+    });
+  });
+
   it("사람이 마지막에 컵을 들고 나갔으면(떠난 뒤 사진에 컵이 없음) 식탁에 가서 집기 대신 그 자리를 찾고(「식탁 위를 비춰 주세요」), 못 찾으면 대상이 없다고 닫는다", async () => {
     const s = await leftWith(1000);
     await s.decide(pam("pam-2", 2, s.clock.t));
