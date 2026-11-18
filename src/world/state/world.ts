@@ -192,6 +192,7 @@ export class WorldState {
     if (d.facts.contents) t.facts.contents = d.facts.contents;
     else delete t.facts.contents;
     d.contents = null;
+    core.vlm.moveEvents(d.id, t.id);
     t.confirmed = true;
     t.status = d.status;
     t.goneAt = null;
