@@ -1,6 +1,6 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import {
-  Timeline, TIMELINE_END_GAP, TimelineCaption, TimelineCurrentTime, TimelineHeader, TimelineProvider, TimelineRegion, TimelineRow, TimelineRowLabel, TimelineSlot, TimelineSlotLabel, timeToX, useTimeline,
+  Timeline, TIMELINE_END_GAP, TimelineCurrentTime, TimelineHeader, TimelineProvider, TimelineRegion, TimelineRow, TimelineRowLabel, TimelineSlot, TimelineSlotLabel,
 } from "../components/ui/timeline";
 import { useReducedMotionNow } from "./motion";
 import type { TimelineData, TimelineRow as RowId } from "./timeline";
@@ -11,14 +11,12 @@ export const TIMELINE_SPAN_S = 30;
 /** 굵은 눈금과 「N초 전」 간격(초). */
 export const TIMELINE_TICK_S = 10;
 /** 줄 이름 열 너비(px). */
-export const TIMELINE_COLUMN_W = 64;
-const COLUMN_W = TIMELINE_COLUMN_W;
+const COLUMN_W = 64;
 /** 지금을 옮기는 간격(ms): 초당 약 12px이라 0.2초에 2px쯤. 움직임 줄이기면 1초. */
 const TICK_MS = 200;
 const REDUCED_TICK_MS = 1000;
 const ROWS: { id: RowId; label: string }[] = [
   { id: "person", label: WORDS.timeline.rows.person },
-  { id: "guess", label: WORDS.timeline.rows.guess },
   { id: "robot", label: WORDS.timeline.rows.robot },
 ];
 
@@ -34,24 +32,10 @@ function useNow(fixed: number | undefined, every: number): number {
   return fixed ?? now;
 }
 
-/** 예상 줄 글: 목표를 세운 때에 붙이고, 지금 선을 넘으면 지금 선에 끝을 맞춘다(글 너비를 잰다). 글은 자르지 않는다(timeline-fit.test.ts가 가장 작은 화면에서 한 줄에 드는지 본다). */
-function Caption({ at, text }: { at: number; text: string }) {
-  const { start, pixelsPerSecond, timelineWidth } = useTimeline();
-  const box = useRef<HTMLDivElement>(null);
-  const [w, setW] = useState(0);
-  useLayoutEffect(() => { setW(box.current?.offsetWidth ?? 0); }, [text]);
-  const x = Math.max(0, Math.min(timeToX(at, start, pixelsPerSecond), timelineWidth - w - 4));
-  return (
-    <div ref={box} data-timeline-caption className="absolute top-0.5" style={{ left: x }}>
-      <TimelineCaption>{text}</TimelineCaption>
-    </div>
-  );
-}
-
 /**
- * 시간 줄 카드(21st.dev Timeline): 사람 · 예상 · 로봇 세 줄과 오른쪽 끝 지금 선. 지금에서 TIMELINE_SPAN_S초 앞까지 보이고 지금이 흐르면 구간이 왼쪽으로 간다.
- * 사람 줄은 사람 상태, 예상 줄은 미리 세운 목표(세움 · 준비됨 테)와 그 글, 로봇 줄은 계획 단계(지금 단계 빨강)와 지켜봄이다(timeline.ts).
- * 사람이 떠난 때 → 첫 명령은 세 줄을 가로지르는 구간과 굵은 「N.N초」다. 첫 판단 전(data null)이면 카드가 없다. 보기만 한다.
+ * 시간 줄 카드(21st.dev Timeline): 맨 위 초 눈금 한 줄, 사람 · 로봇 두 줄과 오른쪽 끝 지금 선. 메시지 상자와 같은 높이(TALK_H)다.
+ * 지금에서 TIMELINE_SPAN_S초 앞까지 보이고 지금이 흐르면 구간이 왼쪽으로 간다. 사람 줄은 사람 상태, 로봇 줄은 계획 단계(지금 단계 빨강)와 지켜봄이다(timeline.ts).
+ * 사람이 떠난 때 → 첫 명령은 두 줄을 가로지르는 구간과 그 위에 얹은 굵은 「N.N초」다(따로 줄 없음). 첫 판단 전(data null)이면 카드가 없다. 보기만 한다.
  * now가 있으면 그 때로 멈춘 채 그린다(가짜 단계 화면).
  */
 export function TimelineCard({ data, box, className, style, now: fixed }: {
@@ -76,11 +60,10 @@ export function TimelineCard({ data, box, className, style, now: fixed }: {
           {ROWS.map((r) => (
             <TimelineRow key={r.id} row={{ id: r.id, label: r.label }} renderRowHeader={(x) => <TimelineRowLabel>{x.label}</TimelineRowLabel>}>
               {data.spans.filter((x) => x.row === r.id).map((x) => (
-                <TimelineSlot key={x.id} slot={{ id: x.id, rowId: r.id, from: x.from, to: x.to }} tone={x.tone} className={r.id === "guess" ? "top-5" : undefined}>
+                <TimelineSlot key={x.id} slot={{ id: x.id, rowId: r.id, from: x.from, to: x.to }} tone={x.tone}>
                   {x.text && <div className="px-2 py-1"><TimelineSlotLabel>{x.text}</TimelineSlotLabel></div>}
                 </TimelineSlot>
               ))}
-              {r.id === "guess" && data.caption && <Caption at={data.caption.at} text={data.caption.text} />}
             </TimelineRow>
           ))}
           {data.gap && <TimelineRegion from={data.gap.from} to={data.gap.to} label={data.gap.text} size="gap" />}

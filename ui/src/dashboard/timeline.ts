@@ -1,20 +1,18 @@
-// 시간 줄 카드 자료(순수 함수): 대시보드 자료(data.ts) → 사람 · 예상 · 로봇 세 줄의 구간(ms 시각), 예상 줄 글, 사람이 떠난 때 → 첫 명령 간격.
-// 숫자는 모두 서버 자료에서 온다: 사람 줄은 유효한 판단의 습관 FSM 상태와 그 판단 시각(people), 예상 줄은 목표의 armed_ms·ready_ms·gone_ms·ended_ms,
-// 로봇 줄은 계획 단계의 started_ms·ended_ms(실행 추적이 단다). 계획 밖 로봇은 지켜봄이다. 그리기(지금이 오른쪽 끝, 초 눈금)는 TimelineCard가 한다.
+// 시간 줄 카드 자료(순수 함수): 대시보드 자료(data.ts) → 사람 · 로봇 두 줄의 구간(ms 시각)과 사람이 떠난 때 → 첫 명령 간격.
+// 숫자는 모두 서버 자료에서 온다: 사람 줄은 유효한 판단의 습관 FSM 상태와 그 판단 시각(people), 로봇 줄은 계획 단계의 started_ms·ended_ms(실행 추적이 단다),
+// 간격은 목표의 사람이 떠난 때(gone_ms)와 첫 단계 시작. 계획 밖 로봇은 지켜봄이다. 예상 줄(목표 구간·글)은 없다(2026-11-19 사용자 「예상을 없애자」).
+// 그리기(지금이 오른쪽 끝, 초 눈금)는 TimelineCard가 한다.
 import type { PlanView } from "../../../src/contract/plan.ts";
 import { isOpen, type DashData } from "./data";
-import { goalOf } from "./goal";
 import { WORDS } from "./words";
 
-export type TimelineRow = "person" | "guess" | "robot";
-/** 구간 색: plain 카드 바탕(지켜봄), muted 옅은 바탕(지난 일·세움), ready brand 테(준비된 목표), brand 빨강(지금 단계). */
-export type SpanTone = "plain" | "muted" | "ready" | "brand";
+export type TimelineRow = "person" | "robot";
+/** 구간 색: plain 카드 바탕(지켜봄), muted 옅은 바탕(사람 상태·지난 단계), brand 빨강(지금 단계). */
+export type SpanTone = "plain" | "muted" | "brand";
 /** 구간 하나: from 시작(보이는 때보다 앞이면 -Infinity), to 끝(아직이면 null). */
 export interface TimeSpan { id: string; row: TimelineRow; from: number; to: number | null; text: string; tone: SpanTone }
 export interface TimelineData {
   spans: TimeSpan[];
-  /** 예상 줄 글 「<조건> <행동> · <단계>」(떠난 뒤 「· N초 먼저」)과 그 자리(목표를 세운 때). 목표가 없으면 null. */
-  caption: { at: number; text: string } | null;
   /** 사람이 떠난 때 → 그 뒤 같은 행동 계획의 첫 명령(첫 단계 시작) 간격 「N.N초」. 없으면 null. */
   gap: { from: number; to: number; text: string } | null;
 }
@@ -26,20 +24,6 @@ function personSpans(s: DashData): TimeSpan[] {
     const text = name(p.state);
     return text ? [{ id: `person:${p.at_ms}`, row: "person" as const, from: p.at_ms, to: s.people[i + 1]?.at_ms ?? null, text, tone: "muted" as const }] : [];
   });
-}
-
-/** 예상 줄: 세움(세운 때 → 준비된 때), 준비됨(준비된 때 → 끝난 때)과 글. */
-function guessOf(s: DashData): { spans: TimeSpan[]; caption: TimelineData["caption"] } {
-  const g = s.goal;
-  const now = goalOf(s);
-  if (!g || !now) return { spans: [], caption: null };
-  const dropped = now.stage === "dropped";
-  const spans: TimeSpan[] = [{ id: `${g.id}:set`, row: "guess", from: g.armed_ms, to: g.ready_ms ?? g.ended_ms, text: "", tone: "muted" }];
-  if (g.ready_ms !== null) spans.push({ id: `${g.id}:ready`, row: "guess", from: g.ready_ms, to: g.ended_ms, text: "", tone: dropped ? "muted" : "ready" });
-  const rule = s.habit?.transitions.find((t) => t.from === g.state && t.to === g.state && t.action === g.action);
-  const started = now.stage === "started" || now.stage === "done";
-  const tail = started && g.gone_ms !== null ? WORDS.timeline.lead(Math.round((g.gone_ms - g.armed_ms) / 1000)) : WORDS.timeline.stage[now.stage];
-  return { spans, caption: { at: g.armed_ms, text: `${rule ? `${rule.trigger} ` : ""}${g.action} · ${tail}` } };
 }
 
 /** 로봇 줄: 시작한 계획 단계(지금 단계는 brand)와 그 사이 지켜봄. */
@@ -78,8 +62,7 @@ function gapOf(s: DashData): TimelineData["gap"] {
 /** 시간 줄 자료. 사람 상태를 모르면(첫 판단 전) null이고 카드를 두지 않는다. */
 export function timelineOf(s: DashData): TimelineData | null {
   if (!s.people.length) return null;
-  const guess = guessOf(s);
-  return { spans: [...personSpans(s), ...guess.spans, ...robotSpans(s.plans)], caption: guess.caption, gap: gapOf(s) };
+  return { spans: [...personSpans(s), ...robotSpans(s.plans)], gap: gapOf(s) };
 }
 
 /** 자료 가운데 가장 늦은 시각(가짜 단계 화면은 이 때를 지금으로 그린다). 없으면 null. */
@@ -87,7 +70,7 @@ export function timelineLast(s: DashData): number | null {
   const g = s.goal;
   const all = [
     ...s.people.map((p) => p.at_ms),
-    ...(g ? [g.armed_ms, g.ready_ms, g.gone_ms, g.fired_ms, g.ended_ms] : []),
+    ...(g ? [g.armed_ms, g.ready_ms, g.gone_ms, g.fired_ms] : []),
     ...s.plans.flatMap((p) => p.steps.flatMap((x) => [x.started_ms, x.ended_ms])),
   ].filter((v): v is number => typeof v === "number" && Number.isFinite(v));
   return all.length ? Math.max(...all) : null;

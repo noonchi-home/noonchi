@@ -291,7 +291,7 @@ describe("가짜 단계(?debug=steps)", () => {
     expect(document.querySelector("main")).toHaveAttribute("data-step", "0");
     expect(rowText("person")).toEqual(["먹거나 마시는 중"]);
     expect(rowText("robot")).toEqual(["지켜봄"]);
-    expect(document.querySelector("[data-timeline-card] [data-timeline-caption]")).toHaveTextContent("컵을 두고 자리를 뜨면 컵 치우기 · 준비됨");
+    expect(document.querySelector("[data-timeline-card] [data-row=guess], [data-timeline-card] [data-timeline-caption]")).toBeNull();
   });
 
   it("&play=MS면 지도가 준비된 뒤부터 MS마다 4→0→1 차례로 넘긴다", async () => {

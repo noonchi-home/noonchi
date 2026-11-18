@@ -95,7 +95,7 @@ export class GoalWatch extends Part {
         pick, objectId, presence: p.since_ms, plan: null, planObject: null, surface: null, job: null,
         view: {
           id, action: pick.action, state: pick.state, trigger: pick.trigger, object: objectId, cls: h.cls, status: "armed", prep: "waiting", reason: null, text,
-          armed_ms: this.clock.now(), ready_ms: null, gone_ms: null, fired_ms: null, ended_ms: null, plan: null,
+          armed_ms: this.clock.now(), ready_ms: null, gone_ms: null, fired_ms: null, plan: null,
         },
       };
       this.publish();
@@ -359,7 +359,7 @@ export class GoalWatch extends Part {
     this.leave(g);
     if (error) this.o.log?.(GOAL_LOG.log.dropPlan(g.view.id, g.view.action, error));
     const { error: _was, ...view } = g.view;
-    g.view = { ...view, status, reason, ended_ms: this.clock.now(), ...(error ? { error } : {}) };
+    g.view = { ...view, status, reason, ...(error ? { error } : {}) };
     this.emit(g.view);
   }
 

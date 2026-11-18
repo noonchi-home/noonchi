@@ -179,7 +179,7 @@ function build(): { moments: Moment[]; coach: Moment } {
   const goalText = GOAL_TEXT.armed(ruleIf({ ...clearRule, learned: false }), TASK_SAY[ACTION]!.will);
   const goal: PendingGoal = {
     id: "goal-1", action: ACTION, state: "left_cup", trigger: clearRule.trigger, object: cup.id, cls: "cup", status: "armed", prep: "ready", reason: null, text: goalText,
-    armed_ms: T0 - 10_000, ready_ms: T0 - 6_000, gone_ms: null, fired_ms: null, ended_ms: null, plan: null,
+    armed_ms: T0 - 10_000, ready_ms: T0 - 6_000, gone_ms: null, fired_ms: null, plan: null,
   };
 
   const moments = MOMENTS.map(({ eye, score }, n) => {
@@ -227,7 +227,7 @@ function build(): { moments: Moment[]; coach: Moment } {
       // 지켜보기: 세운 목표와 그 줄(메시지 상자), 계획 순간: 떠난 뒤 판단이 같은 행동을 골라 씀
       ...(n === 0
         ? [{ type: "goal", goal } as ServerMessage, { type: "thought", messages: [{ id: `goal-1@${T0 - 10_000}`, text: goalText, at_ms: T0 - 10_000, decision: "goal-1" }] } as ServerMessage]
-        : [{ type: "goal", goal: { ...goal, status: "used", gone_ms: T0, fired_ms: T0, ended_ms: T0 + STEP_MS } } as ServerMessage]),
+        : [{ type: "goal", goal: { ...goal, status: "used", gone_ms: T0, fired_ms: T0 } } as ServerMessage]),
     ];
     return { index: n, eye, messages };
   });

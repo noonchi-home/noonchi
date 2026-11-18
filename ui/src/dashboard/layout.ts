@@ -2,7 +2,7 @@
 // 트윈은 화면 전체(여백 안)를 쓰고 나머지는 그 위에 얹는다:
 //   비전 미니맵은 트윈 오른쪽 위 가로 16:9 칸(1280 너비에서 320×180, 화면 너비에 비례), 마스코트는 판 없이 트윈 오른쪽 아래(보이는 높이는 화면 높이의 0.3,
 //   단추 아래 끝이 화면 밑 선이고 그림은 그 아래로 이어진다), 생각 말풍선은 마스코트 위(크기 고정)이고 꼬리 점 둘이 마스코트로 이어진다.
-//   메시지 상자는 트윈 아래쪽 마스코트 바로 왼쪽, 남은 너비의 절반이다. 그 왼쪽 남은 자리 전체(위는 화면 아래에서 1/3)가 시간 줄 카드다.
+//   메시지 상자는 트윈 아래쪽 마스코트 바로 왼쪽, 남은 너비의 절반이다. 그 왼쪽 남은 너비가 시간 줄 카드이고 위·아래 선은 메시지 상자와 같다.
 //   마스코트를 좌우로 뒤집어도(행동하는 동안, Mascot.tsx) 단추 가운데 축을 중심으로 뒤집어 단추 자리는 그대로다.
 // 지도 카메라는 그 단계에 중요한 것(길·목적지·클로이드·확인한 기기 말풍선·방 이름표)을 트윈 위쪽 여백 아래·메시지 상자 위·미니맵과 마스코트 왼쪽 칸(focus)에 맞춰,
 //   얹은 것(가린 자리 blocked) 밑에 깔리지 않게 한다.
@@ -43,7 +43,7 @@ export interface PageLayout {
   logo: Rect;
   /** 메시지 상자(트윈 아래쪽, 마스코트 바로 왼쪽, 남은 너비의 TALK_SHARE). 높이는 TALK_H로 정해져 있다. */
   bubble: Rect;
-  /** 시간 줄 카드(메시지 상자 왼쪽 남은 자리 전체): 바닥 줄은 상자와 같고 위는 화면 높이의 TIMELINE_TOP_SHARE. */
+  /** 시간 줄 카드(메시지 상자 왼쪽 남은 너비): 위·아래 선과 높이(TALK_H)가 메시지 상자와 같다. */
   timeline: Rect;
 }
 
@@ -82,8 +82,6 @@ export const TALK_H = 128;
 export const TALK_SHARE = 0.5;
 /** 메시지 상자 가장 작은 너비(px): 시연 기억 허락 줄 가운데 가장 긴 것(16px 글 약 552)과 상자 안 여백·▼ 자리(66)가 한 줄에 드는 너비. 좁은 화면(1280)만 절반보다 넓어진다. */
 export const TALK_MIN_W = 640;
-/** 시간 줄 카드 위 끝: 화면 높이에 곱하는 몫(화면 아래에서 1/3 높이까지, 2026-11-18 사용자 결정 「FSM은 훨씬 더 크게」의 자리를 2026-11-19 시간 줄이 이어 쓴다). */
-export const TIMELINE_TOP_SHARE = 2 / 3;
 /** 지도 카메라 칸: 위는 칩 줄(top-4 16 + 칩 28) 아래 4(할 일 진행도 알약은 없다), 왼쪽은 40, 얹은 것(메시지 상자·미니맵·마스코트)과는 FOCUS_GAP 떨어진다. */
 const FOCUS_TOP = 48;
 const FOCUS_LEFT = 40;
@@ -124,9 +122,8 @@ export function pageLayout(view: BoxSize, mascot: Pick<MascotImage, "width" | "h
   const bubbleRight = m.left - RING - gap;
   const bubbleW = Math.max(0, Math.min(bubbleRight - roomLeft, Math.max((bubbleRight - roomLeft) * TALK_SHARE, TALK_MIN_W)));
   const bubble: Rect = { left: bubbleRight - bubbleW, top: bottom(twin) - inset - bubbleH, width: bubbleW, height: bubbleH };
-  // 시간 줄 카드: 상자 왼쪽 남은 자리 전체, 바닥 줄은 상자와 같고 위는 화면 높이의 TIMELINE_TOP_SHARE(상자보다 낮지 않게)
-  const lineTop = Math.min(bubble.top, view.height * TIMELINE_TOP_SHARE);
-  const timeline: Rect = { left: roomLeft, top: lineTop, width: Math.max(0, bubble.left - gap - roomLeft), height: bottom(bubble) - lineTop };
+  // 시간 줄 카드: 상자 왼쪽 남은 너비, 위·아래 선은 상자와 같다(2026-11-19 사용자 「응」: 예상 줄을 빼면서 세로 크기 맞추기)
+  const timeline: Rect = { left: roomLeft, top: bubble.top, width: Math.max(0, bubble.left - gap - roomLeft), height: bubble.height };
   const image = mascotImageBox(mascot, scale, HEAD_ROOM);
   const logo = mascotLogoBox(mascot, scale, image);
 

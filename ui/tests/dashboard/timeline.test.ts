@@ -23,12 +23,12 @@ function decision(seq: number, at: number, state: string | null, action: string 
   };
 }
 
-// 실제 영상 wide-glass n2(2026-11-18) 시각: 세움 4.1초, 준비됨 13.5초, 사람 떠남 15.8초, 첫 명령 19.1초
+// 실제 영상 wide-glass n2(2026-11-18) 시각: 목표 세움 4.1초, 준비됨 13.5초, 사람 떠남 15.8초, 첫 명령 19.1초
 const T = 1_794_214_800_000;
 const s = (sec: number) => T + Math.round(sec * 1000);
 const GOAL: PendingGoal = {
   id: "goal-1", action: "컵 치우기", state: "left_cup", trigger: "사용자가 컵을 식탁 등에 두고 자리를 비웠다.", object: "cup_1", cls: "cup", status: "armed", prep: "ready",
-  reason: null, text: "컵을 두고 자리를 뜨면 컵을 치울게요", armed_ms: s(4.1), ready_ms: s(13.5), gone_ms: null, fired_ms: null, ended_ms: null, plan: null,
+  reason: null, text: "컵을 두고 자리를 뜨면 컵을 치울게요", armed_ms: s(4.1), ready_ms: s(13.5), gone_ms: null, fired_ms: null, plan: null,
 };
 /** 컵 치우기 계획: 첫 두 단계를 시작한 것(식탁으로 가기 19.1~19.2초, 컵 집기 19.2초~). */
 function running(): PlanView {
@@ -55,26 +55,15 @@ describe("시간 줄 자료(timelineOf)", () => {
     ]);
   });
 
-  it("예상 줄: 목표를 세운 때부터 준비된 때까지(세움), 준비된 때부터 끝날 때까지(준비됨) 구간이고, 글은 「<조건> <행동> · <단계>」를 세운 때에 단다", () => {
-    const t = timelineOf(feed([habit, decision(1, s(3), "drinking"), { type: "goal", goal: GOAL }]))!;
-    expect(t.spans.filter((x) => x.row === "guess").map(({ from, to, tone }) => ({ from, to, tone }))).toEqual([
-      { from: s(4.1), to: s(13.5), tone: "muted" },
-      { from: s(13.5), to: null, tone: "ready" },
-    ]);
-    expect(t.caption).toEqual({ at: s(4.1), text: "컵을 두고 자리를 뜨면 컵 치우기 · 준비됨" });
-    const set = timelineOf(feed([habit, decision(1, s(3), "drinking"), { type: "goal", goal: { ...GOAL, prep: "planning", ready_ms: null } }]))!;
-    expect(set.caption!.text).toBe("컵을 두고 자리를 뜨면 컵 치우기 · 세움");
-    expect(set.spans.filter((x) => x.row === "guess")).toHaveLength(1);
-  });
-
-  it("사람이 떠난 뒤 글은 목표가 몇 초 먼저 섰는지(세운 때 → 떠난 때, 반올림)다. 쓰면 준비됨 구간이 그 때 끝난다. 버리면 「버림」이다", () => {
-    const used = { ...GOAL, status: "used" as const, gone_ms: s(15.8), fired_ms: s(15.8), ended_ms: s(19.1) };
-    const t = timelineOf(feed([habit, decision(1, s(3), "drinking"), { type: "goal", goal: used }]))!;
-    expect(t.caption!.text).toBe("컵을 두고 자리를 뜨면 컵 치우기 · 12초 먼저");
-    expect(t.spans.filter((x) => x.row === "guess").at(-1)).toMatchObject({ from: s(13.5), to: s(19.1) });
-    const dropped = timelineOf(feed([habit, decision(1, s(3), "drinking"), { type: "goal", goal: { ...used, status: "dropped", reason: "back" } }]))!;
-    expect(dropped.caption!.text).toBe("컵을 두고 자리를 뜨면 컵 치우기 · 버림");
-    expect(dropped.spans.filter((x) => x.row === "guess").every((x) => x.tone === "muted")).toBe(true);
+  // 사용자 결정(2026-11-19): 「예상을 없애자」. 줄은 사람 · 로봇 둘이고 목표 글(「… · 준비됨」·「N초 먼저」)이 없다
+  it("예상 줄이 없다: 목표가 서도 구간은 사람·로봇 줄뿐이고 목표 글 칸(caption)이 없다", () => {
+    const used = { ...GOAL, status: "used" as const, gone_ms: s(15.8), fired_ms: s(15.8) };
+    for (const goal of [GOAL, used]) {
+      const t = timelineOf(feed([habit, decision(1, s(3), "drinking"), { type: "goal", goal }, { type: "plan", plan: running() }]))!;
+      expect(new Set(t.spans.map((x) => x.row))).toEqual(new Set(["person", "robot"]));
+      expect(Object.keys(t).sort()).toEqual(["gap", "spans"]);
+      expect(JSON.stringify(t)).not.toMatch(/준비됨|세움|먼저|컵을 두고 자리를 뜨면/);
+    }
   });
 
   it("로봇 줄: 계획 단계가 시작한 때부터 끝난 때까지(지금 단계는 brand), 계획 밖은 「지켜봄」이다", () => {
@@ -92,7 +81,7 @@ describe("시간 줄 자료(timelineOf)", () => {
   });
 
   it("반응 간격: 사람이 떠난 때 → 그 뒤 같은 행동 계획의 첫 명령(첫 단계 시작) 「N.N초」. 떠나기 전 시작한 계획·다른 행동 계획은 아니다", () => {
-    const used = { ...GOAL, status: "used" as const, gone_ms: s(15.8), fired_ms: s(15.8), ended_ms: s(19.1) };
+    const used = { ...GOAL, status: "used" as const, gone_ms: s(15.8), fired_ms: s(15.8) };
     const t = timelineOf(feed([habit, decision(1, s(3), "drinking"), { type: "goal", goal: used }, { type: "plan", plan: running() }]))!;
     expect(t.gap).toEqual({ from: s(15.8), to: s(19.1), text: "3.3초" });
     const early = timelineOf(feed([habit, decision(1, s(3), "drinking"), { type: "goal", goal: { ...used, gone_ms: s(19.5) } }, { type: "plan", plan: running() }]))!;

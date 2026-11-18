@@ -7,13 +7,14 @@
 // 데이터 연결: 시각 단위 시:분(startHour·endHour·"14:30", 분당 px) → ms 시각(초당 px). 보이는 때는 지금(now)에서 spanSeconds 앞까지이고 지금이 오른쪽 끝이다.
 // 눈금은 초다: tickSeconds마다 굵은 선과 머리 글(tickLabel, 「N초 전」), 그 1/4마다 옅은 선(받은 코드의 시·15분 선). 칸(slot)은 from·to ms(to가 없으면 지금까지).
 // 지금 선(TimelineCurrentTime)은 1분마다 도는 자기 시계 대신 받은 now를 쓰고, 오른쪽 끝이라 이름표를 선 왼쪽(right-0)에 붙인다. 선이 오른쪽 테두리에 묻히지 않게 줄 칸 끝에서 TIMELINE_END_GAP px 띄운다. 이름표 글은 받은 글(nowLabel) 하나다(「Now: 14:30」의 시각은 뺐다).
-// 떨굴 구간(TimelineDropRegion)은 구간 표시(TimelineRegion: 두 끝 선·옅은 바탕·이름표)로 쓴다: 이름표는 구간 위 대신 아래 끝(bottom-1)에 두고, 카드 끝에 걸리면 그 끝에 맞추며, 끝 선 위에 그린다(맨 뒤 차례).
+// 떨굴 구간(TimelineDropRegion)은 구간 표시(TimelineRegion: 두 끝 선·옅은 바탕·이름표)로 쓴다: 이름표는 구간 위 끝 대신 머리 줄 아래 두 줄의 가운데(top-[calc(50%+12px)])에 얹고,
+// 카드 끝에 걸리면 그 끝에 맞추며, 끝 선 위에 그린다(맨 뒤 차례).
+// 메시지 상자와 같은 높이(128)에 눈금 줄과 두 줄이 들게 여백만 줄였다(글 크기는 그대로): 머리 줄 h-12 → h-6, 구간 이름표 px-3 py-1.5 → px-2 py-0.5.
 // 줄 머리 글 자리 열 너비 기본 112 → 64. 머리 줄 열 이름(columnLabel) 기본 "Row" → 없음. 줄 이름(TimelineRowLabel)은 받은 예시 코드(demoCode)의 renderRowHeader 글(px-4 py-1, font-medium text-sm)이다.
 // 토큰 색: accent → brand, accent-foreground → on-brand, 지금 선·이름표 바탕 secondary → foreground(이름표 글 foreground → background), 판·머리 바탕 background → card(트윈 위에 얹는 카드), border·muted-foreground 그대로.
-// 칸 색은 tone(plain 카드 바탕·테, muted 옅은 바탕, ready brand 테, brand 빨강)이다.
+// 칸 색은 tone(plain 카드 바탕·테, muted 옅은 바탕, brand 빨강)이다.
 // 모서리·그림자: 판(timeline-grid)에 rounded-lg·shadow-sm(대시보드 카드 틀 Card와 같은 토큰)을 단다.
 // 구간 이름표 size gap(굵게 font-bold, 글 크기는 받은 text-sm 그대로)을 더했다(2026-11-19 사용자 「글자가 너무 크더라 초나오는거」로 22px을 뺐다).
-// 예상 줄 글(TimelineCaption)을 더했다: 칸 글(TimelineSlotLabel)과 같은 글(font-medium text-xs)을 자르지 않고(truncate 없음, 한 줄) 카드 바탕(bg-card·rounded, px-1)으로 구간·지금 선 위(z-[16])에 둔다.
 // 원래 글 크기: text-sm(14px). 받은 코드의 머리 열 이름·떨굴 구간 이름표가 text-sm, 시 글·칸 글·지금 이름표가 text-xs다. 더 큰 글은 npm run lint(scripts/lint-ui-type.ts)가 막는다.
 import * as React from "react";
 import { createContext, useContext, useEffect, useRef, useState } from "react";
@@ -222,7 +223,7 @@ export function TimelineHeader({
       data-slot="timeline-header"
       className={cn("sticky top-0 z-10 bg-card border-b", className)}
     >
-      <div className="flex h-12">
+      <div className="flex h-6">
         <div
           data-slot="timeline-header-column"
           className="sticky left-0 w-[var(--timeline-column-width)] bg-card border-r flex items-center px-4 font-semibold text-sm z-1"
@@ -333,11 +334,10 @@ export function TimelineRow({
  * TIMELINE SLOT
  * ========================================================================== */
 
-export type TimelineSlotTone = "plain" | "muted" | "ready" | "brand";
+export type TimelineSlotTone = "plain" | "muted" | "brand";
 const SLOT_TONE: Record<TimelineSlotTone, string> = {
   plain: "border bg-card text-card-foreground",
   muted: "bg-muted text-muted-foreground",
-  ready: "border-2 border-brand bg-card text-brand",
   brand: "bg-brand text-on-brand",
 };
 
@@ -402,17 +402,6 @@ export function TimelineSlotLabel({
   );
 }
 
-/** 예상 줄 글: 칸 글과 같은 글을 자르지 않고 카드 바탕으로 구간·지금 선 위에 둔다. */
-export function TimelineCaption({ className, ...props }: React.ComponentProps<"div">) {
-  return (
-    <div
-      data-slot="timeline-caption"
-      className={cn("relative z-[16] whitespace-nowrap rounded bg-card px-1 font-medium text-xs text-brand", className)}
-      {...props}
-    />
-  );
-}
-
 /** 줄 머리 글(받은 예시 코드의 renderRowHeader 글). */
 export function TimelineRowLabel({ className, ...props }: React.ComponentProps<"div">) {
   return (
@@ -466,7 +455,7 @@ export function TimelineRegion({
       <div className="absolute inset-0 bg-brand/[0.07]" />
       <div className="absolute top-0 bottom-0 left-0 w-0.5 bg-brand" />
       <div className="absolute top-0 bottom-0 right-0 w-0.5 bg-brand" />
-      <div data-slot="timeline-region-label" className={cn("absolute bottom-1 bg-brand text-on-brand px-3 py-1.5 rounded text-sm font-semibold whitespace-nowrap shadow-md", align, REGION_LABEL[size])}>
+      <div data-slot="timeline-region-label" className={cn("absolute top-[calc(50%+12px)] -translate-y-1/2 bg-brand text-on-brand px-2 py-0.5 rounded text-sm font-semibold whitespace-nowrap shadow-md", align, REGION_LABEL[size])}>
         {label}
       </div>
     </div>

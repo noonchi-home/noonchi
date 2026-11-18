@@ -5,7 +5,7 @@
 import { describe, expect, it } from "vitest";
 import tokens from "../../../src/design/tokens.json";
 import { mascotLogoBox } from "../../src/dashboard/bust";
-import { ASPECT_STEP, TIMELINE_TOP_SHARE, LIFT, MASCOT_SHARE, mascotPoint, MINIMAP_ASPECT, MINIMAP_MAX_SHARE, MINIMAP_SHARE, nextAspect, pageLayout, RING, TALK_H, TALK_MIN_W, TALK_SHARE, type Rect } from "../../src/dashboard/layout";
+import { ASPECT_STEP, LIFT, MASCOT_SHARE, mascotPoint, MINIMAP_ASPECT, MINIMAP_MAX_SHARE, MINIMAP_SHARE, nextAspect, pageLayout, RING, TALK_H, TALK_MIN_W, TALK_SHARE, type Rect } from "../../src/dashboard/layout";
 import { MASCOT } from "../../src/lib/mascot-image";
 
 const M = MASCOT;
@@ -110,13 +110,13 @@ describe.each([[1920, 1080], [1440, 900], [1522, 722]])("%i×%i", (width, height
     expect("map" in L).toBe(false);
   });
 
-  it("시간 줄 카드는 메시지 상자 왼쪽 남은 자리 전체를 쓰는 큰 카드다: 왼쪽은 트윈 안쪽 여백, 오른쪽은 상자에서 사이(gap)만큼, 바닥 줄은 상자와 같고 위는 화면 높이의 TIMELINE_TOP_SHARE(아래에서 1/3)까지", () => {
-    expect(TIMELINE_TOP_SHARE).toBeCloseTo(2 / 3, 5);
+  // 사용자 결정(2026-11-19): 「예상을 없애자」, 그리고 「응」(메시지 상자와 세로 크기 맞추기). 시간 줄 카드는 메시지 상자와 같은 높이(TALK_H)이고 위·아래 선이 나란하다
+  it("시간 줄 카드는 메시지 상자 왼쪽 자리다: 왼쪽은 트윈 안쪽 여백, 오른쪽은 상자에서 사이(gap)만큼, 위·아래 선은 메시지 상자와 같다(높이 TALK_H)", () => {
     expect(L.timeline.left).toBe(L.twin.left + space.panelPadding);
     expect(near(right(L.timeline), L.bubble.left - L.gap)).toBe(true);
     expect(near(bottom(L.timeline), bottom(L.bubble))).toBe(true);
-    expect(near(L.timeline.top, height * TIMELINE_TOP_SHARE, 1)).toBe(true);
-    expect(L.timeline.height).toBeGreaterThan(TALK_H);
+    expect(near(L.timeline.top, L.bubble.top)).toBe(true);
+    expect(L.timeline.height).toBe(TALK_H);
     expect(L.timeline.width).toBeGreaterThan(L.bubble.width * 0.8);
     for (const r of [L.video, L.mascot, L.bubble]) expect(hit(L.timeline, r)).toBe(false);
   });
@@ -229,7 +229,7 @@ describe("크기(스케치 6안)", () => {
     expect(near(L.mascot.height, 320, 10)).toBe(true);
     expect(L.bubble.height).toBe(TALK_H);
     expect(TALK_H).toBe(128);
-    expect(near(L.timeline.top, 1080 * TIMELINE_TOP_SHARE, 1)).toBe(true);
+    expect(L.timeline.height).toBe(TALK_H);
   });
 });
 

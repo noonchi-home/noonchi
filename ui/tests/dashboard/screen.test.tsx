@@ -275,7 +275,8 @@ describe("대시보드 메시지 상자(트윈 아래쪽 하나, 생각 말풍�
   });
 
   // 사용자 결정(2026-11-19): 「A+C가 그나마 낫네」, 「만들기, 1.6초 크게」. FSM 원 카드 자리를 시간 줄(21st.dev Timeline)이 쓴다
-  it("시간 줄 카드는 메시지 상자 왼쪽 큰 자리(layout timeline)의 21st.dev Timeline이고, 사람 · 예상 · 로봇 세 줄과 오른쪽 끝 「지금」 선, 초 눈금 「N초 전」이 있다. 보기만 한다", () => {
+  // 사용자 결정(2026-11-19): 「예상을 없애자」. 줄은 사람 · 로봇 둘이다
+  it("시간 줄 카드는 메시지 상자 왼쪽 자리(layout timeline)의 21st.dev Timeline이고, 사람 · 로봇 두 줄과 오른쪽 끝 「지금」 선, 초 눈금 「N초 전」이 있다. 예상 줄·목표 글이 없다. 보기만 한다", () => {
     const rect = atScreen(1920, 1080);
     try {
       draw(screenAt(2));
@@ -284,8 +285,10 @@ describe("대시보드 메시지 상자(트윈 아래쪽 하나, 생각 말풍�
       expect(cls(card(), "pointer-events-none")).toBe(true);
       expect(card().querySelector("[data-slot=timeline-grid]")).not.toBeNull();
       expect([...card().querySelectorAll<HTMLElement>("[data-slot=timeline-row]")].map((r) => [r.dataset.row, r.querySelector("[data-slot=timeline-row-name]")!.textContent])).toEqual([
-        ["person", "사람"], ["guess", "예상"], ["robot", "로봇"],
+        ["person", "사람"], ["robot", "로봇"],
       ]);
+      expect(card()).not.toHaveTextContent(/예상|준비됨|먼저/);
+      expect(card().querySelector("[data-timeline-caption], [data-slot=timeline-caption]")).toBeNull();
       const now = card().querySelector<HTMLElement>("[data-slot=timeline-current-time]")!;
       expect(now).toHaveTextContent("지금");
       expect([...card().querySelectorAll("[data-slot=timeline-hour-marker]")].map((m) => m.textContent)).toEqual(["10초 전", "20초 전"]);
@@ -294,26 +297,11 @@ describe("대시보드 메시지 상자(트윈 아래쪽 하나, 생각 말풍�
     } finally { rect.mockRestore(); }
   });
 
-  // 조정자(2026-11-19): 예상 줄 글이 막대 안에서 잘려 보였다(구간 끝 선이 글을 가로지름). 글은 자르지 않고 구간·지금 선 위에 카드 바탕으로 둔다
-  it("예상 줄 글은 자르지 않는다(말줄임·넘침 숨김 없음, 한 줄). 구간 선·지금 선보다 위에 카드 바탕으로 그려 선이 글을 가로지르지 않는다", () => {
-    draw(screenAt(2));
-    const caption = card().querySelector<HTMLElement>("[data-timeline-caption]")!;
-    const text = caption.querySelector<HTMLElement>("[data-slot=timeline-caption]")!;
-    expect(text).toHaveTextContent("컵을 두고 자리를 뜨면 컵 치우기 · 16초 먼저");
-    for (const el of [caption, text]) for (const c of ["truncate", "overflow-hidden", "text-ellipsis"]) expect(cls(el, c), c).toBe(false);
-    expect(cls(text, "whitespace-nowrap")).toBe(true);
-    expect(cls(text, "bg-card")).toBe(true);
-    expect(cls(text, "text-xs")).toBe(true);
-    expect(cls(text, "z-[16]")).toBe(true);
-  });
-
-  it("구간: 사람 줄은 사람 상태, 예상 줄은 목표(준비됨은 brand 테)와 그 글, 로봇 줄은 계획 단계(지금 단계는 brand 빨강)와 지켜봄이다. 지금보다 앞 SPAN초 밖은 그리지 않는다", () => {
+  it("구간: 사람 줄은 사람 상태, 로봇 줄은 계획 단계(지금 단계는 brand 빨강)와 지켜봄이다. 지금보다 앞 SPAN초 밖은 그리지 않는다", () => {
     draw(screenAt(2));
     const row = (id: string) => card().querySelector<HTMLElement>(`[data-slot=timeline-row][data-row=${id}]`)!;
     const slots = (id: string) => [...row(id).querySelectorAll<HTMLElement>("[data-slot=timeline-slot]")];
     expect(slots("person").map((s) => s.textContent)).toEqual(["먹거나 마시는 중", "컵을 두고 자리를 뜸"]);
-    expect(slots("guess").map((s) => s.dataset.tone)).toEqual(["muted", "ready"]);
-    expect(row("guess").querySelector("[data-timeline-caption]")).toHaveTextContent("컵을 두고 자리를 뜨면 컵 치우기 · 16초 먼저");
     expect(slots("robot").map((s) => [s.textContent, s.dataset.tone])).toEqual([["지켜봄", "plain"], ["식탁으로 가기", "muted"], ["컵 집기", "brand"]]);
     // 보이는 때(지금에서 SPAN초 앞까지) 밖만 있는 구간은 없다
     const old = { id: "old", row: "robot" as const, from: TIMELINE_NOW - (TIMELINE_SPAN_S + 30) * 1000, to: TIMELINE_NOW - (TIMELINE_SPAN_S + 5) * 1000, text: "옛 단계", tone: "muted" as const };
@@ -323,7 +311,7 @@ describe("대시보드 메시지 상자(트윈 아래쪽 하나, 생각 말풍�
   });
 
   // 사용자 바로잡음(2026-11-19): 「글자가 너무 크더라 초나오는거」. 22px을 빼고 부품 원래 크기(14px)에 굵기·LG 빨강으로만 띄운다
-  it("사람이 떠난 때 → 첫 명령은 세 줄을 가로지르는 brand 구간과 「N.N초」(부품 원래 크기 14px, 굵게, brand 바탕)다. 간격을 모르면 없다", () => {
+  it("사람이 떠난 때 → 첫 명령은 두 줄을 가로지르는 brand 구간과 「N.N초」(부품 원래 크기 14px, 굵게, brand 바탕)다. 간격을 모르면 없다", () => {
     draw(screenAt(2));
     const region = card().querySelector<HTMLElement>("[data-slot=timeline-drop-region]")!;
     expect(region).toHaveTextContent(TIMELINE_CLEAR.gap!.text);

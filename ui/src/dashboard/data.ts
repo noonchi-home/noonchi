@@ -28,9 +28,9 @@ export interface DashData {
   safety: { id: string; text: string } | null;
   /** 메시지 상자 줄: 새로 온 생각 메시지(반성 메시지 포함)와 바뀐 말풍선 카드 말을 받은 차례로(시계가 다른 기기여도 차례가 맞다). 최근 THOUGHT_KEPT개. */
   talk: { id: string; text: string }[];
-  /** 마지막으로 받은 미리 세운 목표(goal 메시지, src/act/track/goal.ts). 시간 줄 예상 줄과 트윈 목표 고리·미리 그린 길이 쓴다. 받기 전이면 null. */
+  /** 마지막으로 받은 미리 세운 목표(goal 메시지, src/act/track/goal.ts). 트윈 목표 고리·미리 그린 길과 시간 줄 반응 간격(사람이 떠난 때)이 쓴다. 받기 전이면 null. */
   goal: PendingGoal | null;
-  /** 마지막으로 받은 습관 FSM 그림 자료(habit 메시지, src/brain/habit.ts). 시간 줄 사람 줄의 상태 이름과 예상 줄 조건 글이 쓴다. 받기 전이면 null. */
+  /** 마지막으로 받은 습관 FSM 그림 자료(habit 메시지, src/brain/habit.ts). 시간 줄 사람 줄의 상태 이름이 쓴다. 받기 전이면 null. */
   habit: HabitFsm | null;
   /** 사람 상태가 바뀐 때들(유효한 판단의 습관 FSM 상태 fsm.state와 그 판단 시각, 오래된 것부터 최근 PEOPLE_KEPT개). 시간 줄 사람 줄이 쓴다.
    *  사람 상태 FSM이 들어오면 그 상태로 바꾼다. 상태를 모르는 판단(null)은 더하지 않는다. */

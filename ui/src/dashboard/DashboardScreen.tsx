@@ -68,7 +68,7 @@ export function DashboardScreen({ index, plan, step, robotKnown, connected, map,
   const L = useMemo(() => pageLayout(view, MASCOT, aspect), [view, aspect]);
   const decoded = usePredecode([MASCOT.src]);
   // 지금 화면 글이 쓰는 글꼴 조각을 받는다(처음 나오는 글자가 새 조각을 받으면 글을 다시 그린다)
-  const text = JSON.stringify([talk, timeline?.spans.map((s) => s.text), timeline?.caption?.text, timeline?.gap?.text, plan?.goal, plan?.steps.map((s) => s.label), WORDS, "0123456789"]);
+  const text = JSON.stringify([talk, timeline?.spans.map((s) => s.text), timeline?.gap?.text, plan?.goal, plan?.steps.map((s) => s.label), WORDS, "0123456789"]);
   const fonts = useFontsLoaded("Noto Sans KR Variable", text);
   const phase = usePreDraw(fonts && decoded && mapReady);
   const ready = phase === "done";

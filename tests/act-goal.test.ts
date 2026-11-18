@@ -234,21 +234,15 @@ describe("미리 세운 목표: 사람이 떠나면 PAM 확인 뒤 바로 시작
     expect(s.t.goal()).toBeNull();
   });
 
-  it("끝난 때(ended_ms): 서 있는 동안은 null이고, 씀·버림이 된 그 시각을 싣는다. 시작한 계획의 첫 단계는 첫 명령을 보낸 시각(started_ms)을 싣는다", async () => {
+  it("시작한 계획의 첫 단계는 첫 명령을 보낸 시각(started_ms)을 싣는다(대시보드 시간 줄 반응 간격)", async () => {
     const s = await ready();
-    expect(s.goals.every((g) => g.ended_ms === null)).toBe(true);
     s.tick();
     s.gone();
     s.tick();
     const at = s.clock.t;
     await s.decide(pam("pam-2", 2, s.clock.t));
-    expect(s.goals.at(-1)).toMatchObject({ status: "used", ended_ms: at });
+    expect(s.goals.at(-1)).toMatchObject({ status: "used" });
     expect(s.plans.current()!.steps[0]).toMatchObject({ status: "active", started_ms: at });
-    const d = await ready();
-    d.setObjects(() => [cupOn({ seen: d.clock.t, status: "gone" })]);
-    const dropAt = d.clock.t;
-    d.gone();
-    expect(d.goals.at(-1)).toMatchObject({ status: "dropped", reason: "took", ended_ms: dropAt });
   });
 
   it("처음 하는 일 묻기를 켜면(ASK_FIRST_TIME) 목표가 아닌 보통 판단의 처음 하는 컵 치우기는 첫 단계 전에 승인을 묻는다(목표 실행만 묻지 않는다)", async () => {

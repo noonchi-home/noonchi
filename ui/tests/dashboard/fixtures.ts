@@ -109,15 +109,12 @@ export const HABIT = habitView(CUP_FSM_MEMORY, 1);
 /** 시간 줄의 지금(ms, 화면 시험은 이 때로 멈춰 그린다)과 그보다 sec초 앞. */
 export const TIMELINE_NOW = 1_794_214_830_000;
 const ago = (sec: number) => TIMELINE_NOW - Math.round(sec * 1000);
-/** 지켜보기의 시간 줄: 마시는 중, 목표 세움(15초 앞) → 준비됨(10초 앞), 로봇 지켜봄. */
+/** 지켜보기의 시간 줄: 마시는 중, 로봇 지켜봄. */
 export const TIMELINE_WATCH: TimelineData = {
   spans: [
     { id: "person:1", row: "person", from: ago(20), to: null, text: "먹거나 마시는 중", tone: "muted" },
-    { id: "goal-1:set", row: "guess", from: ago(15), to: ago(10), text: "", tone: "muted" },
-    { id: "goal-1:ready", row: "guess", from: ago(10), to: null, text: "", tone: "ready" },
     { id: "watch:0", row: "robot", from: Number.NEGATIVE_INFINITY, to: null, text: "지켜봄", tone: "plain" },
   ],
-  caption: { at: ago(15), text: "컵을 두고 자리를 뜨면 컵 치우기 · 준비됨" },
   gap: null,
 };
 /** 계획 단계의 시간 줄: 9.3초 앞에 사람이 떠나고 6초 앞에 첫 명령(반응 간격 3.3초), 지금 단계 컵 집기. */
@@ -125,13 +122,10 @@ export const TIMELINE_CLEAR: TimelineData = {
   spans: [
     { id: "person:1", row: "person", from: ago(30), to: ago(8), text: "먹거나 마시는 중", tone: "muted" },
     { id: "person:2", row: "person", from: ago(8), to: null, text: LEFT_CUP_STATE, tone: "muted" },
-    { id: "goal-1:set", row: "guess", from: ago(25), to: ago(20), text: "", tone: "muted" },
-    { id: "goal-1:ready", row: "guess", from: ago(20), to: ago(6), text: "", tone: "ready" },
     { id: "watch:0", row: "robot", from: Number.NEGATIVE_INFINITY, to: ago(6), text: "지켜봄", tone: "plain" },
     { id: "cup:1", row: "robot", from: ago(6), to: ago(4), text: "식탁으로 가기", tone: "muted" },
     { id: "cup:2", row: "robot", from: ago(4), to: null, text: "컵 집기", tone: "brand" },
   ],
-  caption: { at: ago(25), text: "컵을 두고 자리를 뜨면 컵 치우기 · 16초 먼저" },
   gap: { from: ago(9.3), to: ago(6), text: "3.3초" },
 };
 

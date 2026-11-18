@@ -31,8 +31,6 @@ export interface PendingGoal {
   /** 사람이 떠난 때(World State 사람 since_ms)와 그것을 본 때. */
   gone_ms: number | null;
   fired_ms: number | null;
-  /** 끝난 때(씀·버림이 된 시각). 서 있는 동안(세움·떠남)은 null. */
-  ended_ms: number | null;
   /** 미리 만든 계획 보기(없으면 null). */
   plan: PlanView | null;
   /** 까닭 글(계획 검사의 첫 틀린 단계와 이유 등): 미리 만들기 실패(prep failed)와 준비한 계획을 버리고 계획 모드로 넘어갈 때(dropped). 없으면 칸이 없다. */

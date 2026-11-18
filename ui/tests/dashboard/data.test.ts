@@ -100,7 +100,7 @@ describe("대시보드 자료", () => {
   it("미리 세운 목표(goal)와 습관 FSM 그림(habit)은 받은 것을 그대로 두고 메시지 상자 줄은 바꾸지 않는다. 같은 판본 habit은 같은 자료다. hello는 지운다", () => {
     const g: PendingGoal = {
       id: "goal-1", action: "컵 치우기", state: "left_cup", trigger: "t", object: "cup_1", cls: "cup", status: "armed", prep: "ready", reason: null, text: "컵을 두고 자리를 뜨면 컵을 치울게요",
-      armed_ms: 1, ready_ms: 2, gone_ms: null, fired_ms: null, ended_ms: null, plan: null,
+      armed_ms: 1, ready_ms: 2, gone_ms: null, fired_ms: null, plan: null,
     };
     const habit = { version: 1, initial: "drinking", states: [{ id: "drinking", name: "먹거나 마시는 중", learned: false }], transitions: [] };
     let s = reduceDash(EMPTY_DASH, { type: "goal", goal: g }, 0);
