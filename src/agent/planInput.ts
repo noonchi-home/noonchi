@@ -13,8 +13,8 @@ export const PLANNER_PROMPT = `너는 이 집 스마트홈 에이전트의 계�
 손
 - 로봇이 없다. 사람이 든 실제 폰이 손이다. 사람이 할 일은 go·pick·place·do 단계로 만든다.
 - 사람 단계에는 문장을 쓰지 않는다. 동작(act)·대상(target)·물건(object 또는 item)만 고르면 서버가 단계 이름과 폰에 보낼 부탁을 만든다. 예: go 가기 → 「식탁으로 가 주세요」, pick 들기 cup_1 → 「컵을 들어 주세요」, place 넣기 싱크대 → 「컵을 싱크대에 넣어 주세요」.
-- act: go 가기 / pick 들기·꺼내기·내리기 / place 넣기·올리기·놓기 / do 따르기·물 받기·넣기·젓기·열기·닫기·켜기·끄기.
-- item은 물건 이름(목록 안)이다. pick·place가 World State 물건이면 쓰지 않는다(그 종류 이름을 쓴다). 안 보이는 물건(냉장고 안 물병, 세탁기 안 세탁물)이나 do에서 다루는 것(따르는 물, 넣는 것)에 쓴다.
+- act는 사람 단계(go·pick·place·do)마다 꼭 쓴다: go 가기 / pick 들기·꺼내기·내리기 / place 넣기·올리기·놓기 / do 따르기·물 받기·넣기·젓기·열기·닫기·켜기·끄기.
+- item은 물건 이름(목록 안 한국어)이다. pick·place가 World State 물건이면 item을 쓰지 않는다(서버가 그 물건 종류 이름으로 부른다). 안 보이는 물건(냉장고 안 물병, 세탁기 안 세탁물)이나 do에서 다루는 것(따르는 물, 넣는 것)에 쓴다.
 
 단계
 - go: 그 자리로 가기. target은 평면도 id. until은 보통 {"phone_near": target}(쓰지 않으면 그것으로 본다).
@@ -50,22 +50,25 @@ export const PLANNER_PROMPT = `너는 이 집 스마트홈 에이전트의 계�
 - [지난 수업]이 있으면 그 단계 순서를 그대로 쓴다.
 - 질문(question)에는 불·열이 나는 가전(인덕션·전자레인지) 이름을 쓰지 않는다.
 
-예(컵 치우기, 식탁 table_1 위 컵 cup_1, 싱크볼이 있는 싱크대 sink_1)
-1. go 가기 table_1 until {"phone_near": "table_1"}
-2. pick 들기 cup_1 until {"any": [{"object": "cup_1", "follow": true, "facts": {"place": "in_hand"}}, {"person_holding": "cup"}]}
-3. go 가기 sink_1 until {"phone_near": "sink_1"}
-4. place 넣기 sink_1 object cup_1 until {"all": [{"any": [{"object": "cup_1", "follow": true, "facts": {"place": "in_sink"}}, {"all": [{"object": "cup_1", "follow": true, "surface": "sink_1", "part": "basin"}, {"not": {"object": "cup_1", "follow": true, "facts": {"place": "in_hand"}}}]}]}, {"not": {"person_holding": "cup_1"}}]}
+예(컵 치우기, 식탁 table_1 위 컵 cup_1, 싱크볼이 있는 싱크대 sink_1). submit_plan steps:
+1. {"kind": "go", "act": "가기", "target": "table_1", "until": {"phone_near": "table_1"}, "timeout_s": 120}
+2. {"kind": "pick", "act": "들기", "target": "cup_1", "until": {"any": [{"object": "cup_1", "follow": true, "facts": {"place": "in_hand"}}, {"person_holding": "cup"}]}, "timeout_s": 120}
+3. {"kind": "go", "act": "가기", "target": "sink_1", "until": {"phone_near": "sink_1"}, "timeout_s": 120}
+4. {"kind": "place", "act": "넣기", "target": "sink_1", "object": "cup_1", "until": {"all": [{"any": [{"object": "cup_1", "follow": true, "facts": {"place": "in_sink"}}, {"all": [{"object": "cup_1", "follow": true, "surface": "sink_1", "part": "basin"}, {"not": {"object": "cup_1", "follow": true, "facts": {"place": "in_hand"}}}]}]}, {"not": {"person_holding": "cup_1"}}]}, "timeout_s": 120}
 
-예(컵에 물 채워 주기, 냉장고 fridge_1, 식탁 table_1 위 빈 컵 cup_1)
-1. go 가기 fridge_1 until {"phone_near": "fridge_1"}
-2. pick 꺼내기 fridge_1 item 물병 until {"object": "bottle", "facts": {"place": "in_hand"}}
-3. go 가기 table_1 until {"phone_near": "table_1"}
-4. do 따르기 cup_1 item 물 until {"object": "cup_1", "follow": true, "facts": {"contents": "has_contents"}}
+예(컵에 물 채워 주기, 냉장고 fridge_1, 식탁 table_1 위 빈 컵 cup_1). submit_plan steps:
+1. {"kind": "go", "act": "가기", "target": "fridge_1", "until": {"phone_near": "fridge_1"}, "timeout_s": 120}
+2. {"kind": "pick", "act": "꺼내기", "item": "물병", "target": "fridge_1", "until": {"object": "bottle", "facts": {"place": "in_hand"}}, "timeout_s": 120}
+3. {"kind": "go", "act": "가기", "target": "table_1", "until": {"phone_near": "table_1"}, "timeout_s": 120}
+4. {"kind": "do", "act": "따르기", "item": "물", "target": "cup_1", "until": {"object": "cup_1", "follow": true, "facts": {"contents": "has_contents"}}, "timeout_s": 120}
 
-예(세탁물 옮기기, 세탁기 washer_1, 건조기 dryer_1)
-1. wait notice 세탁 until {"device": "washer_1", "state": "stopped"} timeout_s 7200 on_timeout ask
-2. go 가기 washer_1 3. pick 꺼내기 washer_1 item 세탁물 4. go 가기 dryer_1
-5. place 넣기 dryer_1 item 세탁물 6. device dryer_1 label 「건조기 시작」 tool start until {"device": "dryer_1", "state": "running"}`;
+예(세탁물 옮기기, 세탁기 washer_1, 건조기 dryer_1). submit_plan steps:
+1. {"kind": "wait", "notice": "세탁", "until": {"device": "washer_1", "state": "stopped"}, "timeout_s": 7200, "on_timeout": "ask"}
+2. {"kind": "go", "act": "가기", "target": "washer_1", "timeout_s": 120}
+3. {"kind": "pick", "act": "꺼내기", "item": "세탁물", "target": "washer_1", "timeout_s": 120}
+4. {"kind": "go", "act": "가기", "target": "dryer_1", "timeout_s": 120}
+5. {"kind": "place", "act": "넣기", "item": "세탁물", "target": "dryer_1", "timeout_s": 120}
+6. {"kind": "device", "label": "건조기 시작", "target": "dryer_1", "tool": "start", "until": {"device": "dryer_1", "state": "running"}, "timeout_s": 60}`;
 
 const xz = (p: readonly number[] | null | undefined) => (p ? `[${p.map((n) => Math.round(n * 100) / 100).join(", ")}]` : "모름");
 const factsOf = (f: Record<string, { value: string } | undefined>) =>
@@ -105,7 +108,7 @@ export function planInput(ctx: PlanContext): string {
     `- 단계 한도: ${Math.min(task.maxSteps ?? PLAN_LIMITS.maxSteps, PLAN_LIMITS.hardMaxSteps)}개`,
     `[PAM 판단] 관찰: ${d.prediction?.observation ?? "없음"} / 이유: ${d.prediction?.reasoning ?? "없음"}`,
     ...(ctx.ahead
-      ? [`[미리 세운 목표] 목표 물건 ${ctx.ahead.object}${ctx.ahead.stand ? `(사람이 지금 쓰는 것을 다 쓰고 ${ctx.ahead.stand.surface_label ?? "곁 면"} 위에 둘 것으로 본 자리)` : ""}. 사람이 아직 쓰는 중이다. 「${ctx.ahead.on ?? ctx.ahead.trigger}」가 되면 할 일이다. 사람이 떠난 뒤를 생각해 계획하고, 물건은 ${ctx.ahead.object}만 쓴다.`]
+      ? [`[미리 세운 목표] 목표 물건 ${ctx.ahead.object}${ctx.ahead.stand ? `(사람이 지금 쓰는 것을 다 쓰고 ${ctx.ahead.stand.surface_label ?? "곁 면"} 위에 둘 것으로 본 자리)` : ""}. 사람이 아직 쓰는 중이다. 「${ctx.ahead.on ?? ctx.ahead.trigger}」가 되면 서버가 이 계획을 시작한다. 그때를 기다리거나 할지 묻는 단계 없이 그 뒤에 할 단계만 계획하고, 물건은 ${ctx.ahead.object}만 쓴다.`]
       : []),
     `[World State] ${ctx.nowIso}`,
     ...worldLines(world, ctx.placed),

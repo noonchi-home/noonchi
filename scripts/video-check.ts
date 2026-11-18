@@ -78,7 +78,8 @@ const DASH_SIZE: [number, number] = [1280, 800];
 const DASH_WAIT_MS = 8_000;
 /** 마지막 눈 줄에서 이만큼(m) 옮기면 눈 줄을 다시 쓴다 */
 const EYE_MOVE_M = 0.5;
-const HISTORY_KINDS = "detection,decision,plan,execution,look,goal";
+/** 시각표(timeline)가 줄로 만드는 서버 기록 종류. GET /api/history의 kinds로 가져온다. */
+export const FETCH_KINDS: readonly string[] = ["detection", "decision", "plan", "execution", "look", "goal", "planner"];
 /** 영상이 끝난 뒤 남은 답 누르기·계획 끝을 더 기다리는 시간 */
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -1015,7 +1016,7 @@ async function main(): Promise<number> {
       if (t0 !== firstT0) console.log(`[video-check] 서버 시계 t0=${t0} (처음 ${firstT0})`);
 
       // 서버 기록·VLM 비용. 새 서버로만 시작하니 /api/brain 합계가 이번 판 값이다
-      const hist = await fetch(`${api}/api/history?since=${Math.min(firstT0, t0)}&kinds=${HISTORY_KINDS}&limit=5000`);
+      const hist = await fetch(`${api}/api/history?since=${Math.min(firstT0, t0)}&kinds=${FETCH_KINDS.join(",")}&limit=5000`);
       if (!hist.ok) throw new Error(`기록을 받지 못함: HTTP ${hist.status}`);
       const history = ((await hist.json()) as { rows: HistoryRow[] }).rows;
       const brain = await getJson<BrainNow>(`${api}/api/brain`);

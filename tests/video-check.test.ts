@@ -8,7 +8,8 @@ import { describe, expect, it } from "vitest";
 import type { HistoryRow } from "../src/contract/history.js";
 import type { WorldEye, WorldObject, WorldView } from "../src/contract/world.js";
 import { dockId, isDockStep } from "../src/act/dock-step.js";
-import { SEND_SAY, clickChoice, clock, costLine, judgeInput, judgeState, markdown, parseArgs, phoneUrl, plannedClicks, sendStartPose, mainPlan, planState, stepPlaces, stepVerdict, timeline, verdict, twinRows, usedServer, roomLabels, ownAssetFailures, videoClock, runTimeline, clipEnd, syncWarning, mustStop, openDashboard, waitLoaded, waitTwinReady, frameGapLine, type ClickRule, type Row, type VideoCommand } from "../scripts/video-check.js";
+import { HISTORY_KINDS as DB_KINDS } from "../src/brain/history/db.js";
+import { FETCH_KINDS, SEND_SAY, clickChoice, clock, costLine, judgeInput, judgeState, markdown, parseArgs, phoneUrl, plannedClicks, sendStartPose, mainPlan, planState, stepPlaces, stepVerdict, timeline, verdict, twinRows, usedServer, roomLabels, ownAssetFailures, videoClock, runTimeline, clipEnd, syncWarning, mustStop, openDashboard, waitLoaded, waitTwinReady, frameGapLine, type ClickRule, type Row, type VideoCommand } from "../scripts/video-check.js";
 import { createServer, type Server } from "node:http";
 import { listenRetry } from "../src/shared/net.js";
 import type { SceneJson } from "../src/contract/layout.js";
@@ -348,6 +349,13 @@ describe("video-check", () => {
       ["00:07.3", "계획 모드", "계획 모드 1/3차례 2.4초 · 버림 · 2번 단계: until이 조건 낱말 모양이 아닙니다: any.1: 쓰지 않는 키 follow."],
       ["00:09.8", "계획 모드", "계획 모드 2/3차례 2.5초 · 통과"],
     ]);
+  });
+
+  // 2026-11-19 plan1: 서버가 planner 줄을 남겨도 시각표가 가져오는 기록 종류(kinds)에 없어 「계획 모드」 줄이 시각표에 없었다
+  it("시각표가 줄로 만드는 기록 종류는 모두 서버에서 가져온다(FETCH_KINDS)", () => {
+    const shown = DB_KINDS.filter((kind) => timeline(0, [{ id: 1, at_ms: 1_000, day: "2026-11-19", kind, subject: "s", text: "글", data: null }], []).length > 0);
+    expect(shown).toContain("planner");
+    expect(shown.filter((k) => !FETCH_KINDS.includes(k))).toEqual([]);
   });
 
   it("비용 줄: /api/brain이 없으면 모름, 가까이 보기·관찰 모드가 없으면 앞 글 그대로, 있으면 횟수와 비용(모르면 비용 모름)", () => {

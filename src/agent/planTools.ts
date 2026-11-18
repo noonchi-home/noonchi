@@ -146,8 +146,8 @@ export const STEP_ARGS = z.object({
   label: z.string().min(1).max(30).optional().describe("device: 화면 단계 이름(예: 건조기 시작). 그 밖의 단계 이름은 서버가 정한다"),
   target: z.string().min(1).optional().describe("go·place: 평면도 id, pick·do: World State 물건 id 또는 평면도 id, device: 가전 id"),
   object: z.string().min(1).optional().describe("pick·place: 든 World State 물건 id"),
-  act: z.enum(ALL_ACTS).optional().describe(`사람 단계 동작: ${Object.entries(STEP_ACTS).map(([k, v]) => `${k} ${v.join("·")}`).join(", ")}. 사람에게 하는 말은 서버가 동작·대상·물건으로 만든다`),
-  item: z.enum(STEP_ITEMS).optional().describe("사람 단계·끝 알림의 물건 이름(목록 안). 사람 단계에서 없으면 object·target 물건의 종류 이름"),
+  act: z.enum(ALL_ACTS).optional().describe(`사람 단계(go·pick·place·do)마다 꼭 쓴다: ${Object.entries(STEP_ACTS).map(([k, v]) => `${k} ${v.join("·")}`).join(", ")}. 사람에게 하는 말은 서버가 동작·대상·물건으로 만든다`),
+  item: z.enum(STEP_ITEMS).optional().describe("물건 이름(목록 안 한국어): 안 보이는 물건·do에서 다루는 것·끝 알림. pick·place가 World State 물건이면 쓰지 않는다(서버가 그 물건 종류 이름으로 부른다)"),
   notice: z.enum(NOTICE_KEYS).optional().describe(`say·wait: 알림·기다리기 열쇠(${NOTICE_KEYS.join("·")}). 폰 글과 화면 이름은 서버가 만든다. 끝은 wait에 쓰지 않는다`),
   question: z.string().min(1).max(60).optional().describe("ask: 짧은 질문, 「?」로 끝남(「주세요」 없이)"),
   choices: z.enum(["clear_keep", "yes_no"]).optional().describe("ask: 답 묶음. clear_keep 치워 주세요·그대로 둬요, yes_no 네·아니요"),
@@ -197,6 +197,8 @@ interface Added { step: Omit<AgentStep, "id">; at: XZ | null }
 
 /** 계획 한 번의 초안. 도구(planTools)가 쓰고, OpenAI를 부르지 않는 합성 기록(scripts/seed-history.ts)도 같은 검사로 쓴다. */
 export const SUBMIT_PLAN = "submit_plan";
+/** item 모양 오류에 붙는 고칠 길(지시문: pick·place가 World State 물건이면 item을 쓰지 않는다). */
+const ITEM_HINT = "World State 물건을 집거나 놓으면 item을 쓰지 않는다";
 /** 틀린 제출의 오류 글 끝에 붙는 다시 내라는 말(차례 기록에는 빼고 남긴다, src/agent/planner.ts). */
 export const RESUBMIT_HINT = "계획 전체를 고쳐 submit_plan으로 다시 보내세요.";
 
@@ -247,10 +249,30 @@ export class PlanDraft {
 
 
 
-  /** 단계 칸 모양(STEP_ARGS). 틀리면 칸마다 까닭. */
+  /** 단계 칸 모양(STEP_ARGS). 틀리면 칸마다 까닭. item이 물건 이름 목록에 없으면 zod 값 목록(36개) 대신 그 값과 고칠 길을 말한다
+   *  (2026-11-19 plan1: 값 목록만 받은 모델이 다음 차례에 person_holding 물건까지 「컵」으로 바꿨다). */
   private parse(raw: unknown): StepArgs | string {
     const parsed = STEP_ARGS.safeParse(raw);
-    return parsed.success ? parsed.data : parsed.error.issues.map((i) => `${i.path.join(".") || "(전체)"}: ${i.message}`).join("; ");
+    if (parsed.success) return parsed.data;
+    return parsed.error.issues.map((i) => {
+      const where = i.path.join(".") || "(전체)";
+      const item = i.code === "invalid_value" && i.path.length === 1 && i.path[0] === "item";
+      return item ? `${where}: 물건 이름 목록에 없는 값 ${JSON.stringify((raw as { item?: unknown }).item)}(${ITEM_HINT})` : `${where}: ${i.message}`;
+    }).join("; ");
+  }
+
+  /** 단계 하나의 모양과 검사(submit). 모양이 틀린 칸이 맨 바깥 칸(번호·종류·시간 한도 말고)뿐이면 그 칸을 뺀 나머지로 단계 검사도 해
+   *  같은 단계의 다른 틀린 칸도 함께 말한다(2026-11-19 plan1: item 모양 오류만 받고 act 없음은 다음 차례에야 받았다). 뺀 칸은 「있어야 합니다」로 다시 말하지 않는다. */
+  private inspect(raw: Record<string, unknown>): Added | string {
+    const shape = this.parse(raw);
+    if (typeof shape !== "string") return this.check(shape);
+    const fields = [...new Set((STEP_ARGS.safeParse(raw).error?.issues ?? []).map((i) => i.path[0]))];
+    if (!fields.length || fields.some((f) => typeof f !== "string" || f === "step" || f === "kind" || f === "timeout_s")) return shape;
+    const rest = STEP_ARGS.safeParse(Object.fromEntries(Object.entries(raw).filter(([k]) => !fields.includes(k))));
+    if (!rest.success) return shape;
+    const r = this.check(rest.data);
+    const more = typeof r === "string" ? r.split("; ").filter((e) => !fields.some((f) => e === `${rest.data.kind}에는 ${String(f)}가 있어야 합니다`)) : [];
+    return [shape, ...more].join("; ");
   }
 
   /** submit_plan: 낼 때마다 계획 전체를 새로 검사한다(앞 제출은 남지 않는다). 단계 번호는 배열 순서다.
@@ -267,8 +289,7 @@ export class PlanDraft {
     const wrong: string[] = [];
     for (const [i, step] of steps.entries()) {
       const n = i + 1;
-      const parsed = this.parse({ ...(step && typeof step === "object" ? step : {}), step: n });
-      const r = typeof parsed === "string" ? parsed : this.check(parsed);
+      const r = this.inspect({ ...(step && typeof step === "object" ? step : {}), step: n });
       if (typeof r === "string") wrong.push(`${n}번 단계: ${r}.`);
       else this.added.push(r);
     }
@@ -312,6 +333,12 @@ export class PlanDraft {
     const steps: AgentStep[] = this.added.map((a, i) => ({ ...a.step, id: `${id}:${i + 1}` }));
     // 내려놓기 물건은 앞 집기의 World State 물건이다(없으면 그것으로 채움). 집기·내려놓기 조건의 물건도 그 물건이다
     for (const [i, s] of steps.entries()) {
+      // 보이는 물건 집기 앞 가기는 그 물건이 놓인 면(평면도 id)으로 간다(2026-11-19 tall plan1: 컵이 식탁 위인데 탁자로 가는 계획이 통과해 다시 검사도 넘고 판이 실패했다)
+      const laid = s.kind === "pick" && s.object ? worldObject(this.ctx.world, s.object)?.surface ?? null : null;
+      const go = laid && floor.objects.has(laid) ? steps.slice(0, i).map((x) => x.kind).lastIndexOf("go") : -1;
+      if (go >= 0 && steps[go]!.target !== laid) {
+        return { ok: false, error: `${go + 1}번 go target(${steps[go]!.target})은 ${i + 1}번에서 집을 물건 ${s.object}이 놓인 면이 아닙니다. 그 면 ${laid}로 가세요.` };
+      }
       // 보이는 물건 집기: 조건이 보는 물건과 들고 있음(person_holding) 물건은 그 물건 id나 그 종류만
       if (s.kind === "pick" && s.object && s.until && [...objectNames(s.until), ...heldNames(s.until)].some((n) => n !== s.object && n !== this.clsOf(s.object!))) {
         return { ok: false, error: `${i + 1}번 집기 until은 집는 물건(${s.object})만 봅니다` };
@@ -473,7 +500,10 @@ export class PlanDraft {
       case "go":
         need("target", !!target);
         if (target && !floor.objects.has(target)) {
-          const inRoom = floor.rooms.some((r) => r.id === target) ? [...floor.objects.values()].filter((o) => o.room === target).map((o) => o.id) : [];
+          // 그 방 물건 목록 맨 앞에 World State 물건이 놓인 면을 둔다(2026-11-19 tall plan1: 앞 8개에 식탁이 없어 컵이 없는 탁자로 갔다)
+          const laid = new Set(world.objects.flatMap((o) => (o.status !== "gone" && o.surface ? [o.surface] : [])));
+          const inRoom = floor.rooms.some((r) => r.id === target)
+            ? [...floor.objects.values()].filter((o) => o.room === target).map((o) => o.id).sort((x, y) => Number(laid.has(y)) - Number(laid.has(x))) : [];
           errors.push(`go target은 평면도 물건 id여야 합니다(방 id 아님): ${target}${inRoom.length ? `. 그 방 물건: ${inRoom.slice(0, 8).join(", ")}` : ""}`);
         }
         break;
@@ -612,7 +642,7 @@ export const SUBMIT_ARGS = z.object({
 export function planTools(draft: PlanDraft): ToolDef[] {
   return [{
     name: SUBMIT_PLAN, title: "계획 내기",
-    description: "계획 전체(단계 배열)를 한 번에 냅니다. 검사를 통과하면 그대로 끝나고, 틀리면 첫 틀린 단계와 까닭을 돌려주니 고친 계획 전체를 다시 내세요.",
+    description: "계획 전체(단계 배열)를 한 번에 냅니다. 검사를 통과하면 그대로 끝나고, 틀리면 틀린 단계마다 번호와 까닭을 한 번에 돌려주니 모두 고친 계획 전체를 다시 내세요.",
     schema: SUBMIT_ARGS,
     run: async (_b, args) => {
       const r = draft.submit(args);
