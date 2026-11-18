@@ -4,7 +4,7 @@ import type { CandidateFsm, PamPredictContract, PamPredictRequest, PamReflectCon
 import { ContractError, CUP_FSM_MEMORY, checkInput, validateCandidateFsm, validateMemory, type DecisionInput, type DecisionModel, type ListMemory, type PamMemory } from "../decision.js";
 import { PyJsonFail, readPyJson } from "./pyjson.js";
 import { parseMemory, parsePrediction } from "./answer.js";
-import { pamLimits, type PamLimits } from "./budget.js";
+import { estimateTokens, pamLimits, type PamLimits } from "./budget.js";
 import { PamAnswerError, PamRequestError } from "./errors.js";
 import { PamLlm, type CallOptions } from "./llm.js";
 import { buildPredictMessages, buildReflectMessages, generation } from "./prompt.js";
@@ -95,8 +95,24 @@ export class PamClient {
     }
   }
 
-  /** 시각 찾기(밤 흐름): 물은 (상태, 후보)·행동마다 그날 일어난 때와 사람이 안 보인 구간. 시각은 그날 줄 시각만 받는다. 답이 틀리면 PamAnswerError. */
+  /** 시각 찾기(밤 흐름): 물은 (상태, 후보)·행동마다 그날 일어난 때와 사람이 안 보인 구간. 시각은 그날 줄 시각만 받는다. 답이 틀리면 PamAnswerError.
+   *  한 요청이 문맥 길이를 넘으면 기록 줄을 차례대로 반씩 나눠(그 줄 구간에 걸친 덩어리만 붙여) 여러 번 묻고 답을 합친다(Codex 1b07d3e2 P2).
+   *  줄 하나로도 넘으면 PamBudgetError. */
   async mark(i: MarkInput, call: CallOptions = {}): Promise<Marks> {
+    const parts: Marks[] = [];
+    for (const part of this.markParts(i)) parts.push(await this.markOne(part, call));
+    return mergeMarks(parts);
+  }
+
+  /** 문맥 길이 안에 드는 시각 찾기 요청들(기록 줄 차례대로). */
+  private markParts(i: MarkInput): MarkInput[] {
+    const fits = estimateTokens(markMessages(i).messages) + this.o.settings.maxTokens.reflector <= this.o.settings.maxModelLen;
+    if (fits || i.lines.length <= 1) return [i];
+    const half = Math.ceil(i.lines.length / 2);
+    return [...this.markParts(markPart(i, i.lines.slice(0, half))), ...this.markParts(markPart(i, i.lines.slice(half)))];
+  }
+
+  private async markOne(i: MarkInput, call: CallOptions): Promise<Marks> {
     const { messages, asked } = markMessages(i);
     assertTextOnly(messages);
     const raw = await this.llm.complete(messages, generation("reflector"), "reflector", this.o.settings.timeoutMs, call);
@@ -120,6 +136,24 @@ export class PamClient {
       throw e;
     }
   }
+}
+
+/** 기록 줄 일부의 시각 찾기 요청: 그 줄 구간(첫 줄 ~ 끝 줄 시각)에 걸친 덩어리 줄(`HH:MM:SS~HH:MM:SS …`)만 붙인다. */
+function markPart(i: MarkInput, lines: string[]): MarkInput {
+  const first = lines[0]!.substring(0, 8), last = lines.at(-1)!.substring(0, 8);
+  return { ...i, lines, chunks: i.chunks.filter((c) => c.substring(0, 8) <= last && c.substring(9, 17) >= first) };
+}
+
+/** 나눠 물은 시각 찾기 답 합치기: 후보·행동마다 시각을 차례대로 합치고(같은 시각은 하나), 안 보인 구간은 차례대로 잇는다. */
+function mergeMarks(parts: Marks[]): Marks {
+  if (parts.length === 1) return parts[0]!;
+  const times = (lists: string[][]) => [...new Set(lists.flat())].sort();
+  const first = parts[0]!;
+  return {
+    candidates: first.candidates.map((c) => ({ ...c, times: times(parts.map((p) => p.candidates.find((x) => x.state === c.state && x.candidate === c.candidate)!.times)) })),
+    actions: first.actions.map((a) => ({ ...a, times: times(parts.map((p) => p.actions.find((x) => x.action === a.action)!.times)) })),
+    unseen: parts.flatMap((p) => p.unseen),
+  };
 }
 
 export class PamDecision implements DecisionModel {

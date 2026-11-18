@@ -48,6 +48,7 @@ export const NIGHT_TEXT = {
   check: (state: string, candidate: string, action: string, n: number, k: number, passed: boolean) => `${state} | ${candidate} | ${action} | n=${n} k=${k} ${passed ? "passed" : "not passed"}`,
   chunkFailed: (why: string) => `덩어리 기록 실패라 하루 요약으로 반성해요 · ${why}`,
   copyFailed: (why: string) => `밤 흐름 사본을 쓰지 못했어요 · ${why}`,
+  markFailed: (day: string, why: string) => `${day} 시각 찾기 실패라 그날은 이번 채택 검사에서 빼요 · ${why}`,
 };
 
 /** 폰 부탁·질문의 답과 그동안의 말(반성 피드백). */

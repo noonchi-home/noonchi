@@ -150,6 +150,28 @@ describe("밤 흐름: 채택 검사", () => {
     }
   });
 
+  // Codex(1b07d3e2 P2): 시각 찾기가 실패하면(답 틀림·문맥 한도) 밤 흐름 전체가 실패하고, 다음 밤에도 같은 날을 다시 물어 계속 실패했다
+  it("한 날의 시각 찾기가 실패하면 그날만 셈에서 빼고 밤 흐름을 잇는다. 그날 사본은 남기지 않아 다음 밤에 다시 묻는다", async () => {
+    let calls = 0;
+    const good = markLeaveAt("08:00:00");
+    const pam = await startFakePamLlm({ chunk: oneChunkPerLine, reflect: () => CANDIDATES_ASK_THEN_CLEAR, mark: (v) => (++calls === 1 ? "{}" : good(v)) });
+    try {
+      const db = HistoryDb.open(":memory:");
+      const dir = tmp();
+      const logged: string[] = [];
+      for (const d of ["2026-11-10", "2026-11-11"]) leaveAndAnswer(db, d, "08:00:00", "08:01:30", "clear");
+      const first = await runNight(db, pamClientFor(pam), "2026-11-10", { dir, log: (l) => logged.push(l) });
+      expect(first.ok).toBe(true);
+      expect(first.checks).toContainEqual(expect.objectContaining({ action: "컵 치우기", n: 0, k: 0, unknown: 0, passed: false }));
+      expect(logged.some((l) => l.includes("2026-11-10") && l.includes("시각 찾기"))).toBe(true);
+      const second = await runNight(db, pamClientFor(pam), "2026-11-11", { dir });
+      expect(calls).toBe(3);   // 둘째 밤: 11-10을 다시 묻고 11-11을 묻는다
+      expect(second.passed).toEqual([{ state: "drinking", action: "컵 치우기", on: LEAVE_ON }]);
+    } finally {
+      await pam.close();
+    }
+  });
+
   it("「그대로 둬요」 답은 사람이 떠나 안 보였어도 셈에 든다: 치워·둬요·둬요·치워면 n=4·k=2로 통과하지 않고 떠날 때는 계속 묻는다", async () => {
     const pam = await fake();
     try {

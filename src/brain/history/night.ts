@@ -291,10 +291,18 @@ export async function runNight(db: HistoryDb, pam: PamClient, day: string, o: Ni
       if (m.chunks === null) {
         try { m.chunks = (await pam.chunk(latestWithin(dl.map((l) => l.line), limits.reflect_input_bytes), call)).chunks; } catch (e) { if (!(e instanceof ContractError)) throw e; m.chunks = []; }
       }
-      const marks: Marks = await pam.mark({
-        states: candidates.states.map((s) => ({ id: s.id, description: s.description })), candidates: ask.map((r) => ({ state: r.state, candidate: r.cand })), actions: want,
-        lines: dl.map((l) => l.line), chunks: chunkLines(db, d, m.chunks),
-      }, call);
+      let marks: Marks;
+      try {
+        marks = await pam.mark({
+          states: candidates.states.map((s) => ({ id: s.id, description: s.description })), candidates: ask.map((r) => ({ state: r.state, candidate: r.cand })), actions: want,
+          lines: dl.map((l) => l.line), chunks: chunkLines(db, d, m.chunks),
+        }, call);
+      } catch (e) {
+        // 그날 시각 찾기가 틀리거나 줄 하나로도 문맥 한도를 넘으면 그날만 셈에서 빼고 잇는다(사본에 남기지 않아 다음 밤에 다시 묻는다, Codex 1b07d3e2 P2). 연결 오류는 그대로 던진다
+        if (!(e instanceof ContractError)) throw e;
+        o.log?.(NIGHT_TEXT.markFailed(d, (e as Error).message));
+        continue;
+      }
       if (o.signal?.aborted) return cancelled();
       for (const c of marks.candidates) m.candidates[markKey(c.state, c.candidate)] = c.times;
       for (const a of marks.actions) m.actions[a.action] = a.times;
@@ -306,7 +314,8 @@ export async function runNight(db: HistoryDb, pam: PamClient, day: string, o: Ni
       const perDay: CheckDay[] = days.flatMap((d) => {
         const dl = linesOf(d);
         const m = marksOf(d);
-        if (!dl.length) return [];
+        // 시각 찾기가 실패한 날(그 후보·행동 시각이 없음)은 셈에 넣지 않는다
+        if (!dl.length || !(markKey(r.state, candidateText(r.cand)) in m.candidates) || !(r.action in m.actions) || m.unseen === null) return [];
         const sec = (t: string) => clock(t, "time");
         const asked = answerActions(db, d).find((x) => x.action === r.action)?.times ?? [];
         // 로봇이 그 일을 한 구간은 못 봄: 그 안의 행동 표시(폰 명령대로 사람이 한 일)는 행동으로 세지 않는다(Codex 1b07d3e2 P2: checkCandidate가 행동을 못 봄보다 먼저 센다)
