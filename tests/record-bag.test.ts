@@ -11,7 +11,7 @@ import { HEARD_MARK } from "../src/world/labels.js";
 
 const EPOCH = { boot: "b1", home: "h#1" };
 const tick = (ms = 50) => new Promise((r) => setTimeout(r, ms));
-const sender = async (name: "world" | "phone" | "devices", bus: MemoryBus) => {
+const sender = async (name: "world" | "phone" | "devices" | "act", bus: MemoryBus) => {
   const n = new BusNode({ name, bus, epoch: EPOCH, log: () => {} });
   await n.prepare();
   n.start();
@@ -29,6 +29,29 @@ describe("기록 노드", () => {
     await tick();
     await rec.idle();
     expect(db.list({}).map((r) => [r.kind, r.text])).toEqual([["detection", "컵 cup_1 보임"]]);
+  });
+
+  it("미리 세운 목표의 전환(/brain/goal_changes, RELIABLE)은 한 번에 몰려도 모두 차례대로 녹화에 남고 기록 DB에는 줄이 없다(반성 입력이 아님, Codex 26bff0f Task 3:483)", async () => {
+    const bus = new MemoryBus();
+    const db = HistoryDb.open(":memory:");
+    const bag = Bag.open(":memory:");
+    const rec = await startRecorder({ bus, epoch: EPOCH, db, bag });
+    rec.start();
+    const act = await sender("act", bus);
+    const goal = {
+      id: "goal-1", action: "컵 치우기", state: "left_cup", trigger: "t", object: "cup_1", cls: "cup", status: "armed" as const, prep: "waiting" as const, reason: null, text: null,
+      armed_ms: 1, ready_ms: null, gone_ms: null, fired_ms: null, plan: null,
+    };
+    const steps = [
+      { status: "armed", prep: "waiting" }, { status: "armed", prep: "planning" }, { status: "armed", prep: "ready" }, { status: "fired", prep: "ready" }, { status: "used", prep: "ready" },
+    ] as const;
+    // 기다리지 않고 한 번에 낸다(STATE는 가운데 값을 합칠 수 있다)
+    await Promise.all(steps.map((s) => act.publish("/brain/goal_changes", { goal: { ...goal, ...s } })));
+    await tick();
+    await rec.idle();
+    const kept = bag.range(0, Number.MAX_SAFE_INTEGER).filter(({ e }) => e.topic === "/brain/goal_changes").map(({ e }) => (e.body as { goal: { status: string; prep: string } }).goal);
+    expect(kept.map((g) => `${g.status}/${g.prep}`)).toEqual(steps.map((s) => `${s.status}/${s.prep}`));
+    expect(db.list({})).toEqual([]);
   });
 
   it("World State 변화의 프레임마다 분석 없음은 world_change로 다시 쓰지 않고(관찰 기록으로 남음), 들은 말은 표시만 쓴다", async () => {

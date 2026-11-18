@@ -184,6 +184,25 @@ describe("인식·집 상태 토픽 모양(묶음 2)", () => {
     expect(ok("/world/changes", { rev: 1, changes: [change], view: VIEW })).toBe(false);
   });
 
+  it("/brain/goal(STATE, 최신 보기)과 /brain/goal_changes(RELIABLE, 전환마다)는 목표 하나({goal})만 받고, 모르는 상태·모르는 칸·사진 칸이면 거절한다", () => {
+    const g = {
+      id: "goal-1", action: "컵 치우기", state: "left_cup", trigger: "t", object: "cup_1", cls: "cup", status: "armed", prep: "ready", reason: null, text: "컵을 두고 자리를 뜨면 컵을 치울게요",
+      armed_ms: 1, ready_ms: 2, gone_ms: null, fired_ms: null, plan: { id: "plan:goal-1", steps: [] },
+    };
+    for (const t of ["/brain/goal", "/brain/goal_changes"] as const) {
+      expect(ok(t, { goal: g }), t).toBe(true);
+      expect(ok(t, { goal: { ...g, status: "dropped", reason: "dock" } }), t).toBe(true);
+      expect(ok(t, { goal: { ...g, status: "ready" } }), t).toBe(false);
+      expect(ok(t, { goal: { ...g, prep: "done" } }), t).toBe(false);
+      expect(ok(t, { goal: { ...g, jpeg_b64: "AA==" } }), t).toBe(false);
+      expect(ok(t, { goal: g, extra: 1 }), t).toBe(false);
+      expect(TOPICS[t].from).toEqual(["brain", "act"]);
+    }
+    expect(TOPICS["/brain/goal"].qos).toEqual({ kind: "state" });
+    expect(TOPICS["/brain/goal_changes"].qos).toEqual({ kind: "reliable" });
+    expect(TOPICS["/brain/goal_changes"].key({ goal: g })).toBe("goal-1");
+  });
+
   it("/world/closer는 {look, ids}(감지 번호 → 물건 id 표)만 받는다", () => {
     expect(ok("/world/closer", { look: "e2.c1", ids: { d1: "cup_1" } })).toBe(true);
     expect(ok("/world/closer", { look: "e2.c1", ids: {} })).toBe(true);
