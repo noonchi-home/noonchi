@@ -100,7 +100,8 @@ describe("집기·내려놓기 대상(focus)", () => {
     w.focus("cup_1", { step: "pick", spot: [1.5, 0] });
     full(w, "e2500", 2500, [det("cup", [270, 170, 20, 10]), cupB]);   // 대상 자리에서 0.354m
     expect(w.view(2500).objects.map((o) => o.id)).toEqual(["cup_1", "cup_2"]);
-    const r = full(w, "e3000", 3000, [lifted, cupB]);
+    // 이 사진은 들린 상자 하나뿐이고 시야 안 컵은 둘(모호)
+    const r = full(w, "e3000", 3000, [lifted]);
     expect(r.ids.get("d1")).not.toBe("cup_1");
     expect(r.ids.get("d1")).not.toBe("cup_1");
     // VLM이 들린 컵을 손에 있음으로 답한다(사진마다 한 답)
