@@ -191,10 +191,12 @@ export type SceneInput =
 
 /** 실행 추적이 지금 집기·내려놓기·들고 가는 대상의 단계와 목적지(트윈 [x, y], 없으면 null). */
 export interface WorldFocus { step: "pick" | "place" | "carry"; spot: [number, number] | null }
-/** /world/input 몸: 실행 추적이 World State에 넣는 것. guard 보기 지킴 켜기·끄기, contents 따르기 창 켜기·끄기, focus 지금 단계 대상(id null이면 풂). */
+/** /world/input 몸: 실행 추적이 World State에 넣는 것. guard 보기 지킴 켜기·끄기, contents 따르기 창 켜기·끄기, focus 지금 단계 대상(id null이면 풂), link 찾은 물건 잇기. */
 export type WorldInput =
   | { kind: "guard" | "contents"; id: string; on: boolean; at_ms: number }
-  | { kind: "focus"; id: string | null; focus: WorldFocus | null; at_ms: number };
+  | { kind: "focus"; id: string | null; focus: WorldFocus | null; at_ms: number }
+  /** 찾기가 겨눈 자리에서 찾은 같은 무리 물건(from)을 계획 대상(to)으로 잇는다(WorldState.relink). */
+  | { kind: "link"; from: string; to: string; at_ms: number };
 /** /world/state 몸: 집 상태 판본과 보기. */
 export interface WorldStateMsg { rev: number; view: WorldView }
 /** /world/changes 몸: 그 판본에서 생긴 변화. */

@@ -8,7 +8,7 @@ import { describe, expect, it } from "vitest";
 import type { HistoryRow } from "../src/contract/history.js";
 import type { WorldEye, WorldObject, WorldView } from "../src/contract/world.js";
 import { dockId, isDockStep } from "../src/act/dock-step.js";
-import { SEND_SAY, clickChoice, clock, costLine, judgeInput, judgeState, markdown, parseArgs, phoneUrl, plannedClicks, sendStartPose, stepVerdict, timeline, twinRows, usedServer, roomLabels, ownAssetFailures, videoClock, runTimeline, clipEnd, syncWarning, mustStop, openDashboard, waitLoaded, waitTwinReady, frameGapLine, type ClickRule, type Row, type VideoCommand } from "../scripts/video-check.js";
+import { SEND_SAY, clickChoice, clock, costLine, judgeInput, judgeState, markdown, parseArgs, phoneUrl, plannedClicks, sendStartPose, mainPlan, stepPlaces, stepVerdict, timeline, verdict, twinRows, usedServer, roomLabels, ownAssetFailures, videoClock, runTimeline, clipEnd, syncWarning, mustStop, openDashboard, waitLoaded, waitTwinReady, frameGapLine, type ClickRule, type Row, type VideoCommand } from "../scripts/video-check.js";
 import { createServer, type Server } from "node:http";
 import { listenRetry } from "../src/shared/net.js";
 import type { SceneJson } from "../src/contract/layout.js";
@@ -346,11 +346,89 @@ describe("video-check", () => {
       .toBe("VLM 54장 · $0.0301 · 가까이 보기 2번 gpt-5.4-mini · 관찰 모드 2번 $0.0016 · 엔진 프레임 54장 · PAM·계획 비용 빠짐");
   });
 
+  // 2026-11-18 wide-glass q2 거짓 실패: 첫 명령이 찾기(「식탁 위를 비춰 주세요」, find:1)라 컵 치우기 계획이 끝나고 컵이 싱크대 안인데 「계획 안 끝남 · 단계 0/0개」였다
+  describe("판정 기준 계획(mainPlan): 찾기·충전 자리·다른 계획이 끼어도 컵 치우기 계획 하나", () => {
+    const steps4 = (done: number) => ["식탁으로 가기", "컵 집기", "싱크대로 가기", "컵 내려놓기"].map((label, i) => ({ id: `plan:pam-2:${i + 1}`, label, status: i < done ? "done" : "active" }));
+    const row = (id: number, subject: string, text: string, status: string, done: number): HistoryRow =>
+      ({ id, at_ms: id * 1000, day: "2026-11-18", kind: "plan", subject, text, data: { status, steps: steps4(done) } });
+    const history = [row(1, "plan:pam-1", "사용자에게 물어보기 계획됨", "done", 0), row(2, "plan:pam-2", "컵 치우기 계획됨", "running", 0), row(3, "plan:pam-2", "컵 치우기 끝남", "done", 4)];
+    const commands: VideoCommand[] = [
+      { video_ms: 17_600, id: "find:1", step: "find:1:aim:1", text: "식탁 위를 비춰 주세요" },
+      { video_ms: 20_000, id: "plan:pam-1", step: "plan:pam-1:1", text: "어떻게 할까요?" },
+      { video_ms: 29_200, id: "plan:pam-2", step: "plan:pam-2:1", text: "식탁으로 가 주세요" },
+      { video_ms: 75_000, id: "dock:1", step: "dock:1:1", text: "충전 자리로 가 주세요" },
+    ];
+    it("찾기(find:)·충전 자리(dock:)는 계획이 아니고, 계획이 여럿이면 컵 치우기 계획이다", () => {
+      expect(mainPlan(commands, history)).toBe("plan:pam-2");
+      expect(mainPlan(commands.filter((c) => c.id !== "plan:pam-2"), history)).toBe("plan:pam-1");
+      expect(mainPlan(commands.filter((c) => c.id.startsWith("find") || c.id.startsWith("dock")), history)).toBeNull();
+    });
+    it("판정 줄의 계획 끝남과 단계 판정 줄의 단계 수는 그 계획 하나로 센다(첫 명령 시각은 처음 나간 명령 그대로)", () => {
+      const v = verdict([], commands, history, 36_300);
+      expect(v.done).toBe(true);
+      expect(v.text).toBe("판정: 첫 명령 00:17.6 「식탁 위를 비춰 주세요」 · 36.3초 전 명령 3개 있음 · 계획 끝남");
+      expect(stepVerdict(history, commands, 0, null)).toBe("단계: 4/4개 끝남 · 누른 단추 0번 · 트윈 눈 모름 · 컵 없음");
+    });
+  });
+
+  // 2026-11-18 tall q1 거짓 통과: 첫 명령이 「세탁기로 가 주세요」(발코니 유령 컵)였는데 단계 영상이 차례로 돌아 「계획 끝남 · 4/4」였다
+  describe("단계 자리 판정(stepPlaces)", () => {
+    const STEPS = ["go:table:go-table.mp4", "pick:cup:pick-cup.mp4", "go:sink:go-sink.mp4", "place:sink:place-cup.mp4"];
+    const command = (n: number, kind: string, id: string, label: string, plan = "plan:pam-3"): VideoCommand =>
+      ({ video_ms: n * 1000, id: plan, step: `${plan}:${n}`, text: `${label} 명령`, kind, target: { id, label } });
+    const RIGHT = [
+      command(1, "go", "dining_table_978b20c7", "거실·복도 식탁"), command(2, "pick", "cup_3", "컵"),
+      command(3, "go", "sink_counter_kitchen", "주방·식당 싱크대"), command(4, "place", "sink_counter_kitchen", "주방·식당 싱크대"),
+    ];
+    const sunk = world(9000, null, [cup("cup_3", "in_sink", { surface: "sink_counter_kitchen", surface_label: "싱크대", surface_part: "basin" })]);
+    it("각 --step의 자리(go:table 식탁, pick:cup 컵, go:sink·place:sink 싱크대)와 실제로 나간 명령의 대상이 맞고 치운 컵이 싱크대 안이면 통과다", () => {
+      expect(stepPlaces(STEPS, RIGHT, sunk, { cupClear: true })).toEqual({ ok: true, text: "단계 자리: 4/4 맞음 · 치운 컵 싱크대 안", problems: [] });
+    });
+    it("명령 대상이 그 단계 자리가 아니면 「단계 자리 틀림: 세탁기 ≠ 식탁」으로 실패다(단계 영상이 차례로 돌아도)", () => {
+      const wrong = [command(1, "go", "washer_balcony", "세탁기"), ...RIGHT.slice(1)];
+      const r = stepPlaces(STEPS, wrong, sunk, { cupClear: true });
+      expect(r.ok).toBe(false);
+      expect(r.problems).toEqual(["단계 자리 틀림: 세탁기 ≠ 식탁"]);
+      expect(r.text).toBe("단계 자리: 3/4 맞음 · 단계 자리 틀림: 세탁기 ≠ 식탁 · 치운 컵 싱크대 안");
+    });
+    it("그 단계의 명령이 없거나 치운 컵이 싱크대 안이 아니면 실패다. 계획 밖 명령(충전 자리·끄기 안내·질문)은 세지 않는다", () => {
+      const extra = [...RIGHT.slice(0, 3), { video_ms: 9000, id: "dock:1", step: "dock:1:1", text: "충전 자리로 가 주세요", kind: "go", target: { id: "dock", label: "충전 자리" } }];
+      const onTable = world(9000, null, [cup("cup_3", "on_table")]);
+      const r = stepPlaces(STEPS, extra, onTable, { cupClear: true });
+      expect(r.ok).toBe(false);
+      expect(r.problems).toEqual(["단계 명령 없음: place:sink", "치운 컵이 싱크대 안이 아님: 식탁 위"]);
+      expect(stepPlaces(STEPS, RIGHT, null, { cupClear: true }).problems).toEqual(["치운 컵이 싱크대 안이 아님: 컵 모름"]);
+    });
+
+    // Codex(2705c21 video-check.ts:335): 모든 --step 판에 컵이 싱크대에 있기를 요구해 정상으로 끝난 전자레인지·라면 시연도 실패했다
+    it("컵이 싱크대 안인지는 컵 치우기 판에만 본다: 라면 시연은 단계 자리만 맞으면 통과다", () => {
+      const ramen = ["go:cabinet:go-cabinet.mp4", "pick:cabinet:pick-pot.mp4"];
+      const commands = [command(1, "go", "kitchen_cabinet_1", "주방수납장"), command(2, "pick", "kitchen_cabinet_1", "주방수납장")];
+      expect(stepPlaces(ramen, commands, world(9000, null, []))).toEqual({ ok: true, text: "단계 자리: 2/2 맞음", problems: [] });
+    });
+
+    // Codex(2705c21 video-check.ts:333): 집은 컵이 사라지면 상관없는 컵(원래 싱크대에 있던 컵)으로 대신 판정해 통과했다
+    it("집은 컵은 옮김 표시(followed_by)만 따라간다: 사라진 컵이 이어진 새 컵이 싱크대 안이면 통과, 이어진 것이 없으면 상관없는 싱크대 컵으로 대신하지 않는다", () => {
+      const moved = world(9000, null, [
+        cup("cup_3", "on_table", { status: "gone", followed_by: "cup_7" }),
+        cup("cup_7", "in_sink", { surface: "sink_counter_kitchen", surface_part: "basin" }),
+      ]);
+      expect(stepPlaces(STEPS, RIGHT, moved, { cupClear: true }).ok).toBe(true);
+      const unrelated = world(9000, null, [
+        cup("cup_3", "on_table", { status: "gone" }),
+        cup("cup_9", "in_sink", { surface: "sink_counter_kitchen", surface_part: "basin" }),
+      ]);
+      expect(stepPlaces(STEPS, RIGHT, unrelated, { cupClear: true }).problems).toEqual(["치운 컵이 싱크대 안이 아님: 식탁 위"]);
+      const noPick = RIGHT.filter((c) => c.kind !== "pick");
+      expect(stepPlaces(STEPS, noPick, unrelated, { cupClear: true }).problems).toEqual(["단계 명령 없음: pick:cup", "치운 컵이 싱크대 안이 아님: 컵 모름"]);
+    });
+  });
+
   it("단계 판정 줄: 첫 명령의 계획 단계 중 끝난 수, 누른 단추 수, 마지막 트윈 눈 방과 컵 놓인 곳", () => {
     const steps = (done: number) => ["식탁으로 가기", "컵 집기", "싱크대로 가기", "컵 내려놓기"].map((label, i) => ({ id: `s${i + 1}`, label, status: i < done ? "done" : i === done ? "active" : "pending" }));
     const plan = (id: number, at_ms: number, subject: string, done: number, status = "running"): HistoryRow => ({ id, at_ms, day: "2026-11-11", kind: "plan", subject, text: "컵 치우기", data: { status, steps: steps(done) } });
-    const history = [plan(1, 1000, "plan-1", 0), plan(2, 2000, "plan-2", 4, "done"), plan(3, 3000, "plan-1", 3)];
-    const commands = [{ video_ms: 34_500, id: "plan-1", step: "s1", text: "식탁으로 가 주세요" }];
+    const history = [plan(1, 1000, "plan:pam-1", 0), plan(2, 2000, "plan:pam-2", 4, "done"), plan(3, 3000, "plan:pam-1", 3)];
+    const commands = [{ video_ms: 34_500, id: "plan:pam-1", step: "s1", text: "식탁으로 가 주세요" }];
     const last = world(9000, eye("kitchen", "주방", 11, 2), [
       cup("cup_1", "in_hand", { status: "gone", last_seen_ms: 8000 }),
       cup("cup_9", "in_sink", { surface_label: "싱크대", room: "kitchen", last_seen_ms: 7000 }),

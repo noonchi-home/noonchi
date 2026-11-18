@@ -159,12 +159,15 @@ export function logVideoAt(at) {
   videoRecord().at = structuredClone(at);
 }
 
-/** 받은 명령을 그 영상 시각으로 기록한다. 같은 단계·글(비전 상태만 바뀐 것)은 한 번만. */
-export function logVideoCommand(videoMs, { id, step, text }) {
+/** 받은 명령을 그 영상 시각으로 기록한다(단계 종류·대상 id·이름도: 판정 도구가 --step 자리와 견준다). 같은 단계·글(비전 상태만 바뀐 것)은 한 번만. */
+export function logVideoCommand(videoMs, { id, step, text, kind, target }) {
   const record = videoRecord();
   const last = record.commands.at(-1);
   if (last && last.id === id && last.step === step && last.text === text) return;
-  record.commands.push({ video_ms: Math.round(videoMs), id, step, text });
+  record.commands.push({
+    video_ms: Math.round(videoMs), id, step, text,
+    ...(kind ? { kind } : {}), ...(target ? { target: { id: target.id, label: target.label } } : {}),
+  });
   console.info(`[video] ${clockText(videoMs)} 명령 ${text} (${step})`);
 }
 

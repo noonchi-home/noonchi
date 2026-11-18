@@ -6,7 +6,7 @@ import { BusNode, MemoryBus, RETRY_MS, VirtualClock, type Envelope, type NodeNam
 import type { Detection, FrameMeta, SceneObservation } from "../src/contract/observe.js";
 import type { WorldChange } from "../src/contract/world.js";
 import { settle } from "../src/record/replay.js";
-import { WorldState, startWorldNode, type CloserPass } from "../src/world/index.js";
+import { WorldState, canRelink, startWorldNode, type CloserPass } from "../src/world/index.js";
 import type { DetLabel } from "../src/world/vocab.js";
 import { engineFrame, LOOK_SIZE, LOOK_VIEW } from "./helpers/camera.js";
 import { det as mkDet } from "./helpers/detectors.js";
@@ -156,6 +156,27 @@ describe("집 상태 노드", () => {
     expect(s.calls.find((c) => c.name === "applyScene")!.args[4]).toEqual(LOOK);
     expect(s.calls.find((c) => c.name === "applyScene")!.args[2]).toEqual(withVlmObject(said(["d1", "in_sink"])));
     expect(s.calls.find((c) => c.name === "applyCloserScene")!.args[5]).toEqual(AT);
+  });
+
+  it("/world/input link(찾기가 겨눈 자리의 물건을 계획 대상으로 잇기)는 world.relink를 그 값으로 부르고 상태를 다시 낸다", async () => {
+    const s = spy(ws());
+    const r = await rig(s.proxy);
+    const states = of(r.got, "/world/state").length;
+    await r.act.publish("/world/input", { kind: "link", from: "cup_2", to: "cup_1", at_ms: 4000 });
+    await r.flush();
+    expect(s.calls.filter((c) => c.name === "relink").map((c) => c.args)).toEqual([["cup_2", "cup_1", 4000]]);
+    expect(of(r.got, "/world/state").length).toBeGreaterThan(states);
+  });
+
+  it("canRelink: 두 물건이 다 있고, 다른 물건이고, 잇는 쪽이 사라지지 않았고, 같은 무리(마시는 그릇)일 때만 잇는다", () => {
+    const cup = { id: "cup_1", cls: "cup" as const, status: "present" as const };
+    expect(canRelink({ id: "cup_2", cls: "cup", status: "present" }, cup)).toBe(true);
+    expect(canRelink({ id: "bottle_1", cls: "bottle", status: "out_of_view" }, cup)).toBe(true);
+    expect(canRelink({ id: "cup_2", cls: "cup", status: "gone" }, cup)).toBe(false);
+    expect(canRelink(cup, cup)).toBe(false);
+    expect(canRelink(undefined, cup)).toBe(false);
+    expect(canRelink({ id: "cup_2", cls: "cup", status: "present" }, undefined)).toBe(false);
+    expect(canRelink({ id: "remote_1", cls: "remote", status: "present" }, cup)).toBe(false);
   });
 
   it("/world/input focus(지금 단계 대상)는 world.focus를 그 값으로 부르고, id null이면 푼다", async () => {

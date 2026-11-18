@@ -96,7 +96,9 @@ export function placePoint(view: CameraView, point: [number, number], size: { wi
     const t = (s.top - o[1]) / d[1];
     if (t <= 0) continue;
     const x = o[0] + d[0] * t, y = o[2] + d[2] * t;
-    if (Math.hypot(x - s.center[0], y - s.center[1]) <= s.radius && (!best || t < best.t)) best = { t, surface: s, top: s.top };
+    // 실제 사각형(배치 자리·방향·바닥 크기)을 알면 그 안, 모르면 반지름 원 안
+    const on = s.rect ? inBasin(s.rect, [x, y]) : Math.hypot(x - s.center[0], y - s.center[1]) <= s.radius;
+    if (on && (!best || t < best.t)) best = { t, surface: s, top: s.top };
   }
   if (!best) {
     const t0 = (0 - o[1]) / d[1];

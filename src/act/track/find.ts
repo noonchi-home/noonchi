@@ -5,7 +5,7 @@
 //   확인에 실패했으면(사진 모자람·VLM 답 없음·그 종류를 감지했지만 확정 못 함) settleMs 사진을 기다린 뒤 다시 비춘다(after, 전체 기한 안).
 // - 비추기는 가까이 보기와 같은 프레임 고르기가 그 자리를 비추기 뒤 사진으로만 고를 수 있을 때(spotReady) 끝난다.
 // - 찾음은 tick마다 본다: 그 자리 FIND.matchM 안에 그 종류의 있는 물건이 막은 검사의 신선도(freshMs, 실행 전은 판단 뒤에 본 것만) 안에 보였고 치운 것·손에 있음이 아니다.
-//   같은 자리(FIND.splitM 안)면 마시는 그릇 무리(vocab DRINKWARE)의 다른 종류도 찾던 대상으로 잇는다(VLM이 투명한 유리컵을 병으로 봄). 종류는 VLM 답 그대로라
+//   마시는 그릇 무리(vocab DRINKWARE)의 다른 종류도 FIND.matchM 안이면 찾던 대상으로 잇는다(VLM이 투명한 유리컵을 병으로 봄). 종류는 VLM 답 그대로라
 //   새 id이므로 계획 대상 이어 붙이기 규칙대로 다시 판단하고, 그 자리는 FIND.retryMs 동안 다시 찾지 않는다(다시 판단이 그 종류를 못 찾아 막혀도 같은 찾기를 되풀이하지 않는다).
 //   여럿이면 그 자리에 가장 가까운 것, 둘이 FIND.splitM 안으로 붙어 가를 수 없으면 아직 못 찾은 것이다. 사진 기다림 중에 찾았지만 낡았으면 새 사진으로 다시 비춘다.
 // - 그만둠: 명령 하나가 PEEK.stepMs 안에 안 끝남, 막힌 채 holdMs, 가까이 보기가 분명히 없음, 찾기 시작부터 FIND.totalMs.
@@ -19,7 +19,8 @@
 //   찾는 동안 같은 행동 판단은 기록만 하고 가장 새 것으로 바꿔 두며(start.ts), 찾으면 그 판단으로 다시 계획 전 검사부터 한다. 다른 행동의 계획을 받으면 거둔다.
 //   계획 밖 가까이 가서 보기보다 먼저다(찾는 동안은 시작하지 않는다). 「그만」은 거두고 그 자리를 쉰다.
 // 실행 전 찾기(Run.find, 계획 명령 줄): 실행 전 검사가 다시 보기 기한(recheckMs)이 지나도 no_target·stale로 막은 계획 대상 하나를 그 마지막 자리에서 찾는다(start.ts tryStart).
-//   막은 그 물건을 찾으면 검사가 다시 통과해 첫 단계로 가고, 그 자리에서 다른 id의 같은 종류 물건만 찾으면 계획을 「찾은 뒤 다시 판단」으로 닫는다.
+//   막은 그 물건을 찾으면 검사가 다시 통과해 첫 단계로 가고, 그 자리 FIND.matchM 안에서 다른 id의 같은 무리 물건만 찾으면 그 물건을 계획 대상 id로 이어
+//   (World State relink, 대상 id가 유령이었어도) 계획을 잇는다. 잇지 못하면 계획을 「찾은 뒤 다시 판단」으로 닫는다.
 import type { CloserResult, DecisionRecord } from "../../contract/events.js";
 import type { PlannedCommand } from "../../contract/phone.js";
 import type { ObjClass, WorldObject, WorldView } from "../../contract/world.js";
@@ -175,7 +176,8 @@ export class Finder extends Part {
       return "over";
     }
     if (out.kind === "found") this.o.thought?.(FIND_THOUGHT.found(f.name), r.decision.id);
-    if (out.kind === "found" && out.obj.id !== objectId) return "other";
+    // 그 자리의 다른 id 같은 무리 물건: 계획 대상 id로 이어 계획을 잇는다(가로 키 큰 컵 r4·r5: 대상 id가 유령이었다). 잇지 못하면 다시 판단
+    if (out.kind === "found" && out.obj.id !== objectId) return this.o.linkObject?.(out.obj.id, objectId) ? "hold" : "other";
     return "hold";
   }
 
@@ -315,7 +317,7 @@ export class Finder extends Part {
    *  가장 가까운 둘이 FIND.splitM 안으로 붙어 있으면 가를 수 없어 null. */
   private hit(world: WorldView, f: Find, now: number): { obj: WorldObject; fresh: boolean } | null {
     const placed = this.core.steps.placed();
-    const kin = (o: WorldObject) => (o.cls === f.cls ? dist3(o.position!, f.at) <= FIND.matchM : sameDrinkware(o.cls, f.cls) && dist3(o.position!, f.at) <= FIND.splitM);
+    const kin = (o: WorldObject) => sameDrinkware(o.cls, f.cls) && dist3(o.position!, f.at) <= FIND.matchM;
     const near = world.objects
       .filter((o) => o.status === "present" && o.position && kin(o) && !putAway(o, placed) && o.facts.place?.value !== "in_hand")
       .sort((a, b) => dist3(a.position!, f.at) - dist3(b.position!, f.at));

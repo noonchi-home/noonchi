@@ -1,16 +1,32 @@
-// 승인 규칙(src/agent/approval.ts): 묻는 때는 둘뿐이다. 허락 없이 하면 위험할 때(위험 목록), 처음이라 승인받은 적 없을 때(PAM 계획).
-// 말로 시킨 가전 명령은 그 말이 승인이다. 답은 승인·거절 둘: 승인은 파일에 남아 다음부터 묻지 않고, 거절은 남기지 않아 다음에 또 묻는다.
+// 승인 규칙(src/agent/approval.ts): 묻는 때는 허락 없이 하면 위험할 때(위험 목록)뿐이다. 처음 하는 일 묻기는 한 곳의 설정값 ASK_FIRST_TIME이고
+// 2026-11-18 사용자 결정으로 끔이다(그 길은 askFirst로 켜서 본다). 말로 시킨 가전 명령은 그 말이 승인이다.
+// 답은 승인·거절 둘: 승인은 파일에 남아 다음부터 묻지 않고, 거절은 남기지 않아 다음에 또 묻는다.
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { ApprovalStore, approvalNeed, approvalsPath, remember, type ApprovalMemory } from "../src/agent/approval.js";
+import { ASK_FIRST_TIME, ApprovalStore, approvalNeed, approvalsPath, remember, type ApprovalMemory } from "../src/agent/approval.js";
 import { APPROVE } from "../src/act/prompts.js";
 
 const EMPTY: ApprovalMemory = { always: {} };
-const need = (o: Partial<Parameters<typeof approvalNeed>[0]>) => approvalNeed({ key: "task:컵 치우기", risky: false, requested: false, memory: EMPTY, ...o });
+/** 처음 하는 일 묻기를 켠 판단(나중에 다시 켤 때의 길). */
+const need = (o: Partial<Parameters<typeof approvalNeed>[0]>) => approvalNeed({ key: "task:컵 치우기", risky: false, requested: false, memory: EMPTY, askFirst: true, ...o });
 
-describe("승인 규칙", () => {
+describe("승인 규칙: 기본(처음 하는 일 묻기 끔, 2026-11-18 사용자 결정)", () => {
+  const plain = (o: Partial<Parameters<typeof approvalNeed>[0]>) => approvalNeed({ key: "task:컵 치우기", risky: false, requested: false, memory: EMPTY, ...o });
+  it("처음 하는 일 묻기는 한 곳의 설정값이고 기본은 끔이다: 처음 하는 PAM 계획도 묻지 않고 바로 한다", () => {
+    expect(ASK_FIRST_TIME).toBe(false);
+    expect(plain({})).toBeNull();
+    expect(plain({ key: "task:세탁물 건조기로 옮기기" })).toBeNull();
+  });
+  it("위험 목록은 안전 규칙이라 그대로 늘 묻는다(승인한 적이 있어도). 말로 시킨 가전 명령은 바로 한다", () => {
+    expect(plain({ key: "device:door_main:unlock", risky: true, requested: true })).toBe("risky");
+    expect(plain({ key: "device:door_main:unlock", risky: true, requested: true, memory: remember(EMPTY, "device:door_main:unlock", "approve", "t") })).toBe("risky");
+    expect(plain({ key: "device:light_1:on", requested: true })).toBeNull();
+  });
+});
+
+describe("승인 규칙: 처음 하는 일 묻기를 켰을 때(askFirst)", () => {
   it("처음 하는 PAM 계획은 묻는다", () => expect(need({})).toBe("first"));
   it("승인을 받은 계획은 다음부터 바로 한다", () => expect(need({ memory: remember(EMPTY, "task:컵 치우기", "approve", "t") })).toBeNull());
   it("거절은 기억하지 않아 다음에 또 묻는다", () => {

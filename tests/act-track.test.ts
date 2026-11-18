@@ -113,7 +113,8 @@ function setup(over: Partial<TrackerOptions> & { w?: () => WorldView; check?: ()
   const t = new ExecutionTracker({
     plans, world: w, check: over.check ?? (() => ({ ok: true })), floor: () => plans.floor(), planGapMs: 0,
     planner: (d, signal) => planner.plan(planContext({ decision: d, world: w(), floor: plans.floor() }), signal),
-    toPhone: (m) => phone.push(m), emit: (l) => logs.push(l), clock, locate: (id) => PLACES[id], ...over, approvals,
+    // 승인 질문 길을 보는 시험이 많아 처음 하는 일 묻기를 켜 둔다(기본 끔은 「기본(처음 하는 일 묻기 끔)」 시험이 askFirst: undefined로 본다)
+    toPhone: (m) => phone.push(m), emit: (l) => logs.push(l), clock, locate: (id) => PLACES[id], askFirst: true, ...over, approvals,
   });
   const decide = async (d: DecisionRecord) => {
     t.onDecision(d);
@@ -3190,6 +3191,16 @@ describe("실행 추적: 판단 뒤 가까이 본 사실(B와 PAM)", () => {
 describe("실행 추적: 승인(처음 하는 PAM 계획)", () => {
   const APPROVE = [{ id: "approve", label: "승인" }, { id: "reject", label: "거절" }];
 
+  // 2026-11-18 사용자 결정: 처음 하는 일이라는 까닭만으로는 묻지 않고 바로 한다(알아서 판단하는 것을 보여 준다). 묻는 길은 askFirst로 켤 때만 아래 시험이 본다
+  it("기본(처음 하는 일 묻기 끔): 처음 컵 치우기도 묻지 않고 첫 명령 「식탁으로 가 주세요」부터 보내고, 승인 기억을 남기지 않는다", async () => {
+    const { decide, spoken, phone, plans, approvals } = setup({ approvals: store(), askFirst: undefined });
+    await decide(decision);
+    expect(spoken()).toEqual(["식탁으로 가 주세요"]);
+    expect(phone.some((m) => m.type === "command" && m.step.endsWith(":approve"))).toBe(false);
+    expect(plans.current()).toMatchObject({ status: "running" });
+    expect(approvals.memory()).toEqual({ always: {} });
+  });
+
   it("처음 컵 치우기는 실제 폰에 「컵 치우기를 할까요?」와 승인·거절 두 단추를 띄우고, 「승인」이면 기억하고 첫 명령을 보낸다", async () => {
     const { t, heard, decide, phone, plans, approvals, spoken, exec } = setup({ approvals: store() });
     await decide(decision);
@@ -4539,7 +4550,37 @@ describe("실행 추적: 계획 대상이 안 보이면 그 마지막 자리에�
     expect(s.last()).toMatchObject({ step: "plan:pam-1:1" });
   });
 
-  it("그 자리 0.5m 안에 다른 id의 같은 종류 컵만 생기면 계획을 「찾은 뒤 다시 판단」으로 닫고 같은 행동 다시 계획 간격에서 뺀다", async () => {
+  // 가로 키 큰 컵 r4·r5(2026-11-18): 계획 대상 id가 유령이었고 겨눈 자리에 다른 id의 같은 컵이 보였는데 「찾은 뒤 다시 판단」으로 계획이 취소됐다
+  it("그 자리 0.5m 안에 다른 id의 같은 무리 물건이 보이면 그 물건을 계획 대상 id로 잇고(linkObject) 계획을 이어 첫 단계를 보낸다", async () => {
+    const links: [string, string][] = [];
+    let s!: ReturnType<typeof runSetup>;
+    s = runSetup({ objects: [seenAt(5_000)], over: { linkObject: (from, to) => {
+      links.push([from, to]);
+      // World State가 잇는다: 대상 id가 그 자리·보임을 받고 다른 id는 사라짐(옮김 표시)
+      s.objects([{ ...seenAt(s.clock.t, to, [2.3, 0.75, 1]) }, { ...seenAt(s.clock.t, from, [2.3, 0.75, 1]), status: "gone", followed_by: to }]);
+      return true;
+    } } });
+    await blocked(s);
+    s.objects([{ ...seenAt(5_000), status: "out_of_view" }, seenAt(s.clock.t, "cup_7", [2.3, 0.75, 1])]);
+    s.tick();
+    expect(links).toEqual([["cup_7", "cup_1"]]);
+    s.tick();
+    expect(s.exec().some((l) => l.state === "failed")).toBe(false);
+    expect(s.last()).toMatchObject({ id: "plan:pam-1", step: "plan:pam-1:1" });
+    // 마시는 그릇 무리의 다른 종류(병)도 0.5m 안이면 잇는다. 0.5m 밖은 잇지 않는다
+    const b: [string, string][] = [];
+    const t = runSetup({ objects: [seenAt(5_000)], over: { linkObject: (from, to) => { b.push([from, to]); return false; } } });
+    await blocked(t);
+    const bottle = (id: string, at: [number, number, number]): WorldObject => ({ ...seenAt(t.clock.t, id, at), cls: "bottle" });
+    t.objects([{ ...seenAt(5_000), status: "gone" }, bottle("bottle_3", [2.6, 0.75, 1])]);
+    t.tick();
+    expect(b).toEqual([]);
+    t.objects([{ ...seenAt(5_000), status: "gone" }, bottle("bottle_2", [2.3, 0.75, 1])]);
+    t.tick();
+    expect(b).toEqual([["bottle_2", "cup_1"]]);
+  });
+
+  it("그 자리 0.5m 안에 다른 id의 같은 종류 컵만 생기고 잇지 못하면(linkObject 없음·실패) 계획을 「찾은 뒤 다시 판단」으로 닫고 같은 행동 다시 계획 간격에서 뺀다", async () => {
     const s = runSetup({ objects: [seenAt(5_000)], over: { planGapMs: 15_000 } });
     await blocked(s);
     s.objects([{ ...seenAt(5_000), status: "out_of_view" }, seenAt(s.clock.t, "cup_7", [2.2, 0.75, 1])]);
@@ -4551,14 +4592,14 @@ describe("실행 추적: 계획 대상이 안 보이면 그 마지막 자리에�
   });
 
   // 가로 유리컵 실제 판 r2(2026-11-18): 가까이 본 VLM이 그 자리 유리컵을 병으로 답해 bottle_2가 생겼고, 찾기가 컵만 찾아 「대상 물건이 보이지 않아」로 끝났다
-  it("그 자리 0.1m 안에 마시는 그릇 무리의 다른 종류(병)만 생겨도 찾던 대상으로 이어 「찾은 뒤 다시 판단」으로 닫는다(종류는 병 그대로). 0.1m 밖의 병은 잇지 않는다", async () => {
+  it("그 자리 0.5m 안에 마시는 그릇 무리의 다른 종류(병)만 생겨도 찾던 대상이다(잇지 못하면 「찾은 뒤 다시 판단」으로 닫는다). 0.5m 밖의 병은 찾은 것이 아니다", async () => {
     const s = runSetup({ objects: [seenAt(5_000)] });
     await blocked(s);
     const bottle = (id: string, at: [number, number, number]): WorldObject => ({ ...seenAt(s.clock.t, id, at), cls: "bottle" });
-    s.objects([{ ...seenAt(5_000), status: "gone" }, bottle("bottle_3", [2.3, 0.75, 1])]);
+    s.objects([{ ...seenAt(5_000), status: "gone" }, bottle("bottle_3", [2.6, 0.75, 1])]);
     s.tick();
     expect(s.exec().some((l) => l.state === "failed")).toBe(false);
-    s.objects([{ ...seenAt(5_000), status: "gone" }, bottle("bottle_2", [2.05, 0.75, 1])]);
+    s.objects([{ ...seenAt(5_000), status: "gone" }, bottle("bottle_2", [2.3, 0.75, 1])]);
     s.tick();
     expect(s.exec().find((l) => l.state === "failed")).toMatchObject({ plan_id: "plan:pam-1", text: EXEC_TEXT.foundNew });
   });

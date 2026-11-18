@@ -1,4 +1,5 @@
-// 실행 추적의 승인 질문(src/agent/approval.ts): 처음 하는 계획은 첫 단계 전에, 위험 목록 가전은 기기 단계에서(토큰), 손으로 켜는 위험 가전은 켜라는 명령보다 먼저 묻는다.
+// 실행 추적의 승인 질문(src/agent/approval.ts): 위험 목록 가전은 기기 단계에서(토큰), 손으로 켜는 위험 가전은 켜라는 명령보다 먼저 묻는다.
+// 처음 하는 계획을 첫 단계 전에 묻기는 설정값(ASK_FIRST_TIME, 기본 끔)을 켤 때만이다.
 // 시간 초과로 다시 묻기(계속·그만)도 같은 질문 자리(ask)를 쓴다. 물을 폰(판본이 맞는 폰)이 없으면 기다리지 않고 실패로 닫는다.
 import { ConditionWatch } from "../../world/index.js";
 import { approvalNeed, riskyHand, taskKey, type AgentStep, type ApprovalAnswer } from "../../agent/index.js";
@@ -10,11 +11,11 @@ export type Asking = { why: "plan" } | { why: "device"; token: string } | { why:
 
 /** 승인 질문: 묻기, 답 받기(계획·기기·손으로 켜기), 묻는 계획인지. */
 export class Approvals extends Part {
-  /** 질문·알림만 있는 계획은 승인을 묻지 않는다. 미리 세운 목표로 시작한 계획도 묻지 않는다(사용자 결정 2026-11-18: 알아서 판단해 실행하는 것을 보인다).
+  /** 질문·알림만 있는 계획은 승인을 묻지 않는다. 미리 세운 목표로 시작한 계획은 처음 하는 일 묻기(ASK_FIRST_TIME)를 켜도 묻지 않는다(사용자 결정 2026-11-18: 알아서 판단해 실행하는 것을 보인다).
    *  위험 목록 가전은 여기와 따로 그 단계에서 늘 묻는다(기기 단계 승인 토큰·손으로 켜기 risky). */
   need(r: Run): ReturnType<typeof approvalNeed> {
     if (r.goal !== null || r.plan.steps.every((s) => s.kind === "ask" || s.kind === "say")) return null;
-    return approvalNeed({ key: taskKey(r.plan.task), risky: false, requested: false, memory: this.o.approvals.memory() });
+    return approvalNeed({ key: taskKey(r.plan.task), risky: false, requested: false, memory: this.o.approvals.memory(), askFirst: this.o.askFirst });
   }
 
   /** 손으로 켜는 위험 가전 단계인가. 이 집 가전 목록을 모르면 손으로 켜는 단계는 모두 위험한 것으로 본다(묻는다). */

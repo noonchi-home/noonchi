@@ -156,6 +156,8 @@ class Week {
     this.tracker = new ExecutionTracker({
       plans: this.plans, world: () => this.view(), floor: () => this.plans.floor(), toPhone: () => {}, emit: (l) => this.brain.emit(l), approvals: this.approvals,
       clock: { now: () => this.t },
+      // 합성 일주일은 처음 하는 일 묻기를 켠 때의 지난 기록이다(첫날 컵 치우기 승인·거절 답이 반성 자료). 지금 서버는 끔(src/agent/approval.ts ASK_FIRST_TIME)
+      askFirst: true,
       check: (d, p) => checkPlan({ decision: d, tasks: [...CUP_TASKS], plan: p, world: this.view(), nowMs: this.t, staleMs: 3000, mode: "test" }),
       // OpenAI를 부르지 않으므로 에이전트가 낼 도구 호출(컵 치우기 네 단계·물어보기)을 같은 계획 검사(PlanDraft)에 넣는다
       planner: (d) => this.plan(d),

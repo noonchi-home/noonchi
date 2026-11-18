@@ -107,6 +107,7 @@ const worldChanges = z.strictObject({ rev, changes: z.array(z.strictObject({ kin
 const worldInput = z.union([
   z.strictObject({ kind: z.enum(["guard", "contents"]), id, on: z.boolean(), at_ms: at }),
   z.strictObject({ kind: z.literal("focus"), id: id.nullable(), focus: z.strictObject({ step: z.enum(["pick", "place", "carry"]), spot: z.tuple([at, at]).nullable() }).nullable(), at_ms: at }),
+  z.strictObject({ kind: z.literal("link"), from: id, to: id, at_ms: at }),
 ]);
 const heard = z.strictObject({ text: z.string(), observed_ms: at });
 /** /world/closer: 가까이 보기 한 번의 VLM 합치기 뒤 최종 id 표. */

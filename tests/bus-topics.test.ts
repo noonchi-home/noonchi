@@ -217,6 +217,10 @@ describe("인식·집 상태 토픽 모양(묶음 2)", () => {
     expect(ok("/world/input", { kind: "focus", id: "cup_1", focus: { step: "throw", spot: null }, at_ms: 1 })).toBe(false);
     expect(ok("/world/input", { kind: "focus", id: "cup_1", on: true, at_ms: 1 })).toBe(false);
     expect(ok("/world/input", { kind: "guard", id: null, on: true, at_ms: 1 })).toBe(false);
+    // 찾기가 겨눈 자리의 같은 무리 물건을 계획 대상으로 잇기(relink)
+    expect(ok("/world/input", { kind: "link", from: "cup_2", to: "cup_1", at_ms: 1 })).toBe(true);
+    expect(ok("/world/input", { kind: "link", from: "cup_2", at_ms: 1 })).toBe(false);
+    expect(ok("/world/input", { kind: "link", from: "cup_2", to: "cup_1", at_ms: 1, on: true })).toBe(false);
     expect(ok("/world/input", { kind: "guard", id: "cup_1", on: true, at_ms: 1 })).toBe(true);
     expect(ok("/world/input", { kind: "contents", id: "cup_1", on: false, at_ms: 1 })).toBe(true);
     expect(ok("/world/input", { kind: "move", id: "cup_1", on: true, at_ms: 1 })).toBe(false);

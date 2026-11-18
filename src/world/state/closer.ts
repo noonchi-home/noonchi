@@ -8,7 +8,7 @@ import type { CameraView, Detection, SceneObservation } from "../../contract/obs
 import { closerObject } from "../accept.js";
 import { CHANGE_TEXT, onSurface } from "../labels.js";
 import { vlmFirst } from "../merge.js";
-import { placePoint, type PlaneSurface } from "../place.js";
+import { pixelOf, placePoint, type PlaneSurface } from "../place.js";
 import { CLASSES, NOW_FACETS, POSE_HOLD, sameDrinkware, STATES, VLM_ONLY, type StateKey, type StateOf } from "../vocab.js";
 import { OBJ_CLASSES, Part, VLM_MATCH_M, dist, fits, fromCamera, type Obj, type V3 } from "./core.js";
 
@@ -111,17 +111,18 @@ export class CloserLook extends Part {
 
   /** 가까이 본 묶음 하나를 넣는다: 맞는 확인된 물건이 있으면 그것을 고치고, 없으면 make일 때만 확인된 물건 하나를 만든다(세는 중인 같은 자리 물건이 있으면
    *  그것을 확인하고 created에 더한다). 넣은 물건은 used에 더해 돌려주고, 넣지 않았으면 null. */
-  private closeGroup(g: CloserGroup, make: boolean, used: Set<string>, surfaces: PlaneSurface[], changes: WorldChange[], created: Fresh[]): Obj | null {
+  private closeGroup(g: CloserGroup, make: boolean, used: Set<string>, surfaces: PlaneSurface[], changes: WorldChange[], created: Fresh[], prefer?: Obj): Obj | null {
     const core = this.core;
     const last = g.seen.at(-1)!;
     const at = last.pass.capturedAtMs;
-    const match = this.nearest(g.cls, last.position, used);
+    // prefer: 잘라 본 칸 안에 비치는 그 물건(cropKin). 상자 투영은 어긋났으니 자리는 고치지 않는다
+    const match = prefer ?? this.nearest(g.cls, last.position, used);
     let obj: Obj | null = null;
     if (match?.confirmed) {
       obj = match;
       if (g.said) core.voteClass(obj, g.cls, at, last.pass.frameId);
       if (g.said) obj.vlmSeen = Math.max(obj.vlmSeen ?? at, at);
-      this.placeCloser(obj, last, surfaces);
+      if (!prefer) this.placeCloser(obj, last, surfaces);
       // 보임은 마지막 보임 판단보다 새 촬영일 때만 고친다(전체 사진이 더 새 촬영으로 본 사라짐·시야 밖을 되돌리지 않는다).
       // 같은 원본 프레임의 전체 사진 판단이면 잘라 본 양성이 앞선다
       if (this.newerCloser(obj, at, last.pass.frameId)) {
@@ -229,14 +230,38 @@ export class CloserLook extends Part {
         continue;
       }
       if (!look || this.lifted(scene, v) || !vlmFirst(false, true)) continue;
-      const s = spots?.get(v.id) ?? this.placeVlm(v, look, sourceFrameId, capturedAtMs, surfaces);
+      const cls = v.cls as ObjClass;
+      const placed = spots?.get(v.id) ?? this.placeVlm(v, look, sourceFrameId, capturedAtMs, surfaces);
+      // 상자 투영 자리에 맞는 물건이 없으면 잘라 본 칸 안에 비치는 같은 무리 확인 물건 하나(가까이 보기는 그 물건 자리를 비춘다. VLM 상자가 칸을 거의 채우면 바닥 점이 어긋난다)
+      const kin = placed && this.nearest(cls, placed.position, used) ? null : this.cropKin(cls, look, used);
+      const s = placed ?? (kin?.position ? this.seenAt(kin.position, look, sourceFrameId, capturedAtMs, v.id) : null);
       if (!s) continue;
-      const obj = this.closeGroup({ cls: v.cls as ObjClass, seen: [s], said: true }, true, used, surfaces, changes, created);
+      const obj = this.closeGroup({ cls, seen: [s], said: true }, true, used, surfaces, changes, created, kin ?? undefined);
       if (!obj) continue;
       ids.set(v.id, obj.id);
       // VLM이 같은 물건이라 한 감지 번호(묶지 않은 경계 상자 등)의 사실도 이 물건 것이다
       if (v.det !== null) ids.set(v.det, obj.id);
     }
+  }
+
+  /** 잘라 본 칸(그 사진 픽셀) 안에 자리가 비치는 같은 무리 확인 물건 중 아직 쓰지 않은 것이 하나뿐이면 그것(같은 종류가 있으면 같은 종류 중에서). 모호하면 null. */
+  private cropKin(cls: ObjClass, look: CloserLookAt, used: ReadonlySet<string>): Obj | null {
+    const [cx, cy, cw, ch] = look.crop;
+    const kin = [...this.core.objects.values()].filter((x) => {
+      if (!x.confirmed || used.has(x.id) || !sameDrinkware(x.cls, cls) || !x.position) return false;
+      const q = pixelOf(look.view, x.position, { width: look.width, height: look.height });
+      return !!q && q[0] >= cx && q[0] <= cx + cw && q[1] >= cy && q[1] <= cy + ch;
+    });
+    const same = kin.filter((x) => x.cls === cls);
+    const pool = same.length ? same : kin;
+    return pool.length === 1 ? pool[0]! : null;
+  }
+
+  /** 그 자리를 그 사진에서 본 것(자리는 바꾸지 않는 잇기에 쓴다). */
+  private seenAt(position: V3, look: CloserLookAt, sourceFrameId: string, capturedAtMs: number, tmp: string): CloserSeen {
+    const q = pixelOf(look.view, position, { width: look.width, height: look.height }) ?? [look.width / 2, look.height / 2];
+    const pass: CloserPass = { frameId: sourceFrameId, capturedAtMs, view: look.view, width: look.width, height: look.height, dets: [] };
+    return { pass, tmp, position, center: [q[0] / look.width, q[1] / look.height], surface: null, part: null, errorM: null };
   }
 
   /** 가까이 본 사진의 VLM 물건 하나를 그 사진의 트윈 자리로(잘라 본 칸 → 원래 엔진 프레임 픽셀 → placePoint). 자리를 모르면 null. */
@@ -328,13 +353,15 @@ export class CloserLook extends Part {
         continue;
       }
       if (core.people.poseHolds(obj.facts[facet], capturedAtMs) || core.scene.carriedPlace(obj.id, facet)) continue;
-      if (!core.vlm.answer(sourceFrameId, obj.id, obj.facts, facet, value, capturedAtMs, true, NOW_FACETS.object.includes(facet), turn)) {
+      // 놓인 곳은 장면 답과 같이 트윈 면으로 정한다(가로 키 큰 컵 r5: 가까이 본 「선반 위」가 식탁 위 컵에 들어갔다)
+      const placed = facet === "place" ? core.vlm.twinPlace(obj, value) as StateKey : value;
+      if (!core.vlm.answer(sourceFrameId, obj.id, obj.facts, facet, placed, capturedAtMs, true, NOW_FACETS.object.includes(facet), turn)) {
         if (facet === "body") core.contents.settle(obj);
         continue;
       }
       if (facet === "body") core.contents.settle(obj);
       obj.closerRev[facet] = (obj.closerRev[facet] ?? 0) + 1;
-      if (obj.confirmed && obj.status !== "gone") changes.push({ kind: "state", at_ms: capturedAtMs, subject: obj.id, meaningful: true, text: CHANGE_TEXT.state(core.name(obj), value) });
+      if (obj.confirmed && obj.status !== "gone") changes.push({ kind: "state", at_ms: capturedAtMs, subject: obj.id, meaningful: true, text: CHANGE_TEXT.state(core.name(obj), placed) });
     }
     for (const [obj, value] of contents) {
       const r = core.contents.see(obj, sourceFrameId, capturedAtMs, value, 1);

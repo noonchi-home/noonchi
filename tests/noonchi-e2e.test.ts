@@ -1,7 +1,7 @@
 // 처음부터 끝까지(가짜 서버): 폰 엔진 프레임 → YOLO(대본)·VLM(가짜 OpenAI 호환 서버, 컵 자리 대본) → World State → PAM(시험용 PAM 자리: 컵 치우기)
 // → 에이전트 계획 모드(같은 가짜 서버의 도구 호출) → 실행 전 검사 → 실제 폰 단계 명령(소리) → 「완료」 단추·World State 컵 자리·말 「다 했어」로 한 단계씩 → 완료, 그리고 한 시간축 기록·대시보드 메시지.
 // 기본 집(마곡 아파트, 식탁·싱크대 있음). 맞추기 전이라 폰 눈 위치를 몰라 이동 단계는 「완료」나 말로 넘긴다.
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -58,10 +58,9 @@ describe("NOONCHI 처음부터 끝까지", () => {
     // PAM은 기본 주기(5초)로 불린다. 관찰 텍스트에 컵이 있으면 컵 치우기를 고르고(끝난 뒤에도: 싱크대 안 컵으로는 새 명령을 보내지 않아야 한다), 없으면 대기
     pam = await startFakePamLlm({ predict: (b) => (/컵 cup_\d/.test(String(b.observation_text))
       ? { observation: "빈 컵이 식탁에 남음", reasoning: "자리를 비워 컵을 치운다", task_index: 0 } : { observation: "컵 없음", reasoning: "할 일 없음", task_index: -1 }) });
-    // 컵 치우기는 전에 승인을 받은 일: 승인을 묻지 않고 첫 명령부터(기본 집 apartment). 승인 답 흐름은 tests/act-track.test.ts가 본다
+    // 처음 하는 컵 치우기도 승인을 묻지 않고 첫 명령부터(2026-11-18 사용자 결정: 처음 하는 일 묻기 끔, 기본 집 apartment). 승인 기억 파일도 쓰지 않는다.
+    // 묻는 길은 tests/mokryeon-e2e.test.ts·tests/act-track.test.ts가 askFirst로 켜서 본다
     const runtimeDir = mkdtempSync(join(tmpdir(), "rt-"));
-    mkdirSync(join(runtimeDir, "homes", "apartment"), { recursive: true });
-    writeFileSync(join(runtimeDir, "homes", "apartment", "approvals.json"), JSON.stringify({ always: { "task:컵 치우기": "2026-11-09T00:00:00.000Z" }, never: {} }));
     srv = await startServer({
       env: { HUB: "memory", PORT: "0", RUNTIME_DIR: runtimeDir, PHONE_PORT: "0", PHONE_HOST: "127.0.0.1",
         BRAIN: "1", VLM_BASE_URL: `${fake.url}/v1`, ...pamLlmEnv(pam), OPENAI_API_KEY: "fake-key", OPENAI_BASE_URL: `${fake.url}/v1` },
@@ -124,6 +123,8 @@ describe("NOONCHI 처음부터 끝까지", () => {
     await pump(async () => (await history("execution")).rows.some((r) => r.id > seen && r.subject !== planId && r.text === CHECK_TEXT.in_sink));
 
     expect(phone.filter((m) => m.type === "command" && m.speak).map((m) => m.text)).toEqual(["식탁으로 가 주세요", "컵을 들어 주세요", "싱크대로 가 주세요", "컵을 싱크대에 넣어 주세요"]);
+    expect(phone.some((m) => m.type === "command" && /:approve$/.test(String(m.step)))).toBe(false);
+    expect(existsSync(join(runtimeDir, "homes", "apartment", "approvals.json"))).toBe(false);
     const all = await history("vlm,detection,pam_text,decision,plan,execution,feedback");
     expect(all.ok).toBe(true);
     expect([...new Set(all.rows.map((r) => r.kind))].sort()).toEqual(["decision", "detection", "execution", "feedback", "pam_text", "plan", "vlm"]);

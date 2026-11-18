@@ -205,8 +205,8 @@ describe("미리 세운 목표: 사람이 떠나면 PAM 확인 뒤 바로 시작
     expect(s.commands()).toEqual([]);
   });
 
-  it("PAM이 떠난 뒤 컵 치우기를 고르면 계획 모드를 다시 부르지 않고 미리 만든 계획을 그 판단 id로 내, 승인을 묻지 않고(처음 하는 일이어도) 판단을 받은 그 자리에서 「식탁으로 가 주세요」를 보낸다", async () => {
-    const s = await ready();
+  it("PAM이 떠난 뒤 컵 치우기를 고르면 계획 모드를 다시 부르지 않고 미리 만든 계획을 그 판단 id로 내, 승인을 묻지 않고(처음 하는 일 묻기를 켜도) 판단을 받은 그 자리에서 「식탁으로 가 주세요」를 보낸다", async () => {
+    const s = await ready({ over: { askFirst: true } });
     s.tick();
     s.gone();
     s.tick();
@@ -220,8 +220,8 @@ describe("미리 세운 목표: 사람이 떠나면 PAM 확인 뒤 바로 시작
     expect(s.t.goal()).toBeNull();
   });
 
-  it("목표가 아닌 보통 판단(목표 없음)의 처음 하는 컵 치우기는 지금처럼 첫 단계 전에 승인을 묻는다", async () => {
-    const s = goalSetup({ over: { habit: () => null } });
+  it("처음 하는 일 묻기를 켜면(ASK_FIRST_TIME) 목표가 아닌 보통 판단의 처음 하는 컵 치우기는 첫 단계 전에 승인을 묻는다(목표 실행만 묻지 않는다)", async () => {
+    const s = goalSetup({ over: { habit: () => null, askFirst: true } });
     await s.decide(pam("pam-1", 1, s.clock.t - 1));
     expect(s.commands()[0]).toMatchObject({ text: APPROVAL_TEXT.ask("컵 치우기") });
   });

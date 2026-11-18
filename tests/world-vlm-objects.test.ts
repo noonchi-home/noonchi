@@ -122,4 +122,136 @@ describe("물건은 장면 VLM 답으로만", () => {
     expect(ids.get("d1")).toBe("cup_1");
     expect(w.view(3000).objects[0]!.facts.contents?.value).toBe("empty");
   });
+
+  // 가로 유리컵 v1(2026-11-18 08:30): VLM이 한 잔을 거의 같은 상자 둘(v1·v2)로 답해 cup_3이 따로 생겼다
+  it("한 답 안에서 같은 무리 상자가 크게 겹치면(IoU 0.5 이상) 한 물건이다: 두 사진이 같은 잔을 두 상자로 답해도 id 하나", () => {
+    const w = ws();
+    const twice: SceneObservation = { scene: "k", summary: "s", observations: [{ object_id: "v2", state: "empty" }],
+      objects: [{ id: "v1", cls: "cup", box: frac(CUP), det: null }, { id: "v2", cls: "cup", box: frac([231, 169, 20, 11]), det: null }] };
+    const ids = new Map<string, string>();
+    w.applyScene("e1", 1000, twice, ids, look);
+    w.applyScene("e2", 2000, twice, ids, look);
+    expect(objs(w, 2000)).toEqual([["cup_1", "present"]]);
+    expect(ids.get("v2")).toBe("cup_1");
+    expect(w.view(2000).objects[0]!.facts.contents?.value).toBe("empty");
+  });
+
+  it("상자가 겹쳐도 서로 다른 YOLO 감지와 이은 두 물건(det)은 두 물건이다", () => {
+    const w = ws();
+    const two: SceneObservation = { scene: "k", summary: "s", observations: [],
+      objects: [{ id: "v1", cls: "cup", box: frac(CUP), det: "d1" }, { id: "v2", cls: "bottle", box: frac(CUP), det: "d2" }] };
+    w.applyScene("e1", 1000, two, new Map(), undefined);
+    w.applyScene("e2", 2000, two, new Map(), undefined);
+    expect(w.view(2000).objects.map((o) => o.id)).toEqual(["cup_1", "bottle_1"]);
+  });
+
+  it("사진 끝에 닿은 상자(아랫변이 놓인 자리가 아님)로는 새 물건을 만들지 않는다", () => {
+    const w = ws();
+    for (const [id, at] of [["e1", 1000], ["e2", 2000]] as const) w.applyScene(id, at, cupScene([230, 300, 20, 60]), new Map(), look);
+    expect(w.view(2000).objects).toEqual([]);
+  });
+
+  it("확정 전 후보도 그 사진 시야 안 같은 무리 후보가 하나뿐이면 잇는다(상자 투영이 흔들려 두 후보로 갈라지지 않는다)", () => {
+    const w = ws();
+    w.applyScene("e1", 1000, cupScene(), new Map(), look);
+    w.applyScene("e2", 2000, cupScene([300, 150, 20, 10]), new Map(), look);   // 0.5m 넘게 떨어진 투영
+    expect(objs(w, 2000)).toEqual([["cup_1", "present"]]);
+  });
 });
+
+// 가로 키 큰 컵 r5·유리컵 v1: 가까이 본 VLM 상자가 잘라 본 칸을 거의 채워 바닥 점이 엉뚱한 자리로 가 새 컵이 생겼고, 가까이 본 「선반 위」가 식탁 위 컵에 그대로 들어갔다
+describe("가까이 본 VLM 물건", () => {
+  const crop: [number, number, number, number] = [120, 90, 240, 180];
+  const closerLook = { view: LOOK_VIEW, ...LOOK_SIZE, crop };
+  it("잘라 본 칸 안에 비치는 같은 무리 확인 물건이 하나뿐이면 상자 투영이 어긋나도 그 물건이다(새 id를 만들지 않는다)", () => {
+    const w = confirmed();
+    const r = w.applyCloser([{ frameId: "e3", capturedAtMs: 3000, view: LOOK_VIEW, ...LOOK_SIZE, dets: [] }]);
+    // 칸을 거의 채운 상자: 바닥 점이 칸 아래 끝이다
+    const tall: SceneObservation = { scene: "k", summary: "s", observations: [], objects: [{ id: "v1", cls: "cup", box: { x: 0.4, y: 0.02, w: 0.2, h: 0.96 }, det: null }] };
+    w.applyCloserScene("e3", 3000, tall, r.ids, r.pending, closerLook);
+    expect(objs(w, 3000)).toEqual([["cup_1", "present"]]);
+    expect(r.ids.get("v1")).toBe("cup_1");
+  });
+
+  it("가까이 본 놓인 곳 답도 트윈 면으로 정한다: 식탁 면 위 컵을 「선반 위」라 해도 식탁 위다", () => {
+    const table = { id: "table_1", label: "식탁", kind: "table" as const, center: [1.5, 0] as [number, number], top: 0, radius: 0.7, rect: { center: [1.5, 0] as [number, number], size: [1, 1] as [number, number], facing_deg: 0 } };
+    const w = new WorldState({ evidenceStepMs: 1000, surfaces: () => [table], floorAt: () => 0, roomAt: () => null, devices: () => [] });
+    w.applyScene("e1", 1000, cupScene(), new Map(), look);
+    w.applyScene("e2", 2000, cupScene(), new Map(), look);
+    expect(w.view(2000).objects[0]).toMatchObject({ surface: "table_1" });
+    const r = w.applyCloser([{ frameId: "e3", capturedAtMs: 3000, view: LOOK_VIEW, ...LOOK_SIZE, dets: [] }]);
+    const shelf: SceneObservation = { scene: "k", summary: "s", observations: [{ object_id: "v1", state: "on_shelf" }], objects: [{ id: "v1", cls: "cup", box: { x: 110 / 240, y: 80 / 180, w: 20 / 240, h: 10 / 180 }, det: null }] };
+    w.applyCloserScene("e3", 3000, shelf, r.ids, r.pending, closerLook);
+    expect(w.view(3000).objects[0]!.facts.place?.value).toBe("on_table");
+  });
+});
+
+// 가로 키 큰 컵 r5·v1(2026-11-18): VLM 상자 아랫변이 식탁 먼 끝을 조금 넘으면 광선이 식탁을 지나쳐 몇 m 뒤 바닥(후면 발코니)에 닿았다.
+// 상자 높이 오차(사진 높이의 몇 %)에 자리가 수 m 흔들리는 바닥 자리는 믿지 않는다
+describe("VLM 상자 바닥 점 자리", () => {
+  // 식탁: 카메라 앞 x 0.5~1.0, 폭 1m, 윗면 0.75(가운데 광선이 식탁 가운데 (0.75, 0.75, 0)에 닿는다)
+  const table = { id: "table_1", label: "식탁", kind: "table" as const, center: [0.75, 0] as [number, number], top: 0.75, radius: 0.56, rect: { center: [0.75, 0] as [number, number], size: [1, 0.5] as [number, number], facing_deg: 0 } };
+  const tw = () => new WorldState({ evidenceStepMs: 1000, surfaces: () => [table], floorAt: () => 0, roomAt: () => null, devices: () => [] });
+  /** 아랫변 가운데가 (240, bottom)인 VLM 컵 상자(높이 30px). */
+  const footAt = (bottom: number) => cupScene([230, bottom - 30, 20, 30]);
+
+  it("아랫변이 식탁 먼 끝을 조금 넘어 광선이 바닥에 닿아도, 사진 높이 4% 안에서 식탁에 닿으면 식탁 위 자리다", () => {
+    const w = tw();
+    w.applyScene("e1", 1000, footAt(152.5), new Map(), look);
+    w.applyScene("e2", 2000, footAt(152.5), new Map(), look);
+    const cup = w.view(2000).objects[0]!;
+    expect(cup).toMatchObject({ surface: "table_1" });
+    expect(cup.position![0]).toBeLessThanOrEqual(1.0);
+    expect(cup.position![1]).toBeCloseTo(0.75, 3);
+  });
+
+  it("카메라에서 3m 넘는 바닥 자리(트윈 면 위가 아님)로는 VLM 상자만으로 새 물건을 만들지 않는다(창 너머 발코니 장식·걷는 중 어긋난 카메라)", () => {
+    const w = tw();
+    for (const [id, at] of [["e1", 1000], ["e2", 2000], ["e3", 3000]] as const) w.applyScene(id, at, footAt(108), new Map(), look);
+    expect(w.view(3000).objects).toEqual([]);
+  });
+
+  it("상자 높이 오차 3%에 0.5m 넘게 흔들리는 먼 바닥 자리로는 새 물건을 만들지 않는다(그 자리로 옮기지도 않는다)", () => {
+    const w = tw();
+    for (const [id, at] of [["e1", 1000], ["e2", 2000], ["e3", 3000]] as const) w.applyScene(id, at, footAt(60), new Map(), look);
+    expect(w.view(3000).objects).toEqual([]);
+    const v = tw();
+    v.applyScene("e1", 1000, footAt(180), new Map(), look);
+    v.applyScene("e2", 2000, footAt(180), new Map(), look);
+    const before = v.view(2000).objects[0]!.position;
+    for (const [id, at] of [["e3", 3000], ["e4", 4000]] as const) v.applyScene(id, at, footAt(60), new Map(), look);
+    expect(v.view(4000).objects.map((o) => [o.id, o.status, o.position])).toEqual([["cup_1", "present", before]]);
+  });
+
+  // 가로 키 큰 컵 r5: 식탁 끝 가까이(사각형 안, 끝에서 0.15m 안) 컵을 VLM이 「선반 위」로 답해 그대로 남았다. 트윈에 선반 면은 없다
+  it("트윈 면 사각형 안에 놓인 물건을 VLM이 트윈에 없는 면(선반 위)으로 답하면 끝 가까이여도 그 면의 놓인 곳이다", () => {
+    const w = tw();
+    const shelf = (id: string, at: number) => w.applyScene(id, at, { ...footAt(159.5), observations: [{ object_id: "v1", state: "on_shelf" }] }, new Map(), look);
+    shelf("e1", 1000);
+    shelf("e2", 2000);
+    shelf("e3", 3000);
+    const cup = w.view(3000).objects[0]!;
+    expect(cup).toMatchObject({ surface: "table_1" });
+    expect(cup.position![0]).toBeGreaterThan(0.85);
+    expect(cup.facts.place?.value).toBe("on_table");
+  });
+});
+
+// 찾기가 겨눈 자리에서 다른 id의 같은 무리 물건을 찾으면 계획 대상 id로 잇는다(src/act/track/find.ts)
+describe("계획 대상으로 잇기(relink)", () => {
+  it("그 물건의 자리·보임·사실을 대상 id가 받고, 그 물건은 사라짐과 옮김 표시(followed_by: 대상)를 남긴다. 같은 무리가 아니거나 없으면 잇지 않는다", () => {
+    const w = confirmed();
+    w.applyScene("e3", 3000, none, new Map(), { ...look, view: AWAY_VIEW });
+    // 다른 자리에 같은 무리 병(bottle_1)이 확정된다
+    const bottle: SceneObservation = { scene: "k", summary: "s", observations: [{ object_id: "v1", state: "empty" }], objects: [{ id: "v1", cls: "bottle", box: frac([300, 150, 20, 10]), det: null }] };
+    w.applyScene("e4", 4000, bottle, new Map(), { ...look, view: AWAY_VIEW });
+    w.applyScene("e5", 5000, bottle, new Map(), { ...look, view: AWAY_VIEW });
+    const b = w.view(5000).objects.find((o) => o.id === "bottle_1")!;
+    expect(w.relink("bottle_1", "cup_1", 5000)).toBe(true);
+    const v = w.view(5000).objects;
+    expect(v.find((o) => o.id === "cup_1")).toMatchObject({ status: "present", position: b.position, last_seen_ms: 5000, facts: { contents: { value: "empty" } } });
+    expect(v.find((o) => o.id === "bottle_1")).toMatchObject({ status: "gone", followed_by: "cup_1" });
+    expect(w.relink("cup_9", "cup_1", 5000)).toBe(false);
+  });
+});
+
