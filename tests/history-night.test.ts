@@ -129,6 +129,27 @@ describe("밤 흐름: 채택 검사", () => {
     }
   });
 
+  // Codex(1b07d3e2 P2): 시각 찾기 사본에 기록 범위 표시가 없어, 23:30 반성 뒤 더해진 같은 날 기록은 다음 밤에도 사본 때문에 건너뛰어 셈에서 빠졌다
+  it("시각 찾기 사본을 만든 뒤 그날 기록이 늘면 다음 밤에 그날을 다시 묻고 늘어난 기록도 센다", async () => {
+    const leaves = (v: MarkView) => v.lines.filter((l) => l.endsWith("| 사람 안 보임")).map((l) => l.substring(0, 8));
+    const pam = await startFakePamLlm({ chunk: oneChunkPerLine, reflect: () => CANDIDATES_ASK_THEN_CLEAR,
+      mark: (v) => ({ candidates: v.candidates.map(([state, candidate]) => ({ state, candidate, times: leaves(v) })), actions: v.actions.map((action) => ({ action, times: [] })), unseen: [] }) });
+    try {
+      const db = HistoryDb.open(":memory:");
+      const dir = tmp();
+      leaveAndAnswer(db, "2026-11-10", "08:00:00", "08:01:30", "clear");
+      await runNight(db, pamClientFor(pam), "2026-11-10", { dir });
+      leaveAndAnswer(db, "2026-11-10", "23:40:00", "23:41:30", "clear");   // 23:30 반성 뒤 더해진 같은 날 기록
+      leaveAndAnswer(db, "2026-11-11", "08:00:00", "08:01:30", "clear");
+      const second = await runNight(db, pamClientFor(pam), "2026-11-11", { dir });
+      const marks = pam.bodies.filter((b): b is MarkView => b.role === "mark");
+      expect(marks.map((m) => leaves(m))).toEqual([["08:00:00"], ["08:00:00", "23:40:00"], ["08:00:00"]]);
+      expect(second.checks).toContainEqual(expect.objectContaining({ state: "drinking", action: "컵 치우기", on: LEAVE_ON, n: 3, k: 3 }));
+    } finally {
+      await pam.close();
+    }
+  });
+
   it("「그대로 둬요」 답은 사람이 떠나 안 보였어도 셈에 든다: 치워·둬요·둬요·치워면 n=4·k=2로 통과하지 않고 떠날 때는 계속 묻는다", async () => {
     const pam = await fake();
     try {

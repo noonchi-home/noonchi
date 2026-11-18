@@ -5,6 +5,7 @@
 // 「그대로 둬요」 답은 따라오지 않은 것이고, 답이 있는 창은 사람이 안 보였어도 본 것이다(answerTimes → CheckDay.answered). 로봇이 그 행동을 한 구간은 안 보인 구간에 더해 못 봄이고
 // 그 안의 행동 표시(폰 명령대로 사람이 한 일)는 행동으로 세지 않는다(robotSpans).
 // 시각 찾기 결과는 그날 사실의 사본(<dir>/marks-<날>.json, 임시 파일 → 이름 바꾸기)이라 기억이 저장되지 않아도 다음 밤에 다시 쓴다. 검사 결과 사본(<dir>/check-<날>.json)은 커밋 뒤에 쓴다.
+import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { ASK_CHOICES, ASK_FOLLOW } from "../../act/prompts.js";
@@ -134,9 +135,11 @@ export function chunkLines(db: HistoryDb, day: string, chunks: readonly Chunk[])
   });
 }
 
-/** 그날 시각 찾기 사본: 덩어리, (상태, 후보 글)마다 시각, 행동마다 시각, 안 보인 구간(아직 안 물었으면 null). */
-interface DayMarks { day: string; chunks: Chunk[] | null; candidates: Record<string, string[]>; actions: Record<string, string[]>; unseen: { start: string; end: string }[] | null }
+/** 그날 시각 찾기 사본: 읽은 기록 줄의 표시(record), 덩어리, (상태, 후보 글)마다 시각, 행동마다 시각, 안 보인 구간(아직 안 물었으면 null). */
+interface DayMarks { day: string; record: string; chunks: Chunk[] | null; candidates: Record<string, string[]>; actions: Record<string, string[]>; unseen: { start: string; end: string }[] | null }
 const markKey = (state: string, text: string) => JSON.stringify([state, text]);
+/** 사본이 읽은 그날 기록 줄의 표시(줄 수와 줄 전체의 sha256). 다르면 그날 기록이 바뀐 것이라 사본을 버리고 다시 묻는다. */
+const recordMark = (lines: readonly { line: string }[]) => `${lines.length}:${createHash("sha256").update(lines.map((l) => l.line).join("\n")).digest("hex")}`;
 
 export interface NightOptions {
   now?: () => number; emit?: (l: BrainLog) => void; filter?: HabitFilter; windowDays?: number; signal?: AbortSignal;
@@ -199,13 +202,17 @@ export async function runNight(db: HistoryDb, pam: PamClient, day: string, o: Ni
     // 반성 입력 기억: 지금까지의 후보 FSM(지난 밤 후보 판본, 없으면 그날 로봇 FSM을 후보 모양으로)
     const input = (db.candidatesFor(day)?.memory as CandidateFsm | undefined) ?? candidateFsmOf(today);
     const markPath = (d: string) => (o.dir ? join(o.dir, `marks-${d}.json`) : null);
+    const linesCache = new Map<string, { time: string; line: string }[]>();
+    const linesOf = (d: string) => linesCache.get(d) ?? linesCache.set(d, dayLines(db, d)).get(d)!;
     const marksCache = new Map<string, DayMarks>();
+    // 사본은 그때 읽은 기록 줄과 같을 때만 쓴다(Codex 1b07d3e2 P2: 23:30 반성 뒤 더해진 같은 날 기록이 사본 때문에 영원히 셈에서 빠졌다)
     const marksOf = (d: string): DayMarks => {
       const hit = marksCache.get(d);
       if (hit) return hit;
       const path = markPath(d);
+      const record = recordMark(linesOf(d));
       const read = path && existsSync(path) ? (JSON.parse(readFileSync(path, "utf8")) as DayMarks) : null;
-      const m: DayMarks = read ?? { day: d, chunks: null, candidates: {}, actions: {}, unseen: null };
+      const m: DayMarks = read?.record === record ? read : { day: d, record, chunks: null, candidates: {}, actions: {}, unseen: null };
       marksCache.set(d, m);
       return m;
     };
@@ -216,7 +223,7 @@ export async function runNight(db: HistoryDb, pam: PamClient, day: string, o: Ni
       try { save(path, m); } catch (e) { o.log?.(NIGHT_TEXT.copyFailed((e as Error).message)); }
     };
     // 1) 덩어리 기록(그날 기록 줄 → 하는 일 덩어리). 줄이 없으면 하루 요약 관찰 텍스트를 쓴다
-    const lines = dayLines(db, day);
+    const lines = linesOf(day);
     const prevChecks = ((db.list({ kinds: ["reflection"], latest: true, limit: 50 }).reverse().find((r) => (r.data as { ok?: boolean; checks?: unknown } | null)?.ok === true && Array.isArray((r.data as { checks?: unknown }).checks))?.data as { checks: NightCheck[] } | undefined)?.checks) ?? [];
     const checksText = prevChecks.length ? latestWithin([NIGHT_TEXT.checksHead, ...prevChecks.map((c) => NIGHT_TEXT.check(c.state, candidateText({ on: c.on, ...(c.when ? { when: c.when } : {}) }), c.action, c.n, c.k, c.passed))], CHECKS_MAX).join("\n") : "";
     // 요약이 비면 대신 보내는 글(관찰 없음·행동 없음)과 다시 반성할 때 붙는 까닭(RETRY_WHY_MAX 글자, UTF-8 3바이트까지), 지난 검사 결과도 한도 안에 들게 미리 뺀다
@@ -279,7 +286,7 @@ export async function runNight(db: HistoryDb, pam: PamClient, day: string, o: Ni
       const ask = [...new Map(rules.map((r) => [markKey(r.state, candidateText(r.cand)), r])).values()].filter((r) => !(markKey(r.state, candidateText(r.cand)) in m.candidates));
       const want = actions.filter((a) => !(a in m.actions));
       if (!ask.length && !want.length && m.unseen !== null) continue;
-      const dl = d === day ? lines : dayLines(db, d);
+      const dl = linesOf(d);
       if (!dl.length) continue;
       if (m.chunks === null) {
         try { m.chunks = (await pam.chunk(latestWithin(dl.map((l) => l.line), limits.reflect_input_bytes), call)).chunks; } catch (e) { if (!(e instanceof ContractError)) throw e; m.chunks = []; }
@@ -297,7 +304,7 @@ export async function runNight(db: HistoryDb, pam: PamClient, day: string, o: Ni
     // 4) 채택 검사(지난 날을 모두 모아 다시 센다)
     const checks: NightCheck[] = rules.map((r) => {
       const perDay: CheckDay[] = days.flatMap((d) => {
-        const dl = dayLines(db, d);
+        const dl = linesOf(d);
         const m = marksOf(d);
         if (!dl.length) return [];
         const sec = (t: string) => clock(t, "time");
