@@ -15,6 +15,7 @@ import { CHECK_TEXT } from "../src/act/labels.js";
 import { fetchRetry } from "../src/shared/net.js";
 import { startServer, type RunningServer } from "../src/server/start.js";
 import { ScriptedDetector, det } from "./helpers/detectors.js";
+import type { Detection } from "../src/contract/observe.js";
 import { startFakePamLlm, type FakePamLlm, pamLlmEnv } from "./helpers/pam.js";
 import { CUP_SCRIPTS, plannerRespond } from "./helpers/planner.js";
 import { heardAtOf, openPhone, openWebSocket } from "./helpers/ws.js";
@@ -41,17 +42,28 @@ afterEach(async (ctx) => {
 });
 
 const inbox = (list: Msg[]) => (ws: WebSocket) => ws.on("message", (d, bin) => { if (!bin) list.push(JSON.parse(String(d)) as Msg); });
+const PERSON = det("person", 0.9, [40, 40, 120, 280]);
+/** 떠남 화살표(컵 치우기)는 직전 상태 drinking에서만 나간다: 사람이 보여 마시는 중(VLM 사실)이고 판단이 그 상태를 본 뒤 사람이 떠난다. */
+async function drinkThenLeave(people: Detection[], dash: Msg[], pump: (until: () => boolean) => Promise<void>): Promise<void> {
+  const from = dash.length;
+  people.push(PERSON);
+  await pump(() => dash.slice(from).some((m) => m.type === "brain" && m.event.type === "decision" && m.event.fsm?.state === "drinking"));
+  people.splice(0);
+}
 
 describe("NOONCHI 처음부터 끝까지", () => {
   it("관찰부터 단계 명령·실행 결과까지 한 흐름으로 돌고 기록·대시보드에 남는다", async () => {
     let cupPlace = "on_table";
+    // 사람 하는 일(VLM 사실): 처음에는 컵으로 마시다 떠나고, 컵을 치운 뒤에는 먹다가 떠난다(먹는 중도 마시는 중 상태라 떠남 화살표가 켜진다. 컵을 쓰지 않아 목표는 서지 않는다)
+    let personAct = "drinking";
+    const people: Detection[] = [];
     fake = await startFakeOpenAI({
       reply: (body) => {
         if (body?.response_format?.json_schema?.name !== "scene_observation") return null;
         const parts = (body.messages as { role: string; content: unknown }[]).filter((m) => m.role === "user").flatMap((m) => (Array.isArray(m.content) ? m.content : [{ text: m.content }]));
         const text = parts.map((p: { text?: unknown }) => (typeof p.text === "string" ? p.text : "")).join("\n");
-        const dets = JSON.parse(/Detections: (\[.*\])/.exec(text)?.[1] ?? "[]") as { id: string }[];
-        return JSON.stringify({ scene: "kitchen", observations: dets.map((d) => ({ object_id: d.id, state: cupPlace })), summary: "컵" });
+        const dets = JSON.parse(/Detections: (\[.*\])/.exec(text)?.[1] ?? "[]") as { id: string; class: string }[];
+        return JSON.stringify({ scene: "kitchen", observations: dets.map((d) => ({ object_id: d.id, state: d.class === "person" ? personAct : cupPlace })), summary: "컵" });
       },
       // 에이전트 계획 모드: 같은 가짜 서버가 컵 치우기 도구 호출(지금 서버와 같은 네 단계)을 낸다
       respond: plannerRespond(CUP_SCRIPTS),
@@ -67,7 +79,7 @@ describe("NOONCHI 처음부터 끝까지", () => {
     srv = await startServer({
       env: { HUB: "memory", PORT: "0", RUNTIME_DIR: runtimeDir, PHONE_PORT: "0", PHONE_HOST: "127.0.0.1",
         BRAIN: "1", VLM_BASE_URL: `${fake.url}/v1`, ...pamLlmEnv(pam), OPENAI_API_KEY: "fake-key", OPENAI_BASE_URL: `${fake.url}/v1` },
-      brain: { detector: new ScriptedDetector(() => [det("cup", 0.9, [220, 160, 40, 20], 41)]) }, log: () => {},
+      brain: { detector: new ScriptedDetector(() => [...people, det("cup", 0.9, [220, 160, 40, 20], 41)]) }, log: () => {},
     });
     const dash: Msg[] = [];
     sockets.push(await openWebSocket(`${srv.url.replace(/^http/, "ws")}/events`, { setup: inbox(dash) }));
@@ -88,6 +100,7 @@ describe("NOONCHI 처음부터 끝까지", () => {
     const history = async (kinds: string) => ((await (await fetchRetry(`${srv!.url}/api/history?kinds=${kinds}`)).json()) as { ok: boolean; rows: HistoryRow[] });
     const said = (text: string) => phone.find((m) => m.type === "command" && m.speak && m.text === text);
 
+    await drinkThenLeave(people, dash, pump);
     await pump(() => !!said("식탁으로 가 주세요"));
     const first = said("식탁으로 가 주세요")!;
     expect(first).toEqual({ type: "command", id: expect.stringMatching(/^plan:pam-\d+$/), step: `${first.id}:1`, text: "식탁으로 가 주세요", vision: "식탁까지 거리 모름", choices: [{ id: "done", label: "완료" }], target: null, speak: true, kind: "go" });
@@ -116,12 +129,15 @@ describe("NOONCHI 처음부터 끝까지", () => {
     cupPlace = "in_sink";
     await pump(() => phone.some((m) => m.type === "command_clear" && m.id === planId));
     await pump(async () => (await history("execution")).rows.some((r) => r.subject === planId && r.text === "완료"));
-    // 다음 판단(컵 치우기)은 싱크대 안 컵을 대상으로 삼지 않고 실행 전 검사에서 멈춘다
+    // 다음 판단(사람이 다시 와서 먹다 떠남 → 컵 치우기)은 싱크대 안 컵을 대상으로 삼지 않고 실행 전 검사에서 멈춘다
+    personAct = "eating";
+    await drinkThenLeave(people, dash, pump);
     await pump(async () => (await history("execution")).rows.some((r) => r.subject !== planId && r.text === CHECK_TEXT.in_sink));
     // 그 뒤 VLM이 같은 컵을 「식탁 위」로 봐도(실제 판정에서 싱크대 속 컵에 나온 답) 실행 추적이 넣은 컵이라 다음 판단도 계획 전 검사에서 멈춘다
     cupPlace = "on_table";
     const cupNow = async () => ((await (await fetchRetry(`${srv!.url}/api/world`)).json()) as { world: WorldView }).world.objects.find((o) => o.cls === "cup");
     await pump(async () => (await cupNow())?.facts.place?.value === "on_table");
+    await drinkThenLeave(people, dash, pump);
     const seen = Math.max(...(await history("execution")).rows.map((r) => r.id));
     await pump(async () => (await history("execution")).rows.some((r) => r.id > seen && r.subject !== planId && r.text === CHECK_TEXT.in_sink));
 
@@ -185,14 +201,15 @@ describe("NOONCHI 처음부터 끝까지", () => {
   }, 60_000);
 
   it("컵이 둘이면 놓기를 끝낸 컵(VLM이 「식탁 위」로 봐도)은 다음 계획 입력에 「이미 치움」으로 가고, 다음 계획은 다른 컵으로 실행 전 검사를 지나 첫 명령을 보낸다", async () => {
+    const people: Detection[] = [];
     // VLM은 두 컵 모두 늘 「식탁 위」로 본다(놓기는 「완료」로 끝낸다)
     fake = await startFakeOpenAI({
       reply: (body) => {
         if (body?.response_format?.json_schema?.name !== "scene_observation") return null;
         const parts = (body.messages as { role: string; content: unknown }[]).filter((m) => m.role === "user").flatMap((m) => (Array.isArray(m.content) ? m.content : [{ text: m.content }]));
         const text = parts.map((p: { text?: unknown }) => (typeof p.text === "string" ? p.text : "")).join("\n");
-        const dets = JSON.parse(/Detections: (\[.*\])/.exec(text)?.[1] ?? "[]") as { id: string }[];
-        return JSON.stringify({ scene: "kitchen", observations: dets.map((d) => ({ object_id: d.id, state: "on_table" })), summary: "컵 둘" });
+        const dets = JSON.parse(/Detections: (\[.*\])/.exec(text)?.[1] ?? "[]") as { id: string; class: string }[];
+        return JSON.stringify({ scene: "kitchen", observations: dets.map((d) => ({ object_id: d.id, state: d.class === "person" ? "drinking" : "on_table" })), summary: "컵 둘" });
       },
       respond: plannerRespond(CUP_SCRIPTS),
     });
@@ -206,7 +223,7 @@ describe("NOONCHI 처음부터 끝까지", () => {
     srv = await startServer({
       env: { HUB: "memory", PORT: "0", RUNTIME_DIR: runtimeDir, PHONE_PORT: "0", PHONE_HOST: "127.0.0.1",
         BRAIN: "1", VLM_BASE_URL: `${fake.url}/v1`, ...pamLlmEnv(pam), OPENAI_API_KEY: "fake-key", OPENAI_BASE_URL: `${fake.url}/v1` },
-      brain: { detector: new ScriptedDetector(() => [det("cup", 0.9, [220, 160, 40, 20], 41), det("cup", 0.9, [300, 160, 40, 20], 41)]) }, log: () => {},
+      brain: { detector: new ScriptedDetector(() => [...people, det("cup", 0.9, [220, 160, 40, 20], 41), det("cup", 0.9, [300, 160, 40, 20], 41)]) }, log: () => {},
     });
     const dash: Msg[] = [];
     sockets.push(await openWebSocket(`${srv.url.replace(/^http/, "ws")}/events`, { setup: inbox(dash) }));
@@ -228,6 +245,7 @@ describe("NOONCHI 처음부터 끝까지", () => {
     const actTarget = (planId: string) => dash.find((m) => m.type === "plan" && m.plan?.id === planId)?.plan.steps.find((s: Msg) => s.kind === "act")?.target;
 
     // 첫 계획(cup_1)의 네 단계를 「완료」로 넘긴다
+    await drinkThenLeave(people, dash, pump);
     await pump(() => phone.some((m) => m.type === "command" && m.speak && /^plan:pam-\d+:1$/.test(m.step)));
     const planId = phone.find((m) => m.type === "command" && m.speak)!.id as string;
     expect(actTarget(planId)).toMatchObject({ objectId: "cup_1" });
@@ -236,7 +254,8 @@ describe("NOONCHI 처음부터 끝까지", () => {
       ws.send(JSON.stringify({ type: "answer", id: planId, step: `${planId}:${k}`, choice: "done" }));
     }
     await pump(async () => (await history("execution")).rows.some((r) => r.subject === planId && r.text === "완료"));
-    // 다음 계획(같은 행동 다시 계획 간격 15초 뒤): 이미 치운 cup_1이 아니라 cup_2로 첫 명령까지 간다
+    // 다음 계획(사람이 다시 마시다 떠남, 같은 행동 다시 계획 간격 15초 뒤): 이미 치운 cup_1이 아니라 cup_2로 첫 명령까지 간다
+    await drinkThenLeave(people, dash, pump);
     await pump(() => phone.some((m) => m.type === "command" && m.speak && m.id !== planId), 40_000);
     const next = phone.find((m) => m.type === "command" && m.speak && m.id !== planId)!;
     expect(next).toMatchObject({ step: `${next.id}:1`, text: "식탁으로 가 주세요" });

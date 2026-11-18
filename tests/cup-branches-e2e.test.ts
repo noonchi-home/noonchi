@@ -101,12 +101,21 @@ async function start(scene: Scene, approved: string[]) {
   const spoken = () => phone.filter((m) => m.type === "command" && m.speak);
   const said = (text: string) => spoken().find((m) => m.text === text);
   const answer = (m: Msg) => ws.send(JSON.stringify({ type: "answer", id: m.id, step: m.step, choice: "done" }));
-  return { dash, phone, pump, hold, history, spoken, said, answer };
+  /** 판단이 사람을 마시는 중(drinking)으로 본 뒤 사람이 떠난다(떠남 화살표는 직전 상태 drinking에서만 나간다). */
+  const leaveAfterDrinking = async (scene: Scene) => {
+    await pump(() => dash.some((m) => m.type === "brain" && m.event.type === "decision" && m.event.fsm?.state === "drinking"));
+    scene.dets = scene.dets.filter((d) => d !== PERSON);
+    const { person: _, ...rest } = scene.facts;
+    scene.facts = rest;
+  };
+  return { dash, phone, pump, hold, history, spoken, said, answer, leaveAfterDrinking };
 }
 
 describe("컵 장면 갈래", () => {
-  it("빈 컵 + 사람 없음 → 컵 치우기: 실제 폰 첫 명령은 「식탁으로 가 주세요」", async () => {
-    const s = await start({ dets: [CUP], facts: { cup: ["on_table", "empty"] } }, ["컵 치우기"]);
+  it("빈 컵 + 마시던 사람이 떠남 → 컵 치우기: 실제 폰 첫 명령은 「식탁으로 가 주세요」", async () => {
+    const scene: Scene = { dets: [PERSON, CUP], facts: { person: ["sitting", "drinking"], cup: ["on_table", "empty"] } };
+    const s = await start(scene, ["컵 치우기"]);
+    await s.leaveAfterDrinking(scene);
     await s.pump(() => s.spoken().length > 0);
     expect(s.spoken()[0]).toMatchObject({ text: "식탁으로 가 주세요", kind: "go" });
     // 컵 치우기는 내용물과 상관없이 바로 첫 명령을 낸다. 내용물은 그 뒤에도 비전으로 계속 확정된다
@@ -115,8 +124,10 @@ describe("컵 장면 갈래", () => {
     expect((pam!.bodies.at(-1) as PredictView).tasks).toEqual(tasksFor("noonchi"));
   }, 60_000);
 
-  it("물이 남은 컵 + 사람 없음 → 컵 치우기(컵을 두고 떠나면 치우는 습관, 내용물과 상관없음): 실제 폰 첫 명령은 「식탁으로 가 주세요」", async () => {
-    const s = await start({ dets: [CUP], facts: { cup: ["on_table", "has_contents"] } }, ["컵 치우기"]);
+  it("물이 남은 컵 + 마시던 사람이 떠남 → 컵 치우기(컵을 두고 떠나면 치우는 습관, 내용물과 상관없음): 실제 폰 첫 명령은 「식탁으로 가 주세요」", async () => {
+    const scene: Scene = { dets: [PERSON, CUP], facts: { person: ["sitting", "drinking"], cup: ["on_table", "has_contents"] } };
+    const s = await start(scene, ["컵 치우기"]);
+    await s.leaveAfterDrinking(scene);
     await s.pump(() => s.spoken().length > 0);
     expect(s.spoken()[0]).toMatchObject({ text: "식탁으로 가 주세요", kind: "go" });
     // 컵 치우기는 내용물과 상관없이 바로 첫 명령을 낸다. 내용물은 그 뒤에도 비전으로 계속 확정된다

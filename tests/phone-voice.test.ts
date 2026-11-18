@@ -16,6 +16,14 @@ import { CUP_SCRIPTS, planCalls } from "./helpers/planner.js";
 import { startFakePamLlm, type FakePamLlm, pamLlmEnv } from "./helpers/pam.js";
 import { BOX_START, BOX_WALLS } from "./helpers/align.js";
 import { heardAtOf, openPhone, openWebSocket } from "./helpers/ws.js";
+import { useLearnedMemory } from "./helpers/memory.js";
+import { CUP_FSM_MEMORY, type FsmMemory } from "../src/brain/decision.js";
+
+/** 폰 말 답을 보는 시험의 기억: seed에 자리에 없음에서 묻기·에어컨 켜기 화살표를 더한다(화살표는 직전 상태에서만 나가고, 이 시험 장면에는 사람이 없다). */
+const AWAY_ASKS: FsmMemory = { ...CUP_FSM_MEMORY, states: CUP_FSM_MEMORY.states.map((s) => (s.id !== "away" ? s : { ...s, next: [...s.next,
+  { to: "away", on: "식탁에 컵이 남아 있다.", action: "사용자에게 물어보기" }, { to: "away", on: "집이 덥다.", action: "에어컨 켜기" }] })) };
+/** 그 기억을 오늘 판본으로 넣은 runtime 폴더. */
+const runtimeWithAsks = () => { const dir = mkdtempSync(join(tmpdir(), "rt-")); useLearnedMemory(dir, AWAY_ASKS); return dir; };
 
 
 type Msg = Record<string, any>;
@@ -113,7 +121,7 @@ describe("startServer(BRAIN=1): 클로이드 질문을 폰 말로 답한다", ()
     llm = await startFakeLlm({ "TV 소리 좀 줄여 봐": ["알겠어요"] });
     pam = await startFakePamLlm({ predict: () => ({ observation: "컵이 식탁에 있음", reasoning: "치울지 묻는다", task_index: 1 }) });
     srv = await startServer({
-      env: { HUB: "memory", PORT: "0", RUNTIME_DIR: mkdtempSync(join(tmpdir(), "rt-")), PHONE_PORT: "0", PHONE_HOST: "127.0.0.1",
+      env: { HUB: "memory", PORT: "0", RUNTIME_DIR: runtimeWithAsks(), PHONE_PORT: "0", PHONE_HOST: "127.0.0.1",
         BRAIN: "1", VLM_BASE_URL: `${fake.url}/v1`, ...pamLlmEnv(pam), ...llm.env },
       brain: { detector: new ScriptedDetector(() => [det("cup", 0.9, [1, 1, 2, 1], 41)]) }, log: () => {},
     });
@@ -174,7 +182,7 @@ describe("startServer(BRAIN=1): 말 답은 말할 때 떠 있던 명령에만", 
     llm = await startFakeLlm({});
     pam = await startFakePamLlm({ predict: () => ({ observation: "컵이 식탁에 있음", reasoning: "치울지 묻는다", task_index: 1 }) });
     srv = await startServer({
-      env: { HUB: "memory", PORT: "0", RUNTIME_DIR: mkdtempSync(join(tmpdir(), "rt-")), PHONE_PORT: "0", PHONE_HOST: "127.0.0.1",
+      env: { HUB: "memory", PORT: "0", RUNTIME_DIR: runtimeWithAsks(), PHONE_PORT: "0", PHONE_HOST: "127.0.0.1",
         BRAIN: "1", VLM_BASE_URL: `${fake.url}/v1`, ...pamLlmEnv(pam), ...llm.env },
       brain: { detector: new ScriptedDetector(() => [det("cup", 0.9, [1, 1, 2, 1], 41)]) }, log: () => {},
     });
@@ -212,7 +220,7 @@ describe("startServer(BRAIN=1): 말 답은 말할 때 떠 있던 명령에만", 
     llm = await startFakeLlm({});
     pam = await startFakePamLlm({ predict: () => ({ observation: "컵이 식탁에 있음", reasoning: "치울지 묻는다", task_index: 1 }) });
     srv = await startServer({
-      env: { HUB: "memory", PORT: "0", RUNTIME_DIR: mkdtempSync(join(tmpdir(), "rt-")), PHONE_PORT: "0", PHONE_HOST: "127.0.0.1",
+      env: { HUB: "memory", PORT: "0", RUNTIME_DIR: runtimeWithAsks(), PHONE_PORT: "0", PHONE_HOST: "127.0.0.1",
         BRAIN: "1", VLM_BASE_URL: `${fake.url}/v1`, ...pamLlmEnv(pam), ...llm.env },
       brain: { detector: new ScriptedDetector(() => [det("cup", 0.9, [1, 1, 2, 1], 41)]) }, log: () => {},
     });
@@ -267,7 +275,7 @@ describe("startServer(BRAIN=1): 말로 하는 승인은 at의 승인 token에만
     fake = await startFakeOpenAI();
     llm = await startFakeLlm({ ...HOME_SCRIPT }, { ...CUP_SCRIPTS, "에어컨 켜기": () => [planCalls([{ kind: "device", label: "거실 에어컨 켜기", target: "ac_living", tool: "turn_on", timeout_s: 60 }])] });
     pam = await startFakePamLlm({ predict: () => ({ observation: "더움", reasoning: "에어컨을 켠다", task_index: 3 }) });
-    const rt = mkdtempSync(join(tmpdir(), "rt-"));
+    const rt = runtimeWithAsks();
     srv = await startServer({
       env: { HUB: "memory", PORT: "0", RUNTIME_DIR: rt, PHONE_PORT: "0", PHONE_HOST: "127.0.0.1", BRAIN: "1", VLM_BASE_URL: `${fake.url}/v1`, ...pamLlmEnv(pam), ...llm.env },
       brain: { detector: new ScriptedDetector(() => [det("cup", 0.9, [1, 1, 2, 1], 41)]) }, log: () => {},

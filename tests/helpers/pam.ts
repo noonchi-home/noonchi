@@ -3,6 +3,7 @@
 import { createServer, type ServerResponse } from "node:http";
 import { adaptedTemplate, CHUNKING_PROMPT, MARKING_PROMPT, MEMORY_CHECK_HEAD, MEMORY_CHECK_PROMPT, NIGHT_HEAD, NONE, PamClient, pamSettings, PREDICT_LOG, PREDICT_STATE, PREDICT_TIME, REFLECT_FEEDBACK, REFLECT_LOG, REFLECT_MEMORY, REFLECT_SUMMARY } from "../../src/brain/pam/index.js";
 import { ANY_STATE, AWAY_STATE, CUP_FSM_MEMORY, type FsmMemory } from "../../src/brain/decision.js";
+import { STATES } from "../../src/world/vocab.js";
 import { listenRetry } from "../../src/shared/net.js";
 
 /** 시험 판단 답: list 기억은 task_index, fsm 기억은 state·from·next_index(pam-predict/3). fsm 요청에 task_index로 내면 fsmAnswer가 화살표로 바꾼다. */
@@ -106,23 +107,41 @@ export function pamView(body: { messages: { content: string | { text: string }[]
   throw new Error("PAM 판단·반성·뜻 검사 메시지가 아닙니다");
 }
 
-/** fsm 요청에 행동 번호(task_index)로 낸 시험 답을 pam-predict/3 답(state·from·next_index)으로 바꾼다(시험 도우미만 찾는다):
- *  요청에 실린 기억에서 그 행동의 화살표를 찾는다. 직전 상태(last_state, 없으면 처음 상태)에 있으면 그것, 없으면 그 행동 화살표가 있는 첫 상태. state는 화살표 도착("*"면 away).
- *  대기이거나 기억에 그 행동 화살표가 없으면 화살표 없음(-1, state는 직전 상태, 모르면 처음 상태): seed 기억으로 도는 시험이 몰래 치우지 않는다.
- *  이미 state를 낸 답과 list 요청은 그대로다. */
+/** 관찰 텍스트 [지속] 사람 줄로 본 사람 상태(PAM이 관찰로 지금 상태를 정하듯): 안 보이면 away, 하는 일이 기억 상태의 activity에 들면 그 상태, 모르면 null. */
+function seenState(v: PredictView, m: FsmMemory): string | null {
+  const lines = v.observation_text.split("\n").filter((l) => l.startsWith("[지속] 사람 ")).map((l) => l.substring("[지속] 사람 ".length));
+  if (lines.some((l) => l.startsWith("안 보임"))) return m.states.some((s) => s.id === AWAY_STATE) ? AWAY_STATE : null;
+  for (const [k, s] of Object.entries(STATES)) {
+    if (s.facet !== "activity" || !lines.some((l) => l.startsWith(s.label))) continue;
+    const owner = m.states.find((x) => x.activity.includes(k));
+    if (owner) return owner.id;
+  }
+  return null;
+}
+
+/** fsm 요청에 행동 번호(task_index)로 낸 시험 답을 pam-predict/3 답(state·from·next_index)으로 바꾼다(시험 도우미만 찾는다). 화살표는 직전 상태(last_state, 모르면 처음 상태)에서만 찾는다
+ *  (Codex 1b07d3e2 P2: 다른 상태의 화살표를 찾으면 직전 상태가 틀린 판단을 가렸다):
+ *  1) 직전 상태에 그 행동 화살표가 있고 관찰과 어긋나지 않으면 그것(state는 도착, "*"면 관찰한 다른 상태, 모르면 away. "*"는 아직 직전 상태로 보이면,
+ *  이름 있는 도착은 관찰한 상태가 다르면 켜지 않는다). 2) 아니면 관찰한 사람 상태가 직전 상태와 다르고
+ *  직전 상태에 그 상태로 가는 행동 없는 화살표가 있으면 그것(사람 상태가 바뀐 화살표). 3) 그 밖은 화살표 없음(-1, state는 관찰한 상태, 모르면 직전 상태).
+ *  그래서 기억에 그 행동 화살표가 없으면 몰래 치우지 않고, 사람이 그 상태에 있는 것을 본 판단이 먼저 있어야 그 상태의 화살표가 켜진다. 이미 state를 낸 답과 list 요청은 그대로다. */
 export function fsmAnswer(v: PredictView, a: Pred): Pred {
   if (v.memory_kind !== "fsm" || a.task_index === undefined || "state" in a) return a;
   const m = v.memory as FsmMemory;
   const { task_index, ...rest } = a;
   const action = task_index >= 0 ? v.tasks[task_index] : undefined;
-  const known = v.last_state !== null && m.states.some((x) => x.id === v.last_state) ? v.last_state : m.initial_state;
-  const edgeOf = (st: FsmMemory["states"][number]) => st.next.findIndex((e) => action !== undefined && e.action === action);
-  const order = [...m.states.filter((x) => x.id === known), ...m.states.filter((x) => x.id !== known)];
-  const from = order.find((x) => edgeOf(x) >= 0);
-  if (!from) return { ...rest, state: known, from: null, next_index: -1 };
-  const i = edgeOf(from);
-  const to = from.next[i]!.to;
-  return { ...rest, state: to === ANY_STATE ? AWAY_STATE : to, from: from.id, next_index: i };
+  const previous = v.last_state ?? m.initial_state;
+  const seen = seenState(v, m);
+  const from = m.states.find((x) => x.id === previous);
+  const fits = (e: FsmMemory["states"][number]["next"][number]) => (e.to === ANY_STATE ? seen !== previous : seen === null || seen === e.to);
+  const i = from && action !== undefined ? from.next.findIndex((e) => e.action === action && fits(e)) : -1;
+  if (from && i >= 0) {
+    const to = from.next[i]!.to;
+    return { ...rest, state: to !== ANY_STATE ? to : seen !== null && seen !== previous ? seen : AWAY_STATE, from: previous, next_index: i };
+  }
+  const j = from && seen !== null && seen !== previous ? from.next.findIndex((e) => e.to === seen && !e.action) : -1;
+  if (j >= 0) return { ...rest, state: seen!, from: previous, next_index: j };
+  return { ...rest, state: seen ?? previous, from: null, next_index: -1 };
 }
 
 /** 관찰 텍스트 [지속] 물건 줄(면 줄 하나 + 사실마다 한 줄)을 컵마다 한 글로 묶어, 싱크대 안이 아닌 첫 컵의 글(없으면 빈 글). */

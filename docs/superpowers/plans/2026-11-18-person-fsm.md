@@ -801,7 +801,7 @@ export function parsePrediction(raw: string, tasks: string[], memory?: PamMemory
    "{\n  \"observation\": \"<single concise sentence describing the relevant current scene state>\",\n  \"reasoning\":   \"<single concise sentence naming the current state and the transition that happened, if any>\",\n  \"state\":       \"<current state id>\",\n  \"from\":        \"<state id the transition left, or null when no transition>\",\n  \"next_index\":  <integer: index in that state's next list, or -1 for no transition>\n}"
    그리고 「## Output Requirements」의 `task_index` 줄을 `state`·`from`·`next_index` 설명으로 바꾼다.
 
-`tests/helpers/pam.ts`의 `Pred`에 `state`·`from`·`next_index`를 더하고 fsm 요청이면 `task_index` 대신 그 셋을 낸다(가짜 답 `pick(action, …)`은 **요청에 실린 기억**(`body.memory`)에서 그 행동의 화살표를 찾는다: 직전 상태(`last_state`)에 있으면 그것, 없으면 그 행동 화살표가 있는 첫 상태. `state`는 화살표 도착(`*`면 `away`). 기억에 그 행동 화살표가 없으면 화살표 없음(-1)을 낸다: seed 기억으로 도는 시험이 몰래 치우지 않는다. 시험 도우미만 찾는다).
+`tests/helpers/pam.ts`의 `Pred`에 `state`·`from`·`next_index`를 더하고 fsm 요청이면 `task_index` 대신 그 셋을 낸다(가짜 답 `pick(action, …)`은 **요청에 실린 기억**(`body.memory`)의 직전 상태(`last_state`, 없으면 처음 상태)에서만 그 행동의 화살표를 찾는다(다른 상태의 화살표는 찾지 않는다). 없으면 관찰 텍스트의 사람 하는 일로 본 상태가 직전 상태와 다를 때 그리로 가는 행동 없는 화살표를, 그것도 없으면 화살표 없음(-1)을 낸다. `state`는 화살표 도착(`*`면 관찰한 다른 상태, 모르면 `away`). 시험 장면은 사람이 그 상태에 있는 것을 먼저 보인다(마시다 떠남 등). 시험 도우미만 찾는다).
 
 컵 치우기를 기대하는 서버 시험은 서버를 띄우기 전에 `useLearnedMemory(runtimeDir)`로 배운 뒤 기억을 오늘 판본으로 넣는다: `tests/goal-e2e.test.ts`, `tests/video-mode-e2e.test.ts`, `tests/video-real-e2e.test.ts`, `tests/wide-glass-e2e.test.ts`, `tests/cup-branches-e2e.test.ts`, `tests/mokryeon-e2e.test.ts`, `tests/noonchi-e2e.test.ts`. `tests/demo-e2e.test.ts`는 Task 9가 맡는다.
 

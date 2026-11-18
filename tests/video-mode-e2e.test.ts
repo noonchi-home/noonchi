@@ -59,7 +59,8 @@ describe("영상 모드 처음부터 끝까지", () => {
         const parts = (body.messages as { role: string; content: unknown }[]).filter((m) => m.role === "user").flatMap((m) => (Array.isArray(m.content) ? m.content : [{ text: m.content }]));
         const text = parts.map((p: { text?: unknown }) => (typeof p.text === "string" ? p.text : "")).join("\n");
         const dets = JSON.parse(/Detections: (\[.*\])/.exec(text)?.[1] ?? "[]") as { id: string; class: string }[];
-        return JSON.stringify({ scene: "kitchen", observations: dets.filter((d) => d.class === "cup").map((d) => ({ object_id: d.id, state: "on_table" })), summary: "컵" });
+        // 사람은 식탁에서 먹는 중이다(떠남 화살표 컵 치우기는 직전 상태 drinking(먹거나 마시는 중)에서만 나간다. 먹는 중은 컵을 쓰지 않아 미리 세운 목표가 서지 않는다)
+        return JSON.stringify({ scene: "kitchen", observations: dets.flatMap((d) => (d.class === "cup" ? [{ object_id: d.id, state: "on_table" }] : d.class === "person" ? [{ object_id: d.id, state: "eating" }] : [])), summary: "컵" });
       },
       respond: plannerRespond(CUP_SCRIPTS),
     });

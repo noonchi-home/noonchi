@@ -1,7 +1,7 @@
 // 판단(pam-predict/3)·반성(pam-reflect/3)을 서버 안 함수로 한다. 계약은 docs/pam-interface.md(사진 칸 없음).
 // 차례(Python PAM과 같다): 사진 칸 검사 → 요청 모양(PamRequestError) → 메시지 → 문맥 길이(PamBudgetError) → LLM(PamLinkError) → 답 검사(PamAnswerError).
 import type { CandidateFsm, PamPredictContract, PamPredictRequest, PamReflectContract, PamReflectRequest, Prediction } from "../../contract/pam.js";
-import { ContractError, CUP_FSM_MEMORY, checkInput, validateCandidateFsm, validateMemory, type DecisionInput, type DecisionModel, type ListMemory, type PamMemory } from "../decision.js";
+import { ContractError, CUP_FSM_MEMORY, checkInput, validateCandidateFsm, validateMemory, type DecisionInput, type DecisionModel, type FsmMemory, type ListMemory } from "../decision.js";
 import { PyJsonFail, readPyJson } from "./pyjson.js";
 import { parseMemory, parsePrediction } from "./answer.js";
 import { estimateTokens, pamLimits, type PamLimits } from "./budget.js";
@@ -55,7 +55,7 @@ export class PamClient {
     const built = buildPredictMessages(req);
     assertTextOnly(built.messages);
     const raw = await this.llm.complete(built.messages, built.generation, "predictor", Math.min(this.o.timeoutMs ?? 30_000, this.o.settings.timeoutMs), call);
-    const parsed = parsePrediction(raw, req.tasks, req.memory_kind === "fsm" ? (validateMemory(req.memory, "fsm") as PamMemory) : undefined);
+    const parsed = parsePrediction(raw, req.tasks, req.memory_kind === "fsm" ? { memory: validateMemory(req.memory, "fsm") as FsmMemory, lastState: req.last_state } : undefined);
     if (parsed.status !== "valid" || !parsed.prediction) throw new PamAnswerError(`PAM 답이 계약에 맞지 않음(대기와 다름): ${parsed.errors.join("; ") || "이유 없음"}`);
     return parsed.prediction;
   }
@@ -166,6 +166,6 @@ export class PamDecision implements DecisionModel {
     } catch (e) {
       return Promise.reject(e);
     }
-    return this.pam.predict({ final_time: input.finalTime, observation_text: input.text, memory_kind: input.memoryKind, memory: input.memory, tasks: input.tasks, last_state: null });
+    return this.pam.predict({ final_time: input.finalTime, observation_text: input.text, memory_kind: input.memoryKind, memory: input.memory, tasks: input.tasks, last_state: input.lastState });
   }
 }

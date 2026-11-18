@@ -8,7 +8,7 @@ import { LEARNED_ACTIONS } from "../src/act/tasks.js";
 import { LEARNED_FSM_MEMORY, learnedFsm } from "../scripts/learned-memory.js";
 
 const input = (over: Partial<DecisionInput> = {}): DecisionInput => ({
-  text: "12:00:00 사람 보임", finalTime: "2026-11-04T12:00:08.000+09:00", memory: CUP_MEMORY, memoryKind: "list", tasks: [...CUP_TASKS],
+  text: "12:00:00 사람 보임", finalTime: "2026-11-04T12:00:08.000+09:00", memory: CUP_MEMORY, memoryKind: "list", tasks: [...CUP_TASKS], lastState: null,
   facts: { contents: "empty" }, ...over,
 });
 

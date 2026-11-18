@@ -16,6 +16,13 @@ const emptyWorld = () => new WorldState({ surfaces: () => [], floorAt: () => 0, 
 /** 배운 뒤 기억(치우기를 보는 판단). 배우기 전(seed)은 「배우기 전(seed) 기억이면…」 시험 하나가 본다. */
 const memory = () => ({ memory: LEARNED_FSM_MEMORY, kind: "fsm" as const, version: 0 });
 const event = () => new Trigger({ mode: "event", minGapMs: 0, periodMs: 1000, idleStopMs: 1e9, liveMs: 10_000, maxInflight: 1 }, 0);
+/** 사람이 돌아와 마신다(away → drinking, 행동 없음): 화살표는 직전 상태에서만 나가므로 떠남 화살표 전에 먼저 마시는 중이 된다. */
+const arrive = { observation: "o", reasoning: "r", state: "drinking", from: "away", next_index: 0 };
+/** 행동 종류·목록만 보는 시험의 기억: 자리에 없음에서 그 행동들로 가는 화살표만 있다. */
+const ACT_FROM_AWAY: FsmMemory = { initial_state: "away", states: [{ id: "away", description: "사용자가 카메라에 보이지 않는다.", activity: [], next: [
+  { to: "away", on: "사용자가 라면 끓이는 법을 묻는다.", action: "라면 끓이기 알려 주기" },
+  { to: "away", on: "사용자가 덥다고 말한다.", action: "에어컨 켜기" },
+] }] };
 
 describe("판단 호출", () => {
   it("의미 있는 변화에 PAM을 부르고, 보낸 관찰 텍스트·World State 요약·결과를 기록한다", async () => {
@@ -120,19 +127,19 @@ describe("판단 호출", () => {
       const log = s.decisions()[0]!;
       expect(log.text_sent.split("\n")).toContain("12:00:00 들은 말 있음");
       expect(JSON.stringify(s.logs)).not.toContain("라면");
-      expect(log.prediction).toEqual({ observation: "사용자가 「들은 말」라고 말함", reasoning: "들은 말 라고 해서 알려 준다", task_index: 0, state: "away", from: "drinking", next_index: 0 });
+      expect(log.prediction).toEqual({ observation: "사용자가 「들은 말」라고 말함", reasoning: "들은 말 라고 해서 알려 준다", task_index: -1, state: "away", from: null, next_index: -1 });
       // 계획 화면·기록에 가는 판단 이유(계획 judgment)도 뺀 글이다
       expect(JSON.stringify(s.records[0]!.prediction)).not.toContain("라면");
     });
 
     it("행동을 고른 판단이 쓴 들은 말은 다음 판단의 관찰 텍스트에 다시 넣지 않는다(「그만」 뒤 같은 말로 그 일을 다시 시작하지 않게). 대기 판단이면 60초 동안 남는다", async () => {
       let index = -1;
-      const s = await setup({ predict: { predict: () => ({ observation: "o", reasoning: "r", task_index: index }) } });
+      const s = await setup({ predict: { predict: () => (index === -1 ? arrive : { observation: "o", reasoning: "r", task_index: index }) } });
       s.d.onChanges(s.world.heard(SAID, s.clock.t));
       s.d.tick();
       await s.d.idle();
       expect(s.sent()).toContain(SAID);
-      // 대기였으니 다음 판단에도 남아 있다
+      // 행동 없는 화살표(돌아와 마심)였으니 다음 판단에도 남아 있다
       index = 0;
       s.clock.t += 5_000;
       s.d.onChanges([{ kind: "appeared", at_ms: s.clock.t, subject: "cup_1", text: "컵 cup_1 보임", meaningful: true }]);
@@ -181,55 +188,62 @@ describe("판단 호출", () => {
 
   it("PAM 답의 상태·화살표를 판단 기록 fsm에 그대로 싣고, 다음 요청에 직전 상태를 보낸다(거꾸로 찾지 않는다)", async () => {
     const answers = [
+      arrive,
       { observation: "o", reasoning: "r", state: "away", from: "drinking", next_index: 0 },
       { observation: "o", reasoning: "r", state: "away", from: null, next_index: -1 },
     ];
     pam = await startFakePamLlm({ predict: () => answers.shift()! });
     const records: DecisionRecord[] = [];
     const d = new Decider({ pam: pamClientFor(pam), world: emptyWorld(), trigger: event(), tasks: () => [...CUP_TASKS], memory, emit: () => {}, onDecision: (r) => records.push(r), offsetMinutes: 540, clock: { now: () => 10_000 } });
-    for (let i = 0; i < 2; i++) {
+    for (let i = 0; i < 3; i++) {
       d.onChanges([{ kind: "person_gone", at_ms: 9000 + i, subject: "person", text: "사람 안 보임", meaningful: true }]);
       d.tick();
       await d.idle();
-      // 첫 판단의 행동(컵 치우기)이 시작됐다: 기다리던 화살표가 풀려 다음 요청의 직전 상태는 넘어간 상태(away)다(아래 pending 시험과 같은 규칙)
-      if (i === 0) d.onExecution("plan:pam-1", "running");
+      // 둘째 판단의 행동(컵 치우기)이 시작됐다: 기다리던 화살표가 풀려 다음 요청의 직전 상태는 넘어간 상태(away)다(아래 pending 시험과 같은 규칙)
+      if (i === 1) d.onExecution("plan:pam-2", "running");
     }
     expect(records.map((r) => [r.action, r.fsm])).toEqual([
+      [null, { state: "drinking", from: "away", next_index: 0, to: "drinking", on: "사용자가 돌아와 먹거나 마신다.", when: null, action: null, learned: false }],
       ["컵 치우기", { state: "away", from: "drinking", next_index: 0, to: "*", on: "사용자가 먹거나 마시기를 끝내고 다른 일로 넘어간다.", when: null, action: "컵 치우기", learned: true }],
       [null, { state: "away", from: null, next_index: -1, to: null, on: null, when: null, action: null, learned: false }],
     ]);
-    expect((pam.bodies as { last_state: string | null }[]).map((b) => b.last_state)).toEqual([null, "away"]);
+    expect((pam.bodies as { last_state: string | null }[]).map((b) => b.last_state)).toEqual([null, "drinking", "away"]);
     expect(d.fsmState()).toBe("away");
   });
 
   it("배우기 전(seed) 기억이면 같은 떠남 화살표의 행동은 묻기다", async () => {
-    pam = await startFakePamLlm({ predict: () => ({ observation: "o", reasoning: "r", state: "away", from: "drinking", next_index: 0 }) });
+    const answers = [arrive, { observation: "o", reasoning: "r", state: "away", from: "drinking", next_index: 0 }];
+    pam = await startFakePamLlm({ predict: () => answers.shift()! });
     const records: DecisionRecord[] = [];
     const seed = () => ({ memory: CUP_FSM_MEMORY, kind: "fsm" as const, version: 1 });
     const d = new Decider({ pam: pamClientFor(pam), world: emptyWorld(), trigger: event(), tasks: () => [...CUP_TASKS], memory: seed, emit: () => {}, onDecision: (r) => records.push(r), offsetMinutes: 540, clock: { now: () => 10_000 } });
-    d.onChanges([{ kind: "person_gone", at_ms: 9000, subject: "person", text: "사람 안 보임", meaningful: true }]);
-    d.tick();
-    await d.idle();
-    expect(records[0]).toMatchObject({ action: "사용자에게 물어보기", fsm: { from: "drinking", next_index: 0, action: "사용자에게 물어보기", learned: false } });
+    for (const at of [9000, 9001]) {
+      d.onChanges([{ kind: "person_gone", at_ms: at, subject: "person", text: "사람 안 보임", meaningful: true }]);
+      d.tick();
+      await d.idle();
+    }
+    expect(records[1]).toMatchObject({ action: "사용자에게 물어보기", fsm: { from: "drinking", next_index: 0, action: "사용자에게 물어보기", learned: false } });
   });
 
   it("행동이 붙은 화살표의 행동이 시작되지 않으면(목표가 맡아 기록만 함) 다음 요청의 직전 상태는 그 출발 상태다. 실행이 시작되거나 15초가 지나면 넘어간 상태다", async () => {
     const leave = { observation: "o", reasoning: "r", state: "away", from: "drinking", next_index: 0 };
     const none = { observation: "o", reasoning: "r", state: "away", from: null, next_index: -1 };
-    const answers = [leave, leave, leave, none, leave, leave, none];
+    const answers = [arrive, leave, leave, leave, none, arrive, leave, leave, none];
     pam = await startFakePamLlm({ predict: () => answers.shift()! });
     let now = 10_000;
     const d = new Decider({ pam: pamClientFor(pam), world: emptyWorld(), trigger: event(), tasks: () => [...CUP_TASKS], memory, emit: () => {}, onDecision: () => {}, offsetMinutes: 540, clock: { now: () => now } });
     const call = async () => { d.onChanges([{ kind: "person_gone", at_ms: now, subject: "person", text: "사람 안 보임", meaningful: true }]); d.tick(); await d.idle(); };
-    await call();                       // pam-1: drinking → * 컵 치우기, 실행 기록 없음(목표가 맡아 기록만)
-    now += 6_000; await call();         // pam-2: 직전 상태 drinking, 같은 화살표를 다시 냄(처음 낸 때는 그대로)
-    now += 6_000; await call();         // pam-3: 직전 상태 drinking, 또 같은 화살표
-    now += 6_000; await call();         // pam-4: 처음 낸 때부터 18초 → 풀려 직전 상태 away(반복이 한도를 늘리지 않는다)
-    await call();                       // pam-5: 다시 drinking → *
-    await call();                       // pam-6: 직전 상태 drinking, 같은 화살표 반복
-    d.onExecution("plan:pam-5", "running");   // 처음 판단(pam-5)의 실행이 시작돼도 푼다
-    await call();                       // pam-7
-    expect((pam.bodies as { last_state: string | null }[]).map((b) => b.last_state)).toEqual([null, "drinking", "drinking", "away", "away", "drinking", "away"]);
+    await call();                       // pam-1: 돌아와 마심(away → drinking)
+    await call();                       // pam-2: drinking → * 컵 치우기, 실행 기록 없음(목표가 맡아 기록만)
+    now += 6_000; await call();         // pam-3: 직전 상태 drinking, 같은 화살표를 다시 냄(처음 낸 때는 그대로)
+    now += 6_000; await call();         // pam-4: 직전 상태 drinking, 또 같은 화살표
+    now += 6_000; await call();         // pam-5: 처음 낸 때부터 18초 → 풀려 직전 상태 away(반복이 한도를 늘리지 않는다)
+    await call();                       // pam-6: 다시 돌아와 마심
+    await call();                       // pam-7: 다시 drinking → *
+    await call();                       // pam-8: 직전 상태 drinking, 같은 화살표 반복
+    d.onExecution("plan:pam-7", "running");   // 처음 판단(pam-7)의 실행이 시작돼도 푼다
+    await call();                       // pam-9
+    expect((pam.bodies as { last_state: string | null }[]).map((b) => b.last_state)).toEqual([null, "drinking", "drinking", "drinking", "away", "away", "drinking", "drinking", "away"]);
   });
 
   it("동시에 나간 판단(PAM_MAX_INFLIGHT=2)의 답이 거꾸로 와도 받은 가장 큰 번호보다 작은 답은 직전 상태·기다리는 화살표를 바꾸지 않는다(Codex 1b07d3e2 P2)", async () => {
@@ -264,28 +278,29 @@ describe("판단 호출", () => {
     const leave = { observation: "o", reasoning: "r", state: "away", from: "drinking", next_index: 0 };
     const none = { observation: "o", reasoning: "r", state: "away", from: null, next_index: -1 };
     async function run(between: (d: Decider, tick: (ms: number) => void) => void) {
-      const answers = [leave, leave, none];
+      const answers = [arrive, leave, leave, none];
       pam = await startFakePamLlm({ predict: () => answers.shift()! });
       let now = 10_000;
       const records: DecisionRecord[] = [];
       const d = new Decider({ pam: pamClientFor(pam), world: emptyWorld(), trigger: event(), tasks: () => [...CUP_TASKS], memory, emit: () => {}, onDecision: (r) => records.push(r), offsetMinutes: 540, clock: { now: () => now } });
       const send = () => { d.onChanges([{ kind: "person_gone", at_ms: now, subject: "person", text: "사람 안 보임", meaningful: true }]); d.tick(); };
-      send(); await d.idle();                // pam-1: drinking → * 컵 치우기
-      send();                                // pam-2를 보냄(답 전)
+      send(); await d.idle();                // pam-1: 돌아와 마심
+      send(); await d.idle();                // pam-2: drinking → * 컵 치우기
+      send();                                // pam-3을 보냄(답 전)
       between(d, (ms) => { now += ms; });
-      await d.idle();                        // pam-2 답(같은 화살표)이 늦게 옴
-      send(); await d.idle();                // pam-3
+      await d.idle();                        // pam-3 답(같은 화살표)이 늦게 옴
+      send(); await d.idle();                // pam-4
       return { records, lastStates: (pam!.bodies as { last_state: string | null }[]).map((b) => b.last_state) };
     }
     it("같은 밀리초에 보낸 요청과 running이어도 그 답은 버린다(행동 없이 late, 직전 상태는 away)", async () => {
-      const r = await run((d) => d.onExecution("plan:pam-1", "running"));
-      expect(r.records[1]).toMatchObject({ id: "pam-2", action: null, late: true });
-      expect(r.lastStates).toEqual([null, "drinking", "away"]);
+      const r = await run((d) => d.onExecution("plan:pam-2", "running"));
+      expect(r.records[2]).toMatchObject({ id: "pam-3", action: null, late: true });
+      expect(r.lastStates).toEqual([null, "drinking", "drinking", "away"]);
     });
     it("계획이 끝나고 15초가 지난 뒤 온 늦은 답도 버린다(같은 일을 다시 시작하지 않는다)", async () => {
-      const r = await run((d, tick) => { d.onExecution("plan:pam-1", "running"); d.onExecution("plan:pam-1", "done"); tick(20_000); });
-      expect(r.records[1]).toMatchObject({ id: "pam-2", action: null, late: true });
-      expect(r.lastStates).toEqual([null, "drinking", "away"]);
+      const r = await run((d, tick) => { d.onExecution("plan:pam-2", "running"); d.onExecution("plan:pam-2", "done"); tick(20_000); });
+      expect(r.records[2]).toMatchObject({ id: "pam-3", action: null, late: true });
+      expect(r.lastStates).toEqual([null, "drinking", "drinking", "away"]);
     });
   });
 
@@ -296,7 +311,7 @@ describe("판단 호출", () => {
     const logs: BrainLog[] = [];
     let now = 10_000;
     const d = new Decider({ pam: pamClientFor(pam), world: emptyWorld(), trigger: event(),
-      tasks: () => tasks, memory, emit: (l) => logs.push(l), offsetMinutes: 540, clock: { now: () => now } });
+      tasks: () => tasks, memory: () => ({ memory: ACT_FROM_AWAY, kind: "fsm", version: 0 }), emit: (l) => logs.push(l), offsetMinutes: 540, clock: { now: () => now } });
     const poke = async () => { d.onChanges([{ kind: "appeared", at_ms: now, subject: "cup_1", text: "컵 cup_1 보임", meaningful: true }]); d.tick(); await d.idle(); now += 1000; };
     await poke();
     index = tasks.indexOf("에어컨 켜기");
@@ -354,7 +369,7 @@ describe("판단 호출", () => {
     let now = 10_000;
     const d = new Decider({ pam: pamClientFor(pam), world: emptyWorld(), trigger: event(),
       tasks: (heard) => { asked.push(heard); return tasks; }, mode: (action) => { modes.push(action); return action === "라면 끓이기 알려 주기" ? "coach" : "noonchi"; },
-      memory, emit: (l) => logs.push(l), offsetMinutes: 540, clock: { now: () => now } });
+      memory: () => ({ memory: ACT_FROM_AWAY, kind: "fsm", version: 0 }), emit: (l) => logs.push(l), offsetMinutes: 540, clock: { now: () => now } });
     d.onChanges([{ kind: "appeared", at_ms: now, subject: "cup_1", text: "컵 cup_1 보임", meaningful: true }]);
     d.tick();
     await d.idle();

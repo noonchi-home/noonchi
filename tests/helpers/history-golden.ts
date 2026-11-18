@@ -8,6 +8,10 @@
 //   장면 단계와 상관없는 시각에 와서 몇 번·어디에 끼는지가 실행마다 다르다(src/brain/decide.ts tick, src/act/track/start.ts onDecision). 있는지만 본다.
 //   계획을 시작한 판단(그 판단 id의 실행 줄 「판단」이 있는 것)은 차례에 남긴다. 그 계획을 하는 동안 같은 행동을 고른 주기 판단과 「같은 행동을 진행 중」은
 //   있는지도 보지 않는다(계획 중에 주기 판단이 오느냐가 판마다 다르다, 2026-11-18 조정자 결정). 다른 행동을 고른 판단은 [있음]에 남긴다.
+//   계획이 시작될 때 나가 있던 요청의 같은 화살표 반복 답(판단이 버린 늦은 답 late, src/brain/decide.ts released)과 그 메모(앞선 판단)도 같은 까닭으로 보지 않는다
+//   (그때 주기 판단이 나가 있었느냐가 판마다 다르다. 2026-11-19 화살표를 직전 상태에서만 찾게 한 뒤 컵 치우기·물 채우기 장면에서 있다 없다 했다).
+//   계획 전 검사가 막은 판단(「판단」 → 막은 까닭, 계획 없음)을 바로 다음 판단이 같은 행동·같은 까닭으로 다시 막은 것도 몇 번인지 보지 않는다: 첫 번만 차례에 남긴다
+//   (행동이 시작되지 않은 화살표는 15초 동안 직전 상태로 남아(src/brain/decide.ts pending) 그동안 주기 판단마다 같은 화살표가 다시 켜진다. 몇 번 켜지는지는 5초 주기에 달렸다).
 // - 정답은 통로를 닫기와 같은 차례로 비운 뒤 뽑는다(settledRows: srv.settle, 시간으로 기다리지 않고 기한을 넘기면 시험 실패).
 // - 사람 단계의 「완료」 답: 그 단계는 비전(World State)·폰 위치로도 끝나서(CLAUDE.md 단계 확인 규칙), 사람이 먼저 눌렀는지 비전이 먼저 봤는지에 따라
 //   완료 답 줄이 있거나 없다(2026-11-18 전자레인지 장면 4번 문 닫기: 세 번 중 한 번은 VLM이 먼저 닫힘을 봐 완료 줄이 없었다). 뺀다.
@@ -66,12 +70,26 @@ export function reflectionRows(db: HistoryDb): string[] {
     const end = acted.find((r) => r.kind === "execution" && r.subject === d.subject && r.at_ms >= d.at_ms && ended(r));
     return [{ starter, action: starter.text, from: starter.at_ms, to: end ? end.at_ms : Number.POSITIVE_INFINITY }];
   });
+  const stale = new Set(acted.filter((r) => r.kind === "decision" && (r.data as { late?: boolean } | null)?.late === true).map((r) => `plan:${r.subject}`));
   const repeat = (r: HistoryRow) => (r.kind === "decision" && spans.some((s) => s.starter !== r && s.action === r.text && r.at_ms >= s.from && r.at_ms <= s.to))
-    || (r.kind === "execution" && r.text === EXEC_TEXT.same);
+    || (r.kind === "execution" && r.text === EXEC_TEXT.same)
+    || (r.kind === "decision" && stale.has(`plan:${r.subject}`)) || (r.kind === "execution" && r.text === EXEC_TEXT.late && stale.has(r.subject ?? ""));
+  // 막은 판단의 되풀이: 시작한 판단을 시각 차례로 보아, 앞 판단과 같은 행동이고 둘 다 「판단」 → 같은 막은 까닭(실패, 계획 없음)으로 끝났으면 뒤 것을 뺀다
+  const planRows = (s: (typeof spans)[number]) => acted.filter((r) => r.kind === "execution" && r.subject === `plan:${s.starter.subject}` && r.at_ms >= s.from);
+  const refusal = (s: (typeof spans)[number]) => {
+    const rows = planRows(s);
+    return rows.length === 2 && rows[0]!.text === EXEC_TEXT.decided && (rows[1]!.data as { state?: string } | null)?.state === "failed" ? `${s.action}|${rows[1]!.text}` : null;
+  };
+  const byTime = [...spans].sort((a, b) => a.from - b.from);
+  const again = new Set<HistoryRow>();
+  byTime.forEach((s, i) => {
+    const key = refusal(s);
+    if (i > 0 && key !== null && key === refusal(byTime[i - 1]!)) for (const r of [s.starter, ...planRows(s)]) again.add(r);
+  });
   const world = all(["detection", "world"]);
   const heard = (r: HistoryRow) => (r.data as { kind?: string } | null)?.kind === "heard";
   const out = [
-    ...ordered("판단·실행·답", acted.filter((r) => !periodic(r) && !doneAnswer(r))),
+    ...ordered("판단·실행·답", acted.filter((r) => !periodic(r) && !doneAnswer(r) && ![...again].some((x) => x.id === r.id))),
     ...ordered("집 상태", world.filter((r) => !heard(r))),
     ...ordered("들은 말", world.filter(heard)),
     ...ordered("가전", all(["device"])),

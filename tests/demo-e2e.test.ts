@@ -188,7 +188,14 @@ async function start(o: { scene: Scene; kind?: "day1" | "week"; view?: View; lea
       expect(b.role, pam!.calls[i]).toBe(pam!.calls[i]);
     });
   };
-  return { server, dir, scene, dash, phone, ws, wait, pump, commands, command, answer, say, decisions, thoughts, says, history, done, pamChecked };
+  /** 판단이 사람을 마시는 중(drinking)으로 본 뒤 사람이 떠난다(떠남 화살표는 직전 상태 drinking에서만 나간다). */
+  const leaveAfterDrinking = async () => {
+    await pump(() => decisions().some((e) => e.fsm?.state === "drinking"), "마시는 중 판단");
+    scene.dets = scene.dets.filter((d) => d !== PERSON);
+    const { person: _, ...rest } = scene.facts;
+    scene.facts = rest;
+  };
+  return { server, dir, scene, dash, phone, ws, wait, pump, commands, command, answer, say, decisions, thoughts, says, history, done, pamChecked, leaveAfterDrinking };
 }
 
 describe("시연 네 장면(자동 모드, 한양목련, 가짜 서버)", () => {
@@ -196,8 +203,9 @@ describe("시연 네 장면(자동 모드, 한양목련, 가짜 서버)", () => 
     expect(DEMO_APPROVALS).toEqual(expect.arrayContaining(["컵 치우기", "에어컨 켜기", RAMEN, MW_TASK]));
   });
 
-  it("1 빈 컵(배운 뒤 기억): 사람이 자리를 비웠고 식탁 컵이 있으면 배운 화살표로 치운다. 메시지 상자는 허락 문장 뒤 치울게요, 첫 명령 「식탁으로 가 주세요」, 판단 사건은 눈치(noonchi)·배운 화살표", async () => {
-    const s = await start({ scene: { dets: [det("cup", 0.9, CUP_BOX, 41)], facts: { cup: ["on_table", "empty"] } }, view: CUP_VIEW, learned: true });
+  it("1 빈 컵(배운 뒤 기억): 마시던 사람이 자리를 비웠고 식탁 컵이 있으면 배운 화살표로 치운다. 메시지 상자는 허락 문장 뒤 치울게요, 첫 명령 「식탁으로 가 주세요」, 판단 사건은 눈치(noonchi)·배운 화살표", async () => {
+    const s = await start({ scene: { dets: [PERSON, det("cup", 0.9, CUP_BOX, 41)], facts: { person: ["sitting", "drinking"], cup: ["on_table", "empty"] } }, view: CUP_VIEW, learned: true });
+    await s.leaveAfterDrinking();
     await s.pump(() => s.commands().some((m) => m.text === "식탁으로 가 주세요"), "첫 명령");
     expect(s.commands()[0]).toMatchObject({ text: "식탁으로 가 주세요", choices: [{ id: "done", label: "완료" }] });
     expect(s.thoughts()).toContain("컵을 두고 자리를 뜨면 치워도 된다고 하셨어요");
@@ -209,7 +217,8 @@ describe("시연 네 장면(자동 모드, 한양목련, 가짜 서버)", () => 
   }, 120_000);
 
   it("1-묻기(seed 기억): 사람이 컵을 두고 떠나면 「컵을 치울지 여쭤볼게요.」(허락 문장 없음)와 폰 「컵을 치울까요?」, 「치워 주세요」 답 뒤 첫 명령 「식탁으로 가 주세요」. 목표는 서지 않는다", async () => {
-    const s = await start({ scene: { dets: [det("cup", 0.9, CUP_BOX, 41)], facts: { cup: ["on_table", "empty"] } }, view: CUP_VIEW });
+    const s = await start({ scene: { dets: [PERSON, det("cup", 0.9, CUP_BOX, 41)], facts: { person: ["sitting", "drinking"], cup: ["on_table", "empty"] } }, view: CUP_VIEW });
+    await s.leaveAfterDrinking();
     await s.pump(() => s.commands().some((m) => m.text === "컵을 치울까요?"), "묻기");
     expect(s.decisions().find((e) => e.action === "사용자에게 물어보기")).toMatchObject({ assist: "noonchi", fsm: { from: "drinking", learned: false } });
     expect(s.says()).toContain("컵을 치울지 여쭤볼게요.");
@@ -279,9 +288,10 @@ describe("시연 네 장면(자동 모드, 한양목련, 가짜 서버)", () => 
   }, 120_000);
 
   it("5 전자레인지 앞에서 「이거 어떻게 하지」: 명령이 Task 12 표의 서버 글 차례대로 오고, 5번은 승인 질문이 먼저이며 승인 뒤 VLM 쓰는 중이면 넘어가고, 6번 동안 꺼짐을 보면 7번이 바로 끝나 8·9번 뒤 끝난다. 끄기 안내가 없고 폰 글은 서버 글 틀이다", async () => {
-    const scene: Scene = { dets: [det("microwave", 0.9, MW_BOX)], facts: { microwave: ["closed", "not_in_use"] } };
+    // 전자레인지 화살표는 요리하는 중 상태에 있다: 사람이 요리하는 중으로 보인다
+    const scene: Scene = { dets: [PERSON, det("microwave", 0.9, MW_BOX)], facts: { person: ["standing", "cooking"], microwave: ["closed", "not_in_use"] } };
     const s = await start({ scene, view: MW_VIEW });
-    await s.pump(() => s.decisions().length > 0, "첫 판단");
+    await s.pump(() => s.decisions().some((e) => e.fsm?.state === "cooking"), "요리하는 중 판단");
     s.say("이거 어떻게 하지");
     await s.pump(() => !!s.commands().find((m) => m.text === "전자레인지로 가 주세요"), "1번");
     const planId = s.commands().find((m) => m.text === "전자레인지로 가 주세요")!.id as string;
@@ -327,9 +337,10 @@ describe("시연 네 장면(자동 모드, 한양목련, 가짜 서버)", () => 
   }, 120_000);
 
   it("6 「라면 끓이는 법 알려 줘」: 첫 명령 「수납장으로 가 주세요」, 6번 「냄비를 인덕션에 올려 주세요」, 7번 전에 승인 질문, 12번은 허브 꺼짐으로 끝나 끄기 안내가 없다. 판단 사건은 코치", async () => {
-    const s = await start({ scene: { dets: [PERSON], facts: { person: ["standing"] } } });
+    // 라면 화살표는 요리하는 중 상태에 있다: 사람이 요리하는 중으로 보인다
+    const s = await start({ scene: { dets: [PERSON], facts: { person: ["standing", "cooking"] } } });
     const cooktop = s.server.twin.devices.find((d) => d.kind === "cooktop")!.id;
-    await s.pump(() => s.decisions().length > 0, "첫 판단");
+    await s.pump(() => s.decisions().some((e) => e.fsm?.state === "cooking"), "요리하는 중 판단");
     s.say("라면 끓이는 법 알려 줘");
     await s.pump(() => s.commands().some((m) => m.text === "수납장으로 가 주세요"), "1번");
     const first = s.commands().find((m) => m.text === "수납장으로 가 주세요")!;

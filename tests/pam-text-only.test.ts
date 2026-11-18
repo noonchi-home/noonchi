@@ -37,7 +37,7 @@ describe("사진 없는 PAM", () => {
 
   it("PAM LLM으로 실제로 나간 본문에 사진이 없고 관찰 텍스트가 든다", async () => {
     pam = await startFakePamLlm({ predict: () => ({ observation: "o", reasoning: "r", state: "away", from: "drinking", next_index: 0 }) });
-    const p = await pamClientFor(pam).predict({ final_time: "2026-11-07T21:00:08.000+09:00", observation_text: "21:00:00 사람 보임", memory_kind: "fsm", memory: CUP_FSM_MEMORY, tasks: [...CUP_TASKS], last_state: null });
+    const p = await pamClientFor(pam).predict({ final_time: "2026-11-07T21:00:08.000+09:00", observation_text: "21:00:00 사람 보임", memory_kind: "fsm", memory: CUP_FSM_MEMORY, tasks: [...CUP_TASKS], last_state: "drinking" });
     expect(p.task_index).toBe(CUP_TASKS.indexOf("사용자에게 물어보기"));
     const sent = JSON.stringify(pam.requests.at(-1));
     expect(sent).not.toMatch(/data:image|base64|"image_url"|"type":"image/);

@@ -11,7 +11,7 @@ afterEach(async () => { await pam?.close(); pam = undefined; });
 
 const input = (over: Partial<DecisionInput> = {}): DecisionInput => ({
   text: "21:00:00 사람 보임\n21:00:04 사람 안 보임", finalTime: "2026-11-07T21:00:08.000+09:00",
-  memory: CUP_FSM_MEMORY, memoryKind: "fsm", tasks: [...CUP_TASKS], facts: { contents: "unknown" }, ...over,
+  memory: CUP_FSM_MEMORY, memoryKind: "fsm", tasks: [...CUP_TASKS], lastState: "drinking", facts: { contents: "unknown" }, ...over,
 });
 const predictArgs = () => ({ final_time: "2026-11-07T21:00:08.000+09:00", observation_text: "t", memory_kind: "fsm" as const, memory: CUP_FSM_MEMORY, tasks: [...CUP_TASKS], last_state: null });
 const reflectArgs = { day: "2026-11-07", memory_kind: "fsm_candidates" as const, memory: candidateFsmOf(CUP_FSM_MEMORY), observation_text: "07:58:02 사람 보임", action_summary: "08:10:40 컵 치우기 부탁", feedback: null };
@@ -31,7 +31,7 @@ describe("PamDecision ↔ PAM LLM", () => {
     expect(pam.calls).toEqual(["predict"]);
     expect(pam.bodies[0]).toEqual({
       role: "predict", final_time: "2026-11-07T21:00:08+09:00", observation_text: "21:00:00 사람 보임\n21:00:04 사람 안 보임",
-      memory_kind: "fsm", memory: CUP_FSM_MEMORY, tasks: [...CUP_TASKS], last_state: null,
+      memory_kind: "fsm", memory: CUP_FSM_MEMORY, tasks: [...CUP_TASKS], last_state: "drinking",
     });
   });
 
@@ -58,7 +58,7 @@ describe("PamClient 답 검사", () => {
     await expect(pamClientFor(pam).predict(predictArgs())).rejects.toBeInstanceOf(PamAnswerError);
     await pam.close();
     pam = await startFakePamLlm({ predict: () => ({ observation: "o", reasoning: "r", state: "away", from: "drinking", next_index: 9 }) });
-    await expect(pamClientFor(pam).predict(predictArgs())).rejects.toThrow(/state 'drinking' has 2 transitions/);
+    await expect(pamClientFor(pam).predict({ ...predictArgs(), last_state: "drinking" })).rejects.toThrow(/state 'drinking' has 2 transitions/);
   });
 
   it("계약 밖 요청은 PamRequestError이고 LLM에 보내지 않는다", async () => {

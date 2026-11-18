@@ -9,8 +9,12 @@
 [판단·실행·답] execution 계획
 [판단·실행·답] execution 실행 중
 [집 상태] world VLM: 컵 둘
+[집 상태] detection 사람 보임
 [집 상태] detection 컵 cup_1 보임
 [집 상태] detection 컵 cup_2 보임
+[집 상태] detection 사람 안 보임
+[집 상태] detection 사람 보임
+[집 상태] detection 사람 안 보임
 [있음] decision 대기 valid
 [있음] decision 컵 치우기 valid
 [있음] execution 대기

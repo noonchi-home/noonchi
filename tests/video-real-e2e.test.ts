@@ -15,6 +15,7 @@ import { videoSession } from "../src/phone/server.js";
 import { fetchRetry } from "../src/shared/net.js";
 import { startServer, type RunningServer } from "../src/server/start.js";
 import { ScriptedDetector, det } from "./helpers/detectors.js";
+import type { Detection } from "../src/contract/observe.js";
 import { startFakePamLlm, type FakePamLlm, pamLlmEnv } from "./helpers/pam.js";
 import { CUP_SCRIPTS, plannerRespond } from "./helpers/planner.js";
 import { heardAtOf, openPhone, openWebSocket } from "./helpers/ws.js";
@@ -41,13 +42,15 @@ const inbox = (list: Msg[]) => (ws: WebSocket) => ws.on("message", (d, bin) => {
 /** 컵 치우기 대본을 query(""이면 실제 연결, ?video=이면 영상 연결)로 처음부터 끝까지 돌리고, 계획 id를 PLAN으로 바꾼 결과를 모은다. */
 async function cupRun(query: string, videoDir: string) {
   let cupPlace = "on_table";
+  // 떠남 화살표(컵 치우기)는 직전 상태 drinking(먹거나 마시는 중)에서만 나간다: 사람이 먹다가 떠난다(먹는 중은 컵을 쓰지 않아 미리 세운 목표가 서지 않는다)
+  const people: Detection[] = [];
   fake = await startFakeOpenAI({
     reply: (body) => {
       if (body?.response_format?.json_schema?.name !== "scene_observation") return null;
       const parts = (body.messages as { role: string; content: unknown }[]).filter((m) => m.role === "user").flatMap((m) => (Array.isArray(m.content) ? m.content : [{ text: m.content }]));
       const text = parts.map((p: { text?: unknown }) => (typeof p.text === "string" ? p.text : "")).join("\n");
-      const dets = JSON.parse(/Detections: (\[.*\])/.exec(text)?.[1] ?? "[]") as { id: string }[];
-      return JSON.stringify({ scene: "kitchen", observations: dets.map((d) => ({ object_id: d.id, state: cupPlace })), summary: "컵" });
+      const dets = JSON.parse(/Detections: (\[.*\])/.exec(text)?.[1] ?? "[]") as { id: string; class: string }[];
+      return JSON.stringify({ scene: "kitchen", observations: dets.map((d) => ({ object_id: d.id, state: d.class === "person" ? "eating" : cupPlace })), summary: "컵" });
     },
     respond: plannerRespond(CUP_SCRIPTS),
   });
@@ -61,7 +64,7 @@ async function cupRun(query: string, videoDir: string) {
   srv = await startServer({
     env: { HUB: "memory", PORT: "0", RUNTIME_DIR: runtimeDir, PHONE_PORT: "0", PHONE_HOST: "127.0.0.1", PHONE_VIDEO_DIR: videoDir,
       BRAIN: "1", VLM_BASE_URL: `${fake.url}/v1`, ...pamLlmEnv(pam), OPENAI_API_KEY: "fake-key", OPENAI_BASE_URL: `${fake.url}/v1` },
-    brain: { detector: new ScriptedDetector(() => [det("cup", 0.9, [220, 160, 40, 20], 41)]) }, log: () => {},
+    brain: { detector: new ScriptedDetector(() => [...people, det("cup", 0.9, [220, 160, 40, 20], 41)]) }, log: () => {},
   });
   const dash: Msg[] = [];
   sockets.push(await openWebSocket(`${srv.url.replace(/^http/, "ws")}/events`, { setup: inbox(dash) }));
@@ -81,6 +84,9 @@ async function cupRun(query: string, videoDir: string) {
   const history = async (kinds: string) => ((await (await fetchRetry(`${srv!.url}/api/history?kinds=${kinds}`)).json()) as { rows: HistoryRow[] }).rows;
   const said = (text: string) => phone.find((m) => m.type === "command" && m.speak && m.text === text);
 
+  people.push(det("person", 0.9, [40, 40, 120, 280]));
+  await pump(() => dash.some((m) => m.type === "brain" && m.event.type === "decision" && m.event.fsm?.state === "drinking"));
+  people.splice(0);
   await pump(() => !!said("식탁으로 가 주세요"));
   const planId = said("식탁으로 가 주세요")!.id as string;
   ws.send(JSON.stringify({ type: "answer", id: planId, step: said("식탁으로 가 주세요")!.step, choice: "done" }));

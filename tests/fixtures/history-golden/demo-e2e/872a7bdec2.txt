@@ -5,6 +5,7 @@
 [판단·실행·답] execution 실행 중
 [판단·실행·답] execution 완료
 [집 상태] world VLM: 집
+[집 상태] detection 사람 보임
 [집 상태] world 거실·복도 에어컨 켜짐
 [들은 말] world 들은 말 있음
 [가전] device stand_ac_dc22b8f3 power "off"→"on"

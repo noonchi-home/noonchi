@@ -233,8 +233,9 @@ export const isTempState = (memory: FsmMemory, id: string): boolean =>
   id.startsWith(TEMP_STATE) && PERSON_ACTIVITIES.includes(id.slice(TEMP_STATE.length)) && !memory.states.some((s) => s.activity.includes(id.slice(TEMP_STATE.length)));
 
 /** fsm 기억의 판단 답(pam-predict/3): 지금 사람 상태(state), 일어난 화살표(from·next_index, 없으면 null·-1). 행동(task_index)은 그 화살표 action이
- *  지금 행동 목록에 있으면 그 번호, 아니면 -1(서버가 만든다). "*" 화살표는 출발 상태를 떠나기만 하면 켜지고(임시 상태로 떠나도), 이름 있는 도착 화살표는 state가 그 상태다. */
-export function validateFsmPrediction(value: Json, memory: FsmMemory, tasks: string[]): Prediction {
+ *  지금 행동 목록에 있으면 그 번호, 아니면 -1(서버가 만든다). "*" 화살표는 출발 상태를 떠나기만 하면 켜지고(임시 상태로 떠나도), 이름 있는 도착 화살표는 state가 그 상태다.
+ *  화살표는 직전 상태(요청 last_state, 모르면 처음 상태)에서만 나간다: from이 직전 상태도 null도 아니면 틀린 답이다(Codex 1b07d3e2 P2: TV 보는 중에 마시는 중의 화살표를 내도 받았다). */
+export function validateFsmPrediction(value: Json, memory: FsmMemory, tasks: string[], lastState: string | null): Prediction {
   validateTasks(tasks);
   const p = object(value, ["observation", "reasoning", "state", "from", "next_index"], "prediction");
   text(p.observation, "prediction.observation");
@@ -244,14 +245,16 @@ export function validateFsmPrediction(value: Json, memory: FsmMemory, tasks: str
   if (!byId(state) && !isTempState(memory, state)) throw new ContractError(`prediction.state: unknown state identifier ${pyRepr(state)}`);
   const index = p.next_index;
   if (typeof index !== "number" || !Number.isInteger(index) || index < -1) throw new ContractError("prediction.next_index: expected an integer from -1");
+  const previous = lastState ?? memory.initial_state;
   if (index === -1) {
-    // 화살표 없음: from은 null이 맞지만 모델이 직전 상태를 적어 오는 일이 잦아(2026-11-19 gpt-5.4-mini) 기억의 상태면 화살표 없음으로 읽는다(화살표를 고르지 않는다)
-    if (p.from !== null && !(typeof p.from === "string" && byId(p.from))) throw new ContractError("prediction.from: expected null or a state id when next_index is -1");
+    // 화살표 없음: from은 null이 맞지만 모델이 직전 상태를 적어 오는 일이 잦아(2026-11-19 gpt-5.4-mini) 직전 상태면 화살표 없음으로 읽는다(화살표를 고르지 않는다)
+    if (p.from !== null && p.from !== previous) throw new ContractError(`prediction.from: expected null or the previous state ${pyRepr(previous)} when next_index is -1`);
     return { observation: p.observation as string, reasoning: p.reasoning as string, task_index: -1, state, from: null, next_index: -1 };
   }
   const fromId = text(p.from, "prediction.from");
   const from = byId(fromId);
   if (!from) throw new ContractError(`prediction.from: unknown state identifier ${pyRepr(fromId)}`);
+  if (fromId !== previous) throw new ContractError(`prediction.from: the transition must leave the previous state ${pyRepr(previous)}, not ${pyRepr(fromId)}`);
   const edge = from.next[index];
   if (!edge) throw new ContractError(`prediction.next_index: state ${pyRepr(from.id)} has ${from.next.length} transitions`);
   if (edge.to === ANY_STATE ? state === from.id : edge.to !== state) throw new ContractError(`prediction.state: transition ${from.id}[${index}] goes to ${pyRepr(edge.to)}`);
@@ -297,6 +300,8 @@ export interface DecisionInput {
   memory: PamMemory;
   memoryKind: "list" | "fsm";
   tasks: string[];
+  /** 직전 판단의 사람 상태(pam-predict/3 last_state, 모르면 null: PAM은 처음 상태로 본다). fsm 기억의 화살표는 이 상태에서만 나간다. */
+  lastState: string | null;
   facts: DecisionFacts;
 }
 
