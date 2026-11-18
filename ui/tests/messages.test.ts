@@ -14,6 +14,13 @@ describe("parseMessage", () => {
     expect(parseMessage('{"type":"say","text":"컵을 들게요."}')).toEqual({ type: "say", text: "컵을 들게요." });
     expect(parseMessage('{"type":"say","text":null}')?.type).toBe("say");
   });
+  it("미리 세운 목표 메시지도 받는다(받지 않으면 메시지 상자 「목표」 알약이 실제 화면에 뜨지 않는다)", () => {
+    const goal = {
+      id: "goal-1", action: "컵 치우기", state: "left_cup", trigger: "t", object: "cup_1", cls: "cup", status: "armed", prep: "ready", reason: null, text: "컵을 두고 자리를 뜨면 컵을 치울게요",
+      armed_ms: 1, ready_ms: 2, gone_ms: null, fired_ms: null, plan: null,
+    };
+    expect(parseMessage(JSON.stringify({ type: "goal", goal }))).toEqual({ type: "goal", goal });
+  });
   it("모르는 type·깨진 JSON은 null", () => {
     expect(parseMessage("{oops")).toBeNull();
     expect(parseMessage(JSON.stringify({ type: "nope" }))).toBeNull();
