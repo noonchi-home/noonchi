@@ -115,7 +115,7 @@ describe("컵 장면 갈래", () => {
     expect((pam!.bodies.at(-1) as PredictView).tasks).toEqual(tasksFor("noonchi"));
   }, 60_000);
 
-  it("물이 남은 컵 + 사람 없음 → 컵 치우기(컵을 두고 떠나면 치우는 습관, 내용물과 상관없음): 실제 폰 첫 명령은 「식탁으로 가 주세요」이고 그대로 두기는 고르지 않는다", async () => {
+  it("물이 남은 컵 + 사람 없음 → 컵 치우기(컵을 두고 떠나면 치우는 습관, 내용물과 상관없음): 실제 폰 첫 명령은 「식탁으로 가 주세요」", async () => {
     const s = await start({ dets: [CUP], facts: { cup: ["on_table", "has_contents"] } }, ["컵 치우기"]);
     await s.pump(() => s.spoken().length > 0);
     expect(s.spoken()[0]).toMatchObject({ text: "식탁으로 가 주세요", kind: "go" });
@@ -123,7 +123,6 @@ describe("컵 장면 갈래", () => {
     await s.pump(async () => (await s.history("world")).some((r) => r.text === "컵 cup_1 내용물 있음"));
     const decisions = (await s.history("decision")).map((r) => r.text);
     expect(decisions).toContain("컵 치우기");
-    expect(decisions).not.toContain("컵 그대로 두기");
     // PAM에 보낸 기억은 배운 뒤 기억이다: 마시는 중에서 떠나는 화살표의 행동이 컵 치우기다
     const drinking = (pam!.bodies.at(-1)!.memory as FsmMemory).states.find((x) => x.id === "drinking")!;
     expect(drinking.next.find((e) => e.to === "*")!.action).toBe("컵 치우기");

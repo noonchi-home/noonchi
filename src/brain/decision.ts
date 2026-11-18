@@ -83,8 +83,8 @@ function objectWith(value: Json, required: string[], optional: string[], path: s
   return value as Record<string, Json>;
 }
 
-/** 행동 목록의 하는 행동인가(안 하기 행동 TaskSpec.plan false는 아니다). */
-const isAction = (a: string) => TASK_NAMES.includes(a) && TASKS[a]?.plan !== false;
+/** 행동 목록의 행동인가. */
+const isAction = (a: string) => TASK_NAMES.includes(a);
 
 /** 사람 활동 FSM 코드 검사(모양, 정답이 분명한 것). 뜻(상태가 사람이 하는 일인지·조건이 사람 쪽인지·합칠 상태)은 기억 뜻 검사(LLM)가 본다. */
 function validateFsm(value: Json): FsmMemory {

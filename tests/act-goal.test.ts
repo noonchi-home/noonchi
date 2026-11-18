@@ -612,12 +612,12 @@ describe("미리 세운 목표: 실제 영상 g1에서 드러난 것(2026-11-18)
     expect(n.goals.at(-1)).toMatchObject({ status: "dropped", reason: "took" });
   });
 
-  it("사람이 마시는 동안 PAM이 「컵 그대로 두기」(계획 없음)·막힌 판단을 골라도 그 일이 맡지 않았으니 목표를 버리지 않는다(g1 세 판 모두 마시는 중 그대로 두기 판단)", async () => {
+  it("사람이 마시는 동안 PAM 판단이 대기(안 하기는 화살표 없음)면 그 일이 맡지 않았으니 목표를 버리지 않는다", async () => {
     const s = goalSetup();
     s.person({ act: "drinking" });
     s.tick();
     await s.t.idle();
-    await s.decide(pam("pam-1", 1, s.clock.t, "컵 그대로 두기", true));
+    await s.decide(pam("pam-1", 1, s.clock.t, null, true));
     expect(s.t.goal()).toMatchObject({ status: "armed", prep: "ready" });
     expect(s.goals.some((g) => g.status === "dropped")).toBe(false);
   });

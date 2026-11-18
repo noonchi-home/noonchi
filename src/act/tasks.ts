@@ -17,8 +17,6 @@ export interface TaskSpec {
   name: string; description: string; allow: TaskAllow; target?: ObjClass; look?: readonly Facet[];
   /** 행동 조건: 대상 물건의 그 면이 이 값으로 확인돼야 한다(계획 전 검사는 확인된 반대 값이면 막고, 실행 전 검사는 모르면 보류, src/act/check.ts). 면은 look 안이다. */
   want?: Partial<Record<Facet, StateKey>>;
-  /** false면 계획을 만들지 않는 행동이다. 판단 기록과 생각 말풍선에만 보인다. */
-  plan?: false;
   /** 집는 물건 종류. 없으면 target이다. */
   carry?: ObjClass;
   /** 코치 행동이 다루는 물건 종류(VLM이 상자로 찾아 World State에 넣는다, src/world/vocab.ts VLM_FIND). */
@@ -59,10 +57,6 @@ export const TASKS: Record<string, TaskSpec> = {
     allow: { kinds: ["device", "say"], need: ["device"], devices: { kinds: ["aircon"], tools: ["turn_on"] } },
   },
   // 컵 갈래(2026-11-13): 끝에 더해 앞 넷의 task_index를 지킨다. 물·콜라를 가르는 사실(먹는 중·TV 보는 중)은 FSM 기억(src/brain/decision.ts CUP_FSM_MEMORY)에 있다
-  "컵 그대로 두기": {
-    name: "컵 그대로 두기", description: "사람이 자리를 비웠지만 컵에 음료가 남아 있어 치우지 않고 그대로 둔다.", target: "cup", look: ["contents"], want: { contents: "has_contents" }, plan: false,
-    allow: { kinds: [], need: [] },
-  },
   "컵에 물 채워 주기": {
     name: "컵에 물 채워 주기", description: "사람이 식사 중인데 컵이 비어 있으면 사람이 냉장고에서 물병을 꺼내 와 컵에 물을 따르게 한다.", target: "cup", touch: true, look: ["contents"], want: { contents: "empty" },
     carry: "bottle", carryUnseen: true, allow: FILL,
@@ -107,7 +101,6 @@ export const TASK_SAY: Readonly<Record<string, { may: string; will: string }>> =
   "사용자에게 물어보기": { may: "여쭤봐도", will: "컵을 치울지 여쭤볼게요" },
   "세탁물 건조기로 옮기기": { may: "세탁물을 건조기로 옮겨도", will: "세탁물을 건조기로 옮길게요" },
   "에어컨 켜기": { may: "에어컨을 켜도", will: "에어컨을 켤게요" },
-  "컵 그대로 두기": { may: "그대로 둬도", will: "컵을 그대로 둘게요" },
   "컵에 물 채워 주기": { may: "물을 채워 드려도", will: "컵에 물을 채울게요" },
   "컵에 콜라 따라 주기": { may: "콜라를 따라 드려도", will: "컵에 콜라를 따를게요" },
   "라면 끓이기 알려 주기": { may: "알려 드려도", will: "라면 끓이는 법을 알려 드릴게요" },

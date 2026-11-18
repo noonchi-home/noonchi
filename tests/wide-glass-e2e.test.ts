@@ -95,12 +95,11 @@ describe.skipIf(!canRun)("가로 유리컵 영상(실제 감지, 가짜 모델) 
       },
       respond: plannerRespond(CUP_SCRIPTS),
     });
-    // 실제 녹화처럼: 사람이 보이면(확인된 컵이 아직 없어도) 「컵 그대로 두기」, 사람이 떠난 뒤 컵이 남으면 「컵 치우기」, 그 밖은 대기
+    // 실제 녹화처럼: 사람이 떠난 뒤 컵이 남으면 「컵 치우기」, 그 밖(사람이 보이는 동안 포함)은 대기(안 하기는 화살표 없음)
     pam = await startFakePamLlm({ predict: (b) => {
       const text = b.observation_text;
       const tasks = b.tasks;
       const cup = /컵 cup_\d/.test(text);
-      if (/^\[지속\] 사람 보임/m.test(text)) return { observation: "사람이 컵으로 마시는 중", reasoning: "더 마실 수 있다", task_index: tasks.indexOf("컵 그대로 두기") };
       if (cup && /^\[지속\] 사람 안 보임/m.test(text)) return { observation: "사람이 떠나고 컵이 남음", reasoning: "컵을 치운다", task_index: tasks.indexOf("컵 치우기") };
       return { observation: "지켜봄", reasoning: "기다린다", task_index: -1 };
     } });
@@ -173,9 +172,8 @@ describe.skipIf(!canRun)("가로 유리컵 영상(실제 감지, 가짜 모델) 
     expect(gone, JSON.stringify(timeline)).toBeGreaterThan(0);
     expect(timeline.slice(0, gone).filter((t) => t.startsWith("command:")), JSON.stringify(timeline)).toEqual([]);
     expect(timeline.slice(0, gone).filter((t) => /^thought:사람이 .+ 지켜볼게요$/.test(t)), JSON.stringify(timeline)).toHaveLength(1);
-    const kept = timeline.indexOf("decision:컵 그대로 두기");
-    expect(kept).toBeGreaterThanOrEqual(0);
-    expect(kept).toBeLessThan(gone);
+    // 사람이 보이는 동안 PAM 판단은 대기라 행동 판단이 없다
+    expect(timeline.slice(0, gone).filter((t) => t.startsWith("decision:")), JSON.stringify(timeline)).toEqual([]);
     // 찾기·계획 밖 가까이 가서 보기 명령은 한 번도 나가지 않았다
     expect(phone.filter((m) => m.type === "command" && /^(find|peek):/.test(String(m.id)))).toEqual([]);
   }, 240_000);

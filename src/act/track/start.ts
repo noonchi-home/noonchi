@@ -22,15 +22,6 @@ export class Starter extends Part {
   /** 마지막 말 부탁을 받은 때까지 보낸 PAM 요청 번호(afterSeq). 말 부탁 계획을 만드는 중이거나 열려 있는 동안 이 번호 이하 PAM 판단은 쓰지 않는다. */
   private lastSpeechSeq = 0;
   private speechN = 0;
-  /** 마지막으로 「그대로 둠」을 기록한 시각: 간격을 세는 실행 추적 시계(leftNoteAt)와 말풍선 카드가 보는 Date.now 시계(leftWallAt). */
-  private leftNoteAt = Number.NEGATIVE_INFINITY;
-  private leftWallAt: number | null = null;
-
-  /** 마지막으로 「그대로 둠」을 기록한 시각(Date.now 시계, 계획 updatedAt과 같은 시계). 없으면 null. */
-  leftAt(): number | null {
-    return this.leftWallAt;
-  }
-
   /** 말 부탁을 판단 기록 꼴(id say-<번호>, source speech, seq 0, 들은 말 한 줄)로 만들어 판단 받기 길(onDecision)에 넣는다. */
   request(r: SpeechRequest): void {
     const core = this.core;
@@ -92,18 +83,10 @@ export class Starter extends Part {
       return;
     }
     const now = this.clock.now();
-    // 계획을 만들지 않는 행동(컵 그대로 두기): 에이전트를 부르지 않고 그 판단 줄에 기록만 한다. 열린 계획·만들던 계획은 건드리지 않는다
-    if (taskOf(d.action)?.plan === false) {
-      if (now - this.leftNoteAt < this.cfg.leftGapMs) return;
-      this.leftNoteAt = now;
-      this.leftWallAt = Date.now();
-      core.emit(planIdOf(d.id), "decided");
-      return core.emit(planIdOf(d.id), "done", EXEC_TEXT.left);
-    }
     const last = this.planAt.get(d.action);
     if (last !== undefined && now - last < this.cfg.planGapMs) return this.note(d, EXEC_TEXT.held);
     this.planAt.set(d.action, now);
-    // 다른 행동의 계획이 맡으면 미리 세운 목표를 버리고 지금 길로(goal.ts). 계획 없는 행동(그대로 두기)·막힌 판단은 맡지 않으니 그대로 둔다
+    // 다른 행동의 계획이 맡으면 미리 세운 목표를 버리고 지금 길로(goal.ts). 막힌 판단은 맡지 않으니 그대로 둔다
     this.takeover(d);
     // 계획을 만드는 중이던 다른 행동은 끊고 버린다(답이 와도 쓰지 않는다)
     this.dropPlanning(EXEC_TEXT.superseded);

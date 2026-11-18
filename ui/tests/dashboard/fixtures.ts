@@ -159,7 +159,7 @@ export const COACH_SAY = { retold: "다시 알려 줬어요.", quiet: "냄비 �
 
 /** 「그대로 두기」를 고른 뒤 말풍선 카드 말(src/act/labels.ts SAY_TEXT.left). */
 export const LEFT_SAY = "컵을 그대로 둘게요.";
-const BRANCH_TASKS = ["컵 치우기", "사용자에게 물어보기", "세탁물 건조기로 옮기기", "에어컨 켜기", "컵 그대로 두기", "컵에 물 채워 주기", "컵에 콜라 따라 주기", "라면 끓이기 알려 주기"];
+const BRANCH_TASKS = ["컵 치우기", "사용자에게 물어보기", "세탁물 건조기로 옮기기", "에어컨 켜기", "컵에 물 채워 주기", "컵에 콜라 따라 주기", "라면 끓이기 알려 주기"];
 
 /** 판단 방송 한 줄. b가 null이면 대기(-1). */
 export function branchDecision(b: Branch | null, seq: number): ServerMessage {

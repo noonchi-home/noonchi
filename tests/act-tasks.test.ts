@@ -24,9 +24,9 @@ describe("행동 목록", () => {
       const t = TASKS[name]!;
       expect(t.name).toBe(name);
       expect(t.description.length).toBeGreaterThan(5);
-      const more = [...(t.coach ? ["coach"] : []), ...(t.maxSteps ? ["maxSteps"] : []), ...(t.target ? ["target"] : []), ...(t.look ? ["look"] : []), ...(t.want ? ["want"] : []), ...(t.plan === false ? ["plan"] : []), ...(t.carry ? ["carry"] : []), ...(t.carryUnseen ? ["carryUnseen"] : []), ...(t.touch ? ["touch"] : []), ...(t.afterUse ? ["afterUse"] : []), ...(t.uses ? ["uses"] : [])];
+      const more = [...(t.coach ? ["coach"] : []), ...(t.maxSteps ? ["maxSteps"] : []), ...(t.target ? ["target"] : []), ...(t.look ? ["look"] : []), ...(t.want ? ["want"] : []), ...(t.learn ? ["learn"] : []), ...(t.carry ? ["carry"] : []), ...(t.carryUnseen ? ["carryUnseen"] : []), ...(t.touch ? ["touch"] : []), ...(t.afterUse ? ["afterUse"] : []), ...(t.uses ? ["uses"] : [])];
       expect(Object.keys(t).sort()).toEqual(["allow", "description", "name", ...more].sort());
-      if (t.plan !== false) expect(t.allow.kinds.length).toBeGreaterThan(0);
+      expect(t.allow.kinds.length).toBeGreaterThan(0);
     }
     expect(TASKS["컵 치우기"]!.allow.kinds).toEqual(["go", "pick", "place"]);
     expect(TASKS["사용자에게 물어보기"]!.allow).toEqual({ kinds: ["ask", "say"], need: ["ask"] });
@@ -46,10 +46,10 @@ describe("행동 목록", () => {
     expect(TASKS["전자레인지로 데우기 알려 주기"]!.uses).toEqual(["bowl"]);
   });
 
-  it("눈치 모드 행동 목록은 일곱이고 앞 넷의 순서는 그대로다(task_index를 지킨다). 코치 행동은 없다", () => {
-    expect(tasksFor("noonchi")).toEqual(["컵 치우기", "사용자에게 물어보기", "세탁물 건조기로 옮기기", "에어컨 켜기", "컵 그대로 두기", "컵에 물 채워 주기", "컵에 콜라 따라 주기"]);
+  it("눈치 모드 행동 목록은 여섯이고 앞 넷의 순서는 그대로다. 코치 행동은 없다", () => {
+    expect(tasksFor("noonchi")).toEqual(["컵 치우기", "사용자에게 물어보기", "세탁물 건조기로 옮기기", "에어컨 켜기", "컵에 물 채워 주기", "컵에 콜라 따라 주기"]);
     expect(TASK_NAMES).toEqual([...tasksFor("noonchi"), "라면 끓이기 알려 주기", "전자레인지로 데우기 알려 주기"]);
-    expect(TASK_NAMES).toHaveLength(9);
+    expect(TASK_NAMES).toHaveLength(8);
     expect(tasksFor("noonchi")).not.toContain("전자레인지로 데우기 알려 주기");
   });
 
@@ -67,26 +67,23 @@ describe("행동 목록", () => {
     }
     const ramen = TASKS["라면 끓이기 알려 주기"]!;
     expect(ramen.allow).toEqual({ kinds: ["go", "pick", "place", "do", "wait", "say"], need: ["do"] });
-    expect([ramen.maxSteps, ramen.target, ramen.plan]).toEqual([14, undefined, undefined]);
+    expect([ramen.maxSteps, ramen.target]).toEqual([14, undefined]);
     // 전자레인지: 문 열기부터 꺼내기까지, 저절로 꺼지는 가전이라 끄기 do 대신 꺼짐을 기다리는 wait가 꼭 있다
     const mw = TASKS["전자레인지로 데우기 알려 주기"]!;
     expect(mw.allow).toEqual({ kinds: ["go", "pick", "place", "do", "wait", "say"], need: ["do", "wait"] });
-    expect([mw.coach, mw.maxSteps, mw.target, mw.plan]).toEqual([true, 12, undefined, undefined]);
+    expect([mw.coach, mw.maxSteps, mw.target]).toEqual([true, 12, undefined]);
     expect(TASKS["컵 치우기"]!.maxSteps).toBeUndefined();
   });
 
-  it("컵 그대로 두기는 계획을 만들지 않는 행동이다", () => {
-    const t = TASKS["컵 그대로 두기"]!;
-    expect(t.plan).toBe(false);
-    expect(t.target).toBe("cup");
-    expect(t.allow).toEqual({ kinds: [], need: [] });
-    expect(TASK_NAMES.filter((n) => TASKS[n]!.plan === false)).toEqual(["컵 그대로 두기"]);
+  it("행동 목록에는 안 하기 행동이 없다(안 하기는 화살표 없음)", () => {
+    expect(TASK_NAMES).not.toContain("컵 그대로 두기");
+    expect(Object.values(TASKS).some((t) => "plan" in t)).toBe(false);
   });
 
   it("채워 주기 둘은 대상이 컵이고 집는 것은 병이며(안 보여도 됨) do 단계가 꼭 있어야 한다", () => {
     for (const name of ["컵에 물 채워 주기", "컵에 콜라 따라 주기"]) {
       const t = TASKS[name]!;
-      expect([t.target, t.carry, t.carryUnseen, t.plan]).toEqual(["cup", "bottle", true, undefined]);
+      expect([t.target, t.carry, t.carryUnseen]).toEqual(["cup", "bottle", true]);
       expect(t.allow).toEqual({ kinds: ["go", "pick", "do", "place"], need: ["go", "pick", "do"] });
     }
     expect(TASKS["컵에 물 채워 주기"]!.description).toContain("물병");
@@ -127,8 +124,7 @@ describe("행동 목록", () => {
 describe("행동 조건(want)", () => {
   const f = (value: string, certainty: "confirmed" | "inferred"): WorldFact => ({ value, at_ms: 1, since_ms: 1, certainty });
   const cupWith = (contents?: WorldFact) => cupAt({ facts: contents ? { contents } : {} });
-  it("내용물을 보는 행동은 조건 값을 둔다(그대로 두기 = 내용물 있음, 채우기·콜라 = 비어 있음). 조건 면은 볼 면 안이다", () => {
-    expect(TASKS["컵 그대로 두기"]!.want).toEqual({ contents: "has_contents" });
+  it("내용물을 보는 행동은 조건 값을 둔다(채우기·콜라 = 비어 있음). 조건 면은 볼 면 안이다", () => {
     expect(TASKS["컵에 물 채워 주기"]!.want).toEqual({ contents: "empty" });
     expect(TASKS["컵에 콜라 따라 주기"]!.want).toEqual({ contents: "empty" });
     expect(TASKS["컵 치우기"]!.want).toBeUndefined();
@@ -206,8 +202,8 @@ describe("사람이 그 물건을 쓰는 중인가(usingNow, 쓰는 중 지킴�
   it("행동의 모드(modeOf, 메시지 상자 머리의 기준): 코치 행동은 coach, 그 밖의 목록 행동은 noonchi, 대기·목록 밖은 null", () => {
     expect(["컵 치우기", "에어컨 켜기", "라면 끓이기 알려 주기", "전자레인지로 데우기 알려 주기", null, "춤추기"].map(modeOf)).toEqual(["noonchi", "noonchi", "coach", "coach", null, null]);
   });
-  it("손대는 행동(touch)만 대상 종류가 있다(그대로 두기·에어컨 켜기는 없다)", () => {
+  it("손대는 행동(touch)만 대상 종류가 있다(에어컨 켜기는 없다)", () => {
     expect(["컵 치우기", "컵에 물 채워 주기", "컵에 콜라 따라 주기"].map(touchTarget)).toEqual(["cup", "cup", "cup"]);
-    expect(["컵 그대로 두기", "에어컨 켜기", null].map(touchTarget)).toEqual([null, null, null]);
+    expect(["에어컨 켜기", null].map(touchTarget)).toEqual([null, null]);
   });
 });

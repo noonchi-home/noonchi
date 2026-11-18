@@ -15,4 +15,5 @@
 [집 상태] world 컵 cup_1 내용물 있음
 [있음] decision 대기 valid
 [있음] execution 대기
+[있음] execution 앞선 판단이라 쓰지 않음
 [있음] vlm

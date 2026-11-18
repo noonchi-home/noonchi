@@ -58,12 +58,11 @@ export function checkDecision(i: Pick<CheckInput, "decision" | "tasks" | "world"
     return fail(i.world.objects.some((x) => x.cls === spec.target && x.status !== "gone" && putAway(x, i.placed)) ? "in_sink" : "no_target");
   }
   if (spec.want) {
-    // 대상이 정해지기 전이라 지금 보이는 후보 전부를 본다: 맞는 컵이 하나라도 있으면 통과, 모르는 컵이 있으면 계획으로 넘기고(계획 없는 행동은 막음), 다 반대 값이면 막는다
+    // 대상이 정해지기 전이라 지금 보이는 후보 전부를 본다: 맞는 컵이 하나라도 있으면 통과, 모르는 컵이 있으면 계획으로 넘기고, 다 반대 값이면 막는다
     const ws = i.world.objects.filter((o) => o.cls === spec.target && o.status === "present" && fresh(o) && !putAway(o, i.placed)).map((o) => wantOf(spec, o));
     if (ws.length && !ws.some((w) => w.ok)) {
       const unknown = ws.some((w) => !w.ok && w.why === "unknown");
       if (!unknown) return fail("contents_mismatch");
-      if (spec.plan === false) return fail("unknown_contents");
     }
   }
   return { ok: true };
