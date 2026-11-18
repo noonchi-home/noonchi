@@ -36,6 +36,9 @@ export class Starter extends Part {
     if (d.atMs < core.quietFrom && core.open()?.decision.action !== d.action) return this.note(d, EXEC_TEXT.late);
     if (d.status !== "valid") return this.note(d, EXEC_TEXT.decisionFailed);
     if (!d.action) return this.note(d, EXEC_TEXT.wait);
+    // 다른 행동을 고른 판단이 맡는다: 미리 세운 목표를 버리고 지금 길로(goal.ts)
+    const goal = core.goal.current();
+    if (goal && goal.action !== d.action) core.goal.drop("other");
     // 미리 세운 목표와 같은 행동인데 사람이 떠난 뒤의 판단이 아니면 목표가 맡는다(사람이 떠나면 판단을 다시 부른다, goal.ts)
     if (core.goal.holds(d)) return this.note(d, EXEC_TEXT.goalWait);
     // 계획이 끝난 뒤 사용자 위치 확인·충전 자리로 가는 동안은 새 일을 미룬다(충전 자리에서 시작한다, dock.ts).

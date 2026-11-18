@@ -15,7 +15,7 @@ import { decisionWorld, fsmRuleOf, goalAhead, type GoalPick } from "../../brain/
 import { ruleIf } from "../../world/labels.js";
 import { GOAL_TEXT } from "../labels.js";
 import { emergencyOf } from "../mode.js";
-import { followedId, planObjectsOf, TASK_NAMES, TASK_SAY, targetOf } from "../tasks.js";
+import { followedId, planObjectsOf, putAway, TASK_NAMES, TASK_SAY, targetOf } from "../tasks.js";
 import { Part } from "./core.js";
 
 /** 목표를 세워 둘 수 있는 시간(ms, 사용자 답 30분)과, 사람이 떠난 뒤 PAM이 그 행동을 고르기를 기다리는 시간(ms, 사용자 답 15초). */
@@ -132,16 +132,42 @@ export class GoalWatch extends Part {
     return ids.length > 0 && ids.every((id) => followedId(world, id) === goal);
   }
 
-  /** 사람이 떠났는지 본다: 사람이 안 보이고(World State) 대상 물건(옮김 표시를 따라감)이 있고 손에 없으면 떠난 때를 실어 fired로 바꾸고 판단을 바로 부르게 한다(한 번).
-   *  손에 있음으로 남아 있으면 내려놓음이 보일 때까지 기다린다. 미리 만들기(prep)는 따로 이어진다. */
+  /** 목표가 아직 맞는지 보고, 사람이 떠났으면 fired로 바꾼다. 맞지 않으면 버리고 지금 길(PAM 판단 → 계획 모드)로 돌아간다:
+   *  안전 알림(safety) → 지금 행동 목록에 없음(mode, 코치 모드) → 충전 자리 복귀 중(dock) → 다른 계획이 열렸거나 다른 행동 계획을 만드는 중(other) → 세운 지 armMs(expired).
+   *  - 사람이 보이는 동안: 다른 등장이면 back, 대상이 이어진 물건 없이 사라지거나 치워지면 moved.
+   *  - 사람이 떠남: 대상이 없으면 took(들고 나감). 손에 있음으로 남아 있으면 떠난 때부터 fireWaitMs 기다린 뒤 took. 그대로 있으면 떠난 때를 실어 fired로 바꾸고
+   *    판단을 바로 부르게 한다(한 번). 미리 만들기(prep)는 따로 이어진다.
+   *  - fired 뒤: 사람이 다시 보이면 back, 대상이 사라지면 took, fireWaitMs 안에 PAM이 그 행동을 고르지 않으면 pam. */
   private watch(g: Goal): void {
     const world = this.o.world();
+    const now = this.clock.now();
     const p = world.person;
-    if (g.view.status === "fired" || p.visible) return;
+    const v = g.view;
+    if (emergencyOf({ world, offNotices: this.core.safety.offTrack().notices })) return this.drop("safety");
+    if (!(this.o.tasks?.() ?? TASK_NAMES).includes(v.action)) return this.drop("mode");
+    if (this.core.dock.busy()) return this.drop("dock");
+    if (this.core.open() || (this.core.planning && this.core.planning.decision.action !== v.action)) return this.drop("other");
+    if (now - v.armed_ms > (this.o.goalArmMs ?? GOAL_DEFAULTS.armMs)) return this.drop("expired");
     const o = world.objects.find((x) => x.id === followedId(world, g.objectId));
-    if (!o || o.status === "gone" || o.facts.place?.value === "in_hand" || o.carried === true) return;
+    if (v.status === "fired") {
+      if (p.visible) return this.drop("back");
+      if (!o || o.status === "gone") return this.drop("took");
+      if (now - (v.fired_ms ?? now) > GOAL_DEFAULTS.fireWaitMs) return this.drop("pam");
+      return;
+    }
+    if (p.visible) {
+      if (p.since_ms !== g.presence) return this.drop("back");
+      if (!o || o.status === "gone" || putAway(o, this.core.steps.placed())) return this.drop("moved");
+      return;
+    }
+    if (!o || o.status === "gone") return this.drop("took");
+    if (putAway(o, this.core.steps.placed())) return this.drop("moved");
+    if (o.facts.place?.value === "in_hand" || o.carried === true) {
+      if (p.since_ms !== null && now - p.since_ms > GOAL_DEFAULTS.fireWaitMs) this.drop("took");
+      return;
+    }
     g.objectId = o.id;
-    this.set(g, { status: "fired", object: o.id, gone_ms: p.since_ms, fired_ms: this.clock.now() });
+    this.set(g, { status: "fired", object: o.id, gone_ms: p.since_ms, fired_ms: now });
     this.o.nudge?.();
   }
 
