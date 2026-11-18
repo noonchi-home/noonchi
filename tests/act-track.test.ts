@@ -453,6 +453,27 @@ describe("실행 추적: 그 자리에서 하는 일(do, 채워 주기)", () => 
     return setup({ plans, locate: (id) => ({ ...PLACES, fridge_1: FRIDGE })[id], approvals: store({ [`task:${WATER}`]: "approve" }), ...over });
   }
 
+  // 2026-11-19 실제 모델(마시는 중 계속 요청 5번 중 1번): 마시는 중에 물 채우기 화살표를 잘못 일으켰다. 물건 조건(비어 있음)은 행동 쪽 검사가 본다
+  it("마시는 중에 물 채우기 판단이 잘못 와도 컵에 내용물이 있다고 확인됐으면 계획 전 검사가 막고, 계획 전 검사를 건너뛰어도 쓰는 동안은 첫 명령을 미루다 떠난 뒤 실행 전 검사가 막아 실제 폰 명령이 없다", async () => {
+    let using = true;
+    const w = (): WorldView => {
+      const b = world([tableCup(["has_contents", 9_000])]);
+      return using ? { ...b, person: { ...b.person, visible: true, since_ms: 0, count: 1, holding: ["cup_1"], facts: { holding: fact("holding_object", 9_500), activity: fact("drinking", 9_500) } } } : b;
+    };
+    const pre = fillSetup({ w, precheck: (d) => checkDecision({ decision: d, tasks: [WATER], world: w() }) });
+    await pre.decide(water);
+    expect(pre.commands()).toEqual([]);
+    expect(pre.exec().at(-1)).toMatchObject({ plan_id: "plan:pam-1", state: "failed", text: CHECK_TEXT.contents_mismatch });
+    const run = fillSetup({ w, check: () => checkPlan({ decision: water, tasks: [WATER], plan: run.plans.current()!, world: w(), nowMs: run.clock.t, staleMs: 600_000, mode: "test" }) });
+    await run.decide(water);
+    expect(run.commands()).toEqual([]);
+    using = false;
+    run.t.onWorld();
+    for (let i = 0; i < 20; i++) { run.clock.t += 250; run.t.tick(); }
+    expect(run.commands()).toEqual([]);
+    expect(run.exec().at(-1)).toMatchObject({ plan_id: "plan:pam-1", state: "failed", text: CHECK_TEXT.contents_mismatch });
+  });
+
   // Codex(638302d use.ts:104): 채우기 계획의 첫 act 대상(냉장고·병)으로 보호를 검사해 쓰는 중인 컵을 지나쳐 첫 명령이 나갔다
   it("사람이 그 컵을 쓰는 중이면 물 채워 주기 계획도 첫 명령을 미룬다(첫 단계 대상이 냉장고·병이어도 계획이 다루는 컵을 본다)", async () => {
     const w = (): WorldView => {
