@@ -271,6 +271,8 @@ describe("startServer(BRAIN=1): 말로 하는 승인은 at의 승인 token에만
     srv = await startServer({
       env: { HUB: "memory", PORT: "0", RUNTIME_DIR: rt, PHONE_PORT: "0", PHONE_HOST: "127.0.0.1", BRAIN: "1", VLM_BASE_URL: `${fake.url}/v1`, PAM_URL: pam.url, ...llm.env },
       brain: { detector: new ScriptedDetector(() => [det("cup", 0.9, [1, 1, 2, 1], 41)]) }, log: () => {},
+      // 계획 승인 질문이 필요하다: 처음 하는 일 묻기를 켜 본다(기본 끔)
+      askFirst: true,
     });
     const phoneUrl = new URL(srv.phoneUrls[0]!);
     const box: Msg[] = [];

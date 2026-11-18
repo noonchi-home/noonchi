@@ -52,6 +52,8 @@ export interface HomeContext {
   matter?: Record<string, unknown>;
   /** 시험용: 관찰 흐름의 감지기·VLM·시계. */
   brain?: PipelineInject;
+  /** 시험용: 처음 하는 일 묻기를 켜 본다. 없으면 ASK_FIRST_TIME(끔). */
+  askFirst?: boolean;
   /** 폰 포트로 이어진 https 주소 찾기(tailscale serve). */
   servedPhoneUrls?: (phonePort: number) => Promise<string[]>;
   /** 지금 운영 모드(/api/health). 없으면 시험 모드. */

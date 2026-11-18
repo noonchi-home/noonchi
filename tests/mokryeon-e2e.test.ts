@@ -68,6 +68,8 @@ describe("한양목련 처음부터 끝까지", () => {
       env: { HUB: "memory", PORT: "0", HOME_ID: "mokryeon_180b", RUNTIME_DIR: runtimeDir, PHONE_PORT: "0", PHONE_HOST: "127.0.0.1",
         BRAIN: "1", VLM_BASE_URL: `${fake.url}/v1`, PAM_URL: pam.url, OPENAI_API_KEY: "fake-key", OPENAI_BASE_URL: `${fake.url}/v1` },
       brain: { detector: new ScriptedDetector(() => [det("cup", 0.9, CUP_BOX, 41)]) }, log: () => {},
+      // 처음 하는 일 승인 길을 끝까지 본다: 처음 하는 일 묻기를 켜 본다(기본 끔, 기본 흐름은 tests/noonchi-e2e.test.ts)
+      askFirst: true,
     });
     const dash: Msg[] = [];
     sockets.push(await openWebSocket(`${srv.url.replace(/^http/, "ws")}/events`, { setup: inbox(dash) }));

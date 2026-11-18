@@ -74,6 +74,8 @@ export interface StartServerOptions {
   matter?: Record<string, unknown>;
   /** 테스트용: 관찰 흐름의 감지기·VLM·시계. */
   brain?: PipelineInject;
+  /** 시험용: 처음 하는 일 묻기를 켜 본다. 없으면 src/agent/approval.ts ASK_FIRST_TIME(끔). */
+  askFirst?: boolean;
   /** 폰 포트로 이어진 https 주소 찾기(main.ts는 tailscale serve 설정을 읽는다). 없으면 찾지 않는다. */
   servedPhoneUrls?: (phonePort: number) => Promise<string[]>;
   /** 대시보드·설정 화면 폴더. 기본은 React 빌드(ui/dist). */
@@ -173,7 +175,7 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
     }
   };
   const ctx: HomeContext = {
-    env, log, runtimeDir, importer: opts.importer, matter: opts.matter, brain: opts.brain, servedPhoneUrls: opts.servedPhoneUrls, webDir: opts.webDir,
+    env, log, runtimeDir, importer: opts.importer, matter: opts.matter, brain: opts.brain, askFirst: opts.askFirst, servedPhoneUrls: opts.servedPhoneUrls, webDir: opts.webDir,
     sources: (homeId, ids) => store.sources(homeId, ids), mode: () => mode, allowOrigin, planToken: env.PLAN_TOKEN?.trim() || undefined, ready: makeReady({ endpoints, agent: agentEndpoint(env), db }),
     history: { db, device: feed.device.emit, brain: feed.brain.emit, plan: feed.plan.emit, reflect },
   };

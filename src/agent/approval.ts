@@ -1,5 +1,6 @@
-// 승인 규칙: 묻는 때는 둘뿐이다. (1) 허락 없이 하면 위험할 때(위험 목록, src/agent/policy.ts needsConfirm), (2) 처음 하는 일이라 전에 승인받은 적
-// 없을 때(PAM 계획). 그 밖에는 묻지 않고 바로 한다. 말로 시킨 가전 명령은 그 말이 승인이다.
+// 승인 규칙: 허락 없이 하면 위험할 때(위험 목록, src/agent/policy.ts needsConfirm)는 늘 묻는다. 처음 하는 일이라 전에 승인받은 적 없을 때(PAM 계획) 묻기는
+// 한 곳의 설정값 ASK_FIRST_TIME이고 끔이다(2026-11-18 사용자 결정: 알아서 판단해 실행하는 것을 보여 준다, 나중에 다시 정한다). 그 밖에는 묻지 않고 바로 한다.
+// 말로 시킨 가전 명령은 그 말이 승인이다.
 // 답은 승인·거절 둘(src/act/prompts.ts APPROVE). 승인은 기억해 같은 일은 다음부터 묻지 않고, 거절은 이번만이라 기억하지 않아 다음에 또 묻는다.
 // 위험 목록은 늘 묻고 답 둘 다 이번만이다. 기억은 runtime/homes/<집>/approvals.json(재시작에도 남음). 예전 파일의 never(「하지 마」)는 읽지 않는다.
 // 대시보드에는 승인을 보이지 않는다.
@@ -25,10 +26,14 @@ export const approvalsPath = (runtimeDir: string, homeId: string) => join(runtim
 
 const empty = (): ApprovalMemory => ({ always: {} });
 
-/** 물을지와 그 까닭. 묻지 않으면 null(바로 한다). requested: 사용자가 말로 시킨 일(가전 명령). */
-export function approvalNeed(o: { key: ApprovalKey; risky: boolean; requested: boolean; memory: ApprovalMemory }): ApprovalWhy | null {
+/** 처음 하는 일 묻기(설정값 하나, 2026-11-18 사용자 결정: 끔. 위험 목록은 이 값과 상관없이 늘 묻는다). */
+export const ASK_FIRST_TIME = false;
+
+/** 물을지와 그 까닭. 묻지 않으면 null(바로 한다). requested: 사용자가 말로 시킨 일(가전 명령).
+ *  askFirst: 처음 하는 일 묻기(없으면 ASK_FIRST_TIME. 시험이 묻는 길을 켜 볼 때만 준다). */
+export function approvalNeed(o: { key: ApprovalKey; risky: boolean; requested: boolean; memory: ApprovalMemory; askFirst?: boolean }): ApprovalWhy | null {
   if (o.risky) return "risky";
-  if (o.requested || Object.hasOwn(o.memory.always, o.key)) return null;
+  if (!(o.askFirst ?? ASK_FIRST_TIME) || o.requested || Object.hasOwn(o.memory.always, o.key)) return null;
   return "first";
 }
 
