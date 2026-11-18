@@ -702,7 +702,7 @@ PAM은 Task 3부터 기억 화살표의 행동만 고른다. 그래서 기억에
 - Produces:
   - 도구 `request_task({ task: string }) → { ok: true } | { ok: false; error: string }` — `task`는 행동 목록(`TASK_NAMES`) 이름 그대로. 모드와 상관없이 받는다(코치 행동이면 계획이 열린 동안 모드가 코치, `modeNow` 그대로).
   - `ExecutionTracker.onRequest(r: { task: string; heard: string; atMs: number }): void` — 들은 말 부탁을 판단 기록 꼴(`id: say-<번호>`, `source: "speech"`, `seq: 0`, `textSent`에 「사람이 말함: 「…」」, `prediction: { observation: "사람이 말로 부탁함", reasoning: "사람이 말로 부탁함", task_index }`, `action: task`, `tasks: TASK_NAMES`)로 만들어 지금 판단 받기 길(`onDecision`)에 넣는다. 그래서 계획 전 검사·계획 모드·승인·실행이 PAM 판단과 같다.
-  - 순서: 말 부탁은 PAM 판단 번호(`seq`, `lastSeq`)와 섞지 않는다(Codex b28711d P2). `onDecision`은 `source === "speech"`면 seq 검사를 건너뛰고 `lastSeq`를 바꾸지 않으며 그 촬영 시각(`atMs`)을 `lastSpeechAt`에 둔다. PAM 판단은 지금처럼 seq로 늦은 답을 거르고, 그에 더해 말 부탁 계획이 열려 있는 동안 `atMs < lastSpeechAt`인 판단(말 부탁보다 먼저 본 관찰)은 「앞선 판단이라 쓰지 않음」으로 기록만 한다.
+  - 순서: 말 부탁은 PAM 판단 번호(`seq`, `lastSeq`)와 섞지 않는다(Codex b28711d P2). `onDecision`은 `source === "speech"`면 seq 검사를 건너뛰고 `lastSeq`를 바꾸지 않으며 그 촬영 시각(`atMs`)을 `lastSpeechAt`에 둔다. PAM 판단은 지금처럼 seq로 늦은 답을 거르고, 그에 더해 말 부탁을 받은 때부터 그 계획을 만드는 중이거나 열려 있는 동안 `atMs < lastSpeechAt`인 판단(말 부탁보다 먼저 본 관찰)은 「앞선 판단이라 쓰지 않음」으로 기록만 한다(Codex 26d2482 P2: 만드는 중에는 `core.open()`이 없어 먼저 보낸 PAM 답이 말 부탁 계획을 끊었다).
 
 - [ ] **Step 1: 실패하는 시험 쓰기**
 
@@ -727,6 +727,20 @@ it("말 부탁은 PAM 판단 번호와 섞이지 않는다: PAM seq가 높아도
   expect(t.exec().at(-1)).toMatchObject({ plan_id: "plan:pam-10", text: EXEC_TEXT.late });
   await t.decide(pam("pam-11", 11, 12_000, "라면 끓이기 알려 주기"));       // 뒤의 PAM 판단: 같은 행동이면 진행 중 기록
   expect(t.exec().at(-1)).toMatchObject({ plan_id: "plan:pam-11", text: EXEC_TEXT.same });
+});
+it("말 부탁 계획을 아직 만드는 중에 그보다 먼저 본 관찰의 PAM 판단이 와도 그 계획을 끊지 않는다", async () => {
+  // tests/act-track.test.ts에 둔다(이 파일의 setup·decision·world·cup·testPlanner·planContext 도우미)
+  let release: (r: PlanResult) => void = () => {};
+  const plans = new PlanHub(smallFloor(), () => {}, () => "t");
+  const w = () => world([cup("present")]);
+  const real = testPlanner(llm);
+  const t = setup({ plans, w, planner: (d, signal) => (d.source === "speech" ? new Promise<PlanResult>((r) => { release = r; }) : real.plan(planContext({ decision: d, world: w(), floor: plans.floor() }), signal)) });
+  t.t.onRequest({ task: "컵 치우기", heard: "컵 치워 줘", atMs: 10_000 });
+  await t.decide({ ...decision, id: "pam-3", seq: 3, atMs: 9_500, action: "사용자에게 물어보기" });   // 말 부탁보다 먼저 본 관찰
+  expect(t.exec().at(-1)).toMatchObject({ plan_id: "plan:pam-3", text: EXEC_TEXT.late });
+  release(await real.plan(planContext({ decision: { ...decision, id: "say-1" }, world: w(), floor: plans.floor() })));
+  await t.t.idle();
+  expect(plans.current()).toMatchObject({ id: "plan:say-1", status: "running" });
 });
 it("목록에 없는 이름은 거절하고 계획을 만들지 않는다", async () => {
   const s = await speechSetup({ agentCalls: [{ name: "request_task", args: { task: "설거지하기" } }] });
@@ -755,8 +769,9 @@ if (d.source === "speech") this.lastSpeechAt = d.atMs;   // 말 부탁: PAM 번�
 else {
   if (d.seq < this.lastSeq) return this.note(d, EXEC_TEXT.late);
   this.lastSeq = d.seq;
-  // 말 부탁 계획이 열려 있는 동안 그보다 먼저 본 관찰의 PAM 판단은 쓰지 않는다
-  if (core.open()?.decision.source === "speech" && d.atMs < this.lastSpeechAt) return this.note(d, EXEC_TEXT.late);
+  // 말 부탁을 받은 때부터(그 계획을 만드는 중이어도) 그보다 먼저 본 관찰의 PAM 판단은 쓰지 않는다
+  const speech = core.planning?.decision.source === "speech" || core.open()?.decision.source === "speech";
+  if (speech && d.atMs < this.lastSpeechAt) return this.note(d, EXEC_TEXT.late);
 }
 ```
  같은 행동을 PAM도 골랐으면 지금 「같은 행동을 진행 중」 기록으로 하나만 돈다.
@@ -842,6 +857,26 @@ it("행동이 붙은 화살표의 행동이 시작되지 않으면(목표가 맡
 (pam-4는 처음 낸 때(pam-1)부터 15초가 지나 풀렸다. pam-6이 같은 화살표를 다시 냈어도 처음 판단 pam-5의 실행이 시작되면 다음 요청은 `away`다.)
 
 ```ts
+// tests/world-decide.test.ts
+it("실행이 시작돼 푼 뒤 그 전에 보낸 같은 화살표 답이 늦게 와도 pending을 되살리지 않는다", async () => {
+  const leave = { observation: "o", reasoning: "r", state: "away", from: "drinking", next_index: 0 };
+  const none = { observation: "o", reasoning: "r", state: "away", from: null, next_index: -1 };
+  const answers = [leave, leave, none];
+  pam = await startFakePamLlm({ predict: () => answers.shift()! });
+  let now = 10_000;
+  const d = new Decider({ pam: pamClientFor(pam), world: emptyWorld(), trigger: event(), tasks: () => [...CUP_TASKS], memory, emit: () => {}, onDecision: () => {}, offsetMinutes: 540, clock: { now: () => now } });
+  const send = () => { d.onChanges([{ kind: "person_gone", at_ms: now, subject: "person", text: "사람 안 보임", meaningful: true }]); d.tick(); };
+  send(); await d.idle();                  // pam-1: drinking → * 컵 치우기
+  send();                                  // pam-2를 보냄(답 전, 10초에 본 관찰)
+  now += 1_000;
+  d.onExecution("plan:pam-1", "running");  // 실행 시작 → 풀림(푼 때 11초)
+  await d.idle();                          // pam-2 답(같은 화살표)이 늦게 옴: 되살리지 않는다
+  send(); await d.idle();                  // pam-3
+  expect((pam.bodies as { last_state: string | null }[]).map((b) => b.last_state)).toEqual([null, "drinking", "away"]);
+});
+```
+
+```ts
 // tests/brain-person.test.ts
 describe("World State 하는 일 → 사람 상태", () => {
   const person = (o: Partial<WorldPerson>): Pick<WorldView, "person"> => ({ person: { visible: true, since_ms: 0, last_seen_ms: 1, count: 1, position: null, position_ms: null, room: null, room_label: null, near: [], holding: [], facts: {}, answered_ms: null, ...o } });
@@ -903,13 +938,17 @@ export function stateOfWorld(memory: FsmMemory, world: Pick<WorldView, "person">
  *  계획 id만 더한다(Codex b28711d P2: 덮어쓰면 처음 계획의 running으로 풀리지 않고 5초마다 늘어 15초 한도가 끝나지 않았다).
  *  그 화살표의 어느 판단이든 실행이 시작되면(실행 기록 running·done), 다른 화살표가 오면, 처음 낸 때부터 PENDING_EDGE_MS가 지나면 푼다. */
 private pending: { from: string; next: number; plans: Set<string>; at: number } | null = null;
+/** 실행이 시작돼 푼 화살표와 푼 때. 그 전에 본 관찰의 같은 화살표 답(늦게 온 반복 답)은 pending을 되살리지 않는다(Codex 26d2482 P2: 이미 시작한 행동을 다시 판단·실행할 수 있었다). */
+private released: { from: string; next: number; at: number } | null = null;
 
 // 판단 받은 뒤
 const step = mem.kind === "fsm" && "states" in mem.memory ? fsmStep(mem.memory, p) : null;
 if (step) {
   this.lastState = step.state;
+  const stale = this.released !== null && step.from === this.released.from && step.next_index === this.released.next && base.atMs < this.released.at;
   const same = this.pending !== null && step.from === this.pending.from && step.next_index === this.pending.next;
-  if (same) this.pending!.plans.add(planIdOf(base.id));
+  if (stale) { /* 푼 화살표의 늦은 반복 답: pending은 그대로(없음) */ }
+  else if (same) this.pending!.plans.add(planIdOf(base.id));
   else if (step.from !== null && step.action !== null && action !== null) this.pending = { from: step.from, next: step.next_index, plans: new Set([planIdOf(base.id)]), at: now };
   else if (step.from !== null) this.pending = null;
 }
@@ -922,7 +961,10 @@ this.o.pam.predict({ final_time: finalTime, observation_text: textSent, memory_k
 
 /** 실행 기록(서버가 실행 추적 emit에서 넘긴다): 기다리던 화살표의 행동이 시작되면 푼다. */
 onExecution(planId: string, state: ExecState): void {
-  if (this.pending?.plans.has(planId) && (state === "running" || state === "done")) this.pending = null;
+  const p = this.pending;
+  if (!p?.plans.has(planId) || (state !== "running" && state !== "done")) return;
+  this.released = { from: p.from, next: p.next, at: this.clock.now() };
+  this.pending = null;
 }
 ```
 
