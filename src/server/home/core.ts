@@ -6,6 +6,7 @@ import type { Agent, ApprovalStore, Observer, PlaceInfo, Planner, Policy } from 
 import type { Decider, ThoughtFeed } from "../../brain/index.js";
 import type { BrainLog, SeenEvent } from "../../contract/events.js";
 import type { PendingGoal } from "../../contract/goal.js";
+import type { HabitFsm } from "../../contract/habit.js";
 import type { PlannedCommand } from "../../contract/phone.js";
 import type { SignalHub, ThinqLink } from "../../devices/index.js";
 import type { FloorPlan, HomePlan, PlaceNames, TwinData, loadLayout, loadScene } from "../../layout/index.js";
@@ -100,6 +101,8 @@ export class HomeCore {
   modeSent: Mode | null = null;
   /** 마지막 미리 세운 목표(src/act/track/goal.ts, 접속한 대시보드에 다시 보낸다). */
   goal: PendingGoal | null = null;
+  /** 마지막으로 보낸 습관 FSM 그림 자료(src/brain/habit.ts, 접속한 대시보드에 다시 보낸다). 판단 전이면 null. */
+  habit: HabitFsm | null = null;
   lookSay: { place: string; atMs: number } | null = null;
   reflected: { atMs: number; learned: number; active: number } | null = null;
   serviceSaid: { text: string; atMs: number } | null = null;

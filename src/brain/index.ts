@@ -3,6 +3,7 @@
 export { Decider, decisionWorld } from "./decide.js";
 export { type PamMemory, fsmRuleOf } from "./decision.js";
 export { type GoalPick, goalAhead } from "./goal.js";
+export { habitView } from "./habit.js";
 export { HISTORY_KINDS, HistoryDb, historyTzMinutes } from "./history/db.js";
 export { FEEDBACK_TEXT, PHOTO_TEXT, REFLECT_TEXT } from "./history/labels.js";
 export { type DeviceNote, attachRecorder, deviceRecorder, recordBrainLog, recordFeedback, topic } from "./history/recorder.js";

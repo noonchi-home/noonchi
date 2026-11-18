@@ -171,6 +171,7 @@ function startApp(core: HomeCore): void {
     brainLast: () => [...todayReflection(history.db), ...(core.lastDecision ? [core.lastDecision] : [])], thoughtLast: () => core.thoughts?.last() ?? null, seenLast: () => core.lastSeen, say: () => ({ text: core.said, ...(core.saidSafety ? { safety: true as const } : {}) }),
     actMode: () => core.mode(),
     goalLast: () => core.goal,
+    habitLast: () => core.habit,
   });
   core.speak();
 }

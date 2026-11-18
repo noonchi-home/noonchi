@@ -2,6 +2,7 @@
 // 정책(승인)은 Policy, 자연어는 Agent가 맡는다. 외부 라이브러리는 ws만 쓴다. API 경로는 도메인별 파일(routes/*)이 등록한다.
 
 import type { PendingGoal } from "../contract/goal.js";
+import type { HabitFsm } from "../contract/habit.js";
 import { existsSync } from "node:fs";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { join, resolve } from "node:path";
@@ -85,6 +86,8 @@ export interface AppOptions {
   actMode?: () => "noonchi" | "coach";
   /** 마지막 미리 세운 목표(src/act/track/goal.ts). /events 접속 때 {type:"goal"}. 없거나 null이면 보내지 않는다. */
   goalLast?: () => PendingGoal | null;
+  /** 마지막 습관 FSM 그림 자료(src/brain/habit.ts). /events 접속 때 {type:"habit"}. 없거나 null이면 보내지 않는다. */
+  habitLast?: () => HabitFsm | null;
   /** 지금 운영 모드(/api/health). 없으면 시험 모드. */
   mode?: () => ControlMode;
   /** 준비 상태(/api/health ready, src/server/ready.ts). 없으면 준비 안 됨. */
@@ -314,6 +317,8 @@ export function createApp(opts: AppOptions): TwinHomeApp {
     if (opts.actMode) send(ws, { type: "mode", mode: opts.actMode() });
     const goal = opts.goalLast?.();
     if (goal) send(ws, { type: "goal", goal });
+    const habit = opts.habitLast?.();
+    if (habit) send(ws, { type: "habit", habit });
     ws.on("error", () => {});
   });
 

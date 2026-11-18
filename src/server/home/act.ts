@@ -3,9 +3,10 @@
 import { ExecutionTracker, LessonStore, Looker, PlanHub, checkDecision, checkPlan, deviceRunner, lessonsPath, loadActConfig, pamTasks } from "../../act/index.js";
 import { lookTargets, taskOf, type TaskSpec } from "../../act/tasks.js";
 import { deviceViews, placesOf, resubmit, type PlaceInfo, type PlanAhead, type PlanContext } from "../../agent/index.js";
-import { Decider, PamClient, lastStoredThoughts, memoryForDay, pamSettings, storeThought, thoughtFeed } from "../../brain/index.js";
+import { Decider, PamClient, habitView, lastStoredThoughts, memoryForDay, pamSettings, storeThought, thoughtFeed } from "../../brain/index.js";
 import type { BrainLog, DecisionRecord } from "../../contract/events.js";
 import type { PendingGoal } from "../../contract/goal.js";
+import type { HabitFsm } from "../../contract/habit.js";
 import { GOAL_LOG } from "../../act/labels.js";
 import type { HistoryDb } from "../../brain/index.js";
 import type { WorldInput, WorldView } from "../../contract/world.js";
@@ -55,6 +56,13 @@ export function publishGoal(core: Pick<HomeCore, "out" | "app" | "goal">, g: Pen
   core.out.act?.push("/brain/goal_changes", { goal: g });
   core.out.act?.push("/brain/goal", { goal: g });
   core.app?.broadcast({ type: "goal", goal: g });
+}
+
+/** 습관 FSM 그림 자료(src/brain/habit.ts)를 보낸다: 판본이 바뀔 때만 대시보드로 {type:"habit"}을 보내고, 접속한 대시보드에 다시 보내려고 마지막 것을 둔다. */
+export function publishHabit(core: { app?: { broadcast(m: unknown): void } | null; habit: HabitFsm | null }, h: HabitFsm): void {
+  if (core.habit?.version === h.version) return;
+  core.habit = h;
+  core.app?.broadcast({ type: "habit", habit: h });
 }
 
 /** 목표 전환 한 줄: 바로 앞 상태(같은 목표)와 견줘 무엇이 바뀌었는지(세움·미리 만들기·사람 떠남·씀·버림). */
@@ -126,6 +134,9 @@ export function startAct(core: HomeCore): (event: BrainLog) => void {
   core.thoughts = feed;
   const emit = (event: BrainLog) => {
     if (event.type === "decision") core.lastDecision = event;
+    // 판단이 PAM에 보낸 기억(판본)의 습관 FSM 그림: 판단 기록보다 먼저, 판본이 바뀔 때만
+    const habit = event.type === "decision" ? core.decider?.habit() : null;
+    if (habit && habit.kind === "fsm" && "states" in habit.memory) publishHabit(core, habitView(habit.memory, habit.version));
     core.app?.broadcast({ type: "brain", event });
     history.brain(event);
     if (event.type === "decision") feed.decision(event);
