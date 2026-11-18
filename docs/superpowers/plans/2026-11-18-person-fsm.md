@@ -9,7 +9,7 @@
 > 6. 반성은 (출발 상태, 행동)마다 화살표 조건 후보 1~3개를 내요(후보 FSM). 코드 검사(모양) → LLM 검사(뜻) → 시각 찾기 → 채택 검사(석준 님 방식: 따라온 비율 75% 이상·단측 이항검정 p < 0.001, 「치워 줘」 답도 따라온 것)를 지난 후보만 로봇이 쓰는 FSM에 들어가요. 거절이면 까닭을 돌려줘 한 번 다시 반성하고, 그래도 안 되면 전날 기억을 써요.
 > 7. 옛 기억은 옮기지 않아요(합성 기록에서 나온 것). 합성 일주일을 새 모양으로 다시 쌓고, 옛 모양 기억을 읽으면 새 seed로 다시 시작해요.
 > 8. 한 번에 다 바꾸지 않아요. 묶음 A(사람 활동 FSM) → B(상태 토픽 그림자) → C(안전) → D(로봇 실행) → E(목표·관리자) → F(노드 나누기) 차례로, 묶음마다 세 영상이 통과하고 사람 떠남 → 첫 명령 1.6~3.3초가 나빠지지 않아야 해요.
-> 9. 사용자가 정한 습관(물 채우기·콜라·에어컨·코치)은 검사 없이 늘 로봇 FSM에 있어요. **배우는 습관은 컵 치우기 하나**예요: seed에는 컵 치우기가 없어 처음 이틀은 떠날 때 묻고, 채택 검사를 지난 3일째부터 바로 치워요. 로봇이 이미 치운 때는 셈에서 빼요(못 봄). 치우기를 보는 시험·영상·시연은 배운 뒤 기억으로 돌고, 목표 미리 세우기도 배운 화살표에서만 서요.
+> 9. 사용자가 정한 습관(물 채우기·콜라·에어컨·코치)은 검사 없이 늘 로봇 FSM에 있어요. **배우는 습관은 컵 치우기와 「말없이 TV 보기 시작 → 에어컨 켜기」 둘**이에요: seed에는 둘 다 없어요. 컵은 처음 이틀은 떠날 때 묻고 채택 검사를 지난 3일째부터 바로 치워요. 에어컨은 4일째부터 말없이 켜요(덥다·부채질 → 에어컨은 정한 습관이라 늘 있어요). 배우기 전 떠날 때 메시지 상자는 「컵을 치울지 여쭤볼게요」예요. 로봇이 이미 치운 때는 셈에서 빼요(못 봄). 치우기를 보는 시험·영상·시연은 배운 뒤 기억으로 돌고, 목표 미리 세우기도 배운 화살표에서만 서요.
 > 10. 대시보드는 FSM 원 카드 대신 시간 줄(사람 · 예상 · 로봇)을 써요(2026-11-19 결정). 사람 줄에는 사람 상태 구간이, 로봇 줄에는 로봇 실행 기계의 계획 단계 구간이 보여요. 화면은 `feat/fsm-card`가 만들고, 이 계획은 두 줄에 넣을 자료를 넘겨요.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
@@ -47,8 +47,10 @@
 21. 채택 검사는 Node로 옮겨(`src/brain/pam/adopt.ts`, 계산만) 석준 님 시험 경우를 그대로 옮겨 같은 답으로 막는다.
 22. 검사 순서: 반성 → 코드 모양 검사 → LLM 뜻 검사 → 시각 찾기·채택 검사 → 통과한 것만 로봇 FSM. 하루 기록은 덩어리(시작·끝·한 문장)로 묶어 반성·시각 찾기 입력으로 쓰고 사람 상태 흐름과 잇는다.
 23. 사용자가 정한 습관(물 채우기·콜라·에어컨·코치)은 채택 검사 없이 늘 로봇 FSM에 있다(사용자 답 2026-11-18). 이 습관은 seed(`CUP_FSM_MEMORY`)에 있다(설정화면 `/setup/`에는 습관 칸이 없고 집·기기·모드·자리만 있다). 반성·채택은 이 화살표를 바꾸지 않는다.
-24. 배우는 습관은 컵 치우기 하나다(`TASKS["컵 치우기"].learn`, `LEARNED_ACTIONS`). seed에는 컵 치우기 화살표가 없고, 그 자리(마시는 중에서 떠남·TV 보며 마시던 중 떠남)는 「사용자에게 물어보기」 화살표다. 채택 검사를 지난 컵 치우기 후보만 로봇 FSM에 들어가고, 같은 트리거(on·when)의 묻기 화살표를 그 자리(같은 번호)에서 바꾼다. 반성 후보는 배우는 행동만 받는다(다른 행동 후보는 빼고 기록).
+24. 배우는 습관은 컵 치우기와 「말없이 TV 보기 시작 → 에어컨 켜기」(데모 「2-습관」, 사용자 답 2026-11-19)다(`TASKS[…].learn`, `LEARNED_ACTIONS` = 컵 치우기·에어컨 켜기). 에어컨 켜기는 행동이 배우는 행동이어도 덥다·부채질 화살표는 사용자가 정한 습관이라 늘 둔다: 정한 습관은 행동 이름이 아니라 seed 화살표(묻기가 아닌 seed 행동 화살표)로 가린다. 말없이 켜기는 채택 검사를 지나면 TV 보는 중 끝에 새 화살표로 더해진다. seed에는 컵 치우기 화살표가 없고, 그 자리(마시는 중에서 떠남·TV 보며 마시던 중 떠남)는 「사용자에게 물어보기」 화살표다. 채택 검사를 지난 컵 치우기 후보만 로봇 FSM에 들어가고, 같은 트리거(on·when)의 묻기 화살표를 그 자리(같은 번호)에서 바꾼다. 반성 후보는 배우는 행동만 받는다(다른 행동 후보는 빼고 기록).
 25. 치우기를 보는 시험·영상·시연은 배운 뒤 기억(`LEARNED_FSM_MEMORY` = 합성 3일째부터 쓰는 로봇 FSM과 같은 화살표)으로 돈다. seed 기억으로 돌면 떠날 때 묻는다(묻기 시험은 따로 둔다). 목표 미리 세우기도 배운 컵 치우기 화살표에서만 선다(묻기는 손대는 행동이 아니라 목표가 없다).
+26. 메시지 상자(사용자 답 2026-11-19): 배우기 전 떠날 때는 허락 문장 없이 로봇 말 「컵을 치울지 여쭤볼게요.」 한 줄이다. 배운 뒤는 지금처럼 「컵을 두고 자리를 뜨면 치워도 된다고 하셨어요」 → 「컵을 치울게요.」다.
+27. TV 보며 마시다 떠날 때(TV 보는 중 → 다른 일, 같이 마시는 중)는 배운 뒤에도 묻는다(사용자 답 2026-11-19, 합성 일주일에 이 일이 없다). 식탁(마시는 중)에서 떠나면 바로 치우고 TV 앞에서 떠나면 묻는 차이를 시험 하나로 지킨다(Task 3).
 
 ## 사람 FSM 만드는 규칙 (구현명세서 SSOT에도 같은 절)
 
@@ -56,7 +58,7 @@
 2. **화살표** = 사람의 일이 바뀜(A → B, 또는 A → 다른 어느 일로든 `*`). 같은 일 중의 사람 사건(말·몸짓)은 자기 자신으로 가는 화살표다. 화살표 조건(`when`)은 사람 쪽 사실만이다(같이 하던 일, 한 말). (출발, 사건 `on`, 조건 `when`)이 같은 화살표는 하나뿐이다.
 3. **행동** = 화살표 위에만, 하나, 로봇 할 일 목록에 있는 것만. 안 하기는 화살표 없음이다. 물건·집 조건(컵 남음·아무도 안 만짐·내용물)은 FSM에 넣지 않고 그 행동의 실행 전 검사(지금 있는 계획 전·실행 전 검사)가 본다. 맞지 않으면 그 검사대로 하고, 검사할 것이 없으면 조용히 안 한다.
 4. **목표** = 지금 상태에서 나가는 화살표의 행동을 읽기만 한다(목표 기계가 쓴다).
-5. **반성** = 새 활동 상태 더하기, 화살표·행동 더하기·바꾸기·지우기만 한다. 행동 화살표는 배우는 행동(지금 컵 치우기)만 (출발 상태, 행동)마다 조건 후보 1~3개로 내고(후보 FSM), 채택 검사를 통과한 후보만 로봇 FSM 화살표가 된다. 사용자가 정한 습관 화살표(seed)는 반성이 고치지 않는다. 있던 상태 id·후보 문구는 바꾸지 않는다. 1~3을 어긴 기억은 거절하고 전날 기억을 쓴다. 로봇·목표·안전 기계는 기억에 없어 반성이 고칠 수 없다.
+5. **반성** = 새 활동 상태 더하기, 화살표·행동 더하기·바꾸기·지우기만 한다. 행동 화살표는 배우는 행동(컵 치우기·에어컨 켜기)만 (출발 상태, 행동)마다 조건 후보 1~3개로 내고(후보 FSM), 채택 검사를 통과한 후보만 로봇 FSM 화살표가 된다. 사용자가 정한 습관 화살표(seed)는 반성이 고치지 않는다. 있던 상태 id·후보 문구는 바꾸지 않는다. 1~3을 어긴 기억은 거절하고 전날 기억을 쓴다. 로봇·목표·안전 기계는 기억에 없어 반성이 고칠 수 없다.
 
 **검사 셋:**
 
@@ -66,7 +68,7 @@
 | 채택 검사(따라옴) | 후보마다 따라온 비율 75% 이상이고 단측 이항검정 p < 0.001(p0 = max(다른 때 비율, 0.01), 검사 창 300초, 마지막 후보만 공로, 안 보인 구간·로봇이 그 일을 한 구간은 못 봄, 「치워 줘」 답은 따라옴, 「두세요」 답이 있는 창은 본 것) | 밤 흐름의 시각 찾기 뒤 | `src/brain/pam/adopt.ts`(석준 님 `trigger_check.py` 그대로에 답 칸 `answered` 하나, 모델 안 부름) |
 | LLM 검사(뜻) | 상태 이름·설명이 사람이 하는 일인지(물건·장소·로봇 행동·시간대가 섞이지 않았는지, 예 「컵 두고 떠남」 거절), 화살표 조건이 사람 쪽 사실만인지, 비슷한 상태(「TV 시청 중」·「TV 보는 중」)를 합쳐야 하는지 | 반성 직후 한 번(코드 검사 뒤) | `PamClient.checkMemory`(같은 PAM LLM 통로·같은 구조, 엄격한 JSON: 통과 여부 + 항목별 까닭) |
 
-**흐름:** 덩어리 기록 → 반성(후보 FSM) → 배우지 않는 행동 후보 빼기(사용자가 정한 습관·코치) → 코드 검사 → LLM 검사 → 거절이면 까닭을 반성 피드백에 붙여 한 번 다시 → 시각 찾기 → 채택 검사 → 로봇 FSM(seed 화살표 + 통과한 컵 치우기 후보, 같은 트리거의 묻기 화살표를 바꿈) → 코드 검사 → 저장. 끝내 거절·실패면 새 판본을 저장하지 않고 전날 기억을 쓴다(반성 기록에 까닭). 판단 속도에는 영향이 없다(밤 한 번).
+**흐름:** 덩어리 기록 → 반성(후보 FSM) → 배우지 않는 행동 후보 빼기(사용자가 정한 습관·코치) → 코드 검사 → LLM 검사 → 거절이면 까닭을 반성 피드백에 붙여 한 번 다시 → 시각 찾기 → 채택 검사 → 로봇 FSM(seed 화살표 + 통과한 배우는 행동 후보, 같은 트리거의 묻기 화살표는 바꾸고 정한 습관 화살표는 그대로) → 코드 검사 → 저장. 끝내 거절·실패면 새 판본을 저장하지 않고 전날 기억을 쓴다(반성 기록에 까닭). 판단 속도에는 영향이 없다(밤 한 번).
 
 ## 새 기억 모양 (`kind: "fsm"`, 2026-11-18 판)
 
@@ -117,7 +119,7 @@ export const CUP_FSM_MEMORY: FsmMemory = {
 };
 ```
 
-seed 행동 화살표는 둘로 나뉜다: **사용자가 정한 습관**(물 채우기·콜라·에어컨·코치 둘, 늘 둠)과 **떠날 때 묻기**(마시는 중·TV 보며 마시던 중, 컵 치우기를 배우기 전 길). 채택 검사를 지난 컵 치우기 후보는 같은 트리거의 묻기 화살표를 바꾼다. 그 결과가 배운 뒤 기억이다:
+seed 행동 화살표는 둘로 나뉜다: **사용자가 정한 습관**(물 채우기·콜라·에어컨·코치 둘, 늘 둠)과 **떠날 때 묻기**(마시는 중·TV 보며 마시던 중, 컵 치우기를 배우기 전 길). 채택 검사를 지난 컵 치우기 후보는 같은 트리거의 묻기 화살표를 바꾼다. 말없이 에어컨 켜기는 seed에 없고, 통과하면 TV 보는 중 끝에 `{ to: "watching_tv", on: "사용자가 소파에 앉아 TV를 보기 시작한다.", action: "에어컨 켜기" }`로 더해진다(TV 보는 중이 된 뒤 판단에서 켠다. 떠나는 화살표와 한 판단에 겹치지 않게 자기 자신으로 가는 화살표다). 컵 치우기만 배운 결과가 배운 뒤 기억이다(합성 3일째부터 쓰는 기억):
 
 ```ts
 // scripts/learned-memory.ts (Task 1): 채택 검사를 지난 뒤(합성 3일째부터)의 로봇 FSM. 치우기를 보는 시험·영상·시연이 쓴다
@@ -149,7 +151,7 @@ export const LEARNED_FSM_MEMORY = learnedFsm();
 
 **두 FSM:**
 - **후보 FSM**(반성이 냄, 기록 DB 기억 종류 `fsm_candidates`): 상태마다 행동 없는 화살표 `next`와, (출발 상태, 행동)마다 화살표 조건 후보 1~3개를 가진 `rules`.
-- **로봇 FSM**(판단이 PAM에 보냄, 기억 종류 `fsm`): seed(사용자가 정한 습관 화살표는 늘, 떠날 때 묻기 화살표) + 채택 검사를 통과한 컵 치우기 후보(석준 님 `predictor_fsm`). 통과 후보와 같은 트리거(on·when)의 묻기 화살표는 그 후보가 그 자리(같은 번호)에서 바꾸고, 다른 트리거면 그 상태 끝에 더한다. 사용자가 정한 습관 화살표와 같은 트리거인 후보는 넣지 않는다(정한 습관이 먼저, 반성 기록 까닭 `settings`). 통과한 후보마다 화살표 하나다(석준 님은 통과 후보를 " or "로 한 트리거에 잇지만, 이 계획은 PAM 답이 화살표 번호로 하나를 가리키므로 따로 둔다).
+- **로봇 FSM**(판단이 PAM에 보냄, 기억 종류 `fsm`): seed(사용자가 정한 습관 화살표는 늘, 떠날 때 묻기 화살표) + 채택 검사를 통과한 배우는 행동 후보(컵 치우기·에어컨 켜기, 석준 님 `predictor_fsm`). 통과 후보와 같은 트리거(on·when)의 묻기 화살표는 그 후보가 그 자리(같은 번호)에서 바꾸고, 다른 트리거면 그 상태 끝에 더한다. 사용자가 정한 습관 화살표와 같은 트리거인 후보는 넣지 않는다(정한 습관이 먼저, 반성 기록 까닭 `settings`). 통과한 후보마다 화살표 하나다(석준 님은 통과 후보를 " or "로 한 트리거에 잇지만, 이 계획은 PAM 답이 화살표 번호로 하나를 가리키므로 따로 둔다).
 
 ```ts
 // src/contract/pam.ts
@@ -173,9 +175,11 @@ export interface CandidateFsm { initial_state: string; states: CandidateState[] 
 
 **시각 찾기**(석준 님 `marking.txt`): 덩어리 기록과 줄 기록을 받아 후보마다 일어난 때(그 출발 상태일 때만), 행동마다 사람이 직접 한 때(그 일을 하러 걸어가기 시작한 줄), 사람이 안 보인 구간을 낸다. 날마다 아직 모르는 (상태, 후보)·행동만 묻고 결과를 남긴다(`runtime/homes/<집>/habit/marks-<날>.json`). 답의 시각은 그날 기록 줄의 시각만 받는다(`validateMarks`).
 
-**밤 흐름**(하루 한 번, 판단 속도와 상관없음): 덩어리 기록 → 반성(후보 FSM, 입력: 덩어리 기록·지금까지의 후보 FSM·검사 결과·피드백) → 코드 모양 검사 → LLM 뜻 검사(거절이면 까닭을 붙여 한 번 다시 반성) → 시각 찾기(지난 날까지, 모르는 것만) → 채택 검사 → 로봇 FSM(seed 화살표 + 통과한 컵 치우기 후보, 같은 트리거의 묻기 화살표를 바꿈) → 코드 검사 → 저장(다음 날부터). 어느 단계든 끝내 거절·실패면 그날 새 판본을 저장하지 않고 전날 기억을 쓴다(반성 기록에 까닭).
+**밤 흐름**(하루 한 번, 판단 속도와 상관없음): 덩어리 기록 → 반성(후보 FSM, 입력: 덩어리 기록·지금까지의 후보 FSM·검사 결과·피드백) → 코드 모양 검사 → LLM 뜻 검사(거절이면 까닭을 붙여 한 번 다시 반성) → 시각 찾기(지난 날까지, 모르는 것만) → 채택 검사 → 로봇 FSM(seed 화살표 + 통과한 배우는 행동 후보, 같은 트리거의 묻기 화살표는 바꾸고 정한 습관 화살표는 그대로) → 코드 검사 → 저장(다음 날부터). 어느 단계든 끝내 거절·실패면 그날 새 판본을 저장하지 않고 전날 기억을 쓴다(반성 기록에 까닭).
 
-**합성 이야기 날짜 계산:** 하루 한 번 컵을 두고 떠나고(후보 1번) 로봇이 물을 때마다 「치워 주세요」로 답하면(따라옴 1번) 다른 때에는 행동이 없어 `p0 = 0.01`이다. 첫날 밤 `n=1, k=1`: `P = 0.01` → 통과 못 함. 둘째 날 밤 `n=2, k=2`: `P = 0.0001 < 0.001`, `k/n = 1` → 통과. 그래서 「처음 이틀은 묻고 → 3일째부터 바로 치우기」다(사용자 확정 2026-11-18, Task 9). 3일째부터 로봇이 바로 치운 창은 못 봄이라 셈이 `n=2, k=2`에 머물고 통과가 이어진다. 하루 두 번 떠나면(아침·저녁) 첫날 밤에 `n=2, k=2`로 통과해 2일째부터다. 합성 데이터는 하루 한 번(아침 커피)만 묻게 맞춘다.
+**합성 이야기 날짜 계산:** 하루 한 번 컵을 두고 떠나고(후보 1번) 로봇이 물을 때마다 「치워 주세요」로 답하면(따라옴 1번) 다른 때에는 행동이 없어 `p0 = 0.01`이다. 첫날 밤 `n=1, k=1`: `P = 0.01` → 통과 못 함. 둘째 날 밤 `n=2, k=2`: `P = 0.0001 < 0.001`, `k/n = 1` → 통과. 그래서 「처음 이틀은 묻고 → 3일째부터 바로 치우기」다(사용자 확정 2026-11-18, Task 9). 3일째부터 로봇이 바로 치운 창은 못 봄이라 셈이 `n=2, k=2`에 머물고 통과가 이어진다.
+
+**말없이 에어컨(데모 「2-습관」) 날짜 계산:** 날마다 TV 보기 시작이 한 번이다(합성 일요일 낮 TV는 뺀다, 하루 두 번이면 하루 앞당겨진다). 1일째는 「아 덥다」에 정한 습관 화살표로 로봇이 켜서 그 창은 못 봄이다. 2·3일째는 사람이 앉은 뒤 20~60초 안에 거실 에어컨을 스스로 켠다(따라옴). 행동은 그 행동의 대상 기기(거실 에어컨)만 센다(침실 에어컨은 다른 기기). 그래서 `p0 = 0.01`이다. 첫째 밤 `n=0`(못 봄 1) → 통과 못 함. 둘째 밤 `n=1, k=1`: `P = 0.01` → 통과 못 함. 셋째 밤 `n=2, k=2`: `P = 0.0001` → 통과. 그래서 **4일째부터** 말없이 켜고, 그 뒤 로봇이 켠 창은 못 봄이라 셈이 `n=2, k=2`에 머문다(Task 9 시험). 하루 두 번 떠나면(아침·저녁) 첫날 밤에 `n=2, k=2`로 통과해 2일째부터다. 합성 데이터는 하루 한 번(아침 커피)만 묻게 맞춘다.
 
 ## 시험·영상이 쓰는 기억 (2026-11-18 확인)
 
@@ -186,6 +190,7 @@ export interface CandidateFsm { initial_state: string; states: CandidateState[] 
 | 서버 e2e(`goal-e2e`·`video-mode-e2e`·`video-real-e2e`·`wide-glass-e2e`·`cup-branches-e2e`·`mokryeon-e2e`·`noonchi-e2e`, `demo-e2e` 장면 1) | 새 runtime이라 seed. 가짜 PAM이 기억과 상관없이 `task_index`로 컵 치우기 | `useLearnedMemory(runtimeDir)` 뒤 서버. 가짜 PAM은 받은 기억에서 화살표를 찾고 없으면 화살표 없음 |
 | 단위 시험(`world-decide`·`brain-goal`·`act-goal`·`brain-thought`·ui 고정 자료)·트윈 가짜 실행(`scripts/twin3d/fake-run.ts`) | `CUP_FSM_MEMORY`(지금 seed에 컵 치우기가 있음) | 치우기를 보는 것은 `LEARNED_FSM_MEMORY`, seed로는 묻기·목표 없음을 본다 |
 | 시연(`demo-setup.ts day1`) | 빈 DB라 seed(지금 seed에 컵 치우기가 있음) | 치우기 장면은 `day1` 뒤 `learned`. 배우기 전 장면은 `day1`만(떠나면 묻기) |
+| 시연 「2-습관」(`demo-setup.ts week` → `reflect --chain`, 또는 `reflect --scripted`) | 합성 7일 판본 + `habit`(말없이 에어컨 규칙을 마지막 판본에 바로 씀) | 합성 7일 밤마다 채택 검사: 마지막 판본에 배운 컵 치우기와 배운 말없이 에어컨 화살표(4일째부터)가 있다. 바로 쓰는 `habit` 갈래는 없다 |
 
 배운 뒤 기억(`LEARNED_FSM_MEMORY`)은 실제 채택 결과(Task 13 `adoptedFsm`)와 합성 3일째부터 쓰는 로봇 FSM(Task 9 `memoryAfter`)과 화살표가 같다. 두 시험이 막는다.
 
@@ -371,7 +376,7 @@ export interface CandidateFsm { initial_state: string; states: CandidateState[] 
 **Files:**
 - Modify: `src/brain/decision.ts` (타입 `FsmMemory`·`validateMemory`·`CUP_FSM_MEMORY`)
 - Modify: `src/brain/pam/budget.ts:23` (빈 기억 모양)
-- Modify: `src/act/tasks.ts` (`TaskSpec.learn`, 「컵 치우기」에 `learn: true`, `LEARNED_ACTIONS`·`ASK_ACTION`, 「사용자에게 물어보기」 설명)
+- Modify: `src/act/tasks.ts` (`TaskSpec.learn`, 「컵 치우기」·「에어컨 켜기」에 `learn: true`, `LEARNED_ACTIONS`·`ASK_ACTION`, 「사용자에게 물어보기」 설명)
 - Create: `scripts/learned-memory.ts` (배운 뒤 기억), `tests/helpers/memory.ts` (`useLearnedMemory`)
 - Test: `tests/brain-decision.test.ts`
 
@@ -383,7 +388,7 @@ export interface CandidateFsm { initial_state: string; states: CandidateState[] 
   - `export interface FsmMemory { initial_state: string; states: FsmState[] }`
   - `validateMemory(value, "fsm"): FsmMemory`(코드 검사, 새 모양만), `PERSON_ACTIVITIES: readonly string[]`
   - `CUP_FSM_MEMORY: FsmMemory`(「새 기억 모양」 절의 seed, 컵 치우기 화살표 없음)
-  - `TaskSpec.learn?: true`, `LEARNED_ACTIONS: readonly string[]`(`["컵 치우기"]`), `ASK_ACTION = "사용자에게 물어보기"`(`src/act/tasks.ts`)
+  - `TaskSpec.learn?: true`, `LEARNED_ACTIONS: readonly string[]`(`["컵 치우기", "에어컨 켜기"]`), `ASK_ACTION = "사용자에게 물어보기"`(`src/act/tasks.ts`)
   - `learnedFsm(states?: readonly string[]): FsmMemory`, `LEARNED_FSM_MEMORY: FsmMemory`, `saveLearned(db: HistoryDb, day: string, memory?: FsmMemory): number`(`scripts/learned-memory.ts`)
   - `useLearnedMemory(runtimeDir: string): number`(`tests/helpers/memory.ts`, 서버를 띄우기 전 그 runtime 기록 DB에 오늘 판본으로)
 
@@ -402,7 +407,7 @@ describe("사람 활동 FSM 코드 검사", () => {
   });
   it("seed에는 컵 치우기 화살표가 없고(배우는 습관) 사용자가 정한 습관 화살표는 있다. 배운 뒤 기억은 마시는 중에서 떠나는 묻기 화살표 자리만 컵 치우기다", () => {
     const actions = (m: FsmMemory) => m.states.flatMap((s) => s.next.flatMap((e) => (e.action ? [e.action] : [])));
-    expect(LEARNED_ACTIONS).toEqual(["컵 치우기"]);
+    expect(LEARNED_ACTIONS).toEqual(["컵 치우기", "에어컨 켜기"]);
     expect(actions(CUP_FSM_MEMORY)).not.toContain("컵 치우기");
     expect(actions(CUP_FSM_MEMORY)).toEqual(expect.arrayContaining(["컵에 물 채워 주기", "컵에 콜라 따라 주기", "에어컨 켜기", "라면 끓이기 알려 주기", "전자레인지로 데우기 알려 주기"]));
     expect(validateMemory(LEARNED_FSM_MEMORY, "fsm")).toBe(LEARNED_FSM_MEMORY);
@@ -542,8 +547,8 @@ function validateFsm(value: Json): FsmMemory {
 
 ```ts
 // src/act/tasks.ts
-export interface TaskSpec { /* …지금 칸… */ /** 반성·채택 검사로 배우는 행동(사용자 답 2026-11-18: 컵 치우기 하나). 나머지 행동 화살표는 사용자가 정한 습관이라 늘 둔다. */ learn?: true }
-// TASKS["컵 치우기"]에 learn: true. 「사용자에게 물어보기」 설명: "치울지 아직 모르는 때(배우기 전 습관, 컵 안이 안 보임 등) 폰으로 사용자에게 어떻게 할지 묻는다."
+export interface TaskSpec { /* …지금 칸… */ /** 반성·채택 검사로 새 화살표를 배울 수 있는 행동(사용자 답: 컵 치우기, 말없이 TV 보기 시작 → 에어컨 켜기). seed 행동 화살표(묻기 빼고)는 이 칸과 상관없이 사용자가 정한 습관이라 늘 둔다. */ learn?: true }
+// TASKS["컵 치우기"]·TASKS["에어컨 켜기"]에 learn: true. 「사용자에게 물어보기」 설명: "치울지 아직 모르는 때(배우기 전 습관, 컵 안이 안 보임 등) 폰으로 사용자에게 어떻게 할지 묻는다."
 export const LEARNED_ACTIONS: readonly string[] = TASK_NAMES.filter((n) => TASKS[n]!.learn === true);
 export const ASK_ACTION = "사용자에게 물어보기";
 ```
@@ -701,6 +706,11 @@ describe("사람 상태 FSM 판단 답", () => {
   });
   it("화살표 없음(-1, from null)은 대기다", () => {
     expect(parsePrediction(ok({ state: "drinking", from: null, next_index: -1 }), tasks, CUP_FSM_MEMORY)).toMatchObject({ status: "valid", selected_action: null, prediction: { task_index: -1 } });
+  });
+  it("배운 뒤에도 식탁(마시는 중)에서 떠나면 치우고 TV 앞(같이 마시는 중)에서 떠나면 묻는다(사용자 답 2026-11-19)", () => {
+    const tvLeave = LEARNED_FSM_MEMORY.states.find((s) => s.id === "watching_tv")!.next.findIndex((e) => e.to === "*");
+    expect(parsePrediction(ok({ state: "away", from: "drinking", next_index: 0 }), tasks, LEARNED_FSM_MEMORY).selected_action).toBe("컵 치우기");
+    expect(parsePrediction(ok({ state: "away", from: "watching_tv", next_index: tvLeave }), tasks, LEARNED_FSM_MEMORY).selected_action).toBe("사용자에게 물어보기");
   });
   it("화살표 행동이 지금 행동 목록에 없으면(코치 행동을 눈치 모드에서) 화살표는 남기고 행동은 대기다", () => {
     const p = parsePrediction(ok({ state: "cooking", from: "cooking", next_index: 0 }), tasks, CUP_FSM_MEMORY);
@@ -909,7 +919,7 @@ else {
 - Modify: `src/brain/decide.ts` (거꾸로 찾기 지움, `last_state` 넘김, 판단 기록 `fsm`)
 - Modify: `src/brain/decision.ts` (`fsmRuleOf`·`fsmNow` 지움, `edgeLearned`)
 - Modify: `src/contract/pam.ts` (`FsmAt`·`FsmRuleAt` → `FsmStep`), `src/contract/events.ts:137-139,338`
-- Modify: `src/brain/thought.ts:27-32`, `src/world/labels.ts:10` (`FSM_STATE_TEXT`, `RULE_IF`에 묻기 한 줄), `ui/src/dashboard/data.ts:150-170`, `ui/src/dashboard/words.ts`
+- Modify: `src/brain/thought.ts:27-32`, `src/world/labels.ts:10` (`FSM_STATE_TEXT`), `src/act/tasks.ts`(`TASK_SAY` 묻기 말), `ui/src/dashboard/data.ts:150-170`, `ui/src/dashboard/words.ts`
 - Modify: `scripts/twin3d/fake-run.ts:117,177`(컵 치우기 판단 `fsm`은 `LEARNED_FSM_MEMORY` 화살표, `learned: true`), `ui/tests/dashboard/fixtures.ts`(컵 갈래 고정 자료는 배운 뒤 기억 화살표)
 - Test: `tests/world-decide.test.ts`, `tests/brain-thought.test.ts`, `tests/brain-person.test.ts`(새), `ui/tests/dashboard/data.test.ts`
 
@@ -1046,16 +1056,19 @@ describe("World State 하는 일 → 사람 상태", () => {
 ```ts
 // tests/brain-thought.test.ts (이 파일의 decision(id, action, fsm) 도우미. rule 도우미는 아래 step으로 바꾼다)
 const step = (o: Partial<FsmStep> = {}): FsmStep => ({ state: "away", from: null, next_index: -1, to: null, on: null, when: null, action: null, learned: false, ...o });
-it("허락 문장은 판단이 낸 화살표에서 만든다: seed 트리거면 RULE_IF(묻기 자리를 바꾼 배운 컵 치우기도), 새 트리거의 배운 화살표는 on·when을 줄이지 않고, 화살표 없음은 줄이 없다", () => {
+it("허락 문장은 판단이 낸 화살표에서 만든다: seed 트리거면 RULE_IF(묻기 자리를 바꾼 배운 컵 치우기도), 새 트리거의 배운 화살표는 on·when을 줄이지 않고, 묻기·화살표 없음은 허락 문장이 없다", () => {
   const leave = LEARNED_FSM_MEMORY.states[0]!.next[0]!;
   expect(decisionLines(decision("pam-1", "컵 치우기", step({ from: "drinking", next_index: 0, to: "*", on: leave.on, action: "컵 치우기", learned: true })))).toEqual(["컵을 두고 자리를 뜨면 치워도 된다고 하셨어요"]);
-  expect(decisionLines(decision("pam-2", "사용자에게 물어보기", step({ from: "drinking", next_index: 0, to: "*", on: leave.on, action: "사용자에게 물어보기" })))).toEqual(["컵을 두고 자리를 뜨면 여쭤봐도 된다고 하셨어요"]);
+  // 배우기 전 떠날 때: 허락 문장 없이 로봇 말만(사용자 답 2026-11-19). 배운 뒤 컵 치우기는 허락 문장 다음 「컵을 치울게요.」
+  expect(decisionLines(decision("pam-2", "사용자에게 물어보기", step({ from: "drinking", next_index: 0, to: "*", on: leave.on, action: "사용자에게 물어보기" })))).toEqual([]);
+  expect(SAY_TEXT.decided("사용자에게 물어보기")).toBe("컵을 치울지 여쭤볼게요.");
+  expect(SAY_TEXT.decided("컵 치우기")).toBe("컵을 치울게요.");
   expect(decisionLines(decision("pam-3", "컵 치우기", step({ from: "drinking", next_index: 2, to: "*", on: "사용자가 외출하러 나간다.", when: "같이 마시는 중이었다.", action: "컵 치우기", learned: true })))[0]).toMatch(/^사용자가 외출하러 나간다\. 같이 마시는 중이었다면 /);
   expect(decisionLines(decision("pam-4", null, step({ state: "drinking" })))).toEqual([]);
 });
 ```
 
-(허락 문장 정답 「컵을 두고 자리를 뜨면 치워도 된다고 하셨어요」는 지금 `TASK_SAY`·`RULE_IF` 그대로다. 묻기 줄 「컵을 두고 자리를 뜨면 여쭤봐도 된다고 하셨어요」는 남은 물음 2의 기본안이다. 저장소 규칙 표의 「허락 문장은 사용자가 정한 짧은 꼴」을 지킨다.)
+(허락 문장 정답 「컵을 두고 자리를 뜨면 치워도 된다고 하셨어요」는 지금 `TASK_SAY`·`RULE_IF` 그대로다. 묻기는 허락 문장 없이 로봇 말 「컵을 치울지 여쭤볼게요.」 한 줄이다(사용자 답 2026-11-19). `SAY_TEXT`는 `src/act/labels.ts`다. 저장소 규칙 표의 「허락 문장은 사용자가 정한 짧은 꼴」을 지킨다.)
 
 - [ ] **Step 2: 실패 확인**
 
@@ -1154,13 +1167,15 @@ export function fsmStep(memory: FsmMemory, p: Prediction): FsmStep {
 export function decisionLines(e: Decision): string[] {
   const f = e.status === "valid" ? e.fsm : null;
   if (!e.action || !f?.on || f.action !== e.action) return [];
+  // 묻기는 허락 문장이 없다: 로봇 말 「컵을 치울지 여쭤볼게요.」(SAY_TEXT.decided)만 나간다(사용자 답 2026-11-19)
+  if (e.action === ASK_ACTION) return [];
   // 배운 화살표라도 seed와 같은 트리거(묻기 자리를 바꾼 컵 치우기)면 사용자가 정한 짧은 꼴
   const short = !f.learned || seedTrigger(f.from!, f.on, f.when);
   return [`${ruleIf({ trigger: f.when ? `${f.on} ${f.when}` : f.on, action: e.action, learned: !short })} ${TASK_SAY[e.action]?.may ?? `${josa(e.action, "을/를")} 해도`} 된다고 하셨어요`];
 }
 ```
 
-임시 상태(`~<값>`)의 이름은 `STATE_TEXT[값]`(예 「노트북 쓰는 중」). `FSM_STATE_TEXT`: `{ drinking: "먹거나 마시는 중", watching_tv: "TV 보는 중", cooking: "요리하는 중", away: "자리에 없음" }`(`left_cup` 지움). `RULE_IF`에 `"사용자에게 물어보기": "컵을 두고 자리를 뜨면"`(배우기 전 떠날 때 묻는 줄, 남은 물음 2 기본안). 화면 알약(`ui/src/dashboard/data.ts` `talkOf`): 상태 = `FSM_STATE_TEXT[f.state] ?? f.state`, 트리거 = `f.on ?? WORDS.noTransition`(「화살표 없음」), 액션 = `f.action ?? WORDS.idle`. `WORDS.manyRules`·`noRule`·`unknown`(상태 모름)은 지운다. `events.ts`의 판단 기록 `fsm` 타입은 `FsmStep | null`.
+임시 상태(`~<값>`)의 이름은 `STATE_TEXT[값]`(예 「노트북 쓰는 중」). `FSM_STATE_TEXT`: `{ drinking: "먹거나 마시는 중", watching_tv: "TV 보는 중", cooking: "요리하는 중", away: "자리에 없음" }`(`left_cup` 지움). `TASK_SAY["사용자에게 물어보기"].will`은 「컵을 치울지 여쭤볼게요」다(배우기 전 떠날 때 메시지 상자 줄, 사용자 답 2026-11-19). `RULE_IF`에 묻기 줄은 없다. 화면 알약(`ui/src/dashboard/data.ts` `talkOf`): 상태 = `FSM_STATE_TEXT[f.state] ?? f.state`, 트리거 = `f.on ?? WORDS.noTransition`(「화살표 없음」), 액션 = `f.action ?? WORDS.idle`. `WORDS.manyRules`·`noRule`·`unknown`(상태 모름)은 지운다. `events.ts`의 판단 기록 `fsm` 타입은 `FsmStep | null`.
 
 - [ ] **Step 4: 통과 확인**
 
@@ -1312,6 +1327,11 @@ describe("반성 뒤 검사(화살표)", () => {
     const w = settingsGuard(CUP_FSM_MEMORY, water);
     expect(w.memory.states[0]!.next.filter((e) => e.action === "컵에 물 채워 주기")).toEqual([CUP_FSM_MEMORY.states[0]!.next[1]]);
     expect(w.notes).toContainEqual(expect.objectContaining({ from: "drinking", on: "사용자가 물을 다 마신다.", kept: false, reason: "settings" }));
+    // 에어컨 켜기는 배우는 행동이어도 덥다·부채질 화살표는 정한 습관이라 되돌린다
+    const hot = structuredClone(CUP_FSM_MEMORY);
+    const seedHot = CUP_FSM_MEMORY.states[1]!.next[1]!;
+    hot.states[1]!.next[1] = { ...seedHot, action: "컵에 콜라 따라 주기" };
+    expect(settingsGuard(CUP_FSM_MEMORY, hot).memory.states[1]!.next.filter((e) => e.on === seedHot.on)).toEqual([seedHot]);
   });
   it("반성이 요리 상태 id를 바꿨으면 그 하는 일(cooking)을 가진 상태에 코치 화살표를 붙이고 seed cooking을 되살리지 않는다(코드 검사 통과)", () => {
     const proposed = structuredClone(CUP_FSM_MEMORY);
@@ -1347,11 +1367,12 @@ export function learnedEdges(previous: FsmMemory, proposed: FsmMemory): EdgeLine
   return linesOf(proposed).filter((e) => !had.has(keyOf(e)));
 }
 
-/** 사용자가 정한 습관 행동: 배우는 행동(`LEARNED_ACTIONS`)도 묻기(`ASK_ACTION`)도 아니다. 반성·채택이 바꾸지 않는다(사용자 답 2026-11-18). */
+/** 배우지 않는 행동(배우는 행동도 묻기도 아님): 반성이 이 행동 화살표를 새로 내거나 바꾸지 못한다. */
 const isSettings = (a: string) => !LEARNED_ACTIONS.includes(a) && a !== ASK_ACTION;
 
 export function settingsGuard(seed: FsmMemory, proposed: FsmMemory): HabitOutput {
-  const seedSettings = linesOf(seed).filter((e) => isSettings(e.action));
+  // 사용자가 정한 습관 = seed의 묻기가 아닌 행동 화살표(배우는 행동 에어컨 켜기의 덥다·부채질 화살표도 든다): 늘 seed 그대로 되돌린다
+  const seedSettings = linesOf(seed).filter((e) => e.action !== ASK_ACTION);
   const notes: HabitRuleNote[] = [];
   const states = proposed.states.map((s) => ({
     ...s, activity: [...s.activity],
@@ -1555,7 +1576,7 @@ git commit -m "feat(reflect): check the reflected memory's meaning with the PAM 
   - `interface CheckDay { start: number; end: number; candidate: number[]; action: number[]; unseen: [number, number][]; answered?: number[] }`(자정부터 초. `unseen`에는 사람이 안 보인 구간과 로봇이 그 행동을 한 구간이 함께 든다. `answered`는 그 행동을 물은 질문에 답한 때로, 이 계획이 더한 칸이다)
   - `interface CheckResult { n: number; k: number; unknown: number; rate: number; base_rate: number; p0: number; p_value: number; passed: boolean }`
   - `binomialTail(k: number, n: number, p: number): number`, `checkCandidate(days: CheckDay[], window = FOLLOW_SECONDS): CheckResult`
-  - `adoptedFsm(c: CandidateFsm, passed: ReadonlySet<string>, seed: FsmMemory): FsmMemory` — `passed`의 열쇠는 `adoptKey(state, action, candidate)` = `JSON.stringify([state, action, on, when ?? null])`. seed 상태는 seed 화살표 차례 그대로(사용자가 정한 습관 화살표는 늘), 통과한 컵 치우기 후보는 같은 (on, when)의 묻기 화살표를 그 자리에서 바꾸고 새 트리거면 끝에 더한다. 사용자가 정한 습관 화살표와 같은 (on, when)인 후보와 배우는 행동이 아닌 후보는 넣지 않는다. 이름을 바꾼 상태에는 Task 6 `hostOf` 규칙. `adoptKey(state, action, candidate)`도 낸다. 결과는 `validateMemory`(코드 검사)를 지난다.
+  - `adoptedFsm(c: CandidateFsm, passed: ReadonlySet<string>, seed: FsmMemory): FsmMemory` — `passed`의 열쇠는 `adoptKey(state, action, candidate)` = `JSON.stringify([state, action, on, when ?? null])`. seed 상태는 seed 화살표 차례 그대로(사용자가 정한 습관 화살표는 늘), 통과한 배우는 행동 후보(컵 치우기·에어컨 켜기)는 같은 (on, when)의 묻기(또는 행동 없는) 화살표를 그 자리에서 바꾸고 새 트리거면 끝에 더한다. 사용자가 정한 습관 화살표와 같은 (on, when)인 후보와 배우는 행동이 아닌 후보는 넣지 않는다. 이름을 바꾼 상태에는 Task 6 `hostOf` 규칙. `adoptKey(state, action, candidate)`도 낸다. 결과는 `validateMemory`(코드 검사)를 지난다.
 
 - [ ] **Step 1: 실패하는 시험 쓰기** (`tests/pam-adopt.test.ts`, 시각은 `t("07:10:00")`처럼 초로)
 
@@ -1657,9 +1678,17 @@ describe("로봇 FSM 만들기(석준 님 predictor_fsm을 화살표로)", () =>
   it("사용자가 정한 습관과 같은 트리거인 후보, 배우는 행동이 아닌 후보는 통과로 와도 넣지 않는다", () => {
     const c = withClear();
     const water = CUP_FSM_MEMORY.states[0]!.next[1]!;
-    c.states[0]!.rules.push({ to: "drinking", action: "컵 치우기", candidates: [{ on: water.on }] }, { to: "away", action: "에어컨 켜기", candidates: [{ on: "사용자가 외출하러 나간다." }] });
-    const out = adoptedFsm(c, new Set([adoptKey("drinking", "컵 치우기", { on: water.on }), adoptKey("drinking", "에어컨 켜기", { on: "사용자가 외출하러 나간다." })]), CUP_FSM_MEMORY);
+    c.states[0]!.rules.push({ to: "drinking", action: "컵 치우기", candidates: [{ on: water.on }] }, { to: "away", action: "컵에 콜라 따라 주기", candidates: [{ on: "사용자가 외출하러 나간다." }] });
+    const out = adoptedFsm(c, new Set([adoptKey("drinking", "컵 치우기", { on: water.on }), adoptKey("drinking", "컵에 콜라 따라 주기", { on: "사용자가 외출하러 나간다." })]), CUP_FSM_MEMORY);
     expect(out).toEqual(CUP_FSM_MEMORY);
+  });
+  it("말없이 TV 보기 시작 → 에어컨 켜기 후보는 통과하면 TV 보는 중 끝에 더하고, 덥다·부채질 → 에어컨(정한 습관)은 같은 트리거 후보가 와도 그대로다", () => {
+    const TV_START_ON = "사용자가 소파에 앉아 TV를 보기 시작한다.";
+    const c = candidateOf(CUP_FSM_MEMORY);
+    const hot = CUP_FSM_MEMORY.states[1]!.next[1]!;
+    c.states.find((s) => s.id === "watching_tv")!.rules.push({ to: "watching_tv", action: "에어컨 켜기", candidates: [{ on: TV_START_ON }, { on: hot.on }] });
+    const out = adoptedFsm(c, new Set([adoptKey("watching_tv", "에어컨 켜기", { on: TV_START_ON }), adoptKey("watching_tv", "에어컨 켜기", { on: hot.on })]), CUP_FSM_MEMORY);
+    expect(out.states.find((s) => s.id === "watching_tv")!.next).toEqual([...CUP_FSM_MEMORY.states[1]!.next, { to: "watching_tv", on: TV_START_ON, action: "에어컨 켜기" }]);
   });
 });
 ```
@@ -1859,9 +1888,11 @@ it("행동 목록에는 안 하기 행동이 없다(안 하기는 화살표 없�
 **Interfaces:**
 - Consumes: Task 1 `LEARNED_FSM_MEMORY`·`saveLearned`, Task 1~8, Task 13 `checkCandidate`·`adoptedFsm`·`adoptKey`.
 - Produces:
-  - `SYNTH_CANDIDATES: CandidateFsm` — 합성 반성이 내는 후보 FSM(seed 모양 + 마시는 중 → `*` 컵 치우기 후보 하나, `on`은 seed 묻기 화살표와 같음).
-  - `weekMarks(n: number): CheckDay[]` — 합성 n일치 채택 검사 입력(장면에서 바로 뽑음, 모델 안 부름): 후보 = 아침 커피 뒤 떠난 때, 행동 = 「치워 주세요」 답 때, `answered` = 1·2일째 답, 안 보인 구간 = 집에 없는 때 + 3일째부터 로봇이 치운 구간.
-  - `memoryAfter(i, h, habit?): FsmMemory` — i번째 날(0부터) 밤 반성이 남기는 로봇 FSM = `adoptedFsm(SYNTH_CANDIDATES, 통과 ? {컵 치우기 후보} : {}, CUP_FSM_MEMORY)` + 설명. 통과는 `checkCandidate(weekMarks(i + 1)).passed`. 1일째는 seed, 2일째는 `memoryAfter(0)`(묻기), 3일째부터 `memoryAfter(1)` 뒤(치우기).
+  - `SYNTH_CANDIDATES: CandidateFsm` — 합성 반성이 내는 후보 FSM(seed 모양 + 마시는 중 → `*` 컵 치우기 후보 하나(`on`은 seed 묻기 화살표와 같음) + TV 보는 중 → 자기 자신 에어컨 켜기 후보 하나(`on` 「사용자가 소파에 앉아 TV를 보기 시작한다.」)).
+  - `weekMarks(n: number, which: "clear" | "aircon"): CheckDay[]` — 합성 n일치 채택 검사 입력(장면에서 바로 뽑음, 모델 안 부름).
+    - `clear`: 후보 = 아침 커피 뒤 떠난 때, 행동 = 「치워 주세요」 답 때, `answered` = 1·2일째 답, 안 보인 구간 = 집에 없는 때 + 3일째부터 로봇이 치운 구간.
+    - `aircon`: 후보 = 소파에 앉아 TV를 보기 시작한 때, 행동 = 사람이 거실 에어컨을 켠 때(2·3일째), 안 보인 구간 = 집에 없는 때 + 로봇이 거실 에어컨을 켠 구간(1일째 「아 덥다」, 4일째부터 배운 화살표).
+  - `memoryAfter(i, h): FsmMemory` — i번째 날(0부터) 밤 반성이 남기는 로봇 FSM = `adoptedFsm(SYNTH_CANDIDATES, 통과한 후보, CUP_FSM_MEMORY)` + 설명. 통과는 `checkCandidate(weekMarks(i + 1, …)).passed`. 컵: 1일째 seed, 2일째 `memoryAfter(0)`(묻기), 3일째부터 치우기. 에어컨: 4일째(`memoryAfter(2)`)부터 말없이 켬. `habit` 칸은 없앤다(채택 검사가 정한다).
   - `demo-setup.ts learned [--dir runtime/demo/day1]` — 서버를 끈 채 `saveLearned(db, 오늘)`(배운 뒤 기억을 오늘 판본으로, 오늘 고정을 바꿈)과 반성 줄(`data.synthetic = true`). 서버 잠금이 잡혀 있으면 멈춘다(지금 `reflect --scripted`와 같은 잠금).
   - `hasLearnedClear(memory: unknown): boolean`(`scripts/video-check.ts`) — 새 모양이고 마시는 중에서 나가는 컵 치우기 화살표가 있다.
   - `/api/memory/day/<날>` 답 `uses.memory` — 그날 쓰는 기억 JSON.
@@ -1889,6 +1920,23 @@ it("합성 일주일: 상태는 seed 넷, 떠날 때 1·2일째는 묻고 둘째
   const leaves = db.list({ kinds: ["decision"], limit: 5000 }).filter((r) => (r.data as { fsm?: FsmStep | null }).fsm?.from === "drinking" && (r.data as { fsm: FsmStep }).fsm.to === ANY_STATE);
   expect(leaves.map((r) => r.text)).toEqual(["사용자에게 물어보기", "사용자에게 물어보기", "컵 치우기", "컵 치우기", "컵 치우기", "컵 치우기", "컵 치우기"]);
 });
+it("합성 일주일 말없이 에어컨(데모 「2-습관」): 1일째 「아 덥다」는 로봇이 켜서 못 봄, 2·3일째 사람이 켬, 셋째 밤 통과해 4일째부터 말없이 켠다. 덥다·부채질 화살표는 날마다 그대로다", () => {
+  const db = seedWeek();
+  const TV_START_ON = "사용자가 소파에 앉아 TV를 보기 시작한다.";
+  const HOT = CUP_FSM_MEMORY.states.find((s) => s.id === "watching_tv")!.next[1]!;
+  const tv = (m: FsmMemory) => m.states.find((s) => s.id === "watching_tv")!.next;
+  const used = [CUP_FSM_MEMORY, ...[0, 1, 2, 3, 4, 5].map((i) => memoryAfter(i, HOME))];
+  expect(used.map((m) => tv(m).some((e) => e.on === TV_START_ON && e.action === "에어컨 켜기"))).toEqual([false, false, false, true, true, true, true]);
+  expect(used.every((m) => tv(m).some((e) => e.on === HOT.on && e.action === "에어컨 켜기"))).toBe(true);
+  const nights = [1, 2, 3, 4, 5, 6, 7].map((n) => checkCandidate(weekMarks(n, "aircon")));
+  expect(nights.map((r) => r.passed)).toEqual([false, false, true, true, true, true, true]);
+  expect(nights.map((r) => [r.n, r.k, r.unknown])).toEqual([[0, 0, 1], [1, 1, 1], [2, 2, 1], [2, 2, 2], [2, 2, 3], [2, 2, 4], [2, 2, 5]]);
+  // 합성 판단: 1일째 덥다 화살표(정한 습관), 4일째부터 TV 보기 시작 화살표(배운 것)
+  const airs = db.list({ kinds: ["decision"], limit: 5000 }).filter((r) => r.text === "에어컨 켜기").map((r) => (r.data as { fsm: FsmStep }).fsm.on);
+  expect(airs).toEqual([HOT.on, TV_START_ON, TV_START_ON, TV_START_ON, TV_START_ON]);
+  // 배운 뒤에도 TV 앞에서 마시다 떠나면 묻는다(사용자 답 2026-11-19)
+  expect(tv(memoryAfter(5, HOME)).find((e) => e.to === ANY_STATE)!.action).toBe("사용자에게 물어보기");
+});
 ```
 
 ```ts
@@ -1912,7 +1960,10 @@ it("배운 컵 치우기 화살표가 있는 기억만 영상을 튼다(seed·�
 });
 ```
 
-`tests/history-api.test.ts`: `/api/memory/day/<날>`의 `uses.memory`가 그날 판본 기억이다. `tests/demo-e2e.test.ts`: 장면 1은 `day1` 뒤 `learned`로 돌고 판단 사건이 `fsm: { learned: true }`, 허락 문장 「컵을 두고 자리를 뜨면 치워도 된다고 하셨어요」, 첫 명령 「식탁으로 가 주세요」. 새 장면 「1-묻기」(`day1`만, seed): 사람이 컵을 두고 떠나면 폰에 「컵을 치울까요?」, 「치워 주세요」 답 뒤 첫 명령 「식탁으로 가 주세요」, 목표 기록 없음.
+`tests/history-api.test.ts`: `/api/memory/day/<날>`의 `uses.memory`가 그날 판본 기억이다. `tests/demo-e2e.test.ts`:
+- 장면 1은 `day1` 뒤 `learned`로 돌고 판단 사건이 `fsm: { learned: true }`, 메시지 상자 「컵을 두고 자리를 뜨면 치워도 된다고 하셨어요」 → 「…컵을 치울게요.」, 첫 명령 「식탁으로 가 주세요」.
+- 새 장면 「1-묻기」(`day1`만, seed): 사람이 컵을 두고 떠나면 메시지 상자 「컵을 치울지 여쭤볼게요.」(허락 문장 없음), 폰에 「컵을 치울까요?」, 「치워 주세요」 답 뒤 첫 명령 「식탁으로 가 주세요」, 목표 기록 없음.
+- 장면 4(합성 7일 반성 뒤 말없이 에어컨)는 밤마다 채택 검사를 거친다: 가짜 PAM 시각 찾기 답은 `weekMarks`와 같은 시각(시험 도우미)이고, 7일 판본에 TV 보기 시작 → 에어컨 켜기 화살표가 있으며, 말없이 TV를 보면 그 화살표로 켠다(`fsm: { learned: true }`). 덥다·부채질 화살표는 seed 그대로다.
 
 - [ ] **Step 2: 실패 확인** — `npm run heavy -- npx vitest run tests/seed-history.test.ts tests/demo-setup.test.ts tests/video-check.test.ts`. Expected: FAIL
 - [ ] **Step 3: 구현**
@@ -1920,21 +1971,25 @@ it("배운 컵 치우기 화살표가 있는 기억만 영상을 튼다(seed·�
 ```ts
 // scripts/seed-history.ts
 const LEAVE_ON = CUP_FSM_MEMORY.states.find((s) => s.id === "drinking")!.next.find((e) => e.to === ANY_STATE)!.on;
+/** 데모 「2-습관」: 말없이 TV를 보기 시작하면 에어컨(배우는 습관, 사용자 답 2026-11-19). */
+export const TV_START_ON = "사용자가 소파에 앉아 TV를 보기 시작한다.";
 /** 합성 반성이 내는 후보 FSM: seed 모양에 마시는 중 → * 컵 치우기 후보 하나(seed 묻기 화살표와 같은 on). */
 export const SYNTH_CANDIDATES: CandidateFsm = {
   initial_state: CUP_FSM_MEMORY.initial_state,
   states: CUP_FSM_MEMORY.states.map((s) => ({
     id: s.id, description: s.description, activity: [...s.activity],
     next: s.next.filter((e) => !e.action).map(({ to, on }) => ({ to, on })),
-    rules: s.id === "drinking" ? [{ to: ANY_STATE, action: "컵 치우기", candidates: [{ on: LEAVE_ON }] }] : [],
+    rules: s.id === "drinking" ? [{ to: ANY_STATE, action: "컵 치우기", candidates: [{ on: LEAVE_ON }] }]
+      : s.id === "watching_tv" ? [{ to: "watching_tv", action: "에어컨 켜기", candidates: [{ on: TV_START_ON }] }] : [],
   })),
 };
-const CLEAR_KEY = adoptKey("drinking", "컵 치우기", { on: LEAVE_ON });
+const KEYS = { clear: adoptKey("drinking", "컵 치우기", { on: LEAVE_ON }), aircon: adoptKey("watching_tv", "에어컨 켜기", { on: TV_START_ON }) } as const;
 
-/** i번째 날(0부터) 밤 반성이 남기는 로봇 FSM. 상태는 seed 넷 그대로이고 떠날 때 행동은 채택 검사(Task 13)가 정한다: 둘째 밤(i = 1)에 통과해 3일째부터 치운다.
- *  시간 습관(평일 7시 커피, 밤에는 묻지 않기)은 설명에만 적는다. habit은 남은 물음 1 답을 따른다. */
-export function memoryAfter(i: number, h: Pick<HomeInfo, "table" | "side" | "livingAc">, habit = false): FsmMemory {
-  const passed = checkCandidate(weekMarks(i + 1)).passed ? new Set([CLEAR_KEY]) : new Set<string>();
+/** i번째 날(0부터) 밤 반성이 남기는 로봇 FSM. 상태는 seed 넷 그대로이고 배우는 화살표는 채택 검사(Task 13)가 정한다:
+ *  컵 치우기는 둘째 밤(i = 1)에 통과해 3일째부터, 말없이 에어컨은 셋째 밤(i = 2)에 통과해 4일째부터.
+ *  시간 습관(평일 7시 커피, 밤에는 묻지 않기)은 설명에만 적는다. */
+export function memoryAfter(i: number, h: Pick<HomeInfo, "table" | "side" | "livingAc">): FsmMemory {
+  const passed = new Set((["clear", "aircon"] as const).filter((w) => checkCandidate(weekMarks(i + 1, w)).passed).map((w) => KEYS[w]));
   const m = adoptedFsm(SYNTH_CANDIDATES, passed, CUP_FSM_MEMORY);
   const state = (id: string) => m.states.find((s) => s.id === id)!;
   if (i >= 1) state("drinking").description += ` ${i >= 5 ? "평일 7시쯤, 주말 8시 40분쯤" : "평일 7시쯤"} 일어나 ${h.table.label}에서 커피를 마신다.`;
@@ -1946,14 +2001,13 @@ export function memoryAfter(i: number, h: Pick<HomeInfo, "table" | "side" | "liv
 합성 장면(`liveDay`)은 **마시는 중에서 떠나는 때가 날마다 아침 커피 뒤 한 번**이게 바꾼다(하루 두 번이면 첫 밤에 통과해 2일째부터가 된다, `weekMarks` 셈이 막는다):
 - 아침(`morning`): 1일째의 첫 떠남(「거절」 뒤 돌아와 커피를 다시 따름)은 지운다(이것도 마시는 중에서 떠나는 때라 셈이 하나 더 는다). 1·2일째는 떠날 때 판단 「사용자에게 물어보기」 → 답 「치워 주세요」 → 컵 치우기 실행, 3일째부터 판단 「컵 치우기」(답 없음, 로봇이 바로 치움).
 - 집 식사(`meal`, 평일 저녁·주말 점심과 저녁)는 마시는 중 상태를 거치지 않게 밖에서 먹고 들어오는 장면(`away`)으로 바꾼다.
-- TV 보며 차(`tv` 차)는 TV 보는 중 상태라 이 후보에 들지 않는다. 떠날 때 차 컵을 들고 침실로 가고(치우기 행동 아님) 판단은 대기다. 밤 23시에 컵이 남는 장면·「밤에는 묻지 마세요」 답은 지운다.
+- TV(`tv`)는 날마다 TV 보기 시작이 한 번이다(일요일 낮 TV는 밖에 나간 장면으로 바꾼다). 1일째는 「아 덥다」 → 판단 에어컨 켜기(덥다 화살표, 정한 습관), 2·3일째는 앉은 뒤 20~60초 안에 사람이 거실 에어컨을 말없이 켜고 판단은 대기, 4일째부터 판단 에어컨 켜기(TV 보기 시작 화살표, 배운 것)로 로봇이 켜고 사람은 켜지 않는다.
+- TV 보며 차(`tv` 차)는 TV 보는 중 상태라 컵 후보에 들지 않는다. 떠날 때 차 컵을 들고 침실로 가고(치우기 행동 아님) 판단은 대기다. 밤 23시에 컵이 남는 장면·「밤에는 묻지 마세요」 답은 지운다.
 - 판단 글: 「left_cup 규칙대로」 → 「마시는 중에서 떠나는 화살표대로」, 「drinking 단계로 돌아와」 → 「마시는 중으로 돌아와」, 「watching_tv 규칙대로」 → 「TV 보는 중 화살표대로」. 그대로 두기를 고르던 판단은 대기.
 
-`weekMarks(n)`은 이 장면에서 바로 뽑는다(후보 = 아침 떠난 때, 1·2일째 행동·`answered` = 답 때, 3일째부터 `unseen`에 로봇 치우기 구간). `PAST_SEED`는 지운다(새 seed가 곧 배우기 전 기억이다).
+`weekMarks(n, which)`는 이 장면에서 바로 뽑는다(Interfaces). `PAST_SEED`는 지운다(새 seed가 곧 배우기 전 기억이다).
 
-`habit`(데모 「2-습관」, 말없이 TV를 보면 에어컨)은 남은 물음 1 답을 따른다:
-- (가) 장면을 빼면: `habit` 갈래, `DEMO_AIRCON_RULE`, `silentAircon`, demo-e2e 장면 4의 에어컨 부분, `reflect --scripted`의 에어컨 안내를 지운다.
-- (나) 배우는 행동에 더하면: `TASKS["에어컨 켜기"].learn`을 켜고, `SYNTH_CANDIDATES`의 TV 보는 중에 「사용자가 소파에 앉아 TV를 보기 시작한다.」 → 에어컨 켜기 후보를 더해 `tv()` 시각으로 채택 검사를 돌린다. 덥다·부채질 → 에어컨은 사용자가 정한 습관으로 늘 둔다(`adoptedFsm`이 seed 자리를 바꾸지 않는다).
+데모 「2-습관」(사용자 답 2026-11-19 (나)): `seedHistory`의 `habit` 칸과 마지막 판본에 말없이 에어컨 규칙을 바로 쓰던 갈래를 지운다. 그 화살표는 위 채택 검사로만 들어간다. `DEMO_AIRCON_RULE`(`tests/helpers/pam.ts`)은 화살표 `{ to: "watching_tv", on: TV_START_ON, action: "에어컨 켜기" }`로, `silentAircon`(`scripts/demo-setup.ts`)은 「TV 보는 중의 `TV_START_ON` 에어컨 켜기 화살표가 있음」으로 바꾼다. `reflect --scripted`는 합성 마지막 판본(`memoryAfter(6)`, 배운 컵 치우기·배운 말없이 에어컨)을 오늘부터로 넣는다.
 
 `scripts/demo-setup.ts`:
 - `learned`: 위 Interfaces대로. 끝에 「배운 뒤 기억 <v>판을 <오늘>부터 쓰게 넣었어요」 한 줄.
@@ -2060,7 +2114,7 @@ it("사람 줄 메시지도 받는다(받지 않으면 시간 줄 사람 줄이 
 4. 습관 거르기 자리 `HabitFilter`는 석준 님 채택 검사(`src/brain/pam/adopt.ts`)가 채운다. 시간·요일 같은 조건은 FSM `when`이 아니다.
 4-1. **석준 님과 맞출 목록**(석준 님 FSM은 아직 상태 안 규칙 모양 `rules[{triggers, action}]`):
    - 후보 FSM 모양: 행동 화살표 `rules[{to, action, candidates[{on, when?}]}]` + 행동 없는 `next[{to, on}]`, 상태에 `activity`, 처음 상태 `away`.
-   - 로봇 FSM 만들기: 통과 후보를 " or "로 잇지 않고 후보마다 화살표 하나(PAM 답이 화살표 번호로 가리킴). 사용자가 정한 습관 화살표는 검사 없이 늘 둠. 배우는 행동은 컵 치우기 하나이고, 통과 후보가 같은 트리거의 seed 묻기 화살표를 그 자리에서 바꿈.
+   - 로봇 FSM 만들기: 통과 후보를 " or "로 잇지 않고 후보마다 화살표 하나(PAM 답이 화살표 번호로 가리킴). 사용자가 정한 습관 화살표는 검사 없이 늘 둠. 배우는 행동은 컵 치우기·에어컨 켜기(말없이 TV 보기 시작)이고, 통과 후보가 같은 트리거의 seed 묻기 화살표는 그 자리에서 바꾸며 정한 습관 화살표(덥다·부채질 → 에어컨 등)는 바꾸지 않음.
    - 셈하기: 행동 때에 「로봇이 물었을 때 그 일을 해 달라고 답한 때」를 더함(「두라」 답은 안 더함). 로봇이 그 일을 한 구간은 안 보인 구간에 더해 못 봄, 답이 있는 창은 본 것(`CheckDay.answered` 한 칸 더함).
    - 시각 찾기 입력: 상태 = 사람 활동 FSM 상태(판단 기록 `fsm.state`), 후보 줄 = `state | on (when)`, 기록 = 덩어리 기록 + 관찰 텍스트 줄.
    - 숫자는 그대로(75%, p < 0.001, p0 바닥 0.01, 창 300초, 같은 후보 10초 안 한 번).
@@ -2100,12 +2154,18 @@ it("사람 줄 메시지도 받는다(받지 않으면 시간 줄 사람 줄이 
 | 합성 이야기 날 | 「처음 이틀은 묻고 → 3일째부터 바로 치우기」(채택 검사로 센 날) | 정한 것 13, 「합성 이야기 날짜 계산」, Task 9 |
 | 로봇이 습관대로 이미 한 때 | 셈에서 뺌(못 봄). 로봇이 한 일이 스스로 습관을 굳히지 않게 | 정한 것 20, 「셈하기」, Task 13·14 |
 | 사용자가 정한 습관 | 물 채우기·콜라·에어컨·코치는 채택 검사 없이 늘 로봇 FSM | 정한 것 23, `adoptedFsm`, `settingsGuard` |
-| 배우는 습관 | 컵 치우기 하나. seed에서 빼고 처음엔 묻기, 채택 검사를 지난 뒤에만 로봇 FSM | 정한 것 24, seed, Task 1·13 |
+| 배우는 습관 | 컵 치우기 하나. seed에서 빼고 처음엔 묻기, 채택 검사를 지난 뒤에만 로봇 FSM(2026-11-19에 말없이 TV 보기 시작 → 에어컨을 더함, 아래 표) | 정한 것 24, seed, Task 1·13 |
 | 화면·영상 시험 기억 | 배운 뒤(3일째 이후) 기억으로 | 「시험·영상이 쓰는 기억」, Task 3·9 |
 | 목표 미리 세우기 | 배운 화살표에서만 | 정한 것 25, Task 5 |
 
+## 사용자 답 (2026-11-19)
+
+| 물음 | 답 | 계획에서 |
+|---|---|---|
+| 데모 「2-습관」 | (나) 「말없이 TV 보기 시작 → 에어컨」을 배우는 습관에 더함(채택 검사 거침). 덥다·부채질 → 에어컨은 정한 습관 그대로. 합성 일주일 셈도 시험으로 | 정한 것 24, 「말없이 에어컨 날짜 계산」(4일째부터), Task 1·6·9·13 |
+| 배우기 전 떠날 때 메시지 상자 | 「컵을 치울지 여쭤볼게요」(로봇 말, 허락 문장 아님). 배운 뒤는 「컵을 두고 자리를 뜨면 치워도 된다고 하셨어요」 → 「컵을 치울게요」 | 정한 것 26, Task 4 |
+| TV 보며 마시다 떠날 때 | 배운 뒤에도 물음. 식탁은 바로 치우고 TV 앞은 묻는 차이를 시험 하나로 | 정한 것 27, Task 3 시험 |
+
 ## 남은 물음
 
-1. 데모 「2-습관」(합성 7일 뒤 말없이 TV를 보면 에어컨을 켬, 배운 습관, `tests/demo-e2e.test.ts` 장면 4·`demo-setup.ts reflect --scripted`)이 「컵 치우기만 배움」과 부딪쳐요. (가) 이 장면을 빼요. (나) 「말없이 TV 보기 시작 → 에어컨」만 배우는 습관에 더해요(덥다·부채질 → 에어컨은 정한 습관으로 늘 둠). 어느 쪽으로 할까요?
-2. 배우기 전(처음 이틀) 떠날 때 메시지 상자 줄을 「컵을 두고 자리를 뜨면 여쭤봐도 된다고 하셨어요」로 둘까요? 허락 문장은 사용자가 정한 짧은 꼴만 써서 묻기 줄도 정해 주셔야 해요.
-3. TV 보며 마시다 떠날 때(TV 보는 중 → 다른 일, 같이 마시는 중)도 seed에서는 묻기예요. 합성 일주일에는 이 일이 없어서 배운 뒤 기억에서도 TV 쪽은 계속 물어요. 이대로 둘까요?
+1. 1일째 「아 덥다」에 로봇이 켠 창은 못 봄으로 셌어요(로봇이 한 때는 셈에서 뺌). 그래서 말없이 에어컨은 **4일째부터**예요. 「치워 줘」 답처럼 「아 덥다」도 따라온 것으로 치면 3일째부터가 돼요. 4일째로 둘까요?
