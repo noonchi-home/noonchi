@@ -5,6 +5,8 @@
 import { z } from "zod";
 import type { DeviceState } from "../contract/devices.js";
 import type { SeenEvent } from "../contract/events.js";
+import type { BrainGoalMsg } from "../contract/goal.js";
+import type { PlanView } from "../contract/plan.js";
 import type { SceneInput, VlmMissing, WorldChange, WorldChangeKind, WorldChangesMsg, WorldCloserMsg, WorldInput, WorldStateMsg, WorldView, YoloMissing } from "../contract/world.js";
 import { CLASSES, SCENE_STATES, type DetLabel } from "../world/vocab.js";
 
@@ -117,6 +119,18 @@ const deviceChange = z.strictObject({
   id, state: z.custom<DeviceState>((v) => isObj(v) && onlyKeys(v, DEVICE_KEY_SET) && typeof v.id === "string" && typeof v.online === "boolean" && isObj(v.twin) && isObj(v.matter) && typeof v.updatedAt === "string"),
   note: z.strictObject({ initial: z.boolean().optional(), label: z.string().optional(), kind: z.string().optional() }),
 });
+/** /brain/goal·/brain/goal_changes: 미리 세운 목표 하나. 계획 보기는 실행 추적이 타입으로 만든 객체라 깊이 보지 않는다(최상위 id·steps만). */
+const planView = z.custom<PlanView>((v) => isObj(v) && typeof v.id === "string" && Array.isArray(v.steps));
+const pendingGoal = z.strictObject({
+  id, action: z.string().min(1), state: z.string().min(1), trigger: z.string(), object: id.nullable(), cls: z.string().min(1),
+  status: z.enum(["armed", "fired", "used", "dropped"]), prep: z.enum(["waiting", "planning", "ready", "failed"]),
+  reason: z.enum(["took", "back", "moved", "replaced", "safety", "mode", "dock", "expired", "pam", "stale", "stop"]).nullable(),
+  text: z.string().nullable(), armed_ms: at, ready_ms: at.nullable(), gone_ms: at.nullable(), fired_ms: at.nullable(), plan: planView.nullable(),
+  error: z.string().min(1).optional(),
+});
+const brainGoal = z.strictObject({ goal: pendingGoal });
+/** 목표 전환의 열쇠: 목표 id(세대). */
+const goalKey = (b: Record<string, unknown>) => String((b.goal as { id?: unknown } | undefined)?.id ?? "_");
 
 /** 두 타입이 같은가(양쪽으로). Assert<Equal<…>>가 false면 tsc가 실패한다(src/observe/scene.ts와 같은 식). */
 type Equal<A, B> = (<T>() => T extends A ? 1 : 2) extends (<T>() => T extends B ? 1 : 2) ? true : false;
@@ -135,6 +149,7 @@ export type TopicBodiesSame = [
   Assert<Equal<z.infer<typeof worldInput>, WorldInput>>,
   Assert<Equal<z.infer<typeof worldCloser>, WorldCloserMsg>>,
   Assert<Equal<z.infer<typeof worldChanges>["changes"][number], WorldChange>>,
+  Assert<Equal<z.infer<typeof brainGoal>, BrainGoalMsg>>,
 ];
 
 export const TOPICS = {
@@ -151,6 +166,9 @@ export const TOPICS = {
   "/world/closer": { qos: { kind: "reliable" }, body: worldCloser, key: by("look"), order: null, from: ["world"] },
   "/brain/decision": { qos: { kind: "reliable" }, body: obj, key: one, order: "stamp", from: ["brain"] },
   "/brain/plan": { qos: { kind: "reliable" }, body: obj, key: by("decision_id"), order: null, from: ["brain", "act"] },
+  // 미리 세운 목표(묶음 4 전에는 실행 추적이 낸다): 최신 보기(늦게 붙은 노드·대시보드)와 전환 하나하나(녹화·재생, STATE는 가운데 값을 합칠 수 있다)
+  "/brain/goal": { qos: { kind: "state" }, body: brainGoal, key: one, order: "stamp", from: ["brain", "act"] },
+  "/brain/goal_changes": { qos: { kind: "reliable" }, body: brainGoal, key: goalKey, order: null, from: ["brain", "act"] },
   "/brain/thought": { qos: { kind: "reliable" }, body: obj, key: one, order: "stamp", from: ["brain"] },
   "/brain/link": { qos: { kind: "state" }, body: obj, key: one, order: "stamp", from: ["brain"] },
   "/brain/cancel": { qos: { kind: "reliable" }, body: obj, key: by("decision_id"), order: null, from: ["act"] },

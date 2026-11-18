@@ -104,6 +104,9 @@ export function planInput(ctx: PlanContext): string {
     `- 쓸 수 있는 단계: ${allow}`,
     `- 단계 한도: ${Math.min(task.maxSteps ?? PLAN_LIMITS.maxSteps, PLAN_LIMITS.hardMaxSteps)}개`,
     `[PAM 판단] 관찰: ${d.prediction?.observation ?? "없음"} / 이유: ${d.prediction?.reasoning ?? "없음"}`,
+    ...(ctx.ahead
+      ? [`[미리 세운 목표] 목표 물건 ${ctx.ahead.object}${ctx.ahead.stand ? `(사람이 지금 쓰는 것을 다 쓰고 ${ctx.ahead.stand.surface_label ?? "곁 면"} 위에 둘 것으로 본 자리)` : ""}. 사람이 아직 쓰는 중이다. 「${ctx.ahead.on ?? ctx.ahead.trigger}」가 되면 할 일이다. 사람이 떠난 뒤를 생각해 계획하고, 물건은 ${ctx.ahead.object}만 쓴다.`]
+      : []),
     `[World State] ${ctx.nowIso}`,
     ...worldLines(world, ctx.placed),
     `[평면도] 방: ${floor.rooms.map((r) => `${r.id} ${roomName(r.id)}`).join(", ")}`,

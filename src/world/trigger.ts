@@ -30,6 +30,7 @@ export class Trigger {
   private lastCall = Number.NEGATIVE_INFINITY;
   private lastFrame = Number.NEGATIVE_INFINITY;
   private lastActivity: number;
+  private nudged = false;
   constructor(private readonly cfg: TriggerConfig, startedAtMs: number) { this.lastActivity = startedAtMs; }
 
   onChanges(changes: WorldChange[]): void {
@@ -42,8 +43,12 @@ export class Trigger {
   /** 엔진 프레임이 온 시각. */
   onFrame(atMs: number): void { this.lastFrame = Math.max(this.lastFrame, atMs); }
 
+  /** 다음 판단을 주기·최소 간격을 기다리지 않고 부르게 한다(미리 세운 목표의 사람이 떠남, src/act/track/goal.ts). 동시 상한·멈춤(프레임 없음)은 지킨다. 부르면 풀린다. */
+  nudge(): void { this.nudged = true; }
+
   due(nowMs: number, personVisible: boolean, inflight: number): boolean {
     if (inflight >= this.cfg.maxInflight) return false;
+    if (this.nudged) return this.pause(nowMs, personVisible) === null;
     if (this.cfg.mode === "event") return this.pending && nowMs - this.lastCall >= this.cfg.minGapMs;
     if (nowMs - this.lastCall < this.cfg.periodMs) return false;
     return this.pause(nowMs, personVisible) === null;
@@ -57,5 +62,5 @@ export class Trigger {
     return null;
   }
 
-  called(nowMs: number): void { this.lastCall = nowMs; this.pending = false; }
+  called(nowMs: number): void { this.lastCall = nowMs; this.pending = false; this.nudged = false; }
 }

@@ -332,6 +332,14 @@ describe("video-check", () => {
     ]);
   });
 
+  it("시각표는 미리 세운 목표 기록(goal)을 「목표」 줄로 넣는다(세움·계획 준비됨·사람 떠남·버림)", () => {
+    const row = (id: number, at_ms: number, text: string): HistoryRow => ({ id, at_ms, day: "2026-11-18", kind: "goal", subject: "goal-1", text, data: null });
+    const rows = timeline(0, [row(1, 14_000, "세움 · 컵 치우기"), row(2, 19_500, "계획 준비됨"), row(3, 15_600, "사람 떠남 · 판단 부름"), row(4, 30_000, "버림 · PAM이 고르지 않음")], []);
+    expect(rows.map((r) => [clock(r.ms), r.kind, r.text])).toEqual([
+      ["00:14.0", "목표", "세움 · 컵 치우기"], ["00:15.6", "목표", "사람 떠남 · 판단 부름"], ["00:19.5", "목표", "계획 준비됨"], ["00:30.0", "목표", "버림 · PAM이 고르지 않음"],
+    ]);
+  });
+
   it("비용 줄: /api/brain이 없으면 모름, 가까이 보기·관찰 모드가 없으면 앞 글 그대로, 있으면 횟수와 비용(모르면 비용 모름)", () => {
     expect(costLine(null)).toBe("VLM 비용 모름(/api/brain 없음)");
     expect(costLine({ frames: 54, vlm: { sent: 54, costUsd: 0.0301 } })).toBe("VLM 54장 · $0.0301 · 엔진 프레임 54장 · PAM·계획 비용 빠짐");

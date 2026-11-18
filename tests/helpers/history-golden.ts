@@ -4,7 +4,7 @@
 // 모양: 흐름마다(판단·실행·답 / 집 상태 / 들은 말 / 가전) 시각 차례로 줄을 늘어놓고, 바로 이어진 같은 줄만 하나로 본다(다른 사건 사이의 되풀이는 남긴다).
 // 정해지지 않는 차이만 뺀다(근거는 각 규칙 옆):
 // - 흐름끼리의 앞뒤: 영상 프레임·VLM 답·폰 말·가전이 서로 다른 시계로 와서 섞이는 차례가 실행마다 다르다.
-// - 주기 판단과 그 처리 메모(대기·같은 행동·기다리는 동안·앞선 판단·방금 계획함·판단 실패·가까이 본 뒤 다시 판단): 판단은 5초 주기(PAM_PERIOD_MS)라
+// - 주기 판단과 그 처리 메모(대기·같은 행동·기다리는 동안·앞선 판단·방금 계획함·판단 실패·가까이 본 뒤 다시 판단·미리 세운 목표가 맡음): 판단은 5초 주기(PAM_PERIOD_MS)라
 //   장면 단계와 상관없는 시각에 와서 몇 번·어디에 끼는지가 실행마다 다르다(src/brain/decide.ts tick, src/act/track/start.ts onDecision). 있는지만 본다.
 //   계획을 시작한 판단(그 판단 id의 실행 줄 「판단」이 있는 것)은 차례에 남긴다. 그 계획을 하는 동안 같은 행동을 고른 주기 판단과 「같은 행동을 진행 중」은
 //   있는지도 보지 않는다(계획 중에 주기 판단이 오느냐가 판마다 다르다, 2026-11-18 조정자 결정). 다른 행동을 고른 판단은 [있음]에 남긴다.
@@ -20,7 +20,7 @@ import { EXEC_TEXT } from "../../src/act/labels.js";
 import { DECISION_TEXT } from "../../src/brain/history/labels.js";
 
 /** 주기 판단을 받아 처리한 메모(계획을 시작하지 않은 판단의 실행 줄). */
-const DECISION_NOTES = new Set<string>([EXEC_TEXT.wait, EXEC_TEXT.same, EXEC_TEXT.busy, EXEC_TEXT.late, EXEC_TEXT.held, EXEC_TEXT.decisionFailed, EXEC_TEXT.closerNewer]);
+const DECISION_NOTES = new Set<string>([EXEC_TEXT.wait, EXEC_TEXT.same, EXEC_TEXT.busy, EXEC_TEXT.late, EXEC_TEXT.held, EXEC_TEXT.decisionFailed, EXEC_TEXT.closerNewer, EXEC_TEXT.goalWait]);
 
 const lineOf = (r: HistoryRow): string => {
   const d = (r.data ?? {}) as Record<string, unknown>;

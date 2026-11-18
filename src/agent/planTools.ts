@@ -6,7 +6,7 @@ import { z } from "zod";
 import { copyRules } from "../shared/copy.js";
 import { ASK_CHOICES, type ActionPrompt } from "../act/prompts.js";
 import type { Lesson, PlanTarget, PlanView, StepKind, XZ } from "../contract/plan.js";
-import { planIdOf, type Placed, type TaskSpec } from "../act/tasks.js";
+import { followedId, planIdOf, type Placed, type TaskSpec } from "../act/tasks.js";
 import type { DeviceView, DecisionRecord } from "../contract/events.js";
 import type { DraftStep, PlanHead } from "./planShape.js";
 import { assemblePlan } from "./planShape.js";
@@ -87,8 +87,20 @@ export interface AgentStep {
   onTimeout: "ask" | "fail";
 }
 
-/** 검사를 통과한 계획: 화면 계획(PlanView, 단계 순서·id가 steps와 같다)과 실행 단계. */
-export interface AgentPlan { view: PlanView; steps: AgentStep[]; task: string }
+/** 검사를 통과한 계획: 화면 계획(PlanView, 단계 순서·id가 steps와 같다)과 실행 단계.
+ *  submitted: 이 계획을 낸 submit_plan 인자(모델이 낸 그대로). 미리 만든 계획을 다른 판단으로 다시 낼 때 쓴다(resubmit). add·finish로 만든 계획은 없다. */
+export interface AgentPlan { view: PlanView; steps: AgentStep[]; task: string; submitted?: unknown }
+
+/** 계획 입력의 미리 세운 목표(src/act/track/goal.ts): 사람이 아직 대상을 쓰는 동안 만드는 계획이다. trigger는 그 습관 규칙의 트리거,
+ *  on은 지금 상태에서 그 상태로 가는 글(없으면 null), object는 목표 물건(World State id): 계획 검사가 같은 종류의 다른 물건을 쓰는 단계를 버린다.
+ *  stand: 목표 물건이 아직 면 위에 놓인 World State 물건이 아닐 때 사람이 다 쓰고 둘 자리에 둔 대신 물건(id는 object). 계획 모드가 World State 물건 맨 앞에 넣는다(withStand). */
+export interface PlanAhead { trigger: string; on: string | null; object: string; stand?: WorldObject }
+
+/** 대신 물건(ahead.stand)이 있으면 그 물건을 World State 물건 맨 앞에 넣은 계획 맥락(같은 id 물건은 뺀다). 없으면 그대로. */
+export function withStand(ctx: PlanContext): PlanContext {
+  const stand = ctx.ahead?.stand;
+  return stand ? { ...ctx, world: { ...ctx.world, objects: [stand, ...ctx.world.objects.filter((o) => o.id !== stand.id)] } } : ctx;
+}
 
 /** 계획 결과: 통과한 계획, 또는 버린 까닭. */
 export type PlanResult = { ok: true; plan: AgentPlan } | { ok: false; error: string };
@@ -122,6 +134,8 @@ export interface PlanContext {
   lesson?: Lesson | null;
   /** 부르는 이름 자료(카탈로그 종류 이름·배치 이름, src/layout/names.ts). [가전] 종류는 devices에서 본다. */
   names?: PlaceNames;
+  /** 미리 세운 목표의 계획이면 그 목표(입력에 [미리 세운 목표] 줄, 계획 검사는 목표 물건만 받는다). */
+  ahead?: PlanAhead;
 }
 
 
@@ -247,7 +261,10 @@ export class PlanDraft {
       if (!r.ok) return again(r.error.startsWith(`${n}번 단계`) ? r.error : `${n}번 단계: ${r.error}`);
     }
     const f = this.finish();
-    return f.ok ? f : again(f.error);
+    if (!f.ok) return again(f.error);
+    // 모델이 낸 인자 그대로 둔다: 미리 만든 계획을 다른 판단·World State로 다시 낼 때 쓴다(resubmit)
+    f.plan.submitted = structuredClone(raw);
+    return f;
   }
 
   /** 계획 전체를 검사하고 끝낸다. */
@@ -302,6 +319,16 @@ export class PlanDraft {
       if (s.object && picked && s.object !== picked) return { ok: false, error: `${i + 1}번 내려놓기 물건(${s.object})이 앞에서 집은 물건(${picked})과 다릅니다` };
       s.object ??= picked;
       if (s.until && objectNames(s.until).some((n) => n !== s.object)) return { ok: false, error: `${i + 1}번 내려놓기 until은 든 물건(${s.object ?? "없음"}) id만 봅니다` };
+    }
+    // 미리 세운 목표의 계획은 목표 물건만 쓴다: 같은 종류의 다른 World State 물건을 쓰는 단계(물건·대상·끝 조건)는 버린다(컵이 둘이면 다른 컵 계획을 받지 않는다)
+    const goal = this.ctx.ahead?.object;
+    if (goal) {
+      const cls = this.clsOf(goal);
+      for (const [i, s] of steps.entries()) {
+        const names = [s.object, s.target, ...(s.until ? objectNames(s.until) : [])].filter((n): n is string => !!n && !!worldObject(this.ctx.world, n));
+        const other = names.find((n) => n !== goal && this.clsOf(n) === cls);
+        if (other) return { ok: false, error: `${i + 1}번 단계: 미리 세운 목표의 물건은 ${goal}입니다(받지 않는 물건: ${other})` };
+      }
     }
     const draft: DraftStep[] = steps.map((s, i) => ({ kind: VIEW_KIND[s.kind], label: s.label, ...this.viewTarget(s, steps[i + 1]) }));
     const head: PlanHead = { id, goal: task.name, judgment: decision.prediction?.reasoning ?? "", source: "brain", dryRun: !steps.some((s) => s.kind === "device"), nowIso };
@@ -576,4 +603,20 @@ export function planTools(draft: PlanDraft): ToolDef[] {
       return r.ok ? { ok: true, data: { steps: r.plan.steps.length } } : { ok: false, error: r.error };
     },
   }];
+}
+/** 미리 만든 계획을 지금 맥락(새 판단·World State·평면도·손 자리·치운 물건)으로 다시 검사해 그 판단의 계획으로 낸다. 모델을 부르지 않는다.
+ *  계획을 새로 만들지 않는다: 모델이 낸 submit_plan 인자를 그대로 다시 내고, 그 안에서 World State 물건 id와 똑같은 글만 옮김 표시(followed_by) 끝 id로 바꾼다.
+ *  계획 id·단계 id는 새 판단 id로, 경로는 지금 손 자리에서 다시 잇는다. 검사를 못 넘으면 까닭을 낸다(부르는 쪽이 계획 모드로 돌아간다). */
+export function resubmit(plan: AgentPlan, ctx: PlanContext, rename?: Readonly<Record<string, string>>): PlanResult {
+  if (plan.submitted === undefined) return { ok: false, error: "다시 낼 submit_plan 인자가 없음" };
+  if (plan.task !== ctx.task.name) return { ok: false, error: `다른 할 일의 계획: ${plan.task}` };
+  const ids = new Set(ctx.world.objects.map((o) => o.id));
+  // rename: 미리 만든 계획의 물건 id → 지금 묶을 World State id(대신 물건 cup_0 → 확정된 컵, 같은 컵을 다른 id로 잡았을 때). 바꾼 뒤 옮김 표시를 따라간다
+  const named = (v: string) => (rename && Object.hasOwn(rename, v) ? rename[v]! : v);
+  const swap = (v: unknown): unknown =>
+    typeof v === "string" ? (ids.has(named(v)) ? followedId(ctx.world, named(v)) : named(v))
+      : Array.isArray(v) ? v.map(swap)
+        : v && typeof v === "object" ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, swap(x)])) : v;
+  const r = new PlanDraft(ctx).submit(swap(plan.submitted));
+  return r.ok ? { ok: true, plan: r.plan } : { ok: false, error: r.error };
 }

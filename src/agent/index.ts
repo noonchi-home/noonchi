@@ -4,7 +4,7 @@ export { describeError, Agent, newSessionId } from "./agent.js";
 export { approvalNeed, taskKey, type ApprovalAnswer, type ApprovalBook, ApprovalStore, approvalsPath } from "./approval.js";
 export { type ObserveChoice, type ObserveSituation, Observer, type ObserverStatus } from "./observer.js";
 export { devicePlan } from "./planShape.js";
-export { TOOL_STATES, objectNames, type AgentPlan, type AgentStep, type PlanResult, placesOf, type PlaceInfo } from "./planTools.js";
+export { TOOL_STATES, objectNames, resubmit, type AgentPlan, type AgentStep, type PlanAhead, type PlanContext, type PlanResult, placesOf, type PlaceInfo } from "./planTools.js";
 export { HUMAN_KINDS, needsPhone, riskyHand, selfStopWait } from "./plan-rules.js";
 export { Planner } from "./planner.js";
 export { Policy } from "./policy.js";

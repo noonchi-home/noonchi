@@ -33,6 +33,9 @@ export interface TaskSpec {
    *  사람이 그 대상 종류를 쓰는 것을 보면 그 사람이 사라질 때까지 찾기·가까이 가서 보기·첫 명령을 미룬다(usingNow, src/act/track/use.ts).
    *  대상을 건드리지 않는 행동(그대로 두기)은 찾지 않는다. */
   touch?: true;
+  /** 사람이 대상(target)을 다 쓰고 떠난 뒤 하는 일(치우기): 사람이 그 종류를 쓰는 것을 보면 습관 FSM이 다음 규칙으로 고를 때 미리 목표로 세우고 계획을 만들어 둔다
+   *  (src/brain/goal.ts goalAhead, src/act/track/goal.ts). 사람이 있는 동안 하는 일(채우기·따르기)은 아니다. */
+  afterUse?: true;
 }
 
 const HAND = ["go", "pick", "place"] as const;
@@ -41,7 +44,7 @@ const FILL: TaskAllow = { kinds: ["go", "pick", "do", "place"], need: ["go", "pi
 
 export const TASKS: Record<string, TaskSpec> = {
   "컵 치우기": {
-    name: "컵 치우기", description: "사람이 자리를 비운 뒤 식탁 등에 남은 컵을 사람이 싱크대에 넣게 한다.", target: "cup", touch: true,
+    name: "컵 치우기", description: "사람이 자리를 비운 뒤 식탁 등에 남은 컵을 사람이 싱크대에 넣게 한다.", target: "cup", touch: true, afterUse: true,
     allow: { kinds: HAND, need: HAND },
   },
   "사용자에게 물어보기": { name: "사용자에게 물어보기", description: "컵 안을 확인할 수 없는 등 애매할 때 폰으로 사용자에게 어떻게 할지 묻는다.", allow: { kinds: ["ask", "say"], need: ["ask"] } },
@@ -160,6 +163,17 @@ export const opaqueBody = (o: WorldObject): boolean => o.facts.body?.value === "
 
 /** 이미 치운 물건: World State 자리가 싱크대 안이거나, 실행 추적이 놓기 단계를 끝낸 물건(placed). */
 export const putAway = (o: WorldObject, placed?: Placed) => o.facts.place?.value === "in_sink" || !!placed?.has(o.id);
+
+/** 옮김 표시(World State followed_by)를 따라간 끝 물건 id(최대 5번). 표시가 없으면 그 id. 미리 만든 계획 다시 내기·미리 세운 목표가 쓴다. */
+export function followedId(world: Pick<WorldView, "objects">, id: string): string {
+  let at = id;
+  for (let i = 0; i < 5; i++) {
+    const next = world.objects.find((o) => o.id === at)?.followed_by ?? null;
+    if (!next || next === id) break;
+    at = next;
+  }
+  return at;
+}
 
 /** 사람이 물건을 들고 있고, 든 것을 모르거나 그 종류 물건이다(관절로 든 것이 책·리모컨 같은 다른 종류뿐이면 아니다).
  *  든 물건 id는 확인 전 물건도 들어 있어 종류를 id 앞(book_3 → book)으로 본다.

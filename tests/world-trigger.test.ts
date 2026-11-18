@@ -20,6 +20,24 @@ describe("PAM 호출 시점", () => {
     expect(t.due(4000, false, 0)).toBe(true);
   });
 
+  it("nudge: 다음 한 번은 주기·최소 간격을 기다리지 않는다. 동시 상한·프레임 없음은 지키고, 부르면 풀린다(미리 세운 목표의 사람이 떠남)", () => {
+    const t = periodic();
+    t.onFrame(1000);
+    t.called(1000);
+    expect(t.due(1250, false, 0)).toBe(false);
+    t.nudge();
+    expect(t.due(1250, false, 1)).toBe(false);
+    expect(t.due(1250, false, 0)).toBe(true);
+    t.called(1250);
+    expect(t.due(1500, false, 0)).toBe(false);
+    t.nudge();
+    expect(t.due(20_000, false, 0)).toBe(false);
+    const e = new Trigger({ mode: "event", minGapMs: 3000, periodMs: 5000, idleStopMs: 1_800_000, liveMs: 10_000, maxInflight: 1 }, 0);
+    e.called(0);
+    e.nudge();
+    expect(e.due(100, false, 0)).toBe(true);
+  });
+
   it("주기: 엔진 프레임이 오는 동안 변화와 상관없이 5초마다, 동시 1개", () => {
     const t = periodic();
     t.onFrame(1000);

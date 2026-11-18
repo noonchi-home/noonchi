@@ -119,6 +119,32 @@ export const USE_THOUGHT = {
   using: (item: string) => `사람이 ${josa(item, "을/를")} 쓰는 중이라 지켜볼게요`,
 } as const;
 
+/** 미리 세운 목표(src/act/track/goal.ts): 메시지 상자 줄(클로이드가 하는 말, 「<규칙 조건> <행동 말>」, 조건은 src/world/labels.ts ruleIf·행동 말은 src/act/tasks.ts TASK_SAY). */
+export const GOAL_TEXT = {
+  armed: (cond: string, will: string) => `${cond} ${will}`,
+} as const;
+
+/** 미리 세운 목표 기록 줄(기록 DB goal, 영상 판정 시각표 「목표」 줄): 세움·미리 만들기·사람 떠남·씀·버림과 그 까닭. */
+export const GOAL_LOG = {
+  armed: (action: string) => `세움 · ${action}`,
+  planning: "계획 미리 만드는 중", ready: "계획 준비됨", failed: "계획 못 만듦", fired: "사람 떠남 · 판단 부름", used: "준비한 계획으로 시작",
+  dropped: (why: string) => `버림 · ${why}`,
+  /** 까닭 글이 있는 미리 만들기 실패와, 준비한 계획을 버리고 계획 모드로 넘어감. */
+  failedWhy: (why: string) => `계획 못 만듦 · ${why}`,
+  dropPlan: (why: string) => `준비한 계획 버림 · ${why}`,
+  why: {
+    took: "들고 나감", back: "다시 나타남", moved: "컵이 옮겨지거나 사라짐", replaced: "다른 일이 맡음", safety: "안전 알림", mode: "코치 모드", dock: "충전 자리로 가는 중",
+    expired: "30분 지남", pam: "PAM이 고르지 않음", stale: "준비한 계획이 지금과 안 맞음", stop: "그만",
+  },
+  /** 계획 검사 글이 없는 까닭: 받은 계획이 목표 물건이 아닌 같은 종류 물건을 다룸, 목표 물건이 미리 만든 때와 다른 면에 있음, 미리 만든 계획이 없음. */
+  error: { notMine: "목표 물건이 아닌 물건을 다루는 계획", surface: "목표 물건이 다른 면으로 옮겨짐", none: "미리 만든 계획 없음" },
+  /** 서버 로그 줄(src/act/track/start.ts 「계획 버림」 줄과 같은 꼴). */
+  log: {
+    failed: (id: string, action: string, why: string) => `[실행 추적] ${id} 계획 못 만듦(${action}): ${why}`,
+    dropPlan: (id: string, action: string, why: string) => `[실행 추적] ${id} 준비한 계획 버림(${action}): ${why}`,
+  },
+} as const;
+
 /** 승인(src/act/track/approval.ts): 처음 하는 계획을 실제 폰에 묻는 글, 「거절」을 받은 계획의 실행 기록. */
 export const APPROVAL_TEXT = {
   ask: (task: string) => `${josa(task, "을/를")} 할까요?`,
@@ -238,6 +264,8 @@ export const EXEC_TEXT = {
   handling: "물건을 다루는 중이라 새 판단을 미룸",
   /** 충전 자리 돌아가기(src/act/track/dock.ts): 계획이 끝난 뒤 사용자 위치 확인·충전 자리로 가는 동안 받은 행동 판단. */
   docking: "충전 자리로 가는 중이라 새 일을 미룸",
+  /** 미리 세운 목표(src/act/track/goal.ts)와 같은 행동을 사람이 떠나기 전에 고른 판단: 목표가 맡는다(사람이 떠나면 판단을 다시 부른다). */
+  goalWait: "다 쓰고 떠나면 할 일로 두었어요",
 } as const;
 
 /** 충전 자리 돌아가기(src/act/track/dock.ts): 실제 폰 명령(사람에게 「주세요」), 대상·비전 이름, 메시지 상자 줄(클로이드가 직접 하는 말). */

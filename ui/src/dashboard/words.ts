@@ -4,7 +4,7 @@ import { CLASSES } from "../../../src/world/vocab.ts";
 export const WORDS = {
   waiting: "기다리는 중",
   /** 메시지 상자: 알약 앞말(상태·트리거·액션), 대기 판단의 트리거·액션, 규칙 없이 고른 행동·규칙이 여럿인 행동의 트리거, 오른쪽 아래 이어짐 표시. */
-  pill: { state: "상태", trigger: "트리거", action: "액션" },
+  pill: { state: "상태", trigger: "트리거", action: "액션", goal: "목표" },
   idle: "대기",
   unknown: "모름",
   noRule: "규칙 없음",

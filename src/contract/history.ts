@@ -6,10 +6,11 @@
  *  photo 폰 사진 찍기 사진, look 관찰 모드가 고른 것(가까이 보기·사람 부탁·기다리기, src/act/look.ts),
  *  thought 생각 말풍선 두 줄(판단 id·행동·본 것·그래서, src/brain/thought.ts),
  *  service 외부 연락 결과(AS센터 전화·보호자 연락의 보냄·거절·연결 없음·실패·확인 불가·취소, src/agent/service.ts),
- *  bus_gap 노드 통로에서 놓친 것(잘려 놓친 SENSOR 수, 세 번 처리하지 못한 메시지, src/record). */
+ *  bus_gap 노드 통로에서 놓친 것(잘려 놓친 SENSOR 수, 세 번 처리하지 못한 메시지, src/record),
+ *  goal 미리 세운 목표의 전환(세움·미리 만들기·사람 떠남·씀·버림, src/act/track/goal.ts). 반성 입력이 아니다. */
 export type HistoryKind =
   | "device" | "detection" | "vlm" | "yolo" | "world" | "pam_text" | "mode" | "decision" | "plan" | "execution" | "reflection" | "feedback" | "photo"
-  | "link" | "trigger" | "look" | "thought" | "service" | "bus_gap";
+  | "link" | "trigger" | "look" | "thought" | "service" | "bus_gap" | "goal";
 
 export interface HistoryRow {
   id: number;

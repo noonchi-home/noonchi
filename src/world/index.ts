@@ -2,7 +2,7 @@
 // 다른 도메인은 이 입구로만 가져온다(도메인 나누기 설계 2.4).
 export { accepts, canRelink, closerObject } from "./accept.js";
 export { ConditionWatch, type Condition, type ConditionContext, CONDITION_KINDS, ConditionSchema, checkCondition, type ConditionHome } from "./conditions.js";
-export { inView, pixelOf, rayDir, restsFromLayout, surfacesFromLayout, boxShape, cupInside, topBox, topView, TOP_BOX_M, TOP_CUP_FALLBACK, TOP_VIEW, type CupInside, type PlaneSurface, type RestSpot } from "./place.js";
+export { inView, pixelOf, rayDir, restsFromLayout, surfacePlace, surfacesFromLayout, boxShape, cupInside, topBox, topView, TOP_BOX_M, TOP_CUP_FALLBACK, TOP_VIEW, type CupInside, type PlaneSurface, type RestSpot } from "./place.js";
 export { TOP_CONFIRM, topPairOf } from "./state/contents.js";
 export { becameKey, deviceStateKeys, deviceStatus, deviceText } from "./relations.js";
 export { WorldState, CLOSER_NEW_FRAMES, type CloserPass } from "./state/world.js";

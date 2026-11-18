@@ -1,5 +1,6 @@
 // 서버↔화면 메시지 계약(WebSocket /events, /api 응답). 순수 타입만 둔다: ui/가 이 파일을 그대로 가져다 쓴다.
 // 바꾸면 ui/src/lib/messages.ts의 parseMessage와 화면 테스트를 같이 고친다.
+import type { PendingGoal } from "./goal.js";
 import type { Command, DeviceSpec, DeviceState } from "./devices.js";
 import type { LayoutMessage } from "./layout.js";
 import type { PhoneChoice } from "./phone.js";
@@ -318,7 +319,9 @@ export type ServerMessage =
   /** 대시보드 말풍선 말 한 문장(src/act/say.ts). 바뀔 때마다, 그리고 접속 때 한 번. null이면 글 없음. safety: 안전 알림(쓰러짐 의심·다시 켜짐·꺼짐 기다림·끄기 안내)이다. */
   | { type: "say"; text: string | null; safety?: true }
   /** 지금 행동 모드(눈치·코치, src/act/mode.ts modeNow): 대시보드 마스코트 머리 위 모드 말풍선. 바뀔 때마다, 그리고 접속 때 한 번. */
-  | { type: "mode"; mode: "noonchi" | "coach" };
+  | { type: "mode"; mode: "noonchi" | "coach" }
+  /** 미리 세운 목표(src/act/track/goal.ts): 바뀔 때마다, 그리고 접속 때 마지막 것. 대시보드는 세움·떠남인 동안 메시지 상자 알약으로 보인다. */
+  | { type: "goal"; goal: PendingGoal };
 
 export interface DecisionRecord {
   id: string;

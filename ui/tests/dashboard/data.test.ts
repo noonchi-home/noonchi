@@ -2,6 +2,7 @@
 // 메시지 상자는 서버가 보낸 짧은 메시지(thought)와 말풍선 카드 말(say)을 받은 차례로 쌓아 최근 두 줄을 보인다. PAM 원래 생각(reasoning)은 싣지 않는다.
 import { describe, expect, it } from "vitest";
 import type { ServerMessage } from "../../../src/contract/events.ts";
+import type { PendingGoal } from "../../../src/contract/goal.ts";
 import { EMPTY_DASH, modeNow, reduceDash, stepIndex, TALK_SHOWN, talkOf } from "../../src/dashboard/data";
 import run from "../../src/dashboard/fake-run.json";
 import { CUP_FSM_MEMORY, fsmRuleOf } from "../../../src/brain/decision.ts";
@@ -91,7 +92,7 @@ describe("대시보드 자료", () => {
     const seen = (run.moments[1]!.messages as ServerMessage[]).find((m) => m.type === "seen")!;
     expect(seen).toMatchObject({ type: "seen", frame: { width: 405, height: 720 }, shapes: [{ label: "cup" }] });
     expect(reduceDash(s, seen, 5)).toBe(s);
-    expect(Object.keys(s).sort()).toEqual(["decision", "eye", "mode", "plan", "reflection", "safety", "say", "says", "talk", "thoughts"]);
+    expect(Object.keys(s).sort()).toEqual(["decision", "eye", "goal", "mode", "plan", "reflection", "safety", "say", "says", "talk", "thoughts"]);
   });
   describe("반성 뒤 메시지 상자", () => {
     const NIGHT = { state: "left_cup", trigger: "밤에 사용자가 식탁을 떠난다.", action: "컵 치우기" };
@@ -105,6 +106,23 @@ describe("대시보드 자료", () => {
       expect(textsOf(feed([reflected(2000, [], [AIRCON], true)]))).toEqual(["사용자가 TV를 보러 소파에 앉는다", "전에 배운 습관이에요"]);
       expect(talkOf(feed([reflected(2000, [], [])]))).toBeNull();
     });
+  });
+
+  it("미리 세운 목표(goal 메시지)는 세움·떠남인 동안 메시지 상자 알약(행동 이름)이고, 씀·버림이면 없다. hello는 지운다", () => {
+    const g: PendingGoal = {
+      id: "goal-1", action: "컵 치우기", state: "left_cup", trigger: "t", object: "cup_1", cls: "cup", status: "armed", prep: "ready", reason: null, text: "컵을 두고 자리를 뜨면 컵을 치울게요",
+      armed_ms: 1, ready_ms: 2, gone_ms: null, fired_ms: null, plan: null,
+    };
+    let s = reduceDash(EMPTY_DASH, { type: "goal", goal: g }, 0);
+    expect(talkOf(s)).toEqual({ lines: [], fsm: null, goal: "컵 치우기" });
+    s = reduceDash(s, { type: "goal", goal: { ...g, status: "fired" } }, 0);
+    expect(talkOf(s)?.goal).toBe("컵 치우기");
+    s = reduceDash(s, { type: "goal", goal: { ...g, status: "used" } }, 0);
+    expect(talkOf(s)).toBeNull();
+    s = reduceDash(s, { type: "goal", goal: { ...g, id: "goal-2", status: "dropped", reason: "back" } }, 0);
+    expect(talkOf(s)).toBeNull();
+    s = reduceDash(reduceDash(s, { type: "goal", goal: { ...g, id: "goal-3" } }, 0), { type: "hello", devices: 0, provider: null, hub: "memory", home: null }, 0);
+    expect(s.goal).toBeNull();
   });
 
   it("hello면 처음으로 돌린다(접속 스냅숏이 뒤따름)", () => {
