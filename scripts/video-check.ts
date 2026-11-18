@@ -305,10 +305,13 @@ const PLACE_WORD: Record<string, string> = {
 /**
  * 단계 자리 판정(2026-11-18: tall q1에서 첫 명령이 「세탁기로 가 주세요」였는데 단계 영상이 차례로 돌아 「계획 끝남 · 4/4」로 거짓 통과했다).
  * --step(<종류>:<낱말>:<영상>)마다 차례로, 첫 계획에서 실제로 나간 같은 종류 명령의 대상 id에 그 낱말이 들어야 맞음이다(go:table 식탁, pick:cup 컵, go:sink·place:sink 싱크대).
- * 계획 밖 명령(충전 자리 dock:·끄기 안내 off:)과 질문(:approve·:hand·:again)은 세지 않는다. 끝에 집은 컵(그 컵이 없으면 가장 최근 컵)이 싱크대 안이어야 한다.
+ * 계획 밖 명령(충전 자리 dock:·끄기 안내 off:)과 질문(:approve·:hand·:again)은 세지 않는다.
+ * 컵 치우기 판(cupClear)이면 끝에 집은 컵이 싱크대 안이어야 한다: 집기 명령의 대상 컵에서 옮김 표시(followed_by)만 따라간 마지막 물건으로 보고,
+ * 상관없는 다른 컵으로 대신하지 않는다(Codex 2705c21). 다른 판(라면·전자레인지)은 단계 자리만 본다.
  * 하나라도 틀리면 ok false이고 problems에 「단계 자리 틀림: 세탁기 ≠ 식탁」·「단계 명령 없음: place:sink」·「치운 컵이 싱크대 안이 아님: 식탁 위」를 둔다.
  */
-export function stepPlaces(steps: readonly string[], commands: readonly VideoCommand[], world: WorldView | null, plan: string | null = mainPlan(commands, [])): { ok: boolean; text: string; problems: string[] } {
+export function stepPlaces(steps: readonly string[], commands: readonly VideoCommand[], world: WorldView | null, o: { plan?: string | null; cupClear?: boolean } = {}): { ok: boolean; text: string; problems: string[] } {
+  const plan = o.plan === undefined ? mainPlan(commands, []) : o.plan;
   const seen = new Set<string>();
   const pool = commands.filter((c) => {
     if (c.id !== plan || !c.kind || /:(approve|hand|again)$/.test(c.step) || isOffStep(c.step) || isDockStep(c.step) || seen.has(c.step)) return false;
@@ -329,14 +332,18 @@ export function stepPlaces(steps: readonly string[], commands: readonly VideoCom
     if (word && target?.id.includes(word)) right++;
     else problems.push(`단계 자리 틀림: ${target?.label ?? "대상 없음"} ≠ ${PLACE_WORD[word] ?? word}`);
   }
-  const cups = (world?.objects ?? []).filter((o) => o.cls === "cup");
-  const cup = cups.find((o) => o.id === picked && o.status !== "gone")
-    ?? [...cups].sort((a, b) => CUP_RANK[a.status] - CUP_RANK[b.status] || b.last_seen_ms - a.last_seen_ms)[0];
+  const head = `단계 자리: ${right}/${steps.length} 맞음`;
+  if (!o.cupClear) return { ok: problems.length === 0, text: [head, ...problems].join(" · "), problems };
+  // 집은 컵: 옮김 표시(followed_by)만 따라간다(사라진 컵을 상관없는 다른 컵으로 대신하지 않는다)
+  const byId = new Map((world?.objects ?? []).map((x) => [x.id, x] as const));
+  let cup = picked ? byId.get(picked) : undefined;
+  for (const seen = new Set<string>(); cup?.followed_by && byId.has(cup.followed_by) && !seen.has(cup.id); ) {
+    seen.add(cup.id);
+    cup = byId.get(cup.followed_by);
+  }
   const sunk = !!cup && (cup.facts.place?.value === "in_sink" || cup.surface_part === "basin");
   const cupLine = sunk ? "치운 컵 싱크대 안" : `치운 컵이 싱크대 안이 아님: ${cup ? placeLabel(cup.facts.place?.value) ?? "놓인 곳 모름" : "컵 모름"}`;
-  if (!sunk) problems.push(cupLine);
-  const stepProblems = problems.filter((p) => p !== cupLine);
-  return { ok: problems.length === 0, text: [`단계 자리: ${right}/${steps.length} 맞음`, ...stepProblems, cupLine].join(" · "), problems };
+  return { ok: problems.length === 0 && sunk, text: [head, ...problems, cupLine].join(" · "), problems: sunk ? problems : [...problems, cupLine] };
 }
 
 /** 판정 줄: 첫 명령 시각, expectMs 전 명령 수, 첫 명령의 계획이 끝났는지. */
@@ -986,7 +993,9 @@ async function main(): Promise<number> {
       const v = verdict(rows, commands, history, expect);
       const stepLine = steps.length ? stepVerdict(history, commands, clicks, twin.last) : null;
       // 단계 자리 판정: --step 자리와 실제 명령 대상, 끝에 치운 컵이 싱크대 안인지. 틀리면 시각표 위에 적고 실패다
-      const places = steps.length ? stepPlaces(steps, commands, twin.last, mainPlan(commands, history)) : null;
+      const judged = mainPlan(commands, history);
+      const cupClear = !!judged && history.some((h) => h.kind === "plan" && h.subject === judged && h.text.startsWith("컵 치우기"));
+      const places = steps.length ? stepPlaces(steps, commands, twin.last, { plan: judged, cupClear }) : null;
       const pageErrors = errors.filter((e) => !/favicon/.test(e));
       const notes = [
         unfinished.length ? `끝까지 돌지 않음: ${unfinished.join(", ")}` : "",

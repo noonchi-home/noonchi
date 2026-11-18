@@ -382,11 +382,11 @@ describe("video-check", () => {
     ];
     const sunk = world(9000, null, [cup("cup_3", "in_sink", { surface: "sink_counter_kitchen", surface_label: "싱크대", surface_part: "basin" })]);
     it("각 --step의 자리(go:table 식탁, pick:cup 컵, go:sink·place:sink 싱크대)와 실제로 나간 명령의 대상이 맞고 치운 컵이 싱크대 안이면 통과다", () => {
-      expect(stepPlaces(STEPS, RIGHT, sunk)).toEqual({ ok: true, text: "단계 자리: 4/4 맞음 · 치운 컵 싱크대 안", problems: [] });
+      expect(stepPlaces(STEPS, RIGHT, sunk, { cupClear: true })).toEqual({ ok: true, text: "단계 자리: 4/4 맞음 · 치운 컵 싱크대 안", problems: [] });
     });
     it("명령 대상이 그 단계 자리가 아니면 「단계 자리 틀림: 세탁기 ≠ 식탁」으로 실패다(단계 영상이 차례로 돌아도)", () => {
       const wrong = [command(1, "go", "washer_balcony", "세탁기"), ...RIGHT.slice(1)];
-      const r = stepPlaces(STEPS, wrong, sunk);
+      const r = stepPlaces(STEPS, wrong, sunk, { cupClear: true });
       expect(r.ok).toBe(false);
       expect(r.problems).toEqual(["단계 자리 틀림: 세탁기 ≠ 식탁"]);
       expect(r.text).toBe("단계 자리: 3/4 맞음 · 단계 자리 틀림: 세탁기 ≠ 식탁 · 치운 컵 싱크대 안");
@@ -394,10 +394,33 @@ describe("video-check", () => {
     it("그 단계의 명령이 없거나 치운 컵이 싱크대 안이 아니면 실패다. 계획 밖 명령(충전 자리·끄기 안내·질문)은 세지 않는다", () => {
       const extra = [...RIGHT.slice(0, 3), { video_ms: 9000, id: "dock:1", step: "dock:1:1", text: "충전 자리로 가 주세요", kind: "go", target: { id: "dock", label: "충전 자리" } }];
       const onTable = world(9000, null, [cup("cup_3", "on_table")]);
-      const r = stepPlaces(STEPS, extra, onTable);
+      const r = stepPlaces(STEPS, extra, onTable, { cupClear: true });
       expect(r.ok).toBe(false);
       expect(r.problems).toEqual(["단계 명령 없음: place:sink", "치운 컵이 싱크대 안이 아님: 식탁 위"]);
-      expect(stepPlaces(STEPS, RIGHT, null).problems).toEqual(["치운 컵이 싱크대 안이 아님: 컵 모름"]);
+      expect(stepPlaces(STEPS, RIGHT, null, { cupClear: true }).problems).toEqual(["치운 컵이 싱크대 안이 아님: 컵 모름"]);
+    });
+
+    // Codex(2705c21 video-check.ts:335): 모든 --step 판에 컵이 싱크대에 있기를 요구해 정상으로 끝난 전자레인지·라면 시연도 실패했다
+    it("컵이 싱크대 안인지는 컵 치우기 판에만 본다: 라면 시연은 단계 자리만 맞으면 통과다", () => {
+      const ramen = ["go:cabinet:go-cabinet.mp4", "pick:cabinet:pick-pot.mp4"];
+      const commands = [command(1, "go", "kitchen_cabinet_1", "주방수납장"), command(2, "pick", "kitchen_cabinet_1", "주방수납장")];
+      expect(stepPlaces(ramen, commands, world(9000, null, []))).toEqual({ ok: true, text: "단계 자리: 2/2 맞음", problems: [] });
+    });
+
+    // Codex(2705c21 video-check.ts:333): 집은 컵이 사라지면 상관없는 컵(원래 싱크대에 있던 컵)으로 대신 판정해 통과했다
+    it("집은 컵은 옮김 표시(followed_by)만 따라간다: 사라진 컵이 이어진 새 컵이 싱크대 안이면 통과, 이어진 것이 없으면 상관없는 싱크대 컵으로 대신하지 않는다", () => {
+      const moved = world(9000, null, [
+        cup("cup_3", "on_table", { status: "gone", followed_by: "cup_7" }),
+        cup("cup_7", "in_sink", { surface: "sink_counter_kitchen", surface_part: "basin" }),
+      ]);
+      expect(stepPlaces(STEPS, RIGHT, moved, { cupClear: true }).ok).toBe(true);
+      const unrelated = world(9000, null, [
+        cup("cup_3", "on_table", { status: "gone" }),
+        cup("cup_9", "in_sink", { surface: "sink_counter_kitchen", surface_part: "basin" }),
+      ]);
+      expect(stepPlaces(STEPS, RIGHT, unrelated, { cupClear: true }).problems).toEqual(["치운 컵이 싱크대 안이 아님: 식탁 위"]);
+      const noPick = RIGHT.filter((c) => c.kind !== "pick");
+      expect(stepPlaces(STEPS, noPick, unrelated, { cupClear: true }).problems).toEqual(["단계 명령 없음: pick:cup", "치운 컵이 싱크대 안이 아님: 컵 모름"]);
     });
   });
 
