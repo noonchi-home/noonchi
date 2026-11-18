@@ -253,16 +253,12 @@ export class SceneObjects extends Part {
   }
 
   /** 그 사진 시야 안의 같은 무리 확인 물건 중 이 답에서 아직 쓰지 않은 것이 하나뿐이면 그것(같은 종류가 있으면 같은 종류 중에서). 둘 이상이면 모호해 null.
-   *  확인 물건이 시야 안에 없으면 확인 전 후보로 같은 규칙을 쓴다(상자 투영이 흔들려 한 물건이 두 후보로 갈라지지 않게). */
+   *  확인 전 후보는 자리(core.matchAt, VLM_MATCH_M 안)로만 잇는다: 거리 없이 이으면 먼 곳에 한 장씩 나온 상자 둘이 한 물건의 두 장으로 확정됐다(Codex P2 41e1181). */
   private inViewKin(cls: ObjClass, used: ReadonlySet<string>, view: CameraView): Obj | null {
-    const one = (confirmed: boolean) => {
-      const kin = [...this.core.objects.values()].filter((x) => x.confirmed === confirmed && x.status !== "gone" && !used.has(x.id) && sameDrinkware(x.cls, cls) && x.position && inView(view, x.position));
-      const same = kin.filter((x) => x.cls === cls);
-      const pool = same.length ? same : kin;
-      return { n: kin.length, hit: pool.length === 1 ? pool[0]! : null };
-    };
-    const sure = one(true);
-    return sure.n ? sure.hit : one(false).hit;
+    const kin = [...this.core.objects.values()].filter((x) => x.confirmed && x.status !== "gone" && !used.has(x.id) && sameDrinkware(x.cls, cls) && x.position && inView(view, x.position));
+    const same = kin.filter((x) => x.cls === cls);
+    const pool = same.length ? same : kin;
+    return pool.length === 1 ? pool[0]! : null;
   }
 
   /** 맞추기 전: 이 답에서 아직 쓰지 않은 사라지지 않은 같은 무리 물건(같은 종류 먼저, 확인된 것 먼저, 처음 본 순서). same이면 같은 종류만. */
@@ -360,15 +356,22 @@ const iouOf = (a: SceneObj["box"], b: SceneObj["box"]): number => {
   const inter = x * y;
   return inter / (a.w * a.h + b.w * b.h - inter || 1);
 };
-/** 한 답 안에서 같은 물건을 두 번 답한 상자로 보는 겹침. */
+/** 한 답 안에서 같은 물건을 두 번 답한 상자로 보는 겹침: IoU, 또는 작은 상자가 큰 상자 안에 든 몫(머그 q2: 큰 상자 안 작은 상자). */
 export const SAME_BOX_IOU = 0.5;
+export const SAME_BOX_INSIDE = 0.7;
+/** 작은 상자가 다른 상자 안에 든 몫(겹친 넓이 / 작은 상자 넓이). */
+const insideOf = (a: SceneObj["box"], b: SceneObj["box"]): number => {
+  const x = Math.max(0, Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x));
+  const y = Math.max(0, Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y));
+  return (x * y) / (Math.min(a.w * a.h, b.w * b.h) || 1);
+};
 /** 한 답의 VLM 물건에서 앞 물건과 같은 무리이고 상자가 SAME_BOX_IOU 넘게 겹치는 것을 뺀다(서로 다른 감지 번호와 이은 둘은 두지 않는다). alias: 뺀 번호 → 남긴 번호. */
 function dedupe(objects: readonly SceneObj[]): { kept: SceneObj[]; alias: Map<string, string> } {
   const kept: SceneObj[] = [];
   const alias = new Map<string, string>();
   for (const v of objects) {
     // 서로 다른 YOLO 감지와 이은 물건은 다른 물건이다
-    const same = kept.find((k) => sameDrinkware(k.cls, v.cls) && iouOf(k.box, v.box) >= SAME_BOX_IOU && !(k.det && v.det && k.det !== v.det));
+    const same = kept.find((k) => sameDrinkware(k.cls, v.cls) && (iouOf(k.box, v.box) >= SAME_BOX_IOU || insideOf(k.box, v.box) >= SAME_BOX_INSIDE) && !(k.det && v.det && k.det !== v.det));
     if (same) alias.set(v.id, same.id);
     else kept.push(v);
   }

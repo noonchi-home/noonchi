@@ -136,6 +136,10 @@ export const VLM_GONE_PHOTOS = 3;
 export const GONE_KEEP_MS = 600_000;
 /** 장면 VLM 답 후보는 이만큼(ms) 다시 안 보이면 잊는다(VLM 두 장 사이 + 1초). */
 export const VLM_CANDIDATE_MS = 5000;
+/** 손에 있음 보호(사라짐을 세지 않음)는 사람이 보이고 손에 있음 답이 이만큼(ms) 안에 왔을 때만이다(장면 VLM 사진 3장쯤). 들고 나가면 풀린다(Codex P2 b8fe7bf). */
+export const HAND_HOLD_MS = 6000;
+/** 자리 잇기에서 다른 종류 같은 무리 둘 중 가장 가까운 것을 고르는 거리 비(둘째가 이 배 이상 멀어야 한다). */
+const KIN_CLEAR = 3;
 /** 장면 VLM 답 후보는 서로 다른 원본 프레임 이만큼에서 보이면 확정한다. */
 export const VLM_CONFIRM_FRAMES = 2;
 /** 장면 VLM 상자 투영은 흔들린다: 확인된 물건 자리는 이만큼(m) 넘게, 사진 2장 이어서 옮겼다고 할 때만 옮긴다. */
@@ -234,8 +238,9 @@ export class WorldCore {
       .sort((a, b) => dist(a.position!, position) - dist(b.position!, position));
     const same = pick((x) => x.cls === cls);
     if (same.length) return same[0]!;
+    // 다른 종류 같은 무리는 하나뿐이거나, 가장 가까운 것이 둘째보다 KIN_CLEAR배 이상 가까울 때만(키 큰 컵 q2: 컵 0.03m·0.38m 사이 병 답이 새 병이 됐다)
     const kin = pick((x) => x.cls !== cls && sameDrinkware(x.cls, cls));
-    return kin.length === 1 ? kin[0]! : null;
+    return kin.length === 1 || (kin.length > 1 && dist(kin[0]!.position!, position) * KIN_CLEAR <= dist(kin[1]!.position!, position)) ? kin[0]! : null;
   }
 
   /** VLM이 이 물건의 종류를 답했다(at 촬영, 원본 프레임 frameId). 같은 원본 프레임·마지막으로 센 촬영보다 옛 답은 세지 않는다.
@@ -323,9 +328,10 @@ export class WorldCore {
     return at < obj.judgedAt || (at === obj.judgedAt && obj.judgedCloser && obj.judgedFrame === frameId);
   }
 
-  /** 사라짐을 세지 않는 물건: 가까이 보기 지킴·보기 지킴·실행 추적의 지금 대상·손에 있음·들고 감 보호. */
+  /** 사라짐을 세지 않는 물건: 가까이 보기 지킴·보기 지킴·실행 추적의 지금 대상·손에 있음(사람이 보이고 HAND_HOLD_MS 안 답)·들고 감 보호. */
   missHeld(obj: Obj, atMs: number): boolean {
-    return this.held(obj, atMs) || this.guarded(obj, atMs) || this.focusHold(obj) || obj.facts.place?.value === "in_hand" || obj.carried;
+    const hand = obj.facts.place?.value === "in_hand" && this.person.visible && atMs - obj.facts.place.at_ms <= HAND_HOLD_MS;
+    return this.held(obj, atMs) || this.guarded(obj, atMs) || this.focusHold(obj) || hand || obj.carried;
   }
 
   held(obj: Obj, atMs: number): boolean {

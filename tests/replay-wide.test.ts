@@ -8,6 +8,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { CameraView, Detection, SceneObservation } from "../src/contract/observe.js";
+import type { WorldObject } from "../src/contract/world.js";
 import { floorLookup, readScenePlan } from "../src/layout/home-plan.js";
 import { resolveHome } from "../src/layout/homes.js";
 import { loadLayout } from "../src/layout/load.js";
@@ -31,12 +32,31 @@ const plan = readScenePlan(home.scenePath);
 const floorAt = floorLookup(plan.rooms);
 
 /** 한 판을 재생하고 마시는 그릇 id(사라진 것 포함)와 물건별 놓인 곳 값을 돌려준다. twin이면 한양목련 트윈 면을 쓴다. */
-export function replay(name: string, twin = true, trace?: (step: string, w: WorldState, at: number) => void) {
+const TABLE = "dining_table_978b20c7";
+const TABLE_CENTER: [number, number] = [9.9612, 3.9242];
+const fromTable = (p: readonly number[]) => Math.hypot(p[0]! - TABLE_CENTER[0], p[2]! - TABLE_CENTER[1]);
+
+/** 그 판 실행 추적의 집기·들고 가기·내려놓기 단계(첫 VLM 촬영부터 ms, 이벤트 기록의 단계 시작 시각). 대상은 집기 시작 때 식탁 가운데에서 가장 가까운 확인된 컵이고,
+ *  내려놓기 자리는 목적지(싱크볼 가운데)다. */
+export interface ReplayPlan { steps: { at: number; step: "pick" | "carry" | "place"; spot?: [number, number] }[] }
+
+export function replay(name: string, twin = true, trace?: (step: string, w: WorldState, at: number) => void, plan?: ReplayPlan) {
   const steps = JSON.parse(readFileSync(new URL(`./fixtures/replay/${name}.json`, import.meta.url), "utf-8")) as Step[];
   const w = new WorldState({ evidenceStepMs: 1000, surfaces: twin ? twinSurfaces : () => [], floorAt: twin ? floorAt : () => 0, roomAt: () => null, devices: () => [] });
   const places = new Set<string>();
+  const todo = [...(plan?.steps ?? [])];
+  let target: string | null = null;
   for (const s of steps) {
     const at = s.at + 1000;
+    while (todo.length && todo[0]!.at + 1000 <= at) {
+      const p = todo.shift()!;
+      const objects = w.view(at).objects.filter((o) => o.status !== "gone" && (o.cls === "cup" || o.cls === "bottle") && o.position);
+      if (p.step === "pick") target = objects.sort((a, b) => fromTable(a.position!) - fromTable(b.position!))[0]?.id ?? null;
+      const now: WorldObject | undefined = target ? w.view(at).objects.find((o) => o.id === target) : undefined;
+      target = now?.status === "gone" && now.followed_by ? now.followed_by : target;
+      const spot: [number, number] | null = p.step === "pick" ? (now?.position ? [now.position[0], now.position[2]] : null) : p.spot ?? null;
+      if (target) w.focus(target, { step: p.step, spot });
+    }
     const eye = { position: [s.view.origin[0], s.view.origin[2]] as [number, number], height_m: s.view.origin[1], yaw_deg: 0, pitch_deg: 0 };
     if (s.crop) {
       // 가까이 본 답: 잘라 키운 사진의 감지를 엔진 프레임 픽셀로 옮겨 묶고, 그 장의 VLM 답으로 넣는다(원본 프레임 id는 「.c」 앞)
@@ -59,19 +79,16 @@ export function replay(name: string, twin = true, trace?: (step: string, w: Worl
   }
   const end = (steps.at(-1)?.at ?? 0) + 1000;
   const cups = w.view(end).objects.filter((o) => o.cls === "cup" || o.cls === "bottle");
-  return { cups: cups.map((o) => o.id), places: [...places], world: w.view(end) };
+  return { cups: cups.map((o) => o.id), places: [...places], world: w.view(end), target };
 }
 
-const TABLE = "dining_table_978b20c7";
-const TABLE_CENTER: [number, number] = [9.9612, 3.9242];
-const fromTable = (p: readonly number[]) => Math.hypot(p[0]! - TABLE_CENTER[0], p[2]! - TABLE_CENTER[1]);
 
 // 마시는 그릇 id 수(사라진 것 포함)가 아래보다 늘지 않는다. r10·r4·r7은 0af95a1 글(「비율, 픽셀 아님」)로 받은 답이라 선반 장식(트로피 모양 잔 등)도 컵으로 답했고,
 // 키 큰 컵 v1·r5는 VLM이 「유리잔과 밝은 색 컵」처럼 식탁 위 컵을 둘 이상 답한다.
 describe("실제 판 재생(장면·가까이 본 VLM 답 + 카메라 + YOLO 감지 + 한양목련 트윈 면)", () => {
   const limit: Record<string, number> = {
     "wide-glass-r10": 4, "wide-tall-r4": 2, "wide-mug-r7": 3, "wide-tall-r5": 2, "wide-mug-r8": 2, "wide-glass-v1": 1, "wide-tall-v1": 3, "wide-mug-v1": 2,
-    "wide-tall-q1": 4, "wide-mug-q1": 2,
+    "wide-tall-q1": 4, "wide-mug-q1": 2, "wide-tall-q2": 3, "wide-mug-q2": 1,
   };
   for (const name of Object.keys(limit)) {
     it(`${name}: 마시는 그릇 id가 ${limit[name]}개를 넘지 않는다`, () => {
@@ -118,4 +135,32 @@ describe("실제 판 재생(장면·가까이 본 VLM 답 + 카메라 + YOLO 감
     const r = replay("wide-tall-r5");
     for (const id of r.cups) expect(r.world.objects.find((o) => o.id === id)!.facts.place?.value, id).toBe("on_table");
   });
+
+  // 5bdff18 실제 판 q2(2026-11-18 09:51~09:56). 머그 q2: 한 머그를 VLM이 큰 상자와 그 안 작은 상자로 답해 같은 식탁에 cup_1·cup_2가 따로 확정됐고(가까이 보기가
+  // 후보를 확정), cup_1이 사라짐이 돼 계획이 「찾은 뒤 다시 판단」으로 취소됐다. 키 큰 컵 q2: 싱크볼 바닥 컵 광선이 싱크대 너머 바닥에 닿아 내려놓기 대상과 잇지
+  // 못했고(새 cup_3), 싱크대 위 컵이 VLM 말 그대로 「식탁 위」라 내려놓기가 끝나지 않았다
+  it("머그 q2: 식탁 위 머그는 처음부터 끝까지 한 id이고 사라지지 않는다", () => {
+    const r = replay("wide-mug-q2");
+    expect(r.cups).toEqual(["cup_1"]);
+    expect(r.world.objects.find((o) => o.id === "cup_1")).toMatchObject({ status: "present", surface: TABLE });
+  });
+
+  it("키 큰 컵 q2(그 판 단계 시각): 집은 컵은 싱크대에서 새 id 없이 그 id로 이어지고, 싱크볼 안(싱크볼 가운데에서 0.2m 안)·「싱크대 안」이 된다", () => {
+    const SINK = "sink_counter_kitchen", BASIN: [number, number] = [5.86, 0.693];
+    const plan: ReplayPlan = { steps: [{ at: 33613, step: "pick" }, { at: 56392, step: "carry" }, { at: 69818, step: "place", spot: BASIN }] };
+    let inSink: number | null = null;
+    const r = replay("wide-tall-q2", true, (_s, w, at) => {
+      if (inSink === null && w.view(at).objects.some((o) => o.facts.place?.value === "in_sink")) inSink = at;
+    }, plan);
+    const t = r.world.objects.find((o) => o.id === r.target)!;
+    expect(t).toMatchObject({ status: "present", surface: SINK, facts: { place: { value: "in_sink" } } });
+    expect(Math.hypot(t.position![0] - BASIN[0], t.position![2] - BASIN[1])).toBeLessThan(0.2);
+    // 싱크대 쪽(목적지 1.5m 안)에는 대상 말고 다른 마시는 그릇 id가 없다
+    const near = r.world.objects.filter((o) => o.id !== r.target && o.position && Math.hypot(o.position[0] - BASIN[0], o.position[2] - BASIN[1]) < 1.5);
+    expect(near).toEqual([]);
+    // 「싱크대 안」은 내려놓기 시작 뒤 20초 안이다(그 판은 끝나지 않았다)
+    expect(inSink).not.toBeNull();
+    expect(inSink! - (69818 + 1000)).toBeLessThan(20000);
+  });
 });
+
