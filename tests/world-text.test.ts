@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { WorldChange, WorldView } from "../src/contract/world.js";
 import { buildPamText, clock, collapseLines, textFromWorld } from "../src/world/text.js";
 import { headWithin } from "../src/shared/cut.js";
-import { MAX_OBSERVATION_TEXT, checkInput } from "../src/brain/decision.js";
+import { CUP_FSM_MEMORY, MAX_OBSERVATION_TEXT, checkInput } from "../src/brain/decision.js";
 import { readFileSync } from "node:fs";
 import type { Detection, EngineFrame } from "../src/contract/observe.js";
 import { sha256 } from "../src/observe/ring.js";
@@ -145,7 +145,7 @@ describe("PAM 관찰 텍스트", () => {
     const c = (i: number): WorldChange => ({ kind: "vlm", at_ms: T(21, 9, 20) + i * 500, subject: "x", text: `VLM: ${"긴 요약 ".repeat(40)}${i}`, meaningful: false });
     const text = textFromWorld(view, Array.from({ length: 80 }, (_, i) => c(i)), { nowMs: T(21, 10, 0), offsetMinutes: 540 });
     expect(text.length).toBeLessThanOrEqual(MAX_OBSERVATION_TEXT);
-    expect(() => checkInput({ text, finalTime: "2026-11-07T21:10:00+09:00", memory: { initial_state: "s", states: [{ id: "s", description: "d", rules: [], next: [] }] } as never, memoryKind: "fsm", tasks: ["컵 치우기"] })).not.toThrow();
+    expect(() => checkInput({ text, finalTime: "2026-11-07T21:10:00+09:00", memory: CUP_FSM_MEMORY, memoryKind: "fsm", tasks: ["컵 치우기"] })).not.toThrow();
     const lines = text.split("\n");
     expect(lines).toContain("[지속] 컵 cup_1 비어 있음: 21:09:50부터 10초째");
     expect(lines).toContain("[지속] 사람 안 보임: 21:05:00부터 5분째");
@@ -196,7 +196,7 @@ describe("PAM 관찰 텍스트", () => {
     const long: WorldChange = { kind: "vlm", at_ms: T(21, 9, 59), subject: "x", text: `VLM: ${"끝없이 긴 요약 ".repeat(3000)}`, meaningful: false };
     const text = textFromWorld(view, [long], { nowMs: T(21, 10, 0), offsetMinutes: 540 });
     expect(text.length).toBeLessThanOrEqual(MAX_OBSERVATION_TEXT);
-    expect(() => checkInput({ text, finalTime: "2026-11-07T21:10:00+09:00", memory: { initial_state: "s", states: [{ id: "s", description: "d", rules: [], next: [] }] } as never, memoryKind: "fsm", tasks: ["컵 치우기"] })).not.toThrow();
+    expect(() => checkInput({ text, finalTime: "2026-11-07T21:10:00+09:00", memory: CUP_FSM_MEMORY, memoryKind: "fsm", tasks: ["컵 치우기"] })).not.toThrow();
     expect(text).toContain("[지속] 사람 안 보임: 21:05:00부터 5분째");
     expect(text.split("\n").at(-1)).toMatch(/^\[때\] /);
   });
