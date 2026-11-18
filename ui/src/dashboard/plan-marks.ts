@@ -4,6 +4,8 @@
 // - 번호: 단계마다 그 단계 자리(이동은 구간 끝 바닥, 그 밖은 대상 자리)와 상태. 지금 단계 이름표 「② 컵 집기」.
 // - 사람 이름표: 발 자리 위 머리 높이에 「사람 · 마시는 중」(하는 일, 없으면 자세, 그것도 없으면 보임), 안 보이면 「사람 · 안 보임」.
 // - 목표 고리: 미리 세운 목표가 선 동안 그 대상 물건 자리(World State position, 없으면 놓인 면의 자리). 글은 없다.
+// - 미리 그린 길: 목표가 준비됨(또는 시작, 사람이 떠남)이고 열린 계획이 없으면 미리 만든 계획(목표 plan)의 길 전체와 단계 번호. 글은 없고, 준비됨은 흐리고 시작은 진하다.
+//   열린 계획이 오면 그 계획의 번호 길(위)로 이어지고, 세움·끝·버림이면 없다(2026-11-19 사용자 결정).
 import type { PlanTarget, PlanView, StepStatus, XZ } from "../../../src/contract/plan.ts";
 import type { WorldView } from "../../../src/contract/world.ts";
 import { STATE_TEXT } from "../../../src/world/labels.ts";
@@ -22,7 +24,12 @@ export interface PlanMarks {
   step: { at: Vec3; text: string } | null;
   person: { at: Vec3; text: string } | null;
   goal: { at: Vec3 } | null;
+  /** 미리 그린 길(목표가 준비된 계획): 길 전체, 단계 번호 자리, 진한가(시작). 없으면 null. */
+  pre: { route: Vec3[]; stops: { n: number; at: Vec3 }[]; strong: boolean } | null;
 }
+
+/** 목표 자료(goal.ts goalOf): 대상 물건, 서 있는가, 단계, 미리 만든 계획. */
+export interface GoalMarkInput { object: string | null; standing: boolean; stage?: "set" | "ready" | "started" | "done" | "dropped"; plan?: PlanView | null }
 
 const len = (a: XZ, b: XZ) => Math.hypot(b[0] - a[0], b[1] - a[1]);
 const same = (a: XZ, b: XZ) => len(a, b) < 1e-9;
@@ -62,6 +69,25 @@ function cut(path: XZ[], w: number): [XZ[], XZ[]] {
   return [path.slice(0, 1), path.slice()];
 }
 
+/** 단계 번호 자리: 이동은 그 구간 끝(바닥), 그 밖은 대상 자리(모르면 대상 평면 자리). */
+function stopsOf(plan: PlanView, at: (t: PlanTarget) => Vec3 | null): { n: number; at: Vec3; i: number }[] {
+  const path = plan.path;
+  return plan.steps.flatMap((s, i) => {
+    const l = plan.legs.find((x) => x.stepId === s.id);
+    const spot = l && path[l.end] ? floor(path[l.end]!) : s.target ? at(s.target) ?? (s.target.position ? floor(s.target.position) : null) : null;
+    return spot ? [{ n: i + 1, at: spot, i }] : [];
+  });
+}
+
+/** 미리 그린 길: 목표가 준비됨·시작이고 미리 만든 계획이 있을 때(열린 계획이 없을 때만 부른다). */
+function preMarks(goal: GoalMarkInput | null | undefined, at: (t: PlanTarget) => Vec3 | null): PlanMarks["pre"] {
+  const p = goal?.plan;
+  if (!p || (goal.stage !== "ready" && goal.stage !== "started")) return null;
+  const stops = stopsOf(p, at).map(({ n, at: spot }) => ({ n, at: spot }));
+  const route = p.path.length > 1 ? p.path.map(floor) : [];
+  return route.length || stops.length ? { route, stops, strong: goal.stage === "started" } : null;
+}
+
 /** 동그라미 번호(①…⑳), 넘으면 숫자. */
 const circled = (n: number) => (n >= 1 && n <= 20 ? String.fromCodePoint(0x245f + n) : `${n}`);
 
@@ -75,7 +101,7 @@ function personMark(w: WorldView | null): PlanMarks["person"] {
 }
 
 /** 목표 고리 자리: 목표가 서 있으면 그 대상 World State 물건 자리, 자리를 모르면 놓인 면의 자리. */
-function goalMark(goal: { object: string | null; standing: boolean } | null | undefined, w: WorldView | null, at: (t: PlanTarget) => Vec3 | null): PlanMarks["goal"] {
+function goalMark(goal: GoalMarkInput | null | undefined, w: WorldView | null, at: (t: PlanTarget) => Vec3 | null): PlanMarks["goal"] {
   if (!goal?.standing || !goal.object) return null;
   const o = w?.objects.find((x) => x.id === goal.object);
   if (!o) return null;
@@ -86,12 +112,12 @@ function goalMark(goal: { object: string | null; standing: boolean } | null | un
 /** plan 열린 계획, robot 맞춘 눈 평면 자리(모르면 null), world 지금 World State, at 단계 대상의 트윈 자리(모르면 null), goal 미리 세운 목표(goal.ts). */
 export function planMarks(o: {
   plan: PlanView | null; robot: XZ | null; world: WorldView | null; at: (t: PlanTarget) => Vec3 | null;
-  goal?: { object: string | null; standing: boolean } | null;
+  goal?: GoalMarkInput | null;
 }): PlanMarks {
   const person = personMark(o.world);
   const goal = goalMark(o.goal, o.world, o.at);
   const plan = isOpen(o.plan) ? o.plan : null;
-  if (!plan) return { route: { done: [], now: [], ahead: [] }, stops: [], step: null, person, goal };
+  if (!plan) return { route: { done: [], now: [], ahead: [] }, stops: [], step: null, person, goal, pre: preMarks(o.goal, o.at) };
   const k = stepIndex(plan) - 1;
   const path = plan.path;
   const legs = plan.legs.map((l, i) => ({ stepId: l.stepId, from: i === 0 ? 0 : plan.legs[i - 1]!.end, to: l.end }));
@@ -115,13 +141,8 @@ export function planMarks(o: {
   }
 
   // 번호: 이동은 구간 끝, 그 밖은 대상 자리(모르면 대상 평면 자리)
-  const stops: PlanMarks["stops"] = [];
-  plan.steps.forEach((s, i) => {
-    const l = legs.find((x) => x.stepId === s.id);
-    const at = l && path[l.to] ? floor(path[l.to]!) : s.target ? o.at(s.target) ?? (s.target.position ? floor(s.target.position) : null) : null;
-    if (at) stops.push({ n: i + 1, at, status: s.status, now: i === k });
-  });
+  const stops: PlanMarks["stops"] = stopsOf(plan, o.at).map(({ n, at, i }) => ({ n, at, status: plan.steps[i]!.status, now: i === k }));
   const cur = stops.find((s) => s.now);
   const step = cur ? { at: cur.at, text: `${circled(cur.n)} ${plan.steps[k]!.label}` } : null;
-  return { route, stops, step, person, goal };
+  return { route, stops, step, person, goal, pre: null };
 }

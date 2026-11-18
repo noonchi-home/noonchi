@@ -11,7 +11,8 @@ import type { Check } from "../../src/dashboard/checks/checks";
 import { coverScale, focusOf, livedOf, toScreen, wideCamera } from "../../src/dashboard/camera";
 import { Dashboard } from "../../src/dashboard/Dashboard";
 import { roomSetsOf, twinFrame } from "../../src/dashboard/frame";
-import { MapOverlay } from "../../src/dashboard/MapOverlay";
+import { MapOverlay, PRE_FADE } from "../../src/dashboard/MapOverlay";
+import type { GoalMarkInput } from "../../src/dashboard/plan-marks";
 import { PreDrawing } from "../../src/dashboard/motion";
 import { TwinEngine } from "../../src/twin/3d/engine";
 import { plateTransform, type MapCamera } from "../../src/twin/3d/view";
@@ -47,13 +48,13 @@ function fakeEngine(start: MapCamera) {
   };
 }
 
-function propsAt(n: number, checks: Check[] = n > 0 ? PLAN_CHECKS : [], world: WorldView | null = null, goal: { object: string | null; standing: boolean } | null = null) {
+function propsAt(n: number, checks: Check[] = n > 0 ? PLAN_CHECKS : [], world: WorldView | null = null, goal: GoalMarkInput | null = null) {
   const frame = twinFrame({ ...moment(n), checks, anchor: anchorOf, home: HOME, cam: CAM, world, goal });
   const cam = wideCamera(IMAGE, SIZE, focusOf(frame, HOME.shapes), PAD);
   return { frame, checks, cam };
 }
 
-function overlay(n: number, engine: ReturnType<typeof fakeEngine> | null, roomSets = roomSetsOf(PLAN, HOME), checks?: Check[], world: WorldView | null = null, goal: { object: string | null; standing: boolean } | null = null) {
+function overlay(n: number, engine: ReturnType<typeof fakeEngine> | null, roomSets = roomSetsOf(PLAN, HOME), checks?: Check[], world: WorldView | null = null, goal: GoalMarkInput | null = null) {
   const p = propsAt(n, checks, world, goal);
   return <MapOverlay {...p} shapes={HOME.shapes} roomSets={roomSets} image={IMAGE} size={SIZE} engine={engine} devices={devices} objects={objects} moveMs={0} blocked={[]} />;
 }
@@ -165,6 +166,35 @@ describe("트윈 위 표시 판", () => {
     expect(ring.textContent).toBe("");
     unmount();
     expect(render(overlay(0, null, undefined, undefined, world, { object: "cup_1", standing: false })).container.querySelector("[data-goal-ring]")).toBeNull();
+  });
+
+  // 2026-11-19 사용자 결정(A+C 만들기): 목표가 준비되면 미리 만든 계획의 길과 번호를 흐리게(글 없이), 시작되면 진해지며 지금 번호 길로 이어진다
+  it("미리 그린 길: 목표가 준비되면 미리 만든 계획의 길(남은 길 색, 흐림)과 번호(흐림, 글 없음)를 그리고, 시작이면 진하며, 열린 계획이 오면 같은 번호 요소가 그 계획 번호로 이어진다. 버리면 없다", () => {
+    const world = (run.moments[0]!.messages as ServerMessage[]).flatMap((m) => (m.type === "world" ? [m.world] : []))[0]!;
+    const pre = { ...PLAN, status: "planned" as const, steps: PLAN.steps.map((s) => ({ ...s, status: "pending" as const })) };
+    const goal = (stage: GoalMarkInput["stage"]): GoalMarkInput => ({ object: "cup_1", standing: stage !== "dropped", stage, plan: pre });
+    const { container, rerender } = render(overlay(0, null, undefined, [], world, goal("ready")));
+    const line = container.querySelector<HTMLElement>('[data-map-plate] [data-line="pre"]')!;
+    expect(line).not.toBeNull();
+    expect(Number(line.style.opacity)).toBe(PRE_FADE);
+    expect(line.querySelectorAll("svg").length).toBeGreaterThan(0);
+    const stops = () => [...container.querySelectorAll<HTMLElement>("[data-stop]")];
+    expect(stops().length).toBe(pre.steps.length);
+    for (const s of stops()) {
+      expect(s).toHaveAttribute("data-pre");
+      expect(Number(s.style.opacity)).toBe(PRE_FADE);
+    }
+    expect(container.querySelector("[data-step-tag]")).toBeNull();
+    const first = stops()[0]!;
+    rerender(overlay(0, null, undefined, [], world, goal("started")));
+    expect(Number(container.querySelector<HTMLElement>('[data-line="pre"]')!.style.opacity)).toBe(1);
+    rerender(overlay(1, null, undefined, undefined, world, goal("started")));
+    expect(container.querySelector('[data-line="pre"]')).toBeNull();
+    expect(stops()[0]).toBe(first);
+    expect(first).not.toHaveAttribute("data-pre");
+    expect(first).toHaveAttribute("data-now");
+    rerender(overlay(0, null, undefined, [], world, goal("dropped")));
+    expect(container.querySelector('[data-line="pre"], [data-pre]')).toBeNull();
   });
 
   it("표시는 21st.dev Line Draw SVG를 겹친 것이고, 한 장은 받은 코드처럼 path 하나만 그린다", () => {

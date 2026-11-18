@@ -5,7 +5,7 @@
 import type { EyeEvent } from "../../../src/contract/events.ts";
 import type { PlanStep, PlanTarget, PlanView, StepStatus, XZ } from "../../../src/contract/plan.ts";
 import type { WorldView } from "../../../src/contract/world.ts";
-import { planMarks, type Vec3 } from "./plan-marks";
+import { planMarks, type GoalMarkInput, type Vec3 } from "./plan-marks";
 import { dashboardChecks, type Check } from "./checks/checks";
 import { conePixelBox, planDirToScreen, planToPixel, screenAngle, type OrthoCamera } from "../twin";
 import type { Px } from "./camera";
@@ -30,6 +30,8 @@ export interface PlannedView {
   person: { px: Px; text: string } | null;
   /** 미리 세운 목표가 선 동안 치울 물건 위 고리 자리. */
   goal: { px: Px } | null;
+  /** 미리 그린 길(목표가 준비된 계획, 글 없음): 길 전체, 단계 번호 자리, 진한가(시작). */
+  pre: { route: Px[]; stops: { n: number; px: Px }[]; strong: boolean } | null;
 }
 
 export interface TwinFrame {
@@ -100,8 +102,8 @@ export function twinFrame(o: {
   cam: OrthoCamera;
   /** 지금 World State(사람 이름표·World State 물건 대상 자리). 없으면 사람 이름표가 없다. */
   world?: WorldView | null;
-  /** 미리 세운 목표(goal.ts): 선 동안 그 물건 위 고리. */
-  goal?: { object: string | null; standing: boolean } | null;
+  /** 미리 세운 목표(goal.ts): 선 동안 그 물건 위 고리, 준비되면 미리 만든 계획의 길. */
+  goal?: GoalMarkInput | null;
 }): TwinFrame {
   const { cam, home } = o;
   const plan = isOpen(o.plan) ? o.plan : null;
@@ -150,6 +152,7 @@ export function twinFrame(o: {
     step: pm.step ? { px: toPx(pm.step.at), text: pm.step.text } : null,
     person: pm.person ? { px: toPx(pm.person.at), text: pm.person.text } : null,
     goal: pm.goal ? { px: toPx(pm.goal.at) } : null,
+    pre: pm.pre ? { route: pm.pre.route.map(toPx), stops: pm.pre.stops.map((s) => ({ n: s.n, px: toPx(s.at) })), strong: pm.pre.strong } : null,
   };
 
   return {

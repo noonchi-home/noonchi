@@ -27,7 +27,7 @@ const person = (over: Partial<WorldView["person"]>): WorldView => ({
 
 describe("계획 표시 자료(planMarks)", () => {
   it("계획이 없으면 길·번호·단계 이름표가 없다", () => {
-    expect(planMarks({ plan: null, robot: [1, 1], world: null, at })).toEqual({ route: { done: [], now: [], ahead: [] }, stops: [], step: null, person: null, goal: null });
+    expect(planMarks({ plan: null, robot: [1, 1], world: null, at })).toEqual({ route: { done: [], now: [], ahead: [] }, stops: [], step: null, person: null, goal: null, pre: null });
   });
 
   it("단계마다 번호 자리: 이동은 그 구간 끝(바닥), 그 밖은 대상 자리. 상태는 단계 상태, 지금 단계는 now. 지금 단계 이름표는 「② 컵 집기」", () => {
@@ -78,5 +78,26 @@ describe("계획 표시 자료(planMarks)", () => {
     expect(planMarks({ plan: null, robot: null, world: cup({}), at, goal: { object: "cup_9", standing: true } }).goal).toBeNull();
     expect(planMarks({ plan: null, robot: null, world: cup({}), at, goal: null }).goal).toBeNull();
     expect(planMarks({ plan: null, robot: null, world: cup({}), at }).goal).toBeNull();
+  });
+
+  // 2026-11-19 사용자 결정(「만들기, 1.6초 크게」 A+C): 목표가 준비되면 미리 만든 계획의 길과 번호를 흐리게(글 없이) 그려 두고, 시작되면 진해지며 지금 번호 길로 이어진다
+  it("미리 그린 길: 목표가 준비됨이고 열린 계획이 없으면 미리 만든 계획의 길 전체와 단계 번호(글 없음, 흐림)다. 시작(떠남)이면 진하다. 열린 계획이 오면 그 번호 길만이고, 세움·버림·끝이면 없다", () => {
+    const pre = { ...planAt(1), id: "plan:goal-1", status: "planned" as const, steps: STEPS.map((x) => ({ ...x, status: "pending" as const })) };
+    const goal = (stage: "set" | "ready" | "started" | "done" | "dropped") => ({ object: "cup_1", standing: stage === "set" || stage === "ready" || stage === "started", stage, plan: pre });
+    const ready = planMarks({ plan: null, robot: [0, 0], world: null, at, goal: goal("ready") });
+    expect(ready.pre).toEqual({
+      route: PATH.map(([x, z]) => [x, 0, z]),
+      stops: [{ n: 1, at: [4, 0, 0] }, { n: 2, at: ANCHORS.table }, { n: 3, at: [8, 0, 3] }, { n: 4, at: ANCHORS.sink }],
+      strong: false,
+    });
+    expect(ready.stops).toEqual([]);
+    expect(ready.step).toBeNull();
+    expect(JSON.stringify(ready.pre)).not.toMatch(/가기|집기|내려놓기/);
+    expect(planMarks({ plan: null, robot: [0, 0], world: null, at, goal: goal("started") }).pre!.strong).toBe(true);
+    for (const stage of ["set", "dropped", "done"] as const) expect(planMarks({ plan: null, robot: [0, 0], world: null, at, goal: goal(stage) }).pre, stage).toBeNull();
+    const open = planMarks({ plan: planAt(1), robot: [0, 0], world: null, at, goal: goal("started") });
+    expect(open.pre).toBeNull();
+    expect(open.stops.map((x) => x.n)).toEqual([1, 2, 3, 4]);
+    expect(planMarks({ plan: null, robot: [0, 0], world: null, at, goal: { ...goal("ready"), plan: null } }).pre).toBeNull();
   });
 });

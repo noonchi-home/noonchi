@@ -20,7 +20,7 @@ describe("미리 세운 목표(goalOf)", () => {
   });
 
   it("세움(미리 만드는 중) → 준비됨(계획 준비) → 시작(사람이 떠남·준비한 계획을 씀) → 끝(그 계획이 끝남). 대상 물건과 행동을 싣는다", () => {
-    expect(at(GOAL)).toEqual({ stage: "set", action: "컵 치우기", object: "cup_1", standing: true });
+    expect(at(GOAL)).toEqual({ stage: "set", action: "컵 치우기", object: "cup_1", standing: true, plan: null });
     expect(at({ ...GOAL, prep: "planning" })!.stage).toBe("set");
     expect(at({ ...GOAL, prep: "ready" })!.stage).toBe("ready");
     expect(at({ ...GOAL, status: "fired", prep: "ready" })!.stage).toBe("started");
