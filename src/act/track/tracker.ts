@@ -385,10 +385,17 @@ export class ExecutionTracker {
     if (HUMAN_KINDS.includes(step.kind) || step.kind === "ask") steps.repeat(r, now);
   }
 
-  /** 가까이 보는 차례인가(찾기 비추기·가까이 보기, 내용물 보류 잘라 보기·위에서 보기): 관찰 흐름이 그동안 VLM 사진 간격을 줄인다(src/observe/pipeline.ts vlmFast). */
+  /** 가까이 보는 차례인가(찾기 비추기·가까이 보기, 내용물 보류 잘라 보기·위에서 보기). */
   looking(): boolean {
     const core = this.core;
     return !core.stopped && (core.finder.looking() || core.contents.looking());
+  }
+
+  /** VLM 사진 간격을 줄일 때인가(src/observe/pipeline.ts vlmFast, FAST_VLM_MS 1초): 가까이 보는 차례이거나 미리 세운 목표가 서 있는 동안(세움·떠남).
+   *  목표가 버려지거나 계획이 시작되면(씀) 원래 간격이다(2026-11-18 사용자 결정: 목표 동안 컵 확정(사진 2장)을 빨리). */
+  fastVlm(): boolean {
+    const core = this.core;
+    return !core.stopped && (this.looking() || core.goal.current() !== null);
   }
 
   /** 판단 전 보기 B가 그 컵을 잘라 봤다(src/act/look.ts looked): 계획 밖으로 가까이 가서 볼지 본다. */

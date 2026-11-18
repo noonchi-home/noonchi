@@ -74,11 +74,16 @@ export interface Run {
   /** 미리 세운 목표(src/act/track/goal.ts)로 미리 만든 계획이면 그 목표 id와 사람이 떠난 때(실행 전 검사 seenSince). 아니면 null.
    *  목표 실행은 첫 단계 전 승인을 묻지 않는다(사용자 결정 2026-11-18, approval.ts need). 위험 목록 가전 단계는 그 단계에서 늘 묻는다. */
   goal: string | null; seenSince: number | null;
+  /** 미리 만든 계획이면 사람이 떠난 때(아니면 null). */
+  leftAt: number | null;
+  /** 떠나기 직전 사진으로 시작한 목표 실행(떠난 뒤 사진에 대상이 아직 없음): 그 대상 id, 사람이 떠난 때, 그 대상을 다루는 단계 앞에서 기다리기 시작한 때.
+   *  그 단계 전에 떠난 뒤 다시 봤는지 보고, 없으면 그 자리를 찾는다(start.ts held). 아니면 null. */
+  verify: { objectId: string; since: number; at: number | null } | null;
 }
 
 /** at: 같은 행동 다시 계획 간격(planGapMs)을 세려고 적은 시각. */
 /** prepared: 미리 만든 계획을 쓴 판단(goal.ts take): 그 목표 id와 실행 전 검사 기준(사람이 떠난 때). */
-export interface Job { decision: DecisionRecord; gen: number; abort: AbortController; at: number; prepared?: { goal: string; seenSince: number } }
+export interface Job { decision: DecisionRecord; gen: number; abort: AbortController; at: number; prepared?: { goal: string; seenSince: number; leftAt: number } }
 
 export const OPEN = new Set<ExecState>(["planned", "running", "verifying"]);
 export const clsOf = (w: WorldView, id: string) => w.objects.find((o) => o.id === id)?.cls ?? id.replace(/_\d+$/, "");

@@ -144,6 +144,8 @@ export class Steps extends Part {
 
   /** 지금 단계를 끝내고 다음 단계로. 마지막이었으면 계획 완료. 집기를 마치면 그 물건은 사람이 들고 다니고, 놓기를 마치면 그 물건은 넣은 곳에 치운 것이다. */
   advance(r: Run): void {
+    // 떠나기 직전 사진으로 시작한 목표 실행: 그 대상을 다루는 단계 전에 떠난 뒤 다시 봤는지 본다(없으면 찾기, start.ts held). 붙잡는 동안 지금 단계에 머문다
+    if (r.verify && this.core.start.held(r, r.at + 1)) return;
     const done = this.core.stepOf(r);
     if (done && HUMAN_KINDS.includes(done.kind)) r.outcomes.push({ label: done.label, alone: !r.helped });
     if (done?.kind === "pick" && done.object) r.carried.add(done.object);

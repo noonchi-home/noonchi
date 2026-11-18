@@ -26,8 +26,9 @@ import { followedId, planObjectsOf, putAway, TASK_NAMES, TASK_SAY, targetOf } fr
 import { Part } from "./core.js";
 
 /** 목표를 세워 둘 수 있는 시간(ms, 사용자 답 30분)과, 사람이 떠난 뒤 PAM이 그 행동을 고르기를 기다리는 시간(ms, 사용자 답 15초),
- *  사람 곁 면으로 볼 거리(m, 사람 자리에서 면 가장자리까지: 면 가운데 거리 − 반지름). */
-export const GOAL_DEFAULTS = { armMs: 30 * 60_000, fireWaitMs: 15_000, spotM: 1.5 } as const;
+ *  사람 곁 면으로 볼 거리(m, 사람 자리에서 면 가장자리까지: 면 가운데 거리 − 반지름),
+ *  떠나기 직전 이 시간(ms) 안에 본 컵이면 떠난 뒤 사진을 기다리지 않고 바로 시작한다(사용자 결정 2026-11-18, 떠난 뒤 다시 봤는지는 집기 전에 본다). */
+export const GOAL_DEFAULTS = { armMs: 30 * 60_000, fireWaitMs: 15_000, spotM: 1.5, leaveSeenMs: 2500 } as const;
 
 /** 미리 만들 때 쓰는 대신 물건: 사람이 다 쓰고 둘 자리(면) 위의 그 종류 물건. id는 <종류>_0(World State 번호는 1부터라 겹치지 않는다). */
 function standIn(cls: string, spot: { surface: string; label: string; position: [number, number, number]; place: string }, room: string | null, now: number): WorldObject {
@@ -277,13 +278,14 @@ export class GoalWatch extends Part {
    *    다시 검사도 fallback도 하지 않고 replaced로 버린다(계획 모드는 한 번에 하나라 fallback이 새 사람 요청의 계획을 끊는다). 끝 상태(used·dropped)는 호출이 끝난 뒤 낸다.
    *  - 둘 다 없으면(미리 만들기 실패·아직) stale로 버리고 null. null이면 부르는 쪽이 계획 모드를 부른다. 쓰면 목표는 used로 끝난다.
    *  준비한 계획을 버리고 계획 모드로 넘어가면 까닭 글(다시 검사·미리 만들기 오류 등)을 목표 error와 서버 로그에 남긴다.
-   *  seenSince: 실행 전 검사가 대상을 다시 본 것으로 볼 기준(사람이 떠난 때). */
-  take(d: DecisionRecord, signal: AbortSignal, fallback: () => PlanResult | Promise<PlanResult>): { out: PlanResult | Promise<PlanResult>; seenSince: number; goal: string } | null {
+   *  seenSince: 실행 전 검사가 대상을 다시 본 것으로 볼 기준(떠나기 직전 GOAL_DEFAULTS.leaveSeenMs 앞), leftAt: 사람이 떠난 때(집기 전에 그 뒤 다시 봤는지 본다). */
+  take(d: DecisionRecord, signal: AbortSignal, fallback: () => PlanResult | Promise<PlanResult>): { out: PlanResult | Promise<PlanResult>; seenSince: number; leftAt: number; goal: string } | null {
     const g = this.goal;
     const reuse = this.o.reuse;
     const v = g?.view;
     if (!g || !v || !reuse || d.action !== v.action || v.gone_ms === null || !this.afterLeave(d, v)) return null;
-    const seenSince = v.gone_ms;
+    const leftAt = v.gone_ms;
+    const seenSince = leftAt - GOAL_DEFAULTS.leaveSeenMs;
     const surface = g.surface;
     // 미리 만든 면에 있는 목표 물건 id(없으면 null)와, 계획의 물건 id를 그 id로 바꾸는 표
     const bound = (): string | null => {
@@ -303,7 +305,7 @@ export class GoalWatch extends Part {
         return null;
       }
       this.end(g, "used");
-      return { out: r, seenSince, goal: v.id };
+      return { out: r, seenSince, leftAt, goal: v.id };
     }
     if (g.job) {
       const job = g.job;
@@ -335,7 +337,7 @@ export class GoalWatch extends Part {
         this.end(g, "dropped", "stale", why);
         return signal.aborted ? cut : fallback();
       });
-      return { out, seenSince, goal: v.id };
+      return { out, seenSince, leftAt, goal: v.id };
     }
     this.drop("stale", v.error ?? GOAL_LOG.error.none);
     return null;

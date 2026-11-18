@@ -3,10 +3,10 @@
 // 계획 없는 행동(그대로 두기)의 기록과 같은 행동 다시 계획 간격도 여기서 센다.
 import { CONTENTS_HOLD } from "./contents.js";
 import type { DecisionRecord } from "../../contract/events.js";
-import { needsPhone, objectNames, type PlanResult } from "../../agent/index.js";
+import { needsPhone, objectNames, type AgentStep, type PlanResult } from "../../agent/index.js";
 import { APPROVAL_TEXT, EXEC_TEXT } from "../labels.js";
 import { quietLabels } from "../lessons.js";
-import { planIdOf, taskOf } from "../tasks.js";
+import { planIdOf, planObjectsOf, taskOf } from "../tasks.js";
 import { saidIn } from "../../world/labels.js";
 import { emergencyOf } from "../mode.js";
 import { Part, clsOf, type Job, type Run } from "./core.js";
@@ -87,7 +87,7 @@ export class Starter extends Part {
       const plan = () => this.o.planner(d, job.abort.signal);
       // 사람이 떠난 목표와 같은 행동이면 미리 만든 계획을 이 판단으로 다시 검사해 쓴다(계획 모드를 다시 부르지 않는다, goal.ts take)
       const ready = core.goal.take(d, job.abort.signal, plan);
-      if (ready) job.prepared = { goal: ready.goal, seenSince: ready.seenSince };
+      if (ready) job.prepared = { goal: ready.goal, seenSince: ready.seenSince, leftAt: ready.leftAt };
       out = ready ? ready.out : plan();
     } catch (e) {
       out = { ok: false, error: (e as Error).message };
@@ -191,7 +191,7 @@ export class Starter extends Part {
       strays: 0, strayAt: Number.NEGATIVE_INFINITY, strayNear: null, told: null, helped: false,
       quiet: taskOf(r.plan.task)?.coach ? quietLabels(this.o.lessons?.get(r.plan.task) ?? null) : new Set(), quietOn: false, outcomes: [], hold: null, window: null, heldIds: new Set(), busyAt: null, usedAt: null,
       // 미리 만든 계획은 쓰는 중이라 미룬 계획처럼 첫 명령을 폰 대화·승인 대기 동안 미룬다(사람 요청이 먼저)
-      useHeld: !!job.prepared, goal: job.prepared?.goal ?? null, seenSince: job.prepared?.seenSince ?? null,
+      useHeld: !!job.prepared, goal: job.prepared?.goal ?? null, seenSince: job.prepared?.seenSince ?? null, leftAt: job.prepared?.leftAt ?? null, verify: null,
       // 계획 전 찾기에서 찾은 뒤 만든 계획이면 찾기로 붙잡았던 계획처럼 첫 명령을 폰 대화·승인 대기 동안 미룬다
       find: null, findHeld: core.foundFor === d.id,
     };
@@ -299,7 +299,49 @@ export class Starter extends Part {
   private begin(r: Run): void {
     this.core.step(r, "running");
     if (r.plan.steps.length === 0) return this.core.steps.finish(r, "done");
+    this.verifyFrom(r);
     this.core.steps.activate(r, 0);
+  }
+
+  /** 떠나기 직전 사진으로 시작한 목표 실행이면(대상을 사람이 떠난 뒤에 아직 못 봄) 그 대상을 다루는 단계 전에 다시 볼 것으로 둔다(held). */
+  private verifyFrom(r: Run): void {
+    const leftAt = r.leftAt;
+    const cls = taskOf(r.plan.task)?.target;
+    if (leftAt === null || !cls) return;
+    const world = this.o.world();
+    const id = planObjectsOf(r.plan.view, world, cls)[0];
+    const o = id ? world.objects.find((x) => x.id === id) : undefined;
+    if (id && o && o.last_seen_ms < leftAt && !touches(r.plan.steps[0], id)) r.verify = { objectId: id, since: leftAt, at: null };
+  }
+
+  /** 다음 단계(next)가 떠난 뒤 다시 보지 못한 목표 대상(verify)을 다루면 그 전에 다시 본다: 떠난 뒤 사진에 그 대상이 있으면(실행 전 검사, 기준 = 떠난 때) 풀고 false.
+   *  아직이면 다시 보기 기한(recheckMs) 동안 기다리고, 그 뒤에도 없음·낡음이면 그 마지막 자리를 찾는다(실행 전 찾기와 같은 길, find.ts keep: 「식탁 위를 비춰 주세요」).
+   *  찾으면 다시 검사가 통과해 그 단계로 가고, 못 찾으면 검사 글로 닫는다. 다른 까닭으로 막히면 기한 뒤 그 글로 닫는다. 붙잡는 동안 true
+   *  (2026-11-18 사용자 결정: 사람이 마지막에 컵을 들고 나갔으면 식탁에 가서 없는 것을 보고 찾기로 넘어간다). */
+  held(r: Run, next: number): boolean {
+    const v = r.verify;
+    const step = r.plan.steps[next];
+    if (!v || !step || !touches(step, v.objectId)) return false;
+    const now = this.clock.now();
+    v.at ??= now;
+    const c = this.o.check(r.decision, r.plan.view, v.since);
+    if (c.ok) {
+      r.verify = null;
+      this.core.finder.release(r, true);
+      return false;
+    }
+    if (!r.find && now - v.at < this.cfg.recheckMs) return true;
+    if ((c.reason === "no_target" || c.reason === "stale") && c.object) {
+      const k = this.core.finder.keep(r, c.object);
+      if (k === "hold") return true;
+      if (k === "other") {
+        this.ungap(r.decision, r.gapAt);
+        this.core.steps.finish(r, "failed", EXEC_TEXT.foundNew, "cancelled");
+        return true;
+      }
+    }
+    this.core.steps.finish(r, "failed", c.text);
+    return true;
   }
 
   /** 판본이 맞는 실제 폰이 붙어 있는가(모르면 붙어 있다고 본다). */
@@ -312,3 +354,6 @@ export class Starter extends Part {
     this.core.emit(planIdOf(d.id), "decided", text);
   }
 }
+
+/** 그 단계가 그 물건을 다루는가(집기·내려놓기·하기의 물건이나 대상). */
+const touches = (step: AgentStep | undefined, id: string) => !!step && step.kind !== "go" && (step.object === id || step.target === id);

@@ -1,5 +1,7 @@
 // 미리 세운 목표를 처음부터 끝까지(가짜 서버, 한양목련, 기준점을 맞춘 카메라): 사람이 컵으로 마시는 동안 「컵 치우기」 목표를 세우고 계획을 미리 만든다.
 // 사람이 떠나면 판단을 바로 부르고, PAM이 컵 치우기를 고르면 미리 만든 계획으로 첫 명령을 낸다(계획 모드 호출은 처음 한 번뿐, 처음 하는 일이어도 묻지 않음).
+// 떠나기 직전 2.5초 안에 식탁 위에서 본 컵이면 떠난 뒤 사진을 기다리지 않는다(2026-11-18 사용자 결정): 사람 사라짐 1초 안 첫 명령이 VLM 사진 때와 상관없다.
+// 목표가 서 있는 동안 VLM 사진 간격은 1초이고, 계획이 시작되면 2초로 돌아간다(src/observe/pipeline.ts FAST_VLM_MS, src/act/track/tracker.ts fastVlm).
 // 물건은 장면 VLM 물건 목록(objects)으로만 생기고 VLM 사진 간격(VLM_FRAME_MS 2초)마다 확정되므로, 컵이 서고 목표가 서기까지 몇 초가 걸린다. 주기 판단은 기본 5초다.
 // 폰 눈·카메라는 tests/mokryeon-e2e.test.ts와 같다(식탁 윗면 가운데를 1.5 m 떨어진 거실에서 높이 1.5 m로 본다).
 import { mkdtempSync } from "node:fs";
@@ -50,10 +52,13 @@ interface Scene { dets: Detection[]; facts: Record<string, string[]> }
 describe("미리 세운 목표(가짜 서버 처음부터 끝까지)", () => {
   it("마시는 동안 목표를 세우고 계획을 미리 만든다. 사람이 떠나면 계획 모드를 다시 부르지 않고, 묻지 않고, 사람 사라짐 1초 안에 「식탁으로 가 주세요」를 보낸다", async () => {
     const scene: Scene = { dets: [PERSON, CUP], facts: { person: ["sitting", "drinking"], cup: ["on_table", "has_contents"] } };
+    /** 장면 VLM 요청을 받은 시각(실제 시계). */
+    const vlmAt: number[] = [];
     fake = await startFakeOpenAI({
       // 장면 VLM 답: 감지 번호마다 사실, 그리고 VLM 물건 목록(컵 감지와 이은 v1)
       reply: (body) => {
         if (body?.response_format?.json_schema?.name !== "scene_observation") return null;
+        vlmAt.push(Date.now());
         const parts = (body.messages as { role: string; content: unknown }[]).filter((m) => m.role === "user").flatMap((m) => (Array.isArray(m.content) ? m.content : [{ text: m.content }]));
         const text = parts.map((p: { text?: unknown }) => (typeof p.text === "string" ? p.text : "")).join("\n");
         const dets = JSON.parse(/Detections: (\[.*\])/.exec(text)?.[1] ?? "[]") as { id: string; class: string }[];
@@ -115,6 +120,14 @@ describe("미리 세운 목표(가짜 서버 처음부터 끝까지)", () => {
     expect(spoken()).toEqual([]);
     expect(dash.some((m) => m.type === "thought" && m.messages.some((t: { text: string }) => t.text === "컵을 두고 자리를 뜨면 컵을 치울게요"))).toBe(true);
     expect(dash.filter((m) => m.type === "goal").at(-1)!.goal).toMatchObject({ action: "컵 치우기", object: cup.id, plan: { goal: "컵 치우기" } });
+    /** from 뒤에 받은 장면 VLM 요청 사이 간격(ms). */
+    const gaps = (from: number) => vlmAt.filter((t) => t >= from).flatMap((t, i, xs) => (i ? [t - xs[i - 1]!] : []));
+    const median = (xs: number[]) => [...xs].sort((a, b) => a - b)[Math.floor(xs.length / 2)]!;
+    // 목표가 서 있는 동안(사람이 아직 마신다) VLM 사진 간격 1초
+    const armed = Date.now();
+    await pump(() => Date.now() - armed >= 4600, "목표 동안 사진");
+    expect(gaps(armed).length, JSON.stringify(gaps(armed))).toBeGreaterThanOrEqual(3);
+    expect(median(gaps(armed))).toBeLessThanOrEqual(1300);
 
     // 2 사람이 떠난다(컵은 식탁에 그대로): 사람 사라짐 1초 안에 첫 명령, 계획 모드는 다시 부르지 않고 승인도 묻지 않는다
     scene.dets = [CUP];
@@ -127,5 +140,11 @@ describe("미리 세운 목표(가짜 서버 처음부터 끝까지)", () => {
     expect(planned()).toBe(1);
     expect(goals().slice(-2)).toEqual(["fired/ready", "used/ready"]);
     expect(JSON.stringify(phone)).not.toContain("할까요");
+
+    // 3 계획이 시작되면(목표 씀) VLM 사진 간격은 다시 2초
+    const started = Date.now();
+    await pump(() => Date.now() - started >= 6500, "계획 뒤 사진");
+    expect(gaps(started + 1000).length).toBeGreaterThanOrEqual(2);
+    expect(Math.min(...gaps(started + 1000)), JSON.stringify(gaps(started + 1000))).toBeGreaterThanOrEqual(1800);
   }, 120_000);
 });

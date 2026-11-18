@@ -10,7 +10,7 @@ import type { TrackCore } from "../src/act/track/core.js";
 import { PlanHub } from "../src/act/hub.js";
 import { checkPlan } from "../src/act/check.js";
 import { tasksFor } from "../src/act/tasks.js";
-import { APPROVAL_TEXT, EXEC_TEXT, USE_THOUGHT } from "../src/act/labels.js";
+import { APPROVAL_TEXT, CHECK_TEXT, EXEC_TEXT, FIND_TEXT, USE_THOUGHT } from "../src/act/labels.js";
 import { Decider } from "../src/brain/decide.js";
 import { Trigger } from "../src/world/trigger.js";
 import { pamClientFor, startFakePamLlm } from "./helpers/pam.js";
@@ -89,13 +89,18 @@ function goalSetup(o: { over?: Partial<TrackerOptions>; state?: string | null; o
     onGoal: (g) => goals.push(g), nudge: () => { nudged++; }, thought: (text) => thoughts.push(text),
     toPhone: (m) => phone.push(m), emit: (l) => logs.push(l), ...o.over,
   });
-  t.onEye([3, 1]);
+  let eye: [number, number] = [3, 1];
+  /** 참이면 tick이 있는 물건을 지금 본 것으로 고치지 않는다(VLM 사진에 안 잡힘). */
+  let frozen = false;
+  t.onEye(eye);
   const tick = (ms = 250) => {
     clock.t += ms;
-    objects = objects.map((x) => (x.status === "present" ? { ...x, last_seen_ms: clock.t, last_in_view_ms: clock.t } : x));
-    t.onEye([3, 1]);
+    if (!frozen) objects = objects.map((x) => (x.status === "present" ? { ...x, last_seen_ms: clock.t, last_in_view_ms: clock.t } : x));
+    t.onEye(eye);
     t.tick();
   };
+  const setEye = (at: [number, number]) => { eye = at; };
+  const freeze = (on = true) => { frozen = on; };
   const person = (p: Who) => {
     if (p && !who) since = clock.t;
     if (!p && who) goneAt = clock.t;
@@ -113,7 +118,7 @@ function goalSetup(o: { over?: Partial<TrackerOptions>; state?: string | null; o
   const commands = () => phone.flatMap((m) => (m.type === "command" ? [m] : []));
   const planCalls = () => llm.bodies().length;
   const states = () => goals.map((g) => `${g.status}/${g.prep}`);
-  return { t, clock, tick, person, gone, setObjects, setSightings, goals, states, thoughts, logs, phone, commands, decide, planCalls, nudged: () => nudged, world: w, plans };
+  return { t, clock, tick, person, gone, setObjects, setSightings, setEye, freeze, goals, states, thoughts, logs, phone, commands, decide, planCalls, nudged: () => nudged, world: w, plans };
 }
 
 describe("미리 세운 목표: 세우기와 미리 만들기", () => {
@@ -788,5 +793,95 @@ describe("미리 세운 목표: 사람이 떠난 것이 반영된 뒤 보낸 판
     expect(s.t.goal()?.status).toBe("fired");
     await s.decide(sent);
     expect(s.commands()[0]).toMatchObject({ id: "plan:pam-2", text: "식탁으로 가 주세요" });
+  });
+});
+
+// 2026-11-18 사용자 결정: 떠나기 직전 2.5초 안에 그 면 위에서 손에 없이 본 컵이면 떠난 뒤 사진을 기다리지 않고 바로 시작한다.
+// 사람이 마지막에 컵을 들고 나갔으면 식탁에 가서 없는 것을 보고 찾기로 넘어간다(집기 전에 떠난 뒤 다시 봤는지 본다)
+describe("미리 세운 목표: 떠나기 직전에 본 컵으로 바로 시작", () => {
+  /** 미리 만든 계획이 준비되고, 컵을 떠나기 lastMs 앞에 마지막으로 본 채(그 뒤 사진에 안 잡힘) 사람이 떠난 상태. */
+  async function leftWith(lastMs: number) {
+    const s = goalSetup();
+    s.person({ act: "drinking" });
+    s.tick();
+    await s.t.idle();
+    expect(s.t.goal()?.prep).toBe("ready");
+    s.tick(1000);
+    s.freeze();
+    s.setObjects(() => [cupOn({ seen: s.clock.t })]);
+    s.tick(lastMs);
+    s.gone();
+    s.tick(2500);
+    return s;
+  }
+
+  it("떠나기 1초 앞에 식탁 위에서 본 컵이면 떠난 뒤 사진 없이 판단을 받자마자 「식탁으로 가 주세요」를 보낸다(판단이 떠난 뒤 2.5초에 와 마지막 사진이 3.5초 지나도)", async () => {
+    const s = await leftWith(1000);
+    await s.decide(pam("pam-2", 2, s.clock.t));
+    expect(s.commands()[0]).toMatchObject({ id: "plan:pam-2", text: "식탁으로 가 주세요" });
+  });
+
+  it("떠나기 3초 앞에 본 컵이면 떠난 뒤 사진을 기다린다(바로 보내지 않는다)", async () => {
+    const s = await leftWith(3000);
+    await s.decide(pam("pam-2", 2, s.clock.t));
+    expect(s.commands()).toEqual([]);
+  });
+
+  it("식탁에 갔을 때 떠난 뒤 사진에 컵이 있으면 바로 「컵을 들어 주세요」로 간다", async () => {
+    const s = await leftWith(1000);
+    await s.decide(pam("pam-2", 2, s.clock.t));
+    s.freeze(false);
+    s.setEye([7, 3]);
+    s.tick();
+    s.tick();
+    expect(s.commands().at(-1)).toMatchObject({ id: "plan:pam-2", text: "컵을 들어 주세요" });
+  });
+
+  it("사람이 마지막에 컵을 들고 나갔으면(떠난 뒤 사진에 컵이 없음) 식탁에 가서 집기 대신 그 자리를 찾고(「식탁 위를 비춰 주세요」), 못 찾으면 대상이 없다고 닫는다", async () => {
+    const s = await leftWith(1000);
+    await s.decide(pam("pam-2", 2, s.clock.t));
+    expect(s.commands()[0]).toMatchObject({ text: "식탁으로 가 주세요" });
+    s.setObjects((xs) => xs.map((x) => ({ ...x, status: "gone" as const })));
+    s.setEye([7, 3]);
+    for (let i = 0; i < 16; i++) s.tick();
+    expect(s.commands().some((c) => c.text === "컵을 들어 주세요")).toBe(false);
+    expect(s.commands().at(-1)).toMatchObject({ text: FIND_TEXT.aim("식탁") });
+    for (let i = 0; i < 280; i++) s.tick();
+    expect(s.logs.filter((l) => l.type === "execution").at(-1)).toMatchObject({ plan_id: "plan:pam-2", state: "failed", text: CHECK_TEXT.no_target });
+  });
+});
+
+// 2026-11-18 사용자 결정: 목표가 서 있는 동안만 VLM 사진 간격을 1초로(관찰 흐름의 가까이 보는 차례와 같은 길, src/observe/pipeline.ts FAST_VLM_MS)
+describe("미리 세운 목표: 목표 동안 VLM 사진 간격", () => {
+  it("목표가 서 있는 동안(세움·떠남) fastVlm이 참이고, 버리거나 계획이 시작되면(씀) 거짓이다", async () => {
+    const s = goalSetup();
+    expect(s.t.fastVlm()).toBe(false);
+    s.person({ act: "drinking" });
+    s.tick();
+    expect(s.t.fastVlm()).toBe(true);
+    await s.t.idle();
+    s.gone();
+    expect(s.t.goal()?.status).toBe("fired");
+    expect(s.t.fastVlm()).toBe(true);
+    await s.decide(pam("pam-2", 2, s.clock.t));
+    expect(s.goals.at(-1)?.status).toBe("used");
+    expect(s.t.fastVlm()).toBe(false);
+    const d = goalSetup();
+    d.person({ act: "drinking" });
+    d.tick();
+    expect(d.t.onHeard("그만")).toMatchObject({ kind: "answer" });
+    expect(d.t.fastVlm()).toBe(false);
+  });
+
+  it("찾기 차례(가까이 보는 차례)와 겹쳐도 참이다", async () => {
+    const s = goalSetup();
+    s.person({ act: "drinking" });
+    s.tick();
+    const core = (s.t as unknown as { core: TrackCore }).core;
+    const real = core.finder.looking.bind(core.finder);
+    core.finder.looking = () => true;
+    expect(s.t.fastVlm()).toBe(true);
+    expect(s.t.looking()).toBe(true);
+    core.finder.looking = real;
   });
 });
