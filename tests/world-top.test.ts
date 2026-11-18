@@ -7,6 +7,7 @@ import { topPairOf } from "../src/world/state/contents.js";
 import { WorldState } from "../src/world/state/world.js";
 import { cylinderBox, engineFrame, LOOK_SIZE, rolled, viewLooking } from "./helpers/camera.js";
 import { det } from "./helpers/detectors.js";
+import { see } from "./helpers/vlm-scene.js";
 
 type V3 = [number, number, number];
 const CUP: V3 = [1, 0.75, 0];
@@ -113,11 +114,11 @@ describe("위에서 본 쌍(topPairOf)", () => {
 describe("World State: 컵 크기와 보기 지킴", () => {
   const table = { id: "table_1", label: "식탁", center: [0.6, 0] as [number, number], top: 0.75, radius: 1 };
   const view = viewLooking([0, 1.4, 0], [0.6, 0.8, 0]);
-  it("전체 사진 감지마다 재서 최근 5장의 가운데값을 size_m으로 낸다(잘라 본 사진은 쌓지 않는다)", () => {
+  it("전체 사진(장면 VLM 물건이 이은 감지 상자)마다 재서 최근 5장의 가운데값을 size_m으로 낸다(잘라 본 사진은 쌓지 않는다)", () => {
     const w = new WorldState({ evidenceStepMs: 1000, surfaces: () => [table], floorAt: () => 0, roomAt: () => ({ id: "kitchen", label: "주방" }), devices: () => [] });
     const box = cylinderBox(view, [0.6, 0.75, 0], 0.04, 0.1);
     const cup: Detection = det("cup", 0.9, box, 41);
-    for (let i = 1; i <= 5; i++) w.applyDetections(engineFrame(`e${i}`, i * 1000, { view }), [cup]);
+    for (let i = 1; i <= 5; i++) see(w, engineFrame(`e${i}`, i * 1000, { view }), [cup]);
     const o = w.view(5000).objects[0]!;
     expect(o.size_m).toBeDefined();
     expect(Math.abs(o.size_m!.height - 0.1)).toBeLessThan(0.01);
@@ -128,27 +129,25 @@ describe("World State: 컵 크기와 보기 지킴", () => {
     expect(w.view(5000).objects.filter((x) => x.cls !== "cup").every((x) => x.size_m === undefined)).toBe(true);
   });
 
-  it("크기를 잰 뒤 반대편 카메라가 자리를 고치면(돌린 폰이라 크기는 못 잼) 바닥 가운데는 지금 자리를 잰 카메라 기준으로 다시 구한다", () => {
+  it("크기를 잰 뒤 반대편 카메라(돌린 폰이라 크기는 못 잼)가 같은 컵을 보면 흔들림(0.3m 안)이라 자리를 고치지 않고, 바닥 가운데는 그 자리를 잰 카메라 기준 그대로다", () => {
     const w = new WorldState({ evidenceStepMs: 1000, surfaces: () => [table], floorAt: () => 0, roomAt: () => ({ id: "kitchen", label: "주방" }), devices: () => [] });
     const c: [number, number, number] = [0.6, 0.75, 0];
-    for (let i = 1; i <= 5; i++) w.applyDetections(engineFrame(`e${i}`, i * 1000, { view }), [det("cup", 0.9, cylinderBox(view, c, 0.04, 0.1), 41)]);
+    for (let i = 1; i <= 5; i++) see(w, engineFrame(`e${i}`, i * 1000, { view }), [det("cup", 0.9, cylinderBox(view, c, 0.04, 0.1), 41)]);
     const before = w.view(5000).objects[0]!;
     const back = rolled(viewLooking([1.2, 1.4, 0], [0.6, 0.8, 0]), 20);
-    w.applyDetections(engineFrame("e6", 6000, { view: back }), [det("cup", 0.9, cylinderBox(back, c, 0.04, 0.1), 41)]);
+    see(w, engineFrame("e6", 6000, { view: back }), [det("cup", 0.9, cylinderBox(back, c, 0.04, 0.1), 41)]);
     const o = w.view(6000).objects[0]!;
     expect(o.size_m!.width).toBe(before.size_m!.width);
-    const [px, , pz] = o.position!;
-    const len = Math.hypot(px - 1.2, pz);
-    expect(o.size_m!.center![0]).toBeCloseTo(px + ((px - 1.2) / len) * (o.size_m!.width / 2), 2);
-    expect(o.size_m!.center![2]).toBeCloseTo(pz + (pz / len) * (o.size_m!.width / 2), 2);
+    expect(o.position).toEqual(before.position);
+    expect(o.size_m!.center).toEqual(before.size_m!.center);
     expect(Math.abs(o.size_m!.center![0] - 0.6)).toBeLessThan(0.03);
   });
 
   // 바닥만 있는 집에서 LOOK_VIEW로 바닥 (1.5, 0, 0)에 보이는 컵
   const plain = () => new WorldState({ evidenceStepMs: 1000, surfaces: () => [], floorAt: () => 0, roomAt: () => ({ id: "kitchen", label: "주방" }), devices: () => [] });
   const cupIn = det("cup", 0.8, [230, 170, 20, 10], 0);
-  const full = (w: WorldState, i: number, dets: Detection[]) => w.applyDetections(engineFrame(`e${i}`, i * 1000), dets);
-  it("보기 지킴(guard on) 동안은 전체 사진에서 6초 넘게 못 봐도 사라지지 않는다. 풀면(off) 센다. closer_hold는 건드리지 않는다", () => {
+  const full = (w: WorldState, i: number, dets: Detection[]) => see(w, engineFrame(`e${i}`, i * 1000), dets);
+  it("보기 지킴(guard on) 동안은 장면 VLM 사진이 6초 넘게 못 봐도 사라지지 않는다. 풀면(off) 센다. closer_hold는 건드리지 않는다", () => {
     const w = plain();
     for (let i = 1; i <= 3; i++) full(w, i, [cupIn]);
     w.guard("cup_1", 3000, true);

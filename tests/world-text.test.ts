@@ -9,6 +9,7 @@ import type { Detection, EngineFrame } from "../src/contract/observe.js";
 import { sha256 } from "../src/observe/ring.js";
 import { WorldState } from "../src/world/state/world.js";
 import { det } from "./helpers/detectors.js";
+import { see } from "./helpers/vlm-scene.js";
 
 const T = (h: number, m: number, s: number) => Date.UTC(2026, 10, 7, h - 9, m, s);
 describe("PAM 관찰 텍스트", () => {
@@ -330,7 +331,7 @@ function exampleScenario(): string {
   let ids = new Map<string, string>();
   for (let i = 1; i <= 5; i++) {
     w.setEye({ position: [1, 2], height_m: 1.2, yaw_deg: 0, pitch_deg: -20 }, T(21, 0, i - 1));
-    const r = w.applyDetections(frame(i), i <= 3 ? [person, cup] : [cup]);
+    const r = see(w, frame(i), i <= 3 ? [person, cup] : [cup]);
     changes.push(...r.changes);
     ids = r.ids;
     if (i === 3) changes.push(...w.applyScene("e3", T(21, 0, 2), { scene: "kitchen", observations: [{ object_id: "d1", state: "standing" }, { object_id: "d2", state: "on_table" }], summary: "사람이 식탁 옆에 서 있고 컵이 식탁 위에 있다" }, ids));

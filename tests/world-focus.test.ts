@@ -7,6 +7,7 @@ import { WorldState } from "../src/world/state/world.js";
 import type { DetLabel } from "../src/world/vocab.js";
 import { AWAY_VIEW, engineFrame, LOOK_VIEW } from "./helpers/camera.js";
 import { det as mkDet } from "./helpers/detectors.js";
+import { see } from "./helpers/vlm-scene.js";
 
 const ws = () => new WorldState({ evidenceStepMs: 1000, surfaces: () => [], floorAt: () => 0, roomAt: () => ({ id: "kitchen", label: "주방" }), devices: () => [] });
 const det = (label: DetLabel, box: [number, number, number, number], score = 0.8): Detection => mkDet(label, score, box, 0);
@@ -16,7 +17,10 @@ const cupIn = det("cup", [230, 170, 20, 10]);
 const lifted = det("cup", [60, 300, 40, 20]);
 /** 목적지(싱크대 쪽) 자리 컵: 식탁 자리에서 1m 넘게 떨어진 바닥. */
 const atSink = det("cup", [400, 150, 20, 10]);
-const full = (w: WorldState, id: string, atMs: number, dets: Detection[]) => w.applyDetections(engineFrame(id, atMs, { view: LOOK_VIEW }), dets);
+/** 엔진 프레임 한 장과 그 사진의 장면 VLM 답(감지와 이은 물건). 폰 눈은 카메라 자리(eye로 바꾼다, null이면 모름). 물건은 장면 VLM 답으로만 생긴다. */
+const full = (w: WorldState, id: string, atMs: number, dets: Detection[], eye?: [number, number] | null) => see(w, engineFrame(id, atMs, { view: LOOK_VIEW }), dets, eye !== undefined ? { eye } : {});
+/** 식탁 자리 컵과 떨어진 둘째 컵(시야 안 같은 무리가 둘이면 VLM 물건을 어느 컵에 이을지 모호하다). */
+const cupB = det("cup", [330, 250, 20, 10]);
 const ids = (w: WorldState, at: number) => w.view(at).objects.map((o) => [o.id, o.status]);
 const xz = (w: WorldState, d: Detection): [number, number] => {
   const t = ws();
@@ -32,7 +36,7 @@ describe("집기·내려놓기 대상(focus)", () => {
     for (let t = 0; t <= 2000; t += 500) full(w, `e${t}`, t, [cupIn]);
     w.focus("cup_1", { step: "carry", spot: null });
     const eyeAt = xz(w, atSink);
-    for (let t = 2500; t <= 9000; t += 500) w.applyDetections({ ...engineFrame(`c${t}`, t, { view: LOOK_VIEW }), eye: { position: eyeAt, height_m: 1.4, yaw_deg: 0, pitch_deg: 0 } as never }, t < 5000 ? [] : [atSink]);
+    for (let t = 2500; t <= 9000; t += 500) full(w, `c${t}`, t, t < 5000 ? [] : [atSink], eyeAt);
     expect(ids(w, 9000)).toEqual([["cup_1", "present"]]);
     // 둘째 id가 이미 생긴 뒤 내려놓기: 그 둘째가 손에 있음으로 보인 적이 있어야(옮긴 컵이라는 근거) 합친다. Codex(4e682c8 1): 싱크대에 원래 있던 컵은 대상이 아니다
     const make = (held: boolean) => {
@@ -55,9 +59,9 @@ describe("집기·내려놓기 대상(focus)", () => {
     for (let t = 0; t <= 2000; t += 500) full(w, `e${t}`, t, [cupIn]);
     for (const at of [2000, 2500]) w.applyScene(`h${at}`, at, { scene: "k", summary: "s", observations: [{ object_id: "d1", state: "in_hand" }] }, new Map([["d1", "cup_1"]]));
     w.focus("cup_1", { step: "carry", spot: null });
-    w.applyDetections(engineFrame("n3000", 3000, { view: AWAY_VIEW }), []);
+    see(w, engineFrame("n3000", 3000, { view: AWAY_VIEW }), []);
     expect(w.view(3000).objects[0]!.status).toBe("out_of_view");
-    const r = full(w, "e3500", 3500, [atSink]);
+    const r = full(w, "e3500", 3500, [atSink], null);
     expect(r.ids.get("d1")).toBe("cup_1");
   });
 
@@ -81,29 +85,29 @@ describe("집기·내려놓기 대상(focus)", () => {
     const close = det("cup", [100, 100, 300, 250]);   // 바짝 댄 잔: 대상 자리 픽셀(240, 180)을 덮는다
     const r = full(w, "e2500", 2500, [close]);
     expect(r.ids.get("d1")).toBe("cup_1");
+    // 시야 안에 다른 컵도 있으면(모호) 대상 자리가 상자 밖인 감지는 대상으로 잇지 않는다
     const other = ws();
-    for (let t = 0; t <= 2000; t += 500) full(other, `e${t}`, t, [cupIn]);
+    for (let t = 0; t <= 2000; t += 500) full(other, `e${t}`, t, [cupIn, cupB]);
     other.focus("cup_1", { step: "pick", spot: [1.5, 0] });
-    const r2 = full(other, "e2500", 2500, [det("cup", [300, 200, 150, 150])]);
+    const r2 = full(other, "e2500", 2500, [det("cup", [300, 120, 150, 150])]);
     expect(r2.ids.get("d1")).not.toBe("cup_1");
   });
 
   // Codex(02dda8c 1): 식별 근거가 모자라면 잇지 않는다. 집기는 대상 자리 0.5m 안이거나 들린 근거(VLM 손에 있음)가 있을 때만 잇는다
-  it("집기 단계: 대상 자리 0.5m 안(0.35m) 감지는 대상으로 잇고, 먼 들린 감지는 근거 없이 잇지 않는다. VLM이 그 감지를 손에 있음으로 답하면 대상으로 잇고 그 뒤 들린 감지도 대상이다", () => {
+  it("집기 단계: 대상 자리 0.5m 안(0.35m) 감지는 대상으로 잇고, 먼 들린 감지는 근거 없이 잇지 않는다(시야 안에 다른 컵도 있어 모호). VLM이 그 감지를 손에 있음으로 답하면 대상으로 잇고 그 뒤 들린 감지도 대상이다", () => {
     const w = ws();
-    for (let t = 0; t <= 2000; t += 500) full(w, `e${t}`, t, [cupIn]);
+    for (let t = 0; t <= 2000; t += 500) full(w, `e${t}`, t, [cupIn, cupB]);
     w.focus("cup_1", { step: "pick", spot: [1.5, 0] });
-    full(w, "e2500", 2500, [det("cup", [270, 170, 20, 10])]);   // 대상 자리에서 0.354m
-    expect(w.view(2500).objects.map((o) => o.id)).toEqual(["cup_1"]);
-    const r = full(w, "e3000", 3000, [lifted]);
+    full(w, "e2500", 2500, [det("cup", [270, 170, 20, 10]), cupB]);   // 대상 자리에서 0.354m
+    expect(w.view(2500).objects.map((o) => o.id)).toEqual(["cup_1", "cup_2"]);
+    const r = full(w, "e3000", 3000, [lifted, cupB]);
     expect(r.ids.get("d1")).not.toBe("cup_1");
-    const said = (): SceneObservation => ({ scene: "k", summary: "s", objects: [{ id: "v1", cls: "cup", box: { x: 60 / 480, y: 300 / 360, w: 40 / 480, h: 20 / 360 }, det: "d1" }], observations: [{ object_id: "v1", state: "in_hand" }] });
-    w.applyScene("e3000", 3000, said(), r.ids, { view: LOOK_VIEW, width: 480, height: 360 });
-    expect(r.ids.get("d1")).toBe("cup_1");
-    const r2 = full(w, "e3500", 3500, [lifted]);
-    w.applyScene("e3500", 3500, said(), r2.ids, { view: LOOK_VIEW, width: 480, height: 360 });
-    for (let t = 4000; t <= 9000; t += 500) full(w, `e${t}`, t, [lifted]);
-    expect(ids(w, 9000)).toEqual([["cup_1", "present"]]);
+    expect(r.ids.get("d1")).not.toBe("cup_1");
+    // VLM이 들린 컵을 손에 있음으로 답한다(사진마다 한 답)
+    const held = (at: number) => see(w, engineFrame(`h${at}`, at, { view: LOOK_VIEW }), [lifted, cupB], { facts: [["v1", "in_hand"]] });
+    expect(held(3500).ids.get("d1")).toBe("cup_1");
+    for (let t = 4000; t <= 9000; t += 500) held(t);
+    expect(ids(w, 9000)).toEqual([["cup_1", "present"], ["cup_2", "present"]]);
   });
 
   it("내려놓기 단계 동안 손에 든 대상은 안 보여도 사라짐으로 세지 않고, 목적지 가까이(1.5m 안)에 새로 보인 같은 종류 컵을 대상으로 잇는다. 목적지에서 먼 새 컵은 잇지 않는다", () => {
@@ -119,10 +123,11 @@ describe("집기·내려놓기 대상(focus)", () => {
     expect(Math.hypot(p[0] - sink[0], p[2] - sink[1])).toBeLessThan(0.3);
     // 대상을 풀면 지금처럼 센다
     w.focus(null);
+    // 대상(식탁 컵)이 그대로 보이는 동안 목적지에서 먼 새 컵은 대상이 아니다
     const far = ws();
     for (let t = 0; t <= 2000; t += 500) full(far, `e${t}`, t, [cupIn]);
     far.focus("cup_1", { step: "place", spot: [sink[0] + 5, sink[1] + 5] });
-    for (let t = 2500; t <= 6000; t += 500) full(far, `e${t}`, t, [atSink]);
+    for (let t = 2500; t <= 6000; t += 500) full(far, `e${t}`, t, [cupIn, atSink]);
     expect(far.view(6000).objects.map((o) => o.id)).toEqual(["cup_1", "cup_2"]);
   });
 });
@@ -138,7 +143,7 @@ describe("내려놓기 단계: 목적지에 새로 보인 컵은 대상", () => 
     for (let t = 2500; t <= 4500; t += 500) full(w, `e${t}`, t, [cupIn, before]);
     const kept = w.view(4500).objects.map((o) => o.id);
     expect(kept).toHaveLength(2);
-    // 손에 든 대상은 자리를 모른다(눈 자리 모름)
+    // 눈 자리를 모르는 YOLO 사진은 물건을 바꾸지 않는다
     w.applyDetections({ ...engineFrame("n5000", 5000, { view: null }), eye: null }, []);
     w.focus("cup_1", { step: "place", spot: sink });
     for (let t = 5500; t <= 9000; t += 500) full(w, `e${t}`, t, [before, atSink]);

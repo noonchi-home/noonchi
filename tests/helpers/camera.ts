@@ -42,6 +42,10 @@ export const LOOK_VIEW = cameraAt(-Math.PI / 2);
 /** 반대(−x)를 보는 카메라: LOOK_VIEW 앞 자리는 시야 밖이다. */
 export const AWAY_VIEW = cameraAt(Math.PI / 2);
 export const LOOK_SIZE = { width: 480, height: 360 };
+/** 그 카메라를 찍은 폰 눈(카메라 자리): 관찰 흐름에 엔진 프레임과 함께 넣는다. */
+export const eyeOfView = (view: CameraView) => ({ position: [view.origin[0], view.origin[2]] as [number, number], height_m: view.origin[1], yaw_deg: 0, pitch_deg: 0, tracking: "ok" as const, at: "2026-11-18T00:00:00.000Z" });
+/** LOOK_VIEW를 찍은 폰 눈(트윈 (0, 0), 높이 1.5): 관찰 흐름에 엔진 프레임과 함께 넣는다(장면 VLM 새 물건은 폰 눈을 아는 사진에서만 확정한다). */
+export const LOOK_EYE = { position: [0, 0] as [number, number], height_m: 1.5, yaw_deg: -90, pitch_deg: -45, tracking: "ok" as const, at: "2026-11-18T00:00:00.000Z" };
 
 /** 밝기가 i마다 다른 회색(60~139)에 흰 네모(rects, 픽셀 [x, y, w, h])를 그린 LOOK_SIZE JPEG. */
 export function frameJpeg(i: number, rects: readonly Box[] = []): Buffer {

@@ -7,6 +7,7 @@ import type { EngineFrame, Detection, CameraView } from "../src/contract/observe
 import { checkPlan } from "../src/act/check.js";
 import { poseOf, standing } from "./helpers/poses.js";
 import { det } from "./helpers/detectors.js";
+import { see } from "./helpers/vlm-scene.js";
 
 const surfaces = () => [{ id: "table_1", label: "식탁", center: [2, 0] as [number, number], top: 0.75, radius: 0.6 }];
 const devices = () => [{ id: "dishwasher_1", kind: "dishwasher", label: "식기세척기" }];
@@ -14,6 +15,8 @@ const ws = () => new WorldState({ evidenceStepMs: 1000, surfaces, floorAt: () =>
 const frame = (i: number): EngineFrame => ({ id: `e${i}`, capturedAtMs: i * 1000, latestAtMs: i * 1000, jpeg: Buffer.from(`${i}`), sha256: sha256(Buffer.from(`${i}`)), width: 480, height: 360, eye: null, view: null });
 const cup: Detection = det("cup", 0.9, [220, 160, 40, 20], 41);
 const person: Detection = det("person", 0.9, [10, 10, 100, 300], 0);
+/** 엔진 프레임 한 장: YOLO 감지(사람·관절)와 같은 사진의 장면 VLM 답(물건 감지와 이은 물건). 물건은 장면 VLM 답으로만 생긴다. */
+const full = (w: WorldState, f: EngineFrame, dets: Detection[], poses?: ReturnType<typeof standing>[]) => see(w, f, dets, { poses });
 
 // 카메라: 트윈 (0, 1.5, 0)에서 45° 아래로 숙이고 +x(look) 또는 −x(away)를 본다. 90° 시야 투영(열 우선)
 const P = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, -1.0002, -1, 0, 0, -0.020002, 0];
@@ -46,24 +49,29 @@ describe("들은 말(실제 폰이 들은 한 마디)", () => {
 describe("World State", () => {
   it("2장 연속(한 장어치 시간) 컵이면 등장, 관계표로 식기세척기를 붙인다(맞추기 전 위치는 모름)", () => {
     const w = ws();
-    expect(w.applyDetections(frame(1), [cup]).changes).toEqual([]);
-    expect(w.applyDetections(frame(2), [cup]).changes.map((c) => c.kind)).toEqual(["appeared"]);
+    expect(full(w, frame(1), [cup]).changes).toEqual([]);
+    expect(full(w, frame(2), [cup]).changes.map((c) => c.kind)).toEqual(["appeared"]);
     const o = w.view(2000).objects[0]!;
     expect(o).toMatchObject({ cls: "cup", status: "present", position: null, devices: ["dishwasher_1"], first_seen_ms: 1000, last_seen_ms: 2000 });
   });
-  it("등장 확인 전 물체는 보이지 않고, 한 장 끊기면 잊는다", () => {
+  it("등장 확인 전 물체는 보이지 않고, VLM 사진에서 5초 넘게 다시 안 보이면 잊는다(한두 장 놓친 후보는 둔다)", () => {
     const w = ws();
-    w.applyDetections(frame(1), [cup]);
+    full(w, frame(1), [cup]);
     expect(w.view(1000).objects).toEqual([]);
-    w.applyDetections(frame(2), []);
-    for (let i = 3; i <= 4; i++) w.applyDetections(frame(i), [cup]);
-    expect(w.view(4000).objects.map((o) => [o.id, o.first_seen_ms])).toEqual([["cup_2", 3000]]);
+    for (let i = 2; i <= 6; i++) full(w, frame(i), []);
+    for (let i = 7; i <= 8; i++) full(w, frame(i), [cup]);
+    expect(w.view(8000).objects.map((o) => [o.id, o.first_seen_ms])).toEqual([["cup_2", 7000]]);
+    const kept = ws();
+    full(kept, frame(1), [cup]);
+    full(kept, frame(2), []);
+    full(kept, frame(3), [cup]);
+    expect(kept.view(3000).objects.map((o) => [o.id, o.first_seen_ms])).toEqual([["cup_1", 1000]]);
   });
   // 안 내용(contents)은 이 규칙이 아니라 내용물 갱신기(3장·4초, tests/world-contents.test.ts)가 정한다
   it("VLM 사실을 면(facet)마다 두고, 두 번 연속이면 confirmed", () => {
     const w = ws();
     let ids = new Map<string, string>();
-    for (let i = 1; i <= 3; i++) ids = w.applyDetections(frame(i), [cup]).ids;
+    for (let i = 1; i <= 3; i++) ids = full(w, frame(i), [cup]).ids;
     expect(w.applyScene("e3", 3000, { scene: "kitchen", observations: [{ object_id: "d1", state: "on_table" }], summary: "s" }, ids)
       .filter((c) => c.kind === "state")).toEqual([expect.objectContaining({ subject: "cup_1", text: "컵 cup_1 식탁 위", meaningful: true })]);
     expect(w.view(3000).objects[0]!.facts.place).toMatchObject({ value: "on_table", certainty: "inferred" });
@@ -76,7 +84,7 @@ describe("World State", () => {
   it("늦게 온 오래된 VLM 답은 새 사실을 덮지 않고, 분석 없음은 셈과 변화로 남긴다", () => {
     const w = ws();
     let ids = new Map<string, string>();
-    for (let i = 1; i <= 3; i++) ids = w.applyDetections(frame(i), [cup]).ids;
+    for (let i = 1; i <= 3; i++) ids = full(w, frame(i), [cup]).ids;
     w.applyScene("e3", 3000, { scene: "k", observations: [{ object_id: "d1", state: "has_contents" }], summary: "s" }, ids);
     w.applyScene("e2", 2000, { scene: "k", observations: [{ object_id: "d1", state: "empty" }], summary: "s" }, ids);
     expect(w.view(3000).objects[0]!.facts.contents!.value).toBe("has_contents");
@@ -93,42 +101,42 @@ describe("World State", () => {
   });
   it("감지 실패·대기열 초과 프레임은 등장·사라짐 셈에 넣지 않고 분석 없음으로 센다", () => {
     const w = ws();
-    for (let i = 1; i <= 3; i++) w.applyDetections(frame(i), [cup]);
+    for (let i = 1; i <= 3; i++) full(w, frame(i), [cup]);
     for (let i = 4; i <= 6; i++) expect(w.applyMissing(`e${i}`, i * 1000, { yolo: "error" })[0]).toMatchObject({ kind: "yolo_missing", text: "감지 오류로 YOLO 분석 없음" });
     expect(w.applyMissing("e7", 7000, { yolo: "cap", vlm: "cap" })[0]).toMatchObject({ kind: "yolo_missing", text: "요청이 몰려 YOLO·VLM 분석 없음" });
     expect(w.view(7000)).toMatchObject({ yolo_missing: 4, vlm_missing: 1, objects: [{ status: "present" }] });
   });
   it("맞추기 전(눈 자세 없음)에는 3장 연속 안 보이면 사라짐", () => {
     const w = ws();
-    for (let i = 1; i <= 3; i++) w.applyDetections(frame(i), [cup]);
-    w.applyDetections(frame(4), []);
-    w.applyDetections(frame(5), []);
-    expect(w.applyDetections(frame(6), []).changes.map((c) => c.kind)).toEqual(["gone"]);
+    for (let i = 1; i <= 3; i++) full(w, frame(i), [cup]);
+    full(w, frame(4), []);
+    full(w, frame(5), []);
+    expect(full(w, frame(6), []).changes.map((c) => c.kind)).toEqual(["gone"]);
     expect(w.view(6000).objects[0]!.status).toBe("gone");
   });
   it("맞춘 뒤: 트윈 위치를 붙이고, 같은 자리 같은 종류는 같은 물체, 시야 밖이면 사라짐을 세지 않는다", () => {
     const w = new WorldState({ evidenceStepMs: 1000, surfaces: () => [{ id: "table_1", label: "식탁", center: [0.75, 0], top: 0.75, radius: 0.6 }], floorAt: () => 0, roomAt: () => ({ id: "kitchen", label: "주방" }), devices });
     const at = (i: number, view: CameraView) => ({ ...frame(i), view });
     const seen: ReturnType<WorldState["applyDetections"]>["changes"] = [];
-    for (let i = 1; i <= 3; i++) seen.push(...w.applyDetections(at(i, look), [cup]).changes);
+    for (let i = 1; i <= 3; i++) seen.push(...full(w, at(i, look), [cup]).changes);
     expect(seen).toEqual([expect.objectContaining({ kind: "appeared", text: "컵 cup_1 보임 · 식탁 위", meaningful: true })]);
     expect(w.view(3000).objects).toEqual([expect.objectContaining({ id: "cup_1", surface: "table_1", room: "kitchen" })]);
     expect(w.view(3000).objects[0]!.position![1]).toBeCloseTo(0.75, 2);
-    expect(w.applyDetections(at(4, away), []).changes).toEqual([expect.objectContaining({ kind: "out_of_view", text: "컵 cup_1 시야 밖", meaningful: false })]);
-    for (let i = 5; i <= 8; i++) expect(w.applyDetections(at(i, away), []).changes).toEqual([]);
+    expect(full(w, at(4, away), []).changes).toEqual([expect.objectContaining({ kind: "out_of_view", text: "컵 cup_1 시야 밖", meaningful: false })]);
+    for (let i = 5; i <= 8; i++) expect(full(w, at(i, away), []).changes).toEqual([]);
     expect(w.view(8000).objects[0]).toMatchObject({ status: "out_of_view", last_in_view_ms: 3000 });
-    expect(w.applyDetections(at(9, look), [cup]).changes.map((c) => c.kind)).toEqual(["back_in_view"]);
+    expect(full(w, at(9, look), [cup]).changes.map((c) => c.kind)).toEqual(["back_in_view"]);
     expect(w.view(9000).objects.map((o) => [o.id, o.status])).toEqual([["cup_1", "present"]]);
   });
   it("쓰는 중·물건을 들고 있음은 그 물체를 본 뒤 VLM 답에 없으면 지우고, 사람이 안 보이면 사람 사실을 지운다", () => {
     const w = ws();
     let ids = new Map<string, string>();
-    for (let i = 1; i <= 3; i++) ids = w.applyDetections(frame(i), [person, cup]).ids;
+    for (let i = 1; i <= 3; i++) ids = full(w, frame(i), [person, cup]).ids;
     w.applyScene("e3", 3000, { scene: "k", observations: [{ object_id: "d1", state: "holding_object" }, { object_id: "d2", state: "in_use" }], summary: "마심" }, ids);
     expect(w.view(3000).objects[0]!.facts.use?.value).toBe("in_use");
     expect(w.view(3000).person.facts.holding?.value).toBe("holding_object");
     for (let i = 4; i <= 100; i++) {
-      ids = w.applyDetections(frame(i), [cup]).ids;
+      ids = full(w, frame(i), [cup]).ids;
       w.applyScene(`e${i}`, i * 1000, { scene: "k", observations: [{ object_id: "d1", state: "on_table" }, { object_id: "d1", state: "empty" }], summary: "빈 컵" }, ids);
     }
     const v = w.view(100_000);
@@ -143,7 +151,7 @@ describe("World State", () => {
   it("늦게 온 오래된 답은 쓰는 중을 지우지 않는다", () => {
     const w = ws();
     let ids = new Map<string, string>();
-    for (let i = 1; i <= 3; i++) ids = w.applyDetections(frame(i), [cup]).ids;
+    for (let i = 1; i <= 3; i++) ids = full(w, frame(i), [cup]).ids;
     w.applyScene("e3", 3000, { scene: "k", observations: [{ object_id: "d1", state: "in_use" }], summary: "s" }, ids);
     w.applyScene("e2", 2000, { scene: "k", observations: [], summary: "s" }, ids);
     expect(w.view(3000).objects[0]!.facts.use?.value).toBe("in_use");
@@ -151,25 +159,25 @@ describe("World State", () => {
   it("띄엄띄엄 본 사람은 보임으로 치지 않는다", () => {
     const w = ws();
     const out: string[] = [];
-    w.applyDetections(frame(1), [person]);
-    for (let i = 2; i <= 30; i++) out.push(...w.applyDetections(frame(i), []).changes.map((c) => c.kind));
-    out.push(...w.applyDetections(frame(31), [person]).changes.map((c) => c.kind));
+    full(w, frame(1), [person]);
+    for (let i = 2; i <= 30; i++) out.push(...full(w, frame(i), []).changes.map((c) => c.kind));
+    out.push(...full(w, frame(31), [person]).changes.map((c) => c.kind));
     expect(out).toEqual([]);
     expect(w.view(31_000).person.visible).toBe(false);
   });
-  it("사라진 물건을 띄엄띄엄 다시 봐도 등장으로 치지 않는다", () => {
+  it("사라진 물건은 시야 안 VLM 사진 3장이 빼고 답하면 사라짐이고, VLM이 다시 보면 그 사진에서 되살린다", () => {
     const w = new WorldState({ evidenceStepMs: 1000, surfaces: () => [{ id: "table_1", label: "식탁", center: [0.75, 0], top: 0.75, radius: 0.6 }], floorAt: () => 0, roomAt: () => ({ id: "kitchen", label: "주방" }), devices });
     const out: string[] = [];
     let n = 0;
-    const step = (dets: Detection[]) => { n++; out.push(...w.applyDetections({ ...frame(n), view: look }, dets).changes.map((c) => `${n}:${c.kind}`)); };
+    const step = (dets: Detection[]) => { n++; out.push(...full(w, { ...frame(n), view: look }, dets).changes.map((c) => `${n}:${c.kind}`)); };
     for (const dets of [[cup], [cup], [cup], [], [], [], [cup], [], [], [], [cup], [], [], [], [cup]]) step(dets);
-    expect(out).toEqual(["2:appeared", "6:gone"]);
-    expect(w.view(n * 1000).objects.map((o) => o.status)).toEqual(["gone"]);
+    expect(out).toEqual(["2:appeared", "6:gone", "7:appeared", "10:gone", "11:appeared", "14:gone", "15:appeared"]);
+    expect(w.view(n * 1000).objects.map((o) => [o.id, o.status])).toEqual([["cup_1", "present"]]);
   });
   it("사람은 2장으로 보임·안 보임, 가전 변화는 바뀐 시각과 이력", () => {
     const w = ws();
-    w.applyDetections(frame(1), [person]);
-    expect(w.applyDetections(frame(2), [person]).changes.map((c) => c.kind)).toEqual(["person_appeared"]);
+    full(w, frame(1), [person]);
+    expect(full(w, frame(2), [person]).changes.map((c) => c.kind)).toEqual(["person_appeared"]);
     expect(w.view(2000).person).toMatchObject({ visible: true, since_ms: 2000, last_seen_ms: 2000 });
     const ch = w.applyDevice({ id: "dishwasher_1", online: true, twin: { running: true }, matter: {}, updatedAt: "" }, 5000);
     expect(ch[0]).toMatchObject({ kind: "device", meaningful: true, text: "식기세척기 작동 중" });
@@ -194,17 +202,17 @@ describe("World State", () => {
 
 // 관절(YOLO26-pose)로 본 사실: 손목이 컵 상자 안·가까이면 컵 「손에 있음」과 사람 「물건을 들고 있음」, 관절로 서 있음·앉아 있음·누워 있음.
 // 같은 프레임에서는 관절 사실이 VLM 답보다 앞선다. 손목이 떨어지면 관절이 붙인 「손에 있음」만 지운다.
-describe("World State: 프레임 간격과 상관없는 시간 규칙(기본 2초 한 장)", () => {
+describe("World State: 프레임 간격과 상관없는 시간 규칙(YOLO 사람은 시간, 물건은 VLM 사진 2초 간격)", () => {
   const table = () => [{ id: "table_1", label: "식탁", center: [0.75, 0] as [number, number], top: 0.75, radius: 0.6 }];
   const real = () => new WorldState({ surfaces: table, floorAt: () => 0, roomAt: () => ({ id: "kitchen", label: "주방" }), devices });
   const at = (t: number, view: CameraView | null = null): EngineFrame => ({ ...frame(0), id: `t${t}`, capturedAtMs: t, latestAtMs: t, view });
-  /** 장면(촬영 시각 → 카메라·감지)을 stepMs 간격으로 넣고 난 변화를 [종류, 대상, 시각]으로 모은다. */
+  /** 장면(촬영 시각 → 카메라·감지)을 stepMs 간격 엔진 프레임으로 넣는다. 장면 VLM 답은 관찰 흐름처럼 2초(VLM_FRAME_MS)마다 한 장이다. 변화는 [종류, 대상, 시각]. */
   const run = (stepMs: number, endMs: number, scene: (t: number) => { view?: CameraView; dets: Detection[]; poses?: ReturnType<typeof standing>[] }) => {
     const w = real();
     const out: [string, string | undefined, number][] = [];
     for (let t = 0; t <= endMs; t += stepMs) {
       const s = scene(t);
-      out.push(...w.applyDetections(at(t, s.view ?? null), s.dets, s.poses).changes.map((c): [string, string | undefined, number] => [c.kind, c.subject, c.at_ms]));
+      out.push(...see(w, at(t, s.view ?? null), s.dets, { poses: s.poses, fast: t % 2000 !== 0 }).changes.map((c): [string, string | undefined, number] => [c.kind, c.subject, c.at_ms]));
     }
     return { w, out };
   };
@@ -225,27 +233,26 @@ describe("World State: 프레임 간격과 상관없는 시간 규칙(기본 2�
     expect(kinds(run(100, 30_000, scene))).toEqual(want);
   });
 
-  it("100ms 간격: 세는 중인 물건을 한두 장 놓쳐도 잊지 않고, 500ms 넘게 못 보면 잊는다", () => {
-    const kept = run(100, 4000, (t) => ({ dets: t === 1000 || t === 1100 ? [] : [cup] }));
-    expect(kept.w.view(4000).objects.map((o) => [o.id, o.first_seen_ms])).toEqual([["cup_1", 0]]);
-    const lost = run(100, 6000, (t) => ({ dets: t >= 1000 && t <= 1500 ? [] : [cup] }));
-    expect(lost.out).toEqual([["appeared", "cup_2", 3600]]);
-    expect(lost.w.view(6000).objects.map((o) => [o.id, o.first_seen_ms])).toEqual([["cup_2", 1600]]);
+  it("YOLO 빠른 프레임이 물건을 놓쳐도 물건은 VLM 사진으로만 정한다: 2초 VLM 사진이 놓치면 다음 VLM 사진(4초)에 확정한다", () => {
+    const kept = run(100, 4000, (t) => ({ dets: t >= 1000 && t <= 1500 ? [] : [cup] }));
+    expect(kept.out).toEqual([["appeared", "cup_1", 2000]]);
+    const late = run(100, 4000, (t) => ({ dets: t === 2000 ? [] : [cup] }));
+    expect(late.out).toEqual([["appeared", "cup_1", 4000]]);
+    expect(late.w.view(4000).objects.map((o) => [o.id, o.first_seen_ms])).toEqual([["cup_1", 0]]);
   });
 
-  it("관절이 붙인 사실은 같은 값이 2초 이어져야 confirmed다(100ms 두 장으로 오르지 않는다)", () => {
-    const grip = standing({ 10: [230, 170, 0.9] }), apart = standing({ 10: [120, 230, 0.9] });
-    // 4초부터 손목이 컵 상자 안
-    const scene = (t: number) => ({ dets: [person, cup], poses: [t >= 4000 ? grip : apart] });
+  it("관절이 붙인 자세는 같은 값이 2초 이어져야 confirmed다(100ms 두 장으로 오르지 않는다)", () => {
+    const stand = standing({ 10: [120, 230, 0.9] });
+    const sit = poseOf({ 5: [110, 100, 0.9], 6: [150, 100, 0.9], 11: [115, 200, 0.9], 12: [145, 200, 0.9], 13: [190, 215, 0.9], 14: [210, 215, 0.9] });
+    // 4초부터 앉음
+    const scene = (t: number) => ({ dets: [person], poses: [t >= 4000 ? sit : stand] });
     for (const [step, ends] of [[2000, [4000]], [100, [4000, 4100, 5900]]] as const) {
       for (const end of ends) {
         const v = run(step, end, scene).w.view(end);
-        expect(v.objects[0]!.facts.place, String(step) + "ms " + end).toMatchObject({ value: "in_hand", certainty: "inferred", since_ms: 4000 });
-        expect(v.person.facts.holding, String(step) + "ms " + end).toMatchObject({ value: "holding_object", certainty: "inferred" });
+        expect(v.person.facts.posture, String(step) + "ms " + end).toMatchObject({ value: "sitting", certainty: "inferred", since_ms: 4000 });
       }
       const v = run(step, 6000, scene).w.view(6000);
-      expect(v.objects[0]!.facts.place, String(step) + "ms").toMatchObject({ value: "in_hand", certainty: "confirmed", since_ms: 4000 });
-      expect(v.person.facts.holding, String(step) + "ms").toMatchObject({ certainty: "confirmed", since_ms: 4000 });
+      expect(v.person.facts.posture, String(step) + "ms").toMatchObject({ value: "sitting", certainty: "confirmed", since_ms: 4000 });
     }
   });
 });
@@ -265,9 +272,9 @@ describe("World State: 트윈 자리는 마스크 바닥 점(foot)의 광선", (
     expect(Math.hypot(byFoot[0] - byBox[0], byFoot[2] - byBox[2])).toBeGreaterThan(0.1);
   });
 
-  it("전체 사진(applyDetections): 물건 자리는 foot 광선의 자리다", () => {
+  it("전체 사진(장면 VLM 물건이 이은 YOLO 감지): 물건 자리는 foot 광선의 자리다", () => {
     const w = real();
-    for (const t of [0, 2000, 4000]) w.applyDetections({ ...frame(0), id: `t${t}`, capturedAtMs: t, latestAtMs: t, view: look }, [covered]);
+    for (const t of [0, 2000, 4000]) full(w, { ...frame(0), id: `t${t}`, capturedAtMs: t, latestAtMs: t, view: look }, [covered]);
     const o = w.view(4000).objects[0]!;
     expect(o.position).toEqual(byFoot);
     expect(o.surface).toBe("table_1");
@@ -276,7 +283,9 @@ describe("World State: 트윈 자리는 마스크 바닥 점(foot)의 광선", (
   it("가까이 보기(applyCloser): 물건 자리는 foot 광선의 자리다", () => {
     const w = real();
     const passes = [0, 2000, 4000].map((t) => ({ frameId: `t${t}`, capturedAtMs: t, view: look, ...size, dets: [{ ...covered, edge: false }] }));
-    w.applyCloser(passes);
+    const r = w.applyCloser(passes);
+    // 가까이 본 VLM이 그 감지(d1)와 같은 물건이라고 답한다
+    w.applyCloserScene("t4000", 4000, { scene: "k", observations: [], objects: [{ id: "v1", cls: "cup", box: { x: 0.45, y: 0.44, w: 0.09, h: 0.11 }, det: "d1" }], summary: "" }, r.ids, r.pending, { view: look, ...size, crop: [0, 0, 480, 360] });
     const o = w.view(4000).objects[0]!;
     expect(o.position).toEqual(byFoot);
     expect(o.surface).toBe("table_1");
@@ -286,128 +295,45 @@ describe("World State: 트윈 자리는 마스크 바닥 점(foot)의 광선", (
 describe("World State + 관절", () => {
   const grip = standing({ 10: [230, 170, 0.9] }); // 오른 손목이 컵 상자 [220, 160, 40, 20] 안
   const apart = standing({ 10: [120, 230, 0.9] }); // 손목이 컵에서 멀다
-  it("손목이 컵 상자 안이면 컵 손에 있음·사람 물건을 들고 있음·서 있음, 변화 글은 등장 다음에", () => {
+  it("관절은 사람 자세(서 있음)만 넣는다: 손목이 컵 상자 안이어도 컵 손에 있음·사람 물건을 들고 있음을 넣지 않는다(물건 사실은 VLM 답으로만)", () => {
     const w = ws();
-    let changes: ReturnType<WorldState["applyDetections"]>["changes"] = [];
-    for (let i = 1; i <= 3; i++) changes.push(...w.applyDetections(frame(i), [person, cup], [grip]).changes);
-    const cupLines = changes.filter((c) => c.subject === "cup_1").map((c) => [c.kind, c.text, c.meaningful]);
-    expect(cupLines[0]).toEqual(["appeared", "컵 cup_1 보임", true]);
+    const changes: ReturnType<WorldState["applyDetections"]>["changes"] = [];
+    for (let i = 1; i <= 3; i++) changes.push(...full(w, frame(i), [person, cup], [grip]).changes);
+    expect(changes.filter((c) => c.subject === "cup_1").map((c) => [c.kind, c.text, c.meaningful])).toEqual([["appeared", "컵 cup_1 보임", true]]);
     const v = w.view(3000);
-    expect(v.objects[0]!.facts.place).toMatchObject({ value: "in_hand", certainty: "confirmed" });
-    expect(v.person.facts).toMatchObject({ holding: { value: "holding_object" }, posture: { value: "standing" } });
-    // 사람은 2장째에 보임이 되고, 그때 사람 사실이 변화로 나간다
-    const w2 = ws();
-    w2.applyDetections(frame(1), [person, cup], [grip]);
-    expect(w2.applyDetections(frame(2), [person, cup], [grip]).changes.filter((c) => c.subject === "person").map((c) => c.text)).toEqual(["사람 보임"]);
-    const w3 = ws();
-    w3.applyDetections(frame(1), [person, cup], [apart]);
-    expect(w3.applyDetections(frame(2), [person, cup], [grip]).changes.filter((c) => c.subject === "cup_1").map((c) => c.text)).toEqual(["컵 cup_1 보임", "컵 cup_1 손에 있음"]);
+    expect(v.objects[0]!.facts.place).toBeUndefined();
+    expect(v.person.facts.holding).toBeUndefined();
+    expect(v.person.holding).toEqual([]);
+    expect(v.person.facts).toMatchObject({ posture: { value: "standing" } });
+    // 손에 있음은 VLM 사진 2장이 이어 답할 때
+    see(w, frame(4), [person, cup], { poses: [grip], facts: [["d2", "in_hand"]] });
+    see(w, frame(5), [person, cup], { poses: [grip], facts: [["d2", "in_hand"]] });
+    expect(w.view(5000).objects[0]!.facts.place?.value).toBe("in_hand");
+    expect(w.view(5000).person.holding).toEqual(["cup_1"]);
   });
 
-  it("같은 프레임 VLM 답이 식탁 위·앉아 있음이라 해도 관절 사실이 남고, 들고 있음도 지우지 않는다. 다음 프레임 VLM 답은 그대로 받는다", () => {
+  it("같은 프레임 VLM 답이 앉아 있음이라 해도 관절 자세가 남는다. 관절이 없는 다음 프레임 VLM 답은 그대로 받는다", () => {
     const w = ws();
     let ids = new Map<string, string>();
-    for (let i = 1; i <= 3; i++) ids = w.applyDetections(frame(i), [person, cup], [grip]).ids;
+    for (let i = 1; i <= 3; i++) ids = full(w, frame(i), [person, cup], [grip]).ids;
     w.applyScene("e3", 3000, { scene: "k", observations: [{ object_id: "d2", state: "on_table" }, { object_id: "d1", state: "sitting" }, { object_id: "d2", state: "empty" }], summary: "s" }, ids);
     let v = w.view(3000);
-    expect(v.objects[0]!.facts).toMatchObject({ place: { value: "in_hand" }, contents: { value: "empty" } });
-    expect(v.person.facts).toMatchObject({ holding: { value: "holding_object" }, posture: { value: "standing" } });
+    expect(v.objects[0]!.facts).toMatchObject({ place: { value: "on_table" }, contents: { value: "empty" } });
+    expect(v.person.facts).toMatchObject({ posture: { value: "standing" } });
     // 관절이 없는 프레임(사람 상자만): VLM 답이 그대로 들어간다
-    ids = w.applyDetections(frame(4), [person, cup]).ids;
-    w.applyScene("e4", 4000, { scene: "k", observations: [{ object_id: "d2", state: "on_table" }, { object_id: "d1", state: "sitting" }], summary: "s" }, ids);
-    // 물건의 다른 놓인 곳은 다른 원본 프레임 2장이 이어 말할 때만 바뀐다(SceneFacts.steady)
-    w.applyScene("e45", 4500, { scene: "k", observations: [{ object_id: "d2", state: "on_table" }, { object_id: "d1", state: "sitting" }], summary: "s" }, ids);
-    v = w.view(4500);
-    expect(v.objects[0]!.facts.place?.value).toBe("on_table");
+    ids = full(w, frame(4), [person, cup]).ids;
+    w.applyScene("e4", 4000, { scene: "k", observations: [{ object_id: "d1", state: "sitting" }], summary: "s" }, ids);
+    v = w.view(4000);
     expect(v.person.facts.posture?.value).toBe("sitting");
-    expect(v.person.facts.holding).toBeUndefined();
   });
 
-  it("손목이 컵에서 떨어지면 관절이 붙인 손에 있음·들고 있음을 지우고, VLM이 붙인 손에 있음은 두며, 사람이 안 보이게 되면 관절의 손에 있음도 지운다", () => {
-    const w = ws();
-    let ids = new Map<string, string>();
-    for (let i = 1; i <= 3; i++) w.applyDetections(frame(i), [person, cup], [grip]);
-    w.applyDetections(frame(4), [person, cup], [apart]);
-    let v = w.view(4000);
-    expect(v.objects[0]!.facts.place).toBeUndefined();
-    expect(v.person.facts.holding).toBeUndefined();
-    ids = w.applyDetections(frame(5), [person, cup], [apart]).ids;
-    w.applyScene("e5", 5000, { scene: "k", observations: [{ object_id: "d2", state: "in_hand" }], summary: "s" }, ids);
-    w.applyScene("e55", 5500, { scene: "k", observations: [{ object_id: "d2", state: "in_hand" }], summary: "s" }, ids);   // 손에 있음은 2장 이어서
-    w.applyDetections(frame(6), [person, cup], [apart]);
-    expect(w.view(6000).objects[0]!.facts.place?.value).toBe("in_hand"); // VLM 사실은 관절이 지우지 않는다
-    w.applyDetections(frame(7), [person, cup], [grip]);
-    for (let i = 8; i <= 9; i++) w.applyDetections(frame(i), [cup]);
-    v = w.view(9000);
-    expect(v.person.visible).toBe(false);
-    expect(v.objects[0]!.facts.place).toBeUndefined();
-  });
-
-  // Codex(4ce9100): 컵을 들고 나가는 장면에서 사람·손목만 먼저 안 보이게 되고 컵은 잠깐 더 보이면, 「손에 있음」을 지워 놓아둔 컵처럼 보였다
-  it("사람이 안 보이게 될 때 들고 있던 컵이 아직 움직이고 있으면 손에 있음을 두고, 3초 넘게 제자리에 있으면(내려놓음) 그때 지운다", () => {
-    const w = ws();
-    for (let i = 1; i <= 3; i++) w.applyDetections(frame(i), [person, cup], [grip]);
-    expect(w.view(3000).objects[0]!.facts.place?.value).toBe("in_hand");
-    // 4초부터 사람은 안 보이고 컵만 옆으로 움직이며 보인다(들고 나가는 중)
-    const moving = (i: number) => det("cup", 0.9, [220 + (i - 3) * 30, 160, 40, 20], 41);
-    for (let i = 4; i <= 9; i++) w.applyDetections(frame(i), [moving(i)]);
-    let v = w.view(9000);
-    expect(v.person.visible).toBe(false);
-    expect(v.objects[0]!.facts.place?.value).toBe("in_hand");
-    // 그 자리에 머물면(앞 자리들과 다 가까워진 뒤 3초) 내려놓은 것이다
-    for (let i = 10; i <= 13; i++) w.applyDetections(frame(i), [moving(9)]);
-    expect(w.view(13_000).objects[0]!.facts.place?.value).toBe("in_hand");
-    w.applyDetections(frame(14), [moving(9)]);
-    v = w.view(14_000);
-    expect(v.objects[0]!.facts.place).toBeUndefined();
-  });
-
-  // Codex(e3a75ab): 직전 프레임과만 견주면 100ms마다 조금씩 들고 가도 제자리로 보였고, 움직이는 컵의 「책상 위」 VLM 답 한 장이 손에 있음을 덮었다
-  it("들고 가는지는 3초 동안 쌓인 움직임으로 본다(100ms마다 조금씩 움직여도 들고 가는 중). 그동안 VLM·가까이 보기의 다른 자리 답은 손에 있음을 덮지 않는다", () => {
-    const w = ws();
-    const at = (t: number): EngineFrame => ({ ...frame(0), id: `t${t}`, capturedAtMs: t, latestAtMs: t });
-    for (let t = 0; t <= 2000; t += 100) w.applyDetections(at(t), [person, cup], [grip]);
-    expect(w.view(2000).objects[0]!.facts.place?.value).toBe("in_hand");
-    // 사람은 안 보이고 컵이 100ms마다 4px(사진 너비의 0.8%)씩 옆으로 간다
-    const step = (t: number) => det("cup", 0.9, [220 + ((t - 2000) / 100) * 4, 160, 40, 20], 41);
-    let ids = new Map<string, string>();
-    for (let t = 2100; t <= 9000; t += 100) ids = w.applyDetections(at(t), [step(t)]).ids;
-    let v = w.view(9000);
-    expect(v.person.visible).toBe(false);
-    expect(v.objects[0]!.facts.place?.value).toBe("in_hand");
-    // 들고 가는 동안 VLM이 「책상 위」라고 답해도(전체 사진·가까이 보기) 손에 있음을 둔다
-    w.applyScene("t9000", 9000, { scene: "k", observations: [{ object_id: "d1", state: "on_desk" }], summary: "s" }, ids);
-    expect(w.view(9000).objects[0]!.facts.place?.value).toBe("in_hand");
-    // 제자리에 머물면(앞 자리들과 다 가까워진 뒤 3초) 내려놓은 것이다
-    for (let t = 9100; t <= 11_000; t += 100) w.applyDetections(at(t), [step(9000)]);
-    expect(w.view(11_000).objects[0]!.facts.place?.value).toBe("in_hand");
-    for (let t = 11_100; t <= 14_500; t += 100) w.applyDetections(at(t), [step(9000)]);
-    v = w.view(14_500);
-    expect(v.objects[0]!.facts.place).toBeUndefined();
-  });
-
-  // Codex(e0f0c33): 움직임을 찾아도 movedAt에 옛 샘플 시각을 넣어, 3초 전 샘플과만 멀어지는 느린 걸음에서는 들고 가는 중에도 손에 있음을 풀었다
-  it("천천히 들고 가도(3초 전 자리와만 기준 넘게 떨어짐) 움직임을 찾은 지금 시각을 기준으로 지켜 손에 있음을 둔다", () => {
-    const w = ws();
-    const at = (t: number): EngineFrame => ({ ...frame(0), id: `t${t}`, capturedAtMs: t, latestAtMs: t });
-    for (let t = 0; t <= 2000; t += 100) w.applyDetections(at(t), [person, cup], [grip]);
-    // 사람은 안 보이고 컵이 5초까지 100ms마다 4px, 그 뒤로는 100ms마다 0.82px씩 간다
-    // (느린 걸음은 3초 앞 자리와만 24.6px로 사진 너비 5% 넘게, 2.9초 앞 자리와는 23.8px로 5% 안)
-    const x = (t: number) => (t <= 5000 ? 220 + ((t - 2000) / 100) * 4 : 340 + ((t - 5000) / 100) * 0.82);
-    for (let t = 2100; t <= 11_000; t += 100) {
-      w.applyDetections(at(t), [det("cup", 0.9, [x(t), 160, 40, 20], 41)]);
-      if (t >= 4000) expect(w.view(t).objects[0]!.facts.place?.value, `${t}ms`).toBe("in_hand");
-    }
-    expect(w.view(11_000).person.visible).toBe(false);
-  });
-
-  it("자세는 가장 확실한 한 사람으로, 손에 듦은 모든 관절의 손목으로 본다(팔 조각의 손목이 컵 상자 안)", () => {
+  it("자세는 가장 확실한 한 사람으로 본다(팔 조각 관절은 자세를 바꾸지 않는다)", () => {
     const w = ws();
     const arm = poseOf({ 10: [235, 170, 0.6] }, [200, 120, 150, 60], 0.3);
-    for (let i = 1; i <= 3; i++) w.applyDetections(frame(i), [person, cup], [apart, arm]);
+    for (let i = 1; i <= 3; i++) full(w, frame(i), [person, cup], [apart, arm]);
     const v = w.view(3000);
-    expect(v.objects[0]!.facts.place?.value).toBe("in_hand");
-    expect(v.person.facts).toMatchObject({ holding: { value: "holding_object" }, posture: { value: "standing" } });
+    expect(v.objects[0]!.facts.place).toBeUndefined();
+    expect(v.person.facts).toMatchObject({ posture: { value: "standing" } });
   });
 
   it("관절로 앉아 있음·누워 있음, 다리가 가려 모르면 자세를 바꾸지 않는다", () => {
@@ -424,92 +350,78 @@ describe("World State + 관절", () => {
 });
 
 describe("후보 자리(sightings): 등장 확인 전에 끊긴 물건의 마지막 자리", () => {
-  // 실제처럼 2초 간격 기준(물건 등장 4초). 사진은 500ms마다, 카메라는 +x(식탁 쪽)를 본다
+  // 장면 VLM 사진은 2초마다, 카메라는 +x(식탁 쪽)를 본다. 후보는 VLM 사진에서 5초 넘게 다시 안 보이면 잊는다
   const w0 = () => new WorldState({ surfaces, floorAt: () => 0, roomAt: () => ({ id: "kitchen", label: "주방" }), devices });
   const shot = (at: number): EngineFrame => ({ id: `s${at}`, capturedAtMs: at, latestAtMs: at, jpeg: Buffer.from(`s${at}`), sha256: sha256(Buffer.from(`s${at}`)), width: 480, height: 360, eye: null, view: look });
-  const run = (w: WorldState, from: number, to: number, dets: Detection[], poses?: ReturnType<typeof standing>[]) => {
-    for (let t = from; t <= to; t += 500) w.applyDetections(shot(t), dets, poses);
+  const run = (w: WorldState, from: number, to: number, dets: Detection[]) => {
+    for (let t = from; t <= to; t += 2000) full(w, shot(t), dets);
   };
   const size = { width: 480, height: 360 };
   const onTable = det("cup", 0.9, [230, 88, 20, 10], 41);
   const tableAt = placeBox(look, onTable.box, size, surfaces(), () => 0).position!;
   const onFloor = (x: number) => det("cup", 0.9, [x, 300, 20, 10], 41);
-  const grip = (x: number) => standing({ 10: [x, 93, 0.9] });
 
-  it("트윈 자리가 있는 컵 후보가 2초 보이다 끊기면 500ms 뒤 물건은 잊히고 종류·자리·면·마지막 본 때가 남는다", () => {
+  it("트윈 자리가 있는 컵 후보를 VLM 사진 1장에서 본 뒤 5초 넘게 못 보면 물건은 잊히고 종류·자리·면·마지막 본 때가 남는다", () => {
     expect(placeBox(look, onTable.box, size, surfaces(), () => 0).surface).toBe("table_1");
     const w = w0();
-    run(w, 0, 1500, [onTable]);
-    expect(w.view(1500).sightings).toBeUndefined();   // 아직 세는 중
-    run(w, 2000, 2500, []);
-    const v = w.view(2500);
+    run(w, 0, 0, [onTable]);
+    run(w, 2000, 4000, []);
+    expect(w.view(4000).sightings).toBeUndefined();   // 아직 세는 중
+    run(w, 6000, 6000, []);
+    const v = w.view(6000);
     expect(v.objects).toEqual([]);
-    expect(v.sightings).toEqual([{ cls: "cup", position: tableAt, surface: "table_1", surface_label: "식탁", at_ms: 1500, in_hand: false }]);
+    expect(v.sightings).toEqual([{ cls: "cup", position: tableAt, surface: "table_1", surface_label: "식탁", at_ms: 0, in_hand: false }]);
   });
 
   it("2분이 지나면 사라지고, 종류마다 가장 새 4개까지다", () => {
     const w = w0();
-    run(w, 0, 1000, [onTable]);
-    run(w, 1500, 1500, []);
-    expect(w.view(121_000).sightings).toHaveLength(1);
-    expect(w.view(121_001).sightings).toBeUndefined();
+    run(w, 0, 0, [onTable]);
+    run(w, 6000, 6000, []);
+    expect(w.view(120_000).sightings).toHaveLength(1);
+    expect(w.view(120_001).sightings).toBeUndefined();
     const w2 = w0();
     [100, 160, 220, 280, 340].forEach((x, i) => {
-      run(w2, i * 3000, i * 3000 + 1000, [onFloor(x)]);
-      run(w2, i * 3000 + 1500, i * 3000 + 1500, []);
+      run(w2, i * 10_000, i * 10_000, [onFloor(x)]);
+      run(w2, i * 10_000 + 6000, i * 10_000 + 6000, []);
     });
-    expect(w2.view(15_000).sightings!.map((s) => s.at_ms)).toEqual([4000, 7000, 10_000, 13_000]);
+    expect(w2.view(50_000).sightings!.map((s) => s.at_ms)).toEqual([10_000, 20_000, 30_000, 40_000]);
   });
 
   it("같은 종류 컵이 그 자리 0.5m 안에 등장하면 그 자리를 지운다(먼 자리는 둔다)", () => {
     const w = w0();
-    run(w, 0, 1000, [onFloor(230)]);
-    run(w, 1500, 1500, []);
-    run(w, 2000, 3000, [onTable]);
-    run(w, 3500, 3500, []);
-    expect(w.view(3500).sightings).toHaveLength(2);
-    run(w, 5000, 9000, [onTable]);
-    const v = w.view(9000);
+    run(w, 0, 0, [onFloor(230)]);
+    run(w, 6000, 6000, []);
+    run(w, 8000, 8000, [onTable]);
+    run(w, 14_000, 14_000, []);
+    expect(w.view(14_000).sightings).toHaveLength(2);
+    run(w, 16_000, 20_000, [onTable]);
+    const v = w.view(20_000);
     expect(v.objects).toEqual([expect.objectContaining({ cls: "cup", status: "present", surface: "table_1" })]);
-    expect(v.sightings).toEqual([expect.objectContaining({ surface: null, at_ms: 1000 })]);
-  });
-
-  it("관절로 든 채 끊긴 후보는 in_hand: true다. 손에 없던 자리가 있으면 그 자리를 손에 없음으로 남긴다", () => {
-    const w = w0();
-    run(w, 0, 1500, [person, onTable], [grip(240)]);
-    run(w, 2000, 2000, []);
-    expect(w.view(2000).sightings).toEqual([expect.objectContaining({ cls: "cup", in_hand: true, at_ms: 1500 })]);
-    // 식탁 위 컵을 0.5초 본 뒤 사람이 들어 조금 옮기다 끊긴다
-    const w2 = w0();
-    const moved = det("cup", 0.9, [236, 88, 20, 10], 41);
-    run(w2, 0, 500, [onTable]);
-    run(w2, 1000, 1500, [person, moved], [grip(246)]);
-    run(w2, 2000, 2000, []);
-    expect(w2.view(2000).sightings).toEqual([{ cls: "cup", position: tableAt, surface: "table_1", surface_label: "식탁", at_ms: 500, in_hand: false }]);
+    expect(v.sightings).toEqual([expect.objectContaining({ surface: null, at_ms: 0 })]);
   });
 });
 
-describe("물건 등장 확인 2초(사람 등장 2초·사라짐 사람 4초·물건 6초는 그대로)", () => {
-  // 실제처럼 2초 간격 기준. 사진은 250ms마다, 카메라는 +x(식탁 쪽)를 본다
+describe("물건 등장 VLM 사진 2장·사라짐 시야 안 VLM 사진 3장(사람 등장 2초·사라짐 4초는 YOLO 그대로)", () => {
+  // 엔진 프레임은 250ms마다, 장면 VLM 사진은 2초마다(관찰 흐름 VLM_FRAME_MS). 카메라는 +x(식탁 쪽)를 본다
   const w0 = () => new WorldState({ surfaces, floorAt: () => 0, roomAt: () => ({ id: "kitchen", label: "주방" }), devices });
   const shot = (at: number): EngineFrame => ({ id: `q${at}`, capturedAtMs: at, latestAtMs: at, jpeg: Buffer.from(`q${at}`), sha256: sha256(Buffer.from(`q${at}`)), width: 480, height: 360, eye: null, view: look });
   const onTable = det("cup", 0.9, [230, 88, 20, 10], 41);
   const run = (w: WorldState, from: number, to: number, dets: (t: number) => Detection[]) => {
     const out: string[] = [];
-    for (let t = from; t <= to; t += 250) out.push(...w.applyDetections(shot(t), dets(t)).changes.map((c) => `${c.kind}@${t}`));
+    for (let t = from; t <= to; t += 250) out.push(...see(w, shot(t), dets(t), { fast: t % 2000 !== 0 }).changes.map((c) => `${c.kind}@${t}`));
     return out;
   };
 
-  it("물건은 처음 본 뒤 2초 이어 보이면 등장이다. 사람은 그대로 2초", () => {
+  it("물건은 VLM 사진 2장(0초·2초)이면 등장이다. 사람은 그대로 2초", () => {
     const w = w0();
     expect(run(w, 0, 3000, () => [onTable, person]).filter((c) => /^(appeared|person_appeared)@/.test(c)).sort()).toEqual(["appeared@2000", "person_appeared@2000"]);
   });
 
-  it("흔들려 1.75초만 잡힌 물건은 등장하지 않고 잊는다. 2초 잡혔다 사라진 물건은 시야 안에서 6초 못 보면 사라짐으로 정리된다", () => {
+  it("VLM 사진 1장만 본 물건은 등장하지 않고 잊는다. 등장한 물건은 시야 안 VLM 사진 3장(4·6·8초)이 못 보면 사라짐으로 정리된다", () => {
     const w = w0();
     expect(run(w, 0, 1750, () => [onTable])).toEqual([]);
-    expect(run(w, 2000, 3000, () => [])).toEqual([]);
-    expect(w.view(3000).objects).toEqual([]);
+    expect(run(w, 2000, 6000, () => [])).toEqual([]);
+    expect(w.view(6000).objects).toEqual([]);
     const v = w0();
     expect(run(v, 0, 2000, () => [onTable])).toEqual(["appeared@2000"]);
     expect(run(v, 2250, 7750, () => [])).toEqual([]);

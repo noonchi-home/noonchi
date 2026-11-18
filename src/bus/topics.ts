@@ -63,7 +63,9 @@ const closerPass = z.strictObject({
 });
 const size = { width: z.number().int().positive(), height: z.number().int().positive() };
 /** 장면 VLM 답을 받은 사진의 카메라·크기·폰 눈 자리. */
-const sceneLook = z.strictObject({ view: camera, ...size, eye: z.tuple([at, at]).nullable().optional() });
+const sceneLook = z.strictObject({
+  view: camera, ...size, eye: z.tuple([at, at]).nullable().optional(), dets: z.array(z.strictObject({ id: z.string(), box, foot: z.tuple([at, at]).optional() })).optional(),
+});
 /** 가까이 본 그 장의 카메라·크기·자른 자리. */
 const closerAt = z.strictObject({ view: camera, ...size, crop: box });
 /** /perception/scene: VLM 답 갈래 다섯(집 상태 입력의 주인)과 YOLO 임시 갈래 넷(VLM 전용으로 바뀔 자리). */

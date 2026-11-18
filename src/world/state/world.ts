@@ -1,21 +1,18 @@
-// World State: 엔진 프레임마다 YOLO 감지와 VLM 관찰을 물체별로 합치고, 시간에 따른 변화(등장·사라짐·시야 밖·상태·가전)를 낸다.
+// World State: 엔진 프레임마다 YOLO 감지(사람·가전 설비·관절)와 장면 VLM 답(물건·사실)을 합치고, 시간에 따른 변화(등장·사라짐·시야 밖·상태·가전)를 낸다.
 // 종류·사실 값·면·신뢰도는 낱말 표(src/world/vocab.ts)를 따른다.
-// - 같은 물체: 트윈 위치 + 종류(종류의 identityM, 없으면 기본 0.25m 안). 맞추기 전(카메라 없음)에는 같은 종류의 물체에 차례로 붙인다.
-// - 등장·사라짐: Confirmer(시간 기준. 등장은 처음 본 뒤 사람·물건 2초 이어 보임, 사라짐은 마지막으로 본 뒤 시야 안에서 사람 4초·물건 6초 못 봄.
-//   2초 간격이면 등장 2장, 사라짐 사람 2장·물건 3장). 사라짐은 그 자리가 시야 안인 프레임만 센다. 등장 확인 전 물체는 view()에 내지 않고, 500ms 넘게 못 보면 잊는다.
+// - 물건: 장면 VLM 답(objects)으로만 생기고·확정되고·사라진다(사용자 결정 2026-11-18, sceneobjects.ts). YOLO 물건 감지는 World State에 들어가지 않는다
+//   (미니맵 표시·폰 위치 맞추기만 쓴다). 같은 물건은 트윈 자리 + 종류(마시는 그릇 무리), 확정은 VLM 사진 2장, 사라짐은 시야 안 VLM 사진 3장.
+// - 사람: YOLO 사람 감지로 등장·사라짐(Confirmer, 등장 2초·사라짐 4초)·자리·방, 관절로 자세·쓰러짐 의심. 관절은 물건을 보지 않는다.
 // - 가전 설비(TV·냉장고·전자레인지·오븐·토스터·싱크대): 보임·사라짐 없이 방(클로이드 눈의 방)마다 종류 하나. VLM 사실만 쌓고 같은 방 트윈 가전 id를 붙인다.
 // - VLM 사실: 면(facet)마다 하나. 그 종류에 없는 면·그 대상에 붙지 않는 값은 버린다. 촬영 시각이 더 오래된 답은 버리고, 같은 값이 연속 두 번이면 confirmed.
 //   지금만 맞는 면(vocab NOW_FACETS: 쓰는 중, 사람 들고 있음·하는 일·자리)은 그 대상을 본 프레임의 VLM 답에 없으면 지운다. 사람이 안 보이면 사람 사실을 지운다.
-// - 관절(applyDetections의 poses): 손목이 물건 상자 안·가까이면 손에 있음과 사람 물건을 들고 있음, 관절 자세(서 있음·앉아 있음·누워 있음).
-//   같은 프레임에서는 관절 사실이 VLM 답보다 앞선다. 손목이 떨어지거나 사람이 안 보이면 관절이 붙인 손에 있음만 지운다.
 // - 사람 자리·방: 맞춘 뒤 가장 큰 사람 상자의 발(상자 아래가 프레임 끝에 닿지 않음)이 보이면 그 바닥 자리와 방. 눈의 방으로 대신하지 않는다. 바뀌면 변화 하나.
 // - 분석 없음(applyMissing): 셈과 변화 하나만 남기고 등장·사라짐 셈에는 넣지 않는다.
 // - 늦게 온 전체 사진: 이미 넣은 가장 새 전체 사진보다 옛 촬영(감지 대기열에서 늦게 나온 프레임)은 통째로 넣지 않는다. 등장·사라짐 셈·자리·보임·사람·가전 설비·관절이
 //   그대로이고 감지 번호도 잇지 않는다(그 프레임 VLM 답은 대상 사실을 넣지 않는다). 전체 사진끼리는 촬영 순서로만 들어간다.
-// - 가까이 보기(applyCloser, src/observe/pipeline.ts closer): 잘라 본 몇 장을 보통 프레임처럼 넣지 않고 한 번에 합친다. 물건 감지만 쓰고(사람·가전 설비·잘린 경계 상자는 버림),
-//   맞는 물건이 없으면 서로 다른 원본 프레임 3장에서 같은 자리로 보이거나, 1장 이상 보이고 같은 가까이 보기의 VLM이 그 감지에 사실을 하나 이상 답하고 가림은 답하지 않아야
-//   (두 모델 확인) 새 물건을 만든다. 3장이 안 된 후보는 VLM 답(applyCloserScene)까지 들고 있다가 답이 없거나 끊기면(endCloser) 버린다. 안 보인 물건은 그대로 둔다.
-//   이미 있는 물건도 가림을 답한 상자의 사실은 넣지 않는다.
+// - 가까이 보기(applyCloser, src/observe/pipeline.ts closer): 잘라 본 몇 장의 물건 감지를 묶어 그 장의 VLM 답(applyCloserScene)까지 들고 있는다. VLM 물건과 이어진
+//   묶음만 그 물건 자리로 넣고, VLM 물건은 YOLO가 못 봤어도 넣는다(가까이 본 VLM 1장은 바로 확정). VLM 답이 없거나 끊기면(endCloser) 넣지 않는다.
+//   안 보인 물건은 그대로 둔다. 이미 있는 물건도 가림을 답한 상자의 사실은 넣지 않는다.
 //   가까이 보기와 전체 사진은 서로 촬영 순서가 섞여 들어오므로 물건마다 자리를 마지막으로 고친 촬영 시각과 보임(있음·시야 밖·사라짐)을 마지막으로 판단한
 //   촬영 시각·원본 프레임·출처를 둔다. 그보다 옛 촬영은 자리·보임을 되돌리지 않고, 가까이 보기가 더 새 촬영으로 본 물건은 옛 전체 사진의 등장·사라짐 셈에도
 //   넣지 않는다. 같은 원본 프레임이면 잘라 본 자리·양성이 앞선다.
@@ -126,14 +123,14 @@ export class WorldState {
     return [...linked, ...this.core.vlm.applyScene(frameId, capturedAtMs, scene, ids)];
   }
 
-  /** 가까이 보기 합치기(closer.ts applyCloser). */
-  applyCloser(looks: readonly CloserPass[], idsFrom?: string, o: { defer?: boolean } = {}): { changes: WorldChange[]; ids: Map<string, string>; pending?: CloserPending } {
-    return this.core.closer.applyCloser(looks, idsFrom, o);
+  /** 가까이 보기 묶기(closer.ts applyCloser): 넣기는 그 장의 VLM 답(applyCloserScene)이 한다. */
+  applyCloser(looks: readonly CloserPass[]): { changes: WorldChange[]; ids: Map<string, string>; pending?: CloserPending } {
+    return this.core.closer.applyCloser(looks);
   }
 
-  /** 가까이 보기 한 번이 VLM 답 없이 끝났다(closer.ts endCloser). */
-  endCloser(pending: CloserPending, ids?: Map<string, string>, idsFrom?: string): WorldChange[] {
-    return this.core.closer.endCloser(pending, ids, idsFrom);
+  /** 가까이 보기 한 번이 VLM 답 없이 끝났다(closer.ts endCloser): 묶음을 버린다. */
+  endCloser(pending: CloserPending): WorldChange[] {
+    return this.core.closer.endCloser(pending);
   }
 
   /** 가까이 본 감지가 물건 감지인가(closer.ts closerObject). */
@@ -261,8 +258,7 @@ export class WorldState {
     const person: WorldPerson = {
       visible: p.visible, since_ms: p.since_ms, last_seen_ms: p.last_seen_ms, count: p.visible ? p.count : 0,
       position: p.position, position_ms: p.positionAt, room: p.room?.id ?? null, room_label: p.room?.label ?? null, near,
-      holding: [...new Set([...(core.byPose.has(p.facts.holding!) ? core.heldIds : []),
-        ...objects.filter((o) => o.status !== "gone" && o.facts.place?.value === POSE_HOLD.object).map((o) => o.id)])],
+      holding: objects.filter((o) => o.status !== "gone" && o.facts.place?.value === POSE_HOLD.object).map((o) => o.id),
       facts: { ...p.facts }, answered_ms: p.answered,
     };
     const sightings = core.sightingsAt(nowMs);

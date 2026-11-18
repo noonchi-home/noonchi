@@ -29,6 +29,8 @@ const edgeCup: Detection = det("cup", 0.72, [0, 160, 40, 20], 41);
 const person: Detection = det("person", 0.9, [100, 40, 60, 200], 0);
 const sink: Detection = det("sink", 0.9, [60, 100, 300, 200], 71);
 const CROP = [120, 90, 240, 180] as [number, number, number, number];
+/** 잘라 키운 사진의 컵 감지(d1)와 같은 물건이라고 답한 VLM 물건: World State 물건은 VLM 물건으로만 생긴다. */
+const VCUP = { id: "v1", cls: "cup", box: { x: 220 / 480, y: 160 / 360, w: 40 / 480, h: 20 / 360 }, det: "d1" };
 /** 가짜 서버가 받은 VLM 요청 중 before 뒤의 것. */
 const chats = (f: FakeServer, before: number) => f.requests.slice(before).filter((q) => q.path.endsWith("/chat/completions"));
 /** 요청에 실린 사진(data URL)들. */
@@ -218,7 +220,7 @@ describe("가까이 보기(관찰 흐름 closer)", () => {
       fake = undefined;
       return r;
     };
-    const silent = (body: any) => (closerVlmReply()(body) === null ? null : JSON.stringify({ scene: "kitchen", observations: [], summary: CLOSER_SUMMARY }));
+    const silent = (body: any) => (closerVlmReply()(body) === null ? null : JSON.stringify({ scene: "kitchen", observations: [], objects: [], summary: CLOSER_SUMMARY }));
     // VLM이 답했으면 found는 VLM이 본 물건만이다(답 없음·가림은 본 것이 아니다)
     expect(await one(silent)).toMatchObject({ ok: true, found: [], vlm: "ok" });
     expect(await one(closerVlmReply("not_visible"))).toMatchObject({ ok: true, found: [], vlm: "ok" });
@@ -339,7 +341,7 @@ describe("가까이 보기(관찰 흐름 closer)", () => {
     const vlm = {
       model: "held",
       json: (req: { texts: string[]; signal?: AbortSignal }) => new Promise((ok) => {
-        const value = { scene: "k", observations: [{ object_id: "d1", state: "in_sink" }], summary: "s" };
+        const value = { scene: "k", objects: [VCUP], observations: [{ object_id: "d1", state: "in_sink" }], summary: "s" };
         if (!req.texts.includes(CLOSER_NOTE)) return ok({ value: { ...value, observations: [] }, costUsd: 0, model: "held", attempts: 1 });
         signals.push(req.signal!);
         answers.push(() => ok({ value, costUsd: 0, model: "held", attempts: 1 }));
@@ -356,11 +358,12 @@ describe("가까이 보기(관찰 흐름 closer)", () => {
     expect(signals[0]!.aborted).toBe(true);
     answers[0]!();
     // 감지는 이미 합쳤으므로 실행한 가까이 보기다: 끊긴 요청의 답은 VLM 풀이 버려 넣을 답이 없다(aborted)
+    // VLM 답이 없으면 잘라 본 감지가 3장이어도 물건을 만들지 않는다(물건은 VLM 물건으로만)
     expect(await pending).toEqual({
       ok: true, frame_id: "e3.c1", captured_at_ms: 6000, crop: [120, 90, 240, 180], frames: 3,
-      found: [{ id: "cup_1", cls: "cup", score: 0.72, facts: [] }], summary: null, vlm: "aborted",
+      found: [{ id: null, cls: "cup", score: 0.72, facts: [] }], summary: null, vlm: "aborted",
     });
-    expect(s.world.view(6000).objects).toEqual([expect.objectContaining({ id: "cup_1", facts: {} })]);
+    expect(s.world.view(6000).objects).toEqual([]);
     expect(s.p.status().closer).toMatchObject({ looks: 1, failed: 0 });
     await s.p.idle();
     expect(s.p.status().vlm.missing).toMatchObject({ timeout: 0, error: 0 });
@@ -372,7 +375,7 @@ describe("가까이 보기(관찰 흐름 closer)", () => {
     const vlm = {
       model: "held",
       json: (req: { texts: string[] }) => new Promise((ok) => {
-        const value = { scene: "k", observations: [{ object_id: "d1", state: "in_sink" }], summary: "s" };
+        const value = { scene: "k", objects: [VCUP], observations: [{ object_id: "d1", state: "in_sink" }], summary: "s" };
         if (!req.texts.includes(CLOSER_NOTE)) return ok({ value: { ...value, observations: [] }, costUsd: 0, model: "held", attempts: 1 });
         answers.push(() => ok({ value, costUsd: 0, model: "held", attempts: 1 }));
       }),
@@ -422,12 +425,12 @@ describe("가까이 보기(관찰 흐름 closer)", () => {
     await s.p.close();
   });
 
-  it("VLM 답이 왔을 때 쓴 가장 새 장이 지금보다 closerStaleMs 넘게 앞서 찍혔으면(폰 끊김) VLM 사실을 넣지 않고 3장이 안 된 후보도 만들지 않는다(vlm no_fresh_frames). 감지로 만든 물건은 그대로다", async () => {
+  it("VLM 답이 왔을 때 쓴 가장 새 장이 지금보다 closerStaleMs 넘게 앞서 찍혔으면(폰 끊김) VLM 답을 넣지 않고 물건도 만들지 않는다(vlm no_fresh_frames)", async () => {
     const answers: (() => void)[] = [];
     const vlm = {
       model: "held",
       json: (req: { texts: string[] }) => new Promise((ok) => {
-        const value = { scene: "k", observations: [{ object_id: "d1", state: "in_sink" }], summary: "s" };
+        const value = { scene: "k", objects: [VCUP], observations: [{ object_id: "d1", state: "in_sink" }], summary: "s" };
         if (!req.texts.includes(CLOSER_NOTE)) return ok({ value: { ...value, observations: [] }, costUsd: 0, model: "held", attempts: 1 });
         answers.push(() => ok({ value, costUsd: 0, model: "held", attempts: 1 }));
       }),
@@ -460,10 +463,10 @@ describe("가까이 보기(관찰 흐름 closer)", () => {
     expect(late.objects).toEqual([]);
     expect(late.logs).toEqual([expect.objectContaining({ frame_id: "e3.c1", yolo: "컵 0.72" })]);
     expect(late.status).toMatchObject({ looks: 1, failed: 0 });
-    // 3장에 보인 컵: 감지로 만든 컵은 남고 VLM 사실만 넣지 않는다
+    // 3장에 보인 컵도 VLM 답을 넣지 않으면 만들지 않는다(물건은 VLM 물건으로만)
     const three = await one([[cup], [cup], [cup]], 6005 + 6000);
-    expect(three.r).toMatchObject({ ok: true, found: [{ id: "cup_1", cls: "cup", facts: [] }], summary: null, vlm: "no_fresh_frames" });
-    expect(three.objects).toEqual([expect.objectContaining({ id: "cup_1", status: "present", facts: {} })]);
+    expect(three.r).toMatchObject({ ok: true, found: [{ id: null, cls: "cup", facts: [] }], summary: null, vlm: "no_fresh_frames" });
+    expect(three.objects).toEqual([]);
   });
 
   // 가로 유리컵 실제 판 r2(2026-11-18): 영상이 끝나 마지막 장면을 붙잡은(held) 동안 첫 가까이 보기가 「새 사진이 끊겨 VLM 답은 넣지 않음」이었다(Codex c5dbb3b 5)
@@ -472,7 +475,7 @@ describe("가까이 보기(관찰 흐름 closer)", () => {
     const vlm = {
       model: "held",
       json: (req: { texts: string[] }) => new Promise((ok) => {
-        const value = { scene: "k", observations: [{ object_id: "d1", state: "in_sink" }], summary: "s" };
+        const value = { scene: "k", objects: [VCUP], observations: [{ object_id: "d1", state: "in_sink" }], summary: "s" };
         if (!req.texts.includes(CLOSER_NOTE)) return ok({ value: { ...value, observations: [] }, costUsd: 0, model: "held", attempts: 1 });
         answers.push(() => ok({ value, costUsd: 0, model: "held", attempts: 1 }));
       }),
@@ -508,7 +511,7 @@ describe("가까이 보기(관찰 흐름 closer)", () => {
     const vlm = {
       model: "held",
       json: (req: { texts: string[] }) => new Promise((ok) => {
-        const answer = () => ok({ value: { scene: "k", observations: [{ object_id: "d1", state: "in_sink" }], summary: "s" }, costUsd: 0, model: "held", attempts: 1 });
+        const answer = () => ok({ value: { scene: "k", objects: req.texts.includes(CLOSER_NOTE) ? [VCUP] : [], observations: [{ object_id: "d1", state: "in_sink" }], summary: "s" }, costUsd: 0, model: "held", attempts: 1 });
         (req.texts.includes(CLOSER_NOTE) ? closer : normal).push(answer);
       }),
     } as unknown as VlmClient;

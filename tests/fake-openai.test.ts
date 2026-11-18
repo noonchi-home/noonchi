@@ -14,11 +14,22 @@ const post = (path: string, body: unknown) =>
 const chat = (body: unknown) => post("/v1/chat/completions", body);
 
 describe("가짜 OpenAI 호환 서버", () => {
-  it("장면 스키마면 감지 번호마다 관찰을 낸다", async () => {
+  it("장면 스키마면 감지 번호마다 관찰을 내고, VLM이 상자로 찾는 물건 감지마다 그 감지와 이은(det) 물건을 낸다(World State 물건은 VLM 물건으로만 생긴다)", async () => {
     f = await startFakeOpenAI();
-    const r = await chat({ model: "m", response_format: { type: "json_schema", json_schema: { name: "scene_observation", schema: {} } },
-      messages: [{ role: "user", content: [{ type: "text", text: 'Detections: [{"id":"d1","class":"cup","box":[1,2,3,4]}]' }] }] });
-    expect(JSON.parse(r.choices[0].message.content)).toEqual({ scene: "unknown", observations: [{ object_id: "d1", state: "contents_unknown" }], objects: [], summary: "가짜 장면" });
+    const body = { model: "m", response_format: { type: "json_schema", json_schema: { name: "scene_observation", schema: {} } },
+      messages: [{ role: "user", content: [{ type: "text", text: 'Detections: [{"id":"d1","class":"cup","box":[1,2,3,4]},{"id":"d2","class":"person","box":[5,6,7,8]},{"id":"d3","class":"bottle","box":[1,2,3,4]}]' }] }] };
+    const r = await chat(body);
+    expect(JSON.parse(r.choices[0].message.content)).toEqual({
+      scene: "unknown", observations: ["d1", "d2", "d3"].map((object_id) => ({ object_id, state: "contents_unknown" })),
+      objects: [{ id: "v1", cls: "cup", box: { x: 0.4, y: 0.4, w: 0.2, h: 0.2 }, det: "d1" }, { id: "v2", cls: "bottle", box: { x: 0.4, y: 0.4, w: 0.2, h: 0.2 }, det: "d3" }], summary: "가짜 장면",
+    });
+    // 시험이 정한 장면 답에 objects가 없으면 같은 물건을 더하고, objects를 정했으면(빈 목록 포함) 그대로 둔다
+    await f.close();
+    f = await startFakeOpenAI({ reply: (b) => (b?.response_format ? JSON.stringify({ scene: "k", observations: [{ object_id: "d1", state: "on_table" }], summary: "s" }) : null) });
+    expect(JSON.parse((await chat(body)).choices[0].message.content).objects.map((o: { det: string }) => o.det)).toEqual(["d1", "d3"]);
+    await f.close();
+    f = await startFakeOpenAI({ reply: (b) => (b?.response_format ? JSON.stringify({ scene: "k", observations: [], objects: [], summary: "s" }) : null) });
+    expect(JSON.parse((await chat(body)).choices[0].message.content).objects).toEqual([]);
   });
 
   it("PAM 판단이면 대기, 반성이면 받은 기억을 그대로 낸다", async () => {

@@ -10,6 +10,8 @@ import { WorldState, startWorldNode, type CloserPass } from "../src/world/index.
 import type { DetLabel } from "../src/world/vocab.js";
 import { engineFrame, LOOK_SIZE, LOOK_VIEW } from "./helpers/camera.js";
 import { det as mkDet } from "./helpers/detectors.js";
+import { vlmObjects } from "./helpers/vlm-scene.js";
+import { accepts } from "../src/world/index.js";
 
 const EPOCH = { boot: "b1", home: "h#1" };
 const NOW = 10_000;
@@ -23,6 +25,13 @@ const person = det("person", [150, 20, 120, 330], 0.9);
 const pass = (frameId: string, atMs: number, dets: Detection[]): CloserPass => ({ frameId, capturedAtMs: atMs, view: LOOK_VIEW, ...LOOK_SIZE, dets: dets.map((d) => ({ ...d, edge: false })) });
 const meta = (id: string, atMs: number): FrameMeta => { const { jpeg: _jpeg, sha256: _sha, ...m } = engineFrame(id, atMs); return m; };
 const said = (...obs: [string, string][]): SceneObservation => ({ scene: "k", observations: obs.map(([object_id, state]) => ({ object_id, state: state as never })), summary: "s" });
+/** 그 사진 VLM 답: 감지(d1…)와 이은 VLM 물건(v1…, 물건은 VLM 답으로만 생긴다)과 사실. */
+const sceneOf = (dets: Detection[], ...obs: [string, string][]): SceneObservation => ({ ...said(...obs), objects: vlmObjects(dets, LOOK_SIZE, accepts) });
+/** 그 사진의 카메라·크기·폰 눈(카메라 자리)·감지(바닥 점): 이어진 VLM 물건은 감지 바닥 점 자리다. */
+const lookOf = (id: string, at: number, dets: Detection[]) => {
+  const m = meta(id, at);
+  return { view: m.view!, width: m.width, height: m.height, eye: [m.view!.origin[0], m.view!.origin[2]] as [number, number], dets: dets.map((d, i) => ({ id: `d${i + 1}`, box: d.box, foot: d.foot })) };
+};
 /** 장면 VLM 답에 YOLO가 못 본 유리잔 하나(VLM 물건 목록). */
 const withVlmObject = (s: SceneObservation): SceneObservation => ({ ...s, objects: [{ id: "v1", cls: "glass", box: { x: 0.3, y: 0.55, w: 0.06, h: 0.08 }, det: null }] });
 /** VLM 답을 받은 사진의 카메라·크기(폰 눈 자리 없음), 가까이 본 장의 카메라·크기·자른 자리. */
@@ -95,45 +104,45 @@ describe("집 상태 노드", () => {
     const d: WorldChange[] = [];
     for (const [id, at] of [["e1", 1000], ["e2", 2000], ["e3", 3000]] as const) {
       const r1 = direct.applyDetections(meta(id, at), [cupIn, person]);
-      d.push(...r1.changes, ...direct.applyScene(id, at, withVlmObject(said(["d1", "in_sink"])), r1.ids, LOOK));
+      d.push(...r1.changes, ...direct.applyScene(id, at, sceneOf([cupIn, person], ["d1", "in_sink"]), r1.ids, lookOf(id, at, [cupIn, person])));
     }
-    const rc = direct.applyCloser([pass("e4", 4000, [cupFar]), pass("e5", 5000, [person, cupFar])], "e5", { defer: true });
-    d.push(...rc.changes, ...direct.applyCloserScene("e5", 5000, said(["d2", "on_floor"]), rc.ids, rc.pending, AT));
+    const rc = direct.applyCloser([pass("e4", 4000, [cupFar]), pass("e5", 5000, [person, cupFar])]);
+    d.push(...rc.changes, ...direct.applyCloserScene("e5", 5000, sceneOf([person, cupFar], ["d2", "on_floor"]), rc.ids, rc.pending, AT));
     d.push(...direct.applyTop("cup_1", "e6", 6000, "empty"));
     d.push(...direct.applyMissing("e7", 7000, { vlm: "timeout" }), ...direct.applyMissing("e8", 8000, { yolo: "error" }));
 
     const r = await rig();
     for (const [id, at] of [["e1", 1000], ["e2", 2000], ["e3", 3000]] as const) {
       await yolo(r, { kind: "frame", frame: meta(id, at), dets: [cupIn, person] });
-      await r.perception.publish("/perception/scene", { kind: "scene", frame_id: id, observed_ms: at, scene: withVlmObject(said(["d1", "in_sink"])), look: LOOK });
+      await r.perception.publish("/perception/scene", { kind: "scene", frame_id: id, observed_ms: at, scene: sceneOf([cupIn, person], ["d1", "in_sink"]), look: lookOf(id, at, [cupIn, person]) });
       await r.flush();
     }
     await yolo(r, { kind: "closer_merge", look: "e5.c1", passes: [pass("e4", 4000, [cupFar]), pass("e5", 5000, [person, cupFar])], from: "e5" });
-    await r.perception.publish("/perception/scene", { kind: "closer_scene", look: "e5.c1", frame_id: "e5", observed_ms: 5000, scene: said(["d2", "on_floor"]), at: AT });
+    await r.perception.publish("/perception/scene", { kind: "closer_scene", look: "e5.c1", frame_id: "e5", observed_ms: 5000, scene: sceneOf([person, cupFar], ["d2", "on_floor"]), at: AT });
     await r.perception.publish("/perception/scene", { kind: "top", object_id: "cup_1", frame_id: "e6", observed_ms: 6000, value: "empty" });
     await r.perception.publish("/perception/scene", { kind: "missing", frame_id: "e7", observed_ms: 7000, missing: "timeout" });
     await r.flush();
     await yolo(r, { kind: "yolo_missing", frame_id: "e8", observed_ms: 8000, yolo: "error" });
     await r.flush();
     expect(d.length).toBeGreaterThan(5);
+    expect(d.some((c) => c.kind === "appeared" && c.subject === "cup_1")).toBe(true);   // VLM 답이 만든 물건
     expect(changesOf(r.got)).toEqual(d);
     expect(lastView(r.got)).toEqual(JSON.parse(JSON.stringify(direct.view(NOW))));   // 통로는 JSON으로 오간다(-0은 0)
   });
 
-  it("가까이 보기 합치기는 VLM 답까지 미루고(defer), VLM 답 없이 끝나면(closer_end) VLM에 보낸 장의 표로 YOLO만으로 넣은 변화를 낸다", async () => {
+  it("가까이 보기 묶음은 VLM 답까지 들고 있고, VLM 답 없이 끝나면(closer_end) 아무것도 넣지 않고 빈 표를 낸다(물건은 VLM 답으로만)", async () => {
     const s = spy(ws());
     const r = await rig(s.proxy);
     const passes = [pass("e1", 1000, [cupFar]), pass("e2", 2000, [cupFar]), pass("e3", 3000, [person, cupFar])];
     await yolo(r, { kind: "closer_merge", look: "e3.c1", passes, from: "e3" });
     await r.flush();
-    expect(s.calls.find((c) => c.name === "applyCloser")!.args.slice(1)).toEqual(["e3", { defer: true }]);
+    expect(s.calls.find((c) => c.name === "applyCloser")!.args).toHaveLength(1);
     expect(changesOf(r.got).filter((c) => c.kind === "appeared")).toEqual([]);
     await r.perception.publish("/perception/scene", { kind: "closer_end", look: "e3.c1" });
     await r.flush();
-    const end = s.calls.find((c) => c.name === "endCloser")!;
-    expect(end.args.slice(1)).toEqual([new Map([["d2", "cup_1"]]), "e3"]);
-    expect(changesOf(r.got).filter((c) => c.kind === "appeared").map((c) => c.subject)).toEqual(["cup_1"]);
-    expect(of(r.got, "/world/closer").at(-1)).toEqual({ look: "e3.c1", ids: { d2: "cup_1" } });
+    expect(s.calls.find((c) => c.name === "endCloser")!.args).toHaveLength(1);
+    expect(changesOf(r.got).filter((c) => c.kind === "appeared")).toEqual([]);
+    expect(of(r.got, "/world/closer").at(-1)).toEqual({ look: "e3.c1", ids: {} });
   });
 
   it("VLM 갈래의 사진 카메라(look)·가까이 본 장의 자리(at)를 World State에 그대로 넘긴다", async () => {
@@ -163,9 +172,9 @@ describe("집 상태 노드", () => {
     await yolo(r, { kind: "closer_merge", look: "e2.c1", passes: [pass("e1", 1000, [cupIn]), pass("e2", 2000, [person, cupIn])], from: "e2" });
     await r.flush();
     expect(of(r.got, "/world/closer")).toEqual([]);
-    await r.perception.publish("/perception/scene", { kind: "closer_scene", look: "e2.c1", frame_id: "e2", observed_ms: 2000, scene: said(["d2", "in_sink"]), at: AT });
+    await r.perception.publish("/perception/scene", { kind: "closer_scene", look: "e2.c1", frame_id: "e2", observed_ms: 2000, scene: sceneOf([person, cupIn], ["d2", "in_sink"]), at: AT });
     await r.flush();
-    expect(of(r.got, "/world/closer")).toEqual([{ look: "e2.c1", ids: { d2: "cup_1" } }]);
+    expect(of(r.got, "/world/closer")).toEqual([{ look: "e2.c1", ids: { d2: "cup_1", v1: "cup_1" } }]);
     await yolo(r, { kind: "closer_merge", look: "e4.c2", passes: [pass("e3", 3000, [cupFar]), pass("e4", 4000, [cupFar])], from: "e4" });
     await r.perception.publish("/perception/scene", { kind: "closer_end", look: "e4.c2" });
     await r.flush();
@@ -234,11 +243,11 @@ describe("집 상태 노드", () => {
     const r = await rig(s.proxy);
     for (const [id, at, state] of [["e1", 1000, "in_sink"], ["e2", 2000, "in_sink"], ["e3", 3000, "on_floor"]] as const) {
       const r1 = direct.applyDetections(meta(id, at), [cupIn, person]);
-      d.push(...r1.changes, ...direct.applyScene(id, at, said(["d1", state]), r1.ids));
+      d.push(...r1.changes, ...direct.applyScene(id, at, sceneOf([cupIn, person], ["d1", state]), r1.ids, lookOf(id, at, [cupIn, person])));
       await yolo(r, { kind: "frame", frame: meta(id, at), dets: [cupIn, person] });
       await r.flush();
       if (id === "e1") r.bus.failing.add("/world/changes");
-      await r.perception.publish("/perception/scene", { kind: "scene", frame_id: id, observed_ms: at, scene: said(["d1", state]) });
+      await r.perception.publish("/perception/scene", { kind: "scene", frame_id: id, observed_ms: at, scene: sceneOf([cupIn, person], ["d1", state]), look: lookOf(id, at, [cupIn, person]) });
       await r.flush();
     }
     await r.clock.advanceTo(NOW + RETRY_MS, r.flush);
@@ -249,12 +258,12 @@ describe("집 상태 노드", () => {
     await yolo(r, { kind: "closer_merge", look: "e5.c1", passes: [pass("e4", 4000, [cupFar]), pass("e5", 5000, [person, cupFar])], from: "e5" });
     await r.flush();
     r.bus.failing.add("/world/closer");
-    await r.perception.publish("/perception/scene", { kind: "closer_scene", look: "e5.c1", frame_id: "e5", observed_ms: 5000, scene: said(["d2", "on_floor"]), at: AT });
+    await r.perception.publish("/perception/scene", { kind: "closer_scene", look: "e5.c1", frame_id: "e5", observed_ms: 5000, scene: sceneOf([person, cupFar], ["d2", "on_floor"]), at: AT });
     await r.flush();
     await r.clock.advanceTo(NOW + 2 * RETRY_MS, r.flush);
     expect(r.bus.failing.size).toBe(0);
     expect(s.calls.filter((c) => c.name === "applyCloserScene")).toHaveLength(1);
-    expect(of(r.got, "/world/closer")).toEqual([{ look: "e5.c1", ids: { d2: "cup_2" } }]);
+    expect(of(r.got, "/world/closer")).toEqual([{ look: "e5.c1", ids: { d2: "cup_2", v1: "cup_2" } }]);
   });
 
   it("YOLO 갈래 입력의 발행이 실패하면 다시 받을 때 남은 변화를 한 번만 낸다", async () => {
@@ -297,8 +306,8 @@ describe("집 상태 노드", () => {
     expect(s.calls.filter((c) => c.name === "endCloser")).toEqual([]);
     await r.clock.advanceTo(NOW + 31_000, r.flush);
     expect(s.calls.filter((c) => c.name === "endCloser")).toHaveLength(1);
-    // 미룬 합치기도 YOLO만으로 넣는다(VLM에 보낸 장 e2의 표)
-    expect(s.calls.find((c) => c.name === "endCloser")!.args[2]).toBe("e2");
+    // 들고 있던 묶음은 버린다(VLM 답 없이는 넣지 않는다)
+    expect(s.calls.find((c) => c.name === "endCloser")!.args).toHaveLength(1);
   });
 
 });

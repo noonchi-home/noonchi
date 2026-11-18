@@ -241,7 +241,8 @@ export class ObservationPipeline {
         this.detsOf.delete(r.frameId);
         const f = this.ring.get(r.frameId);
         // 그 사진을 찍은 때의 카메라·폰 눈(답이 온 때가 아니다)
-        const look = f?.view ? { view: f.view, width: f.width, height: f.height, eye: f.eye ? f.eye.position : null } : undefined;
+        // 그 사진의 YOLO 감지(바닥 점 포함): 그 감지와 이어진 VLM 물건은 자리를 감지 바닥 점으로 낸다
+        const look = f?.view ? { view: f.view, width: f.width, height: f.height, eye: f.eye ? f.eye.position : null, dets: dets.map(({ id, box, foot }) => ({ id, box, ...(foot ? { foot } : {}) })) } : undefined;
         const scene = r.scene && f ? linkDets(r.scene, dets, f.width, f.height) : r.scene;
         o.world.send(scene
           ? { kind: "scene", frame_id: r.frameId, observed_ms: r.capturedAtMs, scene, ...(look ? { look } : {}) }
@@ -363,7 +364,7 @@ export class ObservationPipeline {
       this.o.emit({ ...base, at_ms: this.clock.now(), yolo: null, yolo_missing: "error" });
       this.o.world.send({ kind: "yolo_missing", frame_id: frame.id, observed_ms: frame.capturedAtMs, yolo: "error" });
     }
-    const sceneDets: SceneDetection[] = (dets ?? []).map((d, i) => ({ id: `d${i + 1}`, class: d.label, box: d.box, score: d.score }));
+    const sceneDets: SceneDetection[] = (dets ?? []).map((d, i) => ({ id: `d${i + 1}`, class: d.label, box: d.box, score: d.score, foot: d.foot }));
     this.detsOf.set(frame.id, sceneDets);
     this.pool.submit(frame, sceneDets); // 상한을 넘으면 풀이 VLM 분석 없음(cap)을 onResult로 낸다
   }

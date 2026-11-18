@@ -115,7 +115,7 @@ describe("인식·집 상태 토픽 모양(묶음 2)", () => {
 
   it("/perception/scene VLM 갈래는 VLM 물건 목록(objects)·그 사진의 카메라(look)·가까이 본 장의 자리(at)를 싣고, 그 안의 사진 칸도 거절한다", () => {
     const objects = [{ id: "v1", cls: "glass", box: { x: 0.1, y: 0.2, w: 0.1, h: 0.2 }, det: null }, { id: "v2", cls: "cup", box: { x: 0.5, y: 0.5, w: 0.1, h: 0.1 }, det: "d1" }];
-    const look = { view, width: 480, height: 360, eye: [1, 2] };
+    const look = { view, width: 480, height: 360, eye: [1, 2], dets: [{ id: "d1", box: [1, 2, 3, 4], foot: [2, 6] }, { id: "d2", box: [5, 6, 7, 8] }] };
     const withObjects = { ...scene, objects };
     const kinds = [
       { kind: "scene", frame_id: "e1", observed_ms: 1, scene: withObjects, look },
@@ -128,6 +128,7 @@ describe("인식·집 상태 토픽 모양(묶음 2)", () => {
     for (const photo of ["jpeg", "jpeg_b64", "sha256"]) {
       expect(ok("/perception/scene", { ...kinds[0], scene: { ...scene, objects: [{ ...objects[0], [photo]: "x" }] } }), `object.${photo}`).toBe(false);
       expect(ok("/perception/scene", { ...kinds[0], look: { ...look, [photo]: "x" } }), `look.${photo}`).toBe(false);
+      expect(ok("/perception/scene", { ...kinds[0], look: { ...look, dets: [{ id: "d1", box: [1, 2, 3, 4], [photo]: "x" }] } }), `look.dets.${photo}`).toBe(false);
       expect(ok("/perception/scene", { ...kinds[3], at: { ...at, [photo]: "x" } }), `at.${photo}`).toBe(false);
     }
   });

@@ -5,6 +5,7 @@ import type { BrainLog } from "../../src/contract/events.js";
 import type { WorldChange, WorldView } from "../../src/contract/world.js";
 import { ObservationPipeline, type PipelineOptions, type WorldPort } from "../../src/observe/pipeline.js";
 import { WorldInputs, type WorldState } from "../../src/world/index.js";
+import { TOPICS } from "../../src/bus/index.js";
 
 const PER_FRAME = new Set(["vlm_missing", "yolo_missing"]);
 
@@ -17,6 +18,8 @@ export function directPort(world: WorldState, o: {
   return {
     inputs,
     send(i) {
+      // 통로와 같은 몸 검사(strict): 모양이 어긋나면 통로에서는 입력이 버려지므로 시험에서는 던진다
+      TOPICS["/perception/scene"].body.parse(i);
       const r = inputs.scene(i);
       if (r.closer) closers.set(r.closer.look, r.closer.ids);
       if (!r.changes.length) return;
