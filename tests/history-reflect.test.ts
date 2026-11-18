@@ -477,16 +477,18 @@ describe("반성 API", () => {
     expect(db.list({ kinds: ["reflection"] })).toEqual([]);
   });
 
-  it("반성 기록에 PAM 사용량을 남긴다", async () => {
+  it("반성 기록에 PAM 사용량(그 밤에 부른 호출을 모두 더한 것)을 남긴다", async () => {
     const db = HistoryDb.open(":memory:");
     const t = Date.UTC(2026, 10, 6, 23);
     db.add("detection", t, "사람 보임");
     const logs: BrainLog[] = [];
-    const fetchImpl = (async (_u: unknown, init?: RequestInit) => Response.json({ model: "pam", choices: [{ message: { content: answerOf(init) }, finish_reason: "stop" }],
-      usage: { prompt_tokens: 3000, completion_tokens: 900 } })) as unknown as typeof fetch;
+    let calls = 0;
+    const fetchImpl = (async (_u: unknown, init?: RequestInit) => { calls++; return Response.json({ model: "pam", choices: [{ message: { content: answerOf(init) }, finish_reason: "stop" }],
+      usage: { prompt_tokens: 3000, completion_tokens: 900 } }); }) as unknown as typeof fetch;
     const r = await runReflection(db, pamClientFor({ url: "http://pam.invalid/v1" }, { fetchImpl }), "2026-11-07", { emit: (l) => logs.push(l), now: () => t + 3_600_000 });
     expect(r.ok).toBe(true);
-    const usage = { model: "pam", prompt: 3000, completion: 900, cached: 0, cost_usd: null };
+    expect(calls).toBeGreaterThan(1);
+    const usage = { model: "pam", prompt: 3000 * calls, completion: 900 * calls, cached: 0, cost_usd: null };
     expect(logs.find((l) => l.type === "reflection")).toMatchObject({ usage });
     expect(db.list({ kinds: ["reflection"] })[0]!.data).toMatchObject({ usage });
   });

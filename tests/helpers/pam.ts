@@ -42,6 +42,8 @@ export interface FakePamLlmOptions {
   mark?: (v: MarkView) => unknown;
   /** 갈래별 HTTP 상태(예: { predict: 500 }). */
   status?: Partial<Record<PamView["role"], number>>;
+  /** 갈래별 답 사용량(기본 0). */
+  usage?: Partial<Record<PamView["role"], { prompt_tokens: number; completion_tokens: number }>>;
 }
 
 /** 서버에 넘길 PAM LLM 환경(가짜 서버 주소, 실제 키 대신 가짜 키). */
@@ -219,6 +221,9 @@ const everyLine = (v: ChunkView) => ({ chunks: [...new Map(v.lines.map((l) => [l
 /** 기본 시각 찾기: 물은 것마다 빈 시각, 안 보인 구간 없음. */
 const nothingFound = (v: MarkView) => ({ candidates: v.candidates.map(([state, candidate]) => ({ state, candidate, times: [] })), actions: v.actions.map((action) => ({ action, times: [] })), unseen: [] });
 
+const usageOf = (u?: { prompt_tokens: number; completion_tokens: number }) =>
+  ({ prompt_tokens: u?.prompt_tokens ?? 0, completion_tokens: u?.completion_tokens ?? 0, total_tokens: (u?.prompt_tokens ?? 0) + (u?.completion_tokens ?? 0) });
+
 export async function startFakePamLlm(o: FakePamLlmOptions = {}): Promise<FakePamLlm> {
   const bodies: PamView[] = [];
   const calls: PamView["role"][] = [];
@@ -244,7 +249,7 @@ export async function startFakePamLlm(o: FakePamLlmOptions = {}): Promise<FakePa
       : v.role === "chunk" ? (o.chunk?.(v) ?? everyLine(v)) : v.role === "mark" ? (o.mark?.(v) ?? nothingFound(v)) : (o.reflect?.(v) ?? v.memory);
     const content = typeof answer === "string" ? answer : JSON.stringify(answer);
     send(res, 200, { id: "fake", object: "chat.completion", created: 0, model: body.model,
-      choices: [{ index: 0, message: { role: "assistant", content }, finish_reason: "stop" }], usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 } });
+      choices: [{ index: 0, message: { role: "assistant", content }, finish_reason: "stop" }], usage: usageOf(o.usage?.[v.role]) });
   });
   const { port } = await listenRetry(server, 0, "127.0.0.1");
   return {

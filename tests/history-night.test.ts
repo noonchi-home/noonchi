@@ -146,6 +146,21 @@ describe("밤 흐름: 채택 검사", () => {
     }
   });
 
+  // Codex(1b07d3e2 P3): 밤 흐름이 여러 번 부른 PAM 사용량을 덮어써 마지막 호출 비용만 남았다
+  it("반성 기록 사용량은 그 밤에 부른 PAM 호출(덩어리·반성·뜻 검사·시각 찾기)을 모두 더한 것이다", async () => {
+    const pam = await startFakePamLlm({ chunk: oneChunkPerLine, reflect: () => CANDIDATES_ASK_THEN_CLEAR, mark: markLeaveAt("08:00:00"),
+      usage: { chunk: { prompt_tokens: 10, completion_tokens: 1 }, reflect: { prompt_tokens: 20, completion_tokens: 2 }, check: { prompt_tokens: 30, completion_tokens: 3 }, mark: { prompt_tokens: 40, completion_tokens: 4 } } });
+    try {
+      const db = HistoryDb.open(":memory:");
+      leaveAndAnswer(db, "2026-11-10", "08:00:00", "08:01:30", "clear");
+      expect((await runNight(db, pamClientFor(pam), "2026-11-10", { dir: tmp() })).ok).toBe(true);
+      expect(pam.calls).toEqual(["chunk", "reflect", "check", "mark"]);
+      expect(db.list({ kinds: ["reflection"], latest: true, limit: 1 })[0]!.data).toMatchObject({ usage: { prompt: 100, completion: 10, cached: 0 } });
+    } finally {
+      await pam.close();
+    }
+  });
+
   it("「두세요」 답·아무 일 없음은 따라오지 않은 것, 안 보인 창은 못 봄", () => {
     const db = HistoryDb.open(":memory:");
     leaveAndAnswer(db, "2026-11-10", "08:00:00", "08:01:30", "keep");

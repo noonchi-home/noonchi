@@ -35,6 +35,14 @@ const HABIT_KINDS = ["world", "device", "decision", "execution", "feedback"] as 
 /** 덩어리 기록·시각 찾기가 읽는 그날 기록 줄 종류(사람·물건·가전·사람 말). */
 const LINE_KINDS = ["detection", "world", "device", "feedback"] as const;
 
+/** PAM 사용량 더하기(밤 흐름은 여러 번 부른다): 토큰은 더하고, 비용은 모두 알 때만 더하며, 모델은 다르면 이어 적는다. */
+export function addUsage(a: PamUsage | undefined, b: PamUsage): PamUsage {
+  if (!a) return { ...b };
+  const models = [...new Set([...a.model.split("+"), b.model])].join("+");
+  return { model: models, prompt: a.prompt + b.prompt, completion: a.completion + b.completion, cached: a.cached + b.cached,
+    cost_usd: a.cost_usd === null || b.cost_usd === null ? null : a.cost_usd + b.cost_usd };
+}
+
 /** 최근 줄부터 max 바이트까지 담는다(시각 순으로 돌려줌). */
 export function latestWithin(lines: string[], max: number): string[] {
   const out: string[] = [];
@@ -164,7 +172,8 @@ export async function runNight(db: HistoryDb, pam: PamClient, day: string, o: Ni
     // 그날 판본을 읽기만 한다(날 고정·seed 판본을 남기지 않는다: 끊긴 반성이 다른 반성의 적용일을 밀지 않게)
     const cur = readDayMemory(db, day);
     const feedback = latestWithin(db.list({ day, kinds: ["feedback"] }).map((r) => r.text), MAX_REFLECT_TEXT.feedback).join("\n") || null;
-    const call = { signal: o.signal, onUsage: (u: PamUsage) => { usage = u; } };
+    // 사용량은 그 밤에 부른 PAM 호출(덩어리·반성·뜻 검사·시각 찾기)을 모두 더한다(Codex 1b07d3e2 P3: 덮어써 마지막 호출만 남았다)
+    const call = { signal: o.signal, onUsage: (u: PamUsage) => { usage = addUsage(usage, u); } };
     const limits = await pam.limits();
     if (cur.kind === "list") {
       const maxBytes = limits.reflect_input_bytes - bytes(JSON.stringify(cur.memory, null, 2)) - bytes(feedback ?? "") - bytes(REFLECT_TEXT.noObservation) - bytes(REFLECT_TEXT.noAction);
