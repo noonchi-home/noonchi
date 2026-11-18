@@ -122,6 +122,16 @@ describe("기록기", () => {
     expect(JSON.stringify(db.list({}))).not.toMatch(/jpeg|base64/);
   });
 
+  // 2026-11-18 wide-glass q3: 「계획이 맞지 않아 버림」 줄에 까닭이 없었다({"state":"failed"})
+  it("실행 줄은 상태와, 까닭이 있으면 그 까닭(계획 검사의 첫 틀린 단계와 이유)을 data에 적는다", () => {
+    const { db, subs } = wired();
+    subs.brain!({ type: "execution", at_ms: 1, plan_id: "plan:pam-1", state: "failed", text: "계획이 맞지 않아 버림", reason: "2번 집기: 집을 물건이 없습니다" });
+    subs.brain!({ type: "execution", at_ms: 2, plan_id: "plan:pam-2", state: "running", text: "실행 중" });
+    expect(db.list({ kinds: ["execution"] }).map((r) => [r.subject, r.data])).toEqual([
+      ["plan:pam-1", { state: "failed", reason: "2번 집기: 집을 물건이 없습니다" }], ["plan:pam-2", { state: "running" }],
+    ]);
+  });
+
   it("관찰 모드 기록은 look 줄로 대상·글과 까닭·도구·모델 까닭·결과·계획·단계 id를 적고, 하루 요약에는 넣지 않는다", () => {
     const { db, subs } = wired();
     const result = { ok: true as const, frame_id: "e3.c1", captured_at_ms: 6, crop: [120, 90, 240, 180] as [number, number, number, number], frames: 3, found: [], summary: null, vlm: "ok" as const };

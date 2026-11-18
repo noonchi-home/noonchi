@@ -73,7 +73,7 @@ export function attachRecorder(db: HistoryDb, o: RecorderSources): () => void {
           });
           return;
         case "execution":
-          db.add("execution", l.at_ms, l.text, { subject: l.plan_id, data: { state: l.state } });
+          db.add("execution", l.at_ms, l.text, { subject: l.plan_id, data: { state: l.state, ...(l.reason ? { reason: l.reason } : {}) } });
           return;
         case "link":
           db.add("link", l.at_ms, l.text, { subject: l.target, data: { up: l.up } });

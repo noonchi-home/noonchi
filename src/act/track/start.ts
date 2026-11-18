@@ -133,7 +133,13 @@ export class Starter extends Part {
     if (core.stopped || core.planning !== job) return;
     core.planning = null;
     const d = job.decision;
-    if (!r.ok) return core.emit(planIdOf(d.id), "failed", EXEC_TEXT.badPlan);
+    if (!r.ok) {
+      // 계획 검사(PlanDraft)가 버린 까닭(첫 틀린 단계와 이유)을 실행 기록과 서버 로그에 남기고, 같은 행동 다시 계획 간격 없이 다음 판단에서 바로 다시 짠다
+      // (2026-11-18 wide-glass q3: 까닭 없이 버리고 「방금 계획한 일이라 잠시 뒤 다시 봄」으로 12초를 기다렸다)
+      this.ungap(d, job.at);
+      this.o.log?.(`[실행 추적] ${planIdOf(d.id)} 계획 버림(${d.action}): ${r.error}`);
+      return core.emit(planIdOf(d.id), "failed", EXEC_TEXT.badPlan, r.error);
+    }
     // 만드는 사이 진행 중 계획이 기다리기·기기 단계에 들어갔으면 바꾸지 않는다(그 판단은 그 단계 전 관찰이다)
     if (core.waiting() || d.atMs < core.quietFrom) return core.emit(planIdOf(d.id), "failed", EXEC_TEXT.busy);
     if (this.closerNewer(d)) {

@@ -129,7 +129,8 @@ export type BrainLog =
     assist?: "noonchi" | "coach" | null;
     error?: string; memory_version: number; world: DecisionWorld;
   }
-  | { type: "execution"; at_ms: number; plan_id: string; state: ExecState; text: string }
+  /** reason: 그 실행 기록의 까닭(계획 검사에서 버린 계획이면 첫 틀린 단계와 이유). 없으면 칸이 없다. */
+  | { type: "execution"; at_ms: number; plan_id: string; state: ExecState; text: string; reason?: string }
   | { type: "link"; at_ms: number; target: "pam"; up: boolean; text: string }
   | { type: "trigger"; at_ms: number; paused: boolean; text: string }
   | {

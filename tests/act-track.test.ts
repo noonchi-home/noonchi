@@ -4580,6 +4580,29 @@ describe("실행 추적: 사람이 쓰는 물건은 그 사람이 사라질 때�
 });
 
 // 2026-11-18 사용자 결정: 계획이 끝나면(완료·그만·실패) 걷지 않고 아는 사실로 사용자 위치를 확인한 뒤 충전 자리로 돌아가 지켜본다. 새 일은 그 자리에서 시작한다
+// 2026-11-18 wide-glass q3: 「계획이 맞지 않아 버림」의 까닭이 기록에 없었고({"state":"failed"}), 그 뒤 「방금 계획한 일이라 잠시 뒤 다시 봄」으로 12초를 기다렸다
+describe("실행 추적: 계획 검사에서 버린 계획", () => {
+  it("버린 까닭(계획 검사의 첫 틀린 단계와 이유)을 실행 기록과 서버 로그에 남기고, 같은 행동을 다시 계획하는 간격 없이 바로 다시 짠다", async () => {
+    const plans = new PlanHub(smallFloor(), () => {}, () => "t");
+    const w = () => world([cup("present")]);
+    const real = testPlanner(llm);
+    const logged: string[] = [];
+    let n = 0;
+    const s = setup({
+      plans, w, planGapMs: 60_000, log: (line) => logged.push(line),
+      planner: (d, signal) => (n++ === 0
+        ? Promise.resolve({ ok: false as const, error: "2번 집기: 집을 물건(cup_9)이 World State에 없습니다" })
+        : real.plan(planContext({ decision: d, world: w(), floor: plans.floor() }), signal)),
+    });
+    await s.decide(decision);
+    expect(s.exec().at(-1)).toMatchObject({ plan_id: "plan:pam-1", state: "failed", text: EXEC_TEXT.badPlan, reason: "2번 집기: 집을 물건(cup_9)이 World State에 없습니다" });
+    expect(logged.some((l) => l.includes("plan:pam-1") && l.includes("2번 집기: 집을 물건(cup_9)이 World State에 없습니다"))).toBe(true);
+    await s.decide({ ...decision, id: "pam-2", seq: 2 });
+    expect(s.exec().some((e) => e.text === EXEC_TEXT.held)).toBe(false);
+    expect(s.plans.current()).toMatchObject({ id: "plan:pam-2", status: "running" });
+  });
+});
+
 // 2026-11-18 wide-mug q3: 「컵을 들어 주세요」 중에 폰 든 사람이 보여 PAM이 「컵에 콜라 따라 주기」를 골랐고, 「새 판단으로 바뀜」으로 컵 치우기가 취소됐다
 describe("실행 추적: 손대는 단계 중 다른 행동 판단", () => {
   it("집기·내려놓기 단계와 집은 물건을 들고 가는 동안에는 다른 행동 판단으로 계획을 바꾸지 않고 기록만 한다(계획이 끝난 뒤 다시 판단). 가기 단계에서는 바꾼다", async () => {

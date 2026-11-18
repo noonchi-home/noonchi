@@ -169,9 +169,9 @@ export class TrackCore {
     this.emit(r.plan.view.id, state, text);
   }
 
-  emit(planId: string, state: ExecState, text?: string): void {
+  emit(planId: string, state: ExecState, text?: string, reason?: string): void {
     if (this.stopped) return;
-    this.o.emit({ type: "execution", at_ms: this.clock.now(), plan_id: planId, state, text: text ?? EXEC_TEXT[state] });
+    this.o.emit({ type: "execution", at_ms: this.clock.now(), plan_id: planId, state, text: text ?? EXEC_TEXT[state], ...(reason ? { reason } : {}) });
   }
 }
 
