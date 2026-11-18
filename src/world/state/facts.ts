@@ -138,10 +138,16 @@ export class SceneFacts extends Part {
     const contents: [Obj, StateOf<"contents">][] = [];
     const hidden = new Set(scene.observations.filter((o) => (VLM_ONLY as readonly string[]).includes(o.state)).map((o) => ids.get(o.object_id)).filter((x): x is string => !!x));
     for (const ob of scene.observations) {
-      const id = ids.get(ob.object_id);
-      const target = id ? this.targetOf(id) : null;
-      if (!id || !target || !(ob.state in STATES)) continue;
+      if (!(ob.state in STATES)) continue;
       const value = ob.state as StateKey;
+      let id = ids.get(ob.object_id);
+      // VLM이 사람 사실(마시는 중·물건을 들고 있음)을 그 사람이 쓰는 물건에 붙여 답하면(2026-11-18 가로 영상 g1: 컵 v1에 drinking·holding_object·in_hand) 보이는 사람에게 붙인다.
+      // 물건에는 붙지 않는 사실이라 버리면 쓰는 중 지킴·미리 세운 목표가 「마시는 중」을 못 본다. 손에 든 컵은 아직 물건으로 잇지 않았을 수 있어(id 없음) VLM 물건 번호로도 본다
+      const named = id ? this.targetOf(id) : null;
+      const onObject = named ? named.kind === "object" : (scene.objects ?? []).some((o) => o.id === ob.object_id);
+      if (onObject && core.person.visible && fits(value, "person", "person") && !(named && fits(value, named.cls, named.kind))) id = PERSON;
+      const target = id ? this.targetOf(id) : null;
+      if (!id || !target) continue;
       if (!fits(value, target.cls, target.kind)) continue;
       const facet = STATES[value].facet;
       said.add(`${id}|${facet}`);
