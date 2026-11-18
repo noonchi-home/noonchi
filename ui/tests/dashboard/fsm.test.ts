@@ -102,6 +102,9 @@ describe("FSM 카드 그림 자리(fsmLayout)", () => {
   it("지금 상태의 제자리 고리: 하는 일이 아닌 제자리 전이의 조건과 행동(「조건 / 로봇 행동」 두 줄)", () => {
     const v = fsmLayout(now(), BOX);
     expect(v.loop).toMatchObject({ from: "drinking", to: "drinking", kind: "edge", label: { text: "식사 중 컵이 비면", sub: "컵에 물 채워 주기" } });
+    // 글(왼쪽 글: 오른쪽 끝이 그 자리)은 고리 왼쪽 끝보다 왼쪽이라 고리를 가리지 않는다
+    expect(v.loop!.label!.side).toBe("left");
+    expect(v.loop!.label!.x).toBeLessThan(Math.min(...v.loop!.track.map((q) => q[0])));
   });
 
   it("전이에 행동이 있으면 선 글은 「조건」과 「로봇 행동」 두 줄이다(사람 상태 FSM 모양)", () => {

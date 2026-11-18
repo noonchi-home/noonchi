@@ -162,8 +162,10 @@ export function fsmLayout(f: FsmNow, box: { width: number; height: number }): Fs
       const c1 = add(c0, mul(dirAt(-95), FSM_R + 36));
       const c2 = add(c0, mul(dirAt(-165), FSM_R + 36));
       const fine = Array.from({ length: 49 }, (_, i) => cubic(p0, c1, c2, p3, i / 48));
+      // 글은 고리 왼쪽 끝보다 더 왼쪽에(고리를 가리지 않게), 높이는 고리 꼭대기(카드 위 끝 안쪽)
       const apex = cubic(p0, c1, c2, p3, 0.5);
-      const at: P = [apex[0] - LABEL_OFF, Math.max(apex[1], -box.height / 2 + 20)];
+      const left = Math.min(...fine.map((q) => q[0]));
+      const at: P = [left - LABEL_OFF, Math.max(apex[1], -box.height / 2 + 20)];
       loop = {
         id: `${cur}>${cur}`, from: cur, to: cur, kind: "edge", d: `M${pt(p0)}C${pt(c1)} ${pt(c2)} ${pt(p3)}`, arrow: arrowAt(p3, sub(p3, c2)),
         label: { text: rule.trigger, sub: rule.action!, x: at[0], y: at[1], side: "left" }, track: fine,

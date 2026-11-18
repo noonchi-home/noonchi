@@ -49,9 +49,9 @@ function Label({ line }: { line: FsmLine }) {
 function Face({ name, does }: { name: string; does: string }) {
   return (
     <div className="flex flex-col items-center px-2">
-      <span className="line-clamp-2 break-keep">{name}</span>
+      <span className="line-clamp-2 break-keep text-balance">{name}</span>
       <Separator className="my-1 w-14" />
-      <span className="line-clamp-2 break-keep">{does}</span>
+      <span className="line-clamp-2 break-keep text-balance">{does}</span>
     </div>
   );
 }
