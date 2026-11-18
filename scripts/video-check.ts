@@ -280,11 +280,12 @@ const CUP_RANK: Record<WorldObject["status"], number> = { present: 0, out_of_vie
 
 /** --step 판의 단계 판정 줄: 첫 명령 계획의 끝난 단계 수, 누른 단추 수, 마지막 World State의 눈 방과 컵(보이는 것 먼저, 그다음 마지막에 본 것) 놓인 곳. */
 /** 판정 기준 계획(2026-11-18 wide-glass q2: 첫 명령이 찾기라 끝난 컵 치우기 계획을 「안 끝남 · 0/0개」로 봤다): 명령을 낸 계획(plan:) 가운데
- *  기록의 목표가 컵 치우기인 계획, 없으면 처음 계획. 찾기(find:)·충전 자리(dock:)·끄기 안내(off:)·계획 밖 가까이 보기는 계획이 아니다. 없으면 null. */
+ *  기록의 목표가 컵 치우기인 마지막 계획(wide-mug g1: 마지막으로 실행된 것), 없으면 마지막 계획. 찾기(find:)·충전 자리(dock:)·끄기 안내(off:)·
+ *  계획 밖 가까이 보기(peek:)는 계획이 아니다. 없으면 null. */
 export function mainPlan(commands: readonly VideoCommand[], history: readonly HistoryRow[]): string | null {
   const ids = [...new Set(commands.map((c) => c.id).filter((id) => id.startsWith("plan:")))];
-  const cup = ids.find((id) => history.some((h) => h.kind === "plan" && h.subject === id && h.text.startsWith("컵 치우기")));
-  return cup ?? ids[0] ?? null;
+  const cup = ids.filter((id) => history.some((h) => h.kind === "plan" && h.subject === id && h.text.startsWith("컵 치우기")));
+  return cup.at(-1) ?? ids.at(-1) ?? null;
 }
 
 export function stepVerdict(history: HistoryRow[], commands: VideoCommand[], clicks: number, world: WorldView | null): string {
@@ -309,19 +310,20 @@ function placeName(word: string): string {
  *   그 단계 명령이 없으면 「단계 명령 없음: <단계 이름>」. 있으면 아직 안 쓴 --step(<종류>:<낱말>:<영상>) 가운데 같은 종류에서 대상 id에 낱말이 드는 것을 찾아 맞음으로 세고,
  *   같은 종류가 있는데 낱말이 맞는 것이 없으면 「단계 자리 틀림: 세탁기 ≠ 식탁」(첫 같은 종류 --step을 쓴다). 같은 종류 --step이 없으면 볼 수 없어 세지 않는다.
  *   계획에 없는 --step(찾기가 생길 때만 쓰는 go:cup 등)은 선택이라 세지 않는다(wide-tall q3 거짓 실패).
- * 계획 밖 명령(충전 자리 dock:·끄기 안내 off:)과 질문(:approve·:hand·:again)은 세지 않는다.
+ * 계획 밖 명령(충전 자리 dock:·끄기 안내 off:·내용물 보기 peek:·찾기 find:와 계획 줄의 찾기 :find:)과 질문(:approve·:hand·:again)은 세지 않고, 단계마다 마지막 명령으로 맞춘다.
  * 컵 치우기 판(cupClear)이면 끝에 집은 컵이 싱크대 안이어야 한다: 집기 명령의 대상 컵에서 옮김 표시(followed_by)만 따라간 마지막 물건으로 보고,
  * 상관없는 다른 컵으로 대신하지 않는다(Codex 2705c21). 다른 판(라면·전자레인지)은 단계 자리만 본다.
  */
 export function stepPlaces(steps: readonly string[], commands: readonly VideoCommand[], world: WorldView | null,
   o: { plan?: string | null; cupClear?: boolean; planSteps?: readonly { id: string; label: string; kind: string }[] } = {}): { ok: boolean; text: string; problems: string[] } {
   const plan = o.plan === undefined ? mainPlan(commands, []) : o.plan;
-  const seen = new Set<string>();
-  const pool = commands.filter((c) => {
-    if (c.id !== plan || !c.kind || /:(approve|hand|again)$/.test(c.step) || isOffStep(c.step) || isDockStep(c.step) || seen.has(c.step)) return false;
-    seen.add(c.step);
-    return true;
-  });
+  // 그 계획의 단계 명령만, 단계마다 마지막 명령(찾기 앞뒤로 같은 단계가 다시 나간다). 계획 줄의 찾기(:find:)·질문·끄기 안내·충전 자리는 뺀다(wide-mug g1)
+  const last = new Map<string, VideoCommand>();
+  for (const c of commands) {
+    if (c.id !== plan || !c.kind || c.step.includes(":find:") || /:(approve|hand|again)$/.test(c.step) || isOffStep(c.step) || isDockStep(c.step)) continue;
+    last.set(c.step, c);
+  }
+  const pool = [...last.values()];
   const required = o.planSteps
     ? o.planSteps.filter((x) => x.kind === "move" || x.kind === "act").map((x) => ({ id: x.id, label: x.label }))
     : pool.map((c) => ({ id: c.step, label: c.text }));

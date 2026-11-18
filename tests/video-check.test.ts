@@ -424,6 +424,39 @@ describe("video-check", () => {
       expect(stepPlaces(steps, wrong, end, { plan: P, cupClear: true, planSteps }).problems).toEqual(["단계 자리 틀림: 세탁기 ≠ 식탁"]);
     });
 
+    // 2026-11-18 wide-mug g1 거짓 실패: 내용물 보기(「컵 가까이 가 주세요」)·실행 전 찾기(계획 줄의 「식탁으로 가 주세요」·「식탁 위를 비춰 주세요」)가 끼고
+    // 같은 단계 명령(식탁으로 가 주세요)이 두 번 나가 「단계 자리 2/3 · 거실·복도 식탁 ≠ 싱크대」였다. 마지막 컵 치우기 계획의 단계마다 마지막 명령으로 맞추고 계획 밖 명령은 뺀다
+    it("wide-mug g1: 계획 밖 명령(내용물 보기 peek:, 계획 줄의 찾기 :find:, 충전 자리)은 빼고 단계마다 마지막 명령으로 맞춘다", () => {
+      const steps = ["go:table:wide-mug-go-table.mp4", "pick:cup:wide-mug-pick-cup.mp4", "go:sink:wide-mug-go-sink.mp4", "place:sink:wide-mug-place-sink.mp4"];
+      const P = "plan:pam-7";
+      const TABLE = { id: "dining_table_978b20c7", label: "거실·복도 식탁" };
+      const SINK = { id: "sink_counter_kitchen", label: "주방·식당 싱크대" };
+      const commands: VideoCommand[] = [
+        { video_ms: 14_400, id: "peek:1", step: "peek:1:go:1", text: "컵 가까이 가 주세요", kind: "go", target: { id: "cup_1", label: "컵" } },
+        { video_ms: 28_500, id: P, step: `${P}:find:${TABLE.id}:go:1`, text: "식탁으로 가 주세요", kind: "go", target: TABLE },
+        { video_ms: 31_100, id: P, step: `${P}:find:${TABLE.id}:aim:2`, text: "식탁 위를 비춰 주세요", kind: "do", target: TABLE },
+        { video_ms: 34_300, id: P, step: `${P}:1`, text: "식탁으로 가 주세요", kind: "go", target: TABLE },
+        { video_ms: 34_500, id: P, step: `${P}:2`, text: "컵을 들어 주세요", kind: "pick", target: { id: "cup_1", label: "컵" } },
+        { video_ms: 55_400, id: P, step: `${P}:3`, text: "싱크대로 가 주세요", kind: "go", target: SINK },
+        { video_ms: 65_600, id: P, step: `${P}:4`, text: "컵을 싱크대에 넣어 주세요", kind: "place", target: SINK },
+        { video_ms: 102_900, id: "dock:1", step: "dock:1:1", text: "충전 자리로 가 주세요", kind: "go", target: { id: "dock", label: "충전 자리" } },
+      ];
+      const planRow = (id: number, text: string, status: string): HistoryRow => ({
+        id, at_ms: id * 1000, day: "2026-11-18", kind: "plan", subject: P, text,
+        data: { status, steps: ["식탁으로 가기", "컵 집기", "싱크대로 가기", "컵 내려놓기"].map((label, i) => ({ id: `${P}:${i + 1}`, label, status: status === "done" ? "done" : "pending" })) },
+      });
+      const history = [planRow(1, "컵 치우기 계획됨", "planned"), planRow(2, "컵 치우기 끝남", "done")];
+      const end = world(102_200, null, [cup("cup_1", "in_sink", { surface: "sink_counter_kitchen", surface_label: "싱크대", surface_part: "basin" })]);
+      expect(mainPlan(commands, history)).toBe(P);
+      expect(stepPlaces(steps, commands, end, { plan: mainPlan(commands, history), cupClear: true })).toEqual({ ok: true, text: "단계 자리: 4/4 맞음 · 치운 컵 싱크대 안", problems: [] });
+    });
+
+    it("컵 치우기 계획이 여럿이면 마지막으로 실행된 것을 본다", () => {
+      const cmd = (plan: string, n: number): VideoCommand => ({ video_ms: n, id: plan, step: `${plan}:1`, text: "식탁으로 가 주세요" });
+      const row = (subject: string): HistoryRow => ({ id: 1, at_ms: 1, day: "2026-11-18", kind: "plan", subject, text: "컵 치우기 계획됨", data: { status: "planned", steps: [] } });
+      expect(mainPlan([cmd("plan:pam-2", 1), cmd("plan:pam-5", 2)], [row("plan:pam-2"), row("plan:pam-5")])).toBe("plan:pam-5");
+    });
+
     // Codex(2705c21 video-check.ts:335): 모든 --step 판에 컵이 싱크대에 있기를 요구해 정상으로 끝난 전자레인지·라면 시연도 실패했다
     it("컵이 싱크대 안인지는 컵 치우기 판에만 본다: 라면 시연은 단계 자리만 맞으면 통과다", () => {
       const ramen = ["go:cabinet:go-cabinet.mp4", "pick:cabinet:pick-pot.mp4"];
