@@ -5,7 +5,7 @@ import { ContractError, CUP_FSM_MEMORY, checkInput, validateCandidateFsm, valida
 import { PyJsonFail, readPyJson } from "./pyjson.js";
 import { parseMemory, parsePrediction } from "./answer.js";
 import { estimateTokens, pamLimits, type PamLimits } from "./budget.js";
-import { PamAnswerError, PamRequestError } from "./errors.js";
+import { PamAnswerError, PamBudgetError, PamRequestError } from "./errors.js";
 import { PamLlm, type CallOptions } from "./llm.js";
 import { buildPredictMessages, buildReflectMessages, generation } from "./prompt.js";
 import { UNREADABLE, memoryCheckMessages, parseVerdict, type MemoryVerdict } from "./memoryCheck.js";
@@ -98,24 +98,20 @@ export class PamClient {
   }
 
   /** 시각 찾기(밤 흐름): 물은 (상태, 후보)·행동마다 그날 일어난 때와 사람이 안 보인 구간. 시각은 그날 줄 시각만 받는다. 답이 틀리면 PamAnswerError.
-   *  한 요청이 문맥 길이를 넘으면 기록 줄을 차례대로 반씩 나눠(그 줄 구간에 걸친 덩어리만 붙여) 여러 번 묻고 답을 합친다(Codex 1b07d3e2 P2).
-   *  뒤 조각은 새로 맡은 첫 줄 앞 검사 창(FOLLOW_SECONDS)의 줄도 함께 받는다: 걷기 시작과 행동 완료가 경계를 넘어도 시작 줄 시각으로 답한다(Codex 81d209ef P2).
-   *  줄 하나로도 넘으면 PamBudgetError. */
-  async mark(i: MarkInput, call: CallOptions = {}): Promise<Marks> {
-    const parts: Marks[] = [];
-    for (const part of this.markParts(i)) parts.push(await this.markOne(part, call));
-    return mergeMarks(parts);
-  }
-
-  /** 문맥 길이 안에 드는 시각 찾기 요청들(기록 줄 차례대로). */
-  private markParts(i: MarkInput): MarkInput[] {
-    const fits = estimateTokens(markMessages(i).messages) + this.o.settings.maxTokens.reflector <= this.o.settings.maxModelLen;
-    if (fits || i.lines.length <= 1) return [i];
-    const half = Math.ceil(i.lines.length / 2);
-    const cut = lineSec(i.lines[half]!) - FOLLOW_SECONDS;
-    // 뒤 조각의 첫 줄: 검사 창 안의 앞 줄부터. 앞 조각 전체가 창 안이어도 한 줄은 줄여 나누기가 끝나게 한다
-    const from = Math.min(half, Math.max(1, i.lines.findIndex((l) => lineSec(l) >= cut)));
-    return [...this.markParts(markPart(i, i.lines.slice(0, half))), ...this.markParts(markPart(i, i.lines.slice(from)))];
+   *  한 요청이 문맥 길이를 넘으면 맡은 구간으로 나눠 여러 번 묻는다(planMark): 조각은 앞뒤 검사 창의 맥락 줄을 함께 받고, 답은 맡은 구간 안의 시각만 남긴다.
+   *  요청 수가 MARK_MAX_REQUESTS를 넘거나 줄 하나로도 넘으면 PamBudgetError. log: 맥락을 줄인 조각마다 한 줄. */
+  async mark(i: MarkInput, call: CallOptions = {}, log?: (line: string) => void): Promise<Marks> {
+    const parts = planMark(i, (x) => estimateTokens(markMessages(x).messages) + this.o.settings.maxTokens.reflector <= this.o.settings.maxModelLen, log);
+    const got: Marks[] = [];
+    for (const part of parts) got.push(owned(await this.markOne(part.input, call), part.own));
+    if (got.length === 1) return got[0]!;
+    const first = got[0]!;
+    const times = (pick: (m: Marks) => string[]) => got.flatMap(pick).sort();
+    return {
+      candidates: first.candidates.map((c) => ({ ...c, times: times((m) => m.candidates.find((x) => x.state === c.state && x.candidate === c.candidate)!.times) })),
+      actions: first.actions.map((x) => ({ ...x, times: times((m) => m.actions.find((y) => y.action === x.action)!.times) })),
+      unseen: got.flatMap((m) => m.unseen),
+    };
   }
 
   private async markOne(i: MarkInput, call: CallOptions): Promise<Marks> {
@@ -150,34 +146,71 @@ function markPart(i: MarkInput, lines: string[]): MarkInput {
   return { ...i, lines, chunks: i.chunks.filter((c) => c.substring(0, 8) <= last && c.substring(9, 17) >= first) };
 }
 
-/** 기록 줄(`HH:MM:SS | 글`)의 자정부터 초. */
-const lineSec = (line: string) => clock(headWithin(line, 8), "line");
-/** 같은 후보·행동이 이만큼(초) 안에 다시 맞으면 한 번이다(시각 찾기 지시문 marking.txt와 같다). */
-const SAME_EVENT_SECONDS = 10;
+/** 하루 시각 찾기 요청 수 상한: 넘으면 묻기 전에 PamBudgetError(밤 흐름이 그날만 빼고 다음 밤에 다시 묻는다). */
+export const MARK_MAX_REQUESTS = 32;
+/** 시각 찾기 조각 하나: 요청(맥락 줄 포함)과 맡은 구간(첫·끝 맡은 줄의 HH:MM:SS, 양끝 포함). */
+export interface MarkPartPlan { input: MarkInput; own: readonly [string, string] }
 
-/** 나눠 물은 시각 찾기 답 합치기: 후보·행동마다 시각을 차례대로 합친다. 같은 시각은 하나이고, 다른 조각이 SAME_EVENT_SECONDS 안에 다시 답한 시각은
- *  앞 시각 하나로 센다(겹친 구간을 두 조각이 함께 본다. 한 조각 안의 답은 모델이 이미 그 규칙으로 냈으니 그대로, Codex 81d209ef P2).
- *  안 보인 구간은 시각 차례로 잇고 같은 구간은 하나다. */
-export function mergeMarks(parts: Marks[]): Marks {
-  if (parts.length === 1) return parts[0]!;
-  const times = (lists: string[][]) => {
-    const all = lists.flatMap((ts, part) => ts.map((t) => ({ t, part, s: clock(t, "time") }))).sort((a, b) => a.s - b.s || a.part - b.part);
-    const kept: typeof all = [];
-    for (const x of all) {
-      const prev = kept.at(-1);
-      if (prev && (prev.t === x.t || (prev.part !== x.part && x.s - prev.s <= SAME_EVENT_SECONDS))) continue;
-      kept.push(x);
-    }
-    return kept.map((x) => x.t);
+/** 시각 찾기 나누기(Codex be8a98c0): 하루 기록을 겹치지 않는 맡은 구간으로 나누고, 조각마다 맡은 구간 앞뒤 검사 창(FOLLOW_SECONDS)의 맥락 줄을 붙인다.
+ *  맥락을 붙인 조각이 한도(fits)를 넘으면 맡은 구간만 반으로 나눈다(같은 초 줄은 한 구간). 맡은 구간이 한 초 줄 묶음인데도 넘으면 맥락을 반씩 줄여 맞추고 log 한 줄
+ *  (맥락 0초로도 넘으면 그대로 두어 보낼 때 PamBudgetError). 조각이 MARK_MAX_REQUESTS를 넘으면 PamBudgetError. */
+export function planMark(i: MarkInput, fits: (x: MarkInput) => boolean, log?: (line: string) => void): MarkPartPlan[] {
+  const secs = i.lines.map(lineSec);
+  const time = (k: number) => headWithin(i.lines[k]!, 8);
+  const out: MarkPartPlan[] = [];
+  // 맡은 줄 [a, b)와 앞뒤 ctx초 맥락 줄
+  const build = (a: number, b: number, ctx: number): MarkInput => {
+    let lo = a, hi = b;
+    while (lo > 0 && secs[lo - 1]! >= secs[a]! - ctx) lo--;
+    while (hi < secs.length && secs[hi]! <= secs[b - 1]! + ctx) hi++;
+    return markPart(i, i.lines.slice(lo, hi));
   };
-  const first = parts[0]!;
-  const unseen = [...new Map(parts.flatMap((p) => p.unseen).map((u) => [`${u.start}|${u.end}`, u])).values()].sort((a, b) => (a.start === b.start ? a.end.localeCompare(b.end) : a.start.localeCompare(b.start)));
+  // [a, b) 안에서 가운데에 가까운, 앞 줄과 초가 다른 줄(없으면 -1)
+  const middle = (a: number, b: number) => {
+    const m = a + Math.floor((b - a) / 2);
+    for (let d = 0; d < b - a; d++) for (const k of [m + d, m - d]) if (k > a && k < b && secs[k - 1] !== secs[k]) return k;
+    return -1;
+  };
+  const walk = (a: number, b: number): void => {
+    if (out.length > MARK_MAX_REQUESTS) return;
+    const own = [time(a), time(b - 1)] as const;
+    const whole = build(a, b, FOLLOW_SECONDS);
+    if (fits(whole)) return void out.push({ input: whole, own });
+    const m = middle(a, b);
+    if (m !== -1) {
+      walk(a, m);
+      walk(m, b);
+      return;
+    }
+    for (let ctx = FOLLOW_SECONDS >> 1; ; ctx >>= 1) {
+      const part = build(a, b, ctx);
+      if (fits(part) || ctx === 0) {
+        log?.(`시각 찾기: ${own[0]} 줄은 앞뒤 맥락을 ${ctx}초로 줄여 물어요`);
+        return void out.push({ input: part, own });
+      }
+    }
+  };
+  if (i.lines.length) walk(0, i.lines.length);
+  else out.push({ input: i, own: ["00:00:00", "23:59:59"] });
+  if (out.length > MARK_MAX_REQUESTS) throw new PamBudgetError(`시각 찾기 요청이 ${MARK_MAX_REQUESTS}번을 넘어요(그날 기록 ${i.lines.length}줄)`);
+  return out;
+}
+
+/** 조각 답에서 맡은 구간의 것만: 후보·행동 시각은 맡은 구간 안, 안 보인 구간은 맡은 구간과 겹친 부분(맥락의 답은 그 구간을 맡은 이웃 조각이 남긴다). */
+function owned(m: Marks, own: readonly [string, string]): Marks {
+  const inside = (t: string) => t >= own[0] && t <= own[1];
   return {
-    candidates: first.candidates.map((c) => ({ ...c, times: times(parts.map((p) => p.candidates.find((x) => x.state === c.state && x.candidate === c.candidate)!.times)) })),
-    actions: first.actions.map((a) => ({ ...a, times: times(parts.map((p) => p.actions.find((x) => x.action === a.action)!.times)) })),
-    unseen,
+    candidates: m.candidates.map((c) => ({ ...c, times: c.times.filter(inside) })),
+    actions: m.actions.map((x) => ({ ...x, times: x.times.filter(inside) })),
+    unseen: m.unseen.flatMap((u) => {
+      const start = u.start > own[0] ? u.start : own[0], end = u.end < own[1] ? u.end : own[1];
+      return start <= end ? [{ start, end }] : [];
+    }),
   };
 }
+
+/** 기록 줄(`HH:MM:SS | 글`)의 자정부터 초. */
+const lineSec = (line: string) => clock(headWithin(line, 8), "line");
 
 export class PamDecision implements DecisionModel {
   readonly name = "pam";

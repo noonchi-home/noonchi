@@ -296,7 +296,7 @@ export async function runNight(db: HistoryDb, pam: PamClient, day: string, o: Ni
         marks = await pam.mark({
           states: candidates.states.map((s) => ({ id: s.id, description: s.description })), candidates: ask.map((r) => ({ state: r.state, candidate: r.cand })), actions: want,
           lines: dl.map((l) => l.line), chunks: chunkLines(db, d, m.chunks),
-        }, call);
+        }, call, o.log);
       } catch (e) {
         // 그날 시각 찾기가 틀리거나 줄 하나로도 문맥 한도를 넘으면 그날만 셈에서 빼고 잇는다(사본에 남기지 않아 다음 밤에 다시 묻는다, Codex 1b07d3e2 P2). 연결 오류는 그대로 던진다
         if (!(e instanceof ContractError)) throw e;
