@@ -42,6 +42,12 @@ describe("표시 영상 패킷", () => {
     expect(parsePacket(encodeFramePacket(frame, JPEG))).toEqual({ header: frame, jpeg: JPEG });
   });
 
+  it("영상 청크는 엔진 프레임처럼 서버 시계 촬영 시각(captured_at)과 오차(time_err_ms)를 실을 수 있다", () => {
+    const chunk: VideoHeader = { kind: "video", key: false, ts: 66_666, width: 592, height: 1280, captured_at: 1_763_600_000_123, time_err_ms: 4 };
+    expect(parsePacket(encodeFramePacket(chunk, CHUNK))).toEqual({ video: chunk, data: CHUNK });
+    expect(parsePacket(encodeFramePacket({ ...chunk, time_err_ms: -1 } as VideoHeader, CHUNK))).toMatchObject({ error: expect.stringContaining("time_err_ms") });
+  });
+
   it("설정의 description은 비어도 되고, 청크는 비면 안 된다", () => {
     const config: VideoHeader = { kind: "video_config", codec: "avc1.42E01F", width: 592, height: 1280 };
     expect(parsePacket(encodeFramePacket(config, Buffer.alloc(0)))).toEqual({ video: config, data: Buffer.alloc(0) });

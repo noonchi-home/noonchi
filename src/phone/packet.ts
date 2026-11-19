@@ -34,7 +34,12 @@ const HeaderSchema = z.object({
 // 코덱 이름은 대시보드가 VideoDecoder에 그대로 넘기므로 avc1.42E01F 같은 모양만 받는다
 const VideoHeaderSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("video_config"), codec: z.string().regex(/^[A-Za-z0-9.]{1,64}$/), width: size, height: size }),
-  z.object({ kind: z.literal("video"), key: z.boolean(), ts: z.number().int().min(0), width: size, height: size }),
+  z.object({
+    kind: z.literal("video"), key: z.boolean(), ts: z.number().int().min(0), width: size, height: size,
+    /** 엔진 프레임과 같은 서버 시계 촬영 시각·오차: 대시보드가 그 시각의 마스크를 이 장면에 얹는다(src/phone/server.ts). */
+    captured_at: num.optional(),
+    time_err_ms: z.number().min(0).max(60_000).optional(),
+  }),
 ]);
 
 export interface FrameHeader {
@@ -54,10 +59,10 @@ export interface FrameHeader {
   held?: true;
 }
 
-/** 표시 영상 패킷 헤더. ts는 폰 인코더 시각(µs), width·height는 인코딩 크기. */
+/** 표시 영상 패킷 헤더. ts는 폰 인코더 시각(µs), width·height는 인코딩 크기. captured_at·time_err_ms는 서버 시계 촬영 시각과 오차(시계를 못 맞춘 폰은 없다). */
 export type VideoHeader =
   | { kind: "video_config"; codec: string; width: number; height: number }
-  | { kind: "video"; key: boolean; ts: number; width: number; height: number };
+  | { kind: "video"; key: boolean; ts: number; width: number; height: number; captured_at?: number; time_err_ms?: number };
 
 export type ParsedPacket = { header: FrameHeader; jpeg: Buffer } | { video: VideoHeader; data: Buffer } | { error: string };
 

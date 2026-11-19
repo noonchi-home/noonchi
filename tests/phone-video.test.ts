@@ -208,3 +208,38 @@ describe("스트림 메시지", () => {
     expect(() => parser.push(new Uint8Array(head))).toThrow();
   });
 });
+
+// 장면·마스크 짝 맞추기(2026-11-20): 대시보드가 표시 장면마다 서버 시계 촬영 시각(at)을 알아야 그 시각의 마스크를 얹는다
+describe("표시 장면의 촬영 시각", () => {
+  it("청크 메시지에 촬영 시각(at, 서버 시계 ms)을 싣는다", () => {
+    const relay = new VideoRelay();
+    const a = sink();
+    relay.attach(a);
+    relay.config(1, cfg());
+    relay.chunk(1, { ...chunk(true, 0), at: 5_000 });
+    expect(a.got[1]!.header).toEqual({ type: "chunk", key: true, ts: 0, at: 5_000 });
+  });
+
+  it("H.264 청크가 1초 넘게 없을 때만 화면 프레임(JPEG)을 촬영 시각과 함께 보낸다(영상 모드). 느린 화면은 그 장을 건너뛴다", () => {
+    let t = 10_000;
+    const relay = new VideoRelay({ now: () => t, maxBuffered: 100 });
+    const a = sink();
+    const slow = sink();
+    relay.attach(a);
+    relay.attach(slow);
+    const jpeg = Buffer.from([0xff, 0xd8, 1, 2, 0xff, 0xd9]);
+    slow.slow = 500;
+    relay.still({ at: 9_950, width: 780, height: 438, data: jpeg });
+    expect(a.got).toEqual([{ header: { type: "jpeg", at: 9_950, width: 780, height: 438 }, body: new Uint8Array(jpeg) }]);
+    expect(slow.got).toEqual([]);
+    // 실제 폰: H.264가 도는 동안은 JPEG를 싣지 않는다
+    relay.config(1, cfg());
+    relay.chunk(1, { ...chunk(true, 0, 10), at: 9_990 });
+    t += 1000;
+    relay.still({ at: 10_990, width: 780, height: 438, data: jpeg });
+    expect(a.got.map((m) => m.header.type)).toEqual(["jpeg", "config", "chunk"]);
+    t += 1;
+    relay.still({ at: 10_991, width: 780, height: 438, data: jpeg });
+    expect(a.got.map((m) => m.header.type)).toEqual(["jpeg", "config", "chunk", "jpeg"]);
+  });
+});

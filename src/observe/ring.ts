@@ -7,16 +7,8 @@ import type { EngineFrame } from "../contract/observe.js";
 
 export const sha256 = (b: Buffer): string => createHash("sha256").update(b).digest("hex");
 
-/** 촬영 시각 범위: 동기 정보가 있으면 [captured_at − 오차, captured_at + 오차], 없으면 받은 시각 하나. 받은 시각보다 늦을 수 없다.
- *  폰이 NTP식 clock 핑으로 서버 시계에 맞춘 captured_at과 오차 time_err_ms를 보낸다. atMs(이른 쪽)를 촬영 시각으로 쓴다. */
-export function captureTime(meta: { receivedAtMs: number; capturedAt?: number; timeErrMs?: number }): { atMs: number; latestMs: number; source: "phone" | "received" } {
-  const { capturedAt, timeErrMs } = meta;
-  if (typeof capturedAt === "number" && Number.isFinite(capturedAt) && typeof timeErrMs === "number" && Number.isFinite(timeErrMs) && timeErrMs >= 0) {
-    const latestMs = Math.min(meta.receivedAtMs, Math.round(capturedAt + timeErrMs));
-    return { atMs: Math.min(latestMs, Math.round(capturedAt - timeErrMs)), latestMs, source: "phone" };
-  }
-  return { atMs: meta.receivedAtMs, latestMs: meta.receivedAtMs, source: "received" };
-}
+/** 촬영 시각(src/shared/capture-time.ts): 표시 장면(src/phone/server.ts)도 같은 규칙이다. */
+export { captureTime } from "../shared/capture-time.js";
 
 export class FrameRing {
   private list: EngineFrame[] = [];

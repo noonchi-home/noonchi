@@ -3,9 +3,13 @@
 // 느린 화면에는 쌓지 않는다: 버퍼가 넘치면 그 화면은 다음 키프레임까지 건너뛴다(델타만 받으면 풀 수 없다).
 // 설정은 건너뛸 수 없어 그때 버퍼가 넘친 화면은 끊는다(다시 붙으면 설정·GOP부터). GOP도 화면 버퍼 한도 안일 때만 한꺼번에 보낸다.
 //
+// H.264가 STILL_AFTER_MS 넘게 없으면(영상 모드는 H.264를 만들지 않는다) 화면 프레임(JPEG)을 촬영 시각과 함께 같은 스트림으로 흘린다(캐시하지 않음, 느린 화면은 그 장을 건너뜀).
+// 장면마다 서버 시계 촬영 시각(at)이 붙어 대시보드가 그 시각의 마스크를 그 장면 위에 얹는다(ui/src/dashboard/scene-sync.ts).
+//
 // 화면 스트림(GET /api/eye/video): [헤더 길이 u32][본문 길이 u32][JSON 헤더][본문]이 이어진다.
 //   {type:"config", codec, width, height} + avcC description
-//   {type:"chunk", key, ts} + 청크
+//   {type:"chunk", key, ts, at} + 청크(at: 촬영 시각, 서버 시계 ms)
+//   {type:"jpeg", at, width, height} + JPEG(H.264가 없을 때의 화면 프레임)
 //   {type:"end"}                         폰 영상이 끝남(화면은 JPEG로 돌아간다)
 
 export interface VideoConfig {
@@ -21,7 +25,15 @@ export interface VideoChunk {
   width: number;
   height: number;
   data: Buffer;
+  /** 촬영 시각(서버 시계 ms, src/shared/capture-time.ts). */
+  at?: number;
 }
+
+/** 화면 프레임(JPEG) 한 장과 촬영 시각(서버 시계 ms). */
+export interface VideoStill { at: number; width: number; height: number; data: Buffer }
+
+/** H.264 청크가 이만큼 안 오면 화면 프레임(JPEG)을 스트림에 싣는다(ms). */
+export const STILL_AFTER_MS = 1000;
 
 /** 화면 스트림을 받는 곳(ServerResponse 모양). */
 export interface VideoSink {
@@ -59,7 +71,7 @@ export function encodeStreamMessage(header: object, body: Uint8Array): Buffer {
   return Buffer.concat([lens, head, Buffer.from(body.buffer, body.byteOffset, body.byteLength)]);
 }
 
-const chunkMessage = (c: VideoChunk) => encodeStreamMessage({ type: "chunk", key: c.key, ts: c.ts }, c.data);
+const chunkMessage = (c: VideoChunk) => encodeStreamMessage({ type: "chunk", key: c.key, ts: c.ts, ...(c.at !== undefined ? { at: c.at } : {}) }, c.data);
 
 interface Viewer {
   sink: VideoSink;
@@ -74,6 +86,7 @@ export class VideoRelay {
   private gop: Buffer[] = [];
   private gopBytes = 0;
   private lastKeyAt: number | null = null;
+  private lastChunkAt: number | null = null;
   private recent: { at: number; bytes: number }[] = [];
   private readonly viewers = new Set<Viewer>();
   private readonly now: () => number;
@@ -106,6 +119,7 @@ export class VideoRelay {
   chunk(source: number, c: VideoChunk): void {
     if (source !== this.source || !this.cfg) return;
     const at = this.now();
+    this.lastChunkAt = at;
     this.recent.push({ at, bytes: c.data.length });
     this.recent = this.recent.filter((f) => f.at > at - STATS_WINDOW_MS);
     const message = chunkMessage(c);
@@ -129,6 +143,13 @@ export class VideoRelay {
     }
   }
 
+  /** 화면 프레임(JPEG) 한 장: H.264 청크가 STILL_AFTER_MS 넘게 없을 때만 붙은 화면에 보낸다. 버퍼가 넘친 화면은 그 장을 건너뛴다. */
+  still(s: VideoStill): void {
+    if (this.lastChunkAt !== null && this.now() - this.lastChunkAt <= STILL_AFTER_MS) return;
+    const message = encodeStreamMessage({ type: "jpeg", at: s.at, width: s.width, height: s.height }, s.data);
+    for (const v of this.viewers) if (v.sink.writableLength <= this.maxBuffered) v.sink.write(message);
+  }
+
   /** 폰 연결이 끊김. 지금 영상의 연결이면 캐시를 비우고 화면에 end를 보낸다. */
   endSource(source: number): void {
     if (source !== this.source) return;
@@ -137,6 +158,7 @@ export class VideoRelay {
     this.cfgMessage = null;
     this.resetGop();
     this.lastKeyAt = null;
+    this.lastChunkAt = null;
     this.recent = [];
     const end = encodeStreamMessage({ type: "end" }, new Uint8Array(0));
     for (const v of this.viewers) {
