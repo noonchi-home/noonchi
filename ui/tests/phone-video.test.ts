@@ -894,7 +894,8 @@ describe("영상 입력 모드: 단계 영상·걷기", () => {
       expect(urls).toHaveLength(4);
     });
 
-    it("칸이 하나면 지금처럼 맞는 새 명령마다 그 영상을 다시 튼다", async () => {
+    // 2026-11-20 wide-mug pfsm10: 단계 영상은 원본 하나를 자른 조각이라 한 판에 한 번만 튼다
+    it("칸이 하나여도 그 조각은 한 판에 한 번만 튼다: 맞는 새 명령이 또 와도 영상을 그대로 둔다", async () => {
       fakeTimers();
       const { ws, urls, videos, startAr } = makeEnded({}, "?clip=mw-start.mp4&step=do:microwave:a.mp4");
       await startAr();
@@ -904,7 +905,7 @@ describe("영상 입력 모드: 단계 영상·걷기", () => {
       videos[1]!.end();
       ws.push(doMw("plan:pam-1:4", "전자레인지 문을 닫아 주세요"));
       await after(1500);
-      expect(urls.slice(1)).toEqual(["/phone/videos/a.mp4", "/phone/videos/a.mp4"]);
+      expect(urls.slice(1)).toEqual(["/phone/videos/a.mp4"]);
     });
 
     it("단계 영상이 끝나면 hold가 그 영상·시각이 되고 5초 동안 엔진 프레임이 계속 나가며 그 영상의 마지막 장면을 그린다. 다음 단계 영상이 오면 hold가 null. clips에 duration_ms가 있다", async () => {
@@ -1036,6 +1037,32 @@ describe("영상 입력 모드: 단계 영상·걷기", () => {
       videos[1]!.end();
       await after(0);
       expect(urls.at(-1)).toBe("/phone/videos/place-sink.mp4");
+    });
+
+    // 2026-11-20 wide-mug pfsm10: 물 채우기의 「컵 가까이 가 주세요」(go:cup)와 컵 치우기의 「식탁으로 가 주세요」(go:table)가 같은 go-table 조각을 가리켜 두 번 틀었다
+    it("같은 조각을 가리키는 명령 둘이 와도 한 판에 한 번만 튼다: 줄에서 기다리는 조각은 나중 명령(식탁으로 가기) 자세로 걷고, 이미 튼 조각에 맞는 새 명령은 영상을 그대로 둔다", async () => {
+      fakeTimers();
+      const BOTH = "?clip=cup-empty.mp4&step=go:table:go-table.mp4&step=go:cup:go-table.mp4&step=pick:cup:pick-cup.mp4";
+      const { ws, urls, videos, video, sent, startAr } = make({}, BOTH, { later: { duration: 4 } as never });
+      await startAr();
+      ws.push(ALIGNED);
+      // 첫 영상이 도는 동안 두 명령이 같이 온다
+      ws.push(command({ id: "plan:pam-4", step: "plan:pam-4:peek:cup_3:1", text: "컵 가까이 가 주세요", kind: "go", target: CUP, near_m: 0.8, speak: true }));
+      ws.push(goTable({ id: "plan:pam-5", step: "plan:pam-5:1" }));
+      video.end();
+      await after(0);
+      expect(urls.slice(1)).toEqual(["/phone/videos/go-table.mp4"]);
+      // 나중 명령 자세: 식탁 [0, 0.75, −1.5] 0.6m 앞
+      await after(4200);
+      closeTo(lastPose(sent).position, [0, 1.4, -0.9]);
+      videos[1]!.end();
+      await after(3000);
+      expect(urls.slice(1)).toEqual(["/phone/videos/go-table.mp4"]);
+      // 다음 계획의 식탁으로 가기도 이미 튼 조각이라 다시 틀지 않는다
+      ws.push(goTable({ id: "plan:pam-6", step: "plan:pam-6:1" }));
+      await after(3000);
+      expect(urls.slice(1)).toEqual(["/phone/videos/go-table.mp4"]);
+      expect((window as unknown as { __noonchiVideo: { clips: { clip: string }[] } }).__noonchiVideo.clips.map((c) => c.clip)).toEqual(["go-table.mp4"]);
     });
 
     it("go 조각의 걷기는 조각 길이에 맞춰 조각이 끝날 때 멈출 자리(대상 0.6m 앞)에 닿는다. 다음 명령이 와도 조각이 도는 동안은 계속 걷는다", async () => {

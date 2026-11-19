@@ -12,7 +12,8 @@
 // 조각이 도는 동안은 새 명령이 와도 계속 걷는다(그림과 자세가 맞게). 조각 없는 go 걷기는 초당 WALK_MPS이고 새 명령·지우기에 멈춘다.
 // ?rate=빠르기(0.25~2, 기본 1): 첫 영상과 단계 영상을 그 빠르기로 튼다. 영상 시각은 원본 시각이고(붙잡는 동안도 같은 빠르기로 흐른다),
 // 화면·엔진 프레임 간격과 반응 시간은 실제 시간이다.
-// 같은 종류·낱말 칸이 여럿이면 적은 차례대로 쓴다: 그 종류·낱말에 맞는 새 명령마다 다음 칸, 칸이 다 떨어지면 지금 영상을 둔다(칸이 하나면 맞는 새 명령마다 그 칸).
+// 같은 종류·낱말 칸이 여럿이면 적은 차례대로 쓴다: 그 종류·낱말에 맞는 새 명령마다 다음 칸, 칸이 다 떨어지면 지금 영상을 둔다. 같은 조각(clipUrl)은 한 판에 한 번만 튼다:
+// 줄에서 기다리면 자세만 나중 명령 것으로 바꾸고, 이미 튼 조각이면 영상을 그대로 두고 go만 걷는다(칸 하나에 여러 명령이 맞거나 두 칸이 같은 조각을 가리켜도).
 // 첫 영상도 단계 영상도 끝나면 마지막 장면을 붙잡는다: 다음 단계 영상이 오거나 끝낼 때까지 그 장면으로 프레임을 계속 보내고(시각은 흐른다,
 // 엔진 프레임에 held: true), window.__noonchiVideo.hold = { clip, since: 영상 시각 }(다음 단계 영상이 시작되면 null). 실제 폰은 계속 보므로
 // 판단·계획 뒤 대상 다시 확인이 영상 끝에서 끊기지 않게 한다. ended는 첫 영상이 끝났을 때만 참이다.
@@ -384,6 +385,7 @@ export function createVideoAr({ link, params, hooks, deps }) {
     let nextTimer = null;
     let swapping = false;
     const switched = new Set(); // 단계 영상 조각을 줄에 넣은 명령 id:step(재생에 실패하면 뺀다)
+    const taken = new Set(); // 줄에 넣었거나 튼 단계 영상(clipUrl): 원본 하나를 자른 조각이라 한 판에 한 번만 튼다(재생에 실패하면 뺀다)
     const used = new Map(); // 종류:낱말 → 쓴 칸 수(같은 종류·낱말 칸이 여럿일 때 차례)
     const reactTimers = new Set();
     // 명령 세대: 새 단계 영상 명령·지우기마다 오른다. 예약 타이머와 재생을 기다리는 바꾸기는 세대가 다르면 버린다
@@ -726,22 +728,39 @@ export function createVideoAr({ link, params, hooks, deps }) {
           if (pose) later(() => pose());
           return;
         }
-        // 같은 종류·낱말 칸이 여럿이면 새 명령마다 다음 칸(다 떨어지면 지금 영상을 둔다), 하나면 늘 그 칸.
+        // 같은 종류·낱말 칸이 여럿이면 새 명령마다 다음 칸(다 떨어지면 지금 영상을 둔다), 하나면 그 칸(아래 한 번만 틀기를 거친다).
         // 줄에 넣을 때 칸과 그 명령을 쓴 것으로 센다(재생에 실패하면 되돌려 같은 명령이 다시 올 때 다시 넣는다)
         const group = steps.filter((s) => s.kind === first.kind && s.word === first.word);
         const slot = `${first.kind}:${first.word}`;
         const n = used.get(slot) ?? 0;
         if (group.length > 1 && n >= group.length) return;
         const entry = group.length > 1 ? group[n] : first;
+        // 같은 조각은 한 판에 한 번만 튼다(2026-11-20 wide-mug pfsm10: go:cup·go:table 두 명령이 같은 go-table 조각을 두 번 틀었다).
+        // 줄에서 기다리는 조각이면 자세만 나중 명령 것으로 바꾸고, 이미 튼 조각이면 영상은 그대로 두고 칸 없는 명령처럼 go만 걷는다
+        const waiting = queue.find((q) => q.url === entry.clipUrl);
+        if (waiting) {
+          switched.add(key);
+          waiting.keys.push(key);
+          waiting.pose = pose;
+          return;
+        }
+        if (taken.has(entry.clipUrl)) {
+          switched.add(key);
+          if (target && cmd.kind === "go") later(() => pose());
+          return;
+        }
         used.set(slot, Math.max(used.get(slot) ?? 0, n + 1));
         switched.add(key);
-        enqueue({
-          url: entry.clipUrl, pose,
+        taken.add(entry.clipUrl);
+        const q = {
+          url: entry.clipUrl, pose, keys: [key],
           failed: () => {
-            switched.delete(key);
+            for (const k of q.keys) switched.delete(k);
+            taken.delete(entry.clipUrl);
             if (group.length > 1 && used.get(slot) === n + 1) used.set(slot, n);
           },
-        });
+        };
+        enqueue(q);
       },
       /** 명령이 지워졌다(id가 없으면 무엇이든): 마지막 단계 영상 명령이면 세대를 올려 반응 시간 예약을 버리고 조각 없는 걷기를 멈춘다.
        *  줄에 든 조각과 조각과 함께 걷는 걸음은 그대로 튼다(원본 영상을 자르지 않는다). */
