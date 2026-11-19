@@ -1,4 +1,4 @@
-// 거울(src/world/mirror.ts, stage-queue 묶음 2 Task 4): /world/state·/world/changes를 받아 가장 새 보기와 변화 콜백을 준다.
+// 거울(src/world/mirror.ts): /world/state·/world/changes를 받아 가장 새 보기와 변화 콜백을 준다.
 // 변화는 그 판본 이상의 상태를 가진 뒤에 오고(P2-7), 대시보드 보기 콜백은 판본이 바뀔 때만 부른다(250ms 다시 냄은 부르지 않음).
 import { describe, expect, it } from "vitest";
 import { BusNode, MemoryBus } from "../src/bus/index.js";

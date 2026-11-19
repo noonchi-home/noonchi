@@ -1,4 +1,4 @@
-// 톤: Blender AgX High Contrast 흉내(스파이크 docs/twin3d-spike/main.mjs 49~79줄). AgX 로그 공간에서 대비 1.4·채도 0.95, 중간 회색 기준.
+// 톤: Blender AgX High Contrast 흉내. AgX 로그 공간에서 대비 1.4·채도 0.95, 중간 회색 기준.
 // three의 CustomToneMapping 자리를 한 번만 바꾼다(렌더러는 toneMapping = CustomToneMapping).
 import * as THREE from "three";
 

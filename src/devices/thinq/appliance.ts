@@ -1,7 +1,7 @@
 // ThinQ 상태 ↔ 트윈. 자원·속성 이름은 LG 공식 SDK(thinqconnect/devices/air_conditioner.py, refrigerator.py)를 따른다.
 //   에어컨: operation.airConOperationMode, airConJobMode.currentJobMode, temperatureInUnits[unit C].targetTemperature, airFlow.windStrength
 //   냉장고: doorStatus[locationName MAIN].doorState(문 닫기 명령은 없다)
-// 실제 가전 값과 다를 수 있는 부분은 docs/superpowers/plans/2026-11-06-control-mode.md 「실제 연결 때 확인할 것」.
+// 실제 가전 값과 다를 수 있는 부분은 docs/reference.md 「운영 모드」의 「실제 연결 때 확인할 것」.
 // 읽기·제어·트윈 반영은 가전 종류 이름이 아니라 어댑터(THINQ_ADAPTERS)로 가른다. 가전 종류는 등록부 thinq.adapter로 어댑터를 고른다(src/devices/kinds.ts).
 
 import type { ClimateMode, Command, CommandType, DeviceState, FanSpeed } from "../../contract/devices.js";

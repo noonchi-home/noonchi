@@ -1,8 +1,0 @@
-{
-  "files": {},
-  "decls": { "src/act/lessons.ts#LessonStep": "src/contract/plan.ts#LessonStep", "src/act/lessons.ts#Lesson": "src/contract/plan.ts#Lesson" },
-  "new": [],
-  "text": [],
-  "allow": {},
-  "exceptions": {}
-}

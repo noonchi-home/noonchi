@@ -1,7 +1,7 @@
-// 옮김 검사(scripts/check-moves.ts, 도메인 나누기 설계 4.1 ④⑤): 「import 경로만 달라짐」은 통과하고,
+// 옮김 검사(scripts/check-moves.ts): 「import 경로만 달라짐」은 통과하고,
 // import 뒤 실행문 덧붙임·이름 바꿈·다른 파일로 가져옴·대응표에 없는 지움·초기화 차례 바뀜·이름이 다른 정의를 가리킴은 실패해야 한다.
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -93,7 +93,8 @@ describe("옮김 검사: 파일째 옮김", () => {
 
   it("대응표 모양: 모르는 칸은 거절한다", () => {
     expect(() => parseMoves('{ "files": {}, "moved": [] }')).toThrow(/모르는 칸/);
-    expect(parseMoves(readFileSync(join(import.meta.dirname, "..", MOVES_DIR, "1.json"), "utf8"))).toEqual(M());
+    // 옮긴 것이 없는 단계의 대응표(allow·exceptions 칸 없음)
+    expect(parseMoves('{\n  "files": {},\n  "decls": {},\n  "new": [],\n  "text": []\n}\n')).toEqual(M());
   });
 });
 

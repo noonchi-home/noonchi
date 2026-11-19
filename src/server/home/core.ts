@@ -78,7 +78,7 @@ export class HomeCore {
   surfaces!: () => PlaneSurface[];
   world: WorldState | null = null;
   pipeline: ObservationPipeline | null = null;
-  // 노드(src/bus, stage-queue 묶음 2): 집 세대, 인식·집 상태·거울(act)·폰·가전 노드
+  // 노드(src/bus): 집 세대, 인식·집 상태·거울(act)·폰·가전 노드
   epoch!: { boot: string; home: string };
   perception: PerceptionNode | null = null;
   worldNode: WorldNode | null = null;

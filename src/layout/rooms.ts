@@ -1,4 +1,4 @@
-// 글에서 방 이름 찾기: 방 이름 변형·별칭으로 찾고, 긴 변형이 먼저 자리를 차지한다. 에이전트 기기 찾기와 배치 편집기가 같이 쓴다(도메인 나누기 F4).
+// 글에서 방 이름 찾기: 방 이름 변형·별칭으로 찾고, 긴 변형이 먼저 자리를 차지한다. 에이전트 기기 찾기와 배치 편집기가 같이 쓴다.
 
 import type { RoomSpec } from "../contract/devices.js";
 import { compact } from "../shared/korean.js";

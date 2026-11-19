@@ -1,4 +1,4 @@
-// node.ts — 인식 노드(stage-queue 묶음 2): 관찰 흐름(src/observe/pipeline.ts)이 World State에 넣을 것을 /perception/scene 하나로 차례대로 낸다(사진 없음).
+// node.ts — 인식 노드: 관찰 흐름(src/observe/pipeline.ts)이 World State에 넣을 것을 /perception/scene 하나로 차례대로 낸다(사진 없음).
 // 입력은 낸 차례대로 하나씩 보낸다: 발행이 실패하면 같은 봉투(같은 메시지 id)로 RETRY_MS 뒤 다시 보내고, 성공하기 전에는 뒤 입력을 붙잡아 둔다
 // (frame·closer_merge 없이 뒤의 VLM 답만 가지 않는다). 미니맵 물체 모양은 /perception/detections로 낸다(가장 새 것만 보면 되어 다시 보내지 않는다). 가까이 보기의 찾은 물건 id는 /world/closer 답을 look으로 맞춘다:
 // closer_merge를 낼 때 기다림을 열고, VLM 답(closer_scene·closer_end)을 낸 뒤 기한(CLOSER_WAIT_MS)이 지나면 timeout, 노드를 끝내면 closed로 끝낸다.

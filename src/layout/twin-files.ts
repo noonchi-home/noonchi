@@ -1,5 +1,5 @@
 // twin-studio 데이터 읽기(docs/plan.md "기기 목록 만들기"): 고른 집(homes.json, HOME_ID)의 1순위 <out>/scene.json objects(attrs 있는 것), 없으면 <data>의 placement + floorplan 문 + 카탈로그.
-// 여기서는 날 물건 목록(방·문·물건)만 만들고, 가전 만들기(DeviceSpec·초기 상태)는 src/devices/devices.ts buildDevices가 한다(도메인 나누기 F8).
+// 여기서는 날 물건 목록(방·문·물건)만 만들고, 가전 만들기(DeviceSpec·초기 상태)는 src/devices/devices.ts buildDevices가 한다.
 
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { isAbsolute, join, resolve } from "node:path";

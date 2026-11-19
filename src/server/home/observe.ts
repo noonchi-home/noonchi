@@ -88,7 +88,7 @@ export function routeWorldChanges(core: Pick<HomeCore, "nowMs" | "keepHeard" | "
 /** 거울이 첫 상태를 받기를 기다리는 시간(ms). 넘으면 집을 띄우지 않는다. */
 const FIRST_STATE_MS = 5000;
 
-/** 노드를 띄운다(stage-queue 묶음 2): 집 상태(World State를 바꾸는 곳 하나), 인식, 거울(act: 실행 추적·판단·말풍선·대시보드가 읽고 /world/input을 낸다),
+/** 노드를 띄운다: 집 상태(World State를 바꾸는 곳 하나), 인식, 거울(act: 실행 추적·판단·말풍선·대시보드가 읽고 /world/input을 낸다),
  *  폰(들은 말을 내고 미니맵 모양을 대시보드로), 가전(/device/changes). 모두 준비한 뒤 시작하고, 거울이 첫 상태를 받을 때까지 기다린다.
  *  가전 시작 상태는 첫 상태(변화로 내지 않음)로, 그 뒤 바뀜은 변화로 넣는다. 실행 추적을 만든 뒤, 관찰 흐름을 열기 전에 부른다. */
 export async function startNodes(core: HomeCore, emit: (event: BrainLog) => void): Promise<void> {

@@ -1,4 +1,4 @@
-// 도메인 경계 검사(scripts/lint-domains.ts, 도메인 나누기 설계 3.1~3.3). npm run lint와 같은 검사다.
+// 도메인 경계 검사(scripts/lint-domains.ts). npm run lint와 같은 검사다.
 // 실제 트리는 위반이 없어야 하고(엄격 모드 하나뿐, 예외 목록 없음), 가짜 트리·0a392c5 실제 줄은 정한 오류 글로 실패해야 한다.
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";

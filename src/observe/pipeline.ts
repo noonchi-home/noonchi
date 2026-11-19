@@ -115,7 +115,7 @@ interface TopShot { frame: EngineFrame; box: Box }
 /** 고리 가장 새 프레임의 카메라·촬영 시각·크기(관찰 모드가 대상이 사진 안인지 본다). */
 export interface LatestFrame { view: CameraView | null; capturedAtMs: number; width: number; height: number }
 
-/** 관찰 흐름이 World State에 넣고 읽는 길(stage-queue 묶음 2): 인식 노드(src/observe/node.ts)가 /perception/scene·/world/closer·/world/state로 잇는다.
+/** 관찰 흐름이 World State에 넣고 읽는 길: 인식 노드(src/observe/node.ts)가 /perception/scene·/world/closer·/world/state로 잇는다.
  *  시험은 World State를 바로 부르는 대역(tests/helpers/world-port.ts)을 넘긴다. */
 export interface WorldPort {
   /** /perception/scene 입력 하나(VLM 답, YOLO 임시 갈래). 기다리지 않는다. */

@@ -1,5 +1,5 @@
 // 날 물건 목록 → DeviceSpec 목록·초기 상태(docs/plan.md "기기 목록 만들기"의 가전 만들기).
-// 파일 읽기(scene.json, 없으면 placement·floorplan·카탈로그)는 배치 저장소 src/layout/twin-files.ts가 하고 목록을 넘긴다(도메인 나누기 F8).
+// 파일 읽기(scene.json, 없으면 placement·floorplan·카탈로그)는 배치 저장소 src/layout/twin-files.ts가 하고 목록을 넘긴다.
 
 import type { DeviceSpec, RoomSpec } from "../contract/devices.js";
 import { defaultTwinValue, describeDevice } from "./mapping.js";

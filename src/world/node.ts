@@ -1,4 +1,4 @@
-// node.ts — 집 상태 노드(stage-queue 묶음 2): World State를 바꾸는 곳은 이 노드 하나다. 입력은 노드 줄에 들어온 차례대로 하나씩 넣는다.
+// node.ts — 집 상태 노드: World State를 바꾸는 곳은 이 노드 하나다. 입력은 노드 줄에 들어온 차례대로 하나씩 넣는다.
 // 받는 것: /perception/scene(VLM 답, 집 상태 입력의 주인. 지금은 YOLO 임시 갈래도 같은 토픽으로 와서 차례가 지켜진다: VLM 전용으로 바뀔 자리), /world/input(실행 추적의 지킴·따르기 창), /phone/heard(들은 말), /device/changes(가전 상태).
 // 변화가 있으면 rev를 1 올리고 /world/state {rev, view}와 /world/changes {rev, changes}를 이 차례로 함께 낸다(대시보드는 한 번 지나기로 받는다).
 // 변화 없이 보기만 바뀌는 입력(지킴·따르기 창·가전 상태)은 같은 rev로 상태만 다시 낸다. 250ms마다 tick을 넣고 같은 rev로 상태를 다시 낸다.

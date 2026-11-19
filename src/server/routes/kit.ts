@@ -1,4 +1,4 @@
-// 나눈 API 경로 파일(routes/*)이 함께 쓰는 것: 경로 등록 도구(RouteKit), 오류(HttpError), 본문 읽기(readJson). 경로는 app.ts가 차례대로 등록시킨다(도메인 나누기 2.6).
+// 나눈 API 경로 파일(routes/*)이 함께 쓰는 것: 경로 등록 도구(RouteKit), 오류(HttpError), 본문 읽기(readJson). 경로는 app.ts가 차례대로 등록시킨다.
 import type { IncomingMessage } from "node:http";
 import { z } from "zod";
 import type { Agent, Policy } from "../../agent/index.js";

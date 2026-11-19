@@ -1,5 +1,6 @@
-// 정적 메시 합치기(스파이크 docs/twin3d-spike/main.mjs 666~707줄): 같은 재질·같은 속성 묶음의 메시를 월드 좌표로 하나로 합치고 원래 메시는 숨긴다.
+// 정적 메시 합치기: 같은 재질·같은 속성 묶음의 메시를 월드 좌표로 하나로 합치고 원래 메시는 숨긴다.
 // 옮길 물건을 떼면(detach) 그 물건 메시가 든 무리만 그 메시를 빼고 다시 합치고, 뗀 메시는 다시 보인다.
+// 근거: 구운 트윈 시제품(1920×1080, 2026-11-08)에서 합치면 한 장의 그리기 호출이 1071에서 816으로 줄었다.
 import * as THREE from "three";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 

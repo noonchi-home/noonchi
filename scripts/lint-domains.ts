@@ -1,4 +1,4 @@
-// 도메인 경계 검사(도메인 나누기 설계 2.1·2.3·3.1). npm run lint와 tests/domain-boundaries.test.ts가 같은 검사를 돌린다.
+// 도메인 경계 검사. npm run lint와 tests/domain-boundaries.test.ts가 같은 검사를 돌린다.
 // src/**·ui/src/**의 import를 읽어 파일 → 도메인 표(DOMAINS·LEGACY·TABLES)와 의존 표(DEPS)로 본다. 화면 시험(ui/tests)은 node 모듈 길만 본다.
 // 엄격 모드 하나뿐이다: 위반이 하나라도 있으면 실패하고, 예외 목록이나 검사를 끄는 인자는 없다(9단계에 옮기는 동안 쓰던 예외 목록을 지웠다).
 // 쓰는 법: tsx scripts/lint-domains.ts [--json(위반 열쇠를 JSON으로, 위반이 있으면 끝 코드 1)]

@@ -119,7 +119,7 @@ noonchi-home | 26-2 소프트웨어공학
 | `models/` | 감지·관절 모델(YOLO26s-seg·YOLO26n-pose ONNX) |
 | `scripts/` | 검사(`lint-*.ts`), 영상 시험(`video-check.ts`·`video-record.ts`·`minimap-cut.ts`), 시연·합성 기록(`demo.ts`·`demo-setup.ts`·`seed-history.ts`·`learned-memory.ts`), 가짜 모델 서버(`fake-openai.ts`), 집 자산 가져오기(`twin-assets.ts`), 트윈 사진·무거운 일 잠금(`twin3d/`) |
 | `tests/` | 서버 시험(Vitest). 시험 대역(가짜 PAM·가짜 모델·작은 집)은 `tests/helpers/` |
-| `docs/` | 계약·참고·배포 문서, 작업 계획(`docs/superpowers/plans/`) |
+| `docs/` | 계약·참고·배포 문서 |
 | `web/` | 클로이드의 눈 영상(H.264)을 그리는 워커 |
 
 #### 서버 도메인 (`src/`)

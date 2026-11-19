@@ -6,14 +6,6 @@ twin-studio가 만든 아파트 트윈의 가전 65개를 **가상 Matter 기기
 
 계약 문서는 [`docs/plan.md`](plan.md)다. 인터페이스·형식을 바꾸려면 그 문서를 먼저 고친다.
 
-![웹 화면: 기기 카드 | 3D 트윈 | 대화. "거실 불 켜고 TV 켜줘" 뒤](screenshot-3d.png)
-
-*`npm start`(허브 matter · network)로 띄우고 헤드리스 Chrome으로 채팅에 "거실 불 켜고 TV 켜줘"를 입력해 찍었다. 가운데 3D 트윈(`/twin/viewer/?live=auto&embed=1`)에서 거실 TV 화면이 켜지고 "거실 TV 켜짐·거실 천장등 켜짐·플로어 스탠드 켜짐" 배지가 뜬다. 위쪽 칩은 뷰어의 실시간 연결 상태다.*
-
-![웹 화면: "거실 불 켜고 TV 꺼줘" 뒤 거실 카드](screenshot.png)
-
-*`npm start`(허브 matter · network)로 띄운 화면이다. 채팅에 "거실 불 켜고 TV 꺼줘"를 보내면 거실 천장등·플로어 스탠드가 켜지고(`onOff=true`) 거실 TV가 꺼진다(`onOff=false`). 헤드리스 Chrome으로 실제 클릭·입력해 찍었다.*
-
 ## 빠른 시작
 
 Node 22.15. 트윈 결과물(뷰어·집·카탈로그)은 저장소 `twin/`에 있다. twin-studio에서 집을 다시 빌드했으면 `npx tsx scripts/twin-assets.ts --from <twin-studio 폴더>`로 `twin/`을 다시 채운다(`twin/SOURCE.json`에 twin-studio 커밋과 파일 sha256이 남는다).
@@ -32,7 +24,7 @@ npm start               # 화면을 빌드하고 http://127.0.0.1:8200  (허브 
 ## 구조
 
 ```
-src/                    도메인 폴더(구현명세서 구성 단위, 도메인 나누기 설계 2.1). 다른 도메인은 index.ts(또는 browser.ts) 입구로만 가져온다
+src/                    도메인 폴더(구현명세서 구성 단위). 다른 도메인은 index.ts(또는 browser.ts) 입구로만 가져온다
   contract/             공용 타입만(devices.ts: DeviceSpec·DeviceState·Command·DeviceHub, events·plan·phone·world 등)
   shared/ · infer/ · design/   공용 도우미, 외부 API 통로, 디자인 토큰(기반층)
   devices/              가상 가전·ThinQ: kinds.ts(가전 종류 등록부), mapping.ts(twin ↔ Matter 매핑), devices.ts(가전 만들기),
@@ -165,7 +157,7 @@ HUB=memory npm run demo
 | `THINQ_POLL_MS`, `THINQ_READBACK_MS`, `THINQ_TIMEOUT_MS` | `15000`, `1000,2000,4000`, `10000` | 짝지은 기기 읽기 간격(`0`이면 처음 한 번), 명령 뒤 다시 읽기 전 기다림, 요청 제한 시간 |
 | `THINQ_BASE_URL` | (지역 주소) | ThinQ 주소를 바꾼다(시험의 가짜 서버) |
 | `CALL_SERVICE_URL` | (없음) | 외부 연락(AS센터 전화·보호자 연락)을 받는 전화 서비스 주소(http(s)). 사용자가 실제 폰에서 승인하면 연락 하나를 JSON으로 POST한다(아래 「외부 연락」). 비우면 부르지 않고 「전화 서비스가 아직 연결되지 않았어요.」. http(s) 주소가 아니면 시작하지 않는다 |
-| `REDIS_URL` | (없음) | 노드 통로 Redis 주소. 비우면 메모리 통로. 이 PC 개발용은 `compose.dev.yaml`의 `noonchi-redis`(`redis://127.0.0.1:6379`), compose 안에서는 `redis://redis:6379`. Redis 디스크 저장이 켜져 있으면(`appendonly`·`save`) 통로를 열지 않는다. 계획: `docs/superpowers/plans/2026-11-17-stage-queue.md` |
+| `REDIS_URL` | (없음) | 노드 통로 Redis 주소. 비우면 메모리 통로. 이 PC 개발용은 `compose.dev.yaml`의 `noonchi-redis`(`redis://127.0.0.1:6379`), compose 안에서는 `redis://redis:6379`. Redis 디스크 저장이 켜져 있으면(`appendonly`·`save`) 통로를 열지 않는다. |
 
 선택 값은 `.env.example`에서 주석으로 두었다. 빈 값(`MATTER_X=`)으로 두면 matter.js가 자기 설정으로 읽을 수 있어서다.
 
@@ -351,7 +343,7 @@ npm start
 
 ### 시작 위치·물건·벽 모양으로 맞추기(위치 맞추기)
 
-바닥 구석을 조준하지 않고 맞춘다. 계산은 서버 `src/phone/sync/`가 하고, 폰은 자세·조준점·면 법선·엔진 프레임만 보낸다. 웹이든 앱이든 같은 메시지다. 결과는 바닥 평면의 회전 + 이동(크기 없음) 하나와 품질이다. 계획: [2026-11-10-phone-sync](superpowers/plans/2026-11-10-phone-sync.md).
+바닥 구석을 조준하지 않고 맞춘다. 계산은 서버 `src/phone/sync/`가 하고, 폰은 자세·조준점·면 법선·엔진 프레임만 보낸다. 웹이든 앱이든 같은 메시지다. 결과는 바닥 평면의 회전 + 이동(크기 없음) 하나와 품질이다.
 
 1. **시작 자리 저장(집마다 한 번, 설정 4단계):** 3D 트윈 바닥을 누르면 그 자리에 「시작」 핀이 꽂히고, 다른 곳을 누르면 그쪽을 보는 화살표가 된다. 화살표 끝 손잡이를 끌거나 돌리기 단추(15°씩)로도 돌린다. 끌면(카메라 돌리기) 고르지 않는다. **다시 고르기**는 다음 누름을 새 자리로 쓴다. 이름은 서버가 채운다(`POST /api/phone/start-pose/preview`): 1.5m 안 가장 가까운 물건으로 「<물건> 앞」(없으면 「<방> 시작 위치」), 보는 쪽은 방향 15°·8m 안 가장 가까운 물건. 고친 이름은 그대로 둔다. 방 바닥이 아니면(벽·집 밖) 받지 않는다. **저장**하면 `runtime/homes/<집>/phone-start.json`에 남고 실행 중인 폰에 바로 간다. 「완료하고 대시보드로」는 저장한 뒤에만 누를 수 있다. 예전 `phone-touch.json`(벽 대기 A·B)은 읽지 않는다.
 2. **폰에서 「여기서 시작」:** 시작 자리가 있는 집은 AR을 켜면 위에 「<자리>에 서서 <보는 쪽> 쪽을 봐 주세요」, 아래에 **여기서 시작**이 뜬다. 그 자리에 서서 그 쪽을 보고 누르거나 「여기서 시작」이라고 말한다(말 전체가 시작일 때만). 그 순간 자세로 변환이 바로 정해진다. 이때는 어림이다. 폰이 바닥을 거의 내려다보면 폰 윗쪽을 보는 방향으로 쓴다.
@@ -401,7 +393,7 @@ npm start
 
 ### 영상 모드: 영상으로 시험하기
 
-실제 폰 대신 영상을 틀어 같은 흐름(관찰 → 판단 → 계획 → 단계 명령)을 보고, 명령이 맞는 때에 오는지 판정한다. 계획: [2026-11-11-video-input](superpowers/plans/2026-11-11-video-input.md).
+실제 폰 대신 영상을 틀어 같은 흐름(관찰 → 판단 → 계획 → 단계 명령)을 보고, 명령이 맞는 때에 오는지 판정한다.
 
 - 열기: 폰 페이지 `/phone/?clip=<파일>`. 영상은 폰 서버가 공용 `runtime/videos/<파일>`(`PHONE_VIDEO_DIR`로 바꿈)을 `/phone/videos/<파일>`로 내준다(이름은 영문·숫자·`_-` 64자까지, `.mp4`·`.webm`, Range 요청). 주소 칸 `fov`(세로 시야각, 기본 60°), `pitch`(기본 −25°), `h`(카메라 높이, 기본 1.4m)로 카메라를 정한다. 실제 폰 페이지와 같이 열지 않는다(명령이 둘 다에 간다).
 - 위치: 설정 4단계에서 저장한 시작 자리·방향이 카메라 자리다. 「AR 시작」을 누르면 `reset` 뒤 `start {fixed: true}`를 보내고, 서버는 그 자세를 바로 맞춤(`sync.source: "video"`)으로 둔다. 고정 변환은 물건·벽으로 움직이지 않고, `reset`이나 보통 `start`에서 풀린다. 서버 sync가 none으로 떨어지면(다시 연결) 페이지가 `start {fixed: true}`를 다시 보낸다. 시작 자리가 없으면 「설정 화면에서 시작 위치를 정해 주세요」가 뜬다.
@@ -553,7 +545,7 @@ tailscale serve --bg 8210   # 이미 켜져 있으면 생략. 폰: https://<이 
 
 ## 설정 흐름 (집 → 가전 → 운영 모드 → 위치 동기화 → 대시보드)
 
-`npm start` 뒤 `http://127.0.0.1:8200/`을 열면 설정을 끝내지 않았을 때 `/setup/`으로 간다. 대시보드 **설정 다시 하기**로 언제든 다시 연다. 계획: [2026-11-05-setup-flow](superpowers/plans/2026-11-05-setup-flow.md).
+`npm start` 뒤 `http://127.0.0.1:8200/`을 열면 설정을 끝내지 않았을 때 `/setup/`으로 간다. 대시보드 **설정 다시 하기**로 언제든 다시 연다.
 
 1. **집 고르기**: twin-studio `homes.json`의 집. 다른 집을 고르면 서버를 끄지 않고 허브·에이전트·폰 서버·관찰 흐름을 새 집으로 다시 띄운다(포트 그대로, HUB=matter local 전송에서 약 2초).
 2. **가전 선택**: 집 배치에 놓인 가전마다 **가상**(트윈 시뮬레이터 값을 읽음) 또는 **신호 없음**(상태를 「모름」으로 두고 사진·질문으로만 알아냄). 명령은 둘 다 트윈에서 실행된다. 신호 없는 기기는 에이전트·대시보드 카드·3D 뷰어 모두 새 상태를 받지 않고, 카메라로 본 상태(위 "카메라로 맞추는 가전 상태")만 받는다.
@@ -565,8 +557,6 @@ tailscale serve --bg 8210   # 이미 켜져 있으면 생략. 폰: https://<이 
 
 ## 운영 모드 (시험 · 실제)
 
-계획: [2026-11-06-control-mode](superpowers/plans/2026-11-06-control-mode.md).
-
 - **시험 모드**(기본): 가전을 트윈에서만 다룬다(가상 Matter 기기). ThinQ를 한 번도 부르지 않는다.
 - **실제 모드**: 설정에서 짝지은 에어컨·냉장고만 ThinQ로 실제 가전을 읽고 다룬다. 짝짓지 않은 기기는 가상 그대로다.
   - 읽기: 켤 때와 `THINQ_POLL_MS`마다 읽어 트윈에 비춘다. 기기 상태에 `readback: { source: "thinq", deviceId, at }`이 붙는다. 처음 읽기 전에는 「모름」(카메라로 본 상태가 있으면 그 값). 읽은 뒤에는 카메라로 본 값보다 읽은 값이 이긴다.
@@ -575,7 +565,13 @@ tailscale serve --bg 8210   # 이미 켜져 있으면 생략. 폰: https://<이 
   - 냉장고는 문 상태만 읽는다(문 닫기 명령은 ThinQ에 없다). 실제 가전 값(센서)은 화면·API로 바꿀 수 없다.
 - 토큰은 `THINQ_TOKEN` 환경변수(`.env`)에만 둔다. 로그·오류 글·응답에 나오지 않는다.
 - 저장한 모드가 실제인데 토큰이 없으면 시험 모드로 뜬다.
-- ThinQ 형식은 LG 공식 SDK(github.com/thinq-connect/pythinqconnect)를 따른다. 실제 연결 때 확인할 것은 계획서 「실제 연결 때 확인할 것」.
+- ThinQ 형식은 LG 공식 SDK(github.com/thinq-connect/pythinqconnect)를 따른다.
+
+### 실제 연결 때 확인할 것
+
+- 토큰: `.env`에 `THINQ_TOKEN=<PAT>`(권한: 기기 보기·상태 보기·제어). 필요하면 `THINQ_COUNTRY`, `THINQ_REGION`, `THINQ_CLIENT_ID`.
+- 처음 켜는 순서: 서버를 시험 모드로 켬 → 설정 3단계에서 실제 모드로 바꿈(확인) → ThinQ 기기 목록이 나오는지 → 에어컨·냉장고 짝 → 저장 → 대시보드에서 에어컨 온도 한 번 → 실제 가전과 트윈이 같은지.
+- SDK 문서와 다를 수 있는 것: 기기 종류 글(`DEVICE_AIR_CONDITIONER`·`DEVICE_REFRIGERATOR`), 온도 자원(`temperatureInUnits` 배열·`temperature`), 모드·바람 값(AIR_DRY·MID 등), 문 값(OPEN·CLOSE), 명령 응답 모양, 명령 뒤 상태가 바뀌기까지 걸리는 시간(기본 다시 읽기 1·2·4초), 호출 횟수 제한(기본 15초마다 읽기).
 
 ## 집 고르기와 배치 보정
 

@@ -1,4 +1,4 @@
-// 인식 노드(src/observe/node.ts, stage-queue 묶음 2 Task 5): 관찰 흐름이 World State를 바로 부르지 않는다.
+// 인식 노드(src/observe/node.ts): 관찰 흐름이 World State를 바로 부르지 않는다.
 // World State 입력(YOLO 임시 갈래·VLM 답)은 /perception/scene 하나로 사진 없이 차례대로, 미니맵 모양은 /perception/detections로 낸다.
 // 가까이 보기 id는 VLM 합치기 뒤 /world/closer 답으로 받는다(기한이 지나면 timeout, 노드를 끝내면 closed).
 import { describe, expect, it } from "vitest";
