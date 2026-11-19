@@ -37,7 +37,7 @@ export class Approvals extends Part {
       type: "command", id: r.plan.view.id, step: stepId, text, vision: null,
       choices: choicesOf(r, this.core.stepOf(r)).map(({ id, label }) => ({ id, label })), target: null, speak: true,
     };
-    this.core.answers.send(r.sent);
+    this.core.robot.commands.show(r.sent);
   }
 
   /** 첫 단계 전 승인 답: 승인이면 기억하고, 실행 전 검사를 다시 본 뒤 첫 단계로(답을 기다리는 사이 대상이 바뀌었을 수 있다). 거절이면 기억하지 않고 취소로 닫는다. */

@@ -98,7 +98,7 @@ export class SafetyTracker extends Part {
     if (off && rotate && this.#offQueue.length) {
       this.#offQueue.push(off.note);
       this.#reminder = null;
-      this.core.answers.send({ type: "command_clear", id: off.sent.id });
+      this.core.robot.commands.clear(off.sent.id);
     }
     if (this.#reminder) return;
     while (this.#offQueue.length && this.releaseIfOff(this.#offQueue[0]!.deviceId));
@@ -113,7 +113,7 @@ export class SafetyTracker extends Part {
       this.#offToldAt = null;
       const cycle = this.#cycles.get(note.deviceId);
       if (note.ask && cycle && cycle.askedAt === null) cycle.askedAt = now;
-      this.core.answers.send(sent);
+      this.core.robot.commands.show(sent);
       return;
     }
     if (r?.state === "planned" && !r.asking) {
@@ -141,7 +141,7 @@ export class SafetyTracker extends Part {
     if (!off || now - off.at <= this.cfg.offHoldMs) return;
     if (this.#offQueue.length) return this.nextReminder(true);
     off.at = now;
-    this.core.answers.send({ ...off.sent, speak: true });
+    this.core.robot.commands.show({ ...off.sent, speak: true });
   }
 
   /** 작동 한 번 끝남 판정(하나뿐, 그 가전의 지금 켜기 회차에 대해). 아니면 null. 근거 시각은 촬영 시각(카메라 seen_ms, 허브·실제 가전 신호는 도착 시각)이고
@@ -207,7 +207,7 @@ export class SafetyTracker extends Part {
     if (r?.onAt.has(deviceId)) r.ends.set(deviceId, { cycle: end.cycle, seenAt: end.evidenceAt, how: end.via, at: now });
     if (shown) {
       this.#reminder = null;
-      this.core.answers.send({ type: "command_clear", id: shown.sent.id });
+      this.core.robot.commands.clear(shown.sent.id);
       this.nextReminder();
     }
     return true;
@@ -297,7 +297,7 @@ export class SafetyTracker extends Part {
       off.note = { ...off.note, text, ask: true };
       off.sent = { ...off.sent, text, choices: [], speak: true };
       off.at = now;
-      this.core.answers.send(off.sent);
+      this.core.robot.commands.show(off.sent);
     } else if (r?.state === "running" && !r.asking && step && ((r.sent && step.kind === "do" && step.hand?.to === "off" && step.hand.deviceId === deviceId)
       || selfStopWait(step, this.o.handDevices?.() ?? []) === deviceId)) {
       // 끄기 do는 그 명령 글을, 꺼짐 기다리기(명령이 없는 단계)는 그 단계 id로 새 명령을 띄운다(답 단추 없음)
@@ -305,7 +305,7 @@ export class SafetyTracker extends Part {
       r.sent = r.sent
         ? { ...r.sent, text, choices: [], speak: true }
         : { type: "command", id: r.plan.view.id, step: step.id, text, vision: null, choices: [], target: null, speak: true };
-      this.core.answers.send(r.sent);
+      this.core.robot.commands.show(r.sent);
     } else return false;
     const cycle = this.#cycles.get(deviceId);
     if (cycle && cycle.askedAt === null) cycle.askedAt = now;

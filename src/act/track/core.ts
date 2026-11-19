@@ -12,6 +12,7 @@ import { HUMAN_KINDS, type AgentPlan, type AgentStep } from "../../agent/index.j
 import { DEVICE_UNKNOWN, EXEC_TEXT } from "../labels.js";
 import type { StepOutcome } from "../lessons.js";
 import { AGAIN, APPROVE, LEFTOVER, STEP_DONE, type ActionChoice } from "../prompts.js";
+import type { RobotMachine } from "../robot/machine.js";
 import type { Answers } from "./answers.js";
 import type { Approvals, Asking } from "./approval.js";
 import type { Coach } from "./coach.js";
@@ -120,6 +121,7 @@ export class TrackCore {
   eye: { position: XZ; at: number } | null = null;
   /** 마지막으로 추정 눈(맞추기 전·다시 맞추는 중)을 받은 시각. 이보다 앞선 맞춘 눈은 지금 맞춘 것이 아니다. */
   eyeLostAt = Number.NEGATIVE_INFINITY;
+  robot!: RobotMachine;
   start!: Starter;
   steps!: Steps;
   approval!: Approvals;

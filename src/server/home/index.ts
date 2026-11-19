@@ -174,7 +174,7 @@ function startApp(core: HomeCore): void {
     habitLast: () => core.habit,
     personLast: () => core.person?.last() ?? null,
     robotLast: () => {
-      const state = core.machines.robot.last();
+      const state = core.tracker?.robotLast() ?? null;
       return state && { type: "robot", ...state };
     },
     phoneCommand: () => captionOf(core.command),

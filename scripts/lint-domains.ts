@@ -23,7 +23,7 @@ export const DEPS: Record<string, readonly string[]> = {
   observe: ["bus", "phone", "world", "devices"],
   brain: ["bus", "world", "devices"],
   agent: ["world", "devices", "layout"],
-  act: ["bus", "agent", "brain", "observe", "phone", "world", "devices", "layout"],
+  act: ["bus", "machines", "agent", "brain", "observe", "phone", "world", "devices", "layout"],
   record: ["bus", "brain"],
   server: ["bus", "phone", "observe", "world", "brain", "act", "agent", "devices", "layout", "record", "machines"],
   "ui/twin": [],

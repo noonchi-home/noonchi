@@ -99,7 +99,7 @@ export class Coach extends Part {
     r.quietOn = false;
     r.sent = { ...r.sent, text: said, speak: true };
     this.toldWallAt = Date.now();
-    this.core.answers.send(r.sent);
+    this.core.robot.commands.show(r.sent);
     return said;
   }
 

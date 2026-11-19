@@ -20,7 +20,7 @@ export function noticeTick(core: TrackCore, now: number): void {
       return;
     }
     n.sent = true;
-    core.answers.send({ type: "command", id: n.id, step: `${n.id}:1`, text: n.text, vision: null, choices: [], target: null, speak: true });
+    core.robot.commands.show({ type: "command", id: n.id, step: `${n.id}:1`, text: n.text, vision: null, choices: [], target: null, speak: true });
   }
   // 다른 명령(충전 자리로 가기 등)이 그 줄을 덮었으면 지우기를 보내지 않는다
   if (core.shown() || core.docking?.sent) {
@@ -29,7 +29,7 @@ export function noticeTick(core: TrackCore, now: number): void {
   }
   if (now - n.since < DONE_NOTICE_MS) return;
   core.notice = null;
-  core.answers.send({ type: "command_clear", id: n.id });
+  core.robot.commands.clear(n.id);
 }
 
 /** 맞춘 눈이 이만큼(ms) 안 오면 지금 위치를 모른다(폰 자세는 초당 10번). */
@@ -52,7 +52,7 @@ export function planLine(core: TrackCore, r: Run): Line {
   return {
     id: r.plan.view.id, planId: r.plan.view.id,
     shown: () => r.sent,
-    show: (c) => { r.sent = c; core.answers.send(c); },
+    show: (c) => { r.sent = c; core.robot.commands.show(c); },
     clear: () => core.steps.clear(r),
     get spokeAt() { return r.spokeAt; }, set spokeAt(v) { r.spokeAt = v; },
     get visionAt() { return r.visionAt; }, set visionAt(v) { r.visionAt = v; },
@@ -64,11 +64,11 @@ export function idleLine(core: TrackCore, q: IdleSlot): Line {
   return {
     id: q.id, planId: "",
     shown: () => q.sent,
-    show: (c) => { q.sent = c; core.answers.send(c); },
+    show: (c) => { q.sent = c; core.robot.commands.show(c); },
     clear: () => {
       if (!q.sent) return;
       q.sent = null;
-      if (!core.shown()) core.answers.send({ type: "command_clear", id: q.id });
+      if (!core.shown()) core.robot.commands.clear(q.id);
     },
     get spokeAt() { return q.spokeAt; }, set spokeAt(v) { q.spokeAt = v; },
     get visionAt() { return q.visionAt; }, set visionAt(v) { q.visionAt = v; },
@@ -104,7 +104,7 @@ export function refreshLine(core: TrackCore, line: Line, sent: PlannedCommand, v
   }
   if (now - line.spokeAt >= core.cfg.repeatMs) {
     line.spokeAt = now;
-    core.answers.send({ ...c, speak: true });
+    core.robot.commands.show({ ...c, speak: true });
   }
   return c;
 }

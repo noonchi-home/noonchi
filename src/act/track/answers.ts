@@ -1,11 +1,10 @@
-// 실행 추적의 실제 폰 명령 줄과 답(Answers): 지금 띄운 명령·질문(openCommand), 답 단추(onAnswer), 들은 말(onHeard), 폰으로 보내는 하나뿐인 길(send, 소리 등급).
+// 실행 추적의 실제 폰 명령 줄과 답(Answers): 지금 띄운 명령·질문(openCommand), 답 단추(onAnswer), 들은 말(onHeard).
 // 떠 있는 끄기 안내의 「완료」는 확인된 꺼짐일 때만 지우고(SafetyTracker.releaseIfOff), 아니면 보이게 해 달라는 부탁으로 바꾼다. 말 「완료」로는 풀지 않는다.
-import type { HeardAt, PlannedCommandMessage } from "../../contract/phone.js";
+import type { HeardAt } from "../../contract/phone.js";
 import type { ApprovalAnswer } from "../../agent/index.js";
 import { EXEC_TEXT } from "../labels.js";
 import { ASK_FOLLOW, STEP_DONE, STOP, type ActionChoice } from "../prompts.js";
 import { ASK_ACTION, matchChoice } from "../tasks.js";
-import { talkGrade } from "../talk-grade.js";
 import { Part, choicesOf } from "./core.js";
 
 /** 들은 말의 결과: 답으로 받음, 말할 때와 다른 명령에 온 답이라 버림(stale), 답이 아님(null). */
@@ -137,12 +136,4 @@ export class Answers extends Part {
     return null;
   }
 
-  /** 실제 폰으로 보내는 하나뿐인 길: 명령에는 소리 등급(talkGrade)을 붙인다. 열린 계획의 단계 명령이면 그 단계가 끄는 단계인지 본다. */
-  send(msg: PlannedCommandMessage): void {
-    if (msg.type !== "command") return this.o.toPhone(msg);
-    const r = this.core.run;
-    const step = r?.plan.view.id === msg.id ? r.plan.steps.find((x) => x.id === msg.step) : undefined;
-    const grade = talkGrade(msg, !!step && this.core.safety.turnsOff(step));
-    this.o.toPhone(grade ? { ...msg, grade } : msg);
-  }
 }

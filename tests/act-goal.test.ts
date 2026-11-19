@@ -1032,6 +1032,7 @@ describe("미리 세운 목표: 떠나기 직전에 본 컵으로 바로 시작"
       expect(s.t.onAnswer(first.id, first.step, "done")).toBe(true);
       await s.t.idle();
       expect(s.commands().some((c) => c.text === "컵을 들어 주세요")).toBe(false);
+      expect(s.t.robotTransition({ ...s.t.machineFacts(), observing: false }, s.clock.t)?.state).toBe("recover");
       return s;
     }
     it("그 뒤 사진에 컵이 보이면 「컵을 들어 주세요」로 간다", async () => {
@@ -1047,9 +1048,11 @@ describe("미리 세운 목표: 떠나기 직전에 본 컵으로 바로 시작"
       for (let i = 0; i < 16; i++) s.tick();
       expect(s.commands().at(-1)).toMatchObject({ id: "plan:pam-2", text: "식탁으로 가 주세요" });
       expect(s.commands().at(-1)!.step).not.toBe("plan:pam-2:1");
+      expect(s.t.robotTransition({ ...s.t.machineFacts(), observing: false }, s.clock.t)?.state).toBe("move");
       s.setEye([7, 3]);
       for (let i = 0; i < 8; i++) s.tick();
       expect(s.commands().at(-1)).toMatchObject({ text: FIND_TEXT.aim("식탁") });
+      expect(s.t.robotTransition({ ...s.t.machineFacts(), observing: false }, s.clock.t)?.state).toBe("observe");
       for (let i = 0; i < 280; i++) s.tick();
       expect(s.logs.filter((l) => l.type === "execution").at(-1)).toMatchObject({ plan_id: "plan:pam-2", state: "failed", text: CHECK_TEXT.no_target });
     });

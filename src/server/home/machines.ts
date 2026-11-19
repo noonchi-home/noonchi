@@ -1,12 +1,11 @@
 import { pamTasks } from "../../act/index.js";
-import type { GoalState, ManagerState, RobotState, SafetyState } from "../../contract/machines.js";
-import { goalState, MachineLane, managerState, robotState, safetyState } from "../../machines/index.js";
+import type { GoalState, ManagerState, SafetyState } from "../../contract/machines.js";
+import { goalState, MachineLane, managerState, safetyState } from "../../machines/index.js";
 import { POSE_FALL } from "../../world/vocab.js";
 import type { HomeCore } from "./core.js";
 
 /** 집이 바뀌면 새 시간 줄을 시작한다. 명령 전송이나 계획 변경은 이곳을 거치지 않는다. */
 export class HomeMachines {
-  readonly robot = new MachineLane<RobotState>();
   private readonly goals = new MachineLane<GoalState>();
   private readonly safety = new MachineLane<SafetyState>();
   private readonly manager = new MachineLane<ManagerState>();
@@ -18,7 +17,7 @@ export class HomeMachines {
     const now = core.nowMs();
     const f = tracker.machineFacts();
     const look = core.looker?.activeTrigger();
-    const robot = this.robot.change(robotState({ ...f, blocked: f.blocked || look === "stalled", observing: look === "unknown_fact" }), now);
+    const robot = tracker.robotTransition({ ...f, blocked: f.blocked || look === "stalled", observing: look === "unknown_fact" }, now);
     if (robot) {
       out.push("/robot/state", robot);
       out.push("/robot/changes", robot);

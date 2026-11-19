@@ -228,7 +228,7 @@ describe("시연 네 장면(자동 모드, 한양목련, 가짜 서버)", () => 
     s.answer(s.commands().find((m) => m.text === "컵을 치울까요?")!, "clear");
     await s.pump(() => s.commands().some((m) => m.text === "식탁으로 가 주세요"), "답 뒤 첫 명령");
     expect(s.decisions().find((e) => e.action === "컵 치우기")).toMatchObject({ source: "speech", via: "answer" });
-    expect(await s.history("goal")).toEqual([]);
+    expect(await s.history("goal")).toMatchObject([{ subject: null, data: { state: "idle", id: null } }]);
     s.pamChecked();
   }, 120_000);
 

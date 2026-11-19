@@ -217,7 +217,7 @@ export class Steps extends Part {
     };
     // 알림 글은 판본이 맞는 폰이 없거나 끄기 안내가 명령 줄에 떠 있으면 보내지 않는다(폰 없이 도는 가전 계획, 명령 줄에는 하나만)
     if (step.kind === "say" && (!this.core.start.phoneOk() || this.core.safety.shownOff())) return;
-    this.core.answers.send(r.sent);
+    this.core.robot.commands.show(r.sent);
   }
 
   /** 기기 단계: 정책을 거쳐 기기 도구를 부른다. 승인 토큰이 오면 실제 폰에 묻는다. */
@@ -301,7 +301,7 @@ export class Steps extends Part {
     if (vision !== r.sent.vision && now - r.visionAt >= this.cfg.visionMs) {
       r.visionAt = now;
       r.sent = { ...r.sent, vision, speak: false };
-      this.core.answers.send(r.sent);
+      this.core.robot.commands.show(r.sent);
     }
     return false;
   }
@@ -328,7 +328,7 @@ export class Steps extends Part {
     const target = o?.size_m?.center ?? o?.position;
     if (!t.asked && target && r.sent && (!r.sent.target || r.sent.target.id !== id || target.some((v, i) => Math.abs(v - r.sent!.target!.position[i]!) > 0.02))) {
       r.sent = { ...r.sent, speak: false, target: { id, label: OBJECT_NAME[o!.cls] ?? o!.cls, position: target } };
-      this.core.answers.send(r.sent);
+      this.core.robot.commands.show(r.sent);
     }
     const since = t.retryAfter ?? r.stepAt;
     const retry = t.retryAfter !== undefined && t.doneAt !== null && now - t.doneAt < CONTENTS_HOLD.settleMs;
@@ -468,7 +468,7 @@ export class Steps extends Part {
     if (!r.sent || now - r.spokeAt < this.cfg.repeatMs) return;
     r.spokeAt = now;
     r.helped = true;
-    this.core.answers.send({ ...r.sent, speak: true });
+    this.core.robot.commands.show({ ...r.sent, speak: true });
   }
 
   /** 따르기 창: 그 물건(지금 따라가는 World State id)의 창을 열고, 다른 물건·다른 단계가 되면 앞 창을 닫는다. */
@@ -516,7 +516,7 @@ export class Steps extends Part {
   clear(r: Run): void {
     if (!r.sent) return;
     r.sent = null;
-    this.core.answers.send({ type: "command_clear", id: r.plan.view.id });
+    this.core.robot.commands.clear(r.plan.view.id);
   }
 
   /** 조건을 볼 World State: 폰 자리는 실행 추적이 받은 맞춘 눈과 World State 눈 중 새것. */
@@ -607,7 +607,7 @@ export class Steps extends Part {
     if (state === "done" && taskOf(r.plan.task)?.coach && r.outcomes.length) this.o.lessons?.record(r.plan.task, r.outcomes, new Date(this.clock.now()).toISOString());
     if (r.sent) {
       r.sent = null;
-      this.core.answers.send({ type: "command_clear", id: r.plan.view.id });
+      this.core.robot.commands.clear(r.plan.view.id);
     }
     if (close) this.o.plans.close(r.plan.view.id, close, this.clock.now());
     // 폰으로 시킨 계획을 끝까지 마쳤으면 다음 타이머에 실제 폰 명령 줄에 완료 문장을 띄운다(phone-line.ts noticeTick)
