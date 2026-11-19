@@ -87,13 +87,14 @@ const MINIMAP_SIZE: [number, number] = [1280, 720];
 const DASH_WAIT_MS = 8_000;
 /** 마지막 눈 줄에서 이만큼(m) 옮기면 눈 줄을 다시 쓴다 */
 const EYE_MOVE_M = 0.5;
-const HISTORY_KINDS = "detection,decision,plan,execution,look,goal";
+/** 시각표(timeline)가 줄로 만드는 서버 기록 종류. GET /api/history의 kinds로 가져온다. */
+export const FETCH_KINDS: readonly string[] = ["detection", "decision", "plan", "execution", "look", "goal", "planner"];
 /** 영상이 끝난 뒤 남은 답 누르기·계획 끝을 더 기다리는 시간 */
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 // 표
 
-export type Kind = "사람 등장" | "사람 사라짐" | "물건 등장" | "물건 사라짐" | "PAM 판단" | "목표" | "계획" | "단계" | "명령" | "영상" | "트윈" | "가까이 보기" | "말" | "누름" | "끝";
+export type Kind = "사람 등장" | "사람 사라짐" | "물건 등장" | "물건 사라짐" | "PAM 판단" | "목표" | "계획" | "단계" | "명령" | "영상" | "트윈" | "가까이 보기" | "계획 모드" | "말" | "누름" | "끝";
 /** 표 한 줄. ms는 영상 시각, n은 묶은 줄 수. */
 export interface Row { ms: number; kind: Kind; text: string; n: number }
 /** 폰 페이지가 남긴 명령(window.__noonchiVideo.commands). */
@@ -176,6 +177,8 @@ export function timeline(t0: number | ((atMs: number) => number), history: Histo
     } else if (h.kind === "goal") {
       // 미리 세운 목표의 전환(세움·계획 준비됨·사람 떠남·씀·버림, 서버 goalRecorder)
       raw.push({ ms, kind: "목표", text: h.text, n: 1, from: `goal:${h.subject ?? ""}` });
+    } else if (h.kind === "planner") {
+      raw.push({ ms, kind: "계획 모드", text: h.text, n: 1, from: "planner" });
     } else if (h.kind === "execution") {
       const state = (h.data as { state?: string } | null)?.state ?? "";
       if (!EXEC_PLAIN.has(h.text)) raw.push({ ms, kind: EXEC_END.has(state) ? "끝" : "계획", text: h.text, n: 1, from: "execution" });
@@ -1075,7 +1078,7 @@ async function main(): Promise<number> {
       if (t0 !== firstT0) console.log(`[video-check] 서버 시계 t0=${t0} (처음 ${firstT0})`);
 
       // 서버 기록·VLM 비용. 새 서버로만 시작하니 /api/brain 합계가 이번 판 값이다
-      const hist = await fetch(`${api}/api/history?since=${Math.min(firstT0, t0)}&kinds=${HISTORY_KINDS}&limit=5000`);
+      const hist = await fetch(`${api}/api/history?since=${Math.min(firstT0, t0)}&kinds=${FETCH_KINDS.join(",")}&limit=5000`);
       if (!hist.ok) throw new Error(`기록을 받지 못함: HTTP ${hist.status}`);
       const history = ((await hist.json()) as { rows: HistoryRow[] }).rows;
       const brain = await getJson<BrainNow>(`${api}/api/brain`);

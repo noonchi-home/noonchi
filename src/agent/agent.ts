@@ -64,12 +64,13 @@ export interface StepOptions {
   requireTool?: boolean;
 }
 
-/** 응답 하나의 토큰 사용량. input은 캐시에서 읽은 것(cached)을 포함한 전체 입력이다. */
+/** 응답 하나의 토큰 사용량. input은 캐시에서 읽은 것(cached)을 포함한 전체 입력이다. reasoning은 output 가운데 생각 토큰(공급자가 알려 줄 때만). */
 export interface StepUsage {
   model: string;
   input: number;
   cached: number;
   output: number;
+  reasoning?: number;
 }
 
 export interface StepResult {

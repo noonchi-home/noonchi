@@ -12,7 +12,8 @@ import type { WorldEye, WorldObject, WorldView } from "../src/contract/world.js"
 import { dockId, isDockStep } from "../src/act/dock-step.js";
 import { CUP_FSM_MEMORY } from "../src/brain/decision.js";
 import { LEARNED_FSM_MEMORY } from "../scripts/learned-memory.js";
-import { SEND_SAY, hasLearnedClear, memoryGate, clickChoice, clock, costLine, judgeInput, judgeState, markdown, parseArgs, phoneUrl, plannedClicks, sendStartPose, mainPlan, planState, stepPlaces, stepVerdict, timeline, verdict, twinRows, usedServer, roomLabels, ownAssetFailures, videoClock, runTimeline, clipEnd, syncWarning, mustStop, openDashboard, recordSetup, waitLoaded, waitTwinReady, frameGapLine, type ClickRule, type Row, type VideoCommand } from "../scripts/video-check.js";
+import { HISTORY_KINDS as DB_KINDS } from "../src/brain/history/db.js";
+import { FETCH_KINDS, SEND_SAY, hasLearnedClear, memoryGate, clickChoice, clock, costLine, judgeInput, judgeState, markdown, parseArgs, phoneUrl, plannedClicks, sendStartPose, mainPlan, planState, stepPlaces, stepVerdict, timeline, verdict, twinRows, usedServer, roomLabels, ownAssetFailures, videoClock, runTimeline, clipEnd, syncWarning, mustStop, openDashboard, recordSetup, waitLoaded, waitTwinReady, frameGapLine, type ClickRule, type Row, type VideoCommand } from "../scripts/video-check.js";
 import { createServer, type Server } from "node:http";
 import { listenRetry } from "../src/shared/net.js";
 import type { SceneJson } from "../src/contract/layout.js";
@@ -342,6 +343,23 @@ describe("video-check", () => {
     expect(rows.map((r) => [clock(r.ms), r.kind, r.text])).toEqual([
       ["00:14.0", "목표", "세움 · 컵 치우기"], ["00:15.6", "목표", "사람 떠남 · 판단 부름"], ["00:19.5", "목표", "계획 준비됨"], ["00:30.0", "목표", "버림 · PAM이 고르지 않음"],
     ]);
+  });
+
+  // 2026-11-18 tall e1: 미리 만들기 실패가 「3번 안에 못 냄」만 보여 차례마다 무엇을 버렸는지 시각표에서 몰랐다
+  it("시각표는 계획 모드 차례 기록(planner)을 「계획 모드」 줄로 넣는다", () => {
+    const row = (id: number, at_ms: number, text: string): HistoryRow => ({ id, at_ms, day: "2026-11-18", kind: "planner", subject: "plan:goal-1", text, data: { n: id } });
+    const rows = timeline(0, [row(1, 7_300, "계획 모드 1/3차례 2.4초 · 버림 · 2번 단계: until이 조건 낱말 모양이 아닙니다: any.1: 쓰지 않는 키 follow."), row(2, 9_800, "계획 모드 2/3차례 2.5초 · 통과")], []);
+    expect(rows.map((r) => [clock(r.ms), r.kind, r.text])).toEqual([
+      ["00:07.3", "계획 모드", "계획 모드 1/3차례 2.4초 · 버림 · 2번 단계: until이 조건 낱말 모양이 아닙니다: any.1: 쓰지 않는 키 follow."],
+      ["00:09.8", "계획 모드", "계획 모드 2/3차례 2.5초 · 통과"],
+    ]);
+  });
+
+  // 2026-11-19 plan1: 서버가 planner 줄을 남겨도 시각표가 가져오는 기록 종류(kinds)에 없어 「계획 모드」 줄이 시각표에 없었다
+  it("시각표가 줄로 만드는 기록 종류는 모두 서버에서 가져온다(FETCH_KINDS)", () => {
+    const shown = DB_KINDS.filter((kind) => timeline(0, [{ id: 1, at_ms: 1_000, day: "2026-11-19", kind, subject: "s", text: "글", data: null }], []).length > 0);
+    expect(shown).toContain("planner");
+    expect(shown.filter((k) => !FETCH_KINDS.includes(k))).toEqual([]);
   });
 
   it("비용 줄: /api/brain이 없으면 모름, 가까이 보기·관찰 모드가 없으면 앞 글 그대로, 있으면 횟수와 비용(모르면 비용 모름)", () => {

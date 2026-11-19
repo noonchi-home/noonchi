@@ -75,7 +75,12 @@ export class OpenAIProvider implements LlmProvider {
     const u = res.usage;
     return {
       text: res.output_text ?? "", calls,
-      ...(u ? { usage: { model: res.model || this.model, input: u.input_tokens, cached: u.input_tokens_details?.cached_tokens ?? 0, output: u.output_tokens } } : {}),
+      ...(u ? {
+        usage: {
+          model: res.model || this.model, input: u.input_tokens, cached: u.input_tokens_details?.cached_tokens ?? 0, output: u.output_tokens,
+          ...(typeof u.output_tokens_details?.reasoning_tokens === "number" ? { reasoning: u.output_tokens_details.reasoning_tokens } : {}),
+        },
+      } : {}),
     };
   }
 

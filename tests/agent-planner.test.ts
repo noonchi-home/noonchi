@@ -198,9 +198,10 @@ describe("계획 모드: 컵 치우기", () => {
     expect(inside).toContain("면 위만으로는 넘기지 않는다(싱크볼 옆 조리대도 같은 면이다).");
     expect(inside).toContain(`{"all": [{"any": [{"object": id, "follow": true, "facts": {"place": "in_sink"}}, {"all": [{"object": id, "follow": true, "surface": target, "part": "basin"}, {"not": {"object": id, "follow": true, "facts": {"place": "in_hand"}}}]}]}, {"not": {"person_holding": id}}]}`);
     expect(inside).toContain("싱크볼이 없으면 트윈 자리 조건 없이 자리 사실과 not person_holding을 all로 묶는다.");
-    expect(lines).toContain("예(컵 치우기, 식탁 table_1 위 컵 cup_1, 싱크볼이 있는 싱크대 sink_1)");
-    const example = lines.find((l) => l.startsWith("4. place 넣기 sink_1 object cup_1"))!;
-    expect(JSON.parse(example.slice(example.indexOf(" until ") + 7))).toEqual(cupSteps({ table: "table_1", sink: "sink_1", cup: "cup_1" })[3]!.until);
+    const at = lines.indexOf("예(컵 치우기, 식탁 table_1 위 컵 cup_1, 싱크볼이 있는 싱크대 sink_1). submit_plan steps:");
+    expect(at).toBeGreaterThan(0);
+    // 예의 네 단계는 submit_plan steps 한 칸 JSON 그대로이고 시험 대본과 같다(놓기 조건 포함)
+    expect(lines.slice(at + 1, at + 5).map((l) => JSON.parse(l.replace(/^\d\. /, "")))).toEqual(cupSteps({ table: "table_1", sink: "sink_1", cup: "cup_1" }));
     // 도구 설명(submit_plan 단계 until 칸)도 같은 모양을 말한다
     expect(SUBMIT_ARGS.shape.steps.element.shape.until.description).toContain(
       "place는 자리 사실 또는 트윈 자리(손에 없음, not in_hand)를 any로 묶고, 그 any와 사람이 들고 있지 않음(not person_holding)을 all로 묶는다. 트윈 자리는 위에 놓기면 놓을 면(target) 위, 안에 넣기(싱크대)면 그 면의 싱크볼 안(part basin)",
@@ -219,14 +220,10 @@ describe("계획 모드: 컵 치우기", () => {
     expect(unseen).toContain(`pick target은 그 자리(평면도 id), until은 그 종류 물건이 손에 있음({"object": 종류, "facts": {"place": "in_hand"}}).`);
     // 든 것을 모를 때도 참인 조건(person_holding 종류)은 병 집기에 쓰지 않게 한다
     expect(unseen).toContain(`{"person_holding": 종류}는 든 것을 모를 때도 참이라 다른 물건을 들어도 넘어가니 쓰지 않는다.`);
-    expect(lines).toContain("예(컵에 물 채워 주기, 냉장고 fridge_1, 식탁 table_1 위 빈 컵 cup_1)");
-    const want = fillSteps({ fridge: "fridge_1", table: "table_1", cup: "cup_1", drink: "물" });
-    const example = ["1. go 가기 fridge_1", "2. pick 꺼내기 fridge_1", "3. go 가기 table_1", "4. do 따르기 cup_1"].map((head) => lines.find((l) => l.startsWith(head))!);
-    example.forEach((line, i) => {
-      const w = want[i]! as { kind: string; act: string; target: string; item?: string };
-      expect(line, String(i)).toContain(`${w.kind} ${w.act} ${w.target}${w.item ? ` item ${w.item}` : ""} until`);
-      expect(JSON.parse(line.slice(line.indexOf(" until ") + 7)), String(i)).toEqual(want[i]!.until);
-    });
+    const at = lines.indexOf("예(컵에 물 채워 주기, 냉장고 fridge_1, 식탁 table_1 위 빈 컵 cup_1). submit_plan steps:");
+    expect(at).toBeGreaterThan(0);
+    // 예의 네 단계는 submit_plan steps 한 칸 JSON 그대로이고 시험 대본과 같다(동작·물건 이름·조건)
+    expect(lines.slice(at + 1, at + 5).map((l) => JSON.parse(l.replace(/^\d\. /, "")))).toEqual(fillSteps({ fridge: "fridge_1", table: "table_1", cup: "cup_1", drink: "물" }));
   });
 
   it("가짜 모델의 도구 호출로 만든 물 채워 주기 계획은 네 명령·조건 그대로다", async () => {
@@ -353,7 +350,8 @@ describe("계획 모드: 컵 치우기", () => {
     expect(d.add({ step: 1, ...cupSteps({ ...ids, cup: "cup_1" })[3]! })).toMatchObject({ ok: false, error: expect.stringMatching(/이미 치운 물건입니다.*cup_1/) });
     // 치운 것이 없으면 표시도 검사도 없다
     expect(planInput(planContext({ decision: decision("컵 치우기"), world: two, floor: floor() }))).not.toContain("이미 치움");
-    expect(new PlanDraft(planContext({ decision: decision("컵 치우기"), world: two, floor: floor() })).submit({ steps: cupSteps({ ...ids, cup: "cup_1" }) })).toMatchObject({ ok: true });
+    // (cup_1은 싱크대 위라 집으러 가는 곳도 싱크대다: 집기 앞 가기는 그 물건이 놓인 면으로 간다)
+    expect(new PlanDraft(planContext({ decision: decision("컵 치우기"), world: two, floor: floor() })).submit({ steps: cupSteps({ table: "sink_1", sink: "sink_1", cup: "cup_1" }) })).toMatchObject({ ok: true });
   });
 });
 

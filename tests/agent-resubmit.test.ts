@@ -80,7 +80,7 @@ describe("미리 만든 계획 다시 내기", () => {
     const ctx = planContext({ decision: decision("goal-1", null), world: view([cupAt("cup_1")]), floor: smallFloor() });
     expect(planInput(ctx)).not.toContain("[미리 세운 목표]");
     expect(planInput({ ...ctx, ahead: AHEAD }))
-      .toContain("[미리 세운 목표] 목표 물건 cup_1. 사람이 아직 쓰는 중이다. 「사용자가 컵을 두고 자리를 떠나 보이지 않는다.」가 되면 할 일이다. 사람이 떠난 뒤를 생각해 계획하고, 물건은 cup_1만 쓴다.");
+      .toContain("[미리 세운 목표] 목표 물건 cup_1. 사람이 아직 쓰는 중이다. 「사용자가 컵을 두고 자리를 떠나 보이지 않는다.」가 되면 서버가 이 계획을 시작한다. 그때를 기다리거나 할지 묻는 단계 없이 그 뒤에 할 단계만 계획하고, 물건은 cup_1만 쓴다.");
   });
 });
 
