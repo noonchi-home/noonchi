@@ -61,7 +61,14 @@ export class Starter extends Part {
     // 기다리기·기기 단계 전에 보낸 판단이 그 뒤에 오면 낡은 관찰이라 쓰지 않는다(다시 부르는 판단이 새 관찰로 정한다)
     if (d.atMs < core.quietFrom && core.open()?.decision.action !== d.action) return this.note(d, EXEC_TEXT.late);
     if (d.status !== "valid") return this.note(d, EXEC_TEXT.decisionFailed);
-    if (!d.action) return this.note(d, EXEC_TEXT.wait);
+    if (!d.action) {
+      // 화살표 없는 답이어도 사람 상태가 미리 세운 목표의 화살표대로 바뀌었으면(떠난 뒤 drinking → away) 그 목표의 트리거다(goal.ts triggerOf)
+      const action = core.goal.triggerOf(d);
+      if (!action) return this.note(d, EXEC_TEXT.wait);
+      this.o.log?.(`[실행 추적] ${planIdOf(d.id)} 목표 ${core.goal.current()?.id ?? ""} 트리거: PAM 상태 ${d.fsm?.state ?? ""}(화살표 없음) → ${action}`);
+      // 그 목표 행동의 판단으로 다시 받는다(아래 검사·미리 만든 계획 쓰기는 그대로)
+      return this.onDecision({ ...d, action });
+    }
     // 미리 세운 목표와 같은 행동인데 사람이 떠난 뒤의 판단이 아니면 목표가 맡는다(사람이 떠나면 판단을 다시 부른다, goal.ts)
     if (core.goal.holds(d)) return this.note(d, EXEC_TEXT.goalWait);
     // 계획이 끝난 뒤 사용자 위치 확인·충전 자리로 가는 동안은 새 일을 미룬다(충전 자리에서 시작한다, dock.ts).
@@ -83,7 +90,7 @@ export class Starter extends Part {
     const pre = this.o.precheck?.(d) ?? { ok: true };
     if (!pre.ok) {
       // 대상이 안 보이면 마지막으로 본 자리로 찾으러 간다(찾을 자리가 없으면 지금처럼 닫는다)
-      if ((pre.reason === "no_target" || pre.reason === "in_sink") && core.finder.start(d, pre.text)) return this.takeover(d);
+      if ((pre.reason === "no_target" || pre.reason === "in_sink") && core.finder.start(d, pre.text)) return;
       core.emit(planIdOf(d.id), "decided");
       core.emit(planIdOf(d.id), "failed", pre.text);
       // 분명한 까닭이면 판단이 그 화살표를 기다리지 않게 알린다(15초 동안 같은 막음을 되풀이하지 않게). 싱크대 안이어도 찾을 후보 자리가 남았으면
@@ -95,8 +102,7 @@ export class Starter extends Part {
     const last = this.planAt.get(d.action);
     if (last !== undefined && now - last < this.cfg.planGapMs) return this.note(d, EXEC_TEXT.held);
     this.planAt.set(d.action, now);
-    // 다른 행동의 계획이 맡으면 미리 세운 목표를 버리고 지금 길로(goal.ts). 막힌 판단은 맡지 않으니 그대로 둔다
-    this.takeover(d);
+    // 미리 세운 목표는 여기서 버리지 않는다: 다른 행동의 계획이 실제로 시작할 때(begin) 버린다. 골라졌다가 막히면(계획 실패·쓰는 중·실행 전 검사) 목표가 그대로 맡는다
     // 계획을 만드는 중이던 다른 행동은 끊고 버린다(답이 와도 쓰지 않는다)
     this.dropPlanning(EXEC_TEXT.superseded);
     const job: Job = { decision: d, gen: ++this.gen, abort: new AbortController(), at: now };
@@ -147,7 +153,8 @@ export class Starter extends Part {
     if (d.action && this.planAt.get(d.action) === at) this.planAt.delete(d.action);
   }
 
-  /** 다른 행동의 판단이 일을 맡았다(계획을 만들기 시작하거나 대상을 찾으러 감): 미리 세운 목표를 버린다. 같은 행동이면 목표가 이어 간다. */
+  /** 다른 행동의 계획이 실제로 시작했다(실행 전 검사를 지나 running, begin): 미리 세운 목표를 버린다. 같은 행동이면 목표가 이어 간다.
+   *  (2026-11-19 glass pfsm4-2: 마시는 중 잘못 고른 물 채우기가 계획만 되고 쓰는 중이라 기다렸는데 목표를 버려, 떠난 뒤 치우지 않았다) */
   private takeover(d: DecisionRecord): void {
     const goal = this.core.goal.current();
     if (goal && goal.action !== d.action) this.core.goal.drop("replaced");
@@ -320,6 +327,7 @@ export class Starter extends Part {
   }
 
   private begin(r: Run): void {
+    this.takeover(r.decision);
     this.core.step(r, "running");
     if (r.plan.steps.length === 0) return this.core.steps.finish(r, "done");
     this.verifyFrom(r);
