@@ -1,7 +1,10 @@
 // npx tsx scripts/video-check.ts --clip cup-demo.mp4 [--step <종류>:<낱말>:<영상.mp4> ...] [--phone http://127.0.0.1:8210] [--api http://127.0.0.1:8200]
 //   [--done-after 3] [--out runtime/videos/cup-demo.<시각>.timeline.md] [--expect-after 36.3] [--record <폴더>] [--record-view <top|minimap>] [--record-fps 10] [--fake]
 //   [--say <초>:<글> ...] [--start-at <cup|tv|microwave|kitchen>] [--home mokryeon_180b] [--tail 30] [--max 1800] [--approve <초>] [--done-on <초>:<명령 글> ...]
-//   [--fov <도>] [--pitch <도>] [--h <m>]
+//   [--fov <도>] [--pitch <도>] [--h <m>] [--rate 1]
+// --rate: 영상 빠르기(0.25~2, 기본 1). 1이 아니면 폰 주소에 rate=로 붙고 폰 페이지가 첫 영상·단계 영상을 그 빠르기로 튼다(영상 시각은 원본 시각 그대로).
+//   서버 시각 ↔ 영상 시각 옮기기(videoClock·serverClock)는 짝 밖을 그 빠르기로 세고, 지금 영상이 너무 오래 도는지는 영상 길이 ÷ 빠르기로 본다.
+//   판정 줄 아래 반응 줄(reactionLine): --expect-after 영상 시각(사람이 떠남) → 그 뒤 첫 명령을 서버 시각으로 세어 빠르기와 상관없이 같은 초다.
 // --fov·--pitch·--h: 영상 모드 카메라(세로 시야각 20~120, 숙인 각 -89~89, 높이 0.2~3). 준 것만 폰 주소에 fov=·pitch=·h=로 붙고, 없으면 폰 페이지 기본값(60°, -25°, 1.4m).
 // --say: 영상 시각(서버 시계를 폰 페이지 짝으로 옮긴 값)이 그 초가 되면 폰 페이지 안의 폰 소켓(/phone/events)으로 {type: "say", text, at}를 보낸다
 // (CDP로 그 소켓을 찾아 보냄). 시각표에 「말」 줄: 보낸 서버 시각을 두었다가 끝에서 같은 짝으로 옮긴다.
@@ -11,6 +14,8 @@
 //   누를 때 지금 명령의 계획 id·단계 id·위 줄이 예약한 것과 모두 같을 때만 누른다. 누른 것은 시각표에 「누름」 줄.
 // 끝내기(judgeState): 계획이 닫혔고 누를 답이 없고 끄기 추적(hot·끄기 안내, GET /api/plan의 같은 답)이 남지 않으면 끝, 영상이 멈춘(첫 영상 끝·단계 영상 마지막 장면 붙잡기) 뒤 --tail초,
 // 지금 영상 길이 + 60초, 판 전체 --max초. 끄기 안내가 남은 채 끝나면 「끝까지 돌지 않음」에 남긴다.
+// 계획이 끝남(done)이면 폰 명령 줄의 완료 문장(done:<계획 id>, src/act/done-step.ts)이 보인 뒤 DONE_TAIL_MS(2초)까지 더 보고 끝낸다(8초 안에 안 오면 그냥 끝).
+// 미니맵 판 기록(run.json)에 그 완료 문장 영상 시각(doneMs)과 빠르기(rate)를 남긴다: scripts/minimap-cut.ts가 마지막 조각 끝에서 완료 문장 + 2초까지 남긴다.
 // 영상 모드 판정: 헤드리스 크롬 하나(390×844)로 폰 페이지 <phone>/phone/?clip=<clip>을 열고 「AR 시작」을 눌러 영상을 끝까지 튼다.
 // 폰 페이지 자기 자원(<phone>/assets/…)을 못 받았으면 「AR 시작」 전에 페이지를 한 번 다시 읽고 판정 줄 위에 적는다(이 PC는 127.0.0.1 연결이 가끔 실패한다).
 // --step(여러 번, 종류 go·pick·place·do, 낱말 a-z·_)은 폰 주소에 step=으로 하나씩 붙는다. 폰 페이지는 종류가 같고 대상 id에 낱말이 든 명령이 오면
@@ -71,6 +76,7 @@ import { det } from "../tests/helpers/detectors.js";
 import type { SceneJson } from "../src/contract/layout.js";
 import type { OffTrack } from "../src/contract/plan.js";
 import { isDockStep } from "../src/act/dock-step.js";
+import { isDoneStep } from "../src/act/done-step.js";
 import { isOffStep } from "../src/act/off-step.js";
 import { resolveTwinStudioDir } from "../src/layout/twin-files.js";
 import { resolveHome } from "../src/layout/homes.js";
@@ -127,11 +133,11 @@ export function syncWarning(record: { syncFull?: boolean } | null): string | nul
 
 /** 서버 시각 → 영상 시각. sync는 폰 페이지가 남긴 [서버 시각, 영상 시각] 짝(시각순): 짝 사이는 잇고(멈칫한 구간은 그 두 프레임 사이에 몰린다),
  *  첫 짝 앞과 마지막 짝 뒤는 1:1로 센다. 짝이 없으면(옛 기록) at − t0. */
-export function videoClock(t0: number, sync: readonly (readonly [number, number])[]): (atMs: number) => number {
-  if (!sync.length) return (at) => at - t0;
+export function videoClock(t0: number, sync: readonly (readonly [number, number])[], rate = 1): (atMs: number) => number {
+  if (!sync.length) return (at) => (at - t0) * rate;
   return (at) => {
     const [a0, v0] = sync[0]!;
-    if (at <= a0) return v0 - (a0 - at);
+    if (at <= a0) return v0 - (a0 - at) * rate;
     for (let i = 1; i < sync.length; i++) {
       const [a1, v1] = sync[i]!;
       if (at > a1) continue;
@@ -139,16 +145,41 @@ export function videoClock(t0: number, sync: readonly (readonly [number, number]
       return a1 === a ? v1 : v + ((at - a) * (v1 - v)) / (a1 - a);
     }
     const [an, vn] = sync.at(-1)!;
-    return vn + (at - an);
+    return vn + (at - an) * rate;
   };
+}
+
+/** 영상 시각 → 서버 시각(videoClock을 거꾸로): 짝 사이는 잇고, 멈춘 구간(영상 시각이 그대로)이면 그 영상 시각에 처음 닿은 서버 시각, 짝 밖은 빠르기(rate)로 센다. */
+export function serverClock(t0: number, sync: readonly (readonly [number, number])[], rate = 1): (videoMs: number) => number {
+  if (!sync.length) return (v) => t0 + v / rate;
+  return (v) => {
+    const [a0, v0] = sync[0]!;
+    if (v <= v0) return a0 - (v0 - v) / rate;
+    for (let i = 1; i < sync.length; i++) {
+      const [a1, v1] = sync[i]!;
+      if (v > v1) continue;
+      const [a, w] = sync[i - 1]!;
+      return v1 === w ? a : a + ((v - w) * (a1 - a)) / (v1 - w);
+    }
+    const [an, vn] = sync.at(-1)!;
+    return an + (v - vn) / rate;
+  };
+}
+
+/** 반응 줄: 사람이 떠난 영상 시각(expectMs) 뒤 첫 명령까지를 서버 시각으로 센 초(빠르기를 바꿔 튼 판도 같은 초다). 그 뒤 명령이 없으면 null. */
+export function reactionLine(expectMs: number, commands: readonly VideoCommand[], t0: number, sync: readonly (readonly [number, number])[], rate = 1): string | null {
+  const first = commands.find((c) => c.video_ms >= expectMs);
+  if (!first) return null;
+  const toServer = serverClock(t0, sync, rate);
+  return `반응: ${clock(expectMs)}에 떠난 뒤 첫 명령까지 서버 시각 ${((toServer(first.video_ms) - toServer(expectMs)) / 1000).toFixed(1)}초`;
 }
 
 /** 판 끝 시각표: 서버 시각으로 둔 것(기록·트윈 줄 ms·말 at·누름 at)을 폰 페이지 짝(sync)으로 영상 시각에 옮겨 폰 명령·바꾼 영상(영상 시각)과 합친다. */
 export function runTimeline(o: {
   t0: number; sync: readonly (readonly [number, number])[]; history: HistoryRow[]; commands: VideoCommand[]; endMs: number | null; clips: VideoClip[];
-  twin: Row[]; says: { at: number; text: string }[]; clicks: { at: number; label: string; text: string }[];
+  twin: Row[]; says: { at: number; text: string }[]; clicks: { at: number; label: string; text: string }[]; rate?: number;
 }): Row[] {
-  const toVideo = videoClock(o.t0, o.sync);
+  const toVideo = videoClock(o.t0, o.sync, o.rate);
   return timeline(toVideo, o.history, o.commands, o.endMs, {
     clips: o.clips, twin: o.twin.map((r) => ({ ...r, ms: toVideo(r.ms) })),
     says: o.says.map((s) => ({ atMs: toVideo(s.at), text: s.text })), clicks: o.clicks.map((c) => ({ ms: toVideo(c.at), label: c.label, text: c.text })),
@@ -470,7 +501,13 @@ export function costLine(brain: BrainNow): string {
   return `VLM ${brain.vlm.sent ?? 0}장 · ${usd(brain.vlm.costUsd ?? 0)}${closer}${look} · 엔진 프레임 ${brain.frames ?? 0}장 · PAM·계획 비용 빠짐`;
 }
 
+/** 계획을 마친 완료 문장이 폰 명령 줄에 보인 뒤 더 보는(녹화하는) 시간 ms. */
+export const DONE_TAIL_MS = 2000;
+/** 계획이 끝난 뒤 완료 문장을 기다리는 가장 긴 시간 ms(그 안에 안 오면 그냥 끝낸다). */
+const DONE_WAIT_MS = 8000;
+
 /** 끝내기: watch 더 본다, done 계획이 명시적으로 닫혔고(done·failed·cancelled) 누를 답이 없고 끄기 추적(hot·끄기 안내)이 남지 않음,
+ *  끝남(done)이면 완료 문장(doneNotice)이 보인 뒤 DONE_TAIL_MS가 지났거나 끝난 뒤 DONE_WAIT_MS 안에 오지 않음,
  *  tail_over 영상이 멈춘 뒤 tailMs가 지남(끄기 안내가 남았으면 계획이 닫혀도 여기까지 본다: 카메라가 꺼짐 확인을 이어 가게 폰을 닫지 않는다),
  *  clip_over 지금 영상이 그 길이 + 60초를 넘게 도는 중, max_over 판 전체가 maxMs를 넘음. */
 export function judgeState(o: {
@@ -483,9 +520,13 @@ export function judgeState(o: {
   due: number; planStatus: string | undefined; tailMs: number; totalMs: number; maxMs: number;
   /** 끄기 추적(지금 계획 hot·끄기 안내)이 남아 있는가(judgeInput, GET /api/plan off). */
   offOpen: boolean;
+  /** 완료 문장: 폰 명령 줄에 보인 지 ms(아직이면 null), 계획이 끝난 것을 본 지 ms. 없으면 기다리지 않는다. */
+  doneNotice?: { shownForMs: number | null; waitedMs: number };
 }): "watch" | "done" | "tail_over" | "clip_over" | "max_over" {
   if (o.totalMs > o.maxMs) return "max_over";
-  if (o.due === 0 && PLAN_END.has(o.planStatus ?? "") && !o.offOpen && (!o.untilEnd || o.stillForMs !== null)) return "done";
+  const n = o.doneNotice;
+  const noticeOk = o.planStatus !== "done" || !n || (n.shownForMs !== null ? n.shownForMs >= DONE_TAIL_MS : n.waitedMs > DONE_WAIT_MS);
+  if (o.due === 0 && PLAN_END.has(o.planStatus ?? "") && !o.offOpen && (!o.untilEnd || o.stillForMs !== null) && noticeOk) return "done";
   // 계획을 만드는 중이거나 조회가 실패한(undefined) 때는 닫힌 계획으로 보지 않는다: 영상이 멈춰도 tail까지 본다
   if (o.stillForMs !== null) return o.stillForMs > o.tailMs ? "tail_over" : "watch";
   if (o.clipDurationMs !== null && o.clipPlayedMs > o.clipDurationMs + 60_000) return "clip_over";
@@ -501,7 +542,8 @@ export function plannedClicks(cmd: VideoCommand, rule: ClickRule, now: number): 
   const out: PlannedClick[] = [];
   // 닫힌 계획의 끄기 안내·부탁(src/act/off-step.ts)에는 어떤 누르기도 예약하지 않는다(같은 글의 라면 12번 명령과 가른다)
   // 계획이 끝난 뒤 충전 자리 명령(src/act/dock-step.ts)도 누르지 않는다: 판정은 계획이 끝나면 끝나고, 폰 페이지는 단계 영상 없이 그쪽으로 걷기만 한다
-  if (isOffStep(cmd.step) || isDockStep(cmd.step)) return out;
+  // 계획을 마친 완료 문장(src/act/done-step.ts)에는 단추가 없다
+  if (isOffStep(cmd.step) || isDockStep(cmd.step) || isDoneStep(cmd.step)) return out;
   if (rule.approveAfterMs > 0 && /:(approve|hand)$/.test(cmd.step)) out.push(at(rule.approveAfterMs, "승인"));
   for (const d of rule.doneOn) if (d.text === cmd.text) out.push(at(d.afterMs, "완료"));
   if (!out.length && rule.doneAfterMs > 0) out.push(at(rule.doneAfterMs, null));
@@ -674,7 +716,7 @@ async function startFake(clip: string, steps: string[]): Promise<Fake> {
 
 const USAGE = "쓰는 법: npx tsx scripts/video-check.ts --clip <이름.mp4> [--step <종류>:<낱말>:<영상.mp4> ...] [--phone http://127.0.0.1:8210] [--api http://127.0.0.1:8200] [--done-after 3] [--out <파일.md>] [--expect-after 36.3] [--record <폴더>] [--record-view <top|minimap>] [--record-fps 10] [--fake]"
   + " [--say <초>:<글> ...] [--start-at <cup|tv|microwave|kitchen>] [--home mokryeon_180b] [--tail 30] [--max 1800] [--approve <초>] [--done-on <초>:<명령 글> ...]"
-  + " [--fov <도>] [--pitch <도>] [--h <m>]";
+  + " [--fov <도>] [--pitch <도>] [--h <m>] [--rate 1]";
 
 /** 영상 모드 카메라(폰 주소 fov·pitch·h): 준 값만 있다. 없는 값은 폰 페이지 기본값(세로 시야각 60°, pitch −25°, 높이 1.4m). */
 export interface Camera { fov?: number; pitch?: number; h?: number }
@@ -690,6 +732,8 @@ export interface Args {
   recordPhone: boolean; chrome: ChromeGpu;
   /** --record-view: 녹화 대시보드 보기(top 대시보드 전체, minimap 비전 미니맵만). --record-fps: 녹화 초당 장 수. */
   recordView: DashView; recordFps: number;
+  /** --rate: 영상 빠르기(폰 주소 rate=, 기본 1). */
+  rate: number;
 }
 
 /** 대시보드 보기: top 대시보드 전체, minimap 비전 미니맵만(주소 ?view=minimap). */
@@ -745,18 +789,21 @@ export function parseArgs(argv: string[]): Args | string {
   if (!Number.isInteger(recordFps) || recordFps < 1 || recordFps > 30) return `--record-fps는 1~30 정수(초당 장 수)예요. ${USAGE}`;
   const chrome = (arg("chrome") ?? "headless-gpu") as ChromeGpu;
   if (!CHROME_GPU.includes(chrome)) return `--chrome은 ${CHROME_GPU.join("·")} 가운데 하나예요. ${USAGE}`;
+  const rawRate = argv.includes("--rate") ? arg("rate") : "1";
+  const rate = Number(rawRate);
+  if (!rawRate?.trim() || rawRate.startsWith("--") || !Number.isFinite(rate) || rate < 0.25 || rate > 2) return `--rate는 0.25~2 숫자(영상 빠르기)예요. ${USAGE}`;
   return {
-    recordPhone: argv.includes("--record-phone"), chrome, recordView, recordFps,
+    recordPhone: argv.includes("--record-phone"), chrome, recordView, recordFps, rate,
     clip, fake, steps, doneAfterMs, expectMs, expectSet: arg("expect-after") !== undefined, phone: arg("phone") ?? "http://127.0.0.1:8210", api: arg("api") ?? "http://127.0.0.1:8200", out: arg("out"), record,
     says: says.map((x) => ({ atMs: x!.ms, text: x!.text })), startAt: startAt as DemoScene | null, home: arg("home") ?? HOME, tailMs, maxMs, approveAfterMs,
     doneOn: doneOn.map((x) => ({ afterMs: x!.ms, text: x!.text })), camera,
   };
 }
 
-/** 폰 영상 모드 주소: clip 하나, step을 하나씩, 준 카메라 값(fov·pitch·h)만. */
-export function phoneUrl(phone: string, clip: string, steps: string[], camera: Camera = {}): string {
+/** 폰 영상 모드 주소: clip 하나, step을 하나씩, 준 카메라 값(fov·pitch·h)만, 빠르기가 1이 아니면 rate. */
+export function phoneUrl(phone: string, clip: string, steps: string[], camera: Camera = {}, rate = 1): string {
   const cam = (Object.keys(CAMERA_RANGE) as (keyof Camera)[]).flatMap((k) => (camera[k] === undefined ? [] : [`&${k}=${camera[k]}`])).join("");
-  return `${phone.replace(/\/+$/, "")}/phone/?clip=${encodeURIComponent(clip)}${steps.map((s) => `&step=${encodeURIComponent(s)}`).join("")}${cam}`;
+  return `${phone.replace(/\/+$/, "")}/phone/?clip=${encodeURIComponent(clip)}${steps.map((s) => `&step=${encodeURIComponent(s)}`).join("")}${cam}${rate === 1 ? "" : `&rate=${rate}`}`;
 }
 
 /** 옮긴 문서가 다 불러와질 때까지(주소가 url의 origin이고 readyState complete) 기다린다. Page.navigate 답은 새 문서가 들어서기(commit) 전에 오므로,
@@ -884,7 +931,7 @@ async function main(): Promise<number> {
     try {
       fake = fakeMode ? await startFake(clip, steps) : undefined;
       const api = (fake?.api ?? args.api).replace(/\/+$/, "");
-      const url = phoneUrl(fake?.phone ?? args.phone, clip, steps, args.camera);
+      const url = phoneUrl(fake?.phone ?? args.phone, clip, steps, args.camera, args.rate);
       const planNow = () => getJson<NonNullable<PlanAnswer>>(`${api}/api/plan`);
 
       // 앞 판 계획·World State가 남은 서버면 시작하지 않는다(새로 붙은 폰은 남은 명령을 바로 받는다)
@@ -995,6 +1042,9 @@ async function main(): Promise<number> {
       let duration: number | null = null;
       // 첫 영상 길이(단계 영상으로 바꾸기 전에 본 길이): 미니맵 이은 영상이 첫 영상 끝 붙잡기를 뺀다
       let firstDurationMs: number | null = null;
+      // 완료 문장(폰 명령 줄): 계획이 끝난 것을 본 때와 완료 문장을 처음 본 때(이 PC 시계)
+      let planDoneAt: number | null = null;
+      let noticeAt: number | null = null;
       const clipStart = () => clips.at(-1)?.video_ms ?? 0;
       for (;;) {
         seen = await read();
@@ -1012,11 +1062,12 @@ async function main(): Promise<number> {
         for (const c of commands.slice(known)) {
           console.log(`[video-check] ${clock(c.video_ms)} 명령 ${c.text}`);
           due.push(...plannedClicks(c, rule, Date.now()));
+          if (isDoneStep(c.step)) noticeAt ??= Date.now();
         }
         known = commands.length;
         const now = Date.now();
         // 말: 영상 시각(폰 페이지 짝으로 옮긴 지금)이 그 초가 되면 폰 소켓으로 보낸다. 보낸 서버 시각을 두었다가 끝에서 같은 짝으로 옮긴다
-        const videoNow = videoClock(seen.record?.t0 ?? firstT0, seen.record?.sync ?? [])(now);
+        const videoNow = videoClock(seen.record?.t0 ?? firstT0, seen.record?.sync ?? [], args.rate)(now);
         while (saysLeft.length && videoNow >= saysLeft[0]!.atMs) {
           const x = saysLeft.shift()!;
           const ok = await sendSay(cdp, x.text).catch(() => false);
@@ -1033,7 +1084,7 @@ async function main(): Promise<number> {
           clicks += 1;
           // 누른 때(이 PC 시계 = 같은 PC 서버 시계)를 폰 페이지의 짝으로 영상 시각에 옮긴다. 끝에서 마지막 짝으로 다시 옮긴다
           const pressAt = Date.now();
-          const ms = videoClock(seen.record?.t0 ?? firstT0, seen.record?.sync ?? [])(pressAt);
+          const ms = videoClock(seen.record?.t0 ?? firstT0, seen.record?.sync ?? [], args.rate)(pressAt);
           pressed.push({ ms, at: pressAt, label, text: d.text });
           console.log(`[video-check] ${clock(ms)} 누름 · ${label} · ${d.text}`);
         }
@@ -1050,12 +1101,16 @@ async function main(): Promise<number> {
         stillSince = still ? stillSince ?? Date.now() : null;
         const clipDurationMs = clips.at(-1)?.duration_ms ?? (seen.duration !== null ? seen.duration * 1000 : null);
         const { planStatus, offOpen } = judgeInput(await planNow());
+        if (planStatus === "done") planDoneAt ??= Date.now();
+        // 영상 시각은 원본 시각이라 빠르기를 낮추면 그만큼 오래 돈다
+        const clipRealMs = clipDurationMs === null ? null : clipDurationMs / args.rate;
         const state = judgeState({
-          stillForMs: stillSince === null ? null : Date.now() - stillSince, untilEnd: fakeMode, clipPlayedMs: Date.now() - clipAt, clipDurationMs,
+          stillForMs: stillSince === null ? null : Date.now() - stillSince, untilEnd: fakeMode, clipPlayedMs: Date.now() - clipAt, clipDurationMs: clipRealMs,
           due: due.length, planStatus, tailMs: args.tailMs, totalMs: Date.now() - runStart, maxMs: args.maxMs, offOpen,
+          doneNotice: { shownForMs: noticeAt === null ? null : Date.now() - noticeAt, waitedMs: planDoneAt === null ? 0 : Date.now() - planDoneAt },
         });
         if (offOpen && state !== "watch" && state !== "done") unfinished.push("끄기 안내가 풀리지 않음");
-        if (state === "clip_over") { unfinished.push(`${Math.round((clipDurationMs! + 60_000) / 1000)}초 안에 영상이 끝나지 않음`); break; }
+        if (state === "clip_over") { unfinished.push(`${Math.round((clipRealMs! + 60_000) / 1000)}초 안에 영상이 끝나지 않음`); break; }
         if (state === "max_over") { unfinished.push(`판 전체 ${Math.round(args.maxMs / 1000)}초를 넘음`); break; }
         if (state !== "watch") break;
         if (stop) { unfinished.push("중단"); break; }
@@ -1094,12 +1149,13 @@ async function main(): Promise<number> {
 
       // 서버 시각 → 영상 시각: 폰 페이지가 남긴 짝으로(영상이 멈칫한 만큼을 뺀다)
       const sync = seen.record?.sync ?? [];
-      const toVideo = videoClock(t0, sync);
-      const rows = runTimeline({ t0, sync, history, commands, endMs, clips, twin: twin.rows, says: said, clicks: pressed });
+      const toVideo = videoClock(t0, sync, args.rate);
+      const rows = runTimeline({ t0, sync, history, commands, endMs, clips, twin: twin.rows, says: said, clicks: pressed, rate: args.rate });
       const personUntil = fake?.personUntil() ?? null;
       const expect = fakeMode && !args.expectSet && personUntil !== null ? toVideo(personUntil) : expectMs;
       const v = verdict(rows, commands, history, expect);
       const stepLine = steps.length ? stepVerdict(history, commands, clicks, twin.last) : null;
+      const reaction = reactionLine(expect, commands, t0, sync, args.rate);
       // 단계 자리 판정: --step 자리와 실제 명령 대상, 끝에 치운 컵이 싱크대 안인지. 틀리면 시각표 위에 적고 실패다
       const judged = mainPlan(commands, history);
       const cupClear = !!judged && history.some((h) => h.kind === "plan" && h.subject === judged && h.text.startsWith("컵 치우기"));
@@ -1136,7 +1192,8 @@ async function main(): Promise<number> {
         console.log(`[video-check] 녹화 ${(recorded.endMs / 1000).toFixed(1)}초 · ${args.recordPhone ? `폰 ${n("phone")}장(${fps("phone")}fps) · ` : ""}대시보드 ${n("dash")}장(${fps("dash")}fps)${recorded.lost ? ` · 못 쓴 프레임 ${recorded.lost}장` : ""}`);
         // 미니맵 보기: 장면 폴더를 두고 판 기록(run.json)을 남긴다. scripts/minimap-cut.ts가 붙잡기를 뺀 이은 영상을 만든다
         if (args.recordView === "minimap") {
-          const run: CutRun = { startMs: recStartMs, endMs: recorded.endMs, size: shape.size, frames: recorded.frames.dash ?? [], t0, sync: seen.record?.sync ?? [], firstDurationMs, clips };
+          const doneMs = commands.find((c) => isDoneStep(c.step))?.video_ms ?? null;
+          const run: CutRun = { startMs: recStartMs, endMs: recorded.endMs, size: shape.size, frames: recorded.frames.dash ?? [], t0, sync: seen.record?.sync ?? [], firstDurationMs, clips, rate: args.rate, doneMs };
           writeFileSync(join(framesDir, CUT_RUN_FILE), JSON.stringify(run));
         }
         const made = await encodeDemo(framesDir, recorded, demo, { ...(args.recordPhone ? { phoneSize: SIZE } : {}), dashSize: shape.size, fps: shape.fps, height: shape.height, keepFrames: args.recordView === "minimap" });
@@ -1151,10 +1208,11 @@ async function main(): Promise<number> {
       for (const n of notes) console.log(n);
       if (places) console.log(places.text);
       console.log(v.text);
+      if (reaction) console.log(reaction);
       if (stepLine) console.log(stepLine);
       console.log(cost);
       mkdirSync(dirname(out), { recursive: true });
-      writeFileSync(out, markdown({ clip, mode: fakeMode ? "가짜 서버" : `실제 서버 ${api}`, ranAt: new Date().toLocaleString("sv-SE"), memory: memoryLine, rows, notes, verdict: v.text, extra: stepLine ? [stepLine] : [], cost, image, ...(places ? { warnings: [`${places.ok ? "판정 통과" : "판정 실패"} · ${places.text}`] } : {}) }));
+      writeFileSync(out, markdown({ clip, mode: fakeMode ? "가짜 서버" : `실제 서버 ${api}`, ranAt: new Date().toLocaleString("sv-SE"), memory: memoryLine, rows, notes, verdict: v.text, extra: [reaction, stepLine].filter((x): x is string => !!x), cost, image, ...(places ? { warnings: [`${places.ok ? "판정 통과" : "판정 실패"} · ${places.text}`] } : {}) }));
       console.log(`[video-check] ${out}`);
 
       if (pageErrors.length) console.log(`[video-check] 페이지 오류\n${pageErrors.slice(0, 20).join("\n")}`);

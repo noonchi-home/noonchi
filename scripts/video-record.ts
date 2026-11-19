@@ -30,7 +30,8 @@ export interface Recording { stop(): Promise<Recorded> }
 /** 미니맵 녹화 장면 폴더 안 판 기록 파일 이름(scripts/minimap-cut.ts가 읽는다). */
 export const CUT_RUN_FILE = "run.json";
 /** 판 기록(video-check가 미니맵 녹화 끝에 쓴다). startMs는 녹화 시작 이 PC 시계(서버와 같은 PC라 서버 시계)이고 frames ms는 거기서 센다.
- *  t0·sync는 폰 페이지 재생 시작 서버 시각과 [서버 시각, 영상 시각] 짝, clips는 바꾼 단계 영상(영상 시각·길이), firstDurationMs는 첫 영상 길이(모르면 null). */
+ *  t0·sync는 폰 페이지 재생 시작 서버 시각과 [서버 시각, 영상 시각] 짝, clips는 바꾼 단계 영상(영상 시각·길이), firstDurationMs는 첫 영상 길이(모르면 null).
+ *  rate는 영상 빠르기(없으면 1), doneMs는 계획을 마친 완료 문장이 폰 명령 줄에 온 영상 시각(없으면 null). */
 export interface CutRun {
   startMs: number;
   endMs: number;
@@ -40,6 +41,8 @@ export interface CutRun {
   sync: [number, number][];
   firstDurationMs: number | null;
   clips: { video_ms: number; clip: string; duration_ms?: number }[];
+  rate?: number;
+  doneMs?: number | null;
 }
 
 /** 녹화 폴더 안의 시연 영상 파일: 시각표 파일 이름 줄기(.timeline.md·.md 뺌) + .demo.mp4. */

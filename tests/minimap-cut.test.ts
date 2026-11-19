@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import jpeg from "jpeg-js";
 import { describe, expect, it } from "vitest";
-import { cutFrames, cutTime, makeCut, playSegments, type CutRun } from "../scripts/minimap-cut.js";
+import { cutFrames, cutTime, doneTail, makeCut, playSegments, type CutRun } from "../scripts/minimap-cut.js";
 
 // 녹화 시작 500, 재생 시작(t0) 1000. 첫 영상 8초 → 붙잡기 4초 → 12초에 단계 영상(5초) → 끝에서 붙잡기. 서버 시각과 영상 시각은 1:1(짝 둘)
 const RUN: CutRun = {
@@ -67,6 +67,42 @@ describe("미니맵 이은 영상(minimap-cut)", () => {
     expect(cutFrames(cut, 0, 100).endMs).toBe(10_100);
     // 녹화가 조각 끝을 지나면 조각 길이 합을 넘지 않는다
     expect(cutFrames(RUN, 0, 1000).endMs).toBe(13_000);
+  });
+
+  // 2026-11-20 사용자 「컵치우기를 완료했다는 완료메시지도 없다」: 마지막 조각이 끝난 뒤 완료 문장이 보이고 2초까지 마지막 장면을 남긴다
+  it("완료 문장(doneMs)이 있으면 마지막 조각 끝에서 완료 문장 + 2초까지 마지막 장면 붙잡기를 남긴다. 없으면 지금처럼 조각 끝까지", () => {
+    const segs = playSegments(8000, RUN.clips);
+    // 단계 영상은 17초에 끝나고 완료 문장은 영상 시각 17.5초에 왔다: 17~19.5초를 이은 시각 13~15.5초로 남긴다
+    expect(doneTail(segs, 17_500, 1)).toEqual({ from: 17_000, to: 19_500, at: 13_000 });
+    // 조각이 돌던 중에 완료 문장이 와 2초 뒤에도 조각 안이면 더 남길 것이 없다
+    expect(doneTail(segs, 14_000, 1)).toBeNull();
+    expect(doneTail(segs, null, 1)).toBeNull();
+    const { frames, endMs, heldMs } = cutFrames({ ...RUN, doneMs: 17_500 });
+    expect(heldMs).toBe(2500);
+    expect(endMs).toBe(15_450);
+    // 붙잡은 장면(영상 시각 17~19.5초 = 녹화 ms 17 500~19 900)이 이은 시각 13~15.5초에 있다
+    expect(frames.find((f) => f.ms === 13_000)).toEqual({ file: "dash/000176.jpg", ms: 13_000 });
+    expect(frames.at(-1)!.ms).toBe(15_400);
+    expect(cutFrames(RUN).heldMs).toBe(0);
+  });
+
+  // 2026-11-20 사용자 「원본의 배속을 좀 낮춰서 해봐」: 0.75로 튼 판은 이은 영상도 그만큼 느리게(이은 시각 = 영상 시각 ÷ 빠르기)
+  it("빠르기 0.75로 튼 판(rate)은 이은 시각·길이·완료 뒤 2초가 1 ÷ 0.75배로 늘어난다. 빠르기가 없으면 1이다", () => {
+    // 서버 시각 4ms에 영상 시각 3ms씩: 녹화 500 + i×100, 재생 시작 1000
+    const slow: CutRun = { ...RUN, rate: 0.75, sync: [[1000, 0], [25_000, 18_000]], frames: Array.from({ length: 260 }, (_, i) => ({ file: `dash/${String(i + 1).padStart(6, "0")}.jpg`, ms: i * 100 })) };
+    const { frames, endMs, heldMs } = cutFrames(slow, 0, 50);
+    expect(frames[0]).toEqual({ file: "dash/000006.jpg", ms: 0 });
+    // 첫 영상 끝 앞 마지막 장면: 녹화 ms 11 100 → 서버 11 600 → 영상 7 950 → 이은 시각 10 600
+    expect(frames.filter((f) => f.ms < 8000 / 0.75).at(-1)).toEqual({ file: "dash/000112.jpg", ms: 10_600 });
+    expect(frames.every((f) => f.ms < 13_000 / 0.75)).toBe(true);
+    expect(heldMs).toBe(0);
+    expect(endMs).toBe(frames.at(-1)!.ms + 50);
+    // 완료 문장 영상 시각 17.5초: 붙잡기 끝은 17.5 + 2 × 0.75 = 19초, 남긴 길이 2초 ÷ 0.75
+    expect(doneTail(playSegments(8000, slow.clips), 17_500, 0.75)).toEqual({ from: 17_000, to: 19_000, at: 13_000 });
+    const tail = cutFrames({ ...slow, doneMs: 17_500 });
+    expect(tail.heldMs).toBe(Math.round(2000 / 0.75));
+    expect(tail.endMs).toBeLessThanOrEqual(Math.round(15_000 / 0.75));
+    expect(tail.endMs).toBeGreaterThan(Math.round(14_800 / 0.75));
   });
 
   const ffmpegHere = spawnSync("ffmpeg", ["-version"]).status === 0 && spawnSync("ffprobe", ["-version"]).status === 0;

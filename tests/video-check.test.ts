@@ -10,10 +10,11 @@ import { describe, expect, it } from "vitest";
 import type { HistoryRow } from "../src/contract/history.js";
 import type { WorldEye, WorldObject, WorldView } from "../src/contract/world.js";
 import { dockId, isDockStep } from "../src/act/dock-step.js";
+import { doneId, isDoneStep } from "../src/act/done-step.js";
 import { CUP_FSM_MEMORY } from "../src/brain/decision.js";
 import { LEARNED_FSM_MEMORY } from "../scripts/learned-memory.js";
 import { HISTORY_KINDS as DB_KINDS } from "../src/brain/history/db.js";
-import { FETCH_KINDS, SEND_SAY, hasLearnedClear, memoryGate, clickChoice, clock, costLine, judgeInput, judgeState, markdown, parseArgs, phoneUrl, plannedClicks, sendStartPose, mainPlan, planState, stepPlaces, stepVerdict, timeline, verdict, twinRows, usedServer, roomLabels, ownAssetFailures, videoClock, runTimeline, clipEnd, syncWarning, mustStop, openDashboard, recordSetup, waitLoaded, waitTwinReady, frameGapLine, type ClickRule, type Row, type VideoCommand } from "../scripts/video-check.js";
+import { FETCH_KINDS, SEND_SAY, hasLearnedClear, memoryGate, clickChoice, clock, costLine, judgeInput, judgeState, markdown, parseArgs, phoneUrl, plannedClicks, sendStartPose, mainPlan, planState, stepPlaces, stepVerdict, timeline, verdict, twinRows, usedServer, roomLabels, ownAssetFailures, videoClock, serverClock, reactionLine, DONE_TAIL_MS, runTimeline, clipEnd, syncWarning, mustStop, openDashboard, recordSetup, waitLoaded, waitTwinReady, frameGapLine, type ClickRule, type Row, type VideoCommand } from "../scripts/video-check.js";
 import { createServer, type Server } from "node:http";
 import { listenRetry } from "../src/shared/net.js";
 import type { SceneJson } from "../src/contract/layout.js";
@@ -90,6 +91,18 @@ describe("video-check", () => {
     if (typeof plain === "string") throw new Error(plain);
     expect(plain.camera).toEqual({});
     expect(phoneUrl("http://127.0.0.1:8210", "cup-demo.mp4", plain.steps, plain.camera)).toBe("http://127.0.0.1:8210/phone/?clip=cup-demo.mp4");
+  });
+  // 2026-11-20 사용자 「원본의 배속을 좀 낮춰서 해봐」: 영상 빠르기를 폰 주소 rate=로 넘긴다
+  it("--rate(0.25~2, 기본 1)는 폰 주소에 rate=로 붙는다. 1이면 붙이지 않는다(지금과 같다)", () => {
+    const a = parseArgs(["--clip", "wide.mp4", "--rate", "0.75"]);
+    if (typeof a === "string") throw new Error(a);
+    expect(a.rate).toBe(0.75);
+    expect(phoneUrl("http://127.0.0.1:8210", "wide.mp4", a.steps, a.camera, a.rate)).toBe("http://127.0.0.1:8210/phone/?clip=wide.mp4&rate=0.75");
+    const plain = parseArgs(["--clip", "wide.mp4"]);
+    if (typeof plain === "string") throw new Error(plain);
+    expect(plain.rate).toBe(1);
+    expect(phoneUrl("http://127.0.0.1:8210", "wide.mp4", plain.steps, plain.camera, plain.rate)).toBe("http://127.0.0.1:8210/phone/?clip=wide.mp4");
+    for (const bad of [["--rate", "0.1"], ["--rate", "3"], ["--rate", "느리게"], ["--rate"]]) expect(parseArgs(["--clip", "a.mp4", ...bad]), bad.join(" ")).toMatch(/--rate는 0\.25~2/);
   });
   it("폰 페이지 범위 밖이거나 숫자가 아닌 --fov(20~120)·--pitch(-89~89)·--h(0.2~3)면 그 범위를 알려 준다", () => {
     for (const bad of [["--fov", "10"], ["--fov", "130"], ["--fov", "넓게"], ["--pitch", "-90"], ["--pitch", "95"], ["--h", "0.1"], ["--h", "3.5"], ["--h"], ["--fov", "--fake"]]) {
@@ -225,6 +238,34 @@ describe("video-check", () => {
       expect(at(12_000)).toBe(2_000);
       expect(at(14_050)).toBeCloseTo(3_050, 0);
       expect(at(20_100)).toBe(8_100);
+    });
+    it("빠르기(rate)를 주면 짝이 없을 때와 첫 짝 앞·마지막 짝 뒤를 그 빠르기로 센다. 1이면 지금과 같다", () => {
+      expect(videoClock(1000, [], 0.75)(5000)).toBe(3000);
+      const at = videoClock(10_000, [[10_000, 0], [14_000, 3_000]], 0.75);
+      expect(at(9_000)).toBe(-750);
+      expect(at(12_000)).toBe(1_500);
+      expect(at(18_000)).toBe(6_000);
+      expect(videoClock(10_000, [[10_000, 0], [14_000, 4_000]], 1)(18_000)).toBe(8_000);
+    });
+    it("영상 시각 → 서버 시각(serverClock)은 videoClock을 거꾸로 센다: 멈춘 구간이면 그 영상 시각에 처음 닿은 서버 시각", () => {
+      const sync: [number, number][] = [[10_000, 0], [13_000, 3_000], [15_000, 3_000], [19_000, 6_000]];
+      const back = serverClock(10_000, sync, 0.75);
+      expect(back(-750)).toBe(9_000);
+      expect(back(1_500)).toBe(11_500);
+      expect(back(3_000)).toBe(13_000);
+      expect(back(4_500)).toBe(17_000);
+      expect(back(7_500)).toBe(21_000);
+      expect(serverClock(1000, [], 0.75)(3000)).toBe(5000);
+    });
+    it("반응 줄: 사람이 떠난 영상 시각(--expect-after)에서 첫 명령까지를 서버 시각으로 센다. 빠르기 0.75로 튼 판도 1로 튼 판과 같은 초다", () => {
+      const cmds = (ms: number): VideoCommand[] => [{ video_ms: ms, id: "plan:pam-1", step: "plan:pam-1:1", text: "식탁으로 가 주세요" }];
+      // 빠르기 1: 영상 6초에 떠남(서버 7 000), 9초에 첫 명령(서버 10 000)
+      expect(reactionLine(6000, cmds(9000), 1000, [[1000, 0], [13_000, 12_000]], 1)).toBe("반응: 00:06.0에 떠난 뒤 첫 명령까지 서버 시각 3.0초");
+      // 빠르기 0.75: 같은 서버 반응 3초는 영상 시각으로 2.25초다
+      expect(reactionLine(6000, cmds(8250), 1000, [[1000, 0], [13_000, 9_000]], 0.75)).toBe("반응: 00:06.0에 떠난 뒤 첫 명령까지 서버 시각 3.0초");
+      expect(reactionLine(6000, [], 1000, [], 1)).toBeNull();
+      // 떠나기 전에 낸 명령은 떠난 뒤 첫 명령이 아니다
+      expect(reactionLine(6000, [...cmds(2000), ...cmds(9000).map((c) => ({ ...c, step: "plan:pam-1:2" }))], 1000, [[1000, 0], [13_000, 12_000]], 1)).toBe("반응: 00:06.0에 떠난 뒤 첫 명령까지 서버 시각 3.0초");
     });
     it("시각표의 서버 기록·트윈 줄은 그 짝으로 옮겨 폰 명령(영상 시각)과 한 시계에 선다", () => {
       // 영상 시각 7 600ms만큼 멈칫한 뒤: 폰 명령 28 000(영상 시각)은 서버 시각 1 035 600 무렵에 받았고 그때 계획이 생겼다
@@ -586,6 +627,16 @@ describe("video-check", () => {
       expect(judgeState({ ...base, planStatus: "done" })).toBe("done");
       expect(judgeState({ ...base, planStatus: "done", due: 1 })).toBe("watch");
     });
+    // 2026-11-20 사용자 「컵치우기를 완료했다는 완료메시지도 없다」: 끝난 계획은 완료 문장이 폰 명령 줄에 보인 뒤 DONE_TAIL_MS(2초)까지 녹화한다
+    it("계획이 끝남(done)이면 완료 문장이 보인 뒤 2초까지 본다. 완료 문장이 8초 안에 안 오면 끝낸다. 실패·취소는 기다리지 않는다", () => {
+      expect(DONE_TAIL_MS).toBe(2000);
+      const done = { ...base, planStatus: "done" };
+      expect(judgeState({ ...done, doneNotice: { shownForMs: null, waitedMs: 1000 } })).toBe("watch");
+      expect(judgeState({ ...done, doneNotice: { shownForMs: 1999, waitedMs: 3000 } })).toBe("watch");
+      expect(judgeState({ ...done, doneNotice: { shownForMs: 2000, waitedMs: 3000 } })).toBe("done");
+      expect(judgeState({ ...done, doneNotice: { shownForMs: null, waitedMs: 8001 } })).toBe("done");
+      for (const s of ["failed", "cancelled"]) expect(judgeState({ ...base, planStatus: s, doneNotice: { shownForMs: null, waitedMs: 0 } }), s).toBe("done");
+    });
     it("스스로 시험(--fake)은 영상 끝까지 본다(untilEnd): 계획이 닫혀도 첫 영상이 도는 중이면 watch, 멈추면(끝·붙잡기) done", () => {
       expect(judgeState({ ...base, planStatus: "done", untilEnd: true })).toBe("watch");
       expect(judgeState({ ...base, planStatus: "done", untilEnd: true, stillForMs: 0 })).toBe("done");
@@ -677,6 +728,12 @@ describe("video-check", () => {
         .toEqual([{ at: 2100, label: "승인", id: "plan:pam-3", step: "plan:pam-3:5:hand", text: "그릇이 뜨거워져요. 전자레인지를 켤까요?" }]);
       expect(plannedClicks(cmd("plan:pam-3:approve", "라면 끓이기 알려 주기를 할까요?"), rule({ approveAfterMs: 2000 }), 0)).toHaveLength(1);
       expect(plannedClicks(cmd("plan:pam-3:2", "전자레인지 문을 열어 주세요"), rule({ approveAfterMs: 2000 }), 0)).toEqual([]);
+    });
+    it("계획을 마친 완료 문장(done:<계획 id>)에는 --done-after가 있어도 누르기를 예약하지 않는다", () => {
+      expect(doneId("plan:pam-1")).toBe("done:plan:pam-1");
+      expect(isDoneStep("done:plan:pam-1:1")).toBe(true);
+      expect(isDoneStep("plan:pam-1:1")).toBe(false);
+      expect(plannedClicks(cmd("done:plan:pam-1:1", "컵을 다 치웠어요.", "done:plan:pam-1"), rule({ doneAfterMs: 3000 }), 0)).toEqual([]);
     });
     it("단계 영상 없이 --approve나 --done-on만 주면 --done-after 기본은 0이다: :again 같은 다른 질문에는 예약이 없다", () => {
       for (const flags of [["--approve", "2"], ["--done-on", "8:그릇을 꺼내 주세요"]]) {
