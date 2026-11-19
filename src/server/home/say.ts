@@ -9,6 +9,7 @@ export function startSay(core: HomeCore): void {
   const { plans } = core;
   // 끝난 지 20초·가까이 보기 6초·외부 연락 결과 20초는 계획 updatedAt(PlanHub, Date.now)과 같은 시계로 잰다
   core.speak = () => {
+    core.machines.sample(core);
     const { tracker } = core;
     const toldAt = tracker?.toldAt() ?? null;
     const { text, safety } = sayOf({ plan: plans.current(), command: core.command, world: core.view(), nowMs: Date.now(), look: core.lookSay,

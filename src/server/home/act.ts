@@ -7,9 +7,8 @@ import { Decider, PamClient, PersonLane, habitView, lastStoredThoughts, memoryFo
 import type { BrainLog, DecisionRecord } from "../../contract/events.js";
 import type { PendingGoal } from "../../contract/goal.js";
 import type { HabitFsm } from "../../contract/habit.js";
-import { GOAL_LOG } from "../../act/labels.js";
+export { goalRecorder } from "../../record/index.js";
 import { AGAIN, APPROVE } from "../../act/prompts.js";
-import type { HistoryDb } from "../../brain/index.js";
 import type { WorldInput, WorldView } from "../../contract/world.js";
 import type { SignalHub } from "../../devices/index.js";
 import type { PlanView } from "../../contract/plan.js";
@@ -79,27 +78,6 @@ export function publishHabit(core: { app?: { broadcast(m: unknown): void } | nul
   core.app?.broadcast({ type: "habit", habit: h });
 }
 
-/** 목표 전환 한 줄: 바로 앞 상태(같은 목표)와 견줘 무엇이 바뀌었는지(세움·미리 만들기·사람 떠남·씀·버림). */
-function goalLine(prev: PendingGoal | null, g: PendingGoal): string {
-  if (g.status === "dropped") return g.error ? GOAL_LOG.dropPlan(g.error) : GOAL_LOG.dropped(GOAL_LOG.why[g.reason ?? "stale"]);
-  if (g.status === "used") return GOAL_LOG.used;
-  if (!prev) return GOAL_LOG.armed(g.action);
-  if (g.status === "fired" && prev.status !== "fired") return GOAL_LOG.fired;
-  if (g.prep !== prev.prep && g.prep !== "waiting") return g.prep === "failed" && g.error ? GOAL_LOG.failedWhy(g.error) : GOAL_LOG[g.prep];
-  return GOAL_LOG.armed(g.action);
-}
-
-/** 미리 세운 목표 전환을 기록 DB goal 줄로 남기는 것(영상 판정 시각표 「목표」 줄, 반성 입력이 아니다).
- *  data: 상태·미리 만들기·버린 종류(drop)·물건과, 까닭 글이 있으면 reason(실행 기록 「계획이 맞지 않아 버림」의 reason과 같은 칸). */
-export function goalRecorder(db: Pick<HistoryDb, "add">): (g: PendingGoal, atMs: number) => void {
-  let last: PendingGoal | null = null;
-  return (g, atMs) => {
-    const prev = last?.id === g.id ? last : null;
-    last = g;
-    db.add("goal", atMs, goalLine(prev, g), { subject: g.id, data: { status: g.status, prep: g.prep, drop: g.reason, object: g.object, ...(g.error ? { reason: g.error } : {}) } });
-  };
-}
-
 /** 클로이드 계획(src/act/hub.ts): 장면·평면도·부르는 이름과 계획 묶음(PlanHub). 계획 방송은 대시보드·기록·말풍선 카드로 간다. */
 export function startPlans(core: HomeCore): void {
   const { ctx, twin, layout } = core;
@@ -163,7 +141,7 @@ export function startAct(core: HomeCore): (event: BrainLog) => void {
   const decide = new Decider({
     pam: new PamClient({ settings: pamSettings(env), timeoutMs: Number.isFinite(pamTimeout) && pamTimeout > 0 ? pamTimeout : undefined }),
     // 행동 목록은 지금 모드를 따르고(들은 말이 있으면 말로 부탁한 코치 행동도), 판단 기록의 모드는 그 판단 뒤의 지금 모드다(src/act/mode.ts)
-    world: { view }, trigger: new Trigger(triggerConfigOf(env), now()), tasks: (heard) => pamTasks(core.mode(), heard), mode: (action) => core.mode(action),
+    world: { view }, trigger: new Trigger(triggerConfigOf(env), now()), tasks: (heard) => { core.pamHeard = heard; return pamTasks(core.mode(), heard); }, mode: (action) => core.mode(action),
     memory: () => memoryForDay(history.db, history.db.dayOf(now()), { log: ctx.log }), emit, offsetMinutes: history.db.offsetMinutes, clock: ctx.brain?.clock,
     // 행동 중 기다리기·기기 단계 동안은 PAM을 부르지 않는다(실행 추적이 조건을 본다)
     hold: () => (core.tracker?.waiting() ?? false) || (core.tracker?.coaching() ?? false),
@@ -179,7 +157,11 @@ export function startAct(core: HomeCore): (event: BrainLog) => void {
   core.decider = decide;
   // 시간 줄 사람 줄(src/brain/person.ts): 판단의 PAM 답 상태와 판단 사이 World State 하는 일(판단이 쓰는 기억으로)로 지금 사람 상태를 갖고 바뀔 때만 대시보드로 보낸다
   core.person = new PersonLane({
-    emit: (m) => core.app?.broadcast(m),
+    emit: (m) => {
+      core.out.act?.push("/brain/person", m);
+      core.out.act?.push("/brain/person_changes", m);
+      core.app?.broadcast(m);
+    },
     memory: () => {
       const h = decide.habit();
       return h && h.kind === "fsm" && "states" in h.memory ? (h.memory as FsmMemory) : null;
@@ -192,7 +174,6 @@ export function startAct(core: HomeCore): (event: BrainLog) => void {
   const devices = deviceRunner(signals, policy, twin.rooms);
   // 명령 대상 자리는 배치(면이면 윗면 가운데, 싱크볼이 있으면 싱크볼)에서
   const placeAt = placeLocator(layout?.editor, core.surfaces);
-  const recordGoal = goalRecorder(history.db);
   // 계획 입력: 계획 모드·미리 만든 계획 다시 내기가 같은 맥락을 쓴다(이미 치운 물건 placed는 그때 것)
   const planCtx = (d: DecisionRecord, task: TaskSpec, ahead?: PlanAhead): PlanContext => ({
     decision: d, task, world: view(), floor: plans.floor(), places: core.places(), names: placeNames, rooms: twin.rooms, devices: deviceViews(signals), nowIso: new Date(now()).toISOString(),
@@ -224,7 +205,7 @@ export function startAct(core: HomeCore): (event: BrainLog) => void {
     surfaces: core.surfaces,
     onGoal: (g) => {
       publishGoal(core, g);
-      recordGoal(g, now());
+      core.machines.sample(core);
     },
     nudge: () => decide.nudge(),
     // 실제 폰 명령(src/contract/phone.ts). 폰 서버가 지금 명령을 기억해 새로 붙은 폰에도 보낸다. 명령 대상 자리는 배치(면이면 윗면 가운데)에서

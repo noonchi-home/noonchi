@@ -11,6 +11,7 @@ import type { PlannedCommand } from "../../contract/phone.js";
 import type { SignalHub, ThinqLink } from "../../devices/index.js";
 import type { FloorPlan, HomePlan, PlaceNames, TwinData, loadLayout, loadScene } from "../../layout/index.js";
 import { realClock, type BusNode, type Clock, type Outbox } from "../../bus/index.js";
+import { HomeMachines } from "./machines.js";
 import type { ObservationPipeline, PerceptionNode } from "../../observe/index.js";
 import type { WorldView } from "../../contract/world.js";
 import type { EyeFeed, FrameHeader, PhoneServer, StartStore, twinLandmarks } from "../../phone/index.js";
@@ -84,6 +85,9 @@ export class HomeCore {
   worldNode: WorldNode | null = null;
   mirror: WorldMirror | null = null;
   phoneNode: BusNode | null = null;
+  machineRecorder: BusNode | null = null;
+  readonly machines = new HomeMachines();
+  pamHeard = false;
   devicesNode: BusNode | null = null;
   /** 노드가 내는 입력의 차례대로 보내기 줄(실패하면 같은 봉투로 다시, 닫기 전 비운다): 실행 추적(거울 노드)·폰·가전. */
   out: { act?: Outbox; phone?: Outbox; devices?: Outbox } = {};

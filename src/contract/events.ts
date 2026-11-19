@@ -341,6 +341,7 @@ export type ServerMessage =
   | { type: "habit"; habit: HabitFsm }
   /** 시간 줄 사람 줄: 사람 상태가 바뀔 때, 그리고 접속 때 마지막 것. */
   | PersonMessage
+  | import("./machines.js").RobotMessage
   /** 지금 실제 폰에 낸 명령 한 줄(명령 text, src/contract/phone.ts). 명령을 지우면(command_clear) null, 승인 흐름 질문(승인·거절, 계속·그만)은 싣지 않고 null. 글이 바뀔 때마다, 그리고 접속 때 명령이 있으면 한 번.
    *  대시보드 비전 미니맵만 보기(?view=minimap)가 아래쪽 자막으로 보인다. */
   | { type: "phone_command"; text: string | null };

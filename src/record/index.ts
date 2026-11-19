@@ -3,3 +3,4 @@ export { Bag } from "./bag.js";
 export { historyRoutes } from "./history.js";
 export { startRecorder } from "./node.js";
 export { REPLAY_INPUTS, replay, settle } from "./replay.js";
+export { goalRecorder } from "./machines.js";

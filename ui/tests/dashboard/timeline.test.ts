@@ -11,6 +11,17 @@ import { HABIT, planAt } from "./fixtures";
 const feed = (ms: ServerMessage[]) => ms.reduce((s, m) => reduceDash(s, m, 0), EMPTY_DASH);
 const habit: ServerMessage = { type: "habit", habit: HABIT };
 
+it("서버가 보낸 로봇 단계와 복귀 시각을 시간 줄에 이어 놓는다", () => {
+  const s = feed([
+    { type: "person", state: "away", name: "자리에 없음", source: "world", decision_id: null, since_ms: 100 },
+    { type: "robot", state: "run", since_ms: 150, step: { plan_id: "p", number: 1, label: "컵 들기" } },
+    { type: "robot", state: "return", since_ms: 300, step: null },
+  ]);
+  expect(timelineOf(s)?.spans.filter((x) => x.row === "robot").map(({ from, to, text }) => [from, to, text]))
+    .toEqual([[150, 300, "컵 들기"], [300, null, "충전 자리로 가는 중"]]);
+  expect(timelineLast(s)).toBe(300);
+});
+
 /** 판단 한 줄: at 시각, state 판단 때 FSM 상태(null 모름), action 고른 행동(null 대기). */
 function decision(seq: number, at: number, state: string | null, action: string | null = null, status: "valid" | "failed" = "valid"): ServerMessage {
   return {

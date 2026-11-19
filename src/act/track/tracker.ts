@@ -61,6 +61,7 @@
 // find.ts 찾기(대상이 안 보여 검사가 막은 판단·계획: 마지막으로 본 자리로 가기 → 비추기 → 다시 가까이 보기, 사용자에게 묻지 않음), phone-line.ts 사람 단계 명령 줄 규칙.
 // 다른 도메인은 src/act/index.ts로 가져온다.
 import type { BrainLog, ExecState, DecisionRecord } from "../../contract/events.js";
+import { saidIn } from "../../world/labels.js";
 import type { HeardAt, PlannedCommandMessage } from "../../contract/phone.js";
 import type { OffTrack, PlanView, XZ } from "../../contract/plan.js";
 import type { WorldChange, WorldView } from "../../contract/world.js";
@@ -262,6 +263,31 @@ export class ExecutionTracker {
   current(): { planId: string; state: ExecState } | null {
     const r = this.core.run;
     return r && { planId: r.plan.view.id, state: r.state };
+  }
+
+  /** 상태 토픽이 읽을 실행·복귀·찾기의 현재 차례. 명령이나 쓰기 가능한 실행 객체를 내주지 않는다. */
+  machineFacts() {
+    const c = this.core;
+    const r = c.open();
+    const step = r?.state === "running" ? c.stepOf(r) : null;
+    const find = r?.find ?? c.finding?.find;
+    const hold = r?.hold ?? c.idlePeek?.hold;
+    const inspecting = !!find || !!hold;
+    const walking = find?.part === "go" || hold?.peek?.part === "go";
+    const decision = r?.decision ?? c.planning?.decision ?? c.finding?.decision;
+    return {
+      step: r && step ? { plan_id: r.plan.view.id, number: r.at + 1, label: step.label } : null,
+      dock: c.docking?.phase ?? null,
+      inspection: inspecting ? (walking ? "go" as const : "look" as const) : null,
+      blocked: find?.blockedAt != null || hold?.pausedAt != null || r?.verify?.at != null || r?.asking?.why === "again"
+        || (r?.state === "planned" && !r.asking && (r.phoneWait || r.deferred || r.busyAt !== null || r.usedAt !== null)),
+      asking: !!r?.asking,
+      off: c.safety.offShown(),
+      requested: !!decision && (decision.source === "speech" || saidIn(decision.textSent).length > 0),
+      active: !!r || !!c.planning,
+      goalId: c.run?.goal ?? null,
+      planId: c.run?.plan.view.id ?? null,
+    };
   }
 
   /** 화살표 없는 PAM 답이 미리 세운 목표의 트리거면 그 목표 행동(goal.ts triggerOf), 아니면 null. 판단(Decider goalTrigger)이 기록을 내기 전에 묻는다. */

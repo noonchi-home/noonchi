@@ -7,9 +7,10 @@ import type { WorldChange } from "../contract/world.js";
 import { deviceRecorder, recordBrainLog, recordFeedback, type HistoryDb } from "../brain/index.js";
 import { TOPICS, msgId, type BusNode, type Envelope, type TopicName } from "../bus/index.js";
 import { HEARD_MARK } from "../world/labels.js";
+import { machineWrites } from "./machines.js";
 import type { Bag } from "./bag.js";
 
-type Write = (b: Record<string, unknown>) => void;
+type Write = (b: Record<string, unknown>, stamp: number) => void;
 /** 프레임마다 생기는 분석 없음은 관찰 기록(observe)으로 남으므로 world_change로 다시 쓰지 않는다(관찰 흐름과 같다). */
 const PER_FRAME = new Set(["vlm_missing", "yolo_missing"]);
 /** 들은 말 글: KEEP_HEARD_TEXT가 아니면 내용 없이 표시만 남긴다(기록 DB·녹화가 같은 정책). */
@@ -26,11 +27,13 @@ function forBag(e: Envelope<TopicName>, keep: boolean): Envelope<TopicName> {
   return e;
 }
 
-export function historyRoutes(node: BusNode, db: HistoryDb, o: { bag?: Bag; now: () => number; keepHeard?: boolean }): void {
+export function historyRoutes(node: BusNode, db: HistoryDb, o: { bag?: Bag; now: () => number; keepHeard?: boolean; machinesOnly?: boolean }): void {
   const keep = o.keepHeard ?? false;
   const device = deviceRecorder(db, o.now);
   const logs = (list: unknown) => { for (const l of (list ?? []) as BrainLog[]) recordBrainLog(db, l); };
-  const history: Partial<Record<TopicName, Write>> = {
+  const machines = machineWrites(db);
+  const history: Partial<Record<TopicName, Write>> = o.machinesOnly ? machines : {
+    ...machines,
     "/perception/analysis": (b) => logs(b.logs),
     "/world/changes": (b) => { for (const c of b.changes as WorldChange[]) if (!PER_FRAME.has(c.kind)) recordBrainLog(db, changeLog(c, o.now(), keep)); },
     "/brain/decision": (b) => recordBrainLog(db, b as unknown as BrainLog),
@@ -47,7 +50,7 @@ export function historyRoutes(node: BusNode, db: HistoryDb, o: { bag?: Bag; now:
   for (const topic of topics) {
     const write = history[topic];
     node.on(topic, (b, { e }) => {
-      if (write) db.once({ topic, group: "recorder", key: e.key, msg: msgId(e.header), boot: e.header.boot }, () => write(b as Record<string, unknown>));
+      if (write) db.once({ topic, group: "recorder", key: e.key, msg: msgId(e.header), boot: e.header.boot }, () => write(b as Record<string, unknown>, e.header.stamp));
       if (o.bag && recorded(topic)) o.bag.write(forBag(e, keep), o.now());
     }, TOPICS[topic].qos.kind === "sensor" ? { mode: "all" } : {});
   }

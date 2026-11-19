@@ -82,7 +82,7 @@ describe("대시보드 자료", () => {
     const seen = (run.moments[1]!.messages as ServerMessage[]).find((m) => m.type === "seen")!;
     expect(seen).toMatchObject({ type: "seen", frame: { width: 405, height: 720 }, shapes: [{ label: "cup" }] });
     expect(reduceDash(s, seen, 5)).toBe(s);
-    expect(Object.keys(s).sort()).toEqual(["decision", "eye", "goal", "habit", "mode", "people", "personFed", "plan", "plans", "reflection", "safety", "say", "says", "talk", "thoughts"]);
+    expect(Object.keys(s).sort()).toEqual(["decision", "eye", "goal", "habit", "mode", "people", "personFed", "plan", "plans", "reflection", "robots", "safety", "say", "says", "talk", "thoughts"]);
   });
   describe("반성 뒤 메시지 상자", () => {
     const NIGHT = { from: "drinking", to: "*", on: "밤에 사용자가 식탁을 떠난다.", when: null as string | null, action: "컵 치우기" };

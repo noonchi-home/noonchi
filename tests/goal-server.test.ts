@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { HistoryDb } from "../src/brain/index.js";
 import { BusNode, MemoryBus, Outbox, realClock } from "../src/bus/index.js";
 import type { PendingGoal } from "../src/contract/goal.js";
-import { Bag, startRecorder } from "../src/record/index.js";
+import { Bag, settle, startRecorder } from "../src/record/index.js";
 import { goalRecorder, publishGoal } from "../src/server/home/act.js";
 
 const EPOCH = { boot: "b1", home: "h#1" };
@@ -28,15 +28,67 @@ describe("미리 세운 목표 잇기", () => {
     const steps: PendingGoal[] = [GOAL, { ...GOAL, prep: "planning" }, { ...GOAL, prep: "ready" }, { ...GOAL, status: "fired", prep: "ready" }];
     for (const g of steps) publishGoal(core, g);
     expect(await core.out.act!.drain(2000)).toBe(true);
-    await new Promise((r) => setTimeout(r, 50));
-    await rec.idle();
+    await settle(bus, [act, rec]);
     const rows = bag.range(0, Number.MAX_SAFE_INTEGER);
     const of = (topic: string) => rows.filter(({ e }) => e.topic === topic).map(({ e }) => (e.body as { goal: PendingGoal }).goal);
     expect(of("/brain/goal_changes").map((g) => `${g.status}/${g.prep}`)).toEqual(["armed/waiting", "armed/planning", "armed/ready", "fired/ready"]);
     expect(of("/brain/goal").at(-1)).toMatchObject({ status: "fired", prep: "ready" });
     expect(sent).toEqual(steps.map((goal) => ({ type: "goal", goal })));
     expect(core.goal).toMatchObject({ status: "fired" });
-    expect(db.list({})).toEqual([]);
+    const goals = db.list({ kinds: ["goal"] });
+    expect(goals.map((r) => r.at_ms)).toEqual(rows.filter(({ e }) => e.topic === "/brain/goal_changes").map(({ e }) => e.header.stamp));
+    expect(goals.map((r) => r.text)).toEqual(["세움 · 컵 치우기", "계획 미리 만드는 중", "계획 준비됨", "사람 떠남 · 판단 부름"]);
+    await act.stop();
+    await rec.stop();
+    await bus.close();
+    db.close();
+    bag.close();
+  });
+});
+
+describe("기계 상태 통로와 기록", () => {
+  it("로봇 전이는 같은 봉투가 다시 와도 한 줄이며 늦게 붙은 구독자는 끝의 상태와 시각을 받는다", async () => {
+    const bus = new MemoryBus();
+    const bag = Bag.open(":memory:");
+    const db = HistoryDb.open(":memory:");
+    const rec = await startRecorder({ bus, epoch: EPOCH, db, bag });
+    const act = new BusNode({ name: "act", bus, epoch: EPOCH });
+    const late = new BusNode({ name: "phone", bus, epoch: EPOCH });
+    const seen: unknown[] = [];
+    late.on("/robot/state", (body) => { seen.push(body); });
+    try {
+      await act.prepare();
+      act.start();
+      rec.start();
+      const phases = [
+        { state: "observe" as const, step: null, since_ms: 1000 },
+        { state: "return" as const, step: null, since_ms: 4000 },
+      ];
+      const idle = { state: "idle" as const, since_ms: 900, id: null, action: null, left_ms: null, reason: null, result: null };
+      await act.publish("/goal/changes", idle);
+      for (const body of phases) {
+        await act.publish("/robot/state", body);
+        const event = act.envelope("/robot/changes", body);
+        await act.send(event);
+        await act.send(event);
+      }
+      await late.prepare();
+      late.start();
+      await settle(bus, [act, rec, late]);
+      expect(seen).toEqual([phases[1]]);
+      expect(db.list({ kinds: ["goal"] })).toMatchObject([{ at_ms: 900, text: "대기", data: idle }]);
+      const rows = db.list({ kinds: ["robot"] });
+      expect(rows.map((r) => r.data)).toEqual(phases);
+      expect(rows.map((r) => r.text)).toEqual(["살펴보는 중", "충전 자리로 가는 중"]);
+      expect(bag.range(0, Number.MAX_SAFE_INTEGER, { topics: ["/robot/changes"] }).map((r) => r.e.body)).toEqual(phases);
+    } finally {
+      await late.stop();
+      await rec.stop();
+      await act.stop();
+      await bus.close();
+      bag.close();
+      db.close();
+    }
   });
 });
 

@@ -8,6 +8,7 @@ import type { WorldChange } from "../../contract/world.js";
 import { floorLookup, roomNamedAt, type LayoutEditor } from "../../layout/index.js";
 import { createPipeline, startPerceptionNode } from "../../observe/index.js";
 import { WorldState, loadFallConfig, restsFromLayout, startWorldMirror, startWorldNode, surfacesFromLayout, type PlaneSurface, type RestSpot } from "../../world/index.js";
+import { historyRoutes } from "../../record/index.js";
 import { HEARD_MARK } from "../../world/labels.js";
 import type { HomeCore } from "./core.js";
 
@@ -122,10 +123,15 @@ export async function startNodes(core: HomeCore, emit: (event: BrainLog) => void
   core.phoneNode = phone;
   core.devicesNode = devices;
   core.out = { act: new Outbox(core.mirror.node, { clock, log }), phone: new Outbox(phone, { clock, log }), devices: new Outbox(devices, { clock, log }) };
+  const recorder = new BusNode({ name: "recorder", bus, epoch, clock, log });
+  core.machineRecorder = recorder;
+  ctx.history.db.forgetOtherBoots(epoch.boot);
+  historyRoutes(recorder, ctx.history.db, { now: () => clock.now(), machinesOnly: true });
+  await recorder.prepare();
   const deviceOut = core.out.devices!;
   await phone.prepare();
   await devices.prepare();
-  for (const n of [core.worldNode.node, core.perception.node, core.mirror.node, phone, devices]) n.start();
+  for (const n of [core.worldNode.node, core.perception.node, core.mirror.node, phone, devices, recorder]) n.start();
   const send = (s: Parameters<Parameters<typeof signals.subscribe>[0]>[0], initial: boolean) => {
     const spec = specOf.get(s.id);
     const note = { ...(initial ? { initial: true } : {}), ...(spec ? { label: spec.label, kind: spec.kind } : {}) };
@@ -151,14 +157,16 @@ export async function drainNodes(core: HomeCore, ms = DRAIN_MS): Promise<boolean
   const inputs = await Promise.all([core.perception?.drain(ms), core.out.act?.drain(ms), core.out.phone?.drain(ms), core.out.devices?.drain(ms)]);
   const world = (await core.worldNode?.settle(left())) ?? true;
   const mirror = (await core.mirror?.node.settled(left())) ?? true;
-  return inputs.every((x) => x !== false) && world && mirror;
+  const transitions = (await core.out.act?.drain(left())) ?? true;
+  const recorded = (await core.machineRecorder?.settled(left())) ?? true;
+  return inputs.every((x) => x !== false) && world && mirror && transitions && recorded;
 }
 
 /** 노드를 끝낸다. 먼저 닫기 전 비우기(drainNodes, 기한을 넘겨도 멈춘다: 닫기가 걸리지 않게)를 하고,
  *  그다음 새 일을 만드는 쪽(인식) → 집 상태 → 거울·폰·가전 차례로 끝낸다. 관찰 흐름을 닫고 가전 구독을 끊은 뒤 부른다. */
 export async function stopNodes(core: HomeCore): Promise<void> {
   await drainNodes(core, 3 * DRAIN_MS);
-  for (const n of [core.perception?.node, core.worldNode?.node, core.mirror?.node, core.phoneNode, core.devicesNode]) await n?.stop();
+  for (const n of [core.perception?.node, core.worldNode?.node, core.mirror?.node, core.phoneNode, core.devicesNode, core.machineRecorder]) await n?.stop();
 }
 
 /** 관찰 흐름(src/observe/pipeline.ts)을 연다: 판단·실행 기록은 emit으로, 물체 모양·World State는 대시보드로, 변화는 실행 추적·판단 호출로. 실행 추적을 만든 뒤 부른다. */

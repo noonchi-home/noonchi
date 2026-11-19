@@ -4,7 +4,8 @@
 // 실제 모양으로 바꾼 토픽은 계약(src/contract)의 타입과 같은지 아래 Assert로 tsc가 본다(한쪽만 바꾸면 tsc 실패).
 import { z } from "zod";
 import type { DeviceState } from "../contract/devices.js";
-import type { SeenEvent } from "../contract/events.js";
+import type { PersonMessage, SeenEvent } from "../contract/events.js";
+import type { GoalState, ManagerState, RobotState, SafetyState, Timed } from "../contract/machines.js";
 import type { BrainGoalMsg } from "../contract/goal.js";
 import type { PlanView } from "../contract/plan.js";
 import type { SceneInput, VlmMissing, WorldChange, WorldChangeKind, WorldChangesMsg, WorldCloserMsg, WorldInput, WorldStateMsg, WorldView, YoloMissing } from "../contract/world.js";
@@ -129,6 +130,13 @@ const pendingGoal = z.strictObject({
   error: z.string().min(1).optional(),
 });
 const brainGoal = z.strictObject({ goal: pendingGoal });
+const personState = z.strictObject({ type: z.literal("person"), state: id, name: id, source: z.enum(["decision", "world"]), decision_id: id.nullable(), since_ms: at });
+const robotState = z.strictObject({ state: z.enum(["idle", "observe", "move", "run", "return", "recover"]), since_ms: at,
+  step: z.strictObject({ plan_id: id, number: z.number().int().positive(), label: id }).nullable() });
+const goalState = z.strictObject({ state: z.enum(["idle", "armed", "planning", "ready", "started", "done", "dropped"]), since_ms: at,
+  id: id.nullable(), action: id.nullable(), left_ms: at.nullable(), reason: pendingGoal.shape.reason, result: z.enum(["done", "failed", "cancelled"]).nullable() });
+const safetyState = z.strictObject({ state: z.enum(["normal", "suspect", "emergency"]), since_ms: at, fall: z.boolean(), hot: z.array(id), notices: z.array(id) });
+const managerState = z.strictObject({ owner: z.enum(["safety", "request", "goal", "idle"]), mode: z.enum(["noonchi", "coach"]), since_ms: at, tasks: z.array(id) });
 /** 목표 전환의 열쇠: 목표 id(세대). */
 const goalKey = (b: Record<string, unknown>) => String((b.goal as { id?: unknown } | undefined)?.id ?? "_");
 
@@ -150,9 +158,24 @@ export type TopicBodiesSame = [
   Assert<Equal<z.infer<typeof worldCloser>, WorldCloserMsg>>,
   Assert<Equal<z.infer<typeof worldChanges>["changes"][number], WorldChange>>,
   Assert<Equal<z.infer<typeof brainGoal>, BrainGoalMsg>>,
+  Assert<Same<z.infer<typeof personState>, PersonMessage>>,
+  Assert<Same<z.infer<typeof robotState>, Timed<RobotState>>>,
+  Assert<Same<z.infer<typeof goalState>, Timed<GoalState>>>,
+  Assert<Same<z.infer<typeof safetyState>, Timed<SafetyState>>>,
+  Assert<Same<z.infer<typeof managerState>, Timed<ManagerState>>>,
 ];
 
 export const TOPICS = {
+  "/brain/person": { qos: { kind: "state" }, body: personState, key: one, order: "stamp", from: ["act", "brain"] },
+  "/brain/person_changes": { qos: { kind: "reliable" }, body: personState, key: one, order: null, from: ["act", "brain"] },
+  "/goal/state": { qos: { kind: "state" }, body: goalState, key: one, order: "stamp", from: ["act"] },
+  "/goal/changes": { qos: { kind: "reliable" }, body: goalState, key: one, order: null, from: ["act"] },
+  "/robot/state": { qos: { kind: "state" }, body: robotState, key: one, order: "stamp", from: ["act"] },
+  "/robot/changes": { qos: { kind: "reliable" }, body: robotState, key: one, order: null, from: ["act"] },
+  "/safety/state": { qos: { kind: "state" }, body: safetyState, key: one, order: "stamp", from: ["act"] },
+  "/safety/changes": { qos: { kind: "reliable" }, body: safetyState, key: one, order: null, from: ["act"] },
+  "/manager/state": { qos: { kind: "state" }, body: managerState, key: one, order: "stamp", from: ["act"] },
+  "/manager/changes": { qos: { kind: "reliable" }, body: managerState, key: one, order: null, from: ["act"] },
   "/perception/frame": { qos: { kind: "sensor", depth: 4 }, body: frame, key: one, order: "observed_ms", from: ["phone"], photo: "jpeg_b64" },
   "/phone/pose": { qos: { kind: "sensor", depth: 600, record: true }, body: observed, key: one, order: "observed_ms", from: ["phone"] },
   "/perception/detections": { qos: { kind: "sensor", depth: 600, record: true }, body: seen, key: one, order: "observed_ms", from: ["perception"] },

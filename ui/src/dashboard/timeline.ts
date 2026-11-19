@@ -1,5 +1,5 @@
 // 시간 줄 카드 자료(순수 함수): 대시보드 자료(data.ts) → 사람 · 로봇 두 줄의 구간(ms 시각)과 사람이 떠난 때 → 첫 명령 간격.
-// 숫자는 모두 서버 자료에서 온다: 사람 줄은 서버 사람 상태(person 메시지, 받기 전에는 유효한 판단의 습관 FSM 상태와 그 판단 시각, people), 로봇 줄은 계획 단계의 started_ms·ended_ms(실행 추적이 단다),
+// 숫자는 모두 서버 자료에서 온다: 사람 줄은 서버 사람 상태(person 메시지, 받기 전에는 유효한 판단의 습관 FSM 상태와 그 판단 시각, people), 로봇 줄은 실행 전이의 since_ms(이전 기록은 계획 단계의 started_ms·ended_ms),
 // 간격은 목표의 사람이 떠난 때(gone_ms)와 첫 단계 시작. 계획 밖 로봇은 지켜봄이다. 예상 줄(목표 구간·글)은 없다(2026-11-19 사용자 「예상을 없애자」).
 // 그리기(지금이 오른쪽 끝, 초 눈금)는 TimelineCard가 한다.
 import type { PlanView } from "../../../src/contract/plan.ts";
@@ -62,7 +62,12 @@ function gapOf(s: DashData): TimelineData["gap"] {
 /** 시간 줄 자료. 사람 상태를 모르면(첫 판단 전) null이고 카드를 두지 않는다. */
 export function timelineOf(s: DashData): TimelineData | null {
   if (!s.people.length) return null;
-  return { spans: [...personSpans(s), ...robotSpans(s.plans)], gap: gapOf(s) };
+  const robot = s.robots.length ? s.robots.map((r, i): TimeSpan => ({
+    id: `robot:${r.since_ms}:${r.state}:${r.step?.plan_id ?? ""}:${r.step?.number ?? ""}`, row: "robot",
+    from: r.since_ms, to: s.robots[i + 1]?.since_ms ?? null, text: r.step?.label ?? WORDS.timeline.robot[r.state],
+    tone: r.state === "idle" ? "plain" : i === s.robots.length - 1 ? "brand" : "muted",
+  })) : robotSpans(s.plans);
+  return { spans: [...personSpans(s), ...robot], gap: gapOf(s) };
 }
 
 /** 자료 가운데 가장 늦은 시각(가짜 단계 화면은 이 때를 지금으로 그린다). 없으면 null. */
@@ -70,6 +75,7 @@ export function timelineLast(s: DashData): number | null {
   const g = s.goal;
   const all = [
     ...s.people.map((p) => p.at_ms),
+    ...s.robots.map((r) => r.since_ms),
     ...(g ? [g.armed_ms, g.ready_ms, g.gone_ms, g.fired_ms] : []),
     ...s.plans.flatMap((p) => p.steps.flatMap((x) => [x.started_ms, x.ended_ms])),
   ].filter((v): v is number => typeof v === "number" && Number.isFinite(v));

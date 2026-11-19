@@ -31,7 +31,7 @@ describe("기록 노드", () => {
     expect(db.list({}).map((r) => [r.kind, r.text])).toEqual([["detection", "컵 cup_1 보임"]]);
   });
 
-  it("미리 세운 목표의 전환(/brain/goal_changes, RELIABLE)은 한 번에 몰려도 모두 차례대로 녹화에 남고 기록 DB에는 줄이 없다(반성 입력이 아님, Codex 26bff0f Task 3:483)", async () => {
+  it("미리 세운 목표의 전환(/brain/goal_changes, RELIABLE)은 한 번에 몰려도 녹화와 기록 DB에 같은 차례로 한 줄씩 남는다", async () => {
     const bus = new MemoryBus();
     const db = HistoryDb.open(":memory:");
     const bag = Bag.open(":memory:");
@@ -51,7 +51,14 @@ describe("기록 노드", () => {
     await rec.idle();
     const kept = bag.range(0, Number.MAX_SAFE_INTEGER).filter(({ e }) => e.topic === "/brain/goal_changes").map(({ e }) => (e.body as { goal: { status: string; prep: string } }).goal);
     expect(kept.map((g) => `${g.status}/${g.prep}`)).toEqual(steps.map((s) => `${s.status}/${s.prep}`));
-    expect(db.list({})).toEqual([]);
+    expect(db.list({}).map((r) => ({ kind: r.kind, subject: r.subject, data: r.data }))).toMatchObject(
+      steps.map((s) => ({ kind: "goal", subject: "goal-1", data: s })),
+    );
+    await rec.stop();
+    await act.stop();
+    await bus.close();
+    bag.close();
+    db.close();
   });
 
   it("World State 변화의 프레임마다 분석 없음은 world_change로 다시 쓰지 않고(관찰 기록으로 남음), 들은 말은 표시만 쓴다", async () => {

@@ -1,6 +1,7 @@
 // 대시보드 자료(순수 리듀서): /events 메시지 → 지금 계획·맞춘 눈·마지막 유효 판단·쌓인 생각 메시지·말풍선 카드 말. 물체 모양(seen)은 초당 10번 와서 여기 넣지 않는다(masks.ts 저장소). 화면 값(단계 번호·마스코트 방향·생각 말풍선)도 여기서 고른다.
 // hello는 처음으로 돌린다(접속 스냅숏이 뒤따른다). 같은 계획의 옛 번호, 맞추기 전 추정 눈, 실패한 판단은 버린다.
 import type { BrainLog, EyeEvent, ServerMessage, ThoughtMessage } from "../../../src/contract/events.ts";
+import type { RobotMessage } from "../../../src/contract/machines.ts";
 import type { PendingGoal } from "../../../src/contract/goal.ts";
 import type { HabitFsm } from "../../../src/contract/habit.ts";
 import type { PlanStep, PlanView } from "../../../src/contract/plan.ts";
@@ -35,6 +36,7 @@ export interface DashData {
   /** 사람 상태가 바뀐 때들(오래된 것부터 최근 PEOPLE_KEPT개). 시간 줄 사람 줄이 쓴다. 서버 사람 상태(person 메시지: 판단 PAM 답과 판단 사이 World State 하는 일,
    *  이름은 서버가 붙임)를 받으면 그것만 쓰고, 받기 전에는 유효한 판단의 fsm.state와 그 판단 시각으로 잇는다. 상태를 모르는 판단(null)은 더하지 않는다. */
   people: PersonAt[];
+  robots: RobotMessage[];
   /** person 메시지를 받았는가(그 뒤로는 판단 상태로 사람 줄을 잇지 않는다). */
   personFed: boolean;
   /** 최근 계획(id마다 마지막 판본, 받은 차례로 최근 PLANS_KEPT개). 시간 줄 로봇 줄이 단계 시각(started_ms·ended_ms)을 쓴다. */
@@ -47,7 +49,7 @@ const PEOPLE_KEPT = 8;
 const PLANS_KEPT = 4;
 
 export const EMPTY_DASH: DashData = {
-  plan: null, eye: null, decision: null, thoughts: [], reflection: null, say: null, mode: null, says: 0, safety: null, talk: [], goal: null, habit: null, people: [], personFed: false, plans: [],
+  plan: null, eye: null, decision: null, thoughts: [], reflection: null, say: null, mode: null, says: 0, safety: null, talk: [], goal: null, habit: null, people: [], robots: [], personFed: false, plans: [],
 };
 
 /** 유효한 판단 하나로 사람 상태 줄을 잇는다: 상태(서버 fsmNow)를 모르면(null) 그대로, 마지막과 같으면 그대로. */
@@ -124,6 +126,12 @@ export function reduceDash(s: DashData, m: ServerMessage, now: number): DashData
       const talk = changed && m.text ? addTalk(s.talk, [{ id, text: m.text }]) : s.talk;
       const safety = safe ? (changed ? { id, text: m.text! } : s.safety ?? { id, text: m.text! }) : null;
       return { ...s, say: m.text, safety, talk, says: changed && m.text ? s.says + 1 : s.says };
+    }
+    case "robot": {
+      const prev = s.robots.at(-1);
+      if (prev && (m.since_ms < prev.since_ms || (m.since_ms === prev.since_ms && m.state === prev.state &&
+        m.step?.plan_id === prev.step?.plan_id && m.step?.number === prev.step?.number && m.step?.label === prev.step?.label))) return s;
+      return { ...s, robots: [...s.robots, m].slice(-64) };
     }
     case "person": {
       const people = s.people.at(-1)?.state === m.state ? s.people : [...s.people, { state: m.state, at_ms: m.since_ms, name: m.name }].slice(-PEOPLE_KEPT);

@@ -187,6 +187,10 @@ describe("NOONCHI 처음부터 끝까지", () => {
     const planMsgs = dash.filter((m) => m.type === "plan" && m.plan?.id === planId).map((m) => m.plan);
     expect(planMsgs[0]).toMatchObject({ source: "brain", dryRun: true, judgment: "자리를 비워 컵을 치운다" });
     expect(planMsgs[0].steps.find((s: Msg) => s.kind === "act").target).toMatchObject({ objectId: "cup_1" });
+    const robotSteps = dash.filter((m) => m.type === "robot" && m.state === "run" && m.step?.plan_id === planId).map((m) => m.step.number);
+    expect([...new Set(robotSteps)]).toEqual([1, 2, 3, 4, 5]);
+    const events = (await history("robot")).rows.filter((row) => row.subject === planId);
+    expect(events.map((row) => row.data)).toEqual(dash.filter((m) => m.type === "robot" && m.step?.plan_id === planId).map(({ type, ...robot }) => robot));
     const progress = planMsgs.map((p) => p.steps.map((s: Msg) => s.status).join(","));
     expect(progress).toEqual([
       "pending,pending,pending,pending,pending", "active,pending,pending,pending,pending", "done,active,pending,pending,pending",

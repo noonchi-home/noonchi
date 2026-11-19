@@ -75,6 +75,8 @@ export class SafetyTracker extends Part {
     this.#released.delete(id);
   }
 
+  offShown(): boolean { return this.#reminder !== null; }
+
   /** 떠 있는 끄기 안내(명령과 그 안내)의 깊은 읽기 전용 복사본. 없으면 null. 실제 폰 명령 줄·답·말이 읽는다(받은 쪽이 바꿔도 추적 상태는 그대로다). */
   shownOff(): DeepReadonly<{ sent: PlannedCommand; note: OffNote }> | null {
     const off = this.#reminder;

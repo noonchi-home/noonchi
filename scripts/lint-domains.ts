@@ -8,13 +8,14 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { importsOf, isCode, nonLiteralLoads, parseCode, resolveSpec, walk, type AstNode, type ImportRef } from "./domain-ast.js";
 
 /** 서버 도메인(2.1). 폴더 src/<이름>/, 입구 src/<이름>/index.ts. */
-export const SERVER_DOMAINS = ["bus", "phone", "observe", "world", "brain", "act", "agent", "devices", "layout", "record", "server"] as const;
+export const SERVER_DOMAINS = ["bus", "phone", "observe", "world", "brain", "act", "agent", "devices", "layout", "record", "machines", "server"] as const;
 /** 화면 도메인(2.1). 폴더 ui/src/<이름>/, 입구 ui/src/<이름>/index.ts. 서버 도메인과 이름이 겹치지 않게 "ui/"를 붙인다. */
 export const SCREEN_DOMAINS = ["ui/dashboard", "ui/twin", "ui/phone", "ui/setup"] as const;
 
 /** 의존 표(2.3): 도메인마다 가져와도 되는 도메인. 기반층(계약·공용 표·shared·infer·design·화면 공용)은 늘 된다. 줄을 고칠 때는 이 표 하나만 고친다. */
 export const DEPS: Record<string, readonly string[]> = {
   bus: [],
+  machines: [],
   devices: ["bus"],
   layout: ["devices"],
   world: ["bus", "devices", "layout"],
@@ -24,7 +25,7 @@ export const DEPS: Record<string, readonly string[]> = {
   agent: ["world", "devices", "layout"],
   act: ["bus", "agent", "brain", "observe", "phone", "world", "devices", "layout"],
   record: ["bus", "brain"],
-  server: ["bus", "phone", "observe", "world", "brain", "act", "agent", "devices", "layout", "record"],
+  server: ["bus", "phone", "observe", "world", "brain", "act", "agent", "devices", "layout", "record", "machines"],
   "ui/twin": [],
   "ui/dashboard": ["ui/twin"],
   "ui/setup": ["ui/twin"],

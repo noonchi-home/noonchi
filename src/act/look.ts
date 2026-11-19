@@ -250,6 +250,8 @@ export class Looker {
     }
   }
 
+  activeTrigger(): LookTrigger | null { return this.job?.trigger ?? null; }
+
   status(): LookerStatus {
     const s: ObserverStatus = this.o.observer.status();
     return { calls: s.calls, costUsd: s.costUsd, ...this.count };

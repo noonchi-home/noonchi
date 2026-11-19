@@ -2475,6 +2475,7 @@ describe("실행 추적: 실제 폰 질문은 모두 말로 답할 수 있다(�
     const s = setup({ approvals: store() });
     await s.decide(decision);
     expect(s.last()).toMatchObject({ text: APPROVAL_TEXT.ask("컵 치우기"), step: "plan:pam-1:approve" });
+    expect(s.t.machineFacts()).toMatchObject({ asking: true, step: null });
     const at = heardAtOf(s.phone);
     expect(s.t.onHeard("승인", { kind: "command", id: "plan:pam-1", step: "plan:pam-1:1", pending: [] })).toEqual({ kind: "stale" });
     expect(s.t.onHeard("응 승인", at)).toEqual({ kind: "answer", choice: expect.objectContaining({ id: "approve" }) });
@@ -2560,9 +2561,11 @@ describe("실행 추적: 판본이 맞는 폰이 없을 때(phoneReady)", () => 
     expect(s.phone.filter((m) => m.type === "command")).toEqual([]);
     expect(s.t.current()).toEqual({ planId: P, state: "planned" });
     expect(s.exec().filter((l) => l.text === EXEC_TEXT.phoneOld)).toEqual([expect.objectContaining({ plan_id: P, state: "planned", text: "폰 화면 새로 고침 전이라 새 일을 미룸" })]);
+    expect(s.t.machineFacts().blocked).toBe(true);
     ready = true;
     s.t.tick();
     expect(s.last()).toMatchObject({ type: "command", step: `${P}:1`, text: "식탁으로 가 주세요" });
+    expect(s.t.machineFacts().blocked).toBe(false);
   });
 });
 

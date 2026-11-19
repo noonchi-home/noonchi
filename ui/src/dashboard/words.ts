@@ -9,6 +9,7 @@ export const WORDS = {
   timeline: {
     rows: { person: "사람", robot: "로봇" },
     watch: "지켜봄",
+    robot: { idle: "지켜봄", observe: "살펴보는 중", move: "이동 중", run: "실행 중", return: "충전 자리로 가는 중", recover: "다시 확인하는 중" },
     now: "지금",
     ago: (sec: number) => `${sec}초 전`,
     gap: (sec: string) => `${sec}초`,

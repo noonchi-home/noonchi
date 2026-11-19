@@ -173,6 +173,10 @@ function startApp(core: HomeCore): void {
     goalLast: () => core.goal,
     habitLast: () => core.habit,
     personLast: () => core.person?.last() ?? null,
+    robotLast: () => {
+      const state = core.machines.robot.last();
+      return state && { type: "robot", ...state };
+    },
     phoneCommand: () => captionOf(core.command),
   });
   core.speak();
