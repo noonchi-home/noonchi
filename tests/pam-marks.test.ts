@@ -2,6 +2,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { validateChunks, validateMarks } from "../src/brain/pam/marks.js";
 import { estimateTokens, type PamMessage } from "../src/brain/pam/index.js";
+import { mergeMarks } from "../src/brain/pam/client.js";
 import { pamClientFor, startFakePamLlm, type FakePamLlm, type MarkView } from "./helpers/pam.js";
 
 let pam: FakePamLlm | undefined;
@@ -42,7 +43,16 @@ describe("시각 찾기 나눠 묻기", () => {
       candidates: [{ state: "drinking", candidate: { on: "떠난다." } }], actions: ["컵 치우기"], lines, chunks });
     const asked = pam.bodies.filter((b): b is MarkView => b.role === "mark");
     expect(asked.length).toBeGreaterThan(1);
-    expect(asked.flatMap((b) => b.lines)).toEqual(lines);
+    // 조각은 기록 줄의 이어진 일부이고 모두 합치면 기록 전체다. 뒤 조각은 새로 맡은 첫 줄 앞 검사 창(300초)의 줄도 함께 받는다(Codex 81d209ef P2)
+    const sec = (l: string) => { const [h, m, x] = l.substring(0, 8).split(":").map(Number); return h! * 3600 + m! * 60 + x!; };
+    for (const b of asked) expect(lines.slice(lines.indexOf(b.lines[0]!), lines.indexOf(b.lines[0]!) + b.lines.length)).toEqual(b.lines);
+    expect(new Set(asked.flatMap((b) => b.lines)).size).toBe(lines.length);
+    let seen = new Set<string>();
+    for (const b of asked) {
+      const fresh = b.lines.find((l) => !seen.has(l))!;
+      if (seen.size) expect(b.lines.filter((l) => sec(l) < sec(fresh))).toEqual(lines.filter((l) => sec(l) >= sec(fresh) - 300 && sec(l) < sec(fresh)));
+      seen = new Set([...seen, ...b.lines]);
+    }
     for (const [i, b] of asked.entries()) {
       const first = b.lines[0]!.substring(0, 8), last = b.lines.at(-1)!.substring(0, 8);
       expect(b.chunks).toEqual(chunks.filter((c) => c.substring(0, 8) <= last && c.substring(9, 17) >= first));
@@ -51,5 +61,30 @@ describe("시각 찾기 나눠 묻기", () => {
     }
     const all = leaves({ lines });
     expect(marks).toEqual({ candidates: [{ state: "drinking", candidate: "떠난다.", times: all }], actions: [{ action: "컵 치우기", times: [] }], unseen: all.map((t) => ({ start: t, end: t })) });
+  });
+
+  it("걷기 시작 줄과 행동을 마친 줄이 조각 경계를 넘어도 뒤 조각이 시작 줄을 함께 받아 그 행동을 시작 줄 시각으로 찾는다", async () => {
+    const hms = (s: number) => new Date(s * 1000).toISOString().substring(11, 19);
+    // 50줄마다 걷기 시작(45번째)과 100초 뒤 컵을 싱크대에 넣음(55번째)
+    const lines = Array.from({ length: 1200 }, (_, i) => `${hms(7 * 3600 + i * 10)} | ${i % 50 === 45 ? "사람이 일어나 싱크대 쪽으로 걸어가기 시작한다" : i % 50 === 5 && i > 5 ? "사람이 컵을 싱크대에 넣는다" : "사람이 식탁 옆에서 컵을 들고 천천히 마시는 중이다"}`);
+    const starts = lines.filter((l) => l.endsWith("걸어가기 시작한다")).map((l) => l.substring(0, 8)).filter((t) => lines.some((l) => l.endsWith("싱크대에 넣는다") && l > t));
+    // 시험 모델: 넣은 줄과 그 앞 걷기 시작 줄이 한 요청에 다 있을 때만 그 행동을 시작 줄 시각으로 답한다
+    const sec = (l: string) => { const [h, m, x] = l.substring(0, 8).split(":").map(Number); return h! * 3600 + m! * 60 + x!; };
+    pam = await startFakePamLlm({ mark: (v) => {
+      const has = new Set(v.lines.map((l) => l.substring(0, 8)));
+      const found = v.lines.filter((l) => l.endsWith("싱크대에 넣는다")).map((l) => hms(sec(l) - 100)).filter((t) => has.has(t));
+      return { candidates: [], actions: v.actions.map((action) => ({ action, times: found })), unseen: [] };
+    } });
+    const marks = await pamClientFor(pam).mark({ states: [{ id: "drinking", description: "마시는 중" }], candidates: [], actions: ["컵 치우기"], lines, chunks: [] });
+    expect(pam.bodies.filter((b) => b.role === "mark").length).toBeGreaterThan(1);
+    expect(marks.actions).toEqual([{ action: "컵 치우기", times: starts }]);
+  });
+
+  it("조각 답을 합칠 때 다른 조각이 같은 후보·행동을 10초 안에 다시 답했으면 한 번으로 센다(앞 시각). 한 조각 안의 답과 10초 넘게 떨어진 답은 그대로, 같은 안 보인 구간은 하나다", () => {
+    const part = (c: string[], a: string[], u: [string, string][]) => ({ candidates: [{ state: "watching_tv", candidate: "TV를 켠다.", times: c }], actions: [{ action: "에어컨 켜기", times: a }], unseen: u.map(([start, end]) => ({ start, end })) });
+    expect(mergeMarks([part(["08:00:00", "08:00:05"], ["09:00:00"], [["07:00:00", "07:10:00"]]), part(["08:00:07", "08:30:00"], ["09:00:10", "09:00:11"], [["07:00:00", "07:10:00"], ["10:00:00", "10:00:00"]])]))
+      .toEqual(part(["08:00:00", "08:00:05", "08:30:00"], ["09:00:00", "09:00:11"], [["07:00:00", "07:10:00"], ["10:00:00", "10:00:00"]]));
+    const one = part(["08:00:00", "08:00:05"], [], []);
+    expect(mergeMarks([one])).toEqual(one);
   });
 });

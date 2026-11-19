@@ -10,7 +10,9 @@ import { PamLlm, type CallOptions } from "./llm.js";
 import { buildPredictMessages, buildReflectMessages, generation } from "./prompt.js";
 import { UNREADABLE, memoryCheckMessages, parseVerdict, type MemoryVerdict } from "./memoryCheck.js";
 import { chunkMessages, markMessages, type MarkInput } from "./night.js";
-import { validateChunks, validateMarks, type Chunks, type Marks } from "./marks.js";
+import { clock, validateChunks, validateMarks, type Chunks, type Marks } from "./marks.js";
+import { FOLLOW_SECONDS } from "./adopt.js";
+import { headWithin } from "../../shared/cut.js";
 import { predictRequest, reflectRequest } from "./request.js";
 import type { PamSettings } from "./settings.js";
 
@@ -97,6 +99,7 @@ export class PamClient {
 
   /** 시각 찾기(밤 흐름): 물은 (상태, 후보)·행동마다 그날 일어난 때와 사람이 안 보인 구간. 시각은 그날 줄 시각만 받는다. 답이 틀리면 PamAnswerError.
    *  한 요청이 문맥 길이를 넘으면 기록 줄을 차례대로 반씩 나눠(그 줄 구간에 걸친 덩어리만 붙여) 여러 번 묻고 답을 합친다(Codex 1b07d3e2 P2).
+   *  뒤 조각은 새로 맡은 첫 줄 앞 검사 창(FOLLOW_SECONDS)의 줄도 함께 받는다: 걷기 시작과 행동 완료가 경계를 넘어도 시작 줄 시각으로 답한다(Codex 81d209ef P2).
    *  줄 하나로도 넘으면 PamBudgetError. */
   async mark(i: MarkInput, call: CallOptions = {}): Promise<Marks> {
     const parts: Marks[] = [];
@@ -109,7 +112,10 @@ export class PamClient {
     const fits = estimateTokens(markMessages(i).messages) + this.o.settings.maxTokens.reflector <= this.o.settings.maxModelLen;
     if (fits || i.lines.length <= 1) return [i];
     const half = Math.ceil(i.lines.length / 2);
-    return [...this.markParts(markPart(i, i.lines.slice(0, half))), ...this.markParts(markPart(i, i.lines.slice(half)))];
+    const cut = lineSec(i.lines[half]!) - FOLLOW_SECONDS;
+    // 뒤 조각의 첫 줄: 검사 창 안의 앞 줄부터. 앞 조각 전체가 창 안이어도 한 줄은 줄여 나누기가 끝나게 한다
+    const from = Math.min(half, Math.max(1, i.lines.findIndex((l) => lineSec(l) >= cut)));
+    return [...this.markParts(markPart(i, i.lines.slice(0, half))), ...this.markParts(markPart(i, i.lines.slice(from)))];
   }
 
   private async markOne(i: MarkInput, call: CallOptions): Promise<Marks> {
@@ -144,15 +150,32 @@ function markPart(i: MarkInput, lines: string[]): MarkInput {
   return { ...i, lines, chunks: i.chunks.filter((c) => c.substring(0, 8) <= last && c.substring(9, 17) >= first) };
 }
 
-/** 나눠 물은 시각 찾기 답 합치기: 후보·행동마다 시각을 차례대로 합치고(같은 시각은 하나), 안 보인 구간은 차례대로 잇는다. */
-function mergeMarks(parts: Marks[]): Marks {
+/** 기록 줄(`HH:MM:SS | 글`)의 자정부터 초. */
+const lineSec = (line: string) => clock(headWithin(line, 8), "line");
+/** 같은 후보·행동이 이만큼(초) 안에 다시 맞으면 한 번이다(시각 찾기 지시문 marking.txt와 같다). */
+const SAME_EVENT_SECONDS = 10;
+
+/** 나눠 물은 시각 찾기 답 합치기: 후보·행동마다 시각을 차례대로 합친다. 같은 시각은 하나이고, 다른 조각이 SAME_EVENT_SECONDS 안에 다시 답한 시각은
+ *  앞 시각 하나로 센다(겹친 구간을 두 조각이 함께 본다. 한 조각 안의 답은 모델이 이미 그 규칙으로 냈으니 그대로, Codex 81d209ef P2).
+ *  안 보인 구간은 시각 차례로 잇고 같은 구간은 하나다. */
+export function mergeMarks(parts: Marks[]): Marks {
   if (parts.length === 1) return parts[0]!;
-  const times = (lists: string[][]) => [...new Set(lists.flat())].sort();
+  const times = (lists: string[][]) => {
+    const all = lists.flatMap((ts, part) => ts.map((t) => ({ t, part, s: clock(t, "time") }))).sort((a, b) => a.s - b.s || a.part - b.part);
+    const kept: typeof all = [];
+    for (const x of all) {
+      const prev = kept.at(-1);
+      if (prev && (prev.t === x.t || (prev.part !== x.part && x.s - prev.s <= SAME_EVENT_SECONDS))) continue;
+      kept.push(x);
+    }
+    return kept.map((x) => x.t);
+  };
   const first = parts[0]!;
+  const unseen = [...new Map(parts.flatMap((p) => p.unseen).map((u) => [`${u.start}|${u.end}`, u])).values()].sort((a, b) => (a.start === b.start ? a.end.localeCompare(b.end) : a.start.localeCompare(b.start)));
   return {
     candidates: first.candidates.map((c) => ({ ...c, times: times(parts.map((p) => p.candidates.find((x) => x.state === c.state && x.candidate === c.candidate)!.times)) })),
     actions: first.actions.map((a) => ({ ...a, times: times(parts.map((p) => p.actions.find((x) => x.action === a.action)!.times)) })),
-    unseen: parts.flatMap((p) => p.unseen),
+    unseen,
   };
 }
 
