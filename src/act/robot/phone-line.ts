@@ -3,7 +3,7 @@
 // - 막힘(phoneBlocked): 맞춘 눈이 지금 것이 아님(다시 맞추는 중이거나 EYE_MS 넘게 안 옴), 판본이 맞는 폰 없음, 끄기 안내, 승인 대기, 폰 대화, 계획의 질문.
 // - 보내기(sendLine): 새 명령을 소리로 읽게 띄운다. 되풀이(refreshLine): 비전 줄이 바뀌면 visionMs에 한 번까지 보내고 repeatMs마다 소리로 다시 읽는다.
 import type { PlannedCommand } from "../../contract/phone.js";
-import type { Run, TrackCore } from "./core.js";
+import type { Run, TrackCore } from "../track/core.js";
 
 /** 계획을 마친 완료 문장을 실제 폰 명령 줄에 두는 시간(ms). 그 사이 다른 명령(충전 자리로 가기 등)이 오면 그 명령이 덮는다. */
 export const DONE_NOTICE_MS = 4000;

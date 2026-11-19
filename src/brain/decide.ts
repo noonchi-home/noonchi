@@ -86,7 +86,7 @@ export class Decider {
    *  (Codex 26d2482·6802be0: 시각 비교는 같은 밀리초에서 놓치고, 계획이 끝나고 15초 뒤 온 늦은 답이 같은 일을 다시 시작할 수 있었다). */
   private released: { from: string; next: number; seq: number } | null = null;
   /** 답을 받은 가장 큰 요청 번호(유효·실패 모두). 이보다 작은 번호의 답(동시에 나간 요청이 거꾸로 옴)은 직전 상태·기다리는 화살표·들은 말을 바꾸지 않는다
-   *  (실행 추적도 그 답을 늦은 답으로 버린다, src/act/track/start.ts. Codex 1b07d3e2 P2: 앞선 관찰의 답이 다음 요청의 직전 상태를 되돌렸다). */
+   *  (실행 추적도 그 답을 늦은 답으로 버린다, src/act/robot/start.ts. Codex 1b07d3e2 P2: 앞선 관찰의 답이 다음 요청의 직전 상태를 되돌렸다). */
   private answered = 0;
   /** 마지막으로 PAM에 보낸 기억(판본). 판단 전이면 null. */
   private lastMem: { memory: PamMemory; kind: "list" | "fsm"; version: number } | null = null;
@@ -127,7 +127,7 @@ export class Decider {
     if (state === "running" || state === "done") this.release(planId);
   }
 
-  /** 실행 추적이 그 판단을 계획 전 검사의 분명한 까닭(이미 치움·확인된 내용물 반대 등, src/act/track/start.ts)으로 막았다: 행동이 시작된 것처럼 그 화살표를 푼다.
+  /** 실행 추적이 그 판단을 계획 전 검사의 분명한 까닭(이미 치움·확인된 내용물 반대 등, src/act/robot/start.ts)으로 막았다: 행동이 시작된 것처럼 그 화살표를 푼다.
    *  기다리면 15초 동안 주기 판단마다 같은 화살표가 다시 켜져 같은 막음을 되풀이한다(2026-11-19 조정자 결정). 모름(대상이 안 보임)으로 막은 판단은 알리지 않는다. */
   onRefused(planId: string): void {
     this.release(planId);
@@ -141,7 +141,7 @@ export class Decider {
     this.pending = null;
   }
 
-  /** 지금까지 보낸 마지막 PAM 요청 번호(말 부탁 afterSeq, src/act/track/start.ts request). 보내기 전이면 0. */
+  /** 지금까지 보낸 마지막 PAM 요청 번호(말 부탁 afterSeq, src/act/robot/start.ts request). 보내기 전이면 0. */
   sentSeq(): number {
     return this.seq;
   }

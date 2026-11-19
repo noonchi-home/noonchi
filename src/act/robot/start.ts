@@ -10,9 +10,9 @@ import { quietLabels } from "../lessons.js";
 import { TASK_NAMES, carriesTarget, followedId, planIdOf, planObjectsOf, putAway, taskOf } from "../tasks.js";
 import { CHANGE_TEXT, saidIn } from "../../world/labels.js";
 import { decisionWorld, isoWithOffset } from "../../brain/index.js";
-import type { SpeechRequest } from "./tracker.js";
+import type { SpeechRequest } from "../track/tracker.js";
 import { emergencyOf } from "../mode.js";
-import { Part, clsOf, type Job, type Run } from "./core.js";
+import { Part, clsOf, type Job, type Run } from "../track/core.js";
 
 /** 계획 전 검사가 막은 까닭 가운데 분명한 것(더 봐도 바뀌지 않음): 이미 치움·확인된 내용물 반대·행동 목록 밖.
  *  대상이 안 보임(no_target)은 확정 전 컵일 수 있는 모름이라 넣지 않는다(판단이 그 화살표를 기다려 컵이 확정되면 다시 켠다). */
@@ -288,7 +288,7 @@ export class Starter extends Part {
         r.since = this.clock.now();
         return;
       }
-      // 내용물을 몰라 막혔으면 보류가 붙잡는 동안 다시 보기 기한을 세지 않는다(src/act/track/contents.ts). 보류 중 컵이 낡아도 보류를 이어 간다
+      // 내용물을 몰라 막혔으면 보류가 붙잡는 동안 다시 보기 기한을 세지 않는다(src/act/robot/contents.ts). 보류 중 컵이 낡아도 보류를 이어 간다
       const held = r.hold;
       if ((c.reason === "unknown_contents" && c.object && this.core.contents.keep(r, c.object))
         || (c.reason === "stale" && held && this.core.contents.holding(r) && this.core.contents.keep(r, held.objectId, "stale"))) {

@@ -35,7 +35,7 @@ export interface ToolBackend {
   layout?: LayoutTools;
   /** 외부 연락(서버 안 에이전트만): 종류마다 등록한 받는 이, 다시 보내기 기억을 읽을 수 없으면 그 까닭(blocked), 승인 대기 만들기(정책 askService). */
   service?: { contacts: ServiceContacts; blocked(): string | null; ask(call: ServiceCall): { token: string; reason: string } };
-  /** 할 일 부탁(서버 안 에이전트만): 행동 목록의 일 하나를 실행 추적의 말 부탁 길로 넘긴다(src/act/track/start.ts request). */
+  /** 할 일 부탁(서버 안 에이전트만): 행동 목록의 일 하나를 실행 추적의 말 부탁 길로 넘긴다(src/act/robot/start.ts request). */
   request?: (task: string) => ToolResult;
 }
 

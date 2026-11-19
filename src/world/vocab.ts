@@ -176,7 +176,7 @@ export const VLM_FIND = (Object.keys(CLASSES) as ClassKey[]).filter((k) => CLASS
 /** VLM 물건 목록에서 빼는 것: 컵·병·그릇 모양 장식품(0af95a1·키 큰 컵 q1·q2: 창턱·선반의 트로피 모양 잔을 컵으로 답해 식탁 위 컵이 여러 id로 갈라졌다). */
 export const VLM_SKIP = "Leave out decorations even when shaped like a cup, bottle or bowl: trophies, vases, figurines, candle holders and decorative glassware displayed on a window ledge or shelf.";
 
-/** 마시는 그릇 무리: 같은 물건을 VLM·YOLO가 서로 다른 종류로 볼 수 있다(투명한 유리컵 ↔ 병). 찾기는 같은 자리면 이 무리를 찾던 대상으로 잇는다(src/act/track/find.ts). */
+/** 마시는 그릇 무리: 같은 물건을 VLM·YOLO가 서로 다른 종류로 볼 수 있다(투명한 유리컵 ↔ 병). 찾기는 같은 자리면 이 무리를 찾던 대상으로 잇는다(src/act/robot/find.ts). */
 export const DRINKWARE = ["cup", "bottle"] as const satisfies readonly ClassKey[];
 /** 두 종류가 같거나 둘 다 마시는 그릇 무리인가. */
 export const sameDrinkware = (a: string, b: string): boolean =>

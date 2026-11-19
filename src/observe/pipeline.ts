@@ -489,7 +489,7 @@ export class ObservationPipeline {
     return { ok: true, picked };
   }
 
-  /** 찾기의 비추기가 끝났는가(실행 추적이 본다, src/act/track/find.ts): 가까이 보기가 지금 그 자리를 볼 장을 고를 수 있고(closerFrames), 고른 장이 모두 sinceMs 뒤에 찍혔다.
+  /** 찾기의 비추기가 끝났는가(실행 추적이 본다, src/act/robot/find.ts): 가까이 보기가 지금 그 자리를 볼 장을 고를 수 있고(closerFrames), 고른 장이 모두 sinceMs 뒤에 찍혔다.
    *  그래서 참인 바로 뒤 가까이 보기는 새 사진이 모자라지 않고 비추기 뒤 사진만 본다. */
   spotReady(position: [number, number, number], sinceMs: number): boolean {
     if (this.closed) return false;

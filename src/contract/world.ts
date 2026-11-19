@@ -49,7 +49,7 @@ export interface WorldObject {
    *  지킴(closer_hold)은 그때 풀려 이 물건도 사라짐을 센다. 실행 추적은 이 표시가 있는 물건을 「아직 있음」으로 세지 않고 새 물건으로 바로 이어 간다. */
   followed_by: string | null;
   /** 면마다 가까이 보기 VLM 답이 그 면 값을 새로 넣거나 바꾼 횟수(한 번도 없으면 칸이 없다). 지금 값의 출처와 따로 남아 전체 사진이 값을 바꿔도 줄지 않는다.
-   *  실행 추적이 판단 기록의 횟수(DecisionWorld closer_rev)와 견줘 판단 뒤에 가까이 보기가 바꾼 면인지 본다(src/act/track/start.ts closerNewer). */
+   *  실행 추적이 판단 기록의 횟수(DecisionWorld closer_rev)와 견줘 판단 뒤에 가까이 보기가 바꾼 면인지 본다(src/act/robot/start.ts closerNewer). */
   closer_rev?: Partial<Record<Facet, number>>;
   /** 내용물 세대(src/world/state/contents.ts): 확인 값이 정해지거나 바뀌거나 거둬지거나 다시 열릴 때 오른다. 내용물을 쌓은 적 없으면 칸이 없다(0으로 본다).
    *  내용물(facts.contents)은 확인됨일 때만 믿는 값이다: 3장·4초 이어진 사진. */

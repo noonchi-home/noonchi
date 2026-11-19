@@ -7,7 +7,7 @@
 // 「치운 것」(src/act/tasks.ts putAway)은 싱크대 안 사실이거나 실행 추적이 놓기 단계를 끝낸 물건(placed)이다.
 // 행동 조건(TaskSpec.want, 컵 안): 계획 전 검사는 확인된 반대 값이면 막고 모르면 계획으로 넘긴다(계획 없는 행동은 모르면 막는다).
 // 실행 전 검사는 계획의 대상 물건이 확인된 반대 값이면 막고, 모르면 unknown_contents와 그 물건 id를 낸다(실행 추적이 보류해 가까이 보고 묻는다).
-// 낡음·들고 있음 뒤에 본다(보류 중 낡음은 실행 추적이 보류를 이어 간다, src/act/track/start.ts).
+// 낡음·들고 있음 뒤에 본다(보류 중 낡음은 실행 추적이 보류를 이어 간다, src/act/robot/start.ts).
 import type { PlanView } from "../contract/plan.js";
 import type { ControlMode } from "../contract/setup.js";
 import { sameDrinkware } from "../world/vocab.js";
@@ -18,8 +18,8 @@ import { carriesTarget, holdsTarget, planObjectsOf, putAway, taskOf, wantOf, typ
 
 export type CheckFail = keyof typeof CHECK_TEXT;
 /** carried: in_hand가 대상 물건의 들고 감 보호(World State 물건 carried)에서만 왔다. 실행 추적은 이때 보호가 풀릴 때까지 다시 보기 기한을 세지 않는다. */
-/** object: unknown_contents면 안을 모르는 대상 물건 id(실행 추적 보류, src/act/track/contents.ts), no_target·stale이면 막은 대상 물건 id(실행 추적이 그 자리로 찾으러 간다,
- *  src/act/track/find.ts). 계획에 그 종류 대상이 없으면 싣지 않는다. */
+/** object: unknown_contents면 안을 모르는 대상 물건 id(실행 추적 보류, src/act/robot/contents.ts), no_target·stale이면 막은 대상 물건 id(실행 추적이 그 자리로 찾으러 간다,
+ *  src/act/robot/find.ts). 계획에 그 종류 대상이 없으면 싣지 않는다. */
 export type CheckResult = { ok: true } | { ok: false; reason: CheckFail; text: string; carried?: true; object?: string };
 export interface CheckInput {
   decision: DecisionRecord;
@@ -33,7 +33,7 @@ export interface CheckInput {
   mode: ControlMode;
   /** 계획의 가전 단계와 그 가전이 실제 가전(ThinQ)과 짝지어졌는가. */
   deviceSteps?: { deviceId: string; paired: boolean }[];
-  /** 실행 추적이 놓기 단계를 끝낸 물건(이미 치운 것, src/act/track/steps.ts placed). */
+  /** 실행 추적이 놓기 단계를 끝낸 물건(이미 치운 것, src/act/robot/steps.ts placed). */
   placed?: Placed;
   /** 미리 만든 계획(src/act/track/goal.ts)이면 그 기준 시각(사람이 떠나기 직전 GOAL_DEFAULTS.leaveSeenMs 앞, 집기 전 확인이면 떠난 때):
    *  대상을 그때나 그 뒤에 봤으면 판단 뒤에 다시 본 것으로 보고 낡음 한도(staleMs)는 보지 않는다(2026-11-18 사용자 결정: 떠나기 직전에 본 컵이면 바로 시작,

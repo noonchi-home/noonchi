@@ -3,12 +3,12 @@ import { MachineLane, robotState, type RobotFacts } from "../../machines/index.j
 import type { RobotState } from "../../contract/machines.js";
 import type { TrackCore } from "../track/core.js";
 import { RobotPhone } from "./phone.js";
-import { Steps } from "../track/steps.js";
-import { Approvals } from "../track/approval.js";
-import { Coach } from "../track/coach.js";
-import { ContentsHold } from "../track/contents.js";
-import { Finder } from "../track/find.js";
-import { Dock } from "../track/dock.js";
+import { Steps } from "./steps.js";
+import { Approvals } from "./approval.js";
+import { Coach } from "./coach.js";
+import { ContentsHold } from "./contents.js";
+import { Finder } from "./find.js";
+import { Dock } from "./dock.js";
 
 /** 한 집에서 진행하는 로봇의 단계와 그 단계가 차지한 실제 폰 명령 줄. */
 export class RobotMachine {

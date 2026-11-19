@@ -6,7 +6,7 @@ import { PHONE_NEAR_M } from "../../world/vocab.js";
 import { HUMAN_KINDS, type AgentStep } from "../../agent/index.js";
 import { TELL_TEXT, VISION_TEXT, type TellMode } from "../labels.js";
 import { taskOf } from "../tasks.js";
-import { Part, type Run } from "./core.js";
+import { Part, type Run } from "../track/core.js";
 
 /** 코치 계획 중 다른 행동을 본 것 같다: 지금 단계(이름·명령·번호 1부터)와 계획 단계 목록, 방금 본 변화 줄(최근 30초, 오래된 것부터, 들은 말은 넣지 않는다).
  *  signal은 이 단계가 끝나면 끊긴다. */

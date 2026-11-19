@@ -241,11 +241,11 @@ export function startAct(core: HomeCore): (event: BrainLog) => void {
     sayAloud: (text) => core.phone?.reply(text, "safety"),
     // 멈춘 집기·놓기 단계는 보기 담당(관찰 모드 A)에 알린다
     stalled: (s) => core.looker?.stalled(s) ?? false,
-    // 내용물 보류(src/act/track/contents.ts): 가까이 보기는 보기 담당이 한 번에 하나
+    // 내용물 보류(src/act/robot/contents.ts): 가까이 보기는 보기 담당이 한 번에 하나
     lookContents: (h) => core.looker?.contents(h) ?? false,
     // 가까이 가서 보기: 위에서 비추기가 끝났는가(관찰 흐름), 위에서 비추는 동안 그 컵의 보기 지킴(World State)
     topReady: (id, sinceMs) => core.pipeline?.topReady(id, sinceMs) ?? false,
-    // 찾기(src/act/track/find.ts): 비추기가 끝났는가(가까이 보기와 같은 프레임 고르기), 실행 전 찾기의 신선도는 실행 전 검사의 낡음 기준
+    // 찾기(src/act/robot/find.ts): 비추기가 끝났는가(가까이 보기와 같은 프레임 고르기), 실행 전 찾기의 신선도는 실행 전 검사의 낡음 기준
     spotReady: (at, sinceMs) => core.pipeline?.spotReady(at, sinceMs) ?? false, staleMs: core.act.staleMs,
     // 찾기 상태 줄은 생각 말풍선에 모델 없이 바로 올린다
     thought: (text, decisionId) => feed.note(text, decisionId),

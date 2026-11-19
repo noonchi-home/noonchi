@@ -1,5 +1,5 @@
 // 켠 위험 가전 추적(hot·끄기 안내)을 푸는 길은 하나다(src/act/track/safety.ts SafetyTracker): 추적은 releaseIfOff로만 풀고, 작동 끝남은 cycleEnded로만 본다.
-// 구조 검사: 실행 추적 폴더(src/act/track/) 파일 전체에서 hot·끄기 안내를 지우는 코드는 releaseIfOff·handOver·nextReminder 몸통 안에만,
+// 구조 검사: 실행 추적·로봇 폴더 파일 전체에서 hot·끄기 안내를 지우는 코드는 releaseIfOff·handOver·nextReminder 몸통 안에만,
 // 가전 이력을 보는 코드는 cycleEnded 몸통 안에만 있어야 한다. 지우는 코드는 받는 쪽 이름과 상관없이 찾는다(this.·r.·core.safety.·#).
 // 추적 상태(hot·reminder·offQueue·cycles·released)는 SafetyTracker의 # 비공개 칸에만 두고, 부분이 함께 받는 TrackCore·계획 실행 상태 Run·다른 부분에는 두지 않는다.
 // 과거 실수(79ff269의 onAnswer·onHeard·reminderTick·advance가 「완료」·말·만료·끄기 단계 넘김으로 풀었다)에서 실패하는지도 본다:
@@ -26,7 +26,8 @@ const RULES: { pattern: RegExp; inside: readonly string[] }[] = [
 const STATE = ["hot", "reminder", "offQueue", "cycles", "released"] as const;
 
 /** 실행 추적 폴더의 파일 전체(이름 차례). */
-const trackFiles = () => readdirSync(TRACK_DIR).filter((f) => f.endsWith(".ts")).sort();
+const trackFiles = () => [".", "../robot"].flatMap((dir) => readdirSync(join(TRACK_DIR, dir))
+  .filter((f) => f.endsWith(".ts")).map((f) => dir === "." ? f : `${dir}/${f}`)).sort();
 const readTrack = (f: string) => readFileSync(join(TRACK_DIR, f), "utf8");
 
 /** 주석을 같은 길이의 빈칸으로 바꾼다(줄 번호를 지키려고 줄바꿈은 둔다). 글 안의 //는 건드리지 않게 따옴표·백틱 글은 건너뛴다. */
@@ -148,10 +149,10 @@ function inject(source: string, method: string, lines: readonly string[]): strin
 }
 
 describe("켠 위험 가전 추적을 푸는 길(구조)", () => {
-  it("src/act/track/ 파일 전체: hot·끄기 안내를 지우는 코드는 releaseIfOff·handOver·nextReminder 안에만, 가전 이력은 cycleEnded 안에서만 본다", () => {
+  it("실행 추적·로봇 폴더 전체: hot·끄기 안내를 지우는 코드는 releaseIfOff·handOver·nextReminder 안에만, 가전 이력은 cycleEnded 안에서만 본다", () => {
     const files = trackFiles();
     // 엉뚱한 폴더를 보고 통과하지 않게: 부분 파일과 푸는 몸통이 있어야 한다
-    expect(files).toEqual(expect.arrayContaining(["core.ts", "tracker.ts", "start.ts", "steps.ts", "approval.ts", "safety.ts", "answers.ts", "coach.ts"]));
+    expect(files).toEqual(expect.arrayContaining(["core.ts", "tracker.ts", "../robot/start.ts", "../robot/steps.ts", "../robot/approval.ts", "safety.ts", "answers.ts", "../robot/coach.ts"]));
     const safety = stripComments(readTrack("safety.ts"));
     for (const n of [...RELEASE, "cycleEnded"]) expect(bodies(safety, n), `safety.ts ${n}`).toHaveLength(1);
     const leaks = files.flatMap((f) => releaseLeaks(readTrack(f)).map((l) => `${f}:${l}`));
@@ -176,8 +177,8 @@ describe("켠 위험 가전 추적을 푸는 길(구조)", () => {
   /** 79ff269의 실수 줄을 지금 파일의 그 일을 하는 메서드에 넣는다(받는 쪽 이름은 지금 구조대로 여러 가지). */
   const PAST: { file: string; method: string; lines: string[] }[] = [
     // 끄기 단계를 넘기면(advance) hot에서 뺐다. 닫힐 때(finish) hot을 비웠다
-    { file: "steps.ts", method: "advance", lines: ['if (done?.kind === "do" && done.hand?.to === "off") r.hot.delete(done.hand.deviceId);'] },
-    { file: "steps.ts", method: "finish", lines: ["this.core.safety.hot.clear();"] },
+    { file: "../robot/steps.ts", method: "advance", lines: ['if (done?.kind === "do" && done.hand?.to === "off") r.hot.delete(done.hand.deviceId);'] },
+    { file: "../robot/steps.ts", method: "finish", lines: ["this.core.safety.hot.clear();"] },
     // 끄기 안내의 「완료」(onAnswer)와 말(onHeard)로 안내를 지웠다
     { file: "answers.ts", method: "onAnswer", lines: ["this.core.safety.reminder = null;"] },
     { file: "answers.ts", method: "onHeard", lines: ["safety.offQueue.shift();"] },

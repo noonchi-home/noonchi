@@ -27,7 +27,7 @@ const cupKey = (label: string | undefined, text: string) =>
   (Object.keys(STEP_COMMAND) as (keyof typeof STEP_COMMAND)[]).find((k) => STEP_LABEL[k] === label || STEP_COMMAND[k] === text) ?? null;
 
 /** look: 마지막으로 가까이 보기를 시작한 자리 이름과 그 시각.
- *  told: 마지막으로 다시 알린(tell) 시각. quiet: 지금 조용히 띄운 단계 이름(src/act/track/coach.ts quietStep).
+ *  told: 마지막으로 다시 알린(tell) 시각. quiet: 지금 조용히 띄운 단계 이름(src/act/robot/coach.ts quietStep).
  *  reflected: 마지막 반성 시각과 새로 배운 규칙 수·쓰고 있는 습관 수(20초 동안 말한다). offWait: 끄기 안내 때문에 새 계획을 미루는 동안 기다리는 가전 이름.
  *  offTold: 줄에서 기다리는 끄기 안내를 마지막으로 소리로 알린 가전 이름과 시각(20초 동안 말한다). service: 마지막 외부 연락 결과 글과 그 시각(20초 동안 말한다). */
 export interface SayInput {
@@ -62,7 +62,7 @@ function restLine({ plan, command, world, nowMs, told = null, quiet = null, refl
     const step = sent ? plan.steps.find((s) => s.id === sent.step) : undefined;
     const key = sent ? cupKey(step?.label, sent.text) : null;
     if (key) return SAY_TEXT.will(STEP_COMMAND[key], step?.label ?? STEP_LABEL[key]);
-    // 컵 안 보기(위에서 비추기, src/act/track/steps.ts topStep)
+    // 컵 안 보기(위에서 비추기, src/act/robot/steps.ts topStep)
     if (step && sent!.view === "above") return SAY_TEXT.lookIn(sent!.target?.label ?? step.label);
     if (step) return sent!.choices.length === 0 ? SAY_TEXT.said : SAY_TEXT.will(sent!.text, step.label);
     const active = plan.steps.find((s) => s.status === "active");

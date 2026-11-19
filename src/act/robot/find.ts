@@ -30,7 +30,7 @@ import { PRECHECK_FRESH_MS } from "../check.js";
 import { EXEC_TEXT, FIND_THOUGHT, FIND_TEXT, STEP_TEXT, VISION_TEXT } from "../labels.js";
 import { lostTarget, planIdOf, putAway, touchTarget, type LostSpot } from "../tasks.js";
 import { CONTENTS_HOLD, PEEK } from "./contents.js";
-import { Part, type Run } from "./core.js";
+import { Part, type Run } from "../track/core.js";
 import { eyeNow, idleLine, phoneBlocked, planLine, refreshLine, sendLine, type IdleSlot, type Line } from "./phone-line.js";
 
 type V3 = [number, number, number];

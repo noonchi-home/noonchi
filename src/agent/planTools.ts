@@ -85,7 +85,7 @@ export interface AgentStep {
   until: Condition | null;
   timeoutMs: number;
   onTimeout: "ask" | "fail";
-  /** top: 서버가 넣은 컵 안 보기 단계(do, 위에서 비추기, 모델은 쓰지 않음). 끝은 위에서 본 사진이고 가르기는 실행 추적이 한다(src/act/track/steps.ts topStep). */
+  /** top: 서버가 넣은 컵 안 보기 단계(do, 위에서 비추기, 모델은 쓰지 않음). 끝은 위에서 본 사진이고 가르기는 실행 추적이 한다(src/act/robot/steps.ts topStep). */
   look?: "top";
 }
 
@@ -123,7 +123,7 @@ export function placesOf(floor: FloorPlan, names: PlaceNames = {}): PlaceInfo[] 
   });
 }
 
-/** 계획 입력. floor.robot은 손(맞춘 폰 눈) 자리다. placed는 실행 추적이 놓기를 끝낸 물건(이미 치운 것, src/act/track/steps.ts placed):
+/** 계획 입력. floor.robot은 손(맞춘 폰 눈) 자리다. placed는 실행 추적이 놓기를 끝낸 물건(이미 치운 것, src/act/robot/steps.ts placed):
  *  입력 물건 줄에 「이미 치움」을 붙이고, 그 물건을 집거나 놓는 단계는 버린다. */
 export interface PlanContext {
   decision: DecisionRecord;

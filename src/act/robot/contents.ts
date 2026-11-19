@@ -13,13 +13,13 @@
 // 위에서 본 뒤(after) settleMs에도 모르면 그만둔다. 그 컵·세대는 retryMs 동안 다시 가까이 가지 않는다. 확인됐지만 낡았으면 holdMs 동안 다시 보이기를 기다린다.
 // 그사이 확인되면 실행 전 검사가 통과해 tryStart가 release하고 첫 단계로 간다(첫 명령이 그 명령 줄을 덮는다). 확인된 반대 값이면 검사가 contents_mismatch로 막는다.
 // 컵의 내용물 세대가 바뀌면(마시기 사건·확인) 잘라 보기부터 다시 한다. 앞 차례(look·looking·settle)는 붙잡은 때부터 holdMs가 지나면 차례와 상관없이
-// (가까이 보기가 늦거나 멈춰도) 신호를 끊고 그만둔다. 보류하는 동안 컵을 다시 보지 못해 낡아도(stale) 보류를 이어 간다(src/act/track/start.ts tryStart).
+// (가까이 보기가 늦거나 멈춰도) 신호를 끊고 그만둔다. 보류하는 동안 컵을 다시 보지 못해 낡아도(stale) 보류를 이어 간다(src/act/robot/start.ts tryStart).
 // 계획 밖 가까이 가서 보기(idle, tick): 계획이 없어 PAM이 모르는 내용물로 대기만 하지 않게 같은 차례(peek → seeing → after)를 계획 밖 칸
 //   TrackCore.idlePeek(명령 id peek:<번호>)로 돈다. 시작하는 때(모두): 열린·만드는 계획(코치 포함)·끄기 안내·승인 대기·폰 대화가 없고, 위치를 맞췄고,
 //   사람이 보이고, 행동 목록에 손대는 내용물 행동(touch·want: 채우기·따르기)이 있고, 그 컵이 자동 접근 조건(mayApproach: 사람이 쓰는 중이 아님)을 지나고
 //   보이고 자리를 알고 치운 것·손에 든 것이 아니고 볼 면을 모르며, 불투명이 확인됐거나
 //   B가 그 세대에 잘라 본 지 settleMs가 지났고, 그 컵·세대를 retryMs 안에 보지 않았다. 도는 동안 막는 것(계획·대화·끄기 안내·승인 대기·위치·폰)이 생기면 거둔다
-//   (계획 명령이 그 자리를 덮었으면 지우기를 보내지 않는다). 사람이 그 컵을 쓰기 시작해도 tick마다 보고 거둔다. 새 계획을 받으면 그 계획이 명령·보기 지킴을 쓰기 전에 거둔다(src/act/track/start.ts).
+//   (계획 명령이 그 자리를 덮었으면 지우기를 보내지 않는다). 사람이 그 컵을 쓰기 시작해도 tick마다 보고 거둔다. 새 계획을 받으면 그 계획이 명령·보기 지킴을 쓰기 전에 거둔다(src/act/robot/start.ts).
 //   가까이 가기 중에는 사람이 보여야 하고, 위에서 비추기·위에서 보기·사진 기다림 동안은 안 보여도 잇는다. 「그만」은 어느 차례에서든 받는다.
 //   끝나면 칸을 비운다(모르면 보기 기록만 남는다).
 import type { CloserResult } from "../../contract/events.js";
@@ -29,7 +29,7 @@ import type { LookSpot } from "../../observe/index.js";
 import { OBJECT_NAME, STATE_TEXT } from "../../world/labels.js";
 import { PEEK_TEXT, VISION_TEXT } from "../labels.js";
 import { opaqueBody, putAway, sureValue, taskOf, type TaskSpec } from "../tasks.js";
-import { Part, type Run } from "./core.js";
+import { Part, type Run } from "../track/core.js";
 import { EYE_MS, eyeNow, idleLine, phoneBlocked, planLine, refreshLine, sendLine, type Line } from "./phone-line.js";
 
 /** 보기 담당이 받기를 기다리는 시간, 가까이 본 뒤·위에서 본 뒤 사진을 기다리는 시간, 보류 한도(앞 차례·막힘·위에서 본 뒤 다시 보기·첫 명령 미룸, ms). */
@@ -39,7 +39,7 @@ export const CONTENTS_HOLD = { lookWaitMs: 3000, settleMs: 4000, holdMs: 30_000 
 export const PEEK = { nearM: 0.5, stepMs: 30_000, retryMs: 60_000, movedM: 0.1, eyeMs: EYE_MS } as const;
 /** 보류의 가까이 보기 부탁(보기 담당 src/act/look.ts contents). done은 끝날 때 한 번(못 봐도, 가까이 보기 결과, 끊겼으면 null). signal은 보류가 풀리면 끊긴다.
  *  top이 있으면 잘라 보기 대신 위에서 보기(그 뒤 찍힌 컵 안을 내려다본 사진 쌍, src/observe/pipeline.ts topLook)다. planId가 빈 글이면 계획 밖이다.
- *  force면 찾기의 다시 보기다(src/act/track/find.ts): 같은 물건을 objectGapMs 안에 봤어도 다시 본다. */
+ *  force면 찾기의 다시 보기다(src/act/robot/find.ts): 같은 물건을 objectGapMs 안에 봤어도 다시 본다. */
 /** since: 찾기의 비추기 시각(그 뒤 사진만 가까이 본다, 1장이면 된다). */
 export interface ContentsLook { planId: string; objectId: string; spot: LookSpot; signal: AbortSignal; done(result?: CloserResult | null): void; top?: { sinceMs: number }; force?: true; since?: number }
 type V3 = [number, number, number];

@@ -27,7 +27,7 @@ export interface TaskSpec {
   coach?: true;
   /** 이 행동 계획의 단계 수 상한(없으면 8, src/agent/planTools.ts PLAN_LIMITS). */
   maxSteps?: number;
-  /** 대상 물건에 손을 대는 행동(치우기·채우기·따르기): 대상이 안 보이면 마지막으로 본 자리로 찾으러 간다(src/act/track/find.ts).
+  /** 대상 물건에 손을 대는 행동(치우기·채우기·따르기): 대상이 안 보이면 마지막으로 본 자리로 찾으러 간다(src/act/robot/find.ts).
    *  사람이 그 대상 종류를 쓰는 것을 보면 그 사람이 사라질 때까지 찾기·가까이 가서 보기·첫 명령을 미룬다(usingNow, src/act/track/use.ts).
    *  대상을 건드리지 않는 행동(그대로 두기)은 찾지 않는다. */
   touch?: true;
@@ -36,7 +36,7 @@ export interface TaskSpec {
   afterUse?: true;
   /** 집기 전에 늘 대상 안을 위에서 본다(컵 치우기, 2026-11-20 사용자 「아직도 컵안을 확인해달라는 내용이 없네」·고른 답 「늘 확인」): 위에서 보기를 하는 집이면
    *  계획 검사가 그 종류 첫 집기 앞에 컵 안 보기 단계를 넣고(src/agent/planTools.ts), 실행 추적이 위에서 본 내용물로 가른다
-   *  (비었음 → 집기, 남음 → 버려도 될지 묻기, 모름 → 그만둠, src/act/track/steps.ts topStep). 컵 내용물은 습관 FSM에 넣지 않는다(실행 쪽 규칙). */
+   *  (비었음 → 집기, 남음 → 버려도 될지 묻기, 모름 → 그만둠, src/act/robot/steps.ts topStep). 컵 내용물은 습관 FSM에 넣지 않는다(실행 쪽 규칙). */
   topLook?: true;
   /** 반성·채택 검사로 새 화살표를 배울 수 있는 행동(사용자 답: 컵 치우기, 말없이 TV 보기 시작 → 에어컨 켜기). seed 행동 화살표(묻기 빼고)는 이 칸과 상관없이 사용자가 정한 습관이라 늘 둔다. */
   learn?: true;
@@ -142,7 +142,7 @@ export function lookTargets(): { cls: ObjClass; facets: readonly Facet[] }[] {
   return [...by].map(([cls, facets]) => ({ cls, facets }));
 }
 
-/** 실행 추적이 놓기 단계를 끝낸 물건(src/act/track/steps.ts placed): World State id → 그 계획의 넣은 곳(평면도 id), 끝낸 때 그 면의 싱크볼 안이었으면 part basin, 끝낸 시각.
+/** 실행 추적이 놓기 단계를 끝낸 물건(src/act/robot/steps.ts placed): World State id → 그 계획의 넣은 곳(평면도 id), 끝낸 때 그 면의 싱크볼 안이었으면 part basin, 끝낸 시각.
  *  계획을 만들지 않는다. 이미 치운 것을 아는 근거로만 쓴다. */
 export type Placed = ReadonlyMap<string, { target: string; part?: "basin"; atMs: number }>;
 

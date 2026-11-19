@@ -1,0 +1,12 @@
+{
+  "files": {
+    "src/act/track/steps.ts": "src/act/robot/steps.ts",
+    "src/act/track/approval.ts": "src/act/robot/approval.ts",
+    "src/act/track/coach.ts": "src/act/robot/coach.ts",
+    "src/act/track/dock.ts": "src/act/robot/dock.ts",
+    "src/act/track/find.ts": "src/act/robot/find.ts",
+    "src/act/track/contents.ts": "src/act/robot/contents.ts",
+    "src/act/track/phone-line.ts": "src/act/robot/phone-line.ts",
+    "src/act/track/start.ts": "src/act/robot/start.ts"
+  }
+}

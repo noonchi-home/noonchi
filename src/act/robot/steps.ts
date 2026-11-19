@@ -16,7 +16,7 @@ import { HUMAN_KINDS, selfStopWait, type AgentStep, type ToolResult } from "../.
 import { clearsAway, followedId, sureValue, taskOf, type Placed } from "../tasks.js";
 import { CONTENTS_HOLD } from "./contents.js";
 import { doneId } from "../done-step.js";
-import { Part, choicesOf, clsOf, type Run } from "./core.js";
+import { Part, choicesOf, clsOf, type Run } from "../track/core.js";
 
 /** 놓기를 끝낸 물건이 사라진 뒤 새 id로 다시 잡히기를 기다리는 시간(ms). 등장 확인(물건 4초)·사라짐(6초)보다 넉넉히. */
 const PUT_HANDOVER_MS = 30_000;
@@ -51,7 +51,7 @@ export class Steps extends Part {
   /** 치운 무리에서 풀린 물건: 그 넣은 곳을 정한 뒤 손에 있음이 확인됐다(다시 집어 씀). 같은 면에 도로 놓여도 무리로 보지 않는다(풀림이 무리 판정보다 먼저). */
   private readonly reused = new Set<string>();
 
-  /** 찾기에서 뺄 물건(src/act/track/find.ts): 놓기를 끝낸 물건(placed)과 그 옛 id. 안 보이는 옛 id의 마지막 자리는 치우기 전 자리다. */
+  /** 찾기에서 뺄 물건(src/act/robot/find.ts): 놓기를 끝낸 물건(placed)과 그 옛 id. 안 보이는 옛 id의 마지막 자리는 치우기 전 자리다. */
   awayIds(): ReadonlySet<string> {
     return new Set([...this.placed().keys(), ...this.putOld.keys()]);
   }

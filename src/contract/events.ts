@@ -370,7 +370,7 @@ export interface DecisionRecord {
   /** 이 판단에 보낸 행동 목록(돕는 방식마다 다르다). 계획 전·실행 전 검사가 이 목록으로 본다. */
   tasks?: string[];
   world: DecisionWorld;
-  /** 말 부탁(말 요청 에이전트 request_task·묻기 답)으로 만든 판단(src/act/track/start.ts request): seq는 0이고 PAM 판단 번호와 섞지 않는다. */
+  /** 말 부탁(말 요청 에이전트 request_task·묻기 답)으로 만든 판단(src/act/robot/start.ts request): seq는 0이고 PAM 판단 번호와 섞지 않는다. */
   source?: "speech";
   /** 묻기 답(「치워 주세요」)에서 온 말 부탁. */
   via?: "answer";

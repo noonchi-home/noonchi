@@ -20,9 +20,9 @@ import type { HeardAt, PlannedCommand, PlannedCommandMessage } from "../src/cont
 import type { WorldChange, WorldObject, WorldView } from "../src/contract/world.js";
 import { PlanHub } from "../src/act/hub.js";
 import { APPROVAL_TEXT, CAUTION_TEXT, CHECK_TEXT, DOCK_TEXT, EXEC_TEXT, CAUTION_LINE, PEEK_TEXT, STEP_COMMAND, STEP_LABEL, TOP_TEXT, USE_THOUGHT, type TellMode } from "../src/act/labels.js";
-import { CONTENTS_HOLD, PEEK } from "../src/act/track/contents.js";
-import { FIND } from "../src/act/track/find.js";
-import { DOCK } from "../src/act/track/dock.js";
+import { CONTENTS_HOLD, PEEK } from "../src/act/robot/contents.js";
+import { FIND } from "../src/act/robot/find.js";
+import { DOCK } from "../src/act/robot/dock.js";
 import { POSE_FALL } from "../src/world/vocab.js";
 import { PHONE_PROTOCOL } from "../src/phone/protocol.js";
 /** 인덕션 켜기 전 질문(서버 글). */

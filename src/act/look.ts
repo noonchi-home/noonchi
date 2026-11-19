@@ -1,5 +1,5 @@
 // 보기 담당: 관찰 모드(src/agent/observer.ts)를 부르고 고른 도구를 실행한다. 한 번에 하나만 돈다.
-// A 멈춘 단계(실행 추적 stalled, src/act/track/steps.ts Stall): 집기·놓기 단계가 안 끝남 → look_closer·wait. 계획이 도는 동안 폰은 그 단계 명령의 것이라
+// A 멈춘 단계(실행 추적 stalled, src/act/robot/steps.ts Stall): 집기·놓기 단계가 안 끝남 → look_closer·wait. 계획이 도는 동안 폰은 그 단계 명령의 것이라
 //   사람에게 폰으로 부탁하지 않는다(사진만 쓰는 가까이 보기는 한다).
 //   관찰 모드 호출과 가까이 보기는 그 단계 신호(Stall.signal)로 끊긴다. 끊겨서 그쳤으면(관찰 모드 답 전, 감지를 합치기 전에 끊긴 가까이 보기 aborted)
 //   기록도 settle도 하지 않는다. 가까이 본 결과가 World State에 들어가 그 단계를 끝냈으면(그래서 신호가 끊김, 감지만 합치고 VLM 답은 넣지 않은
@@ -9,9 +9,9 @@
 // B 판단 전 보기(판단 타이머 tick): 행동 대상 종류 물건이 사진 안에 있는데 볼 면(TaskSpec.look)이 확인되지 않음(없음·짐작·모름 값) → look_closer·wait.
 //   불투명이 확인된 컵의 내용물은 옆에서 가까이 봐도 모르므로 보지 않는다(실행 추적이 가까이 가서 위에서 본다). PAM 판단을 막지 않는다.
 //   물건마다 objectGapMs, B 전체로 gapMs에 한 번. 이미 싱크대 안·시야 밖 물건, frameFreshMs 넘게 낡은 프레임, 카메라 없는 프레임은 보지 않는다.
-// C 코치 계획의 다른 행동(실행 추적 strayed, src/act/track/coach.ts Stray): 사람이 지금 단계와 다른 일을 하는 것 같다 → tell_person·wait.
+// C 코치 계획의 다른 행동(실행 추적 strayed, src/act/robot/coach.ts Stray): 사람이 지금 단계와 다른 일을 하는 것 같다 → tell_person·wait.
 //   다른 일(A·B·C)이 도는 중이면 받지 않는다. 그 단계 신호로 끊긴다(끊기면 기록 없음). tell_person이면 실행 추적의 tell을 부른다.
-// E 내용물 보류(실행 추적 src/act/track/contents.ts contents): 실행 전 검사가 컵 안을 몰라 붙잡은 계획의 그 컵을 관찰 모드 없이 바로 가까이 본다.
+// E 내용물 보류(실행 추적 src/act/robot/contents.ts contents): 실행 전 검사가 컵 안을 몰라 붙잡은 계획의 그 컵을 관찰 모드 없이 바로 가까이 본다.
 //   다른 일이 돌면 받지 않는다(실행 추적이 다음 tick에 다시 부른다). objectGapMs 안에 본 컵은 보지 않고 done만(찾기의 다시 보기 force는 그래도 본다).
 //   끝나면 done 한 번(look 기록, 계기 unknown_fact). done에는 가까이 보기 결과(끊겼으면 null)를 싣는다(찾기가 「분명히 없음」과 「확인 실패」를 가른다).
 //   위에서 보기(top, 사람이 폰을 컵 위에 든 뒤)는 objectGapMs를 보지 않고 topLook을 부른다. B가 관찰 모드를 부르는 중이면 A처럼 끊고 먼저 돈다.
@@ -51,19 +51,19 @@ export interface LookerOptions {
   /** 가까이 보기(src/observe/pipeline.ts closer). 감지를 합치기 전에 signal이 끊기면 넣지 않고 aborted, 합친 뒤에 끊기면 ok(vlm aborted),
    *  VLM 답이 왔을 때 사진이 끊겼으면 ok(vlm no_fresh_frames). */
   closer: (spot: LookSpot, signal?: AbortSignal, sinceMs?: number) => Promise<CloserResult>;
-  /** 판단 전 보기 B가 잘라 보기를 마쳤다(자원 사정으로 못 본 것은 빼고): 그 물건 id. 실행 추적이 계획 밖으로 가까이 가서 볼지 본다(src/act/track/contents.ts). */
+  /** 판단 전 보기 B가 잘라 보기를 마쳤다(자원 사정으로 못 본 것은 빼고): 그 물건 id. 실행 추적이 계획 밖으로 가까이 가서 볼지 본다(src/act/robot/contents.ts). */
   looked?: (objectId: string) => void;
   /** 위에서 보기(src/observe/pipeline.ts topLook): sinceMs 뒤 찍힌 컵 안을 내려다본 사진 쌍. 없으면 위에서 보기 부탁은 done만 한다. */
   topLook?: (spot: LookSpot, sinceMs: number, signal?: AbortSignal) => Promise<CloserResult>;
   /** 고리 가장 새 프레임(src/observe/pipeline.ts latest). */
   frame: () => LatestFrame | null;
   world: () => WorldView;
-  /** 지금 할 일 다시 알리기(src/act/track/coach.ts tell): 방식으로 서버가 글을 만든다. 보낸 글, 못 보냈으면 null. 없으면 보내지 못한 것으로 본다. */
+  /** 지금 할 일 다시 알리기(src/act/robot/coach.ts tell): 방식으로 서버가 글을 만든다. 보낸 글, 못 보냈으면 null. 없으면 보내지 못한 것으로 본다. */
   tell?: (planId: string, stepId: string, mode: TellMode) => string | null;
   emit: (l: BrainLog) => void;
   /** 판단 전에 더 잘 볼 종류와 면(src/act/tasks.ts lookTargets). */
   targets: () => readonly { cls: ObjClass; facets: readonly Facet[] }[];
-  /** 실행 추적이 놓기 단계를 끝낸 물건(이미 치운 것, src/act/track/steps.ts placed). 판단 전 보기(B)에서 뺀다. */
+  /** 실행 추적이 놓기 단계를 끝낸 물건(이미 치운 것, src/act/robot/steps.ts placed). 판단 전 보기(B)에서 뺀다. */
   placed?: () => Placed;
   /** 가까이 보기를 시작할 때(대시보드 말풍선 카드). */
   onLook?: (spot: LookSpot) => void;

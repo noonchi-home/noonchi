@@ -14,7 +14,7 @@ import { dockId } from "../dock-step.js";
 import { DOCK_TEXT, VISION_TEXT } from "../labels.js";
 import { emergencyOf } from "../mode.js";
 import { STEP_DONE } from "../prompts.js";
-import { Part, type Run } from "./core.js";
+import { Part, type Run } from "../track/core.js";
 import { eyeNow, idleLine, refreshLine, sendLine, type IdleSlot } from "./phone-line.js";
 
 /** 충전 자리: 닿았다고 보는 폰 눈-충전 자리 수평 거리(m), 지금 자리에서 보기만 하는 시간(ms), 닿지 못하면 그만두는 기한(ms). */

@@ -240,7 +240,7 @@ describe("VLM 상자 바닥 점 자리", () => {
   });
 });
 
-// 찾기가 겨눈 자리에서 다른 id의 같은 무리 물건을 찾으면 계획 대상 id로 잇는다(src/act/track/find.ts)
+// 찾기가 겨눈 자리에서 다른 id의 같은 무리 물건을 찾으면 계획 대상 id로 잇는다(src/act/robot/find.ts)
 describe("계획 대상으로 잇기(relink)", () => {
   it("그 물건의 자리·보임·사실을 대상 id가 받고, 그 물건은 사라짐과 옮김 표시(followed_by: 대상)를 남긴다. 같은 무리가 아니거나 없으면 잇지 않는다", () => {
     const w = confirmed();

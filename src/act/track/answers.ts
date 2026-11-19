@@ -20,7 +20,7 @@ export class Answers extends Part {
     if (off && !core.stopped) return { planId: off.sent.id, stepId: off.sent.step, kind: "command", text: off.sent.text, choices: off.note.ask ? [] : [STEP_DONE] };
     const r = core.shown();
     if (!r) {
-      // 계획 전 찾기(src/act/track/find.ts)·계획 밖 가까이 가서 보기(src/act/track/contents.ts idle): 단추 없는 사람 단계 명령
+      // 계획 전 찾기(src/act/robot/find.ts)·계획 밖 가까이 가서 보기(src/act/robot/contents.ts idle): 단추 없는 사람 단계 명령
       const q = core.finding?.sent ? core.finding : core.docking?.sent ? core.docking : core.idlePeek;
       // 충전 자리 명령만 「완료」가 있다(폰 눈을 모를 때 닿음을 받는다, dock.ts)
       return q?.sent && !core.stopped ? { planId: q.id, stepId: q.sent.step, kind: "command", text: q.sent.text, choices: q === core.docking ? [STEP_DONE] : [] } : null;

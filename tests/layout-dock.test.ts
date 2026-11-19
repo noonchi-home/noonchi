@@ -1,5 +1,5 @@
 // 집마다 충전 자리 하나(twin/data/homes/<집>/dock.json, 2026-11-18 사용자 결정): 장면을 읽을 때 함께 읽고(src/layout/scene.ts loadScene),
-// 계획이 끝나면 실행 추적이 그 자리로 돌아간다(src/act/track/dock.ts). 화면에 새 표시는 없다.
+// 계획이 끝나면 실행 추적이 그 자리로 돌아간다(src/act/robot/dock.ts). 화면에 새 표시는 없다.
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";

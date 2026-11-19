@@ -69,7 +69,7 @@ import type { WorldChange, WorldView } from "../../contract/world.js";
 import type { FloorPlan, PlaceNames } from "../../layout/index.js";
 import type { PlanHub } from "../hub.js";
 import { EXEC_TEXT, type TellMode } from "../labels.js";
-import type { Stall } from "./steps.js";
+import type { Stall } from "../robot/steps.js";
 import { HUMAN_KINDS, type AgentPlan, type ApprovalBook, type PlanAhead, type PlanResult, type ToolResult } from "../../agent/index.js";
 import type { PamMemory } from "../../brain/index.js";
 import type { PlaneSurface } from "../../world/index.js";
@@ -79,21 +79,21 @@ import { QUIET_HINT_MS, type LessonBook } from "../lessons.js";
 import type { ActionChoice } from "../prompts.js";
 import { taskOf, type Placed } from "../tasks.js";
 import { Answers, type HeardResult } from "./answers.js";
-import type { Stray } from "./coach.js";
-import type { ContentsLook } from "./contents.js";
+import type { Stray } from "../robot/coach.js";
+import type { ContentsLook } from "../robot/contents.js";
 import { OPEN, TrackCore, type TrackConfig } from "./core.js";
 import { SafetyTracker, type Cycle, type CycleEnd } from "./safety.js";
-import { Starter } from "./start.js";
+import { Starter } from "../robot/start.js";
 import { UseWatch } from "./use.js";
 import { GoalWatch } from "./goal.js";
-import { noticeTick } from "./phone-line.js";
-export { DONE_NOTICE_MS } from "./phone-line.js";
+import { noticeTick } from "../robot/phone-line.js";
+export { DONE_NOTICE_MS } from "../robot/phone-line.js";
 
 export type { HeardResult } from "./answers.js";
-export type { Stray } from "./coach.js";
-export type { ContentsLook } from "./contents.js";
+export type { Stray } from "../robot/coach.js";
+export type { ContentsLook } from "../robot/contents.js";
 export type { Cycle, CycleEnd } from "./safety.js";
-export type { Stall } from "./steps.js";
+export type { Stall } from "../robot/steps.js";
 
 /** 기기 단계 실행(src/server/home/act.ts: 기기 도구 + 정책). run이 승인 토큰을 내면 실제 폰에 묻고 confirm·cancel로 답한다.
  *  결과의 unverified(ThinQ가 받았지만 다시 읽은 값이 다름)·state 「모름」(신호 없음)은 적용을 확인하지 못한 것이다. */
@@ -113,7 +113,7 @@ export interface TrackerOptions {
   sentSeq?: () => number;
   /** 말 부탁으로 만든 판단(source speech)을 받는다: 서버가 판단 기록으로 남긴다(src/brain/decide.ts logSpeech). */
   onSpeech?: (d: DecisionRecord) => void;
-  /** 계획 전 검사가 분명한 까닭으로 막은 판단의 계획 id(src/act/track/start.ts): 서버가 판단에 넘겨 그 화살표를 기다리지 않게 한다(src/brain/decide.ts onRefused). */
+  /** 계획 전 검사가 분명한 까닭으로 막은 판단의 계획 id(src/act/robot/start.ts): 서버가 판단에 넘겨 그 화살표를 기다리지 않게 한다(src/brain/decide.ts onRefused). */
   onRefused?: (planId: string) => void;
   world: () => WorldView;
   /** 계획 전 검사(src/act/check.ts checkDecision). 에이전트를 부르기 전에 본다. 없으면 통과. */
@@ -146,7 +146,7 @@ export interface TrackerOptions {
   log?: (line: string) => void;
   /** 처음 하는 일 묻기를 켜 볼 때만(시험). 없으면 src/agent/approval.ts ASK_FIRST_TIME(끔)이다. */
   askFirst?: boolean;
-  /** 이 집의 충전 자리(트윈 자리 [x, 높이, y], twin/data/homes/<집>/dock.json). 없으면(null) 계획이 끝나도 충전 자리로 가지 않는다(src/act/track/dock.ts). */
+  /** 이 집의 충전 자리(트윈 자리 [x, 높이, y], twin/data/homes/<집>/dock.json). 없으면(null) 계획이 끝나도 충전 자리로 가지 않는다(src/act/robot/dock.ts). */
   dock?: () => [number, number, number] | null;
   /** 부르는 이름 자료(src/layout/names.ts, 계획 단계와 같은 것). 배치 이름이 없으면 locate 이름을 배치 이름으로 본다. */
   names?: PlaceNames;
@@ -197,7 +197,7 @@ export interface TrackerOptions {
   /** 위에서 비추기가 끝났는가(src/observe/pipeline.ts topReady): sinceMs 뒤 그 컵 안을 내려다본 VLM 프레임 쌍이 있다. 없으면 위에서 비추기가 끝나지 않는다. */
   topReady?: (objectId: string, sinceMs: number) => boolean;
   /** 찾기의 비추기가 끝났는가(src/observe/pipeline.ts spotReady): 가까이 보기가 그 자리(트윈 [x, 높이, y])를 sinceMs 뒤 사진으로만 고를 수 있다.
-   *  없으면 비추기가 끝나지 않는다(src/act/track/find.ts). */
+   *  없으면 비추기가 끝나지 않는다(src/act/robot/find.ts). */
   spotReady?: (position: [number, number, number], sinceMs: number) => boolean;
   /** 실행 전 검사의 낡음 기준(ms, STALE_MS). 실행 전 찾기가 찾았다고 보는 신선도다. 없으면 3초. */
   staleMs?: number;

@@ -1,4 +1,4 @@
-// 컵 안 보기 단계(위에서 비추기, src/act/track/steps.ts topStep)를 처음부터 끝까지 보는 시험 도우미(가짜 서버 e2e):
+// 컵 안 보기 단계(위에서 비추기, src/act/robot/steps.ts topStep)를 처음부터 끝까지 보는 시험 도우미(가짜 서버 e2e):
 // 맞춘 폰이 컵 입구 바로 위에서 내려다본 엔진 프레임(진짜 JPEG), 잘라 키운 위 사진의 그릇 감지, 위에서 보기 VLM 답(TOP_NOTE가 든 요청).
 // 맞춤은 AR = 트윈(tests/helpers/align.ts 기본 변환)이라 컵의 트윈 자리 [x, 높이, y]를 그대로 AR 자리로 쓴다.
 import jpeg from "jpeg-js";

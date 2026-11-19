@@ -14,16 +14,16 @@ import type { StepOutcome } from "../lessons.js";
 import { AGAIN, APPROVE, LEFTOVER, STEP_DONE, type ActionChoice } from "../prompts.js";
 import type { RobotMachine } from "../robot/machine.js";
 import type { Answers } from "./answers.js";
-import type { Approvals, Asking } from "./approval.js";
-import type { Coach } from "./coach.js";
-import type { ContentsHold, Hold, IdlePeek } from "./contents.js";
-import type { Find, Finder, FindSlot } from "./find.js";
+import type { Approvals, Asking } from "../robot/approval.js";
+import type { Coach } from "../robot/coach.js";
+import type { ContentsHold, Hold, IdlePeek } from "../robot/contents.js";
+import type { Find, Finder, FindSlot } from "../robot/find.js";
 import type { Cycle, CycleEnd, SafetyTracker } from "./safety.js";
 import type { UseWatch } from "./use.js";
 import type { GoalWatch } from "./goal.js";
-import type { Dock, DockSlot } from "./dock.js";
-import type { Starter } from "./start.js";
-import type { Steps } from "./steps.js";
+import type { Dock, DockSlot } from "../robot/dock.js";
+import type { Starter } from "../robot/start.js";
+import type { Steps } from "../robot/steps.js";
 import type { TrackerOptions } from "./tracker.js";
 
 /** at: 지금 단계 번호(실행 전 -1). sent: 실제 폰에 띄운 지금 명령. others: 계획 물건 id → 계획을 받을 때 있던 같은 종류의 다른 물건.
@@ -60,16 +60,16 @@ export interface Run {
   quiet: Set<string>; quietOn: boolean;
   /** 끝낸 사람 단계의 결과(수업 기록에 남길 것). */
   outcomes: StepOutcome[];
-  /** 내용물 보류(실행 전 검사가 컵 안을 몰라 막음, src/act/track/contents.ts). 없으면 null. */
+  /** 내용물 보류(실행 전 검사가 컵 안을 몰라 막음, src/act/robot/contents.ts). 없으면 null. */
   hold: Hold | null;
-  /** 지금 단계가 컵 안 보기면 그 위에서 보기(src/act/track/steps.ts topStep). 아니면 null. */
+  /** 지금 단계가 컵 안 보기면 그 위에서 보기(src/act/robot/steps.ts topStep). 아니면 null. */
   top: TopLook | null;
   /** 내용물 보류로 붙잡은 컵 id(보류에서 풀려 첫 명령을 보낼 때 폰 대화·승인 대기를 보고, 그 컵 내용물은 「가까이 본 뒤 다시 판단」에서 뺀다).
    *  busyAt: 폰 대화·승인 대기 때문에 첫 명령을 미루기 시작한 시각. */
   heldIds: Set<string>; busyAt: number | null;
-  /** 따르기 창을 연 물건(World State id, src/act/track/steps.ts window). 없으면 null. */
+  /** 따르기 창을 연 물건(World State id, src/act/robot/steps.ts window). 없으면 null. */
   window: string | null;
-  /** 실행 전 찾기(실행 전 검사가 대상이 안 보여 막은 계획, src/act/track/find.ts). 없으면 null. findHeld: 찾기로 붙잡은 적이 있다(풀린 첫 명령을 폰 대화·승인 대기 동안 미룬다). */
+  /** 실행 전 찾기(실행 전 검사가 대상이 안 보여 막은 계획, src/act/robot/find.ts). 없으면 null. findHeld: 찾기로 붙잡은 적이 있다(풀린 첫 명령을 폰 대화·승인 대기 동안 미룬다). */
   find: Find | null; findHeld: boolean;
   /** 사람이 계획 대상을 쓰는 중이라 첫 명령을 미루기 시작한 시각(src/act/track/use.ts waits). 아니면 null.
    *  useHeld: 쓰는 중이라 미룬 적이 있다(풀린 첫 명령을 폰 대화·승인 대기 동안 미룬다). */
@@ -101,13 +101,13 @@ export interface TrackConfig {
 export class TrackCore {
   run: Run | null = null;
   planning: Job | null = null;
-  /** 계획 밖 가까이 가서 보기(판단 전 보기 B 뒤에도 모를 때, src/act/track/contents.ts idle): 명령 id peek:<번호>와 그 상태. 없으면 null. */
+  /** 계획 밖 가까이 가서 보기(판단 전 보기 B 뒤에도 모를 때, src/act/robot/contents.ts idle): 명령 id peek:<번호>와 그 상태. 없으면 null. */
   idlePeek: IdlePeek | null = null;
-  /** 계획 전 찾기(계획 전 검사가 대상이 안 보여 막은 판단, src/act/track/find.ts): 명령 id find:<번호>와 그 상태. 없으면 null. */
+  /** 계획 전 찾기(계획 전 검사가 대상이 안 보여 막은 판단, src/act/robot/find.ts): 명령 id find:<번호>와 그 상태. 없으면 null. */
   finding: FindSlot | null = null;
   /** 계획 전 찾기에서 찾은 뒤 다시 판단 받기로 넘긴 판단 id: 그 판단으로 만든 계획은 찾기로 붙잡았던 것으로 본다(Run.findHeld). */
   foundFor: string | null = null;
-  /** 계획이 끝난 뒤 충전 자리 돌아가기(src/act/track/dock.ts): 명령 id dock:<번호>와 그 상태. 없으면 null. */
+  /** 계획이 끝난 뒤 충전 자리 돌아가기(src/act/robot/dock.ts): 명령 id dock:<번호>와 그 상태. 없으면 null. */
   docking: DockSlot | null = null;
   /** 남은 음료를 그대로 두라고 한 컵(World State id → 그 답을 받은 때). 사람이 그 뒤에 다시 보이면 푼다(start.ts kept). */
   kept = new Map<string, number>();

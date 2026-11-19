@@ -144,7 +144,7 @@ export class WorldState {
     return this.core.closer.applyTop(objectId, sourceFrameId, capturedAtMs, value);
   }
 
-  /** 실행 추적이 지금 집기·내려놓기 하는 대상(src/act/track/steps.ts): 그 단계 동안 대상은 사라짐으로 세지 않고, 맞는 물건이 없는 같은 종류 감지(들린 컵, 목적지
+  /** 실행 추적이 지금 집기·내려놓기 하는 대상(src/act/robot/steps.ts): 그 단계 동안 대상은 사라짐으로 세지 않고, 맞는 물건이 없는 같은 종류 감지(들린 컵, 목적지
    *  NEAR_M 안에 놓인 컵)는 그 대상 id로 잇는다(가로 유리컵 r5: 집기·내려놓기 중 새 id가 생겨 단계가 늦거나 끝나지 않았다). null이면 푼다. */
   focus(objectId: string | null, f: { step: "pick" | "place" | "carry"; spot: [number, number] | null } | null = null): void {
     const core = this.core;
@@ -178,7 +178,7 @@ export class WorldState {
     d.followed = { id: t.id, at: d.lastSeen, frame: d.judgedFrame };
   }
 
-  /** 찾기가 겨눈 자리에서 찾은 다른 id의 같은 무리 물건(fromId)을 계획 대상(toId)으로 잇는다(src/act/track/find.ts): 대상이 그 자리·보임·더 새 사실·본 시각과
+  /** 찾기가 겨눈 자리에서 찾은 다른 id의 같은 무리 물건(fromId)을 계획 대상(toId)으로 잇는다(src/act/robot/find.ts): 대상이 그 자리·보임·더 새 사실·본 시각과
    *  그 물건의 내용물 갱신기 상태를 받고(대상의 옛 확인 값은 버린다) 확인된 물건이 되며, 그 물건은 사라짐과 옮김 표시(followed_by: 대상)를 남기고 자리를 잃어
    *  식별 후보에서 빠진다(Codex P2 5f230c5: 남은 원본이 같은 종류 먼저인 자리 잇기로 되살아났다). 대상 id가 유령이었어도 계획은 그 id로 이어 간다.
    *  둘 중 하나가 없거나, 같은 무리가 아니거나, 그 물건이 사라졌으면 false. */

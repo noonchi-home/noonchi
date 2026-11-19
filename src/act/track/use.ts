@@ -14,7 +14,7 @@ import { EXEC_TEXT, USE_THOUGHT } from "../labels.js";
 import { clearsAway, planObjectsOf, TASK_NAMES, taskOf, touchTarget, usingNow, type UseWhy } from "../tasks.js";
 import { OBJECT_NAME, STATE_TEXT } from "../../world/labels.js";
 import type { WorldView } from "../../contract/world.js";
-import { CONTENTS_HOLD } from "./contents.js";
+import { CONTENTS_HOLD } from "../robot/contents.js";
 import { Part, type Run } from "./core.js";
 
 /** 옮김 표시(followed_by)를 따라가는 횟수 한도. */
