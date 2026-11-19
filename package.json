@@ -2,6 +2,7 @@
   "name": "twin-home",
   "version": "0.1.0",
   "private": true,
+  "license": "AGPL-3.0-only",
   "description": "twin-studio 아파트 트윈의 가전을 가상 Matter 기기로 띄우고 에이전트로 제어한다",
   "type": "module",
   "engines": {

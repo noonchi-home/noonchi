@@ -12,7 +12,7 @@ const SELF = fileURLToPath(import.meta.url);
 const withoutMigration = (text: string): string => text.replace(/\r/g, "")
   .replace(/^# ── main 합친 뒤 바꿀 것[^\n]*\n(?:(?!# ──)[^\n]*\n)*/m, "")
   .replace(/^### main 합친 뒤 바꿀 것[^\n]*\n(?:(?!### )[^\n]*\n)*/m, "");
-const DIRS = ["src", "scripts", "tests", "ui/src", "ui/tests", "web", ".github", "deploy"];
+const DIRS = ["src", "scripts", "tests", "ui/src", "ui/tests", "web", "deploy"];
 const FILES = [
   "package.json", "ui/package.json", "vitest.config.ts", "ui/vite.config.ts", "tsconfig.json",
   ".env.example", "README.md", "docs/reference.md", "docs/deploy.md", "docs/pam-interface.md", "docs/plan.md", "docs/plan-contract.md",

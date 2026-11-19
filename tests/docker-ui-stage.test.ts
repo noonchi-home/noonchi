@@ -1,5 +1,5 @@
 // deploy/Dockerfile 화면 빌드 단계(FROM … AS ui)가 ui 빌드(tsc --noEmit + vite build)가 ui/ 밖에서 읽는 경로를 모두 복사하는지 본다.
-// 이 PC에는 저장소 전체가 있어 화면 빌드가 늘 통과하므로, 빠진 COPY는 올린 뒤 CI image에서야 드러난다(2026-11-09 twin/ 두 번).
+// 이 PC에는 저장소 전체가 있어 화면 빌드가 늘 통과하므로, 빠진 COPY는 이미지를 빌드해야 드러난다(2026-11-09 twin/ 두 번).
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";

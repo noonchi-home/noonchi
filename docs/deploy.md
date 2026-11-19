@@ -137,7 +137,7 @@ git pull && docker compose --env-file .env -f deploy/compose.yaml --profile gpu 
 - 인스턴스를 멈추면 대시보드·폰·판단이 함께 멈춘다. 데이터는 EBS에 남는다.
 - 컨테이너는 SIGTERM을 받으면 기록을 마치고 닫는다(최대 20초).
 
-## 7. 키 없는 확인(개발 PC·CI)
+## 7. 키 없는 확인(개발 PC)
 
 ```bash
 docker build -f deploy/Dockerfile -t noonchi:check .

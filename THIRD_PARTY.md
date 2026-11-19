@@ -1,5 +1,11 @@
 # 화면·모델 출처와 라이선스
 
+이 저장소의 코드는 AGPL-3.0(뿌리 `LICENSE`)이다. 아래는 다른 라이선스를 따르는 자료다.
+
+## PAM 논문 프롬프트
+
+- `src/brain/pam/prompts/paper/`의 일곱 프롬프트는 Dohyun Lee, Minho Park 외, An Agentic Framework for Proactive Robots with Procedural Assistance Memory(arXiv:2610.21211) 부록 E·F 원문이다. 논문 라이선스 CC BY 4.0을 따른다. 자세한 출처는 `src/brain/pam/THIRD_PARTY.md`.
+
 ## 글꼴
 
 - Noto Sans KR Variable: npm `@fontsource-variable/noto-sans-kr` 5.3.1, SIL Open Font License 1.1.
