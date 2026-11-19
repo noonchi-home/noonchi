@@ -2,15 +2,17 @@ import { useLayoutEffect, useRef, useSyncExternalStore } from "react";
 import { Status } from "../components/ui/status";
 import { placeDetections } from "./detections";
 import type { BoxSize } from "./fit";
-import { MASK_COLORS, paintMasks, shapeBoxes, shapesOf, tileCanvas, type MaskCtx, type SeenStore } from "./masks";
+import { MASK_COLORS, paintMasks, shapeBoxes, shapesOf, tileCanvas, type MaskCtx } from "./masks";
+import type { SeenView } from "./scene-sync";
 
 /**
  * 대시보드 폰 칸 영상 위 물체 모양 층: 마지막 seen의 마스크를 canvas 한 장에 칠하고(masks.ts paintMasks, 종류 무리마다 토큰 색),
  * 마스크 테두리 위에 이름·신뢰도 이름표(Status)를 붙인다. 네모 테두리는 그리지 않는다.
  * seen 저장소만 듣는다: 초당 10번 와도 이 층만 다시 그린다. 위쪽 카드 아래(ceiling)에만 그린다.
+ * seen: 서버 seen 저장소, 실시간 영상이면 장면·마스크 짝(scene-sync.ts store: 지금 그린 장면의 마스크).
  * fallback: seen에 프레임 크기가 없을 때 쓸 그림 크기(가짜 단계 그림).
  */
-export function MaskLayer({ seen, fallback, size, ceiling }: { seen: SeenStore; fallback: BoxSize | null; size: BoxSize; ceiling: number }) {
+export function MaskLayer({ seen, fallback, size, ceiling }: { seen: SeenView; fallback: BoxSize | null; size: BoxSize; ceiling: number }) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const event = useSyncExternalStore(seen.subscribe, seen.get, seen.get);
   const image = event?.frame ?? fallback;
