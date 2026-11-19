@@ -162,8 +162,10 @@ export class Policy {
   private readonly now: () => number;
   /** 닫혔다(집을 닫는 중): 가전 명령·승인 실행을 하지 않는다. */
   private closed = false;
-  /** 시간 제한을 멈춘 때(pause). 멈춘 동안은 그때를 지금으로 본다. */
-  private pausedAt: number | null = null;
+  private safetyHidden = false;
+  private phoneCovered = false;
+  private hiddenApprovals = new Set<string>();
+  private readonly pausedAt = new Map<string, number>();
   readonly approvals: ApprovalBook;
 
   constructor(opts: PolicyOptions = {}) {
@@ -180,37 +182,58 @@ export class Policy {
     return reason ? reason(device.label) : `${device.label}: 사용자 승인이 필요합니다.`;
   }
 
-  /** 승인 대기를 실제 폰에서 가린 동안(끄기 안내가 명령 줄에 떠 있음, src/server/home/act.ts) 시간 제한을 멈춘다. 풀면 가린 시간만큼 만료를 늦춘다.
-   *  가린 동안 받은 대기는 푼 때부터 제 시간(ttlMs)을 받는다. 승인 대기가 보이지 않는 사이 시간 초과로 닫히지 않게 한다. */
+  /** 안전 안내로 가려진 시간은 승인 대기의 남은 시간에서 빼지 않는다. */
   pause(on: boolean): void {
-    if (on && this.pausedAt === null) this.pausedAt = this.now();
-    if (on || this.pausedAt === null) return;
-    const held = this.now() - this.pausedAt;
-    for (const p of [...this.tokens.values(), ...this.calls.values()]) p.expiresAt += held;
-    this.pausedAt = null;
+    if (this.safetyHidden === on) return;
+    this.purge();
+    this.safetyHidden = on;
+    this.syncDeadlines();
   }
 
-  /** 시간 제한이 멈춰 있는가. */
-  paused(): boolean {
-    return this.pausedAt !== null;
+  paused(): boolean { return this.safetyHidden || this.phoneCovered; }
+
+  /** 폰에 올라온 승인 중 보이는 것 하나만 시간을 센다. 다른 세션의 승인에는 영향을 주지 않는다. */
+  visibleApprovals(tokens: readonly string[], visible: string | null, covered = false): void {
+    this.phoneCovered = covered;
+    this.purge();
+    this.hiddenApprovals = new Set(tokens.filter((token) => token !== visible));
+    this.syncDeadlines();
   }
 
-  /** 만료를 셀 때의 지금: 멈춘 동안은 멈춘 때. */
-  private clock(): number {
-    return this.pausedAt ?? this.now();
+  private syncDeadlines(): void {
+    const now = this.now();
+    for (const p of [...this.tokens.values(), ...this.calls.values()]) {
+      const since = this.pausedAt.get(p.token);
+      if (this.safetyHidden || this.hiddenApprovals.has(p.token)) {
+        if (since === undefined) this.pausedAt.set(p.token, now);
+      } else if (since !== undefined) {
+        p.expiresAt += now - since;
+        this.pausedAt.delete(p.token);
+      }
+    }
+  }
+
+  private expired(p: { token: string; expiresAt: number }): boolean {
+    return (this.pausedAt.get(p.token) ?? this.now()) >= p.expiresAt;
+  }
+
+  private forget(token: string): void {
+    this.pausedAt.delete(token);
+    this.hiddenApprovals.delete(token);
   }
 
   issue(deviceId: string, cmd: Command, reason: string): PendingConfirmation {
     this.purge();
-    const p: PendingConfirmation = { token: randomUUID(), deviceId, command: structuredClone(cmd), reason, expiresAt: this.clock() + this.ttlMs };
+    const p: PendingConfirmation = { token: randomUUID(), deviceId, command: structuredClone(cmd), reason, expiresAt: this.now() + this.ttlMs };
     this.tokens.set(p.token, p);
+    if (this.safetyHidden) this.pausedAt.set(p.token, this.now());
     return structuredClone(p);
   }
 
   /** 토큰을 꺼내 지운다. 없거나 만료면 undefined. */
   consume(token: string): PendingConfirmation | undefined {
     const p = this.peek(token);
-    if (p) this.tokens.delete(token);
+    if (p) { this.tokens.delete(token); this.forget(token); }
     return p;
   }
 
@@ -223,8 +246,9 @@ export class Policy {
   /** 외부 연락은 늘 묻는다: 승인 대기를 하나 만든다. 승인 기억을 보지도 남기지도 않는다(답 둘 다 이번만). */
   askService(call: ServiceCall): PendingService {
     this.purge();
-    const p: PendingService = { token: randomUUID(), call: structuredClone(call), reason: serviceAsk(call), expiresAt: this.clock() + this.ttlMs };
+    const p: PendingService = { token: randomUUID(), call: structuredClone(call), reason: serviceAsk(call), expiresAt: this.now() + this.ttlMs };
     this.calls.set(p.token, p);
+    if (this.safetyHidden) this.pausedAt.set(p.token, this.now());
     return structuredClone(p);
   }
 
@@ -238,7 +262,7 @@ export class Policy {
   takeService(token: string): PendingService | undefined {
     this.purge();
     const p = this.calls.get(token);
-    if (p) this.calls.delete(token);
+    if (p) { this.calls.delete(token); this.forget(token); }
     return p && structuredClone(p);
   }
 
@@ -267,6 +291,7 @@ export class Policy {
       const p = this.peek(confirmToken);
       if (p && p.deviceId === id && stable(p.command) === stable(c)) {
         this.tokens.delete(confirmToken);
+        this.forget(confirmToken);
         return hub.command(id, c);
       }
       return this.ask(id, c, reason, state, p ? TOKEN_MISMATCH : TOKEN_MISSING);
@@ -290,7 +315,8 @@ export class Policy {
   private peek(token: string): PendingConfirmation | undefined {
     const p = this.tokens.get(token);
     if (!p) return undefined;
-    if (this.clock() >= p.expiresAt) {
+    if (this.expired(p)) {
+      this.forget(token);
       this.tokens.delete(token);
       return undefined;
     }
@@ -298,8 +324,12 @@ export class Policy {
   }
 
   private purge(): void {
-    const now = this.clock();
-    for (const [t, p] of this.tokens) if (now >= p.expiresAt) this.tokens.delete(t);
-    for (const [t, p] of this.calls) if (now >= p.expiresAt) this.calls.delete(t);
+    for (const records of [this.tokens, this.calls]) {
+      for (const [token, p] of records) {
+        if (!this.expired(p)) continue;
+        records.delete(token);
+        this.forget(token);
+      }
+    }
   }
 }

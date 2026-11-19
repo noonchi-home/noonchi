@@ -9,3 +9,6 @@ export { type SyncState } from "./sync/aligner.js";
 export { twinLandmarks } from "./sync/landmarks.js";
 export { StartPoseError, type StartPose, StartStore, describeStart, readStartPose, startPosePath } from "./sync/start.js";
 export { wallSegments } from "./sync/walls.js";
+
+export { phoneCommandRoutes, phoneOwnerRoutes } from "./node.js";
+export { PhoneClaims, type ClaimKind } from "./owner.js";

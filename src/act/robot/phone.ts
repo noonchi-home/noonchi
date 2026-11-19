@@ -1,3 +1,4 @@
+import type { BusNode, Outbox } from "../../bus/index.js";
 import type { PlannedCommand, PlannedCommandMessage } from "../../contract/phone.js";
 import { talkGrade } from "../talk-grade.js";
 
@@ -42,4 +43,9 @@ export class RobotPhone {
     this.intents.length = 0;
     this.current = null;
   }
+}
+
+/** 명령을 보내는 곳은 로봇 하나다. 운영 중에는 같은 봉투를 다시 보내는 발행 줄을 쓴다. */
+export function emitRobotCommand(out: Pick<Outbox, "push"> | Pick<BusNode, "publish">, cmd: PlannedCommandMessage) {
+  return "push" in out ? out.push("/act/phone_command", { cmd }) : out.publish("/act/phone_command", { cmd });
 }

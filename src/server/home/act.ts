@@ -1,6 +1,6 @@
 // 집 실행 묶음의 판단·검사·실행 잇기(src/act·src/brain 판단 호출): 클로이드 계획(PlanHub), 실행 설정·수업 기록, 생각 메시지·판단 호출(PAM)·실행 추적, 보기 담당(관찰 모드).
 // 판단 → 계획(에이전트 계획 모드) → 실행 전 검사 → 실행 추적이 실제 폰에 명령을 낸다. 생각 메시지는 판단 기록 뒤에 따로 만들어 대시보드로 보내고 기록 DB(thought)에 남긴다.
-import { ExecutionTracker, LessonStore, Looker, PlanHub, checkDecision, checkPlan, deviceRunner, lessonsPath, loadActConfig, pamTasks } from "../../act/index.js";
+import { ExecutionTracker, LessonStore, Looker, PlanHub, emitRobotCommand, checkDecision, checkPlan, deviceRunner, lessonsPath, loadActConfig, pamTasks } from "../../act/index.js";
 import { lookTargets, taskOf, type TaskSpec } from "../../act/tasks.js";
 import { deviceViews, placesOf, resubmit, type PlaceInfo, type PlanAhead, type PlanContext } from "../../agent/index.js";
 import { Decider, PamClient, PersonLane, habitView, lastStoredThoughts, memoryForDay, pamSettings, storeThought, thoughtFeed, type FsmMemory } from "../../brain/index.js";
@@ -16,7 +16,7 @@ import { floorPlanFrom, loadScene, type LayoutEditor, type PlaceNames } from "..
 import { Trigger, canRelink, deviceStateKeys, deviceStatus, loadTriggerConfig, type PlaneSurface, type TriggerConfig } from "../../world/index.js";
 import { loadEndpoints } from "../../infer/endpoints.js";
 import { DEVICE_STATES } from "../../world/vocab.js";
-import { PHONE_SESSION, TALK_QUIET_MS, type HomeCore } from "./core.js";
+import { type HomeCore } from "./core.js";
 
 /** 명령 대상·가까이 볼 자리(이름과 트윈 자리 [x, 높이, y]): 면(식탁·싱크대처럼 윗면이 있는 배치)이면 윗면 가운데(싱크볼이 있으면 윗면 높이의 싱크볼 가운데),
  *  그 밖은 배치 가운데. 배치 가운데는 싱크대면 높이 약 0.45m라, 대상을 겨눈 폰 사진에서 윗면(컵이 놓이는 곳)보다 한참 아래다.
@@ -92,8 +92,13 @@ export function startPlans(core: HomeCore): void {
   const places = (): PlaceInfo[] => placesOf(floorPlan, placeNames);
   // 대시보드 말풍선 카드(src/act/say.ts): 계획 방송·실제 폰 명령·World State 바뀜·판단 타이머 뒤에 다시 보고, 글이 바뀔 때만 보낸다
   const plans = new PlanHub(floorPlan, (m) => {
-    core.app?.broadcast(m);
-    if (m.type === "plan" && m.plan) history.plan(m.plan);
+    if (core.out.act && m.type === "plan") {
+      core.out.act.push("/act/plan", { plan: m.plan });
+      if (m.plan) core.out.act.push("/act/log", { type: "plan", plan: m.plan });
+    } else {
+      core.app?.broadcast(m);
+      if (m.type === "plan" && m.plan) history.plan(m.plan);
+    }
     core.speak();
   });
   core.scene = scene;
@@ -130,7 +135,8 @@ export function startAct(core: HomeCore): (event: BrainLog) => void {
     const habit = event.type === "decision" ? core.decider?.habit() : null;
     if (habit && habit.kind === "fsm" && "states" in habit.memory) publishHabit(core, habitView(habit.memory, habit.version));
     core.app?.broadcast({ type: "brain", event });
-    history.brain(event);
+    if (event.type === "execution" && core.out.act) core.out.act.push("/act/log", event);
+    else history.brain(event);
     if (event.type === "decision") feed.decision(event);
     // 실행 기록: 기다리던 화살표의 행동이 시작되면 판단의 직전 상태를 넘긴다(src/brain/decide.ts onExecution)
     if (event.type === "execution") core.decider?.onExecution(event.plan_id, event.state);
@@ -209,18 +215,7 @@ export function startAct(core: HomeCore): (event: BrainLog) => void {
     },
     nudge: () => decide.nudge(),
     // 실제 폰 명령(src/contract/phone.ts). 폰 서버가 지금 명령을 기억해 새로 붙은 폰에도 보낸다. 명령 대상 자리는 배치(면이면 윗면 가운데)에서
-    toPhone: (m) => {
-      const shown = captionOf(core.command);
-      if (m.type === "command") core.command = m;
-      else if (!m.id || core.command?.id === m.id) core.command = null;
-      // 대시보드 비전 미니맵 자막: 명령 글이 바뀔 때만(지우면 null). 승인 흐름 질문(승인·거절, 계속·그만)은 싣지 않는다(대시보드에는 승인을 보이지 않는다)
-      const text = captionOf(core.command);
-      if (text !== shown) core.app?.broadcast({ type: "phone_command", text });
-      // 안전 명령(끄기 안내·부탁)은 실제 폰에서 승인 대기 카드보다 먼저 보인다: 가린 동안 승인 시간 제한을 멈춘다
-      policy.pause(core.command?.grade === "safety");
-      core.phone?.command(m);
-      if (m.type === "command") core.speak();
-    },
+    toPhone: (m) => { if (core.out.act) emitRobotCommand(core.out.act, m); },
     locate: placeAt, names: placeNames,
     // 계획 검사에서 버린 계획의 까닭 등은 서버 로그에도 남긴다
     log: ctx.log,
@@ -236,9 +231,9 @@ export function startAct(core: HomeCore): (event: BrainLog) => void {
     // 손으로 켜는 단계가 위험 목록 가전인지(켜기 전에 묻는다)와 묻는 글의 가전 이름
     handDevices: () => deviceViews(signals),
     // 판본이 맞는 실제 폰이 붙어 있는가: 폰이 필요한 계획만 그때 시작한다(폰 서버를 켜지 않았으면 늘 붙어 있다고 본다)
-    phoneReady: () => core.phone?.ready() ?? true,
+    phoneReady: () => !core.phoneOn || core.phoneReady,
     // 다른 계획이 도는 동안 줄에서 기다리는 끄기 안내: 명령 줄을 바꾸지 않고 붙은 폰에 소리로만 알린다
-    sayAloud: (text) => core.phone?.reply(text, "safety"),
+    sayAloud: (text) => { core.out.act?.push("/phone/say", { text, grade: "safety" }); },
     // 멈춘 집기·놓기 단계는 보기 담당(관찰 모드 A)에 알린다
     stalled: (s) => core.looker?.stalled(s) ?? false,
     // 내용물 보류(src/act/robot/contents.ts): 가까이 보기는 보기 담당이 한 번에 하나
@@ -262,8 +257,8 @@ export function startAct(core: HomeCore): (event: BrainLog) => void {
     // 따르기 단계 동안 그 컵의 창(그 뒤 사진만, 다 이어진 값이 확인 값을 바꿈)
     contentsAction: (id, on) => worldInput(core, { kind: "contents", id, on, at_ms: now() }),
     // 실제 폰의 승인 대기와 폰 대화 사용(실행 추적이 그동안 사람을 움직이게 하지 않는다)
-    approvalsWaiting: () => core.agent.pending(PHONE_SESSION).length > 0,
-    talking: () => core.talk.inflight > 0 || now() - core.talk.at < TALK_QUIET_MS,
+    approvalsWaiting: () => core.phoneOwner?.kind === "approval",
+    talking: () => core.phoneOwner?.kind === "dialog",
     // 지금 모드의 행동 목록(쓰는 중 지킴·내용물 보류가 볼 행동)
     tasks: () => pamTasks(core.mode(), false),
     // 코치 계획 중 다른 행동을 본 것 같으면 보기 담당(관찰 모드 계기 off_track)에 알린다

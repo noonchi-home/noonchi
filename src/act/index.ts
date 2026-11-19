@@ -8,3 +8,7 @@ export { Looker } from "./look.js";
 export { type Mode, emergencyOf, modeNow, pamTasks } from "./mode.js";
 export { SAY_DONE_MS, sayLine, sayOf } from "./say.js";
 export { ExecutionTracker } from "./track/tracker.js";
+
+export { emitRobotCommand } from "./robot/phone.js";
+
+export { ProgressReplies, progressRoutes, PROGRESS_MS } from "./node.js";

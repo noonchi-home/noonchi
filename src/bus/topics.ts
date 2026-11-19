@@ -121,7 +121,43 @@ const deviceChange = z.strictObject({
   note: z.strictObject({ initial: z.boolean().optional(), label: z.string().optional(), kind: z.string().optional() }),
 });
 /** /brain/goal·/brain/goal_changes: 미리 세운 목표 하나. 계획 보기는 실행 추적이 타입으로 만든 객체라 깊이 보지 않는다(최상위 id·steps만). */
+const phoneCommand = z.strictObject({ cmd: z.discriminatedUnion("type", [
+  z.strictObject({ type: z.literal("command_clear"), id: id.optional() }),
+  z.strictObject({ type: z.literal("command"), id, step: id, text: z.string(), vision: z.string().nullable(),
+    choices: z.array(z.strictObject({ id, label: z.string() })), speak: z.boolean(),
+    target: z.strictObject({ id, label: z.string(), position: z.tuple([at, at, at]) }).nullable(),
+    kind: z.enum(["go", "pick", "place", "do"]).optional(), near_m: z.number().positive().optional(),
+    view: z.literal("above").optional(), grade: z.enum(["question", "safety"]).optional() }),
+]) });
+const claimKind = z.enum(["safety", "approval", "dialog", "plan", "peek"]);
+const phoneClaim = z.strictObject({ claim_id: id, kind: claimKind.nullable(), since_ms: at });
+const phoneOwner = z.strictObject({ owner: z.strictObject({ claim_id: id, kind: claimKind }).nullable() });
+const phoneProgress = z.discriminatedUnion("kind", [
+  z.strictObject({ req: id, expires_ms: at, kind: z.literal("button"), plan_id: id, step: id, choice: id }),
+  z.strictObject({ req: id, expires_ms: at, kind: z.literal("voice"), text: z.string(), at: z.discriminatedUnion("kind", [
+    z.strictObject({ kind: z.literal("command"), id, step: id }), z.strictObject({ kind: z.literal("none") }),
+  ]).optional() }),
+]);
+const progressResult = z.strictObject({ req: id, status: z.enum(["answer", "stale", "passed"]), reply: z.string().optional() });
 const planView = z.custom<PlanView>((v) => isObj(v) && typeof v.id === "string" && Array.isArray(v.steps));
+const xz = z.tuple([at, at]);
+const planTarget = z.strictObject({ objectId: id.optional(), deviceId: id.optional(), room: id.optional(), position: xz.optional() });
+const wirePlan = z.strictObject({
+  id, revision: z.number().int(), supersedes: id.optional(), origin: z.enum(["live", "mock"]).optional(),
+  source: z.enum(["brain", "agent", "planner"]), goal: z.string(), judgment: z.string(), dryRun: z.boolean(),
+  robot: z.strictObject({ position: xz.nullable(), room: id.nullable() }), path: z.array(xz),
+  legs: z.array(z.strictObject({ stepId: id, end: z.number().int() })),
+  steps: z.array(z.strictObject({ id, kind: z.enum(["move", "act", "ask", "device", "wait"]), label: z.string(), target: planTarget.optional(),
+    status: z.enum(["pending", "active", "done", "failed", "skipped"]), started_ms: at.optional(), ended_ms: at.optional() })),
+  status: z.enum(["planned", "running", "done", "cancelled", "failed"]), updatedAt: z.string(),
+});
+const actLog = z.discriminatedUnion("type", [
+  z.strictObject({ type: z.literal("execution"), at_ms: at, plan_id: id, state: z.enum(["decided", "planned", "running", "verifying", "done", "failed"]), text: z.string(), reason: z.string().optional() }),
+  z.strictObject({ type: z.literal("feedback"), at_ms: at, subject: id, text: z.string(), data: z.strictObject({ choice: id, via: z.enum(["voice", "button"]) }) }),
+  z.strictObject({ type: z.literal("plan"), plan: wirePlan }),
+]);
+const actStatus = z.strictObject({ mode: z.enum(["noonchi", "coach"]), hold: z.boolean(), text: z.string().nullable(), safety: z.boolean(),
+  tasks: z.array(id), placed: z.array(z.tuple([id, z.strictObject({ target: id, part: z.literal("basin").optional(), atMs: at })])) });
 const pendingGoal = z.strictObject({
   id, action: z.string().min(1), state: z.string().min(1), trigger: z.string(), object: id.nullable(), cls: z.string().min(1),
   status: z.enum(["armed", "fired", "used", "dropped"]), prep: z.enum(["waiting", "planning", "ready", "failed"]),
@@ -148,6 +184,8 @@ type Flat<T> = { [K in keyof T]: T[K] };
 type Same<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false;
 /** 실제 모양으로 바꾼 토픽 몸이 계약 타입과 같다. 미니맵 몸은 SeenEvent에서 사건 칸을 빼고 근거 시각(촬영 시각)을 단 것이다. */
 export type TopicBodiesSame = [
+  Assert<Same<z.infer<typeof wirePlan>, PlanView>>,
+  Assert<Same<z.infer<typeof phoneCommand>["cmd"], import("../contract/phone.js").PlannedCommandMessage>>,
   Assert<Equal<(typeof VIEW_KEYS)[number], keyof WorldView>>,
   Assert<Equal<(typeof DEVICE_KEYS)[number], keyof DeviceState>>,
   Assert<Same<z.infer<typeof sceneInput>, SceneInput>>,
@@ -195,16 +233,17 @@ export const TOPICS = {
   "/brain/thought": { qos: { kind: "reliable" }, body: obj, key: one, order: "stamp", from: ["brain"] },
   "/brain/link": { qos: { kind: "state" }, body: obj, key: one, order: "stamp", from: ["brain"] },
   "/brain/cancel": { qos: { kind: "reliable" }, body: obj, key: by("decision_id"), order: null, from: ["act"] },
-  "/act/plan": { qos: { kind: "state" }, body: obj, key: by("id"), order: "stamp", from: ["act"] },
-  "/act/status": { qos: { kind: "state" }, body: obj, key: one, order: "stamp", from: ["act"] },
-  "/act/log": { qos: { kind: "reliable" }, body: obj, key: one, order: "stamp", from: ["act"] },
-  "/act/phone_command": { qos: { kind: "state" }, body: obj, key: one, order: "stamp", from: ["act"] },
-  "/phone/claim": { qos: { kind: "state" }, body: obj, key: by("claim_id"), order: "stamp", from: ["act", "phone"] },
-  "/phone/owner": { qos: { kind: "state" }, body: obj, key: one, order: "stamp", from: ["phone"] },
-  "/phone/progress": { qos: { kind: "reliable" }, body: obj, key: by("req"), order: null, from: ["phone"] },
+  "/act/plan": { qos: { kind: "state" }, body: z.strictObject({ plan: wirePlan.nullable() }), key: one, order: "stamp", from: ["act"] },
+  "/act/status": { qos: { kind: "state" }, body: actStatus, key: one, order: "stamp", from: ["act"] },
+  "/act/log": { qos: { kind: "reliable" }, body: actLog, key: one, order: "stamp", from: ["act"] },
+  "/act/phone_command": { qos: { kind: "state" }, body: phoneCommand, key: one, order: "stamp", from: ["act"] },
+  "/phone/claim": { qos: { kind: "state" }, body: phoneClaim, key: by("claim_id"), order: "stamp", from: ["act", "phone"] },
+  "/phone/owner": { qos: { kind: "state" }, body: phoneOwner, key: one, order: "stamp", from: ["phone"] },
+  "/phone/progress": { qos: { kind: "reliable" }, body: phoneProgress, key: by("req"), order: null, from: ["phone"] },
+  "/act/progress_result": { qos: { kind: "reliable" }, body: progressResult, key: by("req"), order: null, from: ["act"] },
   "/phone/heard": { qos: { kind: "reliable" }, body: heard, key: one, order: "observed_ms", from: ["phone"] },
-  "/phone/say": { qos: { kind: "reliable" }, body: obj, key: one, order: null, from: ["act", "brain"] },
-  "/phone/link": { qos: { kind: "state" }, body: obj, key: one, order: "stamp", from: ["phone"] },
+  "/phone/say": { qos: { kind: "reliable" }, body: z.strictObject({ text: z.string(), grade: z.literal("safety").optional() }), key: one, order: null, from: ["act", "brain"] },
+  "/phone/link": { qos: { kind: "state" }, body: z.strictObject({ ready: z.boolean() }), key: one, order: "stamp", from: ["phone"] },
   "/device/command": { qos: { kind: "reliable" }, body: z.looseObject({ command_id: z.string().min(1), deadline_ms: z.number().finite() }), key: by("command_id"), order: null, from: ["act", "phone"] },
   "/device/result": { qos: { kind: "reliable" }, body: z.looseObject({ command_id: z.string().min(1), status: z.enum(["done", "failed", "expired", "unknown"]) }), key: by("command_id"), order: null, from: ["devices"] },
   "/device/state": { qos: { kind: "state" }, body: obj, key: by("id"), order: "stamp", from: ["devices"] },

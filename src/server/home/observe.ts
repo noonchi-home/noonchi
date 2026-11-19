@@ -1,3 +1,7 @@
+import { phoneCommandRoutes, phoneOwnerRoutes } from "../../phone/index.js";
+import { showStatus } from "./say.js";
+import { progressRoutes } from "../../act/index.js";
+import { applyPhoneProgress, showPhoneCommand, syncPhoneClaims } from "./phone.js";
 // 집 실행 묶음의 관찰 흐름·World State 잇기(src/observe·src/world): 트윈 윗면·침대 소파(쓰러짐 의심에서 뺄 자리), World State, 관찰 흐름(YOLO·VLM),
 // 주기 타이머(관찰·판단·실행 추적·보기 담당·말풍선 카드). 관찰 흐름은 BRAIN=1이고 PHONE_PORT가 있을 때만 켠다(폰 카메라가 입력).
 import { join } from "node:path";
@@ -105,6 +109,18 @@ export async function startNodes(core: HomeCore, emit: (event: BrainLog) => void
   const ready = new Promise<void>((r) => { first = r; });
   core.mirror = await startWorldMirror({
     bus, epoch, name: "act", clock, log,
+    routes: (node) => {
+      progressRoutes(node, (p) => applyPhoneProgress(core, p), () => core.nowMs());
+      node.on("/phone/link", ({ ready }) => { core.phoneReady = ready; });
+      node.on("/phone/owner", ({ owner }) => { core.phoneOwner = owner; });
+      node.every(250, () => {
+        if (!core.closed && core.looker) {
+          core.tracker?.tick();
+          core.looker.tick();
+          core.speak();
+        }
+      });
+    },
     onChanges: (changes) => routeWorldChanges(core, emit, changes),
     onView: (view) => {
       first();
@@ -113,6 +129,13 @@ export async function startNodes(core: HomeCore, emit: (event: BrainLog) => void
     },
   });
   const phone = new BusNode({ name: "phone", bus, epoch, clock, log });
+  phoneCommandRoutes(phone, (m) => { if (!core.closed) showPhoneCommand(core, m); });
+  phoneOwnerRoutes(phone);
+  phone.on("/act/status", (s) => showStatus(core, s));
+  phone.on("/act/plan", ({ plan }) => core.app?.broadcast({ type: "plan", plan }));
+  phone.on("/act/progress_result", (r) => core.progress.receive(r));
+  phone.every(250, () => syncPhoneClaims(core));
+  phone.on("/phone/say", ({ text, grade }) => { if (!core.closed) core.phone?.reply(text, grade); });
   // 미니맵 물체 모양(가장 새 것)은 대시보드로만 보낸다(초당 10번이라 기록 DB·실행 기록에 넣지 않는다)
   phone.on("/perception/detections", (b) => {
     const e: SeenEvent = { type: "seen", at_ms: core.nowMs(), frame_id: b.frame_id, captured_at_ms: b.observed_ms, frame: b.frame, shapes: b.shapes };
@@ -158,8 +181,9 @@ export async function drainNodes(core: HomeCore, ms = DRAIN_MS): Promise<boolean
   const world = (await core.worldNode?.settle(left())) ?? true;
   const mirror = (await core.mirror?.node.settled(left())) ?? true;
   const transitions = (await core.out.act?.drain(left())) ?? true;
+  const delivered = (await core.phoneNode?.settled(left())) ?? true;
   const recorded = (await core.machineRecorder?.settled(left())) ?? true;
-  return inputs.every((x) => x !== false) && world && mirror && transitions && recorded;
+  return inputs.every((x) => x !== false) && world && mirror && transitions && delivered && recorded;
 }
 
 /** 노드를 끝낸다. 먼저 닫기 전 비우기(drainNodes, 기한을 넘겨도 멈춘다: 닫기가 걸리지 않게)를 하고,
@@ -196,13 +220,8 @@ export async function startPipeline(core: HomeCore, emit: (event: BrainLog) => v
 /** 주기 타이머(250ms): 판단·실행 추적·보기 담당·말풍선 카드. 오래 이어진 가전 상태(냉장고 문 1분)와 가전 상태는 집 상태 노드가 맡는다. */
 export function startLoop(core: HomeCore): void {
   const decide = core.decider!;
-  const tracking = core.tracker!;
-  const looking = core.looker!;
   core.decideTimer = setInterval(() => {
     decide.tick();
-    tracking.tick();
-    looking.tick();
-    core.speak();
   }, 250);
   core.decideTimer.unref?.();
 }

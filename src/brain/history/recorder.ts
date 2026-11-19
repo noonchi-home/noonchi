@@ -103,14 +103,18 @@ export function recordFeedback(db: HistoryDb, f: FeedbackLog): void {
   db.add("feedback", f.at_ms, f.text, { subject: f.subject, data: f.data });
 }
 
+export function recordPlan(db: HistoryDb, p: PlanView, now: number): void {
+  db.add("plan", Date.parse(p.updatedAt) || now, `${p.goal} ${PLAN_STATUS_TEXT[p.status]}`, {
+    subject: p.id, data: { revision: p.revision, status: p.status, steps: p.steps.map((s) => ({ id: s.id, kind: s.kind, label: s.label, status: s.status })) },
+  });
+}
+
 export function attachRecorder(db: HistoryDb, o: RecorderSources): () => void {
   const now = o.now ?? (() => Date.now());
   const offs = [
     o.onDevice(deviceRecorder(db, now)),
     o.onBrain((l) => recordBrainLog(db, l)),
-    o.onPlan((p) => db.add("plan", Date.parse(p.updatedAt) || now(), `${p.goal} ${PLAN_STATUS_TEXT[p.status]}`, {
-      subject: p.id, data: { revision: p.revision, status: p.status, steps: p.steps.map((s) => ({ id: s.id, kind: s.kind, label: s.label, status: s.status })) },
-    })),
+    o.onPlan((p) => recordPlan(db, p, now())),
     o.onMode((m) => db.add("mode", now(), MODE_TEXT[m], { data: { mode: m } })),
   ];
   return () => offs.forEach((off) => off());

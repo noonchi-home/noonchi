@@ -15,6 +15,7 @@ export interface WorldMirror {
 /** 거울을 준비한다(구독까지, 시작은 띄우는 곳이 모든 노드를 준비한 뒤). name은 /world/changes를 받는 그룹 이름이다. */
 export async function startWorldMirror(o: {
   bus: Bus; epoch: { boot: string; home: string }; name: NodeName; clock?: Clock; log?: (s: string) => void;
+  routes?: (node: BusNode) => void;
   onChanges?: (changes: WorldChange[], view: WorldView) => void | Promise<void>;
   onView?: (view: WorldView) => void | Promise<void>;
 }): Promise<WorldMirror> {
@@ -29,6 +30,7 @@ export async function startWorldMirror(o: {
       await o.onView?.(s.view);
       shown = s.rev;   // 보인 뒤에만 센다: 실패하면 같은 rev가 다시 올 때(250ms 다시 냄) 다시 부른다
     });
+  o.routes?.(node);
   await node.prepare();
   return { node, view: () => latest?.view ?? null, rev: () => latest?.rev ?? null };
 }

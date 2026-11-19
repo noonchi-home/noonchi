@@ -68,6 +68,7 @@ export function engineHeader(header: FrameHeader, video: boolean): FrameHeader {
 }
 
 export interface PhoneServerOptions {
+  onReady?: (ready: boolean) => void;
   onEye: (eye: EyeEvent) => void;
   /** 카메라 프레임·사진을 받을 곳. 없으면 바이너리 메시지를 무시한다. */
   feed?: EyeFeed;
@@ -299,6 +300,14 @@ export function createPhoneServer(opts: PhoneServerOptions): PhoneServer {
   /** 연결마다 판본: wait hello 기다리는 중, ok 판본이 맞음, old 옛 탭(hello 없음·판본 다름). */
   const phase = new WeakMap<WebSocket, "wait" | "ok" | "old">();
   const ok = (ws: WebSocket) => phase.get(ws) === "ok";
+  const ready = () => [...wss.clients].some((ws) => ok(ws) && ws.readyState === WebSocket.OPEN);
+  let lastReady = false;
+  const notifyReady = () => {
+    const current = ready();
+    if (lastReady === current) return;
+    lastReady = current;
+    opts.onReady?.(current);
+  };
   /** 실제 폰에 보낼 명령: 대상 트윈 자리 → AR 자리(맞추기 전이면 대상 null). */
   const wire = (c: PlannedCommand, speak = c.speak): PhoneCommand => {
     const ar = c.target ? session.toAr(c.target.position) : null;
@@ -321,6 +330,7 @@ export function createPhoneServer(opts: PhoneServerOptions): PhoneServer {
     const video = videoSession(req.url, videoDir);
     log(`[phone] 폰 연결(지금 ${wss.clients.size}대)`);
     ws.on("close", () => {
+      notifyReady();
       opts.feed?.video.endSource(source);
       log(`[phone] 폰 끊김(지금 ${wss.clients.size}대)`);
     });
@@ -329,6 +339,7 @@ export function createPhoneServer(opts: PhoneServerOptions): PhoneServer {
     // 옛 탭: 새로 고침 안내만 보낸다
     const old = () => {
       phase.set(ws, "old");
+      notifyReady();
       reply(ws, REFRESH_COMMAND);
     };
     const helloTimer = setTimeout(() => { if (phase.get(ws) === "wait") old(); }, HELLO_MS);
@@ -342,6 +353,7 @@ export function createPhoneServer(opts: PhoneServerOptions): PhoneServer {
       }
       if (was === "ok") return;
       phase.set(ws, "ok");
+      notifyReady();
       if (was === "old") reply(ws, { type: "command_clear", id: REFRESH_COMMAND.id });
       reply(ws, current ? wire(current, false) : { type: "command_clear" });
       // 지금 승인 대기 목록도 보낸다(새로 연 폰도 이미 대기 중인 질문을 보고 답한다)
@@ -422,7 +434,7 @@ export function createPhoneServer(opts: PhoneServerOptions): PhoneServer {
       resendIf(wasAligned, true);
     },
     syncState: () => session.syncState(),
-    ready: () => [...wss.clients].some((ws) => ok(ws) && ws.readyState === WebSocket.OPEN),
+    ready,
     reply(text, grade) {
       for (const ws of wss.clients) if (ok(ws)) reply(ws, { type: "reply", text, ...(grade ? { grade } : {}) } satisfies PhoneTalkReply);
     },

@@ -1,7 +1,7 @@
 // 집 실행 묶음(src/server/home/)의 안쪽 공유 객체 HomeCore: 도메인별 잇기(devices·agent·phone·act·observe·say)가 함께 쓰는 상태와 집 맥락.
 // startHome 한 함수가 나눠 쓰던 클로저 변수를 칸으로 둔 것이다. 조립(index.ts)이 만들어 도메인별 잇기를 옛 차례대로 부르고, 닫을 때도 이 칸을 본다.
 // 칸은 그 잇기가 채우기 전에는 읽지 않는다. 말풍선 카드 speak는 say.ts가 채우기 전까지 아무것도 하지 않는다.
-import { modeNow, type ExecutionTracker, type LessonStore, type Looker, type Mode, type PlanHub, type loadActConfig } from "../../act/index.js";
+import { ProgressReplies, modeNow, type ExecutionTracker, type LessonStore, type Looker, type Mode, type PlanHub, type loadActConfig } from "../../act/index.js";
 import type { Agent, ApprovalStore, Observer, PlaceInfo, Planner, Policy } from "../../agent/index.js";
 import type { Decider, PersonLane, ThoughtFeed } from "../../brain/index.js";
 import type { BrainLog, SeenEvent } from "../../contract/events.js";
@@ -10,7 +10,7 @@ import type { HabitFsm } from "../../contract/habit.js";
 import type { PlannedCommand } from "../../contract/phone.js";
 import type { SignalHub, ThinqLink } from "../../devices/index.js";
 import type { FloorPlan, HomePlan, PlaceNames, TwinData, loadLayout, loadScene } from "../../layout/index.js";
-import { realClock, type BusNode, type Clock, type Outbox } from "../../bus/index.js";
+import { realClock, type Body, type BusNode, type Clock, type Outbox } from "../../bus/index.js";
 import { HomeMachines } from "./machines.js";
 import type { ObservationPipeline, PerceptionNode } from "../../observe/index.js";
 import type { WorldView } from "../../contract/world.js";
@@ -49,6 +49,10 @@ export class HomeCore {
   unsubFocus: () => void = () => {};
   // 실제 폰(phone.ts)
   phoneOn = false;
+  phoneReady = false;
+  readonly progress = new ProgressReplies();
+  phoneOwner: Body<"/phone/owner">["owner"] = null;
+  phoneClaims = new Map<string, Body<"/phone/claim">["kind"]>();
   feed: EyeFeed | undefined;
   eyeHeightM = 0;
   /** 방·벽(scene.json, 없거나 깨졌으면 빈 목록). */
@@ -98,6 +102,8 @@ export class HomeCore {
   command: PlannedCommand | null = null;
   lastDecision: BrainLog | null = null;
   lastSeen: SeenEvent | null = null;
+  statusSent: string | null = null;
+  actStatus: Body<"/act/status"> | null = null;
   said: string | null = null;
   /** 지금 말풍선 말이 안전 알림인가(src/act/say.ts sayOf). */
   saidSafety = false;

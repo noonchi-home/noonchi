@@ -3,8 +3,9 @@
 // 녹화는 같은 메시지를 다시 남기지 않는다. 다 쓰면 콜백이 끝나 실행기가 ack한다(실패하면 던져 다시 받는다).
 // 녹화하는 SENSOR(record: true)는 커서(mode "all")로 다 읽는다. 사진 토픽과 /bus/dead는 녹화하지 않는다.
 import type { BrainLog, FeedbackLog } from "../contract/events.js";
+import type { PlanView } from "../contract/plan.js";
 import type { WorldChange } from "../contract/world.js";
-import { deviceRecorder, recordBrainLog, recordFeedback, type HistoryDb } from "../brain/index.js";
+import { deviceRecorder, recordPlan, recordBrainLog, recordFeedback, type HistoryDb } from "../brain/index.js";
 import { TOPICS, msgId, type BusNode, type Envelope, type TopicName } from "../bus/index.js";
 import { HEARD_MARK } from "../world/labels.js";
 import { machineWrites } from "./machines.js";
@@ -22,6 +23,9 @@ const changeLog = (c: WorldChange, at: number, keep: boolean): BrainLog =>
 function forBag(e: Envelope<TopicName>, keep: boolean): Envelope<TopicName> {
   if (keep) return e;
   const b = e.body as Record<string, unknown>;
+  if (e.topic === "/phone/progress" && b.kind === "voice") {
+    return { ...e, body: { ...b, text: HEARD_MARK } } as Envelope<TopicName>;
+  }
   if (e.topic === "/phone/heard") return { ...e, body: { ...b, text: HEARD_MARK } } as Envelope<TopicName>;
   if (e.topic === "/world/changes") return { ...e, body: { ...b, changes: (b.changes as WorldChange[]).map((c) => (c.kind === "heard" ? { ...c, text: HEARD_MARK } : c)) } } as Envelope<TopicName>;
   return e;
@@ -32,15 +36,19 @@ export function historyRoutes(node: BusNode, db: HistoryDb, o: { bag?: Bag; now:
   const device = deviceRecorder(db, o.now);
   const logs = (list: unknown) => { for (const l of (list ?? []) as BrainLog[]) recordBrainLog(db, l); };
   const machines = machineWrites(db);
-  const history: Partial<Record<TopicName, Write>> = o.machinesOnly ? machines : {
+  const history: Partial<Record<TopicName, Write>> = o.machinesOnly ? { ...machines } : {
     ...machines,
     "/perception/analysis": (b) => logs(b.logs),
     "/world/changes": (b) => { for (const c of b.changes as WorldChange[]) if (!PER_FRAME.has(c.kind)) recordBrainLog(db, changeLog(c, o.now(), keep)); },
     "/brain/decision": (b) => recordBrainLog(db, b as unknown as BrainLog),
     "/brain/link": (b) => recordBrainLog(db, b as unknown as BrainLog),
-    "/act/log": (b) => (b.type === "feedback" ? recordFeedback(db, b as unknown as FeedbackLog) : recordBrainLog(db, b as unknown as BrainLog)),
     "/device/changes": (b) => device(b.state as never, b.note as never),
     "/bus/dead": (b) => { db.add("bus_gap", o.now(), `처리하지 못한 메시지: ${String(b.topic)}`, { data: b }); },
+  };
+  history["/act/log"] = (b) => {
+    if (b.type === "plan") recordPlan(db, b.plan as PlanView, o.now());
+    else if (b.type === "feedback") recordFeedback(db, b as unknown as FeedbackLog);
+    else recordBrainLog(db, b as unknown as BrainLog);
   };
   const recorded = (t: TopicName) => {
     const s = TOPICS[t] as { qos: { kind: string; record?: boolean }; photo?: string };

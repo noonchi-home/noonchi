@@ -143,8 +143,8 @@ describe("격리 재생", () => {
         const w = new BusNode({ name: "world", bus, epoch: EPOCH, clock, log: () => {} });
         const a = new BusNode({ name: "act", bus, epoch: EPOCH, clock, log: () => {} });
         w.on("/perception/analysis", async (b) => { seen.push(String(b.frame_id)); await w.publish("/world/changes", { rev: Number(b.observed_ms), changes: [] }); });
-        a.on("/world/changes", async () => { await a.publish("/act/log", { n: 1 }); });
-        a.on("/act/log", async (b) => { const n = Number(b.n); seen.push(`log ${n}`); if (n < 5) await a.publish("/act/log", { n: n + 1 }); });
+        a.on("/world/changes", async () => { await a.publish("/act/log", { type: "execution", at_ms: 1, plan_id: "p", state: "running", text: "실행" }); });
+        a.on("/act/log", async (b) => { if (b.type !== "execution") return; const n = b.at_ms; seen.push(`log ${n}`); if (n < 5) await a.publish("/act/log", { ...b, at_ms: n + 1 }); });
         return [w, a];
       },
     });

@@ -54,7 +54,7 @@ describe("BusNode 실행기", () => {
     const n = node("act", bus);
     const order: string[] = [];
     n.on("/act/log", () => { order.push("log"); });
-    n.on("/world/changes", async () => { await n.publish("/act/log", { a: 1 }); order.push("changes-end"); });
+    n.on("/world/changes", async () => { await n.publish("/act/log", { type: "execution", plan_id: "p", at_ms: 1, state: "running", text: "실행" }); order.push("changes-end"); });
     const w = node("world", bus);
     await n.prepare();
     await w.prepare();
@@ -119,7 +119,7 @@ describe("BusNode 실행기", () => {
     await tick(50);
     await n.stop();
     expect(cancelled).toBe(true);
-    await expect(n.publish("/act/log", { a: 1 })).rejects.toThrow(/닫힌 노드/);
+    await expect(n.publish("/act/log", { type: "execution", plan_id: "p", at_ms: 1, state: "running", text: "실행" })).rejects.toThrow(/닫힌 노드/);
   });
 
   it("끝내기: spawn한 긴 일(LLM 호출)도 끊고 끝나길 기다리며, 그 뒤 post는 버린다", async () => {
@@ -287,11 +287,11 @@ describe("BusNode 실행기", () => {
   it("통로가 발행에 답하지 않으면(끊김) 발행은 시간 제한으로 실패하고, 끝내기는 기다리는 발행을 끊는다", async () => {
     const stuck: Bus = { publish: () => new Promise<void>(() => {}), subscribe: async () => ({ start() {}, stop: async () => {}, lost: () => 0 }), close: async () => {} };
     const quick = new BusNode({ name: "act", bus: stuck, epoch: EPOCH, log: () => {}, publishTimeoutMs: 50 });
-    await expect(quick.publish("/act/log", { a: 1 })).rejects.toThrow(/50ms/);
+    await expect(quick.publish("/act/log", { type: "execution", plan_id: "p", at_ms: 1, state: "running", text: "실행" })).rejects.toThrow(/50ms/);
     const clock = new VirtualClock(0);
     const n = new BusNode({ name: "act", bus: stuck, epoch: EPOCH, clock, log: () => {} });
     let failed: unknown = null;
-    n.every(100, async () => { try { await n.publish("/act/log", { a: 2 }); } catch (e) { failed = e; throw e; } });
+    n.every(100, async () => { try { await n.publish("/act/log", { type: "execution", plan_id: "p", at_ms: 2, state: "running", text: "실행" }); } catch (e) { failed = e; throw e; } });
     await n.prepare();
     n.start();
     void clock.advanceTo(100);
