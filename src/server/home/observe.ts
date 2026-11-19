@@ -10,7 +10,7 @@ import { BusNode, Outbox } from "../../bus/index.js";
 import type { BrainLog, SeenEvent } from "../../contract/events.js";
 import type { WorldChange } from "../../contract/world.js";
 import { floorLookup, roomNamedAt, type LayoutEditor } from "../../layout/index.js";
-import { createPipeline, startPerceptionNode } from "../../observe/index.js";
+import { createPipeline, LookClient, lookRoutes, startPerceptionNode } from "../../observe/index.js";
 import { WorldState, loadFallConfig, restsFromLayout, startWorldMirror, startWorldNode, surfacesFromLayout, type PlaneSurface, type RestSpot } from "../../world/index.js";
 import { historyRoutes } from "../../record/index.js";
 import { HEARD_MARK } from "../../world/labels.js";
@@ -104,12 +104,15 @@ export async function startNodes(core: HomeCore, emit: (event: BrainLog) => void
   const epoch = core.epoch;
   const clock = core.busClock();
   core.worldNode = await startWorldNode({ bus, epoch, world: core.world!, clock, log });
-  core.perception = await startPerceptionNode({ bus, epoch, clock, log });
+  core.perception = await startPerceptionNode({ bus, epoch, clock, log, routes: (n) => lookRoutes(n, () => core.pipeline, clock) });
   let first: () => void = () => {};
   const ready = new Promise<void>((r) => { first = r; });
   core.mirror = await startWorldMirror({
     bus, epoch, name: "act", clock, log,
     routes: (node) => {
+      core.out.act = new Outbox(node, { clock, log });
+      core.looks = new LookClient(core.out.act, clock);
+      core.looks.routes(node);
       progressRoutes(node, (p) => applyPhoneProgress(core, p), () => core.nowMs());
       node.on("/phone/link", ({ ready }) => { core.phoneReady = ready; });
       node.on("/phone/owner", ({ owner }) => { core.phoneOwner = owner; });
@@ -131,8 +134,8 @@ export async function startNodes(core: HomeCore, emit: (event: BrainLog) => void
   const phone = new BusNode({ name: "phone", bus, epoch, clock, log });
   phoneCommandRoutes(phone, (m) => { if (!core.closed) showPhoneCommand(core, m); });
   phoneOwnerRoutes(phone);
-  phone.on("/act/status", (s) => showStatus(core, s));
-  phone.on("/act/plan", ({ plan }) => core.app?.broadcast({ type: "plan", plan }));
+  phone.on("/act/status_changes", (s) => showStatus(core, s));
+  phone.on("/act/log", (b) => { if (b.type === "plan") core.app?.broadcast(b); });
   phone.on("/act/progress_result", (r) => core.progress.receive(r));
   phone.every(250, () => syncPhoneClaims(core));
   phone.on("/phone/say", ({ text, grade }) => { if (!core.closed) core.phone?.reply(text, grade); });
@@ -145,7 +148,7 @@ export async function startNodes(core: HomeCore, emit: (event: BrainLog) => void
   const devices = new BusNode({ name: "devices", bus, epoch, clock, log });
   core.phoneNode = phone;
   core.devicesNode = devices;
-  core.out = { act: new Outbox(core.mirror.node, { clock, log }), phone: new Outbox(phone, { clock, log }), devices: new Outbox(devices, { clock, log }) };
+  core.out = { act: core.out.act, phone: new Outbox(phone, { clock, log }), devices: new Outbox(devices, { clock, log }) };
   const recorder = new BusNode({ name: "recorder", bus, epoch, clock, log });
   core.machineRecorder = recorder;
   ctx.history.db.forgetOtherBoots(epoch.boot);
@@ -206,6 +209,7 @@ export async function startPipeline(core: HomeCore, emit: (event: BrainLog) => v
     onSeen: (e) => perception.seen(e),
     // 주기 판단(기본 5초)은 엔진 프레임이 오는 동안만 부른다
     onFrame: () => decide.onFrame(),
+    onView: (f) => { void perception.node.publish("/perception/view", f).catch((e: Error) => { if (!core.closed) log(e.message); }); },
     // 실행 추적이 가까이 보는 차례(찾기·내용물 보류)인 동안만 VLM 사진 간격을 1초로 줄인다
     vlmFast: () => core.tracker?.fastVlm() ?? false,
     // 분석한 프레임은 디스크에 쓰지 않는다. DATASET_COLLECT=1일 때만 시험 자료로 RUNTIME_DIR/dataset에 쓴다

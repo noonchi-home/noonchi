@@ -1,3 +1,4 @@
+import { cupSession } from "./helpers/cup-session.js";
 // 처음부터 끝까지(가짜 서버): 폰 엔진 프레임 → YOLO(대본)·VLM(가짜 OpenAI 호환 서버, 컵 자리 대본) → World State → PAM(시험용 PAM 자리: 컵 치우기)
 // → 에이전트 계획 모드(같은 가짜 서버의 도구 호출) → 실행 전 검사 → 실제 폰 단계 명령(소리) → 「완료」 단추·World State 컵 자리·말 「다 했어」로 한 단계씩 → 완료, 그리고 한 시간축 기록·대시보드 메시지.
 // 기본 집(마곡 아파트, 식탁·싱크대 있음). 맞춘 폰 눈은 식탁·싱크대에서 1.2 m 밖이라 이동 단계는 「완료」나 말로 넘기고,
@@ -29,15 +30,15 @@ let srv: RunningServer | undefined;
 let fake: FakeServer | undefined;
 let pam: FakePamLlm | undefined;
 const sockets: WebSocket[] = [];
+let closeCup: (() => Promise<void>) | undefined;
 afterEach(async (ctx) => {
   // 기록 DB 같음 시험: 서버를 닫기 전에 반성용 줄 모양을 뽑아 두고, 다 닫은 뒤 정답과 견준다(시험이 실패했으면 견주지 않음)
   const golden = srv && ctx.task.result?.state !== "fail" ? await settledRows(srv) : null;
   for (const s of sockets.splice(0)) s.close();
-  await srv?.close();
+  if (closeCup) { await closeCup(); closeCup = undefined; }
+  else { await srv?.close(); await fake?.close(); await pam?.close(); }
   srv = undefined;
-  await fake?.close();
   fake = undefined;
-  await pam?.close();
   pam = undefined;
   if (golden instanceof Error) throw golden;
   if (golden) await expectHistoryGolden("noonchi-e2e", ctx.task.name, golden);
@@ -55,59 +56,12 @@ async function drinkThenLeave(people: Detection[], dash: Msg[], pump: (until: ()
 
 describe("NOONCHI 처음부터 끝까지", () => {
   it("관찰부터 단계 명령·실행 결과까지 한 흐름으로 돌고 기록·대시보드에 남는다", async () => {
-    let cupPlace = "on_table";
-    let atSink = false;
-    // 사람 하는 일(VLM 사실): 처음에는 컵으로 마시다 떠나고, 컵을 치운 뒤에는 먹다가 떠난다(먹는 중도 마시는 중 상태라 떠남 화살표가 켜진다. 컵을 쓰지 않아 목표는 서지 않는다)
-    let personAct = "drinking";
-    const people: Detection[] = [];
-    const top = topLook();
-    let above: [number, number, number] | null = null;
-    fake = await startFakeOpenAI({
-      reply: (body) => {
-        const seen = top.reply(body);
-        if (seen) return seen;
-        if (body?.response_format?.json_schema?.name !== "scene_observation") return null;
-        const parts = (body.messages as { role: string; content: unknown }[]).filter((m) => m.role === "user").flatMap((m) => (Array.isArray(m.content) ? m.content : [{ text: m.content }]));
-        const text = parts.map((p: { text?: unknown }) => (typeof p.text === "string" ? p.text : "")).join("\n");
-        const dets = JSON.parse(/Detections: (\[.*\])/.exec(text)?.[1] ?? "[]") as { id: string; class: string }[];
-        return JSON.stringify({ scene: "kitchen", observations: dets.map((d) => ({ object_id: d.id, state: d.class === "person" ? personAct : cupPlace })), summary: "컵" });
-      },
-      // 에이전트 계획 모드: 같은 가짜 서버가 컵 치우기 도구 호출(지금 서버와 같은 네 단계)을 낸다
-      respond: plannerRespond(CUP_SCRIPTS),
-    });
-    // PAM은 기본 주기(5초)로 불린다. 관찰 텍스트에 컵이 있으면 컵 치우기를 고르고(끝난 뒤에도: 싱크대 안 컵으로는 새 명령을 보내지 않아야 한다), 없으면 대기
-    pam = await startFakePamLlm({ predict: (b) => (/컵 cup_\d/.test(String(b.observation_text))
-      ? { observation: "빈 컵이 식탁에 남음", reasoning: "자리를 비워 컵을 치운다", task_index: 0 } : { observation: "컵 없음", reasoning: "할 일 없음", task_index: -1 }) });
-    // 처음 하는 컵 치우기도 승인을 묻지 않고 첫 명령부터(2026-11-18 사용자 결정: 처음 하는 일 묻기 끔, 기본 집 apartment). 승인 기억 파일도 쓰지 않는다.
-    // 묻는 길은 tests/mokryeon-e2e.test.ts·tests/act-track.test.ts가 askFirst로 켜서 본다
-    const runtimeDir = mkdtempSync(join(tmpdir(), "rt-"));
-    // 치우기를 보는 시험은 배운 뒤 기억(합성 3일째부터의 로봇 FSM)으로 돈다. seed 기억이면 떠날 때 묻는다
-    useLearnedMemory(runtimeDir);
-    srv = await startServer({
-      env: { HUB: "memory", PORT: "0", RUNTIME_DIR: runtimeDir, PHONE_PORT: "0", PHONE_HOST: "127.0.0.1",
-        BRAIN: "1", VLM_BASE_URL: `${fake.url}/v1`, ...pamLlmEnv(pam), OPENAI_API_KEY: "fake-key", OPENAI_BASE_URL: `${fake.url}/v1` },
-      brain: { detector: new ScriptedDetector(top.detect(() => [...people, det("cup", 0.9, CUP_BOX, 41)])) }, log: () => {},
-    });
-    const dash: Msg[] = [];
-    sockets.push(await openWebSocket(`${srv.url.replace(/^http/, "ws")}/events`, { setup: inbox(dash) }));
-    const phoneUrl = new URL(srv.phoneUrls[0]!);
-    const phone: Msg[] = [];
-    const ws = await openPhone(`ws://${phoneUrl.host}/phone/events`, { options: { origin: phoneUrl.origin }, setup: inbox(phone) });
-    sockets.push(ws);
-    await alignPhone(srv, ws, phone, dash);
-    let n = 0;
-    // 조건이 맞을 때까지 엔진 프레임을 150ms마다 보낸다(판단 뒤에도 대상을 다시 보도록, 최대 15초)
-    const pump = async (until: () => boolean | Promise<boolean>) => {
-      for (const end = Date.now() + 15_000; Date.now() < end; ) {
-        if (await until()) return;
-        ws.send(frameOf(top, above, n++, atSink ? SINK_VIEW : undefined));
-        await new Promise((r) => setTimeout(r, 150));
-      }
-      throw new Error("조건이 15초 안에 맞지 않음");
-    };
-    const history = async (kinds: string) => ((await (await fetchRetry(`${srv!.url}/api/history?kinds=${kinds}`)).json()) as { ok: boolean; rows: HistoryRow[] });
-    const said = (text: string) => phone.find((m) => m.type === "command" && m.speak && m.text === text);
-
+    const session = await cupSession();
+    const { scene, people, dash, phone, ws, pump, said, history, runtimeDir } = session;
+    srv = session.srv;
+    fake = session.fake;
+    pam = session.pam;
+    closeCup = session.close;
     await drinkThenLeave(people, dash, pump);
     await pump(() => !!said("식탁으로 가 주세요"));
     const first = said("식탁으로 가 주세요")!;
@@ -124,12 +78,12 @@ describe("NOONCHI 처음부터 끝까지", () => {
     // 2 컵 안 보기: 단추 없이, 폰을 컵 입구 위로 들어 내려다본 사진 → 위에서 보기가 비어 있음으로 보면 집기
     await pump(() => !!said(PEEK_TEXT.above("컵")));
     expect(said(PEEK_TEXT.above("컵"))).toMatchObject({ id: planId, step: `${planId}:2`, kind: "do", view: "above", choices: [] });
-    above = cupPos(dash, "cup_1");
+    scene.above = cupPos(dash, "cup_1");
     await pump(() => !!said("컵을 들어 주세요"));
-    above = null;
+    scene.above = null;
     expect(said("컵을 들어 주세요")).toMatchObject({ id: planId, step: `${planId}:3`, vision: "컵 · 식탁 위" });
     // 3 집기: VLM이 컵을 손에 있음으로 본다
-    cupPlace = "in_hand";
+    scene.cupPlace = "in_hand";
     await pump(() => !!said("싱크대로 가 주세요"));
     expect(said("싱크대로 가 주세요")).toMatchObject({ id: planId, step: `${planId}:4`, vision: expect.stringMatching(/^컵 · 손에 있음 · 싱크대까지 /) });
     // 4 이동: 말로 「다 했어」(답 글은 비어 있고 다음 명령이 따로 온다)
@@ -139,16 +93,16 @@ describe("NOONCHI 처음부터 끝까지", () => {
     await pump(() => phone.filter((m) => m.type === "reply").length >= 2);
     expect(phone.filter((m) => m.type === "reply")).toEqual([{ type: "reply", text: "", pending: [] }, { type: "reply", text: "" }]);
     // 5 내려놓기: VLM이 컵을 싱크대 안으로 본다 → 명령을 지우고 완료
-    atSink = true;
-    cupPlace = "in_sink";
+    scene.atSink = true;
+    scene.cupPlace = "in_sink";
     await pump(() => phone.some((m) => m.type === "command_clear" && m.id === planId));
     await pump(async () => (await history("execution")).rows.some((r) => r.subject === planId && r.text === "완료"));
     // 다음 판단(사람이 다시 와서 먹다 떠남 → 컵 치우기)은 싱크대 안 컵을 대상으로 삼지 않고 실행 전 검사에서 멈춘다
-    personAct = "eating";
+    scene.personAct = "eating";
     await drinkThenLeave(people, dash, pump);
     await pump(async () => (await history("execution")).rows.some((r) => r.subject !== planId && r.text === CHECK_TEXT.in_sink));
     // 그 뒤 VLM이 같은 컵을 「식탁 위」로 봐도(실제 판정에서 싱크대 속 컵에 나온 답) 실행 추적이 넣은 컵이라 다음 판단도 계획 전 검사에서 멈춘다
-    cupPlace = "on_table";
+    scene.cupPlace = "on_table";
     const cupNow = async () => ((await (await fetchRetry(`${srv!.url}/api/world`)).json()) as { world: WorldView }).world.objects.find((o) => o.cls === "cup");
     await pump(async () => { const c = await cupNow(); return c?.surface === "sink_1" && c.facts.place?.value === "on_counter"; });
     await drinkThenLeave(people, dash, pump);

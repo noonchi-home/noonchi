@@ -22,7 +22,10 @@ export function startSay(core: HomeCore): void {
     const signature = JSON.stringify(status);
     if (core.statusSent === signature) return;
     core.statusSent = signature;
-    if (core.out.act) core.out.act.push("/act/status", status);
+    if (core.out.act) {
+      core.out.act.push("/act/status", status);
+      core.out.act.push("/act/status_changes", status);
+    }
     else showStatus(core, status);
 
   };

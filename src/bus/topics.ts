@@ -121,7 +121,23 @@ const deviceChange = z.strictObject({
   note: z.strictObject({ initial: z.boolean().optional(), label: z.string().optional(), kind: z.string().optional() }),
 });
 /** /brain/goal·/brain/goal_changes: 미리 세운 목표 하나. 계획 보기는 실행 추적이 타입으로 만든 객체라 깊이 보지 않는다(최상위 id·steps만). */
-const phoneCommand = z.strictObject({ cmd: z.discriminatedUnion("type", [
+const xyz = z.tuple([at, at, at]);
+const lookSpot = z.strictObject({ id, label: z.string(), position: xyz });
+const lookRequest = z.discriminatedUnion("kind", [
+  z.strictObject({ req: id, kind: z.literal("cancel") }),
+  z.strictObject({ req: id, kind: z.literal("ready_top"), object_id: id, since: at, until: at }),
+  z.strictObject({ req: id, kind: z.literal("ready_spot"), position: xyz, since: at, until: at }),
+  z.strictObject({ req: id, kind: z.literal("closer"), spot: lookSpot, since: at.optional(), until: at }),
+  z.strictObject({ req: id, kind: z.literal("top"), spot: lookSpot, since: at, until: at }),
+]);
+const closerResult = z.discriminatedUnion("ok", [
+  z.strictObject({ ok: z.literal(false), why: z.enum(["no_fresh_frames", "vlm_busy", "no_view", "out_of_view", "no_detector", "aborted", "closed", "error", "world_timeout"]) }),
+  z.strictObject({ ok: z.literal(true), frame_id: id, captured_at_ms: at, crop: box, frames: z.number().int(), summary: z.string().nullable(),
+    vlm: z.enum(["ok", "aborted", "no_fresh_frames", ...VLM_MISSING]), found: z.array(z.strictObject({ id: id.nullable(), cls: label, score: at, facts: z.array(z.string()), via: z.literal("vlm").optional() })),
+    top: z.array(z.strictObject({ frame_id: id, kept: z.boolean(), why: z.enum(["moved", "vlm_missing", "not_visible", "no_contents", "no_vessel", "crowded"]).optional() })).optional() }),
+]);
+const lookResult = z.strictObject({ req: id, observed_ms: at, result: z.union([z.boolean(), closerResult]) });
+const phoneCommand = z.strictObject({ revision: rev.optional(), cmd: z.discriminatedUnion("type", [
   z.strictObject({ type: z.literal("command_clear"), id: id.optional() }),
   z.strictObject({ type: z.literal("command"), id, step: id, text: z.string(), vision: z.string().nullable(),
     choices: z.array(z.strictObject({ id, label: z.string() })), speak: z.boolean(),
@@ -154,7 +170,7 @@ const wirePlan = z.strictObject({
 const actLog = z.discriminatedUnion("type", [
   z.strictObject({ type: z.literal("execution"), at_ms: at, plan_id: id, state: z.enum(["decided", "planned", "running", "verifying", "done", "failed"]), text: z.string(), reason: z.string().optional() }),
   z.strictObject({ type: z.literal("feedback"), at_ms: at, subject: id, text: z.string(), data: z.strictObject({ choice: id, via: z.enum(["voice", "button"]) }) }),
-  z.strictObject({ type: z.literal("plan"), plan: wirePlan }),
+  z.strictObject({ type: z.literal("plan"), plan: wirePlan.nullable() }),
 ]);
 const actStatus = z.strictObject({ mode: z.enum(["noonchi", "coach"]), hold: z.boolean(), text: z.string().nullable(), safety: z.boolean(),
   tasks: z.array(id), placed: z.array(z.tuple([id, z.strictObject({ target: id, part: z.literal("basin").optional(), atMs: at })])) });
@@ -184,6 +200,7 @@ type Flat<T> = { [K in keyof T]: T[K] };
 type Same<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false;
 /** 실제 모양으로 바꾼 토픽 몸이 계약 타입과 같다. 미니맵 몸은 SeenEvent에서 사건 칸을 빼고 근거 시각(촬영 시각)을 단 것이다. */
 export type TopicBodiesSame = [
+  Assert<Same<z.infer<typeof closerResult>, import("../contract/events.js").CloserResult>>,
   Assert<Same<z.infer<typeof wirePlan>, PlanView>>,
   Assert<Same<z.infer<typeof phoneCommand>["cmd"], import("../contract/phone.js").PlannedCommandMessage>>,
   Assert<Equal<(typeof VIEW_KEYS)[number], keyof WorldView>>,
@@ -219,8 +236,9 @@ export const TOPICS = {
   "/perception/detections": { qos: { kind: "sensor", depth: 600, record: true }, body: seen, key: one, order: "observed_ms", from: ["perception"] },
   "/perception/analysis": { qos: { kind: "reliable" }, body: observed, key: by("frame_id"), order: "observed_ms", from: ["perception"] },
   "/perception/scene": { qos: { kind: "reliable" }, body: sceneInput, key: one, order: null, from: ["perception"] },
-  "/perception/look_request": { qos: { kind: "reliable" }, body: obj, key: by("req"), order: null, from: ["act"] },
-  "/perception/look_result": { qos: { kind: "reliable" }, body: observed, key: by("req"), order: "observed_ms", from: ["perception"] },
+  "/perception/view": { qos: { kind: "state" }, body: z.strictObject({ view: camera.nullable(), capturedAtMs: at, ...size }), key: one, order: "stamp", from: ["perception"] },
+  "/perception/look_request": { qos: { kind: "reliable" }, body: lookRequest, key: by("req"), order: null, from: ["act"] },
+  "/perception/look_result": { qos: { kind: "reliable" }, body: lookResult, key: by("req"), order: "observed_ms", from: ["perception"] },
   "/world/input": { qos: { kind: "reliable" }, body: worldInput, key: by("id"), order: null, from: ["act"] },
   "/world/state": { qos: { kind: "state" }, body: worldState, key: one, order: "rev", from: ["world"] },
   "/world/changes": { qos: { kind: "reliable" }, body: worldChanges, key: one, order: "rev", from: ["world"] },
@@ -234,8 +252,10 @@ export const TOPICS = {
   "/brain/link": { qos: { kind: "state" }, body: obj, key: one, order: "stamp", from: ["brain"] },
   "/brain/cancel": { qos: { kind: "reliable" }, body: obj, key: by("decision_id"), order: null, from: ["act"] },
   "/act/plan": { qos: { kind: "state" }, body: z.strictObject({ plan: wirePlan.nullable() }), key: one, order: "stamp", from: ["act"] },
+  "/act/status_changes": { qos: { kind: "reliable" }, body: actStatus, key: one, order: "stamp", from: ["act"] },
   "/act/status": { qos: { kind: "state" }, body: actStatus, key: one, order: "stamp", from: ["act"] },
   "/act/log": { qos: { kind: "reliable" }, body: actLog, key: one, order: "stamp", from: ["act"] },
+  "/act/phone_changes": { qos: { kind: "reliable" }, body: phoneCommand, key: one, order: "stamp", from: ["act"] },
   "/act/phone_command": { qos: { kind: "state" }, body: phoneCommand, key: one, order: "stamp", from: ["act"] },
   "/phone/claim": { qos: { kind: "state" }, body: phoneClaim, key: by("claim_id"), order: "stamp", from: ["act", "phone"] },
   "/phone/owner": { qos: { kind: "state" }, body: phoneOwner, key: one, order: "stamp", from: ["phone"] },

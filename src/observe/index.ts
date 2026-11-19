@@ -3,3 +3,5 @@
 export { LOOK_MARGIN, type LookSpot } from "./crop.js";
 export { type LatestFrame, createPipeline, type ObservationPipeline, type PipelineInject, type WorldPort } from "./pipeline.js";
 export { CLOSER_WAIT_MS, startPerceptionNode, type PerceptionNode } from "./node.js";
+
+export { LookClient, lookRoutes } from "./look-port.js";

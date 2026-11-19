@@ -46,7 +46,7 @@ export function historyRoutes(node: BusNode, db: HistoryDb, o: { bag?: Bag; now:
     "/bus/dead": (b) => { db.add("bus_gap", o.now(), `처리하지 못한 메시지: ${String(b.topic)}`, { data: b }); },
   };
   history["/act/log"] = (b) => {
-    if (b.type === "plan") recordPlan(db, b.plan as PlanView, o.now());
+    if (b.type === "plan") { if (b.plan) recordPlan(db, b.plan as PlanView, o.now()); }
     else if (b.type === "feedback") recordFeedback(db, b as unknown as FeedbackLog);
     else recordBrainLog(db, b as unknown as BrainLog);
   };

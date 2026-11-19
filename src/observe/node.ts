@@ -25,7 +25,7 @@ export interface PerceptionNode {
 }
 
 /** 인식 노드를 준비한다(구독까지, 시작은 띄우는 곳이 모든 노드를 준비한 뒤). */
-export async function startPerceptionNode(o: { bus: Bus; epoch: { boot: string; home: string }; clock?: Clock; log?: (s: string) => void; closerWaitMs?: number }): Promise<PerceptionNode> {
+export async function startPerceptionNode(o: { routes?: (node: BusNode) => void; bus: Bus; epoch: { boot: string; home: string }; clock?: Clock; log?: (s: string) => void; closerWaitMs?: number }): Promise<PerceptionNode> {
   const clock = o.clock ?? realClock;
   const log = o.log ?? ((s: string) => console.error(s));
   const waitMs = o.closerWaitMs ?? CLOSER_WAIT_MS;
@@ -70,6 +70,7 @@ export async function startPerceptionNode(o: { bus: Bus; epoch: { boot: string; 
     },
     view: () => latest,
   };
+  o.routes?.(node);
   await node.prepare();
   return {
     node, port,

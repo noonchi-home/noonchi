@@ -13,7 +13,7 @@ function sendSites(file: string, source: string): string[] {
     const key = c.property?.name ?? literalSpec(c.property);
     const parent = c.object?.property?.name ?? literalSpec(c.object?.property);
     if (key === "toPhone" || c.name === "toPhone" || (parent === "answers" && key === "send") ||
-      (["push", "publish", "envelope"].includes(key) && literalSpec(n.arguments[0]) === "/act/phone_command")) {
+      (["push", "publish", "envelope"].includes(key) && ["/act/phone_command", "/act/phone_changes"].includes(literalSpec(n.arguments[0]) ?? ""))) {
       bad.push(file + ":" + source.slice(0, n.start).split("\n").length);
     }
   });

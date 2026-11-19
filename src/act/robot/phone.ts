@@ -45,7 +45,16 @@ export class RobotPhone {
   }
 }
 
-/** 명령을 보내는 곳은 로봇 하나다. 운영 중에는 같은 봉투를 다시 보내는 발행 줄을 쓴다. */
+const revisions = new WeakMap<object, number>();
+
+/** 실제 폰이 받은 차례를 지키고, 늦게 붙는 폰에는 마지막 명령만 되살린다. */
 export function emitRobotCommand(out: Pick<Outbox, "push"> | Pick<BusNode, "publish">, cmd: PlannedCommandMessage) {
-  return "push" in out ? out.push("/act/phone_command", { cmd }) : out.publish("/act/phone_command", { cmd });
+  const revision = (revisions.get(out) ?? 0) + 1;
+  revisions.set(out, revision);
+  const body = { cmd, revision };
+  if ("push" in out) {
+    out.push("/act/phone_changes", body);
+    return out.push("/act/phone_command", body);
+  }
+  return out.publish("/act/phone_changes", body).then(() => out.publish("/act/phone_command", body));
 }

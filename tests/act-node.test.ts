@@ -6,6 +6,20 @@ import { phoneCommandRoutes } from "../src/phone/node.js";
 import type { PlannedCommandMessage } from "../src/contract/phone.js";
 
 describe("로봇에서 폰으로", () => {
+  it("마지막 단계의 지우기와 완료 문장을 붙여 보내도 폰은 둘 다 받는다", async () => {
+    const bus = new MemoryBus(), epoch = { boot: "b", home: "main" };
+    const act = new BusNode({ name: "act", bus, epoch }), phone = new BusNode({ name: "phone", bus, epoch });
+    const received: PlannedCommandMessage[] = [];
+    phoneCommandRoutes(phone, (m) => { received.push(m); });
+    const c: PlannedCommandMessage = { type: "command", id: "p", step: "p:1", text: "마지막 단계", choices: [], speak: true, vision: null, target: null };
+    try {
+      await act.prepare(); await phone.prepare(); act.start(); phone.start();
+      await emitRobotCommand(act, c);
+      await expect.poll(() => received.length).toBe(1);
+      await Promise.all([emitRobotCommand(act, { type: "command_clear", id: "p" }), emitRobotCommand(act, { ...c, step: "done", text: "다 했어요." })]);
+      await expect.poll(() => received.map((m) => m.type)).toEqual(["command", "command_clear", "command"]);
+    } finally { await phone.stop(); await act.stop(); await bus.close(); }
+  });
   it("늦게 붙어도 지금 명령을 받고 다른 집의 명령은 받지 않는다", async () => {
     const epoch = { boot: "b", home: "main" };
     const bus = new MemoryBus();

@@ -94,7 +94,7 @@ export function startPlans(core: HomeCore): void {
   const plans = new PlanHub(floorPlan, (m) => {
     if (core.out.act && m.type === "plan") {
       core.out.act.push("/act/plan", { plan: m.plan });
-      if (m.plan) core.out.act.push("/act/log", { type: "plan", plan: m.plan });
+      core.out.act.push("/act/log", { type: "plan", plan: m.plan });
     } else {
       core.app?.broadcast(m);
       if (m.type === "plan" && m.plan) history.plan(m.plan);
@@ -239,9 +239,9 @@ export function startAct(core: HomeCore): (event: BrainLog) => void {
     // 내용물 보류(src/act/robot/contents.ts): 가까이 보기는 보기 담당이 한 번에 하나
     lookContents: (h) => core.looker?.contents(h) ?? false,
     // 가까이 가서 보기: 위에서 비추기가 끝났는가(관찰 흐름), 위에서 비추는 동안 그 컵의 보기 지킴(World State)
-    topReady: (id, sinceMs) => core.pipeline?.topReady(id, sinceMs) ?? false,
+    topReady: (id, sinceMs) => core.looks?.topReady(id, sinceMs) ?? false,
     // 찾기(src/act/robot/find.ts): 비추기가 끝났는가(가까이 보기와 같은 프레임 고르기), 실행 전 찾기의 신선도는 실행 전 검사의 낡음 기준
-    spotReady: (at, sinceMs) => core.pipeline?.spotReady(at, sinceMs) ?? false, staleMs: core.act.staleMs,
+    spotReady: (at, sinceMs) => core.looks?.spotReady(at, sinceMs) ?? false, staleMs: core.act.staleMs,
     // 찾기 상태 줄은 생각 말풍선에 모델 없이 바로 올린다
     thought: (text, decisionId) => feed.note(text, decisionId),
     guardObject: (id, on) => worldInput(core, { kind: "guard", id, on, at_ms: now() }),
@@ -270,7 +270,7 @@ export function startAct(core: HomeCore): (event: BrainLog) => void {
 /** 보기 담당(src/act/look.ts): 멈춘 단계(A)와 판단 전 보기(B)에 관찰 모드를 한 번에 하나 부르고 고른 도구를 실행한다. 관찰 흐름을 연 뒤 부른다. */
 export function startLooker(core: HomeCore, emit: (event: BrainLog) => void): void {
   const { ctx, observer } = core;
-  const observed = core.pipeline!;
+  const observed = core.looks!;
   const tracking = core.tracker!;
   const now = () => core.nowMs();
   core.looker = new Looker({

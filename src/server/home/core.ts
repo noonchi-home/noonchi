@@ -12,7 +12,7 @@ import type { SignalHub, ThinqLink } from "../../devices/index.js";
 import type { FloorPlan, HomePlan, PlaceNames, TwinData, loadLayout, loadScene } from "../../layout/index.js";
 import { realClock, type Body, type BusNode, type Clock, type Outbox } from "../../bus/index.js";
 import { HomeMachines } from "./machines.js";
-import type { ObservationPipeline, PerceptionNode } from "../../observe/index.js";
+import type { LookClient, ObservationPipeline, PerceptionNode } from "../../observe/index.js";
 import type { WorldView } from "../../contract/world.js";
 import type { EyeFeed, FrameHeader, PhoneServer, StartStore, twinLandmarks } from "../../phone/index.js";
 import type { PlaneSurface, WorldMirror, WorldNode, WorldState } from "../../world/index.js";
@@ -85,6 +85,7 @@ export class HomeCore {
   pipeline: ObservationPipeline | null = null;
   // 노드(src/bus): 집 세대, 인식·집 상태·거울(act)·폰·가전 노드
   epoch!: { boot: string; home: string };
+  looks: LookClient | null = null;
   perception: PerceptionNode | null = null;
   worldNode: WorldNode | null = null;
   mirror: WorldMirror | null = null;

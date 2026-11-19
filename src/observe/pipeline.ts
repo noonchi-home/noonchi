@@ -151,6 +151,7 @@ export interface PipelineOptions {
   /** 감지가 끝난 프레임마다(빠른 프레임 포함) 물체 모양. 대시보드로만 보내고 기록하지 않는다(src/server/home/observe.ts). */
   onSeen?: (e: SeenEvent) => void;
   /** 엔진 프레임이 올 때마다(같은 사진·늦은 프레임 포함). 판단 호출 시점이 관찰이 살아 있는지 본다. */
+  onView?: (f: LatestFrame) => void;
   onFrame?: () => void;
   /** 시험 자료 저장(DATASET_COLLECT=1일 때만). 고리에 넣은 프레임마다 부른다. */
   dataset?: (f: EngineFrame) => void;
@@ -299,6 +300,7 @@ export class ObservationPipeline {
     // VLM 프레임: 앞 VLM 프레임보다 VLM 간격 이상 뒤에 찍힌 프레임(간격이 없으면 모든 프레임). 그 사이는 빠른 프레임이다.
     // 가까이 보는 차례인 동안은 간격이 FAST_VLM_MS다(늘어나는 VLM 호출은 그 차례뿐이다)
     const vlmMs = this.vlmGap();
+    if (this.o.onView) this.o.onView({ view: frame.view, capturedAtMs: frame.capturedAtMs, width: frame.width, height: frame.height });
     frame.vlm = vlmMs === undefined || this.lastVlmAt === null || t.atMs - this.lastVlmAt >= vlmMs;
     if (frame.vlm) this.lastVlmAt = t.atMs;
     if (this.o.dataset) {
@@ -756,6 +758,7 @@ async function createDetector(env: Env, log: (line: string) => void): Promise<De
 /** 환경 변수로 관찰 흐름을 만든다. VLM은 추론 모드가 고른 OpenAI 호환 주소(src/infer)이고, 가까이 보기는 같은 주소에 VLM_CLOSER_MODEL 모델로 보낸다. */
 export async function createPipeline(o: {
   env: Env; world: WorldPort; emit: (log: BrainLog) => void;
+  onView?: (f: LatestFrame) => void;
   onFrame?: () => void; log: (line: string) => void; inject?: PipelineInject; dataset?: (f: EngineFrame) => void;
   onSeen?: (e: SeenEvent) => void;
   onDetected?: (jpeg: Buffer, result: DetectResult) => void;
@@ -772,7 +775,7 @@ export async function createPipeline(o: {
   if (o.dataset) o.log("[경고] 시험 자료 모으기가 켜져 있습니다. 엔진 프레임을 디스크에 씁니다.");
   for (const w of config.warnings ?? []) o.log(w);
   return new ObservationPipeline({
-    config, detector, vlm, closerVlm, world: o.world, emit: o.emit, onFrame: o.onFrame, onSeen: o.onSeen, dataset: o.dataset, onDetected: o.onDetected, vlmFast: o.vlmFast, clock: o.inject?.clock,
+    config, detector, vlm, closerVlm, world: o.world, emit: o.emit, onFrame: o.onFrame, onView: o.onView, onSeen: o.onSeen, dataset: o.dataset, onDetected: o.onDetected, vlmFast: o.vlmFast, clock: o.inject?.clock,
   });
 }
 
