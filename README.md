@@ -1,6 +1,6 @@
 # A Proactive Agentic Home for CLOiD Combining Active Observation and Behavior Prediction
 
-**Group: Blitz** · Software Engineering 26-2
+LG electronics · Software Engineering 26-2
 
 ![Node.js](https://img.shields.io/badge/Node.js-22-5FA04E?logo=nodedotjs&logoColor=white)
 ![TypeScript](https://img.shields.io/badge/TypeScript-7.0-3178C6?logo=typescript&logoColor=white)
