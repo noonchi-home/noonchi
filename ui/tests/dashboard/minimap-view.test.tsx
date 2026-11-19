@@ -118,6 +118,22 @@ describe("비전 미니맵만(?view=minimap)", () => {
     expect(pane().querySelector("[data-eye-video]")).toBeNull();
   });
 
+  // 2026-11-19 사용자: 미니맵 녹화에 지금 실제 폰에 낸 명령 한 줄을 아래쪽 자막으로
+  it("지금 실제 폰 명령(phone_command)을 아래쪽 한 줄로 글 그대로 보이고, 지우면(null) 사라진다. 부품 원래 글 크기(Item sm 14px)다", async () => {
+    await mount(true);
+    expect(document.querySelector("[data-phone-command]")).toBeNull();
+    send([{ type: "phone_command", text: "식탁으로 가 주세요" }]);
+    const line = document.querySelector<HTMLElement>("[data-phone-command]")!;
+    expect(line).toHaveTextContent(/^식탁으로 가 주세요$/);
+    expect(line.querySelector('[data-slot="item"]')).toHaveAttribute("data-size", "sm");
+    expect(line.closest(".pointer-events-none")).not.toBeNull();
+    expect(line.parentElement).toBe(document.querySelector("main"));
+    send([{ type: "phone_command", text: "컵을 들어 주세요" }]);
+    expect(document.querySelector("[data-phone-command]")).toHaveTextContent(/^컵을 들어 주세요$/);
+    send([{ type: "phone_command", text: null }]);
+    expect(document.querySelector("[data-phone-command]")).toBeNull();
+  });
+
   it("창이 16:9가 아니면(1280×800) 칸은 가운데 1280×720이다", async () => {
     windowSize(1280, 800);
     await mount(true);

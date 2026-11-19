@@ -171,6 +171,22 @@ describe("REST 명령 + WS 이벤트", () => {
     expect(await waitFor((m) => m.type === "goal")).toEqual({ type: "goal", goal });
   });
 
+  // 2026-11-19 사용자: 미니맵 녹화에 지금 실제 폰 명령 한 줄을 자막으로
+  it("WS에 붙으면 지금 실제 폰에 낸 명령 한 줄을 {type:\"phone_command\"}로 보낸다(명령이 없으면 보내지 않는다)", async () => {
+    const home = makeHome();
+    const app = createApp({ hub: home.hub, policy: home.policy, rooms: ROOMS, log: () => {}, say: () => ({ text: null }), phoneCommand: () => "식탁으로 가 주세요" });
+    const { url } = await app.listen(0, "127.0.0.1");
+    cleanups.push(() => app.close());
+    const { waitFor } = await listen(url);
+    expect(await waitFor((m) => m.type === "phone_command")).toEqual({ type: "phone_command", text: "식탁으로 가 주세요" });
+    const bare = createApp({ hub: home.hub, policy: home.policy, rooms: ROOMS, log: () => {}, say: () => ({ text: null }), phoneCommand: () => null, habitLast: () => ({ version: 1, initial: "a", states: [], transitions: [] }) });
+    const other = await bare.listen(0, "127.0.0.1");
+    cleanups.push(() => bare.close());
+    const seen = await listen(other.url);
+    await seen.waitFor((m) => m.type === "habit");
+    expect(seen.messages.some((m) => m.type === "phone_command")).toBe(false);
+  });
+
   it("WS에 붙으면 마지막 습관 FSM 그림 자료를 {type:\"habit\"}로 보낸다(없으면 보내지 않는다)", async () => {
     const home = makeHome();
     const habit = { version: 1, initial: "drinking", states: [{ id: "drinking", name: "먹거나 마시는 중", learned: false }], transitions: [] };

@@ -205,6 +205,12 @@ describe("대시보드 자료 연결", () => {
     expect(phonePane().querySelector('[data-detection], [data-slot="bounding-box"]')).toBeNull();
   });
 
+  it("실제 폰 명령 자막(phone_command)은 비전 미니맵만 보기(?view=minimap)에만 있고 대시보드에는 없다", async () => {
+    await mount(true);
+    send([{ type: "phone_command", text: "식탁으로 가 주세요" }]);
+    expect(document.querySelector("[data-phone-command]")).toBeNull();
+  });
+
   it("소켓이 닫히면 「연결 끊김 · 다시 연결 중」 칩이 생기고 다시 열리면 없어진다", async () => {
     await mount(false);
     send(moment(2));

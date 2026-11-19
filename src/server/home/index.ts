@@ -173,6 +173,7 @@ function startApp(core: HomeCore): void {
     goalLast: () => core.goal,
     habitLast: () => core.habit,
     personLast: () => core.person?.last() ?? null,
+    phoneCommand: () => core.command?.text ?? null,
   });
   core.speak();
 }

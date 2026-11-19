@@ -211,8 +211,12 @@ export function startAct(core: HomeCore): (event: BrainLog) => void {
     nudge: () => decide.nudge(),
     // 실제 폰 명령(src/contract/phone.ts). 폰 서버가 지금 명령을 기억해 새로 붙은 폰에도 보낸다. 명령 대상 자리는 배치(면이면 윗면 가운데)에서
     toPhone: (m) => {
+      const shown = core.command?.text ?? null;
       if (m.type === "command") core.command = m;
       else if (!m.id || core.command?.id === m.id) core.command = null;
+      // 대시보드 비전 미니맵 자막: 명령 글이 바뀔 때만(지우면 null)
+      const text = core.command?.text ?? null;
+      if (text !== shown) core.app?.broadcast({ type: "phone_command", text });
       // 안전 명령(끄기 안내·부탁)은 실제 폰에서 승인 대기 카드보다 먼저 보인다: 가린 동안 승인 시간 제한을 멈춘다
       policy.pause(core.command?.grade === "safety");
       core.phone?.command(m);

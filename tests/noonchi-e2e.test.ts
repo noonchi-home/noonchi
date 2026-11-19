@@ -187,6 +187,19 @@ describe("NOONCHI 처음부터 끝까지", () => {
     const told = says.indexOf("식탁으로 갈게요.");
     expect(says[told - 1]).toMatch(/컵을 치울게요\.$/);
     expect(says.slice(told, told + 5)).toEqual(["식탁으로 갈게요.", "컵을 들게요.", "싱크대로 갈게요.", "컵을 싱크대에 넣을게요.", "컵을 다 치웠어요."]);
+    // 대시보드 phone_command: 실제 폰에 낸 명령 한 줄 그대로이고 바뀔 때만, 지우면 null(미니맵 녹화 자막, 2026-11-19 사용자)
+    const line: (string | null)[] = [];
+    let current: Msg | null = null;
+    for (const m of phone) {
+      if (m.type === "command") current = m;
+      else if (m.type === "command_clear" && (!m.id || current?.id === m.id)) current = null;
+      else continue;
+      const text = (current?.text as string | undefined) ?? null;
+      if (line.at(-1) !== text) line.push(text);
+    }
+    while (line[0] === null) line.shift();
+    expect(line.slice(0, 5)).toEqual(["식탁으로 가 주세요", "컵을 들어 주세요", "싱크대로 가 주세요", "컵을 싱크대에 넣어 주세요", null]);
+    expect(dash.filter((m) => m.type === "phone_command").map((m) => m.text)).toEqual(line);
     // 새로 붙은 대시보드: world 다음에 마지막 판단과 그 판단의 생각 두 줄, 마지막 물체 모양(seen), 그다음 지금 말풍선 글
     const late: Msg[] = [];
     sockets.push(await openWebSocket(`${srv.url.replace(/^http/, "ws")}/events`, { setup: inbox(late) }));

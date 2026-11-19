@@ -90,6 +90,8 @@ export interface AppOptions {
   habitLast?: () => HabitFsm | null;
   /** 시간 줄 사람 줄의 마지막 사람 상태(src/brain/person.ts). 접속한 대시보드에 다시 보낸다. */
   personLast?: () => PersonMessage | null;
+  /** 지금 실제 폰에 낸 명령 한 줄. /events 접속 때 있으면 {type:"phone_command"}로 보낸다. */
+  phoneCommand?: () => string | null;
   /** 지금 운영 모드(/api/health). 없으면 시험 모드. */
   mode?: () => ControlMode;
   /** 준비 상태(/api/health ready, src/server/ready.ts). 없으면 준비 안 됨. */
@@ -323,6 +325,8 @@ export function createApp(opts: AppOptions): TwinHomeApp {
     if (habit) send(ws, { type: "habit", habit });
     const person = opts.personLast?.();
     if (person) send(ws, person);
+    const command = opts.phoneCommand?.();
+    if (command) send(ws, { type: "phone_command", text: command });
     ws.on("error", () => {});
   });
 
