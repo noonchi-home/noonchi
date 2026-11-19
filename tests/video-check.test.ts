@@ -1105,7 +1105,7 @@ describe("미니맵만 녹화(--record-view minimap, --record-fps)", () => {
     expect(src).toContain("openWindow(port, shape.size");
     expect(src).toContain("openDashboard(dash, api, { view: args.recordView })");
     expect(src).toMatch(/startRecording\(framesDir, .*\{ name: \"dash\", page: dash, size: shape\.size \}\], \{ intervalMs: shape\.intervalMs \}\)/);
-    expect(src).toMatch(/encodeDemo\(framesDir, recorded, demo, \{.*dashSize: shape\.size, fps: shape\.fps, height: shape\.height \}\)/);
+    expect(src).toMatch(/encodeDemo\(framesDir, recorded, demo, \{.*dashSize: shape\.size, fps: shape\.fps, height: shape\.height[,}]/);
   });
 
   const ffmpegHere = spawnSync("ffmpeg", ["-version"]).status === 0 && spawnSync("ffprobe", ["-version"]).status === 0;
@@ -1130,6 +1130,33 @@ describe("미니맵만 녹화(--record-view minimap, --record-fps)", () => {
       }
     } finally {
       rmSync(dir, { recursive: true, force: true });
+    }
+  }, 60_000);
+});
+
+// 2026-11-19 사용자 「그냥 하나의 영상으로, 결정론적으로」: 미니맵 녹화는 장면 폴더와 판 기록(run.json)을 남겨 scripts/minimap-cut.ts가 이은 영상을 만든다
+describe("미니맵 녹화는 이은 영상 재료를 남긴다", () => {
+  it("main: minimap 보기면 장면 폴더를 지우지 않고(keepFrames) 녹화 시작 시각·장면·짝·영상 조각·첫 영상 길이를 run.json(CUT_RUN_FILE)에 쓴다", () => {
+    const src = readFileSync(new URL("../scripts/video-check.ts", import.meta.url), "utf8");
+    expect(src).toMatch(/encodeDemo\(framesDir, recorded, demo, \{.*keepFrames: args\.recordView === "minimap"/);
+    expect(src).toContain("join(framesDir, CUT_RUN_FILE)");
+    expect(src).toMatch(/recStartMs = Date\.now\(\);\s*\n\s*rec = await startRecording\(/);
+    expect(src).toMatch(/startMs: recStartMs, endMs: recorded\.endMs, size: shape\.size, frames: recorded\.frames\.dash \?\? \[\], t0, sync: seen\.record\?\.sync \?\? \[\], firstDurationMs, clips/);
+  });
+
+  const ffmpegHere = spawnSync("ffmpeg", ["-version"]).status === 0;
+  it.skipIf(!ffmpegHere)("encodeDemo keepFrames면 mp4를 만든 뒤에도 장면 폴더를 그대로 둔다", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "video-record-"));
+    const out = join(tmpdir(), `video-record-keep-${process.pid}-${Date.now()}.demo.mp4`);
+    try {
+      mkdirSync(join(dir, "dash"));
+      writeFileSync(join(dir, "dash", "000001.jpg"), jpeg.encode({ data: Buffer.alloc(64 * 36 * 4, 90), width: 64, height: 36 }, 80).data);
+      const r = await encodeDemo(dir, { endMs: 500, frames: { dash: [{ file: "dash/000001.jpg", ms: 0 }] }, lost: 0 }, out, { dashSize: [64, 36], height: 36, keepFrames: true });
+      expect(r).toEqual({ ok: true });
+      expect(existsSync(join(dir, "dash", "000001.jpg"))).toBe(true);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+      rmSync(out, { force: true });
     }
   }, 60_000);
 });

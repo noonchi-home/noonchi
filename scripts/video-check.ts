@@ -39,6 +39,8 @@
 // ffmpeg가 없거나 실패하면 <폴더>/<줄기>.frames 프레임 폴더를 남기고 판정 줄 위에 적는다.
 // --record-view minimap: 녹화 대시보드를 <api>/?view=minimap(비전 미니맵만, 3D 트윈 없음)으로 1280×720 창에 열고 mp4도 1280×720이다. 기본 top(대시보드 전체). 끝 사진도 그 창이다.
 // --record-fps: 녹화 초당 장 수(1~30, 기본 10). ack 간격(1000/fps)과 mp4 fps가 그 값이다.
+// minimap 보기는 mp4를 만든 뒤에도 <줄기>.frames 장면 폴더를 두고 판 기록 run.json(녹화 시작 시각·장면·폰 페이지 짝·단계 영상·첫 영상 길이)을 남긴다.
+// scripts/minimap-cut.ts가 그것으로 붙잡기를 뺀 이은 영상(<줄기>.minimap.mp4)을 만든다.
 // 영상은 소리 없이 「AR 시작」 누름에서 튼다. launchChrome은 자동 재생 플래그를 받지 않지만 소리 없는 재생은 크롬 기본값으로 된다.
 // 오늘 기억: 영상을 틀기 전에 GET /api/memory/day/<오늘>의 uses.memory를 본다(memoryGate). 마시는 중에서 떠나는 배운 컵 치우기 화살표가 없으면(seed·옛 모양)
 // 크롬을 띄우지 않고 끝 코드 1과 판정 줄(서버를 끄고 demo-setup learned로 넣으라는 글). 있으면 시각표 머리에 「기억 <v>판 · <source>」 한 줄.
@@ -64,7 +66,7 @@ import { KINDS, type DeviceKind } from "../src/devices/kinds.js";
 import { withTimeout } from "./twin3d/capture-lib.js";
 import { CHROME_GPU, chromePath, closeChrome, devtoolsPort, launchChrome, openPage, openTab, openWindow, type Chrome, type ChromeGpu, type Page } from "./twin3d/cdp.js";
 import { heldLock, withHeavy, type Lock } from "./twin3d/heavy.js";
-import { demoFile, encodeDemo, RECORD_FPS, startRecording, type Recorded, type Recording } from "./video-record.js";
+import { CUT_RUN_FILE, demoFile, encodeDemo, RECORD_FPS, startRecording, type CutRun, type Recorded, type Recording } from "./video-record.js";
 import { det } from "../tests/helpers/detectors.js";
 import type { SceneJson } from "../src/contract/layout.js";
 import type { OffTrack } from "../src/contract/plan.js";
@@ -871,6 +873,8 @@ async function main(): Promise<number> {
     // --record: 판정 내내 띄운 대시보드 창, 녹화, 대시보드 창 오류(판정에 넣지 않음), 녹화 쪽 적을 것
     let dash: Page | undefined;
     let rec: Recording | undefined;
+    // 녹화 시작 이 PC 시계(미니맵 이은 영상 판 기록 run.json의 startMs)
+    let recStartMs = 0;
     let recorded: Recorded | undefined;
     let encoded = false;
     const dashErrors: string[] = [];
@@ -927,6 +931,7 @@ async function main(): Promise<number> {
         // 녹화하는 동안 대시보드 그림 간격(requestAnimationFrame)을 쌓는다(끝에 중앙값·p90·최대를 적는다)
         await dash.evaluate(FRAME_GAPS_START, 10_000).catch(() => {});
         rmSync(framesDir, { recursive: true, force: true });
+        recStartMs = Date.now();
         rec = await startRecording(framesDir, [...(args.recordPhone ? [{ name: "phone", page: cdp, size: SIZE }] : []), { name: "dash", page: dash, size: shape.size }], { intervalMs: shape.intervalMs });
         const shown = await cdp.evaluate("document.visibilityState", 10_000).catch(() => "모름");
         if (args.recordPhone && shown !== "visible") recordNotes.push(`녹화: 폰 탭이 가려짐(visibilityState ${String(shown)})`);
@@ -988,6 +993,8 @@ async function main(): Promise<number> {
       let commands: VideoCommand[] = [];
       let clips: VideoClip[] = [];
       let duration: number | null = null;
+      // 첫 영상 길이(단계 영상으로 바꾸기 전에 본 길이): 미니맵 이은 영상이 첫 영상 끝 붙잡기를 뺀다
+      let firstDurationMs: number | null = null;
       const clipStart = () => clips.at(-1)?.video_ms ?? 0;
       for (;;) {
         seen = await read();
@@ -996,6 +1003,7 @@ async function main(): Promise<number> {
         commands = seen.record?.commands ?? commands;
         clips = seen.record?.clips ?? clips;
         duration = seen.duration ?? duration;
+        if (!clips.length && seen.duration !== null) firstDurationMs = seen.duration * 1000;
         for (const c of clips.slice(knownClips)) {
           console.log(`[video-check] ${clock(c.video_ms)} 단계 영상 ${c.clip}`);
           clipAt = Date.now();
@@ -1126,7 +1134,12 @@ async function main(): Promise<number> {
         const n = (name: string) => recorded!.frames[name]?.length ?? 0;
         const fps = (name: string) => (n(name) / Math.max(recorded!.endMs / 1000, 0.001)).toFixed(1);
         console.log(`[video-check] 녹화 ${(recorded.endMs / 1000).toFixed(1)}초 · ${args.recordPhone ? `폰 ${n("phone")}장(${fps("phone")}fps) · ` : ""}대시보드 ${n("dash")}장(${fps("dash")}fps)${recorded.lost ? ` · 못 쓴 프레임 ${recorded.lost}장` : ""}`);
-        const made = await encodeDemo(framesDir, recorded, demo, { ...(args.recordPhone ? { phoneSize: SIZE } : {}), dashSize: shape.size, fps: shape.fps, height: shape.height });
+        // 미니맵 보기: 장면 폴더를 두고 판 기록(run.json)을 남긴다. scripts/minimap-cut.ts가 붙잡기를 뺀 이은 영상을 만든다
+        if (args.recordView === "minimap") {
+          const run: CutRun = { startMs: recStartMs, endMs: recorded.endMs, size: shape.size, frames: recorded.frames.dash ?? [], t0, sync: seen.record?.sync ?? [], firstDurationMs, clips };
+          writeFileSync(join(framesDir, CUT_RUN_FILE), JSON.stringify(run));
+        }
+        const made = await encodeDemo(framesDir, recorded, demo, { ...(args.recordPhone ? { phoneSize: SIZE } : {}), dashSize: shape.size, fps: shape.fps, height: shape.height, keepFrames: args.recordView === "minimap" });
         encoded = true;
         if (made.ok) console.log(`[video-check] 시연 영상 ${demo}`);
         else { console.log(`[video-check] ${made.why}`); notes.push(`시연 영상 못 만듦: ${made.why}`); }
