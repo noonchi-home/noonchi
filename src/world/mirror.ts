@@ -4,6 +4,8 @@
 import { BusNode, type Bus, type Clock, type NodeName } from "../bus/index.js";
 import type { WorldChange, WorldStateMsg, WorldView } from "../contract/world.js";
 
+type AfterRev = (rev: number, ctx: { defer(): (ok: boolean) => void }, run: (actual: number) => void) => void;
+
 export interface WorldMirror {
   node: BusNode;
   /** 가장 새 보기(아직 상태를 못 받았으면 null). */
@@ -15,22 +17,32 @@ export interface WorldMirror {
 /** 거울을 준비한다(구독까지, 시작은 띄우는 곳이 모든 노드를 준비한 뒤). name은 /world/changes를 받는 그룹 이름이다. */
 export async function startWorldMirror(o: {
   bus: Bus; epoch: { boot: string; home: string }; name: NodeName; clock?: Clock; log?: (s: string) => void;
-  routes?: (node: BusNode) => void;
+  routes?: (node: BusNode, afterRev: AfterRev) => void;
   onChanges?: (changes: WorldChange[], view: WorldView) => void | Promise<void>;
   onView?: (view: WorldView) => void | Promise<void>;
 }): Promise<WorldMirror> {
   const node = new BusNode({ name: o.name, bus: o.bus, epoch: o.epoch, clock: o.clock, log: o.log });
   let latest: WorldStateMsg | null = null;
   let shown: number | null = null;
+  const waiting = new Set<{ rev: number; run: (actual: number) => void; settle: (ok: boolean) => void }>();
+  const afterRev: AfterRev = (rev, ctx, run) => {
+    if (latest && latest.rev >= rev) run(latest.rev);
+    else waiting.add({ rev, run, settle: ctx.defer() });
+  };
   node.withState("/world/changes", "/world/state",
     (c, s) => o.onChanges?.(c.changes, s.view),
     async (s) => {
       latest = s;
+      for (const job of waiting) {
+        if (s.rev < job.rev) continue;
+        waiting.delete(job);
+        try { job.run(s.rev); job.settle(true); } catch { job.settle(false); }
+      }
       if (s.rev === shown) return;
       await o.onView?.(s.view);
       shown = s.rev;   // 보인 뒤에만 센다: 실패하면 같은 rev가 다시 올 때(250ms 다시 냄) 다시 부른다
     });
-  o.routes?.(node);
+  o.routes?.(node, afterRev);
   await node.prepare();
   return { node, view: () => latest?.view ?? null, rev: () => latest?.rev ?? null };
 }

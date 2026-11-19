@@ -6,6 +6,7 @@ import { applyPhoneProgress, showPhoneCommand, syncPhoneClaims } from "./phone.j
 // 주기 타이머(관찰·판단·실행 추적·보기 담당·말풍선 카드). 관찰 흐름은 BRAIN=1이고 PHONE_PORT가 있을 때만 켠다(폰 카메라가 입력).
 import { join } from "node:path";
 import { datasetWriter } from "../../brain/index.js";
+import { BrainPlans, planningRoutes } from "../../brain/index.js";
 import { BusNode, Outbox } from "../../bus/index.js";
 import type { BrainLog, SeenEvent } from "../../contract/events.js";
 import type { WorldChange } from "../../contract/world.js";
@@ -107,10 +108,32 @@ export async function startNodes(core: HomeCore, emit: (event: BrainLog) => void
   core.perception = await startPerceptionNode({ bus, epoch, clock, log, routes: (n) => lookRoutes(n, () => core.pipeline, clock) });
   let first: () => void = () => {};
   const ready = new Promise<void>((r) => { first = r; });
+  let brainReady!: () => void;
+  const brainStarted = new Promise<void>((r) => { brainReady = r; });
+  core.brainMirror = await startWorldMirror({
+    bus, epoch, name: "brain", clock, log,
+    routes: (node) => {
+      core.out.brain = new Outbox(node, { clock, log });
+      planningRoutes(node, core.makePlan, clock);
+      node.on("/act/status", (s) => { core.brainStatus = s; });
+      node.on("/perception/frame_seen", () => core.decider?.onFrame());
+      node.every(250, () => { if (!core.closed && core.pipeline && core.brainMirror?.view()) core.decider?.tick(); });
+    },
+    onChanges: (changes, view) => {
+      if (changes.some((c) => c.kind.startsWith("person"))) core.person?.onWorld(view, core.nowMs());
+      core.decider?.onChanges(changes);
+    },
+    onView: () => brainReady(),
+  });
   core.mirror = await startWorldMirror({
     bus, epoch, name: "act", clock, log,
-    routes: (node) => {
+    routes: (node, afterRev) => {
       core.out.act = new Outbox(node, { clock, log });
+      core.brainPlans = new BrainPlans(core.out.act, clock);
+      core.brainPlans.routes(node);
+      node.on("/brain/decision", (b, ctx) => afterRev(b.rev, ctx, (rev) => {
+        if (!core.closed) core.tracker?.onDecision(b.decision, rev === b.rev ? b.check : undefined);
+      }));
       core.looks = new LookClient(core.out.act, clock);
       core.looks.routes(node);
       progressRoutes(node, (p) => applyPhoneProgress(core, p), () => core.nowMs());
@@ -124,7 +147,7 @@ export async function startNodes(core: HomeCore, emit: (event: BrainLog) => void
         }
       });
     },
-    onChanges: (changes) => routeWorldChanges(core, emit, changes),
+    onChanges: (changes) => routeWorldChanges({ tracker: core.tracker, decider: null, keepHeard: core.keepHeard, nowMs: () => core.nowMs() }, emit, changes),
     onView: (view) => {
       first();
       core.app?.broadcast({ type: "world", world: view });
@@ -148,16 +171,16 @@ export async function startNodes(core: HomeCore, emit: (event: BrainLog) => void
   const devices = new BusNode({ name: "devices", bus, epoch, clock, log });
   core.phoneNode = phone;
   core.devicesNode = devices;
-  core.out = { act: core.out.act, phone: new Outbox(phone, { clock, log }), devices: new Outbox(devices, { clock, log }) };
+  core.out = { ...core.out, phone: new Outbox(phone, { clock, log }), devices: new Outbox(devices, { clock, log }) };
   const recorder = new BusNode({ name: "recorder", bus, epoch, clock, log });
   core.machineRecorder = recorder;
   ctx.history.db.forgetOtherBoots(epoch.boot);
-  historyRoutes(recorder, ctx.history.db, { now: () => clock.now(), machinesOnly: true });
+  historyRoutes(recorder, ctx.history.db, { now: () => clock.now(), machinesOnly: true, keepHeard: core.keepHeard });
   await recorder.prepare();
   const deviceOut = core.out.devices!;
   await phone.prepare();
   await devices.prepare();
-  for (const n of [core.worldNode.node, core.perception.node, core.mirror.node, phone, devices, recorder]) n.start();
+  for (const n of [core.worldNode.node, core.perception.node, core.mirror.node, core.brainMirror.node, phone, devices, recorder]) n.start();
   const send = (s: Parameters<Parameters<typeof signals.subscribe>[0]>[0], initial: boolean) => {
     const spec = specOf.get(s.id);
     const note = { ...(initial ? { initial: true } : {}), ...(spec ? { label: spec.label, kind: spec.kind } : {}) };
@@ -167,7 +190,7 @@ export async function startNodes(core: HomeCore, emit: (event: BrainLog) => void
   core.unsubWorld = signals.subscribe((s) => send(s, false));
   let timer: ReturnType<typeof setTimeout> | undefined;
   const late = new Promise<"late">((r) => { timer = setTimeout(() => r("late"), FIRST_STATE_MS); });
-  const got = await Promise.race([ready.then(() => "ok" as const), late]);
+  const got = await Promise.race([Promise.all([ready, brainStarted]).then(() => "ok" as const), late]);
   clearTimeout(timer);
   if (got === "late") throw new Error(`집 상태 노드의 첫 상태를 ${FIRST_STATE_MS}ms 안에 받지 못했어요`);
 }
@@ -180,27 +203,27 @@ const DRAIN_MS = 1000;
 export async function drainNodes(core: HomeCore, ms = DRAIN_MS): Promise<boolean> {
   const end = Date.now() + ms;
   const left = () => Math.max(0, end - Date.now());
-  const inputs = await Promise.all([core.perception?.drain(ms), core.out.act?.drain(ms), core.out.phone?.drain(ms), core.out.devices?.drain(ms)]);
+  const inputs = await Promise.all([core.perception?.drain(ms), core.out.act?.drain(ms), core.out.brain?.drain(ms), core.out.phone?.drain(ms), core.out.devices?.drain(ms)]);
   const world = (await core.worldNode?.settle(left())) ?? true;
+  const brain = (await core.brainMirror?.node.settled(left())) ?? true;
   const mirror = (await core.mirror?.node.settled(left())) ?? true;
   const transitions = (await core.out.act?.drain(left())) ?? true;
   const delivered = (await core.phoneNode?.settled(left())) ?? true;
   const recorded = (await core.machineRecorder?.settled(left())) ?? true;
-  return inputs.every((x) => x !== false) && world && mirror && transitions && delivered && recorded;
+  return inputs.every((x) => x !== false) && world && brain && mirror && transitions && delivered && recorded;
 }
 
 /** 노드를 끝낸다. 먼저 닫기 전 비우기(drainNodes, 기한을 넘겨도 멈춘다: 닫기가 걸리지 않게)를 하고,
  *  그다음 새 일을 만드는 쪽(인식) → 집 상태 → 거울·폰·가전 차례로 끝낸다. 관찰 흐름을 닫고 가전 구독을 끊은 뒤 부른다. */
 export async function stopNodes(core: HomeCore): Promise<void> {
   await drainNodes(core, 3 * DRAIN_MS);
-  for (const n of [core.perception?.node, core.worldNode?.node, core.mirror?.node, core.phoneNode, core.devicesNode, core.machineRecorder]) await n?.stop();
+  for (const n of [core.perception?.node, core.worldNode?.node, core.brainMirror?.node, core.mirror?.node, core.phoneNode, core.devicesNode, core.machineRecorder]) await n?.stop();
 }
 
 /** 관찰 흐름(src/observe/pipeline.ts)을 연다: 판단·실행 기록은 emit으로, 물체 모양·World State는 대시보드로, 변화는 실행 추적·판단 호출로. 실행 추적을 만든 뒤 부른다. */
 export async function startPipeline(core: HomeCore, emit: (event: BrainLog) => void): Promise<void> {
   const { ctx } = core;
   const { env, log, runtimeDir, history } = ctx;
-  const decide = core.decider!;
   const perception = core.perception!;
   const { engineHeaders } = core;
   core.pipeline = await createPipeline({
@@ -208,7 +231,9 @@ export async function startPipeline(core: HomeCore, emit: (event: BrainLog) => v
     // 물체 모양은 /perception/detections로(폰 노드가 대시보드로만 보낸다)
     onSeen: (e) => perception.seen(e),
     // 주기 판단(기본 5초)은 엔진 프레임이 오는 동안만 부른다
-    onFrame: () => decide.onFrame(),
+    onFrame: () => {
+      void perception.node.publish("/perception/frame_seen", { at_ms: core.nowMs() }).catch((e: Error) => { if (!core.closed) log(e.message); });
+    },
     onView: (f) => { void perception.node.publish("/perception/view", f).catch((e: Error) => { if (!core.closed) log(e.message); }); },
     // 실행 추적이 가까이 보는 차례(찾기·내용물 보류)인 동안만 VLM 사진 간격을 1초로 줄인다
     vlmFast: () => core.tracker?.fastVlm() ?? false,
@@ -219,13 +244,4 @@ export async function startPipeline(core: HomeCore, emit: (event: BrainLog) => v
       if (h && r.landmarks?.length) core.phone?.landmarks(h, r.landmarks);
     },
   });
-}
-
-/** 주기 타이머(250ms): 판단·실행 추적·보기 담당·말풍선 카드. 오래 이어진 가전 상태(냉장고 문 1분)와 가전 상태는 집 상태 노드가 맡는다. */
-export function startLoop(core: HomeCore): void {
-  const decide = core.decider!;
-  core.decideTimer = setInterval(() => {
-    decide.tick();
-  }, 250);
-  core.decideTimer.unref?.();
 }

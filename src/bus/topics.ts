@@ -3,6 +3,11 @@
 // 몸 모양은 그 토픽을 옮기는 묶음에서 실제 모양으로 바꾼다(그 전에는 객체인지와 순서 칸만 본다).
 // 실제 모양으로 바꾼 토픽은 계약(src/contract)의 타입과 같은지 아래 Assert로 tsc가 본다(한쪽만 바꾸면 tsc 실패).
 import { z } from "zod";
+import { CHECK_TEXT } from "../act/labels.js";
+import { ConditionSchema } from "../world/condition-schema.js";
+import type { DecisionRecord } from "../contract/events.js";
+import type { PlanAhead, PlanResult } from "../contract/plan-work.js";
+import type { WorldObject } from "../contract/world.js";
 import type { DeviceState } from "../contract/devices.js";
 import type { PersonMessage, SeenEvent } from "../contract/events.js";
 import type { GoalState, ManagerState, RobotState, SafetyState, Timed } from "../contract/machines.js";
@@ -167,6 +172,38 @@ const wirePlan = z.strictObject({
     status: z.enum(["pending", "active", "done", "failed", "skipped"]), started_ms: at.optional(), ended_ms: at.optional() })),
   status: z.enum(["planned", "running", "done", "cancelled", "failed"]), updatedAt: z.string(),
 });
+const maybeText = z.string().nullable();
+const prediction = z.strictObject({ observation: z.string(), reasoning: z.string(), task_index: z.int(),
+  state: id.optional(), from: maybeText.optional(), next_index: z.int().optional() });
+const fsmStep = z.strictObject({ state: id, from: maybeText, next_index: z.int(), to: maybeText, on: maybeText, when: maybeText, action: maybeText, learned: z.boolean() });
+const decisionRecord = z.strictObject({
+  id, seq: rev, atMs: at, finalTime: id, textSent: z.string(), status: z.enum(["valid", "failed"]), prediction: prediction.nullable(), action: maybeText,
+  fsm: fsmStep.nullable().optional(), late: z.literal(true).optional(), goal: z.literal(true).optional(), error: z.string().optional(),
+  usage: z.strictObject({ model: id, prompt: rev, completion: rev, cached: rev, cost_usd: at.nullable() }).optional(), memoryVersion: rev, tasks: z.array(id).optional(),
+  world: z.strictObject({ person_visible: z.boolean(), vlm_missing: rev, yolo_missing: rev, objects: z.array(z.strictObject({
+    id, cls: id, status: id, surface: maybeText, surface_label: maybeText, error_m: at.nullable(),
+    facts: z.record(id, z.strictObject({ value: id, certainty: z.enum(["confirmed", "inferred"]) })), closer_rev: z.record(id, rev).optional(),
+  })) }), source: z.literal("speech").optional(), via: z.literal("answer").optional(), afterSeq: rev.optional(),
+});
+const precheck = z.discriminatedUnion("ok", [
+  z.strictObject({ ok: z.literal(true) }),
+  z.strictObject({ ok: z.literal(false), reason: z.enum(Object.keys(CHECK_TEXT) as [keyof typeof CHECK_TEXT, ...(keyof typeof CHECK_TEXT)[]]),
+    text: id, object: id.optional(), carried: z.literal(true).optional() }),
+]);
+const planAhead = z.strictObject({ trigger: z.string(), on: maybeText, object: id,
+  stand: z.custom<WorldObject>((v) => isObj(v) && typeof v.id === "string" && typeof v.cls === "string" && isObj(v.facts)).optional() });
+const agentStep = z.strictObject({
+  id, kind: z.enum(["go","pick","place","do","device","ask","say","wait"]), label: id, target: maybeText, object: maybeText, command: maybeText,
+  prompt: z.strictObject({ text: id, ends: z.array(id), choices: z.array(z.strictObject({
+    id, label: id, words: z.array(z.string()), reply: z.string(), whole: z.boolean().optional(),
+  })) }).nullable(), text: maybeText, device: z.strictObject({ tool: id, deviceId: id, args: z.record(id, z.unknown()) }).nullable(),
+  hand: z.strictObject({ deviceId: id, to: z.enum(["on","off","open","close"]) }).nullable(), caution: maybeText,
+  until: ConditionSchema.nullable(), timeoutMs: at, onTimeout: z.enum(["ask","fail"]), look: z.literal("top").optional(),
+});
+const planResult = z.discriminatedUnion("ok", [
+  z.strictObject({ ok: z.literal(true), plan: z.strictObject({ view: wirePlan, steps: z.array(agentStep), task: id, submitted: z.unknown().optional() }) }),
+  z.strictObject({ ok: z.literal(false), error: z.string() }),
+]);
 const actLog = z.discriminatedUnion("type", [
   z.strictObject({ type: z.literal("execution"), at_ms: at, plan_id: id, state: z.enum(["decided", "planned", "running", "verifying", "done", "failed"]), text: z.string(), reason: z.string().optional() }),
   z.strictObject({ type: z.literal("feedback"), at_ms: at, subject: id, text: z.string(), data: z.strictObject({ choice: id, via: z.enum(["voice", "button"]) }) }),
@@ -202,6 +239,9 @@ type Same<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false;
 export type TopicBodiesSame = [
   Assert<Same<z.infer<typeof closerResult>, import("../contract/events.js").CloserResult>>,
   Assert<Same<z.infer<typeof wirePlan>, PlanView>>,
+  Assert<Same<z.infer<typeof decisionRecord>, DecisionRecord>>,
+  Assert<Same<z.infer<typeof planAhead>, PlanAhead>>,
+  Assert<Same<z.infer<typeof planResult>, PlanResult>>,
   Assert<Same<z.infer<typeof phoneCommand>["cmd"], import("../contract/phone.js").PlannedCommandMessage>>,
   Assert<Equal<(typeof VIEW_KEYS)[number], keyof WorldView>>,
   Assert<Equal<(typeof DEVICE_KEYS)[number], keyof DeviceState>>,
@@ -236,6 +276,7 @@ export const TOPICS = {
   "/perception/detections": { qos: { kind: "sensor", depth: 600, record: true }, body: seen, key: one, order: "observed_ms", from: ["perception"] },
   "/perception/analysis": { qos: { kind: "reliable" }, body: observed, key: by("frame_id"), order: "observed_ms", from: ["perception"] },
   "/perception/scene": { qos: { kind: "reliable" }, body: sceneInput, key: one, order: null, from: ["perception"] },
+  "/perception/frame_seen": { qos: { kind: "state" }, body: z.strictObject({ at_ms: at }), key: one, order: "stamp", from: ["perception"] },
   "/perception/view": { qos: { kind: "state" }, body: z.strictObject({ view: camera.nullable(), capturedAtMs: at, ...size }), key: one, order: "stamp", from: ["perception"] },
   "/perception/look_request": { qos: { kind: "reliable" }, body: lookRequest, key: by("req"), order: null, from: ["act"] },
   "/perception/look_result": { qos: { kind: "reliable" }, body: lookResult, key: by("req"), order: "observed_ms", from: ["perception"] },
@@ -243,14 +284,15 @@ export const TOPICS = {
   "/world/state": { qos: { kind: "state" }, body: worldState, key: one, order: "rev", from: ["world"] },
   "/world/changes": { qos: { kind: "reliable" }, body: worldChanges, key: one, order: "rev", from: ["world"] },
   "/world/closer": { qos: { kind: "reliable" }, body: worldCloser, key: by("look"), order: null, from: ["world"] },
-  "/brain/decision": { qos: { kind: "reliable" }, body: obj, key: one, order: "stamp", from: ["brain"] },
-  "/brain/plan": { qos: { kind: "reliable" }, body: obj, key: by("decision_id"), order: null, from: ["brain", "act"] },
+  "/brain/decision": { qos: { kind: "reliable" }, body: z.strictObject({ decision: decisionRecord, rev, check: precheck, assist: z.enum(["noonchi", "coach"]), at_ms: at }), key: one, order: null, from: ["brain"] },
+  "/brain/plan_request": { qos: { kind: "reliable" }, body: z.strictObject({ req: id, decision: decisionRecord, ahead: planAhead.optional(), until: at }), key: by("req"), order: null, from: ["act"] },
+  "/brain/plan": { qos: { kind: "reliable" }, body: z.strictObject({ req: id, decision_id: id, result: planResult }), key: by("req"), order: null, from: ["brain"] },
   // 미리 세운 목표(묶음 4 전에는 실행 추적이 낸다): 최신 보기(늦게 붙은 노드·대시보드)와 전환 하나하나(녹화·재생, STATE는 가운데 값을 합칠 수 있다)
   "/brain/goal": { qos: { kind: "state" }, body: brainGoal, key: one, order: "stamp", from: ["brain", "act"] },
   "/brain/goal_changes": { qos: { kind: "reliable" }, body: brainGoal, key: goalKey, order: null, from: ["brain", "act"] },
   "/brain/thought": { qos: { kind: "reliable" }, body: obj, key: one, order: "stamp", from: ["brain"] },
   "/brain/link": { qos: { kind: "state" }, body: obj, key: one, order: "stamp", from: ["brain"] },
-  "/brain/cancel": { qos: { kind: "reliable" }, body: obj, key: by("decision_id"), order: null, from: ["act"] },
+  "/brain/cancel": { qos: { kind: "reliable" }, body: z.strictObject({ req: id, decision_id: id }), key: by("req"), order: null, from: ["act"] },
   "/act/plan": { qos: { kind: "state" }, body: z.strictObject({ plan: wirePlan.nullable() }), key: one, order: "stamp", from: ["act"] },
   "/act/status_changes": { qos: { kind: "reliable" }, body: actStatus, key: one, order: "stamp", from: ["act"] },
   "/act/status": { qos: { kind: "state" }, body: actStatus, key: one, order: "stamp", from: ["act"] },

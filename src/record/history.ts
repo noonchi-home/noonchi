@@ -2,12 +2,12 @@
 // 메시지 하나의 기록 줄과 처리표(bus_seen, msgId)는 한 트랜잭션이다(db.once): 다시 온 메시지는 쓰지 않는다. 가전 지난 값(device_last)도 같은 트랜잭션이다.
 // 녹화는 같은 메시지를 다시 남기지 않는다. 다 쓰면 콜백이 끝나 실행기가 ack한다(실패하면 던져 다시 받는다).
 // 녹화하는 SENSOR(record: true)는 커서(mode "all")로 다 읽는다. 사진 토픽과 /bus/dead는 녹화하지 않는다.
-import type { BrainLog, FeedbackLog } from "../contract/events.js";
+import type { BrainLog, DecisionRecord, FeedbackLog } from "../contract/events.js";
 import type { PlanView } from "../contract/plan.js";
 import type { WorldChange } from "../contract/world.js";
-import { deviceRecorder, recordPlan, recordBrainLog, recordFeedback, type HistoryDb } from "../brain/index.js";
+import { decisionLog, deviceRecorder, recordPlan, recordBrainLog, recordFeedback, type HistoryDb } from "../brain/index.js";
 import { TOPICS, msgId, type BusNode, type Envelope, type TopicName } from "../bus/index.js";
-import { HEARD_MARK } from "../world/labels.js";
+import { HEARD_MARK, redactHeard } from "../world/labels.js";
 import { machineWrites } from "./machines.js";
 import type { Bag } from "./bag.js";
 
@@ -23,6 +23,10 @@ const changeLog = (c: WorldChange, at: number, keep: boolean): BrainLog =>
 function forBag(e: Envelope<TopicName>, keep: boolean): Envelope<TopicName> {
   if (keep) return e;
   const b = e.body as Record<string, unknown>;
+  if (e.topic === "/brain/decision" || e.topic === "/brain/plan_request") {
+    const d = b.decision as DecisionRecord;
+    return { ...e, body: { ...b, decision: { ...d, textSent: redactHeard(d.textSent) } } } as Envelope<TopicName>;
+  }
   if (e.topic === "/phone/progress" && b.kind === "voice") {
     return { ...e, body: { ...b, text: HEARD_MARK } } as Envelope<TopicName>;
   }
@@ -40,11 +44,11 @@ export function historyRoutes(node: BusNode, db: HistoryDb, o: { bag?: Bag; now:
     ...machines,
     "/perception/analysis": (b) => logs(b.logs),
     "/world/changes": (b) => { for (const c of b.changes as WorldChange[]) if (!PER_FRAME.has(c.kind)) recordBrainLog(db, changeLog(c, o.now(), keep)); },
-    "/brain/decision": (b) => recordBrainLog(db, b as unknown as BrainLog),
     "/brain/link": (b) => recordBrainLog(db, b as unknown as BrainLog),
     "/device/changes": (b) => device(b.state as never, b.note as never),
     "/bus/dead": (b) => { db.add("bus_gap", o.now(), `처리하지 못한 메시지: ${String(b.topic)}`, { data: b }); },
   };
+  history["/brain/decision"] = (b) => recordBrainLog(db, decisionLog(b.decision as DecisionRecord, Number(b.at_ms), b.assist as "noonchi" | "coach", keep));
   history["/act/log"] = (b) => {
     if (b.type === "plan") { if (b.plan) recordPlan(db, b.plan as PlanView, o.now()); }
     else if (b.type === "feedback") recordFeedback(db, b as unknown as FeedbackLog);

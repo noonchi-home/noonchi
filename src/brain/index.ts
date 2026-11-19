@@ -13,3 +13,6 @@ export { datasetWriter, loadRetention, sweep } from "./history/retention.js";
 export { daySummary, isDay } from "./history/summary.js";
 export { PamClient, pamSettings } from "./pam/index.js";
 export { type ThoughtFeed, decisionLines, lastStoredThoughts, storeThought, thoughtFeed } from "./thought.js";
+
+export { BrainPlans, dailyMemory, planningRoutes, type MakePlan } from "./node.js";
+export { decisionLog } from "./decide.js";

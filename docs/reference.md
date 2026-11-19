@@ -6,6 +6,10 @@ twin-studio가 만든 아파트 트윈의 가전 65개를 **가상 Matter 기기
 
 계약 문서는 [`docs/plan.md`](plan.md)다. 인터페이스·형식을 바꾸려면 그 문서를 먼저 고친다.
 
+실제 폰의 단계 답은 `/phone/progress`로 보낸다. 폰 노드는 처음 붙을 때 `/act/phone_command`로 지금 명령을 받고, 그 뒤에는 `/act/phone_changes`에서 지우기와 다음 명령을 차례로 받는다. 가까이 보기와 컵 안 보기는 `/perception/look_request`와 `/perception/look_result`로 요청과 답을 맞춘다.
+
+판단 노드는 집 상태를 따로 구독하고, 같은 날의 기억은 반성이 끝나면 다시 읽는다. 실행은 `/brain/decision`으로 판단을 받고 `/brain/plan_request`로 계획을 부탁한다. 답은 `/brain/plan`, 취소는 `/brain/cancel`로 보낸다. 격리 재생은 녹화해 둔 판단과 계획 답을 쓴다.
+
 ## 목표와 실행 순서
 
 목표 기계(`src/goal/watch.ts`)는 사람이 쓰던 컵과 준비한 계획을 기억한다. 관리자는 안전 안내, 말로 받은 부탁, 목표 행동, 대기 순서로 일을 고른다. 직접 받은 부탁은 집기·놓기 중이면 그 단계가 끝난 뒤 한 번 이어 간다. ‘그만’은 기다리는 부탁도 취소한다. 실제 폰 명령은 로봇의 명령 줄(`src/act/robot/phone.ts`)에서 보낸다.

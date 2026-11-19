@@ -21,9 +21,10 @@ const EPOCH = { boot: "b1", home: "h#1" };
 const h = (seq: number, stamp: number) => ({ stamp, node: "perception" as const, inst: "i1", seq, ...EPOCH });
 
 describe("격리 재생", () => {
-  it("가전 명령·계획 같은 출력 토픽은 흘리지 않는다", () => {
+  it("가전 명령은 보내지 않고 판단과 계획은 녹화한 모델 결과를 쓴다", () => {
     expect(REPLAY_INPUTS).not.toContain("/device/command");
-    expect(REPLAY_INPUTS).not.toContain("/brain/plan");
+    expect(REPLAY_INPUTS).toContain("/brain/plan");
+    expect(REPLAY_INPUTS).not.toContain("/brain/plan_request");
     expect(REPLAY_INPUTS).toContain("/perception/analysis");
     // 실행 추적이 집 상태에 넣은 입력(지킴·따르기 창·지금 단계 대상·잇기)도 집 상태 입력이다
     expect(REPLAY_INPUTS).toContain("/world/input");

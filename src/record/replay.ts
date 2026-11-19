@@ -6,7 +6,7 @@ import { MAX_DELIVERIES, MemoryBus, RETRY_MS, VirtualClock, type BusNode, type T
 import type { Bag } from "./bag.js";
 
 export const REPLAY_INPUTS: readonly TopicName[] = [
-  "/perception/detections", "/perception/analysis", "/perception/scene", "/perception/look_result", "/phone/pose", "/phone/heard", "/phone/progress", "/device/changes", "/world/input",
+  "/brain/decision", "/brain/plan", "/perception/view", "/perception/detections", "/perception/analysis", "/perception/scene", "/perception/look_result", "/phone/pose", "/phone/heard", "/phone/progress", "/device/changes", "/world/input",
 ];
 
 /** 처리 장벽: 모든 노드의 줄이 비고 통로에 예약된 배달이 없는 상태가 두 번 이어질 때까지 기다린다(이어지는 발행이 몇 단계여도). */

@@ -19,7 +19,7 @@ import type { HubKind, MatterTransport, StartHubOptions } from "../hubFactory.js
 import { captionOf, prepareAct, startAct, startLooker, startPlans } from "./act.js";
 import { startAgent, watchFocus } from "./agent.js";
 import { preparePhone, startPhone } from "./phone.js";
-import { drainNodes, startLoop, startPipeline, startWorld, startNodes, stopNodes } from "./observe.js";
+import { drainNodes, startPipeline, startWorld, startNodes, stopNodes } from "./observe.js";
 import { onReflection, sayTimer, startSay } from "./say.js";
 import { setLink, startDevices } from "./devices.js";
 import { HomeCore } from "./core.js";
@@ -119,7 +119,6 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
       await startNodes(core, emit);
       await startPipeline(core, emit);
       startLooker(core, emit);
-      startLoop(core);
     }
     sayTimer(core);
     startApp(core);
@@ -134,7 +133,7 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
     core.thoughts?.close();
     core.tracker?.stop();
     core.looker?.stop();
-    core.looks?.close();
+    core.looks?.close(); core.brainPlans?.close();
     core.unsubWorld();
     await core.pipeline?.close().catch(() => {});
     await stopNodes(core).catch(() => {});
@@ -206,7 +205,7 @@ function runtime(core: HomeCore): HomeRuntime {
       // 먼저 새 일을 막는다: 판단·계획 진행(판단 타이머·실행 추적·관찰 모드·계획 모드)을 멈추고 정책을 닫아 가전 명령을 막는다.
       // 그다음 외부 연락: 차례를 기다리던 연락은 취소로 기록하고, 보내는 중인 연락은 끝난 뒤 닫는다(기록 DB·말풍선·폰·앱 답 길은 아직 열려 있다)
       const steps: [string, () => unknown][] = [
-        ["새 일 막기", () => { policy.close(); core.progress.close(); core.looks?.close(); clearInterval(core.decideTimer); core.decider?.stop(); core.tracker?.stop(); core.looker?.stop(); planner.abort(); }],
+        ["새 일 막기", () => { policy.close(); core.progress.close(); core.looks?.close(); core.brainPlans?.close(); clearInterval(core.decideTimer); core.decider?.stop(); core.tracker?.stop(); core.looker?.stop(); planner.abort(); }],
         ["외부 연락", () => agent.close()], ["초점", core.unsubFocus], ["관찰 흐름", () => { core.thoughts?.close(); core.unsubWorld(); return core.pipeline?.close(); }],
         // 노드: 새 일을 만드는 쪽(인식) → 집 상태 → 거울·폰·가전 차례(그 뒤 변화가 대시보드로 가지 않는다)
         ["노드", () => stopNodes(core)], ["눈 화면", () => feed?.close()],

@@ -47,7 +47,7 @@ export function showStatus(core: HomeCore, status: Body<"/act/status">): void {
 
 /** 관찰 흐름이 꺼져 판단 타이머가 없으면 말풍선 글만 본다(끝난 지 20초가 지나면 지켜보기로). */
 export function sayTimer(core: HomeCore): void {
-  if (core.decideTimer) return;
+  if (core.brainMirror || core.decideTimer) return;
   core.decideTimer = setInterval(core.speak, 1000);
   core.decideTimer.unref?.();
 }
@@ -55,6 +55,7 @@ export function sayTimer(core: HomeCore): void {
 /** 반성 사건(src/server/start.ts가 넘긴다): 말풍선 카드가 20초 동안 배운 습관을 말한다. */
 export function onReflection(core: HomeCore, event: Extract<BrainLog, { type: "reflection" }>): void {
   if (!event.ok) return;
+  core.invalidateMemory();
   core.reflected = { atMs: event.at_ms, learned: event.learned?.length ?? 0, active: event.active?.length ?? 0 };
   core.speak();
   setTimeout(() => core.speak(), SAY_DONE_MS + 50).unref?.();

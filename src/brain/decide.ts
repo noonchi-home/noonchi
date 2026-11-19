@@ -1,3 +1,4 @@
+import type { BusNode } from "../bus/index.js";
 // 판단 호출: Trigger가 허락하면 World State 관찰 텍스트 + 기억 + 행동 목록으로 PAM을 부른다. 요청마다 번호(seq)를 붙인다.
 // 동시 상한을 넘으면 부르지 않는다(Trigger.due가 false). 결과는 기록(decision)과 onDecision으로 넘긴다. 늦게 온 답(받은 가장 큰 번호보다 작은 번호)은 상태를 바꾸지 않고, 행동은 실행 추적이 seq로 버린다.
 // PAM 연결 끊김·연결됨(link)과 주기 판단 멈춤(폰 사진 없음·사람 없음)·다시 시작(trigger)은 바뀔 때 한 번씩 기록한다.
@@ -38,7 +39,22 @@ export function decisionWorld(w: WorldView): DecisionWorld {
   };
 }
 
+/** 모델 응답은 판단 노드의 받은 줄에서만 상태를 바꾼다. 종료가 먼저면 대기를 풀고 버린다. */
+function applyAnswer(node: Pick<BusNode, "post"> | undefined, signal: AbortSignal, run: () => void): Promise<void> {
+  if (signal.aborted) return Promise.resolve();
+  if (!node) { run(); return Promise.resolve(); }
+  return new Promise((resolve, reject) => {
+    const stop = () => resolve();
+    signal.addEventListener("abort", stop, { once: true });
+    node.post(() => {
+      signal.removeEventListener("abort", stop);
+      try { if (!signal.aborted) run(); resolve(); } catch (e) { reject(e); }
+    });
+  });
+}
+
 export interface DeciderOptions {
+  node?: () => Pick<BusNode, "spawn" | "post">;
   pam: PamClient;
   /** 집 상태 보기(거울). */
   world: { view(now: number): WorldView };
@@ -189,14 +205,15 @@ export class Decider {
     if (this.pending && now - this.pending.at > PENDING_EDGE_MS) this.pending = null;
     const last = this.pending?.from ?? this.lastState;
     let usage: PamUsage | undefined;
-    const job: Promise<void> = Promise.resolve()
-      .then(() => {
+    const node = this.o.node?.();
+    const query = async (life: AbortSignal) => {
         checkInput({ text: textSent, finalTime, memory: mem.memory, memoryKind: mem.kind, tasks });
         return this.o.pam.predict({ final_time: finalTime, observation_text: textSent, memory_kind: mem.kind, memory: mem.memory, tasks, last_state: last },
-          { signal: this.cancel.signal, onUsage: (u) => { usage = u; } });
-      })
+          { signal: AbortSignal.any([life, this.cancel.signal]), onUsage: (u) => { usage = u; } });
+    };
+    const job = Promise.resolve().then(() => node ? node.spawn(query) : query(this.cancel.signal))
       .then(
-        (p) => {
+        (p) => applyAnswer(node, this.cancel.signal, () => {
           this.setLink(true);
           const newest = base.seq > this.answered;
           this.answered = Math.max(this.answered, base.seq);
@@ -223,12 +240,12 @@ export class Decider {
           // 행동을 고른 판단이 쓴 들은 말은 다음 관찰 텍스트에 다시 넣지 않는다(그 일을 그만둔 뒤 같은 말로 다시 시작하지 않게)
           if (action !== null) this.recent = this.recent.filter((c) => c.kind !== "heard" || c.at_ms > now);
           this.finish({ ...base, status: "valid", prediction, action, fsm: step, ...(usage ? { usage } : {}) });
-        },
-        (e: unknown) => {
+        }),
+        (e: unknown) => applyAnswer(node, this.cancel.signal, () => {
           this.answered = Math.max(this.answered, base.seq);
           if (e instanceof PamLinkError) this.setLink(false);
           this.finish({ ...base, status: "failed", prediction: null, action: null, fsm: null, error: (e as Error).message, ...(usage ? { usage } : {}) });
-        },
+        }),
       )
       .finally(() => { this.running.delete(job); });
     this.running.add(job);
@@ -253,13 +270,7 @@ export class Decider {
 
   private emitDecision(r: DecisionRecord): void {
     if (this.stopped) return;
-    this.o.emit({
-      type: "decision", at_ms: this.clock.now(), id: r.id, seq: r.seq, text_sent: this.o.keepHeard?.() ? r.textSent : redactHeard(r.textSent), status: r.status, prediction: r.prediction, action: r.action, fsm: r.fsm ?? null,
-      // 이 판단 뒤의 지금 모드(서버가 정하는 한 곳, src/act/mode.ts)
-      assist: this.o.mode ? this.o.mode(r.action) : modeOf(r.action),
-      ...(r.error ? { error: r.error } : {}), ...(r.usage ? { usage: r.usage } : {}), memory_version: r.memoryVersion, world: r.world,
-      ...(r.source ? { source: r.source } : {}), ...(r.via ? { via: r.via } : {}), ...(r.late ? { late: r.late } : {}), ...(r.goal ? { goal: r.goal } : {}),
-    });
+    this.o.emit(decisionLog(r, this.clock.now(), this.o.mode?.(r.action) ?? modeOf(r.action), !!this.o.keepHeard?.()));
   }
 
   /** 나가 있는 판단이 끝날 때까지 기다린다(시험용). */
@@ -272,4 +283,15 @@ export class Decider {
     this.stopped = true;
     this.cancel.abort(new Error("판단 호출을 멈춤"));
   }
+}
+
+/** 실시간 방송과 기록 노드가 같은 판단 줄을 만든다. */
+export function decisionLog(r: DecisionRecord, atMs: number, mode: "coach" | "noonchi" | null, keep: boolean): Extract<BrainLog, { type: "decision" }> {
+  return {
+    type: "decision", at_ms: atMs, id: r.id, seq: r.seq, text_sent: keep ? r.textSent : redactHeard(r.textSent), status: r.status, prediction: r.prediction, action: r.action, fsm: r.fsm ?? null,
+    // 이 판단 뒤의 지금 모드(서버가 정하는 한 곳, src/act/mode.ts)
+    assist: mode,
+    ...(r.error ? { error: r.error } : {}), ...(r.usage ? { usage: r.usage } : {}), memory_version: r.memoryVersion, world: r.world,
+    ...(r.source ? { source: r.source } : {}), ...(r.via ? { via: r.via } : {}), ...(r.late ? { late: r.late } : {}), ...(r.goal ? { goal: r.goal } : {}),
+  };
 }

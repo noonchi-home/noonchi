@@ -291,8 +291,8 @@ export class ExecutionTracker {
     return this.core.answers.openCommand();
   }
 
-  onDecision(d: DecisionRecord): void {
-    this.core.start.onDecision(d);
+  onDecision(d: DecisionRecord, prechecked?: CheckResult): void {
+    this.core.start.onDecision(d, false, prechecked);
   }
 
   /** 말 부탁: 들은 말 부탁을 판단 기록 꼴(source speech)로 만들어 판단 받기 길에 넣는다(계획 전 검사·계획 모드·승인·실행이 PAM 판단과 같다). */

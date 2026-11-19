@@ -3,7 +3,7 @@
 import { ExecutionTracker, LessonStore, Looker, PlanHub, emitRobotCommand, checkDecision, checkPlan, deviceRunner, lessonsPath, loadActConfig, pamTasks } from "../../act/index.js";
 import { lookTargets, taskOf, type TaskSpec } from "../../act/tasks.js";
 import { deviceViews, placesOf, resubmit, type PlaceInfo, type PlanAhead, type PlanContext } from "../../agent/index.js";
-import { Decider, PamClient, PersonLane, habitView, lastStoredThoughts, memoryForDay, pamSettings, storeThought, thoughtFeed, type FsmMemory } from "../../brain/index.js";
+import { Decider, PamClient, PersonLane, dailyMemory, habitView, lastStoredThoughts, memoryForDay, pamSettings, storeThought, thoughtFeed, type FsmMemory } from "../../brain/index.js";
 import type { BrainLog, DecisionRecord } from "../../contract/events.js";
 import type { PendingGoal } from "../../contract/goal.js";
 import type { HabitFsm } from "../../contract/habit.js";
@@ -136,7 +136,7 @@ export function startAct(core: HomeCore): (event: BrainLog) => void {
     if (habit && habit.kind === "fsm" && "states" in habit.memory) publishHabit(core, habitView(habit.memory, habit.version));
     core.app?.broadcast({ type: "brain", event });
     if (event.type === "execution" && core.out.act) core.out.act.push("/act/log", event);
-    else history.brain(event);
+    else if (!(event.type === "decision" && !event.source && core.out.brain)) history.brain(event);
     if (event.type === "decision") feed.decision(event);
     // 실행 기록: 기다리던 화살표의 행동이 시작되면 판단의 직전 상태를 넘긴다(src/brain/decide.ts onExecution)
     if (event.type === "execution") core.decider?.onExecution(event.plan_id, event.state);
@@ -144,18 +144,25 @@ export function startAct(core: HomeCore): (event: BrainLog) => void {
   // 판단 호출(src/brain/decide.ts): World State 관찰 텍스트 + 기억 + 행동 목록으로 PAM(src/brain/pam/)을 부른다.
   // 기억은 그날 처음 정한 판본(src/brain/history/reflect.ts). 관찰 텍스트 시각은 기록 DB와 같은 시간대
   const pamTimeout = Number(env.PAM_TIMEOUT_MS);
+  const brainView = () => core.brainMirror!.view()!;
+  const memory = dailyMemory((day) => memoryForDay(history.db, day, { log: ctx.log }));
+  core.invalidateMemory = memory.invalidate;
   const decide = new Decider({
+    node: () => core.brainMirror!.node,
     pam: new PamClient({ settings: pamSettings(env), timeoutMs: Number.isFinite(pamTimeout) && pamTimeout > 0 ? pamTimeout : undefined }),
     // 행동 목록은 지금 모드를 따르고(들은 말이 있으면 말로 부탁한 코치 행동도), 판단 기록의 모드는 그 판단 뒤의 지금 모드다(src/act/mode.ts)
-    world: { view }, trigger: new Trigger(triggerConfigOf(env), now()), tasks: (heard) => { core.pamHeard = heard; return pamTasks(core.mode(), heard); }, mode: (action) => core.mode(action),
-    memory: () => memoryForDay(history.db, history.db.dayOf(now()), { log: ctx.log }), emit, offsetMinutes: history.db.offsetMinutes, clock: ctx.brain?.clock,
+    world: { view: brainView }, trigger: new Trigger(triggerConfigOf(env), now()), tasks: (heard) => { core.pamHeard = heard; return pamTasks(core.mode(), heard); }, mode: (action) => core.mode(action),
+    memory: () => memory.get(history.db.dayOf(now())), emit, offsetMinutes: history.db.offsetMinutes, clock: ctx.brain?.clock,
     // 행동 중 기다리기·기기 단계 동안은 PAM을 부르지 않는다(실행 추적이 조건을 본다)
-    hold: () => (core.tracker?.waiting() ?? false) || (core.tracker?.coaching() ?? false),
+    hold: () => core.brainStatus?.hold ?? false,
     keepHeard: () => core.keepHeard,
     // 판단 → 시간 줄 사람 줄 → 계획 → 실행 전 검사 → 실행 추적(src/act/)
     onDecision: (d) => {
       core.person?.onDecision(d);
-      core.tracker?.onDecision(d);
+      const check = d.status === "valid" && d.action ? checkDecision({
+        decision: d, tasks: d.tasks ?? pamTasks(core.mode(), false), world: brainView(), nowMs: now(), placed: new Map(core.brainStatus?.placed),
+      }) : { ok: true as const };
+      core.out.brain?.push("/brain/decision", { decision: d, rev: core.brainMirror?.rev() ?? 0, check, assist: core.mode(d.action), at_ms: core.lastDecision?.at_ms ?? now() });
     },
     // 화살표 없는 답의 미리 세운 목표 트리거(src/goal/watch.ts triggerOf): 판단 기록에도 그 목표 행동이 남는다
     goalTrigger: (d) => core.tracker?.goalTrigger(d) ?? null,
@@ -164,8 +171,8 @@ export function startAct(core: HomeCore): (event: BrainLog) => void {
   // 시간 줄 사람 줄(src/brain/person.ts): 판단의 PAM 답 상태와 판단 사이 World State 하는 일(판단이 쓰는 기억으로)로 지금 사람 상태를 갖고 바뀔 때만 대시보드로 보낸다
   core.person = new PersonLane({
     emit: (m) => {
-      core.out.act?.push("/brain/person", m);
-      core.out.act?.push("/brain/person_changes", m);
+      core.out.brain?.push("/brain/person", m);
+      core.out.brain?.push("/brain/person_changes", m);
       core.app?.broadcast(m);
     },
     memory: () => {
@@ -187,6 +194,11 @@ export function startAct(core: HomeCore): (event: BrainLog) => void {
     // 관찰 흐름이 위에서 본 사진으로 컵 안을 본다(topReady·lookContents top): 컵 치우기 계획에 컵 안 보기 단계가 든다
     topLook: true,
   });
+  core.makePlan = async ({ decision, ahead }, signal) => {
+    const task = taskOf(decision.action);
+    if (!task) return { ok: false, error: "행동 목록에 없는 행동" };
+    return planner.plan({ ...planCtx(decision, task, ahead), world: brainView() }, signal);
+  };
   core.tracker = new ExecutionTracker({
     plans, floor: () => plans.floor(), world: view, emit, clock: ctx.brain?.clock, approvals, devices, offsetMinutes: history.db.offsetMinutes,
     // 말 부탁(request_task·묻기 답): 그때까지 보낸 마지막 PAM 요청 번호로 앞선 PAM 판단을 가르고, 만든 판단은 판단 기록으로 남긴다
@@ -195,11 +207,7 @@ export function startAct(core: HomeCore): (event: BrainLog) => void {
     // 실행 추적이 놓기 단계를 끝낸 물건(placed)도 이미 치운 것으로 본다
     precheck: (d) => checkDecision({ decision: d, tasks: d.tasks ?? pamTasks(core.mode(), false), world: view(), nowMs: now(), placed: core.tracker?.placed() }),
     // 계획 입력·제출 검사도 이미 치운 물건(placed, 이 계획을 만들 때 것)을 안다: 입력 줄에 「이미 치움」, 그 물건을 대상으로 한 계획은 버린다
-    planner: (d, signal, ahead) => {
-      const task = taskOf(d.action);
-      if (!task) return { ok: false, error: "행동 목록에 없는 행동" };
-      return planner.plan(planCtx(d, task, ahead), signal);
-    },
+    planner: (d, signal, ahead) => core.brainPlans!.plan(d, signal, ahead),
     // 미리 세운 목표(src/goal/watch.ts): PAM이 쓰는 습관 기억(마지막 판단 때 판본)과 마지막으로 맞은 상태로 목표를 세우고, 미리 만든 계획은 PAM 판단으로 다시 검사해 쓴다.
     // 목표는 /brain/goal_changes·/brain/goal과 대시보드로 보내고, 사람이 떠나면 판단을 다음 타이머(250ms)에 바로 부른다
     habit: () => decide.habit(),

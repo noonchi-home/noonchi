@@ -3,7 +3,7 @@
 // 칸은 그 잇기가 채우기 전에는 읽지 않는다. 말풍선 카드 speak는 say.ts가 채우기 전까지 아무것도 하지 않는다.
 import { ProgressReplies, modeNow, type ExecutionTracker, type LessonStore, type Looker, type Mode, type PlanHub, type loadActConfig } from "../../act/index.js";
 import type { Agent, ApprovalStore, Observer, PlaceInfo, Planner, Policy } from "../../agent/index.js";
-import type { Decider, PersonLane, ThoughtFeed } from "../../brain/index.js";
+import type { BrainPlans, MakePlan, Decider, PersonLane, ThoughtFeed } from "../../brain/index.js";
 import type { BrainLog, SeenEvent } from "../../contract/events.js";
 import type { PendingGoal } from "../../contract/goal.js";
 import type { HabitFsm } from "../../contract/habit.js";
@@ -88,6 +88,11 @@ export class HomeCore {
   looks: LookClient | null = null;
   perception: PerceptionNode | null = null;
   worldNode: WorldNode | null = null;
+  brainMirror: WorldMirror | null = null;
+  brainPlans: BrainPlans | null = null;
+  brainStatus: Body<"/act/status"> | null = null;
+  makePlan!: MakePlan;
+  invalidateMemory = () => {};
   mirror: WorldMirror | null = null;
   phoneNode: BusNode | null = null;
   machineRecorder: BusNode | null = null;
@@ -95,7 +100,7 @@ export class HomeCore {
   pamHeard = false;
   devicesNode: BusNode | null = null;
   /** 노드가 내는 입력의 차례대로 보내기 줄(실패하면 같은 봉투로 다시, 닫기 전 비운다): 실행 추적(거울 노드)·폰·가전. */
-  out: { act?: Outbox; phone?: Outbox; devices?: Outbox } = {};
+  out: { act?: Outbox; brain?: Outbox; phone?: Outbox; devices?: Outbox } = {};
   unsubWorld: () => void = () => {};
   decideTimer: NodeJS.Timeout | undefined;
   // 말풍선 카드(say.ts): 실제 폰에 낸 지금 명령, 마지막 판단·물체 모양, 보낸 글, 가까이 보기·반성·외부 연락 결과
