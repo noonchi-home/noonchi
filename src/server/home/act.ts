@@ -14,7 +14,8 @@ import type { WorldInput, WorldView } from "../../contract/world.js";
 import type { SignalHub } from "../../devices/index.js";
 import type { PlanView } from "../../contract/plan.js";
 import { floorPlanFrom, loadScene, type LayoutEditor, type PlaceNames } from "../../layout/index.js";
-import { Trigger, canRelink, deviceStateKeys, deviceStatus, loadTriggerConfig, type PlaneSurface } from "../../world/index.js";
+import { Trigger, canRelink, deviceStateKeys, deviceStatus, loadTriggerConfig, type PlaneSurface, type TriggerConfig } from "../../world/index.js";
+import { loadEndpoints } from "../../infer/endpoints.js";
 import { DEVICE_STATES } from "../../world/vocab.js";
 import { PHONE_SESSION, TALK_QUIET_MS, type HomeCore } from "./core.js";
 
@@ -48,6 +49,11 @@ function liveDevices(v: WorldView, hub: SignalHub): WorldView {
 /** 실행 추적이 World State에 넣는 것(보기 지킴·따르기 창)은 /world/input으로 낸다(거울 노드 act, 집 상태 노드가 넣는다). */
 function worldInput(core: HomeCore, i: WorldInput): void {
   core.out.act?.push("/world/input", i);   // 차례대로, 실패하면 같은 봉투로 다시(src/bus/outbox.ts)
+}
+
+/** 판단 호출 시점 설정: 주기 기본은 PAM_LLM_MODEL을 반영한 최종 PAM 모델(loadEndpoints)로 고른다(nano면 1초, src/world/trigger.ts). */
+export function triggerConfigOf(env: Record<string, string | undefined>): TriggerConfig {
+  return loadTriggerConfig(env, { pamModel: loadEndpoints(env).pam.model });
 }
 
 /** 미리 세운 목표(src/act/track/goal.ts)를 보낸다: 전환은 /brain/goal_changes(RELIABLE, 녹화·재생에 하나하나), 최신 보기는 /brain/goal(STATE, 늦게 붙은 노드),
@@ -157,7 +163,7 @@ export function startAct(core: HomeCore): (event: BrainLog) => void {
   const decide = new Decider({
     pam: new PamClient({ settings: pamSettings(env), timeoutMs: Number.isFinite(pamTimeout) && pamTimeout > 0 ? pamTimeout : undefined }),
     // 행동 목록은 지금 모드를 따르고(들은 말이 있으면 말로 부탁한 코치 행동도), 판단 기록의 모드는 그 판단 뒤의 지금 모드다(src/act/mode.ts)
-    world: { view }, trigger: new Trigger(loadTriggerConfig(env), now()), tasks: (heard) => pamTasks(core.mode(), heard), mode: (action) => core.mode(action),
+    world: { view }, trigger: new Trigger(triggerConfigOf(env), now()), tasks: (heard) => pamTasks(core.mode(), heard), mode: (action) => core.mode(action),
     memory: () => memoryForDay(history.db, history.db.dayOf(now()), { log: ctx.log }), emit, offsetMinutes: history.db.offsetMinutes, clock: ctx.brain?.clock,
     // 행동 중 기다리기·기기 단계 동안은 PAM을 부르지 않는다(실행 추적이 조건을 본다)
     hold: () => (core.tracker?.waiting() ?? false) || (core.tracker?.coaching() ?? false),

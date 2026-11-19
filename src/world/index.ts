@@ -9,5 +9,5 @@ export { WorldState, CLOSER_NEW_FRAMES, type CloserPass } from "./state/world.js
 export { WorldInputs, startWorldNode, WORLD_TICK_MS, type WorldNode } from "./node.js";
 export { startWorldMirror, type WorldMirror } from "./mirror.js";
 export { textFromWorld, collapseLines, PAM_TEXT_MAX } from "./text.js";
-export { Trigger, type TriggerPause, loadTriggerConfig } from "./trigger.js";
+export { PAM_PERIOD, Trigger, type TriggerConfig, type TriggerPause, loadTriggerConfig } from "./trigger.js";
 export { loadFallConfig, FALL_DEFAULTS, type FallConfig } from "./fall.js";
