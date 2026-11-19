@@ -5,7 +5,13 @@
 // 엔진 프레임은 서버 engine_ms마다(품질 0.8, 투영 행렬·서버 시계 촬영 시각). 표시 영상(H.264)은 만들지 않는다. 영상은 다시 틀지 않는다.
 // 재생을 기다리는 동안 다시 시작하면 같은 시작을 기다리고(영상은 하나), 그 사이 끝내면 그 영상을 닫고 시작하지 않는다.
 // 단계 영상(?step=<종류>:<대상 낱말>:<영상>, 여러 개): 사람 단계 명령(command)의 종류가 같고 대상 id에 낱말이 든 첫 칸이면, 그 id·step에 한 번
-// ?react=초(기본 1.5) 뒤 그 영상으로 바꿔 튼다(새 영상을 깔고 튼 뒤 앞 영상을 닫는다). 영상 시각은 앞 영상들 시각에 이어 센다.
+// 그 영상 조각을 줄에 넣어 차례가 되면 바꿔 튼다(새 영상을 깔고 튼 뒤 앞 영상을 닫는다, ?react=초(기본 1.5)는 붙잡는 중에 받은 조각을 트기까지). 영상 시각은 앞 영상들 시각에 이어 센다.
+// 단계 영상은 원본 하나를 이어 자른 조각이라 받은 차례대로 끝까지 튼다(2026-11-20 사용자 「원래 영상은 저렇게 안끊긴다니까?」): 지금 영상(첫 영상 포함)이
+// 아직 돌면 그 영상이 끝난 바로 뒤에 다음 조각을 틀고(자르지 않는다), 이미 끝나 붙잡는 중이면 반응 시간 뒤 튼다. 단계가 먼저 끝나 다음 명령이 오거나
+// 명령이 지워져도 줄에 든 조각은 버리지 않는다(건너뛰지 않는다). go 조각의 걷기는 그 조각 길이(÷ 빠르기)에 맞춰 조각이 끝날 때 멈출 자리에 닿고,
+// 조각이 도는 동안은 새 명령이 와도 계속 걷는다(그림과 자세가 맞게). 조각 없는 go 걷기는 초당 WALK_MPS이고 새 명령·지우기에 멈춘다.
+// ?rate=빠르기(0.25~2, 기본 1): 첫 영상과 단계 영상을 그 빠르기로 튼다. 영상 시각은 원본 시각이고(붙잡는 동안도 같은 빠르기로 흐른다),
+// 화면·엔진 프레임 간격과 반응 시간은 실제 시간이다.
 // 같은 종류·낱말 칸이 여럿이면 적은 차례대로 쓴다: 그 종류·낱말에 맞는 새 명령마다 다음 칸, 칸이 다 떨어지면 지금 영상을 둔다(칸이 하나면 맞는 새 명령마다 그 칸).
 // 첫 영상도 단계 영상도 끝나면 마지막 장면을 붙잡는다: 다음 단계 영상이 오거나 끝낼 때까지 그 장면으로 프레임을 계속 보내고(시각은 흐른다,
 // 엔진 프레임에 held: true), window.__noonchiVideo.hold = { clip, since: 영상 시각 }(다음 단계 영상이 시작되면 null). 실제 폰은 계속 보므로
@@ -14,8 +20,7 @@
 // go 단계면 자세가 대상 쪽으로 돌아 시작 숙인 각(?pitch=)으로 초당 0.8m 걸어(자세 타이머가 한 칸씩) 대상 0.6m 앞에서 멈춘다.
 // go 명령에 near_m(가까이 가서 보기)이 있으면 min(0.6, near_m × NEAR_WALK)m 앞까지 걷는다(그 단계가 끝나는 거리 안).
 // do 명령이 view above(위에서 비추기)면 폰을 대상 바로 위(지금 자리 쪽으로 수평 ABOVE.backM, 위 ABOVE.upM)로 옮겨 대상을 내려다본다(높이도 바뀐다).
-// 명령이 지워지면(command_clear, commandClear) 그 명령의 예약된 단계 영상 바꾸기를 멈추고 걷기를 멈춘다(자세는 그대로). 새 명령·지우기마다 명령 세대가 올라
-// 이미 재생을 기다리는 바꾸기도 재생이 끝났을 때 세대가 다르면 새 영상을 닫고 앞 영상·자세를 그대로 둔다.
+// 명령이 지워지면(command_clear, commandClear) 그 명령의 반응 시간 예약과 조각 없는 걷기를 멈춘다(자세는 그대로). 줄에 든 조각과 조각과 함께 걷는 걸음은 그대로다.
 // 집기·놓기 단계면 걷기를 멈추고 그 자리에서 대상(cmd.target.ar, 면이면 서버가 윗면 가운데로 준다)을 바라본다: 사람이 폰을 대상에 겨누듯
 // 대상 쪽 yaw와 대상 높이까지 숙인 각(video-math lookAt)으로 돈다. 대상이 수평 1cm 안(바로 위·아래)이면 자세를 바꾸지 않는다. 높이는 늘 그대로다.
 // 영상에는 위치 추적이 없어 자세를 페이지가 옮긴다. 단계를 넘기는 판단은 서버가 한다.
@@ -43,6 +48,8 @@ const ENGINE_QUALITY = 0.8;
 const MAX_BUFFERED = 512 * 1024;
 const OPEN = 1; // WebSocket.OPEN
 const REACT_S = 1.5;
+/** 재생 빠르기 범위(?rate=). */
+const RATE = { min: 0.25, max: 2 };
 const WALK_MPS = 0.8;
 const WALK_STOP_M = 0.6;
 /** 가까이 가서 보기 go(near_m)는 그 거리의 이만큼까지 걷는다(자세 흔들림 여유). */
@@ -81,6 +88,8 @@ export function videoParams(params) {
     heightM: clamp(params.get("h"), 0.2, 3, 1.4),
     steps: params.getAll("step").map(stepEntry).filter(Boolean),
     reactMs: Math.round(clamp(params.get("react"), 0, 10, REACT_S) * 1000),
+    // 영상 모드: 카메라 입력. 재생 빠르기
+    rate: clamp(params.get("rate"), RATE.min, RATE.max, 1),
   };
 }
 
@@ -197,6 +206,10 @@ function browserVideo(url) {
     get duration() { return el.duration; },
     drawTo(ctx, width, height) { ctx.drawImage(el, 0, 0, width, height); },
     play: () => el.play(),
+    setRate(r) {
+      el.defaultPlaybackRate = r;
+      el.playbackRate = r;
+    },
     nextFrame(cb) {
       if (typeof el.requestVideoFrameCallback === "function") el.requestVideoFrameCallback((now) => cb(now));
       else requestAnimationFrame((now) => cb(now));
@@ -266,6 +279,7 @@ export function createVideoAr({ link, params, hooks, deps }) {
   const pitchDeg = d.pitchDeg ?? -25;
   const steps = d.steps ?? [];
   const reactMs = d.reactMs ?? REACT_S * 1000;
+  const rate = d.rate ?? 1;
   // 시작 자세: 서버가 시작 자리로 맞추는 자세. 걸어도 start는 이 자세로 보낸다
   const startPosition = [0, d.heightM ?? 1.4, 0];
   const startOrientation = pitchQuat(pitchDeg);
@@ -328,6 +342,7 @@ export function createVideoAr({ link, params, hooks, deps }) {
     const doc = overlay?.ownerDocument ?? document;
     let video = d.createVideo(d.clipUrl);
     wait.video = video;
+    video.setRate?.(rate);
     // 덮개(canvas·위 줄·엄지 자리)보다 먼저 두어 그 밑에 깔린다. React 뿌리 밖(body 맨 앞)에 둔다
     if (video.element) doc.body.prepend(video.element);
     try {
@@ -347,7 +362,8 @@ export function createVideoAr({ link, params, hooks, deps }) {
     const canvas = d.createCanvas();
     const ctx = canvas.getContext("2d", { willReadFrequently: true });
     const record = videoRecord();
-    record.t0 = Math.round(phoneNow() - video.currentTime * 1000);
+    // 영상 모드: 시험 기록. t0는 영상 시각 0의 시계 시각이다(빠르기 rate로 틀면 영상 시각 1ms에 시계 1 / rate ms)
+    record.t0 = Math.round(phoneNow() - (video.currentTime * 1000) / rate);
     record.ended = false;
     record.hold = null;
     record.commands = [];
@@ -362,21 +378,22 @@ export function createVideoAr({ link, params, hooks, deps }) {
     let clockFixed = false;
     let due = 0;
     let lastEngine = null;
-    let walk = null; // go 단계 걷기: { goal }
-    let swapTurn = 0;
-    const switched = new Set(); // 단계 영상으로 바꾸기를 끝낸 명령 id:step(예약만 하고 지운 것은 넣지 않는다)
+    let walk = null; // go 단계 걷기: { goal, mps, clip }(clip: 단계 영상 조각과 함께 걷는다, 조각이 끝날 때 닿는다)
+    // 영상 모드: 단계 영상. 틀 차례를 기다리는 조각 줄(받은 차례), 다음 조각을 틀 타이머, 바꾸는 중
+    const queue = [];
+    let nextTimer = null;
+    let swapping = false;
+    const switched = new Set(); // 단계 영상 조각을 줄에 넣은 명령 id:step(재생에 실패하면 뺀다)
     const used = new Map(); // 종류:낱말 → 쓴 칸 수(같은 종류·낱말 칸이 여럿일 때 차례)
     const reactTimers = new Set();
     // 명령 세대: 새 단계 영상 명령·지우기마다 오른다. 예약 타이머와 재생을 기다리는 바꾸기는 세대가 다르면 버린다
     let cmdGen = 0;
     let lastCmdId = null;
     let lastKey = null; // 마지막으로 받은 명령 id:단계(같은 명령이 다시 오면 비전 상태만 바뀐 것)
-    let pendingKey = null; // 단계 영상 바꾸기를 예약한 명령 id:단계(끝나거나 지워지기 전)
     // 영상 모드: 자세 흉내
     let posedKey = null; // 단계 영상 칸 없이 자세만 옮기기로 한 명령 id:단계(같은 명령이 다시 와도 다시 하지 않는다)
-    let pendingToken = null; // 그 예약 하나(바꾸기가 끝나면 성공·실패·취소 모두 그 예약만 푼다)
     let stepClip = null; // 지금 도는 단계 영상 이름(첫 영상이면 null)
-    let holdMs = 0; // 마지막 장면을 붙잡은 시간(타이머 칸을 센다): 붙잡는 동안에도 영상 시각이 흐른다
+    let holdMs = 0; // 마지막 장면을 붙잡은 시간(타이머 칸 × 빠르기, 영상 시각): 붙잡는 동안에도 영상 시각이 흐른다
     let holdTimer = null;
     const held = () => holdMs;
     const timeline = () => offset + video.currentTime * 1000 + held();
@@ -415,7 +432,7 @@ export function createVideoAr({ link, params, hooks, deps }) {
       const dx = walk.goal[0] - position[0];
       const dz = walk.goal[2] - position[2];
       const left = Math.hypot(dx, dz);
-      const stride = (WALK_MPS * SEND_MS) / 1000;
+      const stride = ((walk.mps ?? WALK_MPS) * SEND_MS) / 1000;
       if (left <= stride) {
         setPose(walk.goal, orientation);
         walk = null;
@@ -423,11 +440,13 @@ export function createVideoAr({ link, params, hooks, deps }) {
       }
       setPose([position[0] + (dx / left) * stride, position[1], position[2] + (dz / left) * stride], orientation);
     };
-    /** target 쪽으로 돌아 서고 stopM(기본 0.6m) 앞까지 걷기 시작한다. 숙인 각은 주소 칸 pitch. 이미 그 안이면 그대로. */
+    /** target 쪽으로 돌아 서고 stopM(기본 0.6m) 앞까지 걷기 시작한다. 숙인 각은 주소 칸 pitch. 이미 그 안이면 그대로.
+     *  clipMs(단계 영상 조각이 실제로 도는 시간)가 있으면 그 시간에 닿게 걷고(조각과 함께 걷는다), 없으면 초당 WALK_MPS. */
     // 영상 모드: 자세 흉내
-    const startWalk = (target, stopM = WALK_STOP_M) => {
+    const startWalk = (target, stopM = WALK_STOP_M, clipMs) => {
       const w = walkGoal(position, target, stopM);
-      walk = w && { goal: w.goal };
+      const dist = w ? Math.hypot(w.goal[0] - position[0], w.goal[2] - position[2]) : 0;
+      walk = w && (clipMs > 0 ? { goal: w.goal, mps: dist / (clipMs / 1000), clip: true } : { goal: w.goal, mps: WALK_MPS, clip: false });
       if (w) setPose(position, yawPitchQuat(w.yaw, pitchDeg));
     };
     /** 걷기를 멈추고 그 자리에서 target을 바라본다(사람이 폰을 대상에 겨눈다). 바로 위·아래면 자세는 그대로. */
@@ -460,7 +479,7 @@ export function createVideoAr({ link, params, hooks, deps }) {
       const t = timeline();
       if (!clockFixed) {
         clockFixed = true;
-        record.t0 = Math.round(stamp.captured_at - t);
+        record.t0 = Math.round(stamp.captured_at - t / rate);
       }
       syncLog.note(stamp.captured_at, t);
     };
@@ -505,7 +524,7 @@ export function createVideoAr({ link, params, hooks, deps }) {
       if (stamp.captured_at !== undefined) {
         if (!clockFixed) {
           clockFixed = true;
-          record.t0 = Math.round(stamp.captured_at - t);
+          record.t0 = Math.round(stamp.captured_at - t / rate);
         }
         syncLog.note(stamp.captured_at, t);
       }
@@ -513,7 +532,8 @@ export function createVideoAr({ link, params, hooks, deps }) {
       showMarks(marks);
       if (ws()?.readyState !== OPEN) return;
       // 엔진 프레임 차례: 앞 엔진 프레임이 인코딩 중이거나 보낼 것이 쌓였으면 건너뛴다(쌓지 않는다)
-      const step = engineStep({ last: lastEngine, now: t, intervalMs: engineMs, canStart: enginePipeline.canStart(), buffered: ws().bufferedAmount, maxBuffered: MAX_BUFFERED });
+      // 영상 시각으로 세되 간격은 실제 시간이다(빠르기를 곱한다)
+      const step = engineStep({ last: lastEngine, now: t, intervalMs: engineMs * rate, canStart: enginePipeline.canStart(), buffered: ws().bufferedAmount, maxBuffered: MAX_BUFFERED });
       lastEngine = step.last;
       if (step.action !== "wait" && step.action !== "send") stats.skipped("engine");
       if (step.action === "send") {
@@ -534,7 +554,7 @@ export function createVideoAr({ link, params, hooks, deps }) {
         stats.skipped("buffer");
         return;
       }
-      due = Math.max(due + FRAME_MS, t + FRAME_MS / 2);
+      due = Math.max(due + FRAME_MS * rate, t + (FRAME_MS * rate) / 2);
       const long = Math.min(FRAME_LONG, Math.max(fw, fh));
       const width = portrait ? Math.round((long * fw) / fh) : long;
       const h = portrait ? long : Math.round((long * fh) / fw);
@@ -570,10 +590,34 @@ export function createVideoAr({ link, params, hooks, deps }) {
       const tick = frameSend(v);
       const every = Math.max(20, Math.floor(FRAME_MS / 2));
       holdTimer = setInterval(() => {
-        holdMs += every;
+        holdMs += every * rate;
         tick(performance.now());
       }, every);
+      // 줄에 기다리는 조각이 있으면 끝난 바로 뒤에 튼다(원본처럼 이어진다)
+      if (queue.length) playNext(0);
     });
+    /** 줄의 다음 조각을 delay 뒤 튼다(이미 타이머가 있거나 바꾸는 중이면 그대로). 다 틀면(열지 못해도) 붙잡는 중이고 줄이 남았으면 바로 다음 조각. */
+    // 영상 모드: 단계 영상
+    const playNext = (delay) => {
+      if (nextTimer !== null || swapping || !queue.length) return;
+      nextTimer = setTimeout(() => {
+        nextTimer = null;
+        if (run !== current) return;
+        const q = queue.shift();
+        if (!q) return;
+        swapping = true;
+        void swap(q).finally(() => {
+          swapping = false;
+          if (holdTimer !== null && queue.length) playNext(0);
+        });
+      }, delay);
+    };
+    /** 조각을 줄에 넣는다: 지금 영상이 아직 돌면 그 영상이 끝난 뒤(watchEnd), 끝나 붙잡는 중이면 반응 시간 뒤 튼다. */
+    // 영상 모드: 단계 영상
+    const enqueue = (q) => {
+      queue.push(q);
+      if (holdTimer !== null) playNext(reactMs);
+    };
     const stopHold = () => {
       if (holdTimer !== null) clearInterval(holdTimer);
       holdTimer = null;
@@ -582,21 +626,24 @@ export function createVideoAr({ link, params, hooks, deps }) {
       record.hold = null;
     };
 
-    /** 단계 영상으로 바꾼다: 새 영상을 앞 영상 밑에 깔고 튼 뒤 앞 영상을 닫는다. 마지막에 건 바꾸기만 쓴다.
-     *  pose: 새 영상으로 바꿀 때 함께 바꿀 자세(go 걷기·집기·놓기 바라보기). 열지 못하거나 더 새 바꾸기가 있으면 부르지 않는다. */
-    async function swap(url, pose, gen = cmdGen, done) {
-      const turn = ++swapTurn;
-      const next = d.createVideo(url);
+    /** 줄의 조각 q로 바꾼다: 새 영상을 앞 영상 밑에 깔고 그 빠르기로 튼 뒤 앞 영상을 닫는다(줄이 차례를 지키므로 다른 바꾸기와 겹치지 않는다).
+     *  q.pose: 새 영상으로 바꿀 때 함께 바꿀 자세(go 걷기·집기·놓기 바라보기). 조각이 실제로 도는 시간(길이 ÷ 빠르기)을 넘긴다.
+     *  조각과 함께 걷던 걸음이 덜 끝났으면 그 자리에 닿힌 뒤 바꾼다. 열지 못하면 그 명령을 다시 받을 수 있게 줄에 넣은 표시를 푼다. */
+    // 영상 모드: 단계 영상
+    async function swap(q) {
+      const next = d.createVideo(q.url);
+      next.setRate?.(rate);
       if (next.element) doc.body.prepend(next.element);
       try {
         await next.play();
       } catch {
         next.close();
-        console.warn(`[video] 단계 영상을 열지 못했어요 ${clipNameOf(url)}`);
+        q.failed?.();
+        console.warn(`[video] 단계 영상을 열지 못했어요 ${clipNameOf(q.url)}`);
         return;
       }
-      // 끝낸 AR·더 새 바꾸기·지워진 명령(세대가 다름)이면 새 영상을 닫고 앞 영상·자세를 그대로 둔다
-      if (run !== current || turn !== swapTurn || gen !== cmdGen) {
+      // 끝낸 AR이면 새 영상을 닫는다
+      if (run !== current) {
         next.close();
         return;
       }
@@ -610,15 +657,19 @@ export function createVideoAr({ link, params, hooks, deps }) {
         portrait = fh > fw;
         projection = projectionFromFov(d.fovDeg ?? 60, fw / fh);
       }
+      if (walk?.clip) {
+        setPose(walk.goal, orientation);
+        walk = null;
+      }
+      const dur = Number(next.duration);
+      const known = Number.isFinite(dur) && dur > 0;
       // 앞 영상 프레임 고리는 멈췄다: 새 영상 첫 프레임부터 새 자세가 실린다
-      pose?.();
-      done?.();
+      q.pose?.(known ? (dur * 1000) / rate : undefined);
       record.ended = false;
       const ms = timeline();
-      stepClip = clipNameOf(url);
-      const dur = Number(next.duration);
-      record.clips.push({ video_ms: Math.round(ms), clip: stepClip, ...(Number.isFinite(dur) && dur > 0 ? { duration_ms: Math.round(dur * 1000) } : {}) });
-      console.info(`[video] ${clockText(ms)} 단계 영상 ${clipNameOf(url)}`);
+      stepClip = clipNameOf(q.url);
+      record.clips.push({ video_ms: Math.round(ms), clip: stepClip, ...(known ? { duration_ms: Math.round(dur * 1000) } : {}) });
+      console.info(`[video] ${clockText(ms)} 단계 영상 ${clipNameOf(q.url)}`);
       old.close();
       watchEnd(next);
       next.nextFrame(frameLoop(next));
@@ -626,23 +677,22 @@ export function createVideoAr({ link, params, hooks, deps }) {
 
     const current = {
       videoTime: timeline,
-      /** 사람 단계 명령: 맞는 step 칸이 있으면 그 id·step에 한 번, reactMs 뒤 단계 영상으로 바꾸고, 바뀌면 go는 걷고 집기·놓기·그 자리에서 하는 일(do)은 대상을 바라본다.
+      /** 사람 단계 명령: 맞는 step 칸이 있으면 그 id·step에 한 번 그 조각을 줄에 넣는다(차례대로 끝까지 튼다, enqueue). 조각이 틀어질 때
+       *  go는 걷고(조각과 함께, 조각이 끝날 때 닿는다) 집기·놓기·그 자리에서 하는 일(do)은 대상을 바라본다.
        *  맞는 칸이 없으면 대상이 있는 go만 reactMs 뒤 걷는다(영상은 그대로). 그 밖은 영상이 돌지 않으므로 자세도 그대로 둔다:
        *  자세만 돌리면 사진과 자세가 어긋나 서버가 엉뚱한 자리를 잘라 본다(2026-11-17 머그 실제 녹화). */
       command(cmd) {
         const key = `${cmd.id}:${cmd.step}`;
         const fresh = key !== lastKey;
-        // 같은 명령이 이어서 다시 오면(비전 상태만 바뀜) 이미 예약했거나 바꾼 것은 그대로 둔다(대상이 그제야 붙었으면 아래에서 예약한다)
-        if (!fresh && (pendingKey === key || switched.has(key))) return;
-        // 새 명령(다른 id·단계, 단계 영상이 없는 질문·승인도): 앞 명령의 예약된 바꾸기·재생을 기다리는 바꾸기·걷기를 먼저 멈춘다
+        // 같은 명령이 이어서 다시 오면(비전 상태만 바뀜) 이미 줄에 넣은 것은 그대로 둔다(대상이 그제야 붙었으면 아래에서 넣는다)
+        if (!fresh && switched.has(key)) return;
+        // 새 명령(다른 id·단계, 단계 영상이 없는 질문·승인도): 앞 명령의 반응 시간 예약과 조각 없는 걷기를 멈춘다. 줄에 든 조각과 그 걷기는 그대로다
         if (fresh) {
           lastKey = key;
-          pendingKey = null;
-          pendingToken = null;
           cmdGen++;
           for (const timer of reactTimers) clearTimeout(timer);
           reactTimers.clear();
-          walk = null;
+          if (walk && !walk.clip) walk = null;
         }
         const id = cmd.target?.id;
         const first = typeof id === "string" ? steps.find((s) => s.kind === cmd.kind && id.includes(s.word)) : undefined;
@@ -651,9 +701,9 @@ export function createVideoAr({ link, params, hooks, deps }) {
         if (!first && !(target && cmd.kind === "go")) return;
         const gen = cmdGen;
         lastCmdId = cmd.id;
-        // go는 걷기(near_m이 있으면 그 거리 안까지), view above면 위에서 비추기, 그 밖은 그 자리에서 바라보기
+        // go는 걷기(near_m이 있으면 그 거리 안까지), view above면 위에서 비추기, 그 밖은 그 자리에서 바라보기. clipMs: 조각이 실제로 도는 시간(조각과 함께 걷기)
         const stopM = typeof cmd.near_m === "number" ? Math.min(WALK_STOP_M, cmd.near_m * NEAR_WALK) : WALK_STOP_M;
-        const pose = target && (cmd.kind === "go" ? () => startWalk(target, stopM) : cmd.view === "above" ? () => holdAbove(target) : () => face(target));
+        const pose = target && (cmd.kind === "go" ? (clipMs) => startWalk(target, stopM, clipMs) : cmd.view === "above" ? () => holdAbove(target) : () => face(target));
         const later = (fn) => {
           const timer = setTimeout(() => {
             reactTimers.delete(timer);
@@ -663,51 +713,46 @@ export function createVideoAr({ link, params, hooks, deps }) {
           reactTimers.add(timer);
         };
         // 영상 모드: 자세 흉내. 맞는 단계 영상 칸이 없는 go는 영상은 그대로 두고 반응 시간 뒤 걷기만 한다(같은 명령이 다시 와도 다시 시작하지 않는다).
-        // 단계 영상 예약과 따로 센다: 대상이 바뀌어 같은 명령이 칸에 맞게 되면 그때 단계 영상으로 바꾼다
+        // 단계 영상 예약과 따로 센다: 대상이 바뀌어 같은 명령이 칸에 맞게 되면 그때 단계 영상을 줄에 넣는다
         if (!first) {
           // 이어진 재전송(비전 상태만 바뀜)은 그대로 두고, 다른 명령 뒤 다시 온 같은 명령(시간 초과 질문 뒤 「계속」)은 다시 걷는다
           if (!fresh && posedKey === key) return;
           posedKey = key;
-          later(pose);
+          later(() => pose());
           return;
         }
-        // 이미 그 단계 영상으로 바꾼 명령이 다시 왔다(시간 초과 질문 뒤 「계속」 등): 영상 칸을 더 쓰지 않고 자세 동작만 다시 시작한다
+        // 이미 그 단계 영상을 줄에 넣은 명령이 다시 왔다(시간 초과 질문 뒤 「계속」·지운 뒤 다시 옴): 영상 칸을 더 쓰지 않고 자세 동작만 다시 시작한다
         if (switched.has(key)) {
-          if (pose) later(pose);
+          if (pose) later(() => pose());
           return;
         }
         // 같은 종류·낱말 칸이 여럿이면 새 명령마다 다음 칸(다 떨어지면 지금 영상을 둔다), 하나면 늘 그 칸.
-        // 칸과 그 명령은 바꾸기가 끝났을 때만 쓴 것으로 센다(예약만 하고 지운 바꾸기는 칸을 쓰지 않고, 같은 명령이 다시 오면 다시 예약한다)
+        // 줄에 넣을 때 칸과 그 명령을 쓴 것으로 센다(재생에 실패하면 되돌려 같은 명령이 다시 올 때 다시 넣는다)
         const group = steps.filter((s) => s.kind === first.kind && s.word === first.word);
         const slot = `${first.kind}:${first.word}`;
         const n = used.get(slot) ?? 0;
         if (group.length > 1 && n >= group.length) return;
         const entry = group.length > 1 ? group[n] : first;
-        const token = {};
-        pendingKey = key;
-        pendingToken = token;
-        // 바꾸기가 끝나면(성공·재생 실패·더 새 바꾸기·지움) 이 예약을 푼다: 재생에 실패했으면 같은 명령이 다시 올 때 다시 바꿔 본다
-        const settle = () => {
-          if (pendingToken !== token) return;
-          pendingToken = null;
-          pendingKey = null;
-        };
-        later(() => void swap(entry.clipUrl, pose, gen, () => {
-          used.set(slot, Math.max(used.get(slot) ?? 0, n + 1));
-          switched.add(key);
-        }).finally(settle));
+        used.set(slot, Math.max(used.get(slot) ?? 0, n + 1));
+        switched.add(key);
+        enqueue({
+          url: entry.clipUrl, pose,
+          failed: () => {
+            switched.delete(key);
+            if (group.length > 1 && used.get(slot) === n + 1) used.set(slot, n);
+          },
+        });
       },
-      /** 명령이 지워졌다(id가 없으면 무엇이든): 마지막 단계 영상 명령이면 세대를 올려 예약된 바꾸기·재생을 기다리는 바꾸기를 버리고 걷기를 멈춘다. */
+      /** 명령이 지워졌다(id가 없으면 무엇이든): 마지막 단계 영상 명령이면 세대를 올려 반응 시간 예약을 버리고 조각 없는 걷기를 멈춘다.
+       *  줄에 든 조각과 조각과 함께 걷는 걸음은 그대로 튼다(원본 영상을 자르지 않는다). */
       commandClear(id) {
         if (id !== undefined && id !== lastCmdId) return;
         cmdGen++;
         lastKey = null;
-        pendingKey = null;
         posedKey = null;
-        pendingToken = null;
         for (const timer of reactTimers) clearTimeout(timer);
         reactTimers.clear();
-        walk = null;
+        if (walk && !walk.clip) walk = null;
       },
       close() {
         // 끝낼 때 지금 짝(멈칫하는 도중이면 멈춘 시간까지)
@@ -716,6 +761,8 @@ export function createVideoAr({ link, params, hooks, deps }) {
         clearInterval(poseTimer);
         clearInterval(perfTimer);
         if (holdTimer !== null) clearInterval(holdTimer);
+        if (nextTimer !== null) clearTimeout(nextTimer);
+        queue.length = 0;
         for (const timer of reactTimers) clearTimeout(timer);
         reactTimers.clear();
         walk = null;

@@ -836,6 +836,11 @@ describe("영상 입력 모드: 단계 영상·걷기", () => {
   const fakeTimers = () => vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval"] });
   const after = (ms: number) => vi.advanceTimersByTimeAsync(ms);
   const lastPose = (sent: () => Record<string, any>[]) => sent().filter((m) => m.type === "pose").at(-1)!;
+  /** 첫 영상이 끝난(붙잡는 중) 판: 단계 영상은 지금 영상이 끝나야 틀므로 단계 명령 시험은 첫 영상을 끝낸 뒤 시작한다. */
+  const makeEnded = (...args: Parameters<typeof make>) => {
+    const m = make(...args);
+    return { ...m, startAr: async () => { await m.startAr(); m.video.end(); } };
+  };
   const closeTo = (got: number[], want: number[]) => {
     expect(got).toHaveLength(want.length);
     got.forEach((x, i) => expect(x).toBeCloseTo(want[i]!, 6));
@@ -867,7 +872,7 @@ describe("영상 입력 모드: 단계 영상·걷기", () => {
 
     it("do:microwave:a·b·c가 있으면 전자레인지 대상 do 명령 셋에 a·b·c를 차례로 튼다. 같은 명령이 다시 와도(비전 상태만 바뀜) 다음 칸으로 넘기지 않는다", async () => {
       fakeTimers();
-      const { ws, urls, startAr } = make({}, ORDER);
+      const { ws, urls, videos, startAr } = makeEnded({}, ORDER);
       await startAr();
       ws.push(ALIGNED);
       ws.push(doMw("plan:pam-1:2", "전자레인지 문을 열어 주세요"));
@@ -876,9 +881,12 @@ describe("영상 입력 모드: 단계 영상·걷기", () => {
       await after(1500);
       expect(urls.slice(1)).toEqual(["/phone/videos/a.mp4"]);
       ws.push(doMw("plan:pam-1:4", "전자레인지 문을 닫아 주세요"));
-      await after(1500);
       ws.push(doMw("plan:pam-1:5", "전자레인지를 켜 주세요"));
-      await after(1500);
+      // 앞 조각이 끝나야 다음 조각을 튼다(차례대로 끝까지)
+      videos[1]!.end();
+      await after(0);
+      videos[2]!.end();
+      await after(0);
       expect(urls.slice(1)).toEqual(["/phone/videos/a.mp4", "/phone/videos/b.mp4", "/phone/videos/c.mp4"]);
       // 칸이 다 떨어지면 지금 영상을 둔다
       ws.push(doMw("plan:pam-1:8", "전자레인지 문을 열어 주세요"));
@@ -888,11 +896,12 @@ describe("영상 입력 모드: 단계 영상·걷기", () => {
 
     it("칸이 하나면 지금처럼 맞는 새 명령마다 그 영상을 다시 튼다", async () => {
       fakeTimers();
-      const { ws, urls, startAr } = make({}, "?clip=mw-start.mp4&step=do:microwave:a.mp4");
+      const { ws, urls, videos, startAr } = makeEnded({}, "?clip=mw-start.mp4&step=do:microwave:a.mp4");
       await startAr();
       ws.push(ALIGNED);
       ws.push(doMw("plan:pam-1:2", "전자레인지 문을 열어 주세요"));
       await after(1500);
+      videos[1]!.end();
       ws.push(doMw("plan:pam-1:4", "전자레인지 문을 닫아 주세요"));
       await after(1500);
       expect(urls.slice(1)).toEqual(["/phone/videos/a.mp4", "/phone/videos/a.mp4"]);
@@ -900,13 +909,14 @@ describe("영상 입력 모드: 단계 영상·걷기", () => {
 
     it("단계 영상이 끝나면 hold가 그 영상·시각이 되고 5초 동안 엔진 프레임이 계속 나가며 그 영상의 마지막 장면을 그린다. 다음 단계 영상이 오면 hold가 null. clips에 duration_ms가 있다", async () => {
       fakeTimers();
-      const { ws, videos, startAr } = make({}, ORDER, { later: { duration: 12 } as never });
+      const { ws, videos, startAr } = makeEnded({}, ORDER, { later: { duration: 12 } as never });
       await startAr();
       ws.push({ ...ALIGNED, engine_ms: 500 });
       ws.push(doMw("plan:pam-1:2", "전자레인지 문을 열어 주세요"));
       await after(1500);
       const a = videos[1]!;
       expect(rec().clips.at(-1)).toMatchObject({ clip: "a.mp4", duration_ms: 12_000 });
+      const playingFrom = (await Promise.all(ws.packets.map(headerOf))).filter((h) => h.kind === "engine").length;
       a.advance(12);
       await after(0);
       a.end();
@@ -920,7 +930,7 @@ describe("영상 입력 모드: 단계 영상·걷기", () => {
       expect(engineAfter - engineBefore).toBeGreaterThanOrEqual(8);
       // 붙잡은 장면은 held로 보내 서버가 같은 사진도 간격마다 새 관찰로 받게 한다. 붙잡기 전 프레임에는 없다
       expect(engines.slice(engineBefore).every((h) => h.held === true)).toBe(true);
-      expect(engines.slice(0, engineBefore).some((h) => "held" in h)).toBe(false);
+      expect(engines.slice(playingFrom, engineBefore).some((h) => "held" in h)).toBe(false);
       expect(a.drawTo.mock.calls.length).toBeGreaterThan(drawsBefore);
       ws.push(doMw("plan:pam-1:4", "전자레인지 문을 닫아 주세요"));
       await after(1500);
@@ -954,7 +964,7 @@ describe("영상 입력 모드: 단계 영상·걷기", () => {
 
     it("붙잡는 동안 타이머는 프레임만 보내고 다음 프레임을 예약하지 않는다(예약 콜백이 늘지 않는다)", async () => {
       fakeTimers();
-      const { ws, videos, startAr } = make({}, ORDER);
+      const { ws, videos, startAr } = makeEnded({}, ORDER);
       await startAr();
       ws.push({ ...ALIGNED, engine_ms: 500 });
       ws.push(doMw("plan:pam-1:2", "전자레인지 문을 열어 주세요"));
@@ -972,9 +982,101 @@ describe("영상 입력 모드: 단계 영상·걷기", () => {
     });
   });
 
+  // 2026-11-20 사용자 「원래 영상은 저렇게 안끊긴다니까?」: 단계 영상은 원본 하나를 이어 자른 조각이다. 차례대로 끝까지 틀면 원본 그대로다
+  describe("단계 영상 차례: 건너뛰지 않고 자르지 않는다", () => {
+    const SINK_GO = (over: Record<string, unknown> = {}) => command({ step: "plan:pam-1:3", text: "싱크대로 가 주세요", vision: "싱크대까지 2.0m", kind: "go", target: SINK, speak: false, ...over });
+    const placeSink = () => command({ step: "plan:pam-1:4", text: "컵을 싱크대에 넣어 주세요", vision: "컵 · 손에 있음", kind: "place", target: SINK, speak: false });
+
+    it("첫 영상이 끝나기 전에 온 단계 명령은 첫 영상이 끝난 뒤에 튼다(첫 영상을 자르지 않는다). 끝난 뒤에는 기다리지 않고 바로", async () => {
+      fakeTimers();
+      const { ws, urls, video, startAr } = make({}, STEPS);
+      await startAr();
+      ws.push(ALIGNED);
+      ws.push(goTable());
+      await after(3000);
+      expect(urls).toEqual(["/phone/videos/cup-empty.mp4"]);
+      expect(video.closed).toBe(0);
+      video.end();
+      await after(0);
+      expect(urls).toEqual(["/phone/videos/cup-empty.mp4", "/phone/videos/go-table.mp4"]);
+    });
+
+    it("단계가 먼저 끝나 다음 명령이 와도 받은 조각은 차례대로 끝까지 튼다: 식탁으로 가기가 바로 끝나 집기 명령이 와도 go-table → pick-cup", async () => {
+      fakeTimers();
+      const { ws, urls, videos, video, startAr } = make({}, STEPS);
+      await startAr();
+      ws.push(ALIGNED);
+      video.end();
+      ws.push(goTable());
+      await after(200);
+      ws.push(pickCup());
+      await after(1500);
+      expect(urls.slice(1)).toEqual(["/phone/videos/go-table.mp4"]);
+      await after(5000);
+      expect(urls.slice(1)).toEqual(["/phone/videos/go-table.mp4"]);
+      videos[1]!.end();
+      await after(0);
+      expect(urls.slice(1)).toEqual(["/phone/videos/go-table.mp4", "/phone/videos/pick-cup.mp4"]);
+    });
+
+    it("도는 조각을 다음 명령이 자르지 않는다: 싱크대로 가기 조각이 도는 동안 놓기 명령이 와도 그 조각이 끝난 뒤 place-sink. 명령 지우기도 줄에 든 조각을 버리지 않는다", async () => {
+      fakeTimers();
+      const { ws, urls, videos, video, startAr } = make({}, STEPS);
+      await startAr();
+      ws.push(ALIGNED);
+      video.end();
+      ws.push(SINK_GO());
+      await after(1500);
+      expect(urls.at(-1)).toBe("/phone/videos/go-sink.mp4");
+      ws.push(placeSink());
+      ws.push({ type: "command_clear", id: "plan:pam-1" });
+      await after(5000);
+      expect(urls.at(-1)).toBe("/phone/videos/go-sink.mp4");
+      expect(videos[1]!.closed).toBe(0);
+      videos[1]!.end();
+      await after(0);
+      expect(urls.at(-1)).toBe("/phone/videos/place-sink.mp4");
+    });
+
+    it("go 조각의 걷기는 조각 길이에 맞춰 조각이 끝날 때 멈출 자리(대상 0.6m 앞)에 닿는다. 다음 명령이 와도 조각이 도는 동안은 계속 걷는다", async () => {
+      fakeTimers();
+      const { ws, sent, video, startAr } = make({}, STEPS, { later: { duration: 4 } as never });
+      await startAr();
+      ws.push(ALIGNED);
+      video.end();
+      ws.push(SINK_GO());
+      await after(1500);
+      // 거리 2m에서 1.4m를 4초에: 2초 뒤 절반
+      await after(2000);
+      expect(Math.hypot(lastPose(sent).position[0], lastPose(sent).position[2] + 0)).toBeCloseTo(0.7, 1);
+      ws.push(placeSink());
+      await after(2000);
+      closeTo(lastPose(sent).position, [0.84, 1.4, -1.12]);
+    });
+
+    it("rate(재생 빠르기, 0.25~2, 기본 1): 첫 영상·단계 영상을 그 빠르기로 틀고, go 걷기는 조각 길이 ÷ 빠르기(0.75면 4초 조각이 5.33초)에 맞춰 닿는다", async () => {
+      expect(videoParams(new URLSearchParams("clip=a.mp4"))).toMatchObject({ rate: 1 });
+      for (const [raw, r] of [["0.75", 0.75], ["0.1", 0.25], ["3", 2], ["x", 1]] as const) expect(videoParams(new URLSearchParams(`clip=a.mp4&rate=${raw}`))!.rate).toBe(r);
+      fakeTimers();
+      const rates: number[] = [];
+      const { ws, sent, video, startAr } = make({}, `${STEPS}&rate=0.75`, { later: { duration: 4, setRate: (r: number) => rates.push(r) } as never });
+      (video as unknown as { setRate: (r: number) => void }).setRate = (r) => rates.push(r);
+      await startAr();
+      ws.push(ALIGNED);
+      video.end();
+      ws.push(SINK_GO());
+      await after(1500);
+      expect(rates).toEqual([0.75, 0.75]);
+      await after(4000);
+      expect(Math.hypot(lastPose(sent).position[0], lastPose(sent).position[2])).toBeCloseTo(1.05, 1);
+      await after(1400);
+      closeTo(lastPose(sent).position, [0.84, 1.4, -1.12]);
+    });
+  });
+
   it("go 명령(대상 dining_table_1)이 오면 1.5초 뒤 go-table.mp4를 만들어 덮개 앞에 깔고 튼다. 그 전에는 바꾸지 않고, 바꾸면 앞 영상을 닫는다", async () => {
     fakeTimers();
-    const { ws, urls, videos, overlay, startAr } = make({}, STEPS);
+    const { ws, urls, videos, overlay, startAr } = makeEnded({}, STEPS);
     await startAr();
     ws.push(ALIGNED);
     ws.push(goTable());
@@ -992,7 +1094,7 @@ describe("영상 입력 모드: 단계 영상·걷기", () => {
 
   it("go 단계 영상으로 바꾸면 자세가 초당 0.8m로 대상 쪽으로 걸어 대상 0.6m 앞([0, 1.4, −0.9])에서 멈춘다. 높이·pitch는 그대로, 엔진·화면 프레임 머리도 새 자리", async () => {
     fakeTimers();
-    const { ws, sent, videos, startAr } = make({}, STEPS);
+    const { ws, sent, videos, startAr } = makeEnded({}, STEPS);
     await startAr();
     ws.push({ ...ALIGNED, engine_ms: 500 });
     ws.push(goTable());
@@ -1027,7 +1129,7 @@ describe("영상 입력 모드: 단계 영상·걷기", () => {
 
   it("옆에 있는 대상으로 걸으면 대상 쪽으로 돌아 본다: 멈춘 뒤 대상 고리가 화면 가로 가운데, 숙인 각은 그대로", async () => {
     fakeTimers();
-    const { ws, sent, videos, marks, startAr } = make({}, STEPS);
+    const { ws, sent, videos, marks, startAr } = makeEnded({}, STEPS);
     await startAr();
     ws.push(ALIGNED);
     ws.push(command({ step: "plan:pam-1:3", text: "싱크대로 가 주세요", vision: "싱크대까지 2.0m", kind: "go", target: SINK, speak: false }));
@@ -1044,7 +1146,7 @@ describe("영상 입력 모드: 단계 영상·걷기", () => {
 
   it("pick 명령은 1.5초 뒤 pick-cup.mp4로 바꾸고, 그 자리에서 컵 쪽으로 돌고 숙여 컵 고리가 화면 가운데. 엔진 프레임 머리도 새 자세, 다시 보내는 start는 처음 자세", async () => {
     fakeTimers();
-    const { ws, sent, urls, videos, marks, startAr } = make({}, STEPS);
+    const { ws, sent, urls, videos, marks, startAr } = makeEnded({}, STEPS);
     await startAr();
     ws.push({ ...ALIGNED, engine_ms: 500 });
     ws.push(pickCup());
@@ -1071,7 +1173,7 @@ describe("영상 입력 모드: 단계 영상·걷기", () => {
 
   it("do 명령(대상 id에 cup)이 오면 1.5초 뒤 pour-water.mp4로 바꿔 틀고, 걷지 않고 그 자리에서 대상을 본다. 같은 낱말의 pick 칸으로는 바꾸지 않는다", async () => {
     fakeTimers();
-    const { ws, sent, urls, videos, marks, startAr } = make({}, `${STEPS}&step=do:cup:pour-water.mp4`);
+    const { ws, sent, urls, videos, marks, startAr } = makeEnded({}, `${STEPS}&step=do:cup:pour-water.mp4`);
     await startAr();
     ws.push({ ...ALIGNED, engine_ms: 500 });
     ws.push(command({ step: "plan:pam-1:4", text: "컵에 물을 따라 주세요", vision: "컵 · 비어 있음", kind: "do", target: CUP, speak: false }));
@@ -1103,14 +1205,14 @@ describe("영상 입력 모드: 단계 영상·걷기", () => {
 
     it("go 명령에 near_m 0.5가 있으면 go-cup.mp4로 바꾸고 컵 0.4m 앞까지 걷는다(없으면 0.6m)", async () => {
       fakeTimers();
-      const { ws, sent, urls, startAr } = make({}, PEEK_STEPS);
+      const { ws, sent, urls, startAr } = makeEnded({}, PEEK_STEPS);
       await startAr();
       ws.push(ALIGNED);
       ws.push(goCup());
       await after(5000);
       expect(urls).toEqual(["/phone/videos/cup-empty.mp4", "/phone/videos/go-cup.mp4"]);
       expect(flatTo(lastPose(sent).position, CUP.ar)).toBeCloseTo(0.4, 6);
-      const plain = make({}, PEEK_STEPS);
+      const plain = makeEnded({}, PEEK_STEPS);
       await plain.startAr();
       plain.ws.push(ALIGNED);
       plain.ws.push(goCup({ near_m: undefined }));
@@ -1120,7 +1222,7 @@ describe("영상 입력 모드: 단계 영상·걷기", () => {
 
     it("do 명령이 view above면 above-cup.mp4로 바꾸고 폰을 컵 입구 바로 위(수평 2cm, 위 40cm)로 옮겨 컵을 내려다본다", async () => {
       fakeTimers();
-      const { ws, sent, urls, startAr } = make({}, PEEK_STEPS);
+      const { ws, sent, urls, startAr } = makeEnded({}, PEEK_STEPS);
       await startAr();
       ws.push(ALIGNED);
       ws.push(aboveCup());
@@ -1159,7 +1261,7 @@ describe("영상 입력 모드: 단계 영상·걷기", () => {
 
     it("컵 바로 위(수평 1cm 안)에서 위에서 비추기를 받아도 지금 보는 쪽을 써서 컵 위로 옮겨 내려다본다", async () => {
       fakeTimers();
-      const { ws, sent, startAr } = make({}, PEEK_STEPS);
+      const { ws, sent, startAr } = makeEnded({}, PEEK_STEPS);
       await startAr();
       ws.push(ALIGNED);
       const below = { ...CUP, ar: [0, 0.8, 0] };
@@ -1170,18 +1272,17 @@ describe("영상 입력 모드: 단계 영상·걷기", () => {
       closeTo(lastPose(sent).orientation, yawPitchQuat(want.yaw, want.pitchDeg));
     });
 
-    it("맞는 단계 영상이 없는 새 명령(승인 질문 등)이 오면 앞 명령의 예약된 바꾸기와 걷기를 멈춘다. 같은 명령이 다시 오면(비전 상태만 바뀜) 멈추지 않는다", async () => {
+    it("맞는 단계 영상이 없는 새 명령(승인 질문 등)이 와도 줄에 든 조각은 튼다(원본을 자르지 않는다). 길이를 모르는 조각의 걷기(조각 없는 걷기처럼)는 새 명령에 멈추고, 같은 명령이 다시 오면(비전 상태만 바뀜) 멈추지 않는다", async () => {
       fakeTimers();
-      const { ws, sent, urls, startAr } = make({}, PEEK_STEPS);
+      const { ws, urls, startAr } = makeEnded({}, PEEK_STEPS);
       await startAr();
       ws.push(ALIGNED);
       ws.push(goCup());
       await after(1000);
       ws.push(command({ step: "plan:pam-1:approve", text: "물 채우기를 할까요?", vision: null, choices: [{ id: "approve", label: "승인" }, { id: "reject", label: "거절" }], target: null }));
       await after(3000);
-      expect(urls).toEqual(["/phone/videos/cup-empty.mp4"]);
-      for (const p of sent().filter((m) => m.type === "pose")) expect(p.position).toEqual([0, 1.4, 0]);
-      const w = make({}, PEEK_STEPS);
+      expect(urls).toEqual(["/phone/videos/cup-empty.mp4", "/phone/videos/go-cup.mp4"]);
+      const w = makeEnded({}, PEEK_STEPS);
       await w.startAr();
       w.ws.push(ALIGNED);
       w.ws.push(goCup());
@@ -1201,7 +1302,7 @@ describe("영상 입력 모드: 단계 영상·걷기", () => {
 
     it("지운 명령과 같은 id·단계가 다시 오면 다시 예약해 바꾼다(예약만 하고 지운 것은 끝난 것이 아니다)", async () => {
       fakeTimers();
-      const { ws, urls, startAr } = make({}, PEEK_STEPS);
+      const { ws, urls, startAr } = makeEnded({}, PEEK_STEPS);
       await startAr();
       ws.push(ALIGNED);
       ws.push(goCup());
@@ -1214,7 +1315,7 @@ describe("영상 입력 모드: 단계 영상·걷기", () => {
 
     it("단계 영상을 열지 못하면(재생 실패) 예약이 풀려, 같은 명령이 다시 오면 다시 바꿔 본다", async () => {
       fakeTimers();
-      const { ws, urls, startAr } = make({}, PEEK_STEPS, { later: { play: async () => { throw new Error("열 수 없음"); } } });
+      const { ws, urls, startAr } = makeEnded({}, PEEK_STEPS, { later: { play: async () => { throw new Error("열 수 없음"); } } });
       await startAr();
       ws.push(ALIGNED);
       ws.push(goCup());
@@ -1227,7 +1328,7 @@ describe("영상 입력 모드: 단계 영상·걷기", () => {
 
     it("시간 초과 질문 뒤 「계속」으로 같은 go 명령이 다시 오면 영상 칸을 더 쓰지 않고 걷기만 다시 시작한다", async () => {
       fakeTimers();
-      const { ws, sent, urls, startAr } = make({}, PEEK_STEPS);
+      const { ws, sent, urls, startAr } = makeEnded({}, PEEK_STEPS);
       await startAr();
       ws.push(ALIGNED);
       ws.push(goCup());
@@ -1242,9 +1343,9 @@ describe("영상 입력 모드: 단계 영상·걷기", () => {
       expect(urls).toEqual(["/phone/videos/cup-empty.mp4", "/phone/videos/go-cup.mp4"]);
     });
 
-    it("취소된 바꾸기는 단계 영상 칸을 쓰지 않는다: 같은 do:cup 칸이 둘이면 위에서 비추기를 지우고 다시 받아도 첫 칸을 튼다", async () => {
+    it("지워도 줄에 든 칸은 차례대로 튼다: 같은 do:cup 칸이 둘이면 위에서 비추기를 지우고 다른 단계로 다시 받으면 첫 칸 뒤에 둘째 칸, 칸이 다 떨어지면 더 넣지 않는다", async () => {
       fakeTimers();
-      const { ws, urls, startAr } = make({}, "?clip=cup-empty.mp4&step=do:cup:above-a.mp4&step=do:cup:above-b.mp4");
+      const { ws, urls, videos, startAr } = makeEnded({}, "?clip=cup-empty.mp4&step=do:cup:above-a.mp4&step=do:cup:above-b.mp4");
       await startAr();
       ws.push(ALIGNED);
       ws.push(aboveCup());
@@ -1254,14 +1355,15 @@ describe("영상 입력 모드: 단계 영상·걷기", () => {
       await after(2000);
       expect(urls).toEqual(["/phone/videos/cup-empty.mp4", "/phone/videos/above-a.mp4"]);
       ws.push(aboveCup({ step: "plan:pam-1:peek:cup_3:2:above:4" }));
+      videos[1]!.end();
       await after(2000);
       expect(urls).toEqual(["/phone/videos/cup-empty.mp4", "/phone/videos/above-a.mp4", "/phone/videos/above-b.mp4"]);
     });
 
-    it("새 영상 재생을 기다리는 동안 명령이 지워지면, 재생이 끝난 뒤 새 영상을 닫고 앞 영상과 자세를 그대로 둔다", async () => {
+    it("새 영상 재생을 기다리는 동안 명령이 지워져도 그 조각을 튼다(줄에 든 조각은 원본 영상이다): 앞 영상을 닫고 새 영상으로 이어 간다", async () => {
       fakeTimers();
       const g = gate();
-      const { ws, sent, videos, startAr } = make({}, PEEK_STEPS, { later: { play: g.play } });
+      const { ws, videos, startAr } = makeEnded({}, PEEK_STEPS, { later: { play: g.play } });
       await startAr();
       ws.push(ALIGNED);
       ws.push(goCup());
@@ -1270,9 +1372,9 @@ describe("영상 입력 모드: 단계 영상·걷기", () => {
       ws.push({ type: "command_clear", id: "plan:pam-1" });
       g.release();
       await after(2000);
-      expect(videos[1]!.closed).toBe(1);
-      expect(videos[0]!.closed).toBe(0);
-      for (const p of sent().filter((m) => m.type === "pose")) expect(p.position).toEqual([0, 1.4, 0]);
+      expect(videos[1]!.closed).toBe(0);
+      expect(videos[0]!.closed).toBe(1);
+      expect((window as unknown as { __noonchiVideo: { clips: { clip: string }[] } }).__noonchiVideo.clips.map((c) => c.clip)).toEqual(["go-cup.mp4"]);
     });
   });
 
@@ -1288,19 +1390,22 @@ describe("영상 입력 모드: 단계 영상·걷기", () => {
 
   it("집기 뒤 go는 숙인 각 −25°로 걷고, place 명령이면 멈춘 자리에서 싱크대 윗면 쪽으로 숙여 고리가 화면 가운데", async () => {
     fakeTimers();
-    const { ws, sent, videos, marks, startAr } = make({}, STEPS);
+    const { ws, sent, videos, marks, startAr } = makeEnded({}, STEPS);
     await startAr();
     ws.push(ALIGNED);
     ws.push(pickCup());
     await after(1500);
     ws.push(command({ step: "plan:pam-1:3", text: "싱크대로 가 주세요", vision: "싱크대까지 2.0m", kind: "go", target: SINK, speak: false }));
-    await after(1500 + 3000);
+    // 집기 조각이 끝나면 싱크대로 가기 조각을 바로 튼다
+    videos[1]!.end();
+    await after(3000);
     const yaw = Math.atan2(-1.2, 1.6);
     closeTo(lastPose(sent).position, [0.84, 1.4, -1.12]);
     closeTo(lastPose(sent).orientation, yawPitchQuat(yaw, -25));
     ws.push(command({ step: "plan:pam-1:4", text: "컵을 싱크대에 넣어 주세요", vision: "컵 · 손에 있음", kind: "place", target: SINK, speak: false }));
+    videos[2]!.end();
     // 바꾼 자세는 다음 pose(100ms마다)에 실린다
-    await after(1500 + 200);
+    await after(200);
     // 싱크대 [1.2, 0.9, −1.6]: 수평 0.6m 앞, 0.5m 아래
     closeTo(lastPose(sent).position, [0.84, 1.4, -1.12]);
     closeTo(lastPose(sent).orientation, yawPitchQuat(yaw, (Math.atan2(-0.5, 0.6) * 180) / Math.PI));
@@ -1311,9 +1416,9 @@ describe("영상 입력 모드: 단계 영상·걷기", () => {
     expect(m[0]!.v).toBeCloseTo(0.5, 5);
   });
 
-  it("걷는 중에 pick 영상으로 바꾸면 걷기를 멈추고 그 자리에서 컵을 본다", async () => {
+  it("길이를 모르는 go 조각의 걷기는 다음 명령(pick)에 멈추고, go 조각이 끝나 pick 조각이 틀어지면 그 자리에서 컵을 본다", async () => {
     fakeTimers();
-    const { ws, sent, startAr } = make({}, `${STEPS}&react=0`);
+    const { ws, sent, videos, startAr } = makeEnded({}, `${STEPS}&react=0`);
     await startAr();
     ws.push(ALIGNED);
     ws.push(goTable());
@@ -1322,7 +1427,10 @@ describe("영상 입력 모드: 단계 영상·걷기", () => {
     expect(at[2]).toBeLessThan(-0.2);
     expect(at[2]).toBeGreaterThan(-0.6);
     ws.push(pickCup());
-    await after(1000);
+    await after(500);
+    closeTo(lastPose(sent).position, at);
+    videos[1]!.end();
+    await after(500);
     closeTo(lastPose(sent).position, at);
     const dz = -1.4 - at[2]!;
     closeTo(lastPose(sent).orientation, yawPitchQuat(Math.atan2(-0.1, -dz), (Math.atan2(-0.6, Math.hypot(0.1, dz)) * 180) / Math.PI));
@@ -1338,7 +1446,7 @@ describe("영상 입력 모드: 단계 영상·걷기", () => {
   it("pick 단계 영상이 틀어지기 전에는 자세를 바꾸지 않아 앞 영상 프레임은 앞 자세로 간다. 틀어지면 영상과 자세를 함께 바꾼다", async () => {
     fakeTimers();
     const p = plays();
-    const { ws, sent, video, videos, startAr } = make({}, STEPS, { later: { play: p.play } });
+    const { ws, sent, videos, startAr } = makeEnded({}, STEPS, { later: { play: p.play } });
     await startAr();
     ws.push({ ...ALIGNED, engine_ms: 500 });
     ws.push(pickCup());
@@ -1346,8 +1454,8 @@ describe("영상 입력 모드: 단계 영상·걷기", () => {
     expect(p.list).toHaveLength(1);
     closeTo(lastPose(sent).orientation, pitchQuat(-25));
     const before = ws.packets.length;
-    video.advance(0.6);
-    await after(0);
+    // 첫 영상은 끝나 붙잡는 중이다: 붙잡은 장면 프레임이 앞 자세로 간다
+    await after(600);
     const old = (await Promise.all(ws.packets.slice(before).map(headerOf))).find((h) => h.kind === "engine")!;
     closeTo(old.orientation, pitchQuat(-25));
     p.list[0]!.release();
@@ -1364,7 +1472,7 @@ describe("영상 입력 모드: 단계 영상·걷기", () => {
   it("go 단계 영상이 틀어지기 전에는 걷지 않고, 틀어지면 걷기 시작한다", async () => {
     fakeTimers();
     const p = plays();
-    const { ws, sent, startAr } = make({}, STEPS, { later: { play: p.play } });
+    const { ws, sent, startAr } = makeEnded({}, STEPS, { later: { play: p.play } });
     await startAr();
     ws.push(ALIGNED);
     ws.push(goTable());
@@ -1380,7 +1488,7 @@ describe("영상 입력 모드: 단계 영상·걷기", () => {
     fakeTimers();
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     const p = plays();
-    const { ws, sent, video, startAr } = make({}, STEPS, { later: { play: p.play } });
+    const { ws, sent, video, startAr } = makeEnded({}, STEPS, { later: { play: p.play } });
     await startAr();
     ws.push(ALIGNED);
     ws.push(goTable());
@@ -1396,31 +1504,33 @@ describe("영상 입력 모드: 단계 영상·걷기", () => {
     expect(lastPose(sent).orientation).toEqual(pitchQuat(-25));
   });
 
-  it("앞서 건 단계 영상이 더 새 바꾸기보다 늦게 틀어지면 그 영상도 그 자세(걷기)도 쓰지 않는다", async () => {
+  it("줄은 차례를 지킨다: 앞 조각(go-table)이 늦게 열려도 다음 조각(pick-cup)은 그 조각이 열리고 끝난 뒤에 연다", async () => {
     fakeTimers();
     const p = plays();
-    const { ws, sent, videos, startAr } = make({}, STEPS, { later: { play: p.play } });
+    const { ws, sent, videos, urls, startAr } = makeEnded({}, STEPS, { later: { play: p.play } });
     await startAr();
     ws.push(ALIGNED);
     ws.push(goTable());
     await after(1500);
     ws.push(pickCup());
     await after(1500);
-    expect(p.list).toHaveLength(2);
+    expect(p.list).toHaveLength(1);
+    expect(urls.slice(1)).toEqual(["/phone/videos/go-table.mp4"]);
+    p.list[0]!.release();
+    await after(200);
+    expect(lastPose(sent).position[2]).toBeLessThan(0);
+    videos[1]!.end();
+    await after(0);
+    expect(urls.slice(1)).toEqual(["/phone/videos/go-table.mp4", "/phone/videos/pick-cup.mp4"]);
     p.list[1]!.release();
     await after(200);
-    const look = yawPitchQuat(Math.atan2(-0.1, 1.4), (Math.atan2(-0.6, Math.hypot(0.1, 1.4)) * 180) / Math.PI);
-    p.list[0]!.release();
-    await after(1000);
     expect(videos[1]!.closed).toBe(1);
     expect(videos[2]!.closed).toBe(0);
-    expect(lastPose(sent).position).toEqual([0, 1.4, 0]);
-    closeTo(lastPose(sent).orientation, look);
   });
 
   it("대상이 바로 아래(수평 1cm 안)면 단계 영상만 바꾸고 자세는 그대로", async () => {
     fakeTimers();
-    const { ws, sent, urls, startAr } = make({}, STEPS);
+    const { ws, sent, urls, startAr } = makeEnded({}, STEPS);
     await startAr();
     ws.push(ALIGNED);
     ws.push(pickCup({ target: { ...CUP, ar: [0.005, 0.8, -0.005] } }));
@@ -1432,7 +1542,7 @@ describe("영상 입력 모드: 단계 영상·걷기", () => {
 
   it("같은 id·step 명령이 비전 줄만 바뀌어 다시 와도 한 번만 바꾼다. 종류가 없거나 다르거나, 대상이 없거나 대상 id에 낱말이 없으면 바꾸지 않는다", async () => {
     fakeTimers();
-    const { ws, urls, startAr } = make({}, STEPS);
+    const { ws, urls, startAr } = makeEnded({}, STEPS);
     await startAr();
     ws.push(ALIGNED);
     ws.push(command({ kind: "go", target: null, speak: false }));
@@ -1480,6 +1590,10 @@ describe("영상 입력 모드: 단계 영상·걷기", () => {
     ws.push(pickCup());
     expect(window.__noonchiVideo!.commands.at(-1)).toMatchObject({ video_ms: at + 2000, step: "plan:pam-1:2" });
     await after(1500);
+    // go-table 조각이 아직 돈다: 끝난 바로 뒤에 pick-cup
+    expect(window.__noonchiVideo!.clips.at(-1)!.clip).toBe("go-table.mp4");
+    next.end();
+    await after(0);
     expect(window.__noonchiVideo!.clips.at(-1)).toEqual({ video_ms: at + 2000, clip: "pick-cup.mp4" });
     expect(next.closed).toBe(1);
     // 끝난 단계 영상도 이어 센 시각으로 남긴다: 마지막 장면을 붙잡고(hold) ended는 첫 영상 때만 참이다
@@ -1492,7 +1606,7 @@ describe("영상 입력 모드: 단계 영상·걷기", () => {
 
   it("크기가 다른 단계 영상(가로 1280×720)이면 투영·프레임 크기를 다시 정한다", async () => {
     fakeTimers();
-    const { ws, videos, startAr } = make({}, STEPS, { later: { videoWidth: 1280, videoHeight: 720 } });
+    const { ws, videos, startAr } = makeEnded({}, STEPS, { later: { videoWidth: 1280, videoHeight: 720 } });
     await startAr();
     ws.push({ ...ALIGNED, engine_ms: 500 });
     ws.push(pickCup());
@@ -1520,16 +1634,18 @@ describe("영상 입력 모드: 단계 영상·걷기", () => {
       close() {},
     };
     const urls: string[] = [];
+    const vids: ReturnType<typeof fakeVideo>[] = [];
     const hooks = { onStart() {}, onEnd() {}, onHit() {}, onMarks() {}, onPerf() {}, note() {} };
     const ar = createVideoAr({
       link: link as never, params: new URLSearchParams(), hooks,
       deps: {
         ...videoParams(new URLSearchParams(STEPS))!,
-        createVideo: (url: string) => { urls.push(url); return fakeVideo(); },
+        createVideo: (url: string) => { urls.push(url); const v = fakeVideo(); vids.push(v); return v; },
         createEncoder: fakeEncoder, createCanvas: fakeCanvas, screen: () => ({ width: 390, height: 844 }),
       },
     });
     await ar.start({});
+    vids[0]!.end();
     ar.command(goTable() as never);
     await after(2000);
     expect(urls).toEqual(["/phone/videos/cup-empty.mp4", "/phone/videos/go-table.mp4"]);
@@ -1541,6 +1657,7 @@ describe("영상 입력 모드: 단계 영상·걷기", () => {
     await ar.start({});
     expect(ar.state.position).toEqual([0, 1.4, 0]);
     expect(sent.filter((m) => m.type === "pose").at(-1)!.position).toEqual([0, 1.4, 0]);
+    vids.at(-1)!.end();
     ar.command(goTable() as never);
     await after(1500);
     expect(urls).toEqual(["/phone/videos/cup-empty.mp4", "/phone/videos/go-table.mp4", "/phone/videos/cup-empty.mp4", "/phone/videos/go-table.mp4"]);

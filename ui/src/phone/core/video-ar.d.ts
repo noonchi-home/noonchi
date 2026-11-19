@@ -20,6 +20,8 @@ export interface VideoSource {
   readonly ended: boolean;
   drawTo(ctx: unknown, width: number, height: number): void;
   play(): Promise<void>;
+  /** 재생 빠르기(1이 원본, 브라우저 영상은 playbackRate). 없으면 늘 1. */
+  setRate?(rate: number): void;
   /** 다음 영상 프레임에 한 번 부른다(now: performance.now 기준 ms). */
   nextFrame(cb: (now: number) => void): void;
   onEnded(cb: () => void): void;
@@ -38,8 +40,10 @@ export interface VideoArDeps {
   heightM?: number;
   /** 단계 영상 칸(기본 없음). */
   steps?: VideoStep[];
-  /** 명령을 받고 단계 영상으로 바꾸기까지(ms, 기본 1500). */
+  /** 마지막 장면을 붙잡는 중에 명령을 받고 다음 단계 영상을 틀기까지(ms, 기본 1500). 영상이 도는 중이면 그 조각이 끝난 바로 뒤에 튼다. */
   reactMs?: number;
+  /** 재생 빠르기(0.25~2, 기본 1). 첫 영상·단계 영상을 이 빠르기로 틀고 영상 시각은 원본 시각 그대로다. */
+  rate?: number;
   createVideo?: (url: string) => VideoSource;
   createEncoder?: () => JpegEncoder;
   createCanvas?: () => VideoCanvas;
@@ -49,10 +53,11 @@ export interface VideoArDeps {
 export interface VideoAr extends PhoneAr {
   /** 지금 영상 시각(ms, 앞 단계 영상들 시각에 이어 센다). 재생 전·끝낸 뒤는 0. */
   videoTime(): number;
-  /** 받은 명령: 재생 중 맞는 step 칸이 있으면 그 id·step에 한 번, reactMs 뒤 단계 영상으로 바꾸고 go면 대상 0.6m(near_m이 있으면 그 0.8배와 0.6m 중 작은 것) 앞까지 걷고,
+  /** 받은 명령: 재생 중 맞는 step 칸이 있으면 그 id·step에 한 번 단계 영상 조각을 줄에 넣는다(받은 차례대로 끝까지 틀고 건너뛰거나 자르지 않는다).
+   *  조각이 틀어지면 go면 대상 0.6m(near_m이 있으면 그 0.8배와 0.6m 중 작은 것) 앞까지 조각이 끝날 때 닿게 걷고,
    *  집기·놓기·do면 걷기를 멈추고 그 자리에서 대상을 바라본다. do가 view above면 폰을 대상 바로 위로 옮겨 내려다본다. */
   command(cmd: PhoneCommand): void;
-  /** 지운 명령(command_clear, id가 없으면 무엇이든): 마지막 단계 영상 명령이면 예약된 바꾸기·재생을 기다리는 바꾸기를 버리고 걷기를 멈춘다(자세는 그대로). */
+  /** 지운 명령(command_clear, id가 없으면 무엇이든): 조각 없는 걷기와 예약된 자세 바꾸기만 멈춘다. 줄에 든 조각과 조각에 맞춘 걷기는 그대로 둔다. */
   commandClear(id?: string): void;
   /** 서버 상태 sync마다: 재생 중 맞춤이 없고(none) 시작 자리가 있으면 start fixed를 다시 보낸다. */
   syncStatus(sync: { state: string; start: unknown } | null | undefined): void;
@@ -73,7 +78,7 @@ export interface VideoRecord {
 }
 
 /** 영상 모드인지 아는 하나뿐인 길: 주소의 clip(영상 이름)이 있으면 그 이름과 영상 AR 값, 없으면 null(실제 모드). clip은 여기서만 읽는다. */
-export function videoParams(params: URLSearchParams): (Required<Pick<VideoArDeps, "clipUrl" | "fovDeg" | "pitchDeg" | "heightM" | "steps" | "reactMs">> & { clip: string }) | null;
+export function videoParams(params: URLSearchParams): (Required<Pick<VideoArDeps, "clipUrl" | "fovDeg" | "pitchDeg" | "heightM" | "steps" | "reactMs" | "rate">> & { clip: string }) | null;
 export function videoRecord(target?: object): VideoRecord;
 /** 짝 수 상한. */
 export const SYNC_MAX: number;
