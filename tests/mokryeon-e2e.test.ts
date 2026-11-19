@@ -178,6 +178,8 @@ describe("한양목련 처음부터 끝까지", () => {
     expect(dash.some((m) => m.type === "brain" && m.event.type === "observe" && "boxes" in m.event)).toBe(false);
     const shown = JSON.stringify(dash);
     for (const word of [ask, "할까요", "승인", "거절", ":approve"]) expect(shown).not.toContain(word);
+    // 미니맵 자막(phone_command)은 단계 명령만 싣고 승인 질문은 싣지 않는다(대시보드에는 승인을 보이지 않는다)
+    expect(dash.filter((m) => m.type === "phone_command").map((m) => m.text)).toEqual(expect.arrayContaining(["식탁으로 가 주세요", "컵을 들어 주세요", "싱크대로 가 주세요", "컵을 싱크대에 넣어 주세요"]));
 
     // 4 답은 기억 파일에 남고, 다음 판단은 묻지 않고 바로 첫 명령
     const memory = JSON.parse(readFileSync(join(runtimeDir, "homes", "mokryeon_180b", "approvals.json"), "utf8")) as Record<string, unknown>;

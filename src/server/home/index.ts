@@ -16,7 +16,7 @@ import type { PipelineInject } from "../../observe/index.js";
 import type { StartStore } from "../../phone/index.js";
 import type { Agent, Policy } from "../../agent/index.js";
 import type { HubKind, MatterTransport, StartHubOptions } from "../hubFactory.js";
-import { prepareAct, startAct, startLooker, startPlans } from "./act.js";
+import { captionOf, prepareAct, startAct, startLooker, startPlans } from "./act.js";
 import { startAgent, watchFocus } from "./agent.js";
 import { preparePhone, startPhone } from "./phone.js";
 import { drainNodes, startLoop, startPipeline, startWorld, startNodes, stopNodes } from "./observe.js";
@@ -173,7 +173,7 @@ function startApp(core: HomeCore): void {
     goalLast: () => core.goal,
     habitLast: () => core.habit,
     personLast: () => core.person?.last() ?? null,
-    phoneCommand: () => core.command?.text ?? null,
+    phoneCommand: () => captionOf(core.command),
   });
   core.speak();
 }
