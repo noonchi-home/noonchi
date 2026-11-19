@@ -55,21 +55,21 @@ export class Coach extends Part {
 
   /** 다른 행동 알림: 코치 계획의 사람 단계이고 단계마다 strayMax번·strayGapMs에 한 번 안이면 strayed를 부른다. 받은 것만 센다. more는 덧붙일 변화 줄. */
   private stray(r: Run, more: string[] = []): void {
-    if (!this.o.strayed || r.strays >= this.cfg.strayMax) return;
+    if (!this.o.observe.strayed || r.strays >= this.cfg.strayMax) return;
     const now = this.clock.now();
     if (now - r.strayAt < this.cfg.strayGapMs) return;
     const at = this.coachStep();
     if (!at) return;
-    if (!this.o.strayed({ ...at, changes: [...this.seen.map((c) => c.text), ...more] })) return;
+    if (!this.o.observe.strayed({ ...at, changes: [...this.seen.map((c) => c.text), ...more] })) return;
     r.strayAt = now;
     r.strays++;
   }
 
   /** 폰이 지금 단계 자리를 떠나 다른 평면도 자리 가까이로 갔는가(이동 단계는 보지 않는다). 그 자리마다 한 번 다른 행동 알림을 부른다. */
   strayNear(r: Run, step: AgentStep): void {
-    if (!this.o.strayed || step.kind === "go" || !HUMAN_KINDS.includes(step.kind) || r.asking) return;
+    if (!this.o.observe.strayed || step.kind === "go" || !HUMAN_KINDS.includes(step.kind) || r.asking) return;
     const e = this.core.eye;
-    const fp = this.o.floor();
+    const fp = this.o.layout.floor();
     const here = step.target ? fp.objects.get(step.target)?.position ?? null : null;
     if (!e || !here || this.clock.now() - e.at > STRAY_KEEP_MS) return;
     const far = (p: XZ) => Math.hypot(e.position[0] - p[0], e.position[1] - p[1]);

@@ -16,7 +16,7 @@ export class RobotMachine {
   private readonly lane = new MachineLane<RobotState>();
 
   constructor(private readonly core: TrackCore) {
-    this.commands = new RobotPhone(core.o.toPhone, (command) => {
+    this.commands = new RobotPhone(core.o.phone.toPhone, (command) => {
       const plan = core.run?.plan;
       const step = plan?.view.id === command.id ? plan.steps.find((s) => s.id === command.step) : undefined;
       return !!step && core.safety.turnsOff(step);

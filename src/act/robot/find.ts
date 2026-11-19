@@ -81,14 +81,14 @@ export class Finder extends Part {
     const cls = touchTarget(d.action);
     if (core.stopped || core.finding || !cls || core.open() || core.planning) return false;
     const now = this.clock.now();
-    const spot = lostTarget({ world: this.o.world(), cls, placed: core.steps.placed(), away: core.steps.awayIds(), now, freshMs: PRECHECK_FRESH_MS, resting: (s) => this.resting(s, now) });
+    const spot = lostTarget({ world: this.o.state.view(), cls, placed: core.steps.placed(), away: core.steps.awayIds(), now, freshMs: PRECHECK_FRESH_MS, resting: (s) => this.resting(s, now) });
     if (!spot || !core.use.mayApproach({ cls, id: spot.objectId })) return false;
     // 계획 밖 가까이 가서 보기와 함께 돌지 않는다(찾기가 먼저)
     core.contents.dropIdle();
     const q: FindSlot = { id: `find:${++this.slotSeq}`, sent: null, spokeAt: now, visionAt: now, find: this.make(spot, PRECHECK_FRESH_MS, Number.NEGATIVE_INFINITY, now), first: d, decision: d, text };
     core.finding = q;
     core.emit(planIdOf(d.id), "decided", EXEC_TEXT.finding(q.find.name));
-    this.o.thought?.(FIND_THOUGHT.start(q.find.name, q.find.surfaceLabel), d.id);
+    this.o.events.thought?.(FIND_THOUGHT.start(q.find.name, q.find.surfaceLabel), d.id);
     this.idle();
     return true;
   }
@@ -99,7 +99,7 @@ export class Finder extends Part {
     const cls = touchTarget(d.action);
     if (!cls) return false;
     const now = this.clock.now();
-    return lostTarget({ world: this.o.world(), cls, placed: this.core.steps.placed(), away: this.core.steps.awayIds(), now, freshMs: PRECHECK_FRESH_MS, resting: (s) => this.resting(s, now) }) !== null;
+    return lostTarget({ world: this.o.state.view(), cls, placed: this.core.steps.placed(), away: this.core.steps.awayIds(), now, freshMs: PRECHECK_FRESH_MS, resting: (s) => this.resting(s, now) }) !== null;
   }
 
   /** 찾는 동안 받은 같은 행동 판단: 가장 새 것으로 바꿔 두고 true(기록은 start.ts가 남긴다). 찾는 중이 아니거나 다른 행동이면 false. */
@@ -130,10 +130,10 @@ export class Finder extends Part {
     if (out.kind === "going") return;
     core.finding = null;
     if (out.kind === "over") {
-      this.o.thought?.(FIND_THOUGHT.lost(q.find.name), q.first.id);
+      this.o.events.thought?.(FIND_THOUGHT.lost(q.find.name), q.first.id);
       return core.emit(planIdOf(q.first.id), "failed", q.text);
     }
-    this.o.thought?.(FIND_THOUGHT.found(q.find.name), q.first.id);
+    this.o.events.thought?.(FIND_THOUGHT.found(q.find.name), q.first.id);
     core.foundFor = q.decision.id;
     core.start.onDecision(q.decision);
   }
@@ -172,24 +172,24 @@ export class Finder extends Part {
     if (!f) {
       const cls = touchTarget(r.decision.action);
       const spot = cls && this.core.use.mayApproach({ cls, id: objectId }) ? lostTarget({
-        world: this.o.world(), cls, placed: this.core.steps.placed(), away: this.core.steps.awayIds(), now, freshMs: this.staleMs(), seenAfter: r.decision.atMs, objectId,
+        world: this.o.state.view(), cls, placed: this.core.steps.placed(), away: this.core.steps.awayIds(), now, freshMs: this.staleMs(), seenAfter: r.decision.atMs, objectId,
         resting: (s) => this.resting(s, now),
       }) : null;
       if (!spot) return "none";
       f = r.find = this.make(spot, this.staleMs(), r.decision.atMs, now);
-      this.o.thought?.(FIND_THOUGHT.start(f.name, f.surfaceLabel), r.decision.id);
+      this.o.events.thought?.(FIND_THOUGHT.start(f.name, f.surfaceLabel), r.decision.id);
     }
     const out = this.step(line, f, now, !!r.asking);
     if (out.kind === "over") {
-      this.o.thought?.(FIND_THOUGHT.lost(f.name), r.decision.id);
+      this.o.events.thought?.(FIND_THOUGHT.lost(f.name), r.decision.id);
       return "over";
     }
-    if (out.kind === "found") this.o.thought?.(FIND_THOUGHT.found(f.name), r.decision.id);
+    if (out.kind === "found") this.o.events.thought?.(FIND_THOUGHT.found(f.name), r.decision.id);
     // 그 자리의 다른 id 같은 무리 물건: 찾기 중에 처음 본 것이면 계획 대상 id로 이어 계획을 잇는다(가로 키 큰 컵 r4·r5: 대상 id가 유령이었다).
     // 찾기 전부터 따로 있던 물건(계획을 받을 때 있던 같은 종류, 찾기 시작 전에 처음 본 것)은 다른 물건이라 잇지 않는다(Codex P2 5f230c5). 잇지 못하면 다시 판단
     if (out.kind === "found" && out.obj.id !== objectId) {
       const before = !!r.others.get(objectId)?.has(out.obj.id) || out.obj.first_seen_ms < f.startedAt;
-      return !before && this.o.linkObject?.(out.obj.id, objectId) ? "hold" : "other";
+      return !before && this.o.state.linkObject?.(out.obj.id, objectId) ? "hold" : "other";
     }
     return "hold";
   }
@@ -226,7 +226,7 @@ export class Finder extends Part {
     if (now - f.startedAt > FIND.totalMs) return this.over(line, f);
     // 사람이 그 종류를 쓰는 중이면(use.ts) 명령·보기 지킴·가까이 보기를 거두고 사람이 사라질 때까지 기다린다(막힘 한도 holdMs). 풀리면 가기·비추기부터 다시 한다
     if (!this.core.use.mayApproach({ cls: f.cls, id: f.objectId })) return this.pause(line, f, now);
-    const hit = this.hit(this.o.world(), f, now);
+    const hit = this.hit(this.o.state.view(), f, now);
     if (hit?.fresh) {
       this.close(line, f, "done");
       if (hit.obj.cls !== f.cls) this.rested.push({ cls: f.cls, at: [...f.at], when: now });
@@ -267,7 +267,7 @@ export class Finder extends Part {
     if (!f.sent) return this.send(line, f, d > FIND.nearM ? "go" : "aim", d, now);
     if (f.part === "go" && d <= FIND.nearM) return this.send(line, f, "aim", d, now);
     if (now - f.since > PEEK.stepMs) return this.over(line, f);
-    if (f.part === "aim" && this.o.spotReady?.(f.at, f.aimAt)) {
+    if (f.part === "aim" && this.o.observe.spotReady?.(f.at, f.aimAt)) {
       // 그 자리를 비추기 뒤 사진으로 가까이 볼 수 있다: 명령을 거두고(보기 지킴은 둔다) 가까이 본다
       this.withdraw(line, f);
       f.phase = "look";
@@ -288,12 +288,12 @@ export class Finder extends Part {
       const absent = r !== undefined && !!r?.ok && r.vlm === "ok" && !r.found.some((x) => sameDrinkware(x.cls, f.cls));
       f.looked = r === undefined ? null : absent ? (f.absents++ ? "absent" : "unsure") : "unsure";
     };
-    if (!this.o.lookContents) {
+    if (!this.o.observe.lookContents) {
       after();
       return { kind: "going" };
     }
     f.phase = "looking";
-    const took = this.o.lookContents({
+    const took = this.o.observe.lookContents({
       planId: line.planId, objectId: f.spotId, spot: { id: f.spotId, label: f.label, position: [...f.at] }, signal: f.end.signal, force: true, since: f.aimAt, done: after,
     });
     if (!took && f.phase === "looking") {
@@ -378,13 +378,13 @@ export class Finder extends Part {
   private guard(f: Find): void {
     if (f.guarded || !f.objectId) return;
     f.guarded = true;
-    this.o.guardObject?.(f.objectId, true);
+    this.o.state.guardObject?.(f.objectId, true);
   }
 
   private unguard(f: Find): void {
     if (!f.guarded || !f.objectId) return;
     f.guarded = false;
-    this.o.guardObject?.(f.objectId, false);
+    this.o.state.guardObject?.(f.objectId, false);
   }
 
   /** 쉬는 자리인가: 같은 종류를 FIND.retryMs 안에 FIND.matchM 안에서 찾아보고 못 찾았거나 마시는 그릇 무리의 다른 종류로만 찾았다. */

@@ -80,7 +80,7 @@ export class ContentsHold extends Part {
    *  아직 붙잡고 있으면 true, 그만두면 false(검사 실패로 닫힌다). */
   keep(r: Run, objectId: string, reason: "unknown_contents" | "stale" = "unknown_contents"): boolean {
     const now = this.clock.now();
-    const world = this.o.world();
+    const world = this.o.state.view();
     const o = world.objects.find((x) => x.id === objectId);
     const gen = o?.contents_gen ?? 0;
     const line = planLine(this.core, r);
@@ -105,12 +105,12 @@ export class ContentsHold extends Part {
     h.pausedAt = null;
     if ((h.phase === "look" || h.phase === "looking" || h.phase === "settle") && now - h.at > CONTENTS_HOLD.holdMs) return this.over(line, h);
     if (h.phase === "look") {
-      const skip = !o?.position || opaqueBody(o) || !this.o.lookContents;
+      const skip = !o?.position || opaqueBody(o) || !this.o.observe.lookContents;
       const hold = h;
       if (!skip) {
         // 보기 담당이 받자마자 done을 부를 수 있으니 먼저 looking으로 둔다
         h.phase = "looking";
-        const took = this.o.lookContents!({
+        const took = this.o.observe.lookContents!({
           planId: r.plan.view.id, objectId, spot: { id: objectId, label: OBJECT_NAME[o!.cls] ?? o!.cls, position: o!.position! }, signal: h.end.signal,
           done: () => { if (r.hold === hold && hold.phase === "looking") Object.assign(hold, { phase: "settle", lookedAt: this.clock.now() }); },
         });
@@ -145,7 +145,7 @@ export class ContentsHold extends Part {
     const recent = this.peeked.get(h.objectId);
     if (!h.tried && recent && recent.gen === h.gen && now - recent.at < PEEK.retryMs) return this.over(line, h);
     const core = this.core;
-    const world = this.o.world();
+    const world = this.o.state.view();
     // 컵이 옮겨졌다(자리 바뀜): 거두고 처음부터. 옮김 표시가 남아 있으면 새 대상이 정해질 때까지 막힘으로 둔다(같은 옛 컵으로 다시 보내지 않는다)
     if (h.peek && o?.position && !o.followed_by && dist3(o.position, h.peek.at) > PEEK.movedM) {
       this.withdraw(line, h);
@@ -168,7 +168,7 @@ export class ContentsHold extends Part {
     if (!pk.sent) return this.send(line, h, o, d <= PEEK.nearM ? "above" : "go", d, now);
     if (pk.part === "go" && d <= PEEK.nearM) return this.send(line, h, o, "above", d, now);
     if (now - pk.since > PEEK.stepMs) return this.over(line, h);
-    if (pk.part === "above" && this.o.topReady?.(o.id, pk.aboveAt)) {
+    if (pk.part === "above" && this.o.observe.topReady?.(o.id, pk.aboveAt)) {
       // 위에서 본 사진 쌍이 모였다: 명령을 거두고(보기 지킴은 위에서 보기가 끝날 때 푼다) 위에서 보기를 부탁한다
       this.withdraw(line, h, false);
       Object.assign(h, { phase: "seeing", seeingAt: now, lookAsked: false });
@@ -193,7 +193,7 @@ export class ContentsHold extends Part {
       pk.aboveAt = now;
       if (!pk.guarded) {
         pk.guarded = true;
-        this.o.guardObject?.(o.id, true);
+        this.o.state.guardObject?.(o.id, true);
       }
     }
     h.tried = true;
@@ -216,8 +216,8 @@ export class ContentsHold extends Part {
       Object.assign(h, { phase: "after", afterAt: this.clock.now() });
       this.unguard(h);
     };
-    if (!this.o.lookContents) return finish();
-    const took = this.o.lookContents({
+    if (!this.o.observe.lookContents) return finish();
+    const took = this.o.observe.lookContents({
       planId: line.planId, objectId: o.id, spot: { id: o.id, label: OBJECT_NAME[o.cls] ?? o.cls, position: centerOf(o) }, signal: h.end.signal,
       top: { sinceMs: h.peek?.aboveAt ?? h.seeingAt }, done: finish,
     });
@@ -239,7 +239,7 @@ export class ContentsHold extends Part {
     const pk = h.peek;
     if (!pk?.guarded) return;
     pk.guarded = false;
-    this.o.guardObject?.(h.objectId, false);
+    this.o.state.guardObject?.(h.objectId, false);
   }
 
   /** 그만둔다: 명령을 거두고 보기 지킴을 풀고 부탁을 끊는다. 가까이 가서 보라고 한 적이 있으면 그 컵·세대를 retryMs 동안 다시 가지 않는다. 늘 false. */
@@ -298,7 +298,7 @@ export class ContentsHold extends Part {
 
   /** 판단 전 보기 B가 그 컵을 잘라 봤다(결과와 상관없이, 자원 사정으로 못 본 것은 빼고). */
   lookedIdle(objectId: string): void {
-    const o = this.o.world().objects.find((x) => x.id === objectId);
+    const o = this.o.state.view().objects.find((x) => x.id === objectId);
     this.lookedB.set(objectId, { gen: o?.contents_gen ?? 0, at: this.clock.now() });
   }
 
@@ -310,7 +310,7 @@ export class ContentsHold extends Part {
 
   /** 행동 목록의 손대는 내용물 행동(touch·want와 대상 종류가 있는 행동: 채우기·따르기. 그대로 두기는 손대지 않아 아니다). */
   private wanting(): TaskSpec[] {
-    return (this.o.tasks?.() ?? []).map((n) => taskOf(n)).filter((t): t is TaskSpec => !!t?.want && !!t.target && !!t.touch);
+    return (this.o.brain.tasks?.() ?? []).map((n) => taskOf(n)).filter((t): t is TaskSpec => !!t?.want && !!t.target && !!t.touch);
   }
 
   /** 계획 밖으로 가까이 가서 볼 컵: 내용물 행동의 대상 종류이고, 보이고 자리를 알며, 치운 것·손에 든 것이 아니고, 볼 면을 모르고,
@@ -337,7 +337,7 @@ export class ContentsHold extends Part {
     const core = this.core;
     if (core.stopped) return;
     const now = this.clock.now();
-    const world = this.o.world();
+    const world = this.o.state.view();
     const blocked = this.idleBlocked();
     const q = core.idlePeek;
     if (q) {

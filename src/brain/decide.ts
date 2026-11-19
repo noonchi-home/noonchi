@@ -2,14 +2,14 @@ import type { BusNode } from "../bus/index.js";
 // 판단 호출: Trigger가 허락하면 World State 관찰 텍스트 + 기억 + 행동 목록으로 PAM을 부른다. 요청마다 번호(seq)를 붙인다.
 // 동시 상한을 넘으면 부르지 않는다(Trigger.due가 false). 결과는 기록(decision)과 onDecision으로 넘긴다. 늦게 온 답(받은 가장 큰 번호보다 작은 번호)은 상태를 바꾸지 않고, 행동은 실행 추적이 seq로 버린다.
 // PAM 연결 끊김·연결됨(link)과 주기 판단 멈춤(폰 사진 없음·사람 없음)·다시 시작(trigger)은 바뀔 때 한 번씩 기록한다.
-import type { BrainLog, DecisionWorld, DecisionRecord, ExecState, PamUsage } from "../contract/events.js";
+import type { BrainLog, DecisionRecord, ExecState, PamUsage } from "../contract/events.js";
 import type { WorldChange, WorldView } from "../contract/world.js";
 import { modeOf, planIdOf } from "../act/tasks.js";
 import { checkInput, fsmStep, isoWithOffset, type PamMemory } from "./decision.js";
 import { PamLinkError, type PamClient } from "./pam/index.js";
 import { CHANGE_TEXT, HEARD_MAX, LINK_TEXT, TRIGGER_TEXT, redactHeard, redactSaid, saidIn } from "../world/labels.js";
 import { headWithin } from "../shared/cut.js";
-import { textFromWorld } from "../world/index.js";
+import { decisionWorld, textFromWorld } from "../world/index.js";
 import type { Trigger, TriggerPause } from "../world/index.js";
 
 /** 관찰 텍스트에 넣을 변화를 이만큼 둔다(텍스트 창은 그 안의 최근 60초). */
@@ -27,17 +27,7 @@ function heardKey(line: string): string | null {
 }
 
 
-/** 판단 기록에 붙이는 World State 요약: 사라지지 않은 물건의 상태·면(id·이름)·위치 오차·사실, 사람이 보이는가, 분석 없음 수. */
-export function decisionWorld(w: WorldView): DecisionWorld {
-  return {
-    objects: w.objects.filter((o) => o.status !== "gone").map((o) => ({
-      id: o.id, cls: o.cls, status: o.status, surface: o.surface, surface_label: o.surface_label, error_m: o.error_m,
-      facts: Object.fromEntries(Object.entries(o.facts).flatMap(([k, f]) => (f ? [[k, { value: f.value, certainty: f.certainty }]] : []))),
-      ...(o.closer_rev ? { closer_rev: { ...o.closer_rev } as Record<string, number> } : {}),
-    })),
-    person_visible: w.person.visible, vlm_missing: w.vlm_missing, yolo_missing: w.yolo_missing,
-  };
-}
+export { decisionWorld } from "../world/index.js";
 
 /** 모델 응답은 판단 노드의 받은 줄에서만 상태를 바꾼다. 종료가 먼저면 대기를 풀고 버린다. */
 function applyAnswer(node: Pick<BusNode, "post"> | undefined, signal: AbortSignal, run: () => void): Promise<void> {

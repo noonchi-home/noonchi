@@ -90,7 +90,10 @@ export function syncPhoneClaims(core: HomeCore): void {
   }
   core.policy.visibleApprovals(tokens.map((p) => p.token), cmd?.grade === "safety" ? null : tokens[0]?.token ?? null, cmd?.grade === "safety");
   for (const [id, kind] of next) {
-    if (core.phoneClaims.get(id) !== kind) core.out.phone.push("/phone/claim", { claim_id: id, kind, since_ms: now });
+    if (core.phoneClaims.get(id) === kind) continue;
+    // 같은 ms에 생긴 승인도 실제 폰 카드에 추가된 차례를 지킨다.
+    core.claimStamp = Math.max(now, core.claimStamp + 0.01);
+    core.out.phone.push("/phone/claim", { claim_id: id, kind, since_ms: core.claimStamp });
   }
   for (const id of core.phoneClaims.keys()) {
     if (!next.has(id)) core.out.phone.push("/phone/claim", { claim_id: id, kind: null, since_ms: now });
@@ -113,6 +116,7 @@ export function applyPhoneProgress(core: HomeCore, b: Body<"/phone/progress">): 
   if (core.closed || !tracker) return { req, status: "stale" };
   const open = tracker.openCommand();
   const at = b.kind === "voice" && b.at ? { ...b.at, pending: [] } : undefined;
+  const before = core.speechOrder;
   const heard = b.kind === "voice" ? tracker.onHeard(b.text, at) : null;
   const button = b.kind === "button" && open ? open.choices.find((c) => c.id === b.choice) : undefined;
   const picked = b.kind === "button"
@@ -121,10 +125,14 @@ export function applyPhoneProgress(core: HomeCore, b: Body<"/phone/progress">): 
   if (!picked) return { req, status: heard?.kind === "stale" || b.kind === "button" ? "stale" : "passed" };
   if (open) {
     const data = { choice: picked.id, via: b.kind };
-    const text = FEEDBACK_TEXT.answer(b.kind === "voice" ? b.text : picked.label, open.kind, open.text);
-    core.out.act?.push("/act/log", { type: "feedback", at_ms: core.nowMs(), subject: open.planId, text, data });
+    // 원문 보관을 끈 집에는 실제 답과 정확히 같은 등록 문구만 남긴다.
+    const answer = b.kind === "button" ? picked.label : core.keepHeard ? b.text : picked.words.find((word) => word === b.text) ?? picked.label;
+    const text = FEEDBACK_TEXT.answer(answer, open.kind, open.text);
+    const feedback = { type: "feedback" as const, at_ms: core.nowMs(), subject: open.planId, text, data };
+    if (core.speechOrder && before !== core.speechOrder) core.followupFeedback.set(core.speechOrder, feedback);
+    else core.out.act?.push("/act/log", feedback);
   }
-  return { req, status: "answer", reply: picked.reply };
+  return { req, status: "answer", reply: picked.reply, choice_id: picked.id };
 }
 
 async function phoneProgress(core: HomeCore, data:

@@ -5,7 +5,7 @@
 import type { BrainLog, DecisionRecord, FeedbackLog } from "../contract/events.js";
 import type { PlanView } from "../contract/plan.js";
 import type { WorldChange } from "../contract/world.js";
-import { decisionLog, deviceRecorder, recordPlan, recordBrainLog, recordFeedback, type HistoryDb } from "../brain/index.js";
+import { decisionLog, deviceRecorder, recordPlan, recordBrainLog, recordFeedback, storeThought, type HistoryDb } from "../brain/index.js";
 import { TOPICS, msgId, type BusNode, type Envelope, type TopicName } from "../bus/index.js";
 import { HEARD_MARK, redactHeard } from "../world/labels.js";
 import { machineWrites } from "./machines.js";
@@ -23,6 +23,10 @@ const changeLog = (c: WorldChange, at: number, keep: boolean): BrainLog =>
 function forBag(e: Envelope<TopicName>, keep: boolean): Envelope<TopicName> {
   if (keep) return e;
   const b = e.body as Record<string, unknown>;
+  if (e.topic === "/manager/order" || (e.topic === "/manager/request" && b.kind === "speech")) {
+    const input = b.input as import("../bus/index.js").Body<"/brain/decision">;
+    return { ...e, body: { ...b, input: { ...input, decision: { ...input.decision, textSent: redactHeard(input.decision.textSent) } } } } as Envelope<TopicName>;
+  }
   if (e.topic === "/brain/decision" || e.topic === "/brain/plan_request") {
     const d = b.decision as DecisionRecord;
     return { ...e, body: { ...b, decision: { ...d, textSent: redactHeard(d.textSent) } } } as Envelope<TopicName>;
@@ -44,9 +48,13 @@ export function historyRoutes(node: BusNode, db: HistoryDb, o: { bag?: Bag; now:
     ...machines,
     "/perception/analysis": (b) => logs(b.logs),
     "/world/changes": (b) => { for (const c of b.changes as WorldChange[]) if (!PER_FRAME.has(c.kind)) recordBrainLog(db, changeLog(c, o.now(), keep)); },
-    "/brain/link": (b) => recordBrainLog(db, b as unknown as BrainLog),
     "/device/changes": (b) => device(b.state as never, b.note as never),
     "/bus/dead": (b) => { db.add("bus_gap", o.now(), `처리하지 못한 메시지: ${String(b.topic)}`, { data: b }); },
+  };
+  history["/brain/link_changes"] = (b) => recordBrainLog(db, b as unknown as BrainLog);
+  history["/brain/thought"] = (b) => {
+    const { home, messages } = b as import("../bus/index.js").Body<"/brain/thought">;
+    for (const m of messages) storeThought(db, home, m);
   };
   history["/brain/decision"] = (b) => recordBrainLog(db, decisionLog(b.decision as DecisionRecord, Number(b.at_ms), b.assist as "noonchi" | "coach", keep));
   history["/act/log"] = (b) => {

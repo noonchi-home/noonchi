@@ -84,7 +84,7 @@ export function eyeNow(core: TrackCore, now: number): { position: [number, numbe
 /** 사람 단계 명령을 보내지 않을 때(어느 명령 줄이든 같다). asking: 계획에 승인·다시 묻기 질문이 떠 있다. */
 export function phoneBlocked(core: TrackCore, now: number, asking: boolean): boolean {
   return !eyeNow(core, now) || !core.start.phoneOk() || core.safety.offPending() || !!core.safety.shownOff()
-    || (core.o.approvalsWaiting?.() ?? false) || (core.o.talking?.() ?? false) || asking;
+    || (core.o.phone.approvalsWaiting?.() ?? false) || (core.o.phone.talking?.() ?? false) || asking;
 }
 
 /** 새 명령을 그 줄에 띄운다(소리로 읽기): 읽은 때·비전 줄을 보낸 때를 지금으로 둔다. */

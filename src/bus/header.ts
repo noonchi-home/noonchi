@@ -17,8 +17,11 @@ export function encode<N extends TopicName>(e: Envelope<N>): string {
   return JSON.stringify({ key: e.key, header: e.header, body: e.body });
 }
 
+const envelopes = new Map(Object.entries(TOPICS).map(([topic, spec]) =>
+  [topic, z.strictObject({ key: z.string(), header: Header, body: spec.body })] as const));
+
 export function decode<N extends TopicName>(topic: N, raw: string): Envelope<N> {
-  const v = z.strictObject({ key: z.string(), header: Header, body: TOPICS[topic].body }).parse(JSON.parse(raw));
+  const v = envelopes.get(topic)!.parse(JSON.parse(raw));
   return { topic, key: v.key, header: v.header, body: v.body as Body<N> };
 }
 

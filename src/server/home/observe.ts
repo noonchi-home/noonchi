@@ -6,6 +6,8 @@ import { applyPhoneProgress, showPhoneCommand, syncPhoneClaims } from "./phone.j
 // 주기 타이머(관찰·판단·실행 추적·보기 담당·말풍선 카드). 관찰 흐름은 BRAIN=1이고 PHONE_PORT가 있을 때만 켠다(폰 카메라가 입력).
 import { join } from "node:path";
 import { datasetWriter } from "../../brain/index.js";
+import { goalRoutes } from "../../goal/index.js";
+import { managerRoutes } from "../../manage/index.js";
 import { BrainPlans, planningRoutes } from "../../brain/index.js";
 import { BusNode, Outbox } from "../../bus/index.js";
 import type { BrainLog, SeenEvent } from "../../contract/events.js";
@@ -112,9 +114,10 @@ export async function startNodes(core: HomeCore, emit: (event: BrainLog) => void
   const brainStarted = new Promise<void>((r) => { brainReady = r; });
   core.brainMirror = await startWorldMirror({
     bus, epoch, name: "brain", clock, log,
-    routes: (node) => {
+    routes: (node, afterRev) => {
       core.out.brain = new Outbox(node, { clock, log });
       planningRoutes(node, core.makePlan, clock);
+      node.on("/brain/nudge", ({ rev }, ctx) => afterRev(rev, ctx, () => { if (!core.closed) core.decider?.nudge(); }));
       node.on("/act/status", (s) => { core.brainStatus = s; });
       node.on("/perception/frame_seen", () => core.decider?.onFrame());
       node.every(250, () => { if (!core.closed && core.pipeline && core.brainMirror?.view()) core.decider?.tick(); });
@@ -125,14 +128,33 @@ export async function startNodes(core: HomeCore, emit: (event: BrainLog) => void
     },
     onView: () => brainReady(),
   });
+  const manager = new BusNode({ name: "manager", bus, epoch, clock, log });
+  core.managerNode = manager;
+  core.out.manager = managerRoutes(manager, clock);
+  await manager.prepare();
+  core.goalMirror = await startWorldMirror({
+    bus, epoch, name: "goal", clock, log,
+    routes: (node, afterRev) => {
+      core.out.goal = goalRoutes(node, clock);
+      core.goalPlans = new BrainPlans(core.out.goal, clock, "goal:");
+      core.goalPlans.routes(node);
+      node.on("/goal/update", (b, ctx) => afterRev(b.rev, ctx, () => { if (!core.closed) core.tracker?.updateGoal(); }));
+      node.every(250, () => { if (!core.closed && core.goalMirror?.view() && core.mirror?.view()) core.tracker?.updateGoal(); });
+    },
+  });
   core.mirror = await startWorldMirror({
     bus, epoch, name: "act", clock, log,
     routes: (node, afterRev) => {
       core.out.act = new Outbox(node, { clock, log });
       core.brainPlans = new BrainPlans(core.out.act, clock);
       core.brainPlans.routes(node);
-      node.on("/brain/decision", (b, ctx) => afterRev(b.rev, ctx, (rev) => {
-        if (!core.closed) core.tracker?.onDecision(b.decision, rev === b.rev ? b.check : undefined);
+      node.on("/manager/order", ({ input: b, gate, resumed }, ctx) => afterRev(b.rev, ctx, (rev) => {
+        if (!core.closed) core.tracker?.onOrder(b.decision, gate, resumed, rev === b.rev ? b.check : undefined);
+        const feedback = core.followupFeedback.get(b.decision.id);
+        if (feedback) {
+          core.out.act?.push("/act/log", { ...feedback, at_ms: core.nowMs(), data: { ...feedback.data, observed_ms: feedback.at_ms } });
+          core.followupFeedback.delete(b.decision.id);
+        }
       }));
       core.looks = new LookClient(core.out.act, clock);
       core.looks.routes(node);
@@ -155,10 +177,14 @@ export async function startNodes(core: HomeCore, emit: (event: BrainLog) => void
     },
   });
   const phone = new BusNode({ name: "phone", bus, epoch, clock, log });
-  phoneCommandRoutes(phone, (m) => { if (!core.closed) showPhoneCommand(core, m); });
+  let statusReady!: () => void;
+  const statusStarted = new Promise<void>((resolve) => { statusReady = resolve; });
+  phoneCommandRoutes(phone, (m) => { if (!core.closed) showPhoneCommand(core, m); }, {
+    plan: ({ plan }) => core.app?.broadcast({ type: "plan", plan }), status: (s) => { showStatus(core, s); statusReady(); },
+  });
   phoneOwnerRoutes(phone);
-  phone.on("/act/status_changes", (s) => showStatus(core, s));
-  phone.on("/act/log", (b) => { if (b.type === "plan") core.app?.broadcast(b); });
+  phone.on("/brain/thought", ({ type, messages }) => core.app?.broadcast({ type, messages }));
+  phone.on("/brain/link_changes", (event) => core.app?.broadcast({ type: "brain", event }));
   phone.on("/act/progress_result", (r) => core.progress.receive(r));
   phone.every(250, () => syncPhoneClaims(core));
   phone.on("/phone/say", ({ text, grade }) => { if (!core.closed) core.phone?.reply(text, grade); });
@@ -180,7 +206,7 @@ export async function startNodes(core: HomeCore, emit: (event: BrainLog) => void
   const deviceOut = core.out.devices!;
   await phone.prepare();
   await devices.prepare();
-  for (const n of [core.worldNode.node, core.perception.node, core.mirror.node, core.brainMirror.node, phone, devices, recorder]) n.start();
+  for (const n of [core.worldNode.node, core.perception.node, core.mirror.node, core.brainMirror.node, core.goalMirror.node, manager, phone, devices, recorder]) n.start();
   const send = (s: Parameters<Parameters<typeof signals.subscribe>[0]>[0], initial: boolean) => {
     const spec = specOf.get(s.id);
     const note = { ...(initial ? { initial: true } : {}), ...(spec ? { label: spec.label, kind: spec.kind } : {}) };
@@ -190,7 +216,7 @@ export async function startNodes(core: HomeCore, emit: (event: BrainLog) => void
   core.unsubWorld = signals.subscribe((s) => send(s, false));
   let timer: ReturnType<typeof setTimeout> | undefined;
   const late = new Promise<"late">((r) => { timer = setTimeout(() => r("late"), FIRST_STATE_MS); });
-  const got = await Promise.race([Promise.all([ready, brainStarted]).then(() => "ok" as const), late]);
+  const got = await Promise.race([Promise.all([ready, brainStarted, core.actStatus ? Promise.resolve() : statusStarted]).then(() => "ok" as const), late]);
   clearTimeout(timer);
   if (got === "late") throw new Error(`집 상태 노드의 첫 상태를 ${FIRST_STATE_MS}ms 안에 받지 못했어요`);
 }
@@ -207,17 +233,24 @@ export async function drainNodes(core: HomeCore, ms = DRAIN_MS): Promise<boolean
   const world = (await core.worldNode?.settle(left())) ?? true;
   const brain = (await core.brainMirror?.node.settled(left())) ?? true;
   const mirror = (await core.mirror?.node.settled(left())) ?? true;
+  const goal = (await core.goalMirror?.node.settled(left())) ?? true;
+  const manager = (await core.managerNode?.settled(left())) ?? true;
+  const orders = (await core.out.manager?.drain(left())) ?? true;
+  const goals = (await core.out.goal?.drain(left())) ?? true;
+  const applied = (await core.mirror?.node.settled(left())) ?? true;
   const transitions = (await core.out.act?.drain(left())) ?? true;
   const delivered = (await core.phoneNode?.settled(left())) ?? true;
   const recorded = (await core.machineRecorder?.settled(left())) ?? true;
-  return inputs.every((x) => x !== false) && world && brain && mirror && transitions && delivered && recorded;
+  return inputs.every((x) => x !== false) && world && brain && mirror && goal && manager && orders && goals && applied && transitions && delivered && recorded;
 }
 
 /** 노드를 끝낸다. 먼저 닫기 전 비우기(drainNodes, 기한을 넘겨도 멈춘다: 닫기가 걸리지 않게)를 하고,
  *  그다음 새 일을 만드는 쪽(인식) → 집 상태 → 거울·폰·가전 차례로 끝낸다. 관찰 흐름을 닫고 가전 구독을 끊은 뒤 부른다. */
 export async function stopNodes(core: HomeCore): Promise<void> {
+  for (const feedback of core.followupFeedback.values()) core.out.act?.push("/act/log", feedback);
+  core.followupFeedback.clear();
   await drainNodes(core, 3 * DRAIN_MS);
-  for (const n of [core.perception?.node, core.worldNode?.node, core.brainMirror?.node, core.mirror?.node, core.phoneNode, core.devicesNode, core.machineRecorder]) await n?.stop();
+  for (const n of [core.perception?.node, core.worldNode?.node, core.brainMirror?.node, core.goalMirror?.node, core.managerNode, core.mirror?.node, core.phoneNode, core.devicesNode, core.machineRecorder]) await n?.stop();
 }
 
 /** 관찰 흐름(src/observe/pipeline.ts)을 연다: 판단·실행 기록은 emit으로, 물체 모양·World State는 대시보드로, 변화는 실행 추적·판단 호출로. 실행 추적을 만든 뒤 부른다. */

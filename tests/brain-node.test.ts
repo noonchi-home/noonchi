@@ -63,3 +63,24 @@ it("녹화한 판단과 계획 결과만으로 같은 요청을 마친다", asyn
     expect(await done).toEqual({ ok: false, error: "녹화한 결과" });
   } finally { bag.close(); }
 });
+
+
+it("밤 반성은 서울 시각에 한 번 시작하고 노드가 끝나면 모델도 멈춘다", async () => {
+  const { NightReflection } = await import("../src/brain/node.js");
+  const { VirtualClock } = await import("../src/bus/index.js");
+  const clock = new VirtualClock(Date.UTC(2026, 10, 7, 14, 29, 59));
+  const bus = new MemoryBus({ clock });
+  const calls: string[] = [];
+  const night = new NightReflection({ bus, boot: "test", clock, at: "23:30", offsetMinutes: 540, run: async (day, signal) => {
+    calls.push(day);
+    await new Promise<void>((resolve) => signal.addEventListener("abort", () => { calls.push("중단"); resolve(); }, { once: true }));
+  } });
+  try {
+    await night.start();
+    await clock.advanceTo(clock.now() + 1000);
+    expect(calls).toEqual(["2026-11-07"]);
+    await night.close();
+    await clock.advanceTo(clock.now() + 86_400_000);
+    expect(calls).toEqual(["2026-11-07", "중단"]);
+  } finally { await night.close(); await bus.close(); }
+});

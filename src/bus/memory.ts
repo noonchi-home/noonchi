@@ -7,7 +7,7 @@
 // 받는 쪽이 거절(reject)하면 "retry"로 본다. 다시 주기는 시계(clock, 기본 실제 시계)로 RETRY_MS가 지난 뒤에만 한다(그 사이 새 메시지가 와도 앞당기지 않는다).
 // 재생은 가상 시계를 넘겨 다시 주기도 가상 시각으로 돈다(장벽은 다시 주기를 기다리지 않고, 시계를 당길 때 돈다).
 // close() 뒤에는 발행·구독을 거절하고 예약된 배달도 돌리지 않는다.
-import { CLOSED, deadBody, gapCounter, MAX_DELIVERIES, RETRY_MS, type Bus, type Deliver, type Subscription } from "./bus.js";
+import { CLOSED, deadBody, gapCounter, MAX_DELIVERIES, RETRY_MS, stateSnapshot, type Bus, type Deliver, type ReadMode, type Subscription } from "./bus.js";
 import { decode, encode, type Envelope } from "./header.js";
 import { realClock, type Clock } from "./clock.js";
 import { TOPICS, type NodeName, type TopicName } from "./topics.js";
@@ -55,8 +55,12 @@ export class MemoryBus implements Bus {
     else for (const w of this.#wake.get(e.topic) ?? []) this.#later(() => w(e.key));
   }
 
-  async subscribe<N extends TopicName>(topic: N, node: NodeName, deliver: Deliver<N>, o: { mode?: "latest" | "all" } = {}): Promise<Subscription> {
+  async subscribe<N extends TopicName>(topic: N, node: NodeName, deliver: Deliver<N>, o: { mode?: ReadMode } = {}): Promise<Subscription> {
     if (this.#closed) throw new Error(CLOSED);
+    if (o.mode === "snapshot") {
+      if (TOPICS[topic].qos.kind !== "state") throw new Error("현재 값은 STATE 토픽에서만 읽을 수 있어요");
+      return stateSnapshot(topic, [...(this.#state.get(topic)?.values() ?? [])], deliver, () => !this.#closed);
+    }
     const d = deliver as Deliver<TopicName>;
     const q = TOPICS[topic].qos;
     if (q.kind === "reliable") {

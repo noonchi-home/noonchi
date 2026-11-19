@@ -2,12 +2,13 @@
 // 같은 주소 자리의 가짜 OpenAI 서버가 도구 호출로 낸다(tests/helpers/planner.ts, 지금 서버와 같은 컵 계획). 계획 단계마다 사람에게 명령 하나를 보내고,
 // 그 단계가 됐는지를 폰 눈 위치(이동)와 World State(컵 자리)로 본 뒤 다음 명령을 보낸다. 「완료」(단추·말)는 지금 단계 하나를 넘기고 「그만」은 계획을 그만둔다.
 // 조건은 단계가 시작된 뒤 본 사실만 쓰므로 손에 있음·싱크대 안 사실은 지금 시계(clock.t)로 둔다.
+import { testTracker, type TrackerFixture } from "./helpers/tracker-ports.js";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { ActionChoice } from "../src/act/prompts.js";
-import { DONE_NOTICE_MS, ExecutionTracker, TRACK_DEFAULTS, type ContentsLook, type Stall, type Stray, type TrackerOptions } from "../src/act/track/tracker.js";
+import { DONE_NOTICE_MS, type ExecutionTracker, TRACK_DEFAULTS, type ContentsLook, type Stall, type Stray } from "../src/act/track/tracker.js";
 import type { TrackCore } from "../src/act/track/core.js";
 import { ApprovalStore, type ApprovalAnswer } from "../src/agent/approval.js";
 import type { AgentStep } from "../src/agent/planTools.js";
@@ -103,7 +104,7 @@ function store(remembered: Record<string, ApprovalAnswer> = {}): ApprovalStore {
 
 /** approvals가 없으면 컵 치우기에 승인을 받아 둔 기억으로 만든다(승인 질문 없이 첫 단계부터). 같은 행동 다시 계획 간격은 0(그 간격은 따로 본다).
  *  decide: 판단을 넘기고 에이전트가 계획을 다 만들 때까지 기다린다. */
-function setup(over: Partial<TrackerOptions> & { w?: () => WorldView; check?: () => CheckResult } = {}) {
+function setup(over: Partial<TrackerFixture> & { w?: () => WorldView; check?: () => CheckResult } = {}) {
   const logs: BrainLog[] = [];
   const phone: PlannedCommandMessage[] = [];
   const clock = { t: 10_000, now() { return this.t; } };
@@ -113,7 +114,7 @@ function setup(over: Partial<TrackerOptions> & { w?: () => WorldView; check?: ()
   const planner = testPlanner(llm);
   /** 실행 추적에 넘긴 판단(PAM 판단과 말 부탁·묻기 답으로 만든 판단, onSpeech). */
   const decided: DecisionRecord[] = [];
-  const t = new ExecutionTracker({
+  const t = testTracker({
     onSpeech: (d) => decided.push(d),
     plans, world: w, check: over.check ?? (() => ({ ok: true })), floor: () => plans.floor(), planGapMs: 0,
     planner: (d, signal) => planner.plan(planContext({ decision: d, world: w(), floor: plans.floor() }), signal),
@@ -1686,7 +1687,7 @@ describe("실행 추적: 켠 위험 가전 추적은 확인된 꺼짐으로만 �
   const lastOff = (seen: number, close = true, explicit = true): Dev["sight_last"] => ({ power: { value: "off", seen_ms: seen, explicit, close } });
 
   /** 전자레인지 켜기(1번)·끄기(2번) 계획을 받아 켜기 질문에 승인한다. 돌려준 값: 켜라고 한 시각. */
-  async function mwOn(o: { w: () => WorldView; steps?: Record<string, unknown>[]; handDevices?: TrackerOptions["handDevices"] }) {
+  async function mwOn(o: { w: () => WorldView; steps?: Record<string, unknown>[]; handDevices?: TrackerFixture["handDevices"] }) {
     const s = coachSetup({ w: o.w, handDevices: "handDevices" in o ? o.handDevices : () => [{ id: "microwave_1", kind: "microwave", label: "전자레인지" }] });
     llm.scripts[RAMEN] = () => [planCalls(o.steps ?? [MW_ON, MW_OFF_STEP])];
     await s.decide(ramenDecision());
@@ -4640,7 +4641,7 @@ describe("실행 추적: 계획 대상이 안 보이면 그 마지막 자리에�
     let s: ReturnType<typeof setup>;
     s = setup({
       w, staleMs: 3000,
-      check: ((d, p) => checkPlan({ decision: d, tasks: CUP_TASKS, plan: p, world: w(), nowMs: s.clock.t, staleMs: 3000, mode: "test", placed: s.t.placed() })) as TrackerOptions["check"] as () => CheckResult,
+      check: ((d, p) => checkPlan({ decision: d, tasks: CUP_TASKS, plan: p, world: w(), nowMs: s.clock.t, staleMs: 3000, mode: "test", placed: s.t.placed() })) as TrackerFixture["check"] as () => CheckResult,
       spotReady: () => ready, lookContents: (h) => { looks.push(h); return true; }, guardObject: (id, on) => guards.push([id, on]), ...o.over,
     });
     let eye: [number, number] = [6, 1];

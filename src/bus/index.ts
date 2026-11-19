@@ -1,5 +1,5 @@
 // index.ts — 통로(ROS 2 rmw·토픽·실행기처럼). 노드는 이 입구로만 가져온다.
-export { MAX_DELIVERIES, RETRY_MS, type Bus, type Deliver, type Outcome, type Subscription } from "./bus.js";
+export { MAX_DELIVERIES, RETRY_MS, type Bus, type Deliver, type Outcome, type ReadMode, type Subscription } from "./bus.js";
 export { VirtualClock, realClock, type Clock } from "./clock.js";
 export { Freshness } from "./fresh.js";
 export { Header, decode, encode, frameBytes, msgId, type Envelope } from "./header.js";

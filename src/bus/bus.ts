@@ -2,7 +2,7 @@
 // subscribe는 그룹·커서를 만들기만 하고 start() 뒤에 배달한다. publish는 받는 쪽 콜백을 그 호출 안에서 부르지 않는다.
 // RELIABLE은 deliver가 "ack"일 때만 ack한다. "retry"면 RETRY_MS 뒤 같은 메시지를 다시 주고, 그동안 같은 토픽·그룹의 뒤 메시지는 주지 않는다.
 // 한 구독 안에서 MAX_DELIVERIES번 실패하면 /bus/dead에 남기고 ack한 뒤 다음으로 간다. /bus/dead 자체의 실패는 다시 보내지 않고 log만 남긴다.
-import type { Envelope } from "./header.js";
+import { decode, type Envelope } from "./header.js";
 import type { NodeName, TopicName } from "./topics.js";
 
 export const MAX_DELIVERIES = 3;
@@ -11,6 +11,7 @@ export const RETRY_MS = 100;
 export const CLOSED = "닫힌 통로예요";
 export type Outcome = "ack" | "retry";
 export type Deliver<N extends TopicName> = (e: Envelope<N>) => Promise<Outcome>;
+export type ReadMode = "latest" | "all" | "snapshot";
 export interface Subscription {
   start(): void;
   /** 끊는다. 처리 중이던 RELIABLE은 ack하지 않는다(다시 붙은 같은 그룹이 차례대로 다시 받는다). */
@@ -20,8 +21,27 @@ export interface Subscription {
 }
 export interface Bus {
   publish<N extends TopicName>(e: Envelope<N>): Promise<void>;
-  subscribe<N extends TopicName>(topic: N, node: NodeName, deliver: Deliver<N>, o?: { mode?: "latest" | "all" }): Promise<Subscription>;
+  subscribe<N extends TopicName>(topic: N, node: NodeName, deliver: Deliver<N>, o?: { mode?: ReadMode }): Promise<Subscription>;
   close(): Promise<void>;
+}
+
+/** 준비 때 이미 있던 STATE만 시작할 때 한 번 준다. 뒤 변화는 별도의 RELIABLE 구독이 맡는다. */
+export function stateSnapshot<N extends TopicName>(topic: N, raws: string[], deliver: Deliver<N>, open: () => boolean): Subscription {
+  const saved = raws.map((raw) => decode(topic, raw));
+  let started = false;
+  let stopped = false;
+  const run = async () => {
+    for (const message of saved) {
+      if (stopped || !open()) break;
+      await deliver(message).catch(() => "retry" as const);
+    }
+    saved.length = 0;
+  };
+  return {
+    start() { if (!started) { started = true; void run(); } },
+    stop: async () => { stopped = true; },
+    lost: () => 0,
+  };
 }
 
 /** 놓친 수 세기(SENSOR all): 보낸 노드 인스턴스마다 마지막 seq. base는 준비 때 가장 새 메시지다(그 인스턴스는 그 seq부터).

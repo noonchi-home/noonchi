@@ -38,7 +38,7 @@ export class Dock extends Part {
   planClosed(r: Run, close: "done" | "failed" | "cancelled" | null): void {
     const core = this.core;
     if (core.stopped || close === null || r.at < 0) return;
-    const at = this.o.dock?.() ?? null;
+    const at = this.o.layout.dock?.() ?? null;
     if (!at) return;
     this.drop();
     const now = this.clock.now();
@@ -54,7 +54,7 @@ export class Dock extends Part {
     const now = this.clock.now();
     if (q.phase === "look") {
       if (now - q.since < DOCK.lookMs) return;
-      this.o.thought?.(userWhere(this.o.world()), q.decision);
+      this.o.events.thought?.(userWhere(this.o.state.view()), q.decision);
       q.phase = "go";
       q.since = now;
     }
@@ -65,7 +65,7 @@ export class Dock extends Part {
     if (now - q.startedAt > DOCK.totalMs) {
       line.clear();
       core.docking = null;
-      this.o.thought?.(DOCK_TEXT.gaveUp, q.decision);
+      this.o.events.thought?.(DOCK_TEXT.gaveUp, q.decision);
       return;
     }
     if (this.blocked()) return line.clear();
@@ -76,7 +76,7 @@ export class Dock extends Part {
         target: { id: "dock", label: DOCK_TEXT.label, position: [...q.at] }, speak: true, kind: "go", near_m: DOCK.nearM,
       };
       sendLine(line, sent, now);
-      this.o.thought?.(DOCK_TEXT.going, q.decision);
+      this.o.events.thought?.(DOCK_TEXT.going, q.decision);
       return;
     }
     refreshLine(core, line, q.sent, vision, now);
@@ -88,7 +88,7 @@ export class Dock extends Part {
     if (!q) return;
     idleLine(this.core, q).clear();
     this.core.docking = null;
-    this.o.thought?.(DOCK_TEXT.docked, q.decision);
+    this.o.events.thought?.(DOCK_TEXT.docked, q.decision);
   }
 
   /** 충전 자리로 가는 중(확인 포함)인가: 그동안 새 행동 판단을 미룬다. 비상이면 거두고 아니라고 한다(안전 일은 미루지 않는다). */
@@ -101,7 +101,7 @@ export class Dock extends Part {
 
   /** 비상: 쓰러짐 의심이거나 끄기 안내가 떠 있거나 줄에서 기다린다. */
   private emergency(): boolean {
-    return emergencyOf({ world: this.o.world(), offNotices: this.core.safety.offTrack().notices });
+    return emergencyOf({ world: this.o.state.view(), offNotices: this.core.safety.offTrack().notices });
   }
 
   /** 「그만」·새 계획·멈춤: 명령을 거두고 칸을 비운다. */
@@ -115,6 +115,6 @@ export class Dock extends Part {
   /** 명령 줄 막힘: 판본이 맞는 폰 없음, 끄기 안내, 승인 대기, 폰 대화(맞춘 눈은 없어도 보낸다: 거리 모름). */
   private blocked(): boolean {
     const core = this.core;
-    return !core.start.phoneOk() || core.safety.offPending() || !!core.safety.shownOff() || (this.o.approvalsWaiting?.() ?? false) || (this.o.talking?.() ?? false);
+    return !core.start.phoneOk() || core.safety.offPending() || !!core.safety.shownOff() || (this.o.phone.approvalsWaiting?.() ?? false) || (this.o.phone.talking?.() ?? false);
   }
 }

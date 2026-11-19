@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { syncPhoneClaims } from "../src/server/home/phone.js";
 import { PhoneClaims } from "../src/phone/owner.js";
 import { TOPICS } from "../src/bus/topics.js";
 import { Policy } from "../src/agent/policy.js";
@@ -44,4 +45,20 @@ describe("폰 한 자리", () => {
     t = 322;
     expect(policy.pending().map((p) => p.token)).toEqual([c.token]);
   });
+});
+
+
+it("같은 순간에 들어온 카드도 폰에 표시한 차례대로 소유한다", () => {
+  const claims = new PhoneClaims();
+  const sent: string[] = [];
+  const core = { nowMs: () => 10000, phoneClaims: new Map(), claimStamp: 0, talk: { inflight: 0, at: -10000 },
+    agent: { pending: () => [{ token: "a" }, { token: "b" }] },
+    policy: { visibleApprovals() {} },
+    out: { phone: { push(_topic: string, c: { claim_id: string; kind: "approval"; since_ms: number }) {
+      sent.push(c.claim_id); claims.set(c.claim_id, c.kind, c.since_ms);
+    } } },
+  } as unknown as Parameters<typeof syncPhoneClaims>[0];
+  syncPhoneClaims(core);
+  expect(sent).toHaveLength(2);
+  expect(claims.owner()?.claim_id).toBe(sent[0]);
 });

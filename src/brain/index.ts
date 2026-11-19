@@ -14,5 +14,5 @@ export { daySummary, isDay } from "./history/summary.js";
 export { PamClient, pamSettings } from "./pam/index.js";
 export { type ThoughtFeed, decisionLines, lastStoredThoughts, storeThought, thoughtFeed } from "./thought.js";
 
-export { BrainPlans, dailyMemory, planningRoutes, type MakePlan } from "./node.js";
+export { BrainPlans, NightReflection, dailyMemory, planningRoutes, type MakePlan } from "./node.js";
 export { decisionLog } from "./decide.js";

@@ -16,8 +16,8 @@ export const SCREEN_DOMAINS = ["ui/dashboard", "ui/twin", "ui/phone", "ui/setup"
 export const DEPS: Record<string, readonly string[]> = {
   bus: [],
   machines: [],
-  manage: ["machines"],
-  goal: ["manage", "agent", "world", "brain"],
+  manage: ["bus", "machines"],
+  goal: ["bus", "machines", "manage", "agent", "world", "brain"],
   devices: ["bus"],
   layout: ["devices"],
   world: ["bus", "devices", "layout"],

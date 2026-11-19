@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, expectTypeOf, it } from "vitest";
 import { BusNode, MemoryBus, TOPICS } from "../src/bus/index.js";
 import { ProgressReplies, progressRoutes } from "../src/act/node.js";
 import { emitRobotCommand } from "../src/act/robot/phone.js";
@@ -6,6 +6,21 @@ import { phoneCommandRoutes } from "../src/phone/node.js";
 import type { PlannedCommandMessage } from "../src/contract/phone.js";
 
 describe("로봇에서 폰으로", () => {
+  it("계획과 첫 두 명령이 붙어 와도 폰이 첫 명령부터 받는다", async () => {
+    const bus = new MemoryBus(), epoch = { boot: "b", home: "h" };
+    const act = new BusNode({ name: "act", bus, epoch }), phone = new BusNode({ name: "phone", bus, epoch });
+    const seen: string[] = [];
+    phoneCommandRoutes(phone, (m) => { if (m.type === "command") seen.push(m.step); },
+      { plan: () => { seen.push("plan"); }, status: () => {} });
+    try {
+      await act.prepare(); await phone.prepare(); act.start(); phone.start();
+      await act.publish("/act/phone_changes", { plan: null });
+      for (const step of ["first", "next"]) {
+        await emitRobotCommand(act, { type: "command", id: "p", step, text: step, choices: [], speak: true, vision: null, target: null });
+      }
+      await expect.poll(() => seen).toEqual(["plan", "first", "next"]);
+    } finally { await phone.stop(); await act.stop(); await bus.close(); }
+  });
   it("마지막 단계의 지우기와 완료 문장을 붙여 보내도 폰은 둘 다 받는다", async () => {
     const bus = new MemoryBus(), epoch = { boot: "b", home: "main" };
     const act = new BusNode({ name: "act", bus, epoch }), phone = new BusNode({ name: "phone", bus, epoch });
@@ -83,4 +98,11 @@ it("대시보드 통로는 실제 계획·상태·실행 기록만 받는다", (
   expect(TOPICS["/act/plan"].body.safeParse({ plan: null, token: "x" }).success).toBe(false);
   expect(TOPICS["/act/log"].body.safeParse({ type: "execution", state: "unknown", plan_id: "p", at_ms: 1, text: "" }).success).toBe(false);
   expect(TOPICS["/act/status"].body.safeParse({ mode: "other" }).success).toBe(false);
+});
+
+
+it("실행 생성자에서 따로 받는 함수는 계획과 두 검사뿐이다", () => {
+  type Options = import("../src/act/track/tracker.js").TrackerOptions;
+  type Callbacks = { [K in keyof Options]-?: NonNullable<Options[K]> extends (...args: never[]) => unknown ? K : never }[keyof Options];
+  expectTypeOf<Callbacks>().toEqualTypeOf<"planner" | "precheck" | "check">();
 });

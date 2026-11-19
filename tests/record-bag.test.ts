@@ -11,7 +11,7 @@ import { HEARD_MARK } from "../src/world/labels.js";
 
 const EPOCH = { boot: "b1", home: "h#1" };
 const tick = (ms = 50) => new Promise((r) => setTimeout(r, ms));
-const sender = async (name: "world" | "phone" | "devices" | "act", bus: MemoryBus) => {
+const sender = async (name: "world" | "phone" | "devices" | "act" | "goal", bus: MemoryBus) => {
   const n = new BusNode({ name, bus, epoch: EPOCH, log: () => {} });
   await n.prepare();
   n.start();
@@ -37,7 +37,7 @@ describe("기록 노드", () => {
     const bag = Bag.open(":memory:");
     const rec = await startRecorder({ bus, epoch: EPOCH, db, bag });
     rec.start();
-    const act = await sender("act", bus);
+    const goalNode = await sender("goal", bus);
     const goal = {
       id: "goal-1", action: "컵 치우기", state: "left_cup", trigger: "t", object: "cup_1", cls: "cup", status: "armed" as const, prep: "waiting" as const, reason: null, text: null,
       armed_ms: 1, ready_ms: null, gone_ms: null, fired_ms: null, plan: null,
@@ -46,7 +46,7 @@ describe("기록 노드", () => {
       { status: "armed", prep: "waiting" }, { status: "armed", prep: "planning" }, { status: "armed", prep: "ready" }, { status: "fired", prep: "ready" }, { status: "used", prep: "ready" },
     ] as const;
     // 기다리지 않고 한 번에 낸다(STATE는 가운데 값을 합칠 수 있다)
-    await Promise.all(steps.map((s) => act.publish("/brain/goal_changes", { goal: { ...goal, ...s } })));
+    await Promise.all(steps.map((s) => goalNode.publish("/brain/goal_changes", { goal: { ...goal, ...s } })));
     await tick();
     await rec.idle();
     const kept = bag.range(0, Number.MAX_SAFE_INTEGER).filter(({ e }) => e.topic === "/brain/goal_changes").map(({ e }) => (e.body as { goal: { status: string; prep: string } }).goal);
@@ -55,7 +55,7 @@ describe("기록 노드", () => {
       steps.map((s) => ({ kind: "goal", subject: "goal-1", data: s })),
     );
     await rec.stop();
-    await act.stop();
+    await goalNode.stop();
     await bus.close();
     bag.close();
     db.close();

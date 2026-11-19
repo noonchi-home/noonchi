@@ -85,22 +85,26 @@ export function loadReflectAt(env: Record<string, string | undefined>): string |
 }
 
 /** 매일 at(HH:MM, offsetMinutes 시간대)에 그날을 반성한다. 끝나면 다음 날 같은 시각을 잡는다. */
-export function scheduleReflection(o: { at: string; offsetMinutes: number; run: (day: string) => Promise<unknown>; now?: () => number }): { stop(): void } {
+export function scheduleReflection(o: { at: string; offsetMinutes: number; run: (day: string) => Promise<unknown>; now?: () => number; after?: (ms: number, fn: () => void) => () => void }): { stop(): void } {
   const [h, m] = o.at.split(":").map(Number) as [number, number];
   const now = o.now ?? (() => Date.now());
   const offset = o.offsetMinutes * 60_000;
-  let timer: NodeJS.Timeout | undefined;
+  const after = o.after ?? ((ms, fn) => {
+    const t = setTimeout(fn, ms);
+    t.unref?.();
+    return () => clearTimeout(t);
+  });
+  let cancel: (() => void) | undefined;
   let stopped = false;
   const next = () => {
     if (stopped) return;
     const local = new Date(now() + offset);
     let target = Date.UTC(local.getUTCFullYear(), local.getUTCMonth(), local.getUTCDate(), h, m) - offset;
     if (target <= now()) target += 86_400_000;
-    timer = setTimeout(() => {
+    cancel = after(target - now(), () => {
       void o.run(new Date(target + offset).toISOString().slice(0, 10)).catch(() => {}).finally(next);
-    }, target - now());
-    timer.unref?.();
+    });
   };
   next();
-  return { stop: () => { stopped = true; clearTimeout(timer); } };
+  return { stop: () => { stopped = true; cancel?.(); } };
 }

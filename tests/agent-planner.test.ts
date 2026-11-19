@@ -1,5 +1,6 @@
 // 에이전트 계획 모드(src/agent/planner.ts·planTools.ts)와 어떤 계획이든 돌리는 실행 추적(src/act/track/).
 // 모델은 같은 주소 자리의 가짜 OpenAI 서버가 도구 호출로 낸다(tests/helpers/planner.ts). 실제 OpenAI는 부르지 않는다.
+import { testTracker, type TrackerFixture } from "./helpers/tracker-ports.js";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -7,7 +8,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { deviceRunner } from "../src/act/devices.js";
 import { sayLine } from "../src/act/say.js";
 import { TASKS } from "../src/act/tasks.js";
-import { ExecutionTracker, type TrackerOptions } from "../src/act/track/tracker.js";
+
 import { ApprovalStore, type ApprovalAnswer } from "../src/agent/approval.js";
 import { PLANNER_PROMPT, planInput } from "../src/agent/planInput.js";
 import { PLAN_LIMITS, PlanDraft, SUBMIT_ARGS, type AgentStep, type PlanContext, type TaskInfo } from "../src/agent/planTools.js";
@@ -117,7 +118,7 @@ beforeAll(async () => {
 afterAll(async () => { await llm.close(); });
 
 /** 실행 추적 + 계획 모드 에이전트(가짜 모델) + 메모리 허브·정책. w: World State(허브 가전 상태를 넣는다). */
-function rig(o: { objects?: () => WorldObject[]; history?: () => Record<string, WorldDevice["history"]>; approvals?: ApprovalStore; task?: TaskInfo; over?: Partial<TrackerOptions>; initial?: Record<string, Record<string, unknown>> } = {}) {
+function rig(o: { objects?: () => WorldObject[]; history?: () => Record<string, WorldDevice["history"]>; approvals?: ApprovalStore; task?: TaskInfo; over?: Partial<TrackerFixture>; initial?: Record<string, Record<string, unknown>> } = {}) {
   const logs: BrainLog[] = [];
   const phone: PlannedCommandMessage[] = [];
   const clock = { t: 10_000, now() { return this.t; } };
@@ -128,7 +129,7 @@ function rig(o: { objects?: () => WorldObject[]; history?: () => Record<string, 
   const w = () => view(o.objects?.() ?? [], devicesOf(hub, o.history?.()));
   const ctx = (d: DecisionRecord): PlanContext => planContext({ decision: d, world: w(), floor: plans.floor(), hub, task: o.task });
   const planned: DecisionRecord[] = [];
-  const t = new ExecutionTracker({
+  const t = testTracker({
     plans, world: w, check: () => ({ ok: true }), floor: () => plans.floor(), planGapMs: 0, clock, approvals: o.approvals ?? store(),
     planner: (d, signal) => { planned.push(d); return planner.plan(ctx(d), signal); },
     devices: deviceRunner(hub, policy), toPhone: (m) => phone.push(m), emit: (l) => logs.push(l), ...o.over,
@@ -1061,7 +1062,7 @@ describe("계획 모드: 판단마다 한 번", () => {
     const signals: AbortSignal[] = [];
     const plans = new PlanHub(smallFloor(), () => {}, () => "t");
     const logs: BrainLog[] = [];
-    const t = new ExecutionTracker({
+    const t = testTracker({
       plans, world: () => view([cup()]), check: () => ({ ok: true }), floor: () => plans.floor(), approvals: store(), toPhone: () => {}, emit: (l) => logs.push(l),
       planner: (_d, signal) => { signals.push(signal); return new Promise(() => {}); },
     });

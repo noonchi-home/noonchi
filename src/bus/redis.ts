@@ -17,7 +17,7 @@
 //   그룹이 없으면(Redis는 오류 대신 0을 준다) NOGROUP처럼 기동을 잃은 것이다.
 // 연결마다 error 리스너를 단다(프로세스가 죽지 않는다). 막고 읽기(BLOCK)는 구독마다 따로 연결(duplicate)을 쓴다.
 import { createClient, type RedisClientType } from "redis";
-import { CLOSED, deadBody, gapCounter, MAX_DELIVERIES, RETRY_MS, type Bus, type Deliver, type Subscription } from "./bus.js";
+import { CLOSED, deadBody, gapCounter, MAX_DELIVERIES, RETRY_MS, stateSnapshot, type Bus, type Deliver, type ReadMode, type Subscription } from "./bus.js";
 import { decode, encode, type Envelope } from "./header.js";
 import { TOPICS, type NodeName, type TopicName } from "./topics.js";
 
@@ -116,8 +116,13 @@ export class RedisBus implements Bus {
     else await this.client.xAdd(k, "*", { m: raw });
   }
 
-  async subscribe<N extends TopicName>(topic: N, node: NodeName, deliver: Deliver<N>, o: { mode?: "latest" | "all" } = {}): Promise<Subscription> {
+  async subscribe<N extends TopicName>(topic: N, node: NodeName, deliver: Deliver<N>, o: { mode?: ReadMode } = {}): Promise<Subscription> {
     this.#open();
+    if (o.mode === "snapshot") {
+      if (TOPICS[topic].qos.kind !== "state") throw new Error("현재 값은 STATE 토픽에서만 읽을 수 있어요");
+      const saved = await this.client.hGetAll(`${this.#k(topic)}:state`);
+      return stateSnapshot(topic, Object.values(saved), deliver, () => !this.#closed && !this.#lost);
+    }
     const conn = this.client.duplicate() as RedisClientType;
     conn.on("error", (e: Error) => this.log(`[통로] ${topic} 구독 연결 오류: ${e.message}`));
     await conn.connect();
@@ -129,7 +134,7 @@ export class RedisBus implements Bus {
     }
   }
 
-  async #subscribeOn<N extends TopicName>(conn: RedisClientType, topic: N, node: NodeName, deliver: Deliver<N>, o: { mode?: "latest" | "all" }): Promise<Subscription> {
+  async #subscribeOn<N extends TopicName>(conn: RedisClientType, topic: N, node: NodeName, deliver: Deliver<N>, o: { mode?: ReadMode }): Promise<Subscription> {
     const k = this.#k(topic);
     const q = TOPICS[topic].qos;
     let on = true;

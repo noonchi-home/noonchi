@@ -24,7 +24,7 @@ export function startSay(core: HomeCore): void {
     core.statusSent = signature;
     if (core.out.act) {
       core.out.act.push("/act/status", status);
-      core.out.act.push("/act/status_changes", status);
+      core.out.act.push("/act/phone_changes", { status });
     }
     else showStatus(core, status);
 

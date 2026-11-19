@@ -146,8 +146,8 @@ describe("미리 세운 목표(가짜 서버 처음부터 끝까지)", () => {
 
     // 3 계획이 시작되면(목표 씀) VLM 사진 간격은 다시 2초
     const started = Date.now();
-    await pump(() => Date.now() - started >= 6500, "계획 뒤 사진");
-    expect(gaps(started + 1000).length).toBeGreaterThanOrEqual(2);
+    // 전환 직후 1초를 빼면 다음 사진까지 최대 한 주기를 더 기다려야 한다.
+    await pump(() => gaps(started + 1000).length >= 2, "계획 뒤 VLM 사진 세 장", 8000);
     expect(Math.min(...gaps(started + 1000)), JSON.stringify(gaps(started + 1000))).toBeGreaterThanOrEqual(1800);
   }, 120_000);
 });

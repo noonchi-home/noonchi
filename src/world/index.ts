@@ -11,3 +11,4 @@ export { startWorldMirror, type WorldMirror } from "./mirror.js";
 export { textFromWorld, collapseLines, PAM_TEXT_MAX } from "./text.js";
 export { PAM_PERIOD, Trigger, type TriggerConfig, type TriggerPause, loadTriggerConfig } from "./trigger.js";
 export { loadFallConfig, FALL_DEFAULTS, type FallConfig } from "./fall.js";
+export { decisionWorld } from "./decision-view.js";

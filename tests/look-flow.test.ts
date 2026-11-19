@@ -1,12 +1,13 @@
 // 흐름 시험: 놓기 단계에서 전체 사진은 싱크대 안 컵을 못 봐도, 멈춘 단계(A) → 관찰 모드가 고른 가까이 보기 → 최근 다섯 장에서 컵을 찾고 VLM이 싱크대 안이라 답해
 // 「완료」 없이 계획이 끝난다. 진짜 WorldState·ObservationPipeline·ExecutionTracker·Planner·Observer·Looker를 쓰고, 모델은 가짜 OpenAI 서버 하나다
 // (계획 모드 대본 CUP_SCRIPTS, 관찰 모드 대본 look_closer sink_1, 가까이 본 사진의 VLM 답 싱크대 안).
+import { testTracker } from "./helpers/tracker-ports.js";
 import { pipelineOn } from "./helpers/world-port.js";
 import { afterEach, describe, expect, it } from "vitest";
 import { startFakeOpenAI, type FakeServer } from "../scripts/fake-openai.js";
 import { Looker } from "../src/act/look.js";
 import { lookTargets } from "../src/act/tasks.js";
-import { ExecutionTracker } from "../src/act/track/tracker.js";
+
 import { ApprovalStore } from "../src/agent/approval.js";
 import { Observer } from "../src/agent/observer.js";
 import { Planner } from "../src/agent/planner.js";
@@ -62,7 +63,7 @@ async function setup(o: { stalled: boolean }) {
   approvals.answer("task:컵 치우기", "approve");
   const planner = new Planner({ provider: createProvider(env).provider });
   let looker: Looker | null = null;
-  const tracker = new ExecutionTracker({
+  const tracker = testTracker({
     plans, world: () => world.view(clock.now()), check: () => ({ ok: true }), floor: () => plans.floor(), approvals, clock,
     planner: (d, signal) => planner.plan(planContext({ decision: d, world: world.view(clock.now()), floor: plans.floor() }), signal),
     toPhone: (m) => phone.push(m), emit: (l) => logs.push(l), locate: (id) => PLACES[id],

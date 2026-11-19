@@ -19,6 +19,22 @@ const until = async (f: () => boolean | Promise<boolean>, ms = 3000) => {
 
 export function busContract(name: string, make: () => Promise<Bus>, opts: { length: (b: Bus, topic: string) => Promise<number> }) {
   describe(`${name} 통로 계약`, () => {
+    it("처음 값만 복구하는 구독은 준비 뒤 바뀐 명령을 앞질러 주지 않는다", async () => {
+      const bus = await make();
+      const received: number[] = [];
+      try {
+        await bus.publish(env("/device/state", { id: "a", on: 1 }, 1, "a", "devices"));
+        const sub = await bus.subscribe("/device/state", "phone", async (e) => {
+          received.push(e.header.seq);
+          return "ack";
+        }, { mode: "snapshot" });
+        await bus.publish(env("/device/state", { id: "a", on: 0 }, 2, "a", "devices"));
+        sub.start();
+        await until(() => received.length > 0);
+        await sub.stop();
+        expect(received).toEqual([1]);
+      } finally { await bus.close(); }
+    });
     it("준비만 한 구독은 배달하지 않고, 시작한 뒤에 준비 이후 것부터 준다(RELIABLE)", async () => {
       const bus = await make();
       const got: number[] = [];

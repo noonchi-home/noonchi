@@ -1,6 +1,8 @@
-import { Outbox, realClock, type Body, type BusNode, type Clock } from "../bus/index.js";
+import { BusNode, Outbox, realClock, type Body, type Bus, type Clock } from "../bus/index.js";
 import type { DecisionRecord } from "../contract/events.js";
 import type { PlanAhead, PlanResult } from "../contract/plan-work.js";
+
+import { scheduleReflection } from "./history/reflect.js";
 
 const PLAN_TIMEOUT_MS = 46_000;
 type Request = Body<"/brain/plan_request">;
@@ -23,7 +25,7 @@ export class BrainPlans {
   private readonly pending = new Map<string, { decision: string; finish: (r: PlanResult) => void; abort: () => void }>();
   private sequence = 0;
   private closed = false;
-  constructor(private readonly out: Outbox, private readonly clock: Clock = realClock) {}
+  constructor(private readonly out: Outbox, private readonly clock: Clock = realClock, private readonly prefix = "") {}
 
   routes(node: BusNode): void {
     node.on("/brain/plan", (b) => {
@@ -34,7 +36,7 @@ export class BrainPlans {
 
   plan(d: DecisionRecord, signal: AbortSignal, ahead?: PlanAhead): Promise<PlanResult> {
     if (this.closed || signal.aborted) return Promise.resolve(failure("계획을 취소했어요."));
-    const req = d.id + ":" + ++this.sequence;
+    const req = this.prefix + d.id + ":" + ++this.sequence;
     const until = this.clock.now() + PLAN_TIMEOUT_MS;
     return new Promise((resolve) => {
       const finish = (result: PlanResult) => {
@@ -90,4 +92,28 @@ export function planningRoutes(node: BusNode, make: MakePlan, clock: Clock): voi
       });
     });
   });
+}
+
+
+/** 반성 기록은 서버의 공용 DB에 쓴다. 집을 바꿔도 그날의 타이머는 하나다. */
+export class NightReflection {
+  private readonly node: BusNode;
+  private timer?: ReturnType<typeof scheduleReflection>;
+
+  constructor(private readonly o: { bus: Bus; boot: string; at: string; offsetMinutes: number; clock?: Clock;
+    run(day: string, signal: AbortSignal): Promise<unknown> }) {
+    this.node = new BusNode({ name: "brain", bus: o.bus, epoch: { boot: o.boot, home: "history" }, clock: o.clock });
+  }
+  async start(): Promise<void> {
+    await this.node.prepare();
+    if (this.timer || this.node.closed) return;
+    this.node.start();
+    const { at, offsetMinutes, clock = realClock, run } = this.o;
+    this.timer = scheduleReflection({ at, offsetMinutes, now: () => clock.now(), after: (ms, fn) => clock.after(ms, fn),
+      run: (day) => this.node.spawn((signal) => run(day, signal)) });
+  }
+  async close(): Promise<void> {
+    this.timer?.stop();
+    await this.node.stop();
+  }
 }

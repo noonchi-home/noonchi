@@ -14,7 +14,7 @@ import type { SignalHub } from "../devices/index.js";
 import { HistoryDb, historyTzMinutes } from "../brain/index.js";
 import { REFLECT_TEXT } from "../brain/index.js";
 import { attachRecorder, topic, type DeviceNote } from "../brain/index.js";
-import { loadReflectAt, runReflection, scheduleReflection, type ReflectResult } from "../brain/index.js";
+import { loadReflectAt, runReflection, NightReflection, type ReflectResult } from "../brain/index.js";
 import { loadRetention, sweep } from "../brain/index.js";
 import { PamClient, pamSettings } from "../brain/index.js";
 import type { DeviceHub, DeviceState } from "../contract/devices.js";
@@ -191,11 +191,11 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
   const pam = new PamClient({ settings: pamConfig });
   const closing = new AbortController();
   let reflecting: Promise<ReflectResult> | null = null;
-  const reflect = async (day: string): Promise<ReflectResult> => {
+  const reflect = async (day: string, life?: AbortSignal): Promise<ReflectResult> => {
     if (reflecting) throw new HttpError(409, REFLECT_TEXT.running);
     // 반성 사건은 지금 집의 대시보드로 보내고 집 묶음에도 넘긴다(말풍선 카드가 배운 습관을 말한다)
     const job = runReflection(db, pam, day, {
-      signal: closing.signal, log,
+      signal: life ? AbortSignal.any([life, closing.signal]) : closing.signal, log,
       // 시각 찾기·검사 결과 사본: runtime/homes/<집>/habit
       ...(current ? { dir: join(runtimeDir, "homes", current.twin.home.id, "habit") } : {}),
       emit: (event) => {
@@ -468,7 +468,8 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
   clean();
   const cleaner = setInterval(clean, 3_600_000);
   cleaner.unref?.();
-  const schedule = reflectAt ? scheduleReflection({ at: reflectAt, offsetMinutes: db.offsetMinutes, run: reflect }) : null;
+  const night = reflectAt ? new NightReflection({ bus, boot, at: reflectAt, offsetMinutes: db.offsetMinutes, run: reflect }) : null;
+  await night?.start();
   if (reflectAt) log(`반성: 매일 ${reflectAt}`);
   const live = () => current ?? last;
   const server: RunningServer = {
@@ -496,14 +497,13 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
     async close() {
       if (closed) return;
       closed = true;
-      schedule?.stop();
       clearInterval(cleaner);
       await job;
       // 집의 새 일(판단·실행 추적·가전 정책)을 먼저 막는다: 집 닫기의 첫 단계(새 일 막기)는 부르는 순간 돈다.
       // 그다음 진행 중인 반성 요청을 끊고, 집 닫기와 반성이 끝나기를 기다린다. 앱이 /events 소켓을 먼저 끊어야 껍데기 서버 close가 기다리지 않는다
       const homeClosing = current?.close();
       closing.abort(new Error("서버를 끔"));
-      await homeClosing;
+      await Promise.all([homeClosing, night?.close()]);
       await reflecting?.catch(() => {});
       await shell.close();
       await bus.close().catch(() => {});

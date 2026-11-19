@@ -1,11 +1,11 @@
 // 미리 세운 목표(src/goal/watch.ts): 사람이 컵을 쓰는 것을 보면 습관 FSM 한 걸음 앞의 「컵 치우기」를 목표로 세우고 계획을 미리 만들어 둔다.
 // 사람이 떠나면 판단을 바로 부르게 하고, PAM이 같은 행동을 고르면 미리 만든 계획을 다시 검사해 첫 명령을 낸다(계획 모드를 다시 부르지 않는다).
 // 계획 모델은 같은 주소 자리의 가짜 OpenAI 서버(tests/helpers/planner.ts), 시계는 시험 시계(clock.t)다. smallFloor: 식탁 table_1 [7, 3], 싱크대 sink_1 [5, 1].
+import { testTracker, type TrackerFixture } from "./helpers/tracker-ports.js";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { ExecutionTracker, type TrackerOptions } from "../src/act/track/tracker.js";
 import type { TrackCore } from "../src/act/track/core.js";
 import { PlanHub } from "../src/act/hub.js";
 import { checkPlan } from "../src/act/check.js";
@@ -58,7 +58,7 @@ const pam = (id: string, seq: number, atMs: number, action: string | null = "컵
 /** 실행 추적 + 미리 세운 목표. person(who)로 사람을 바꾸고(나타나면 since_ms, 사라지면 그때가 since_ms), setObjects로 물건을 바꾼다.
  *  tick은 시계를 ms 움직이고, 있는 물건을 지금 본 것으로 고친 뒤 tracker.tick을 부른다. gone은 World State 사람 사라짐 변화처럼 onWorld를 부른다.
  *  승인 기억은 비어 있다(처음 하는 일): 목표로 시작한 실행은 묻지 않는다. */
-function goalSetup(o: { over?: Partial<TrackerOptions>; state?: string | null; memory?: FsmMemory; objects?: WorldObject[]; where?: [number, number]; floor?: FloorPlan } = {}) {
+function goalSetup(o: { over?: Partial<TrackerFixture>; state?: string | null; memory?: FsmMemory; objects?: WorldObject[]; where?: [number, number]; floor?: FloorPlan } = {}) {
   const clock = { t: 10_000, now() { return this.t; } };
   let who: Who = null;
   let since = 0;
@@ -86,7 +86,7 @@ function goalSetup(o: { over?: Partial<TrackerOptions>; state?: string | null; m
   const planner = testPlanner(llm);
   const approvals = new ApprovalStore(join(mkdtempSync(join(tmpdir(), "goal-")), "homes", "h", "approvals.json"), () => "t");
   const ctx = (d: DecisionRecord, ahead?: PlanAhead) => ({ ...planContext({ decision: d, world: w(), floor: plans.floor() }), ...(ahead ? { ahead } : {}) });
-  const t = new ExecutionTracker({
+  const t = testTracker({
     plans, world: w, floor: () => plans.floor(), planGapMs: 0, approvals, clock, tasks: () => NOONCHI, locate: (id) => PLACES[id],
     planner: (d, signal, ahead) => planner.plan(ctx(d, ahead), signal),
     check: (d, p, seenSince) => checkPlan({ decision: d, tasks: NOONCHI, plan: p, world: w(), nowMs: clock.t, staleMs: 3000, mode: "test", ...(seenSince !== undefined ? { seenSince } : {}) }),
@@ -200,7 +200,7 @@ describe("미리 세운 목표: 세우기와 미리 만들기", () => {
   });
 
   it("세우지 않는 때: 습관 기억이 없음, 코치 모드 행동 목록, 쓰러짐 의심, 다른 계획이 열려 있음", async () => {
-    for (const over of [{ habit: () => null }, { tasks: () => tasksFor("coach") }] as Partial<TrackerOptions>[]) {
+    for (const over of [{ habit: () => null }, { tasks: () => tasksFor("coach") }] as Partial<TrackerFixture>[]) {
       const s = goalSetup({ over });
       s.person({ act: "drinking" });
       s.tick();

@@ -7,7 +7,7 @@
 // 닫힌 뒤 publish·spawn은 거절하고 post는 버린다. 줄은 늘 다음 차례에 돌기 시작한다(첫 일이 동기로 던져도 줄이 멈추지 않는다).
 // 발행은 publishTimeoutMs(기본 5초) 안에 끝나야 하고, 끝내기(노드 수명 신호)가 기다리는 발행을 끊는다(통로가 끊겨 답하지 않아도 멈추지 않는다).
 import { randomUUID } from "node:crypto";
-import type { Bus, Outcome, Subscription } from "./bus.js";
+import type { Bus, Outcome, ReadMode, Subscription } from "./bus.js";
 import { realClock, type Clock } from "./clock.js";
 import { Freshness } from "./fresh.js";
 import type { Envelope } from "./header.js";
@@ -35,7 +35,7 @@ function bounded<T>(p: Promise<T>, signal: AbortSignal, ms: number, what: string
 type Ctx<N extends TopicName> = { e: Envelope<N>; signal: AbortSignal; defer: () => Settle };
 type RunCtx = { signal: AbortSignal; defer: () => Settle };
 type Job = { run: (c: RunCtx) => Promise<void> | void; done?: Settle; latest?: TopicName };
-type Sub = { topic: TopicName; mode?: "latest" | "all"; cb: (body: never, ctx: Ctx<TopicName>) => void | Promise<void> };
+type Sub = { topic: TopicName; mode?: ReadMode; cb: (body: never, ctx: Ctx<TopicName>) => void | Promise<void> };
 
 export class BusNode {
   readonly name: NodeName;
@@ -75,7 +75,7 @@ export class BusNode {
     this.#fresh = new Freshness(() => this.#epoch);
   }
 
-  on<N extends TopicName>(topic: N, cb: (body: Body<N>, ctx: Ctx<N>) => void | Promise<void>, o: { mode?: "latest" | "all" } = {}): void {
+  on<N extends TopicName>(topic: N, cb: (body: Body<N>, ctx: Ctx<N>) => void | Promise<void>, o: { mode?: ReadMode } = {}): void {
     this.#subs.push({ topic, mode: o.mode, cb: cb as never });
   }
 

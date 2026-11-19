@@ -200,7 +200,7 @@ describe("인식·집 상태 토픽 모양(묶음 2)", () => {
       expect(ok(t, { goal: { ...g, prep: "done" } }), t).toBe(false);
       expect(ok(t, { goal: { ...g, jpeg_b64: "AA==" } }), t).toBe(false);
       expect(ok(t, { goal: g, extra: 1 }), t).toBe(false);
-      expect(TOPICS[t].from).toEqual(["brain", "act"]);
+      expect(TOPICS[t].from).toEqual(["goal"]);
     }
     expect(TOPICS["/brain/goal"].qos).toEqual({ kind: "state" });
     expect(TOPICS["/brain/goal_changes"].qos).toEqual({ kind: "reliable" });

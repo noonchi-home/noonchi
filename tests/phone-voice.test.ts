@@ -116,13 +116,13 @@ describe("startServer(BRAIN=1): 클로이드 질문을 폰 말로 답한다", ()
     llm = undefined;
   });
 
-  it("질문이 소리로 오고, 말한 답은 에이전트로 가지 않고 실행을 끝내며 반성 피드백으로 남는다. 답이 아닌 말은 피드백으로 남기지 않는다", async () => {
+  it.each([false, true])("질문에 말로 답하면 실행을 끝내고, 말 보관 설정(%s)에 따라 반성 피드백을 남긴다", async (keepHeard) => {
     fake = await startFakeOpenAI();
     llm = await startFakeLlm({ "TV 소리 좀 줄여 봐": ["알겠어요"] });
     pam = await startFakePamLlm({ predict: () => ({ observation: "컵이 식탁에 있음", reasoning: "치울지 묻는다", task_index: 1 }) });
     srv = await startServer({
       env: { HUB: "memory", PORT: "0", RUNTIME_DIR: runtimeWithAsks(), PHONE_PORT: "0", PHONE_HOST: "127.0.0.1",
-        BRAIN: "1", VLM_BASE_URL: `${fake.url}/v1`, ...pamLlmEnv(pam), ...llm.env },
+        KEEP_HEARD_TEXT: keepHeard ? "1" : "0", BRAIN: "1", VLM_BASE_URL: `${fake.url}/v1`, ...pamLlmEnv(pam), ...llm.env },
       brain: { detector: new ScriptedDetector(() => [det("cup", 0.9, [1, 1, 2, 1], 41)]) }, log: () => {},
     });
     const phoneUrl = new URL(srv.phoneUrls[0]!);
@@ -154,8 +154,10 @@ describe("startServer(BRAIN=1): 클로이드 질문을 폰 말로 답한다", ()
     expect((await replies(1))[0]).toMatchObject({ text: "알겠어요" });
     ws.send(JSON.stringify({ type: "say", text: "그냥 그대로 둬", at: heardAtOf(box) }));
     expect((await replies(2))[1]).toMatchObject({ text: "알겠어요. 그대로 둘게요" });
+    // 답과 기록은 서로 다른 구독자에게 간다. 기록 노드가 그 답까지 처리한 뒤 실제 DB를 읽는다.
+    expect(await srv.settle(2000)).toBe(true);
     const rows = srv.history.list({ kinds: ["feedback", "execution"] });
-    expect(rows.filter((r) => r.kind === "feedback").map((r) => r.text)).toEqual(["그냥 그대로 둬 · 질문: 컵을 치울까요?"]);
+    expect(rows.filter((r) => r.kind === "feedback").map((r) => r.text)).toEqual([`${keepHeard ? "그냥 그대로 둬" : "그대로 둬요"} · 질문: 컵을 치울까요?`]);
     expect(rows.some((r) => r.kind === "execution" && r.subject === ask.id && r.text === "완료: 그대로 둬요")).toBe(true);
     expect(box.some((m) => m.type === "command_clear" && m.id === ask.id)).toBe(true);
   }, 30_000);

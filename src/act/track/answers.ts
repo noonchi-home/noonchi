@@ -75,7 +75,7 @@ export class Answers extends Part {
         steps.finish(r, "done", EXEC_TEXT.answered(picked.label));
         // 묻기 답 → 말 부탁(「치워 주세요」면 컵 치우기를 말 부탁 길로 시작한다, 「그대로 둬요」는 하지 않는다)
         const task = r.decision.action === ASK_ACTION ? ASK_FOLLOW[picked.id] : undefined;
-        if (task) core.start.request({ task, heard: picked.label, atMs: now, afterSeq: this.o.sentSeq?.() ?? 0, via: "answer" });
+        if (task) core.start.request({ task, heard: picked.label, atMs: now, afterSeq: this.o.brain.sentSeq?.() ?? 0, via: "answer" });
       } else steps.advance(r);
     } else steps.advance(r);
     return true;
@@ -90,7 +90,9 @@ export class Answers extends Part {
     if (core.stopped) return null;
     const open = core.open();
     // 미리 세운 목표(미리 만든 계획·만드는 중 포함)에 「그만」: 목표를 버린다. 남겨 두면 사람이 떠날 때 그 계획을 실행한다(goal.ts)
-    const deferred = matchChoice(text, [STOP]) !== null && core.manager.cancel();
+    const stopping = matchChoice(text, [STOP]) !== null;
+    const awaiting = stopping && core.start.cancelSpeech();
+    const deferred = (stopping && core.manager.cancel()) || awaiting;
     const goal = !!core.goal.current() && matchChoice(text, [STOP]) !== null;
     if (goal) core.goal.drop("stop");
     // 명령이 없는 단계(기다리기·기기)와 만드는 중인 계획에도 「그만」은 받는다

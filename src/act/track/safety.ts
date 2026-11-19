@@ -152,7 +152,7 @@ export class SafetyTracker extends Part {
    *  지금 상태(허브·실제 가전 신호)가 켜짐이거나 그 근거보다 새 카메라 명시 값이 켜짐이면 null. */
   private cycleEnded(deviceId: string): CycleEnd | null {
     const c = this.#cycles.get(deviceId);
-    const d = this.o.world().devices.find((x) => x.id === deviceId);
+    const d = this.o.state.view().devices.find((x) => x.id === deviceId);
     if (!c || !d || d.status === null || onNow(d)) return null;
     for (const k of CYCLE_VALUES) {
       let switched: number | null = null;
@@ -223,7 +223,7 @@ export class SafetyTracker extends Part {
       this.#released.delete(deviceId);
       return false;
     }
-    const d = this.o.world().devices.find((x) => x.id === deviceId);
+    const d = this.o.state.view().devices.find((x) => x.id === deviceId);
     const on = onSeenAfter(d, rel.evidenceAt, rel.evidenceAt + this.cfg.rearmMs);
     if (on === null) return false;
     this.#released.delete(deviceId);
@@ -252,7 +252,7 @@ export class SafetyTracker extends Part {
   /** 줄에서 기다리는 끄기 안내를 붙은 폰에 소리로만 알리고(명령 줄은 그대로) 그 시각을 남긴다. */
   private tellWaiting(deviceId: string): void {
     const name = this.core.handLabel(deviceId);
-    this.o.sayAloud?.(CAUTION_TEXT.rearmed(name));
+    this.o.phone.sayAloud?.(CAUTION_TEXT.rearmed(name));
     this.#offToldAt = this.clock.now();
     this.#offToldId = deviceId;
     this.#offToldWall = { device: name, atMs: Date.now() };
@@ -277,7 +277,7 @@ export class SafetyTracker extends Part {
   handOver(r: Run): void {
     if (this.core.stopped) return;
     for (const id of [...this.#hot]) this.releaseIfOff(id);
-    const devices = this.o.world().devices;
+    const devices = this.o.state.view().devices;
     for (const id of this.#hot) this.queueOff(r.plan.view.id, id, offNow(devices.find((d) => d.id === id)));
     this.#hot.clear();
     this.nextReminder();
@@ -299,7 +299,7 @@ export class SafetyTracker extends Part {
       off.at = now;
       this.core.robot.commands.show(off.sent);
     } else if (r?.state === "running" && !r.asking && step && ((r.sent && step.kind === "do" && step.hand?.to === "off" && step.hand.deviceId === deviceId)
-      || selfStopWait(step, this.o.handDevices?.() ?? []) === deviceId)) {
+      || selfStopWait(step, this.o.appliances.handDevices?.() ?? []) === deviceId)) {
       // 끄기 do는 그 명령 글을, 꺼짐 기다리기(명령이 없는 단계)는 그 단계 id로 새 명령을 띄운다(답 단추 없음)
       Object.assign(r, { spokeAt: now, helped: true, quietOn: false });
       r.sent = r.sent
@@ -316,7 +316,7 @@ export class SafetyTracker extends Part {
   offAsk(r: Run, step: AgentStep, now: number): void {
     const id = this.offTarget(step);
     if (!id || !this.#hot.has(id) || r.asking || (!r.sent && step.kind === "do") || r.offAsked === r.gen || now - r.stepAt < this.cfg.showAskMs) return;
-    if (!offNow(this.o.world().devices.find((d) => d.id === id))) return;
+    if (!offNow(this.o.state.view().devices.find((d) => d.id === id))) return;
     r.offAsked = r.gen;
     this.askToShow(id);
   }
@@ -324,7 +324,7 @@ export class SafetyTracker extends Part {
   /** 그 단계가 끄는 가전: 손 조작 끄기 do의 그 가전, 저절로 꺼지는 가전의 꺼짐 기다리기(selfStopWait)의 그 가전. 아니면 null. */
   private offTarget(step: AgentStep | undefined): string | null {
     if (!step) return null;
-    return selfStopWait(step, this.o.handDevices?.() ?? []) ?? (step.kind === "do" && step.hand?.to === "off" ? step.hand.deviceId : null);
+    return selfStopWait(step, this.o.appliances.handDevices?.() ?? []) ?? (step.kind === "do" && step.hand?.to === "off" ? step.hand.deviceId : null);
   }
 
   /** 가전을 끄는 단계인가(그 명령·부탁은 안전 등급): 끄는 단계(offTarget: 손 끄기 do·꺼짐 기다리기), 또는 끝나는 조건이 가전 꺼짐·멈춤인 단계. */
@@ -347,7 +347,7 @@ export class SafetyTracker extends Part {
     const id = this.offTarget(step);
     const cycle = id ? this.#cycles.get(id) : undefined;
     if (!id || !cycle || !r.onAt.has(id) || this.#hot.has(id)) return false;
-    const d = this.o.world().devices.find((x) => x.id === id);
+    const d = this.o.state.view().devices.find((x) => x.id === id);
     const rec = r.ends.get(id);
     const end = rec?.cycle === cycle.cycle ? rec : undefined;
     const since = end?.seenAt ?? cycle.onAt;

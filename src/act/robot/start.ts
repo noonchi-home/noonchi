@@ -9,7 +9,8 @@ import { APPROVAL_TEXT, CHECK_TEXT, EXEC_TEXT } from "../labels.js";
 import { quietLabels } from "../lessons.js";
 import { TASK_NAMES, carriesTarget, followedId, planIdOf, planObjectsOf, putAway, taskOf, clearsAway, touchTarget } from "../tasks.js";
 import { CHANGE_TEXT, saidIn } from "../../world/labels.js";
-import { decisionWorld, isoWithOffset } from "../../brain/index.js";
+import { decisionWorld } from "../../world/index.js";
+import { isoWithOffset } from "../../shared/time.js";
 import type { SpeechRequest } from "../track/tracker.js";
 import { emergencyOf } from "../mode.js";
 import { Part, clsOf, type Job, type Run } from "../track/core.js";
@@ -27,6 +28,23 @@ export class Starter extends Part {
   /** 마지막 말 부탁을 받은 때까지 보낸 PAM 요청 번호(afterSeq). 말 부탁의 대상을 찾는 중이거나 계획을 만드는 중이거나 열려 있는 동안 이 번호 이하 PAM 판단은 쓰지 않는다. */
   private lastSpeechSeq = 0;
   private speechN = 0;
+  private speechWaiting: string | null = null;
+  cancelSpeech(): boolean {
+    if (!this.speechWaiting) return false;
+    this.speechWaiting = null;
+    this.o.manager.cancelSpeech?.();
+    return true;
+  }
+
+  order(d: DecisionRecord, gate: "take" | "defer" | "request" | "dock" | "hands", resumed: boolean, pre?: CheckResult): void {
+    if (d.source === "speech") {
+      if (this.speechWaiting !== d.id) return;
+      if (gate !== "defer") this.speechWaiting = null;
+    }
+    if (gate === "take") this.onDecision(d, resumed, pre);
+    else this.note(d, gate === "dock" ? EXEC_TEXT.docking : gate === "request" ? EXEC_TEXT.requestWait
+      : this.context().emergency ? EXEC_TEXT.safetyWait : EXEC_TEXT.handling);
+  }
   /** 말 부탁을 판단 기록 꼴(id say-<번호>, source speech, seq 0, 들은 말 한 줄)로 만들어 판단 받기 길(onDecision)에 넣는다. */
   request(r: SpeechRequest): void {
     const core = this.core;
@@ -35,13 +53,17 @@ export class Starter extends Part {
     const d: DecisionRecord = {
       id: `say-${++this.speechN}`, seq: 0, atMs: r.atMs, textSent: CHANGE_TEXT.heard(r.heard), finalTime: isoWithOffset(r.atMs, this.o.offsetMinutes ?? 540),
       status: "valid", prediction: { observation: EXEC_TEXT.spoken, reasoning: EXEC_TEXT.spoken, task_index: tasks.indexOf(r.task) }, action: r.task,
-      memoryVersion: 0, tasks, world: decisionWorld(this.o.world()), source: "speech", afterSeq: r.afterSeq, ...(r.via ? { via: r.via } : {}),
+      memoryVersion: 0, tasks, world: decisionWorld(this.o.state.view()), source: "speech", afterSeq: r.afterSeq, ...(r.via ? { via: r.via } : {}),
     };
-    this.o.onSpeech?.(d);
-    this.onDecision(d);
+    this.o.brain.onSpeech?.(d);
+    if (this.o.manager.offerSpeech) {
+      this.lastSpeechSeq = d.afterSeq ?? 0;
+      this.speechWaiting = d.id;
+      this.o.manager.offerSpeech(d);
+    } else this.onDecision(d);
   }
 
-  private context() {
+  context() {
     const c = this.core;
     const r = c.open();
     return {
@@ -49,7 +71,7 @@ export class Starter extends Part {
       handling: r && c.touching(r) ? c.stepOf(r)?.id ?? null : null,
       requested: r?.decision.source === "speech" || c.planning?.decision.source === "speech" || c.finding?.decision.source === "speech",
       docking: !!c.docking,
-      emergency: emergencyOf({ world: this.o.world(), offNotices: c.safety.offTrack().notices }),
+      emergency: emergencyOf({ world: this.o.state.view(), offNotices: c.safety.offTrack().notices }),
     };
   }
 
@@ -73,7 +95,7 @@ export class Starter extends Part {
       // 받은 가장 새 판단 번호: 기록만 한 판단(같은 행동 등)보다 먼저 보낸 판단이 늦게 와도 쓰지 않는다
       this.lastSeq = d.seq;
       // 말 부탁을 받은 때부터(그 대상을 계획 전에 찾는 중이거나 계획을 만드는 중이어도) 그 전에 보낸 요청의 PAM 판단은 쓰지 않는다
-      const speech = core.planning?.decision.source === "speech" || core.open()?.decision.source === "speech"
+      const speech = this.speechWaiting !== null || core.planning?.decision.source === "speech" || core.open()?.decision.source === "speech"
         || core.finding?.first.source === "speech" || core.finding?.decision.source === "speech";
       if (speech && d.seq <= this.lastSpeechSeq) return this.note(d, EXEC_TEXT.late);
     }
@@ -110,7 +132,7 @@ export class Starter extends Part {
     if (this.kept(d)) {
       core.emit(planIdOf(d.id), "decided");
       core.emit(planIdOf(d.id), "failed", CHECK_TEXT.kept);
-      this.o.onRefused?.(planIdOf(d.id));
+      this.o.brain.onRefused?.(planIdOf(d.id));
       return;
     }
     const pre = prechecked ?? this.o.precheck?.(d) ?? { ok: true };
@@ -121,7 +143,7 @@ export class Starter extends Part {
       core.emit(planIdOf(d.id), "failed", pre.text);
       // 분명한 까닭이면 판단이 그 화살표를 기다리지 않게 알린다(15초 동안 같은 막음을 되풀이하지 않게). 싱크대 안이어도 찾을 후보 자리가 남았으면
       // (확정 전 새 컵일 수 있다) 모름이라 알리지 않는다
-      if (SETTLED.has(pre.reason) && !(pre.reason === "in_sink" && core.finder.candidate(d))) this.o.onRefused?.(planIdOf(d.id));
+      if (SETTLED.has(pre.reason) && !(pre.reason === "in_sink" && core.finder.candidate(d))) this.o.brain.onRefused?.(planIdOf(d.id));
       return;
     }
     const now = this.clock.now();
@@ -155,7 +177,7 @@ export class Starter extends Part {
    *  미룬 적이 있으면 표시해 둔다(풀린 뒤 첫 명령을 폰 대화·승인 대기 동안 미룬다). 미룬 지 holdMs가 지나면 닫는다. 미루거나 닫았으면 true. */
   private userBusy(r: Run): boolean {
     const cls = touchTarget(r.decision.action);
-    const ids = cls ? planObjectsOf(r.plan.view, this.o.world(), cls, clearsAway(taskOf(r.decision.action), cls)).map((id) => r.alias.get(id) ?? id) : [];
+    const ids = cls ? planObjectsOf(r.plan.view, this.o.state.view(), cls, clearsAway(taskOf(r.decision.action), cls)).map((id) => r.alias.get(id) ?? id) : [];
     const used = ids.length ? ids.some((id) => this.core.use.busy({ cls, id })) : this.core.use.busy({ cls, id: null });
     if (!used) {
       r.usedAt = null;
@@ -185,7 +207,7 @@ export class Starter extends Part {
     const facets = spec?.look ?? [];
     if (!spec?.target || !facets.length) return false;
     const then = new Map(d.world.objects.map((o) => [o.id, o]));
-    return this.o.world().objects.some((o) => o.cls === spec.target && o.status !== "gone" && facets.some((f) => {
+    return this.o.state.view().objects.some((o) => o.cls === spec.target && o.status !== "gone" && facets.some((f) => {
       if (f === "contents" && held?.has(o.id)) return false;
       const before = then.get(o.id);
       return (o.closer_rev?.[f] ?? 0) !== (before?.closer_rev?.[f] ?? 0) && before?.facts[f]?.value !== o.facts[f]?.value;
@@ -197,7 +219,7 @@ export class Starter extends Part {
     const core = this.core;
     const spec = taskOf(d.action);
     if (!spec?.topLook || !spec.target || !core.kept.size) return false;
-    const world = this.o.world();
+    const world = this.o.state.view();
     for (const [id, at] of core.kept) if (world.person.visible && (world.person.since_ms ?? 0) > at) core.kept.delete(id);
     const kept = new Set([...core.kept.keys()].map((id) => followedId(world, id)));
     const left = world.objects.filter((o) => o.cls === spec.target && o.status === "present" && !putAway(o, core.steps.placed()));
@@ -207,7 +229,7 @@ export class Starter extends Part {
   /** 사람이 떠나 목표가 판단을 부른 뒤 온, 떠나기 전 관찰의 다른 행동 판단인가(goal.ts beforeLeave). 사람이 말로 한 부탁과 비상은 아니다. */
   private beforeLeave(d: DecisionRecord): boolean {
     return this.core.goal.beforeLeave(d) && !saidIn(d.textSent).length
-      && !emergencyOf({ world: this.o.world(), offNotices: this.core.safety.offTrack().notices });
+      && !emergencyOf({ world: this.o.state.view(), offNotices: this.core.safety.offTrack().notices });
   }
 
   /** 「가까이 본 뒤 다시 판단」으로 닫은 계획은 같은 행동 다시 계획 간격(planGapMs)에 넣지 않는다: 다음 판단이 새 사실로 바로 다시 고른다.
@@ -247,7 +269,7 @@ export class Starter extends Part {
       // 계획 검사(PlanDraft)가 버린 까닭(첫 틀린 단계와 이유)을 실행 기록과 서버 로그에 남기고, 같은 행동 다시 계획 간격 없이 다음 판단에서 바로 다시 짠다
       // (2026-11-18 wide-glass q3: 까닭 없이 버리고 「방금 계획한 일이라 잠시 뒤 다시 봄」으로 12초를 기다렸다)
       this.ungap(d, job.at);
-      this.o.log?.(`[실행 추적] ${planIdOf(d.id)} 계획 버림(${d.action}): ${r.error}`);
+      this.o.events.log?.(`[실행 추적] ${planIdOf(d.id)} 계획 버림(${d.action}): ${r.error}`);
       return core.emit(planIdOf(d.id), "failed", EXEC_TEXT.badPlan, r.error);
     }
     // 만드는 사이 진행 중 계획이 기다리기·기기 단계에 들어갔으면 바꾸지 않는다(그 판단은 그 단계 전 관찰이다)
@@ -275,7 +297,7 @@ export class Starter extends Part {
     // 새 계획이 있으면 PlanHub.onDecision이 지금 계획을 취소로 닫고 supersedes를 단다
     if (open) core.steps.finish(open, "failed", EXEC_TEXT.superseded, null);
     const now = this.clock.now();
-    const world = this.o.world();
+    const world = this.o.state.view();
     const ids = new Set<string>();
     for (const s of r.plan.steps) {
       if (s.object) ids.add(s.object);
@@ -286,7 +308,7 @@ export class Starter extends Part {
     const others = new Map([...ids].map((id) => [id, new Set(world.objects.filter((o) => o.cls === clsOf(world, id) && o.id !== id).map((o) => o.id))]));
     const run: Run = {
       plan: r.plan, decision: d, state: "decided", since: now, at: -1, stepAt: now, spokeAt: now, visionAt: now, sent: null,
-      asking: null, askAt: now, watch: null, others, alias: new Map([...ids].map((id) => [id, id])), carried: new Set(), placeAt: (id) => (id ? this.o.floor().objects.get(id)?.position ?? null : null), deadline: now, again: false, device: "idle", gen: 0,
+      asking: null, askAt: now, watch: null, others, alias: new Map([...ids].map((id) => [id, id])), carried: new Set(), placeAt: (id) => (id ? this.o.layout.floor().objects.get(id)?.position ?? null : null), deadline: now, again: false, device: "idle", gen: 0,
       looks: 0, lookAt: Number.NEGATIVE_INFINITY, stepEnd: null, gapAt: job.at, onAt: new Map(), ends: new Map(), offAsked: -1, deferred: false, phoneWait: false, phone: false,
       strays: 0, strayAt: Number.NEGATIVE_INFINITY, strayNear: null, told: null, helped: false,
       quiet: taskOf(r.plan.task)?.coach ? quietLabels(this.o.lessons?.get(r.plan.task) ?? null) : new Set(), quietOn: false, outcomes: [], hold: null, top: null, window: null, heldIds: new Set(), busyAt: null, usedAt: null,
@@ -316,7 +338,7 @@ export class Starter extends Part {
     }
     // 미리 세운 목표 실행은 첫 명령 전에 안전(쓰러짐 의심·끄기 안내)을 다시 보고, 비상이면 시작하지 않는다
     // (받아 쓰던 미리 만들기를 기다리는 동안은 목표를 떼어 목표의 안전 버림이 보지 않는다, Codex 59447ec P1)
-    if (r.goal !== null && emergencyOf({ world: this.o.world(), offNotices: safety.offTrack().notices })) return steps.finish(r, "failed", EXEC_TEXT.goalSafety, "cancelled");
+    if (r.goal !== null && emergencyOf({ world: this.o.state.view(), offNotices: safety.offTrack().notices })) return steps.finish(r, "failed", EXEC_TEXT.goalSafety, "cancelled");
     // 사람이 계획 대상을 쓰는 중이면 사람이 사라질 때까지 첫 명령·찾기·가까이 보기를 미룬다(holdMs 넘으면 닫음, src/manage/use.ts)
     if (this.userBusy(r)) return;
     const c = this.o.check(r.decision, r.plan.view, this.startSince(r));
@@ -364,7 +386,7 @@ export class Starter extends Part {
     this.core.contents.release(r);
     this.core.finder.release(r);
     // 보류·찾기·쓰는 중 기다림에서 풀린 계획은 폰 대화·승인 대기가 없을 때만 첫 명령을 보낸다(다른 대화를 덮지 않는다). 미룬 지 holdMs가 지나면 닫는다
-    if ((r.heldIds.size > 0 || r.findHeld || r.useHeld) && ((this.o.talking?.() ?? false) || (this.o.approvalsWaiting?.() ?? false))) {
+    if ((r.heldIds.size > 0 || r.findHeld || r.useHeld) && ((this.o.phone.talking?.() ?? false) || (this.o.phone.approvalsWaiting?.() ?? false))) {
       const now = this.clock.now();
       this.core.contents.clearPeek(r);
       this.core.finder.clearFind(r);
@@ -375,7 +397,7 @@ export class Starter extends Part {
     }
     r.busyAt = null;
     const why = this.core.approval.need(r);
-    r.phone = needsPhone(r.plan, why, this.o.handDevices?.() ?? []);
+    r.phone = needsPhone(r.plan, why, this.o.appliances.handDevices?.() ?? []);
     // 끄기 안내가 남아 있으면 폰이 필요한 계획은 첫 명령(승인 질문 포함)을 미룬다(한 번 기록): 안내가 다 풀리면 nextReminder가 다시 부른다.
     // 폰이 필요 없는 가전 계획은 그대로 시작한다
     if (r.phone && safety.offPending()) {
@@ -411,7 +433,7 @@ export class Starter extends Part {
   private goalTarget(r: Run): string | null {
     const spec = taskOf(r.plan.task);
     if (r.leftAt === null || !spec?.target) return null;
-    return planObjectsOf(r.plan.view, this.o.world(), spec.target, carriesTarget(spec))[0] ?? null;
+    return planObjectsOf(r.plan.view, this.o.state.view(), spec.target, carriesTarget(spec))[0] ?? null;
   }
 
   /** 실행 전 검사 기준: 목표 실행이면 떠나기 직전 GOAL_DEFAULTS.leaveSeenMs 앞(seenSince). 첫 단계가 그 대상을 다루면(집기로 시작) 떠난 때(leftAt):
@@ -428,7 +450,7 @@ export class Starter extends Part {
     const leftAt = r.leftAt;
     const id = this.goalTarget(r);
     if (leftAt === null || !id) return;
-    const o = this.o.world().objects.find((x) => x.id === id);
+    const o = this.o.state.view().objects.find((x) => x.id === id);
     if (o && o.last_seen_ms < leftAt && !touches(r.plan.steps[0], id)) r.verify = { objectId: id, since: leftAt, at: null };
   }
 
@@ -464,7 +486,7 @@ export class Starter extends Part {
 
   /** 판본이 맞는 실제 폰이 붙어 있는가(모르면 붙어 있다고 본다). */
   phoneOk(): boolean {
-    return this.o.phoneReady?.() ?? true;
+    return this.o.phone.ready?.() ?? true;
   }
 
   /** 계획을 만들지 않는 판단(대기·실패·같은 행동·늦은 답·잠시 뒤)은 그 판단 줄에 기록만 한다. */

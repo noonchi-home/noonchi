@@ -16,7 +16,7 @@ import type { PlanView } from "../contract/plan.js";
 import type { SceneInput, VlmMissing, WorldChange, WorldChangeKind, WorldChangesMsg, WorldCloserMsg, WorldInput, WorldStateMsg, WorldView, YoloMissing } from "../contract/world.js";
 import { CLASSES, SCENE_STATES, type DetLabel } from "../world/vocab.js";
 
-export const NODES = ["phone", "perception", "world", "brain", "act", "devices", "recorder"] as const;
+export const NODES = ["phone", "perception", "world", "brain", "act", "goal", "manager", "devices", "recorder"] as const;
 export type NodeName = (typeof NODES)[number];
 export type Qos = { kind: "sensor"; depth: number; record?: boolean } | { kind: "state" } | { kind: "reliable" };
 /** 낡음을 보는 기준: 근거 시각(observed_ms 칸), 상태 판본(rev 칸), 발행 시각(머리 stamp), 없음. */
@@ -159,7 +159,7 @@ const phoneProgress = z.discriminatedUnion("kind", [
     z.strictObject({ kind: z.literal("command"), id, step: id }), z.strictObject({ kind: z.literal("none") }),
   ]).optional() }),
 ]);
-const progressResult = z.strictObject({ req: id, status: z.enum(["answer", "stale", "passed"]), reply: z.string().optional() });
+const progressResult = z.strictObject({ req: id, status: z.enum(["answer", "stale", "passed"]), reply: z.string().optional(), choice_id: id.optional() });
 const planView = z.custom<PlanView>((v) => isObj(v) && typeof v.id === "string" && Array.isArray(v.steps));
 const xz = z.tuple([at, at]);
 const planTarget = z.strictObject({ objectId: id.optional(), deviceId: id.optional(), room: id.optional(), position: xz.optional() });
@@ -190,6 +190,7 @@ const precheck = z.discriminatedUnion("ok", [
   z.strictObject({ ok: z.literal(false), reason: z.enum(Object.keys(CHECK_TEXT) as [keyof typeof CHECK_TEXT, ...(keyof typeof CHECK_TEXT)[]]),
     text: id, object: id.optional(), carried: z.literal(true).optional() }),
 ]);
+const checkedDecision = z.strictObject({ decision: decisionRecord, rev, check: precheck, assist: z.enum(["noonchi", "coach"]), at_ms: at });
 const planAhead = z.strictObject({ trigger: z.string(), on: maybeText, object: id,
   stand: z.custom<WorldObject>((v) => isObj(v) && typeof v.id === "string" && typeof v.cls === "string" && isObj(v.facts)).optional() });
 const agentStep = z.strictObject({
@@ -206,7 +207,7 @@ const planResult = z.discriminatedUnion("ok", [
 ]);
 const actLog = z.discriminatedUnion("type", [
   z.strictObject({ type: z.literal("execution"), at_ms: at, plan_id: id, state: z.enum(["decided", "planned", "running", "verifying", "done", "failed"]), text: z.string(), reason: z.string().optional() }),
-  z.strictObject({ type: z.literal("feedback"), at_ms: at, subject: id, text: z.string(), data: z.strictObject({ choice: id, via: z.enum(["voice", "button"]) }) }),
+  z.strictObject({ type: z.literal("feedback"), at_ms: at, subject: id, text: z.string(), data: z.strictObject({ choice: id, via: z.enum(["voice", "button"]), observed_ms: at.optional() }) }),
   z.strictObject({ type: z.literal("plan"), plan: wirePlan.nullable() }),
 ]);
 const actStatus = z.strictObject({ mode: z.enum(["noonchi", "coach"]), hold: z.boolean(), text: z.string().nullable(), safety: z.boolean(),
@@ -218,6 +219,8 @@ const pendingGoal = z.strictObject({
   text: z.string().nullable(), armed_ms: at, ready_ms: at.nullable(), gone_ms: at.nullable(), fired_ms: at.nullable(), plan: planView.nullable(),
   error: z.string().min(1).optional(),
 });
+const pamLink = z.strictObject({ type: z.literal("link"), target: z.literal("pam"), up: z.boolean(), at_ms: at, text: z.string() });
+const thoughtMessage = z.strictObject({ id, decision: id, at_ms: at, text: z.string() });
 const brainGoal = z.strictObject({ goal: pendingGoal });
 const personState = z.strictObject({ type: z.literal("person"), state: id, name: id, source: z.enum(["decision", "world"]), decision_id: id.nullable(), since_ms: at });
 const robotState = z.strictObject({ state: z.enum(["idle", "observe", "move", "run", "return", "recover"]), since_ms: at,
@@ -261,16 +264,28 @@ export type TopicBodiesSame = [
 ];
 
 export const TOPICS = {
-  "/brain/person": { qos: { kind: "state" }, body: personState, key: one, order: "stamp", from: ["act", "brain"] },
-  "/brain/person_changes": { qos: { kind: "reliable" }, body: personState, key: one, order: null, from: ["act", "brain"] },
-  "/goal/state": { qos: { kind: "state" }, body: goalState, key: one, order: "stamp", from: ["act"] },
-  "/goal/changes": { qos: { kind: "reliable" }, body: goalState, key: one, order: null, from: ["act"] },
+  "/brain/person": { qos: { kind: "state" }, body: personState, key: one, order: "stamp", from: ["brain"] },
+  "/brain/person_changes": { qos: { kind: "reliable" }, body: personState, key: one, order: null, from: ["brain"] },
+  "/brain/nudge": { qos: { kind: "reliable" }, body: z.strictObject({ rev }), key: one, order: null, from: ["goal"] },
+  "/goal/update": { qos: { kind: "reliable" }, body: z.strictObject({ rev }), key: one, order: null, from: ["act"] },
+  "/act/work": { qos: { kind: "reliable" }, body: z.strictObject({
+    at_ms: at, goal: pendingGoal.pick({ id: true, action: true, status: true, prep: true, gone_ms: true, reason: true }).nullable(), plan: z.strictObject({ goal: id.nullable(), status: wirePlan.shape.status }).nullable(),
+    active: z.boolean(), requested: z.boolean(), emergency: z.boolean(), handling: id.nullable(), activeAction: maybeText, docking: z.boolean(),
+    mode: z.enum(["noonchi","coach"]), tasks: z.array(id),
+  }), key: one, order: null, from: ["act"] },
+  "/manager/request": { qos: { kind: "reliable" }, body: z.discriminatedUnion("kind", [
+    z.strictObject({ kind: z.literal("speech"), input: checkedDecision }), z.strictObject({ kind: z.literal("cancel") }),
+  ]), key: one, order: null, from: ["act"] },
+  "/manager/order": { qos: { kind: "reliable" }, body: z.strictObject({ input: checkedDecision,
+    gate: z.enum(["take","defer","request","dock","hands"]), resumed: z.boolean() }), key: one, order: null, from: ["manager"] },
+  "/goal/state": { qos: { kind: "state" }, body: goalState, key: one, order: "stamp", from: ["goal"] },
+  "/goal/changes": { qos: { kind: "reliable" }, body: goalState, key: one, order: null, from: ["goal"] },
   "/robot/state": { qos: { kind: "state" }, body: robotState, key: one, order: "stamp", from: ["act"] },
   "/robot/changes": { qos: { kind: "reliable" }, body: robotState, key: one, order: null, from: ["act"] },
   "/safety/state": { qos: { kind: "state" }, body: safetyState, key: one, order: "stamp", from: ["act"] },
   "/safety/changes": { qos: { kind: "reliable" }, body: safetyState, key: one, order: null, from: ["act"] },
-  "/manager/state": { qos: { kind: "state" }, body: managerState, key: one, order: "stamp", from: ["act"] },
-  "/manager/changes": { qos: { kind: "reliable" }, body: managerState, key: one, order: null, from: ["act"] },
+  "/manager/state": { qos: { kind: "state" }, body: managerState, key: one, order: "stamp", from: ["manager"] },
+  "/manager/changes": { qos: { kind: "reliable" }, body: managerState, key: one, order: null, from: ["manager"] },
   "/perception/frame": { qos: { kind: "sensor", depth: 4 }, body: frame, key: one, order: "observed_ms", from: ["phone"], photo: "jpeg_b64" },
   "/phone/pose": { qos: { kind: "sensor", depth: 600, record: true }, body: observed, key: one, order: "observed_ms", from: ["phone"] },
   "/perception/detections": { qos: { kind: "sensor", depth: 600, record: true }, body: seen, key: one, order: "observed_ms", from: ["perception"] },
@@ -284,20 +299,20 @@ export const TOPICS = {
   "/world/state": { qos: { kind: "state" }, body: worldState, key: one, order: "rev", from: ["world"] },
   "/world/changes": { qos: { kind: "reliable" }, body: worldChanges, key: one, order: "rev", from: ["world"] },
   "/world/closer": { qos: { kind: "reliable" }, body: worldCloser, key: by("look"), order: null, from: ["world"] },
-  "/brain/decision": { qos: { kind: "reliable" }, body: z.strictObject({ decision: decisionRecord, rev, check: precheck, assist: z.enum(["noonchi", "coach"]), at_ms: at }), key: one, order: null, from: ["brain"] },
-  "/brain/plan_request": { qos: { kind: "reliable" }, body: z.strictObject({ req: id, decision: decisionRecord, ahead: planAhead.optional(), until: at }), key: by("req"), order: null, from: ["act"] },
+  "/brain/decision": { qos: { kind: "reliable" }, body: checkedDecision, key: one, order: null, from: ["brain"] },
+  "/brain/plan_request": { qos: { kind: "reliable" }, body: z.strictObject({ req: id, decision: decisionRecord, ahead: planAhead.optional(), until: at }), key: by("req"), order: null, from: ["act", "goal"] },
   "/brain/plan": { qos: { kind: "reliable" }, body: z.strictObject({ req: id, decision_id: id, result: planResult }), key: by("req"), order: null, from: ["brain"] },
   // 미리 세운 목표(묶음 4 전에는 실행 추적이 낸다): 최신 보기(늦게 붙은 노드·대시보드)와 전환 하나하나(녹화·재생, STATE는 가운데 값을 합칠 수 있다)
-  "/brain/goal": { qos: { kind: "state" }, body: brainGoal, key: one, order: "stamp", from: ["brain", "act"] },
-  "/brain/goal_changes": { qos: { kind: "reliable" }, body: brainGoal, key: goalKey, order: null, from: ["brain", "act"] },
-  "/brain/thought": { qos: { kind: "reliable" }, body: obj, key: one, order: "stamp", from: ["brain"] },
-  "/brain/link": { qos: { kind: "state" }, body: obj, key: one, order: "stamp", from: ["brain"] },
-  "/brain/cancel": { qos: { kind: "reliable" }, body: z.strictObject({ req: id, decision_id: id }), key: by("req"), order: null, from: ["act"] },
+  "/brain/goal": { qos: { kind: "state" }, body: brainGoal, key: one, order: "stamp", from: ["goal"] },
+  "/brain/goal_changes": { qos: { kind: "reliable" }, body: brainGoal, key: goalKey, order: null, from: ["goal"] },
+  "/brain/thought": { qos: { kind: "reliable" }, body: z.strictObject({ home: id, type: z.literal("thought"), messages: z.array(thoughtMessage) }), key: one, order: "stamp", from: ["brain"] },
+  "/brain/link_changes": { qos: { kind: "reliable" }, body: pamLink, key: one, order: "stamp", from: ["brain"] },
+  "/brain/link": { qos: { kind: "state" }, body: pamLink, key: one, order: "stamp", from: ["brain"] },
+  "/brain/cancel": { qos: { kind: "reliable" }, body: z.strictObject({ req: id, decision_id: id }), key: by("req"), order: null, from: ["act", "goal"] },
   "/act/plan": { qos: { kind: "state" }, body: z.strictObject({ plan: wirePlan.nullable() }), key: one, order: "stamp", from: ["act"] },
-  "/act/status_changes": { qos: { kind: "reliable" }, body: actStatus, key: one, order: "stamp", from: ["act"] },
   "/act/status": { qos: { kind: "state" }, body: actStatus, key: one, order: "stamp", from: ["act"] },
   "/act/log": { qos: { kind: "reliable" }, body: actLog, key: one, order: "stamp", from: ["act"] },
-  "/act/phone_changes": { qos: { kind: "reliable" }, body: phoneCommand, key: one, order: "stamp", from: ["act"] },
+  "/act/phone_changes": { qos: { kind: "reliable" }, body: z.union([phoneCommand, z.strictObject({ plan: wirePlan.nullable() }), z.strictObject({ status: actStatus })]), key: one, order: "stamp", from: ["act"] },
   "/act/phone_command": { qos: { kind: "state" }, body: phoneCommand, key: one, order: "stamp", from: ["act"] },
   "/phone/claim": { qos: { kind: "state" }, body: phoneClaim, key: by("claim_id"), order: "stamp", from: ["act", "phone"] },
   "/phone/owner": { qos: { kind: "state" }, body: phoneOwner, key: one, order: "stamp", from: ["phone"] },

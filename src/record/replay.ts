@@ -3,6 +3,8 @@
 // (타이머마다 장벽), 발행한 뒤 다시 장벽을 지난다. 통로의 다시 주기도 가상 시계로 돈다. 마지막 메시지 뒤에는 다시 주기가 다 끝나게 시계를 더 당긴다.
 // 실패해도 노드를 끝내고 통로를 닫는다. 실제 통로(Redis)에는 아무것도 보내지 않는다.
 import { MAX_DELIVERIES, MemoryBus, RETRY_MS, VirtualClock, type BusNode, type TopicName } from "../bus/index.js";
+import { QUESTION_CHOICES, STEP_DONE, STOP } from "../act/prompts.js";
+import { HEARD_MARK } from "../world/labels.js";
 import type { Bag } from "./bag.js";
 
 export const REPLAY_INPUTS: readonly TopicName[] = [
@@ -21,6 +23,17 @@ export async function settle(bus: MemoryBus, nodes: readonly BusNode[], maxRound
 
 export async function replay(o: { bag: Bag; from: number; to: number; launch: (bus: MemoryBus, clock: VirtualClock) => Promise<BusNode[]>; topics?: readonly TopicName[] }): Promise<{ sent: number }> {
   const rows = o.bag.range(o.from, o.to, { topics: o.topics ?? REPLAY_INPUTS });
+  // 말 원문을 가린 녹화에서도, 폰이 실제로 받아들인 답만 같은 단추 글로 재생한다.
+  const labels = new Map([STEP_DONE, STOP, ...Object.values(QUESTION_CHOICES).flat()].map((c) => [c.id, c.label]));
+  const answers = new Map<string, string>();
+  const answerKey = (h: { boot: string; home: string }, req: string) => JSON.stringify([h.boot, h.home, req]);
+  if (rows.some(({ e }) => e.topic === "/phone/progress")) {
+    for (const { e } of o.bag.range(o.from, o.to, { topics: ["/act/progress_result"] })) {
+      const b = e.body as import("../bus/index.js").Body<"/act/progress_result">;
+      const text = b.choice_id && labels.get(b.choice_id);
+      if (b.status === "answer" && text) answers.set(answerKey(e.header, b.req), text);
+    }
+  }
   const clock = new VirtualClock(rows[0]?.arrivalMs ?? o.from);
   const bus = new MemoryBus({ warn: () => {}, clock });
   let nodes: BusNode[] = [];
@@ -32,7 +45,10 @@ export async function replay(o: { bag: Bag; from: number; to: number; launch: (b
     for (const { e, arrivalMs } of rows) {
       await clock.advanceTo(arrivalMs, barrier);
       await barrier();
-      await bus.publish(e);
+      if (e.topic === "/phone/progress" && "text" in e.body && e.body.text === HEARD_MARK && "req" in e.body) {
+        const body = e.body as Extract<import("../bus/index.js").Body<"/phone/progress">, { kind: "voice" }>;
+        await bus.publish({ ...e, body: { ...body, text: answers.get(answerKey(e.header, body.req)) ?? HEARD_MARK } });
+      } else await bus.publish(e);
       await barrier();
     }
     await clock.advanceTo(clock.now() + RETRY_MS * MAX_DELIVERIES, barrier);

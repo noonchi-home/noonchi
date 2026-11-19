@@ -161,17 +161,36 @@ class Week {
     this.person = { visible: false, since_ms: this.t, last_seen_ms: null, count: 0, room: null, room_label: null, position: null, near: [], holding: [], position_ms: null, answered_ms: null, facts: {} };
     this.plans = new PlanHub(this.home.fp, (m) => { if (m.type === "plan" && m.plan) this.plansOut.emit(m.plan); }, () => new Date(this.t).toISOString());
     this.tracker = new ExecutionTracker({
-      plans: this.plans, world: () => this.view(), floor: () => this.plans.floor(), toPhone: () => {}, emit: (l) => this.brain.emit(l), approvals: this.approvals,
+      plans: this.plans,
+      approvals: this.approvals,
       clock: { now: () => this.t },
-      // 묻기 답 「치워 주세요」 → 말 부탁(컵 치우기) 판단을 서버처럼 판단 기록에 남긴다(src/brain/decide.ts logSpeech)
-      sentSeq: () => this.seq,
-      onSpeech: (d) => this.brain.emit({
-        type: "decision", at_ms: this.t, id: d.id, seq: d.seq, text_sent: d.textSent, status: d.status, prediction: d.prediction, action: d.action, fsm: null,
-        memory_version: d.memoryVersion, world: d.world, ...(d.source ? { source: d.source } : {}), ...(d.via ? { via: d.via } : {}),
-      }),
       check: (d, p) => checkPlan({ decision: d, tasks: [...CUP_TASKS], plan: p, world: this.view(), nowMs: this.t, staleMs: 3000, mode: "test" }),
       // OpenAI를 부르지 않으므로 에이전트가 낼 도구 호출(컵 치우기 네 단계·물어보기)을 같은 계획 검사(PlanDraft)에 넣는다
       planner: (d) => this.plan(d),
+      state: {
+        view: () => this.view(),
+      },
+      layout: {
+        floor: () => this.plans.floor(),
+      },
+      phone: {
+        toPhone: () => {},
+      },
+      brain: {
+        // 묻기 답 「치워 주세요」 → 말 부탁(컵 치우기) 판단을 서버처럼 판단 기록에 남긴다(src/brain/decide.ts logSpeech)
+        sentSeq: () => this.seq,
+        onSpeech: (d) => this.brain.emit({
+          type: "decision", at_ms: this.t, id: d.id, seq: d.seq, text_sent: d.textSent, status: d.status, prediction: d.prediction, action: d.action, fsm: null,
+          memory_version: d.memoryVersion, world: d.world, ...(d.source ? { source: d.source } : {}), ...(d.via ? { via: d.via } : {}),
+        }),
+      },
+      goals: {},
+      manager: {},
+      observe: {},
+      events: {
+        emit: (l) => this.brain.emit(l),
+      },
+      appliances: {},
     });
     for (const d of [this.home.livingAc, this.home.bedAc]) {
       if (!this.twin.has(d.id)) this.twin.set(d.id, { power: d === this.home.bedAc ? "on" : "off" });

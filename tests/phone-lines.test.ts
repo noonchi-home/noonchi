@@ -1,11 +1,12 @@
 // 위험 가전(인덕션·전자레인지)에 대한 폰 글은 기본 거부다(src/agent/policy.ts): 모델이 쓴 글에 위험 가전 이름이 나오거나 그 단계 대상이 위험 가전이면
 // 그 글은 폰으로 보내지 않는다. 켜는 말인지 끄는 말인지 낱말로 가르지 않는다. 사람 단계 글은 모델이 고른 동작·대상·물건으로 서버가 만든다(src/act/labels.ts STEP_TEXT).
 // 글이 생기는 자리마다 자리 목록(PHONE_LINE_SITES)과 함께 「모델이 쓴 위험 가전 글은 어느 자리에서도 폰으로 안 나간다」를 본다.
+import { testTracker } from "./helpers/tracker-ports.js";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { ExecutionTracker } from "../src/act/track/tracker.js";
+import { type ExecutionTracker } from "../src/act/track/tracker.js";
 import { Agent, type LlmProvider, type StepOptions, type StepResult } from "../src/agent/agent.js";
 import { ApprovalStore } from "../src/agent/approval.js";
 import { Observer, type ObserveSituation } from "../src/agent/observer.js";
@@ -71,7 +72,7 @@ function tracker(at = 1) {
   const plans = new PlanHub(floor(), () => {}, () => "t");
   const approvals = new ApprovalStore(join(mkdtempSync(join(tmpdir(), "lines-")), "approvals.json"), () => "t");
   approvals.answer(`task:${RAMEN}`, "approve");
-  const t = new ExecutionTracker({
+  const t = testTracker({
     plans, world: () => WORLD, check: () => ({ ok: true }), floor: () => plans.floor(), approvals, toPhone: (m) => phone.push(m), emit: () => {},
     handDevices: () => [{ id: "induction_1", kind: "cooktop", label: "인덕션" }],
     planner: () => new PlanDraft(ctx()).submit({ steps: [

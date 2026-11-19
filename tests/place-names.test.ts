@@ -1,10 +1,10 @@
 // 평면도 물건·가전을 사람에게 부르는 이름은 한 곳(src/layout/names.ts placeName)에서 찾는다:
 // 종류 짧은 이름 → 카탈로그 종류 이름 → 배치 이름 → 가전 종류 이름. 계획 단계 글·실행 추적의 부탁·비전 상태 줄이 모두 이것을 쓰고, id는 사람 글에 내지 않는다.
+import { testTracker } from "./helpers/tracker-ports.js";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { ExecutionTracker } from "../src/act/track/tracker.js";
 import { ApprovalStore } from "../src/agent/approval.js";
 import { PlanDraft } from "../src/agent/planTools.js";
 import type { PlannedCommandMessage } from "../src/contract/phone.js";
@@ -50,7 +50,7 @@ describe("실행 추적은 같은 이름 찾기만 쓴다", () => {
     const plans = new PlanHub(floor(), () => {}, () => "t");
     const approvals = new ApprovalStore(join(mkdtempSync(join(tmpdir(), "names-")), "approvals.json"), () => "t");
     approvals.answer(`task:${RAMEN}`, "approve");
-    const t = new ExecutionTracker({
+    const t = testTracker({
       plans, world: () => WORLD, check: () => ({ ok: true }), floor: () => plans.floor(), approvals, toPhone: (m) => phone.push(m), emit: () => {}, clock, ...(names ? { names } : {}),
       planner: () => new PlanDraft(planContext({ decision, world: WORLD, floor: floor(), typeLabel: catalog.typeLabel })).submit({ steps: [
         { kind: "go", act: "가기", target: "bookcase_1", timeout_s: 120 },

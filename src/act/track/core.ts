@@ -1,5 +1,5 @@
 // 실행 추적(src/act/track/)의 안쪽 공유 객체 TrackCore와 부분이 함께 쓰는 계획 실행 상태(Run)·도우미.
-// TrackCore는 상태(지금 계획·만드는 계획·멈춤·폰 눈·조용한 때)와 실행 기록(emit)·실제 폰 길(o.toPhone)을 든다. 부분(start·steps·approval·safety·answers·coach)은
+// TrackCore는 상태(지금 계획·만드는 계획·멈춤·폰 눈·조용한 때)와 실행 기록(emit)·실제 폰 길(o.phone.toPhone)을 든다. 부분(start·steps·approval·safety·answers·coach)은
 // 이 객체를 받는 작은 클래스(Part)이고, 서로를 이 객체의 칸으로 부른다. 부분끼리는 값 import가 없다(ExecutionTracker가 만들어 잇는다, tracker.ts).
 // 켠 위험 가전 추적 상태(hot·끄기 안내·회차·풀린 가전)는 여기 두지 않는다: SafetyTracker(safety.ts)의 # 비공개 칸이다.
 import type { DecisionRecord, ExecState } from "../../contract/events.js";
@@ -172,9 +172,9 @@ export class TrackCore {
 
   /** 평면도 물건·가전을 부르는 이름(src/layout/names.ts placeName, 계획 단계 글과 같은 차례). 없으면 null(id를 사람 글에 쓰지 않는다). */
   nameOf(id: string): string | null {
-    const names = this.o.names ?? {};
-    return placeName(id, this.o.floor().objects.get(id)?.type, {
-      ...names, layoutName: names.layoutName ?? ((x) => this.o.locate?.(x)?.label), deviceKind: names.deviceKind ?? ((x) => this.o.handDevices?.().find((d) => d.id === x)?.kind),
+    const names = this.o.layout.names ?? {};
+    return placeName(id, this.o.layout.floor().objects.get(id)?.type, {
+      ...names, layoutName: names.layoutName ?? ((x) => this.o.layout.locate?.(x)?.label), deviceKind: names.deviceKind ?? ((x) => this.o.appliances.handDevices?.().find((d) => d.id === x)?.kind),
     });
   }
 
@@ -191,7 +191,7 @@ export class TrackCore {
 
   emit(planId: string, state: ExecState, text?: string, reason?: string): void {
     if (this.stopped) return;
-    this.o.emit({ type: "execution", at_ms: this.clock.now(), plan_id: planId, state, text: text ?? EXEC_TEXT[state], ...(reason ? { reason } : {}) });
+    this.o.events.emit({ type: "execution", at_ms: this.clock.now(), plan_id: planId, state, text: text ?? EXEC_TEXT[state], ...(reason ? { reason } : {}) });
   }
 }
 

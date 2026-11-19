@@ -20,15 +20,15 @@ describe("미리 세운 목표 잇기", () => {
     const db = HistoryDb.open(":memory:");
     const rec = await startRecorder({ bus, epoch: EPOCH, db, bag });
     rec.start();
-    const act = new BusNode({ name: "act", bus, epoch: EPOCH, log: () => {} });
-    await act.prepare();
-    act.start();
+    const goal = new BusNode({ name: "goal", bus, epoch: EPOCH, log: () => {} });
+    await goal.prepare();
+    goal.start();
     const sent: unknown[] = [];
-    const core = { out: { act: new Outbox(act, { clock: realClock, log: () => {} }) }, app: { broadcast: (m: unknown) => sent.push(m) }, goal: null } as unknown as Parameters<typeof publishGoal>[0];
+    const core = { out: { goal: new Outbox(goal, { clock: realClock, log: () => {} }) }, app: { broadcast: (m: unknown) => sent.push(m) }, goal: null } as unknown as Parameters<typeof publishGoal>[0];
     const steps: PendingGoal[] = [GOAL, { ...GOAL, prep: "planning" }, { ...GOAL, prep: "ready" }, { ...GOAL, status: "fired", prep: "ready" }];
     for (const g of steps) publishGoal(core, g);
-    expect(await core.out.act!.drain(2000)).toBe(true);
-    await settle(bus, [act, rec]);
+    expect(await core.out.goal!.drain(2000)).toBe(true);
+    await settle(bus, [goal, rec]);
     const rows = bag.range(0, Number.MAX_SAFE_INTEGER);
     const of = (topic: string) => rows.filter(({ e }) => e.topic === topic).map(({ e }) => (e.body as { goal: PendingGoal }).goal);
     expect(of("/brain/goal_changes").map((g) => `${g.status}/${g.prep}`)).toEqual(["armed/waiting", "armed/planning", "armed/ready", "fired/ready"]);
@@ -38,7 +38,7 @@ describe("미리 세운 목표 잇기", () => {
     const goals = db.list({ kinds: ["goal"] });
     expect(goals.map((r) => r.at_ms)).toEqual(rows.filter(({ e }) => e.topic === "/brain/goal_changes").map(({ e }) => e.header.stamp));
     expect(goals.map((r) => r.text)).toEqual(["세움 · 컵 치우기", "계획 미리 만드는 중", "계획 준비됨", "사람 떠남 · 판단 부름"]);
-    await act.stop();
+    await goal.stop();
     await rec.stop();
     await bus.close();
     db.close();
@@ -65,7 +65,8 @@ describe("기계 상태 통로와 기록", () => {
         { state: "return" as const, step: null, since_ms: 4000 },
       ];
       const idle = { state: "idle" as const, since_ms: 900, id: null, action: null, left_ms: null, reason: null, result: null };
-      await act.publish("/goal/changes", idle);
+      const goalNode = new BusNode({ name: "goal", bus, epoch: EPOCH });
+      try { await goalNode.publish("/goal/changes", idle); } finally { await goalNode.stop(); }
       for (const body of phases) {
         await act.publish("/robot/state", body);
         const event = act.envelope("/robot/changes", body);

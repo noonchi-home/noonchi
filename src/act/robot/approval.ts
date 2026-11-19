@@ -21,14 +21,14 @@ export class Approvals extends Part {
   /** 손으로 켜는 위험 가전 단계인가. 이 집 가전 목록을 모르면 손으로 켜는 단계는 모두 위험한 것으로 본다(묻는다). */
   risky(step: AgentStep | undefined): boolean {
     if (!step || step.kind !== "do" || step.hand?.to !== "on") return false;
-    const devices = this.o.handDevices?.();
+    const devices = this.o.appliances.handDevices?.();
     return devices ? riskyHand(step, devices) : true;
   }
 
   /** 실제 폰에 질문(승인·다시 묻기): 위에 질문, 아래 답 단추. 물을 폰(판본이 맞는 폰)이 없으면 기다리지 않고 실패로 닫는다. */
   ask(r: Run, asking: Asking, text: string, stepId: string): void {
     if (!this.core.start.phoneOk()) {
-      if (asking.why === "device") this.o.devices?.cancel(asking.token);
+      if (asking.why === "device") this.o.appliances.run?.cancel(asking.token);
       return this.core.steps.finish(r, "failed", EXEC_TEXT.phoneGone);
     }
     const now = this.clock.now();
@@ -55,14 +55,14 @@ export class Approvals extends Part {
     r.asking = null;
     this.core.steps.clear(r);
     if (answer === "reject") {
-      this.o.devices?.cancel(token);
+      this.o.appliances.run?.cancel(token);
       return this.core.steps.finish(r, "failed", APPROVAL_TEXT.refused, "cancelled");
     }
     const gen = r.gen;
     r.device = "running";
     // 승인을 기다린 시간은 이 단계 시간 한도에 넣지 않는다
     r.deadline = this.clock.now() + (this.core.stepOf(r)?.timeoutMs ?? 0);
-    this.o.devices!.confirm(token, () => this.core.live(r, gen)).then((res) => this.core.steps.deviceResult(r, gen, res), () => this.core.steps.deviceResult(r, gen, { ok: false }));
+    this.o.appliances.run!.confirm(token, () => this.core.live(r, gen)).then((res) => this.core.steps.deviceResult(r, gen, res), () => this.core.steps.deviceResult(r, gen, { ok: false }));
   }
 
   /** 켜기 전 질문의 답(기억하지 않는다): 승인이면 그때 켜라는 명령을 보내고(그 가전은 끄는 단계가 끝날 때까지 켠 것으로 본다), 거절이면 취소로 닫는다.
