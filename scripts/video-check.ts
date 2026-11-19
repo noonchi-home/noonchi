@@ -1,5 +1,5 @@
 // npx tsx scripts/video-check.ts --clip cup-demo.mp4 [--step <종류>:<낱말>:<영상.mp4> ...] [--phone http://127.0.0.1:8210] [--api http://127.0.0.1:8200]
-//   [--done-after 3] [--out runtime/videos/cup-demo.<시각>.timeline.md] [--expect-after 36.3] [--record <폴더>] [--fake]
+//   [--done-after 3] [--out runtime/videos/cup-demo.<시각>.timeline.md] [--expect-after 36.3] [--record <폴더>] [--record-view <top|minimap>] [--record-fps 10] [--fake]
 //   [--say <초>:<글> ...] [--start-at <cup|tv|microwave|kitchen>] [--home mokryeon_180b] [--tail 30] [--max 1800] [--approve <초>] [--done-on <초>:<명령 글> ...]
 //   [--fov <도>] [--pitch <도>] [--h <m>]
 // --fov·--pitch·--h: 영상 모드 카메라(세로 시야각 20~120, 숙인 각 -89~89, 높이 0.2~3). 준 것만 폰 주소에 fov=·pitch=·h=로 붙고, 없으면 폰 페이지 기본값(60°, -25°, 1.4m).
@@ -37,6 +37,8 @@
 // 녹화하는 동안 대시보드 그림 간격을 재 적는다. 끝 사진은 그 창으로 바로 찍는다. 크롬을 끈 뒤 ffmpeg로 대시보드(폰도 받았으면 나란히) mp4 하나
 // (H.264, yuv420p, 10fps, 실제 시간 길이)를 <폴더>/<시각표 이름 줄기>.demo.mp4로 만든다. --chrome은 크롬 그리기 방식(기본 headless-gpu)이다.
 // ffmpeg가 없거나 실패하면 <폴더>/<줄기>.frames 프레임 폴더를 남기고 판정 줄 위에 적는다.
+// --record-view minimap: 녹화 대시보드를 <api>/?view=minimap(비전 미니맵만, 3D 트윈 없음)으로 1280×720 창에 열고 mp4도 1280×720이다. 기본 top(대시보드 전체). 끝 사진도 그 창이다.
+// --record-fps: 녹화 초당 장 수(1~30, 기본 10). ack 간격(1000/fps)과 mp4 fps가 그 값이다.
 // 영상은 소리 없이 「AR 시작」 누름에서 튼다. launchChrome은 자동 재생 플래그를 받지 않지만 소리 없는 재생은 크롬 기본값으로 된다.
 // 오늘 기억: 영상을 틀기 전에 GET /api/memory/day/<오늘>의 uses.memory를 본다(memoryGate). 마시는 중에서 떠나는 배운 컵 치우기 화살표가 없으면(seed·옛 모양)
 // 크롬을 띄우지 않고 끝 코드 1과 판정 줄(서버를 끄고 demo-setup learned로 넣으라는 글). 있으면 시각표 머리에 「기억 <v>판 · <source>」 한 줄.
@@ -80,6 +82,8 @@ const STEP_ARG = /^(?:go|pick|place|do):[a-z_]+:[A-Za-z0-9_-]{1,64}\.(?:mp4|webm
 const SIZE: [number, number] = [390, 844];
 /** 대시보드 사진 탭 크기와 열고 기다리는 시간 */
 const DASH_SIZE: [number, number] = [1280, 800];
+/** 비전 미니맵만 보기(?view=minimap) 창 크기: 16:9 미니맵 칸이 창을 채운다. */
+const MINIMAP_SIZE: [number, number] = [1280, 720];
 const DASH_WAIT_MS = 8_000;
 /** 마지막 눈 줄에서 이만큼(m) 옮기면 눈 줄을 다시 쓴다 */
 const EYE_MOVE_M = 0.5;
@@ -663,7 +667,7 @@ async function startFake(clip: string, steps: string[]): Promise<Fake> {
 
 // 돌리기
 
-const USAGE = "쓰는 법: npx tsx scripts/video-check.ts --clip <이름.mp4> [--step <종류>:<낱말>:<영상.mp4> ...] [--phone http://127.0.0.1:8210] [--api http://127.0.0.1:8200] [--done-after 3] [--out <파일.md>] [--expect-after 36.3] [--record <폴더>] [--fake]"
+const USAGE = "쓰는 법: npx tsx scripts/video-check.ts --clip <이름.mp4> [--step <종류>:<낱말>:<영상.mp4> ...] [--phone http://127.0.0.1:8210] [--api http://127.0.0.1:8200] [--done-after 3] [--out <파일.md>] [--expect-after 36.3] [--record <폴더>] [--record-view <top|minimap>] [--record-fps 10] [--fake]"
   + " [--say <초>:<글> ...] [--start-at <cup|tv|microwave|kitchen>] [--home mokryeon_180b] [--tail 30] [--max 1800] [--approve <초>] [--done-on <초>:<명령 글> ...]"
   + " [--fov <도>] [--pitch <도>] [--h <m>]";
 
@@ -679,7 +683,12 @@ export interface Args {
   camera: Camera;
   /** --record-phone: 녹화에 폰 화면도 붙인다(기본은 대시보드만). --chrome: 크롬 그리기 방식(기본 headless-gpu). */
   recordPhone: boolean; chrome: ChromeGpu;
+  /** --record-view: 녹화 대시보드 보기(top 대시보드 전체, minimap 비전 미니맵만). --record-fps: 녹화 초당 장 수. */
+  recordView: DashView; recordFps: number;
 }
+
+/** 대시보드 보기: top 대시보드 전체, minimap 비전 미니맵만(주소 ?view=minimap). */
+export type DashView = "top" | "minimap";
 
 /** 인자(process.argv.slice(2)) → 판 설정, 틀리면 까닭 글. --step은 여러 번 받고, 있으면 --done-after 기본이 0이다. --record는 시연 영상 폴더. */
 export function parseArgs(argv: string[]): Args | string {
@@ -725,10 +734,14 @@ export function parseArgs(argv: string[]): Args | string {
     if (!raw?.trim() || raw.startsWith("--") || !Number.isFinite(v) || v < lo || v > hi) return `--fov는 20~120(도), --pitch는 -89~89(도), --h는 0.2~3(m) 숫자예요. ${USAGE}`;
     camera[k] = v;
   }
+  const recordView = argv.includes("--record-view") ? arg("record-view") : "top";
+  if (recordView !== "top" && recordView !== "minimap") return `--record-view는 top·minimap 가운데 하나예요. ${USAGE}`;
+  const recordFps = argv.includes("--record-fps") ? Number(arg("record-fps")) : RECORD_FPS;
+  if (!Number.isInteger(recordFps) || recordFps < 1 || recordFps > 30) return `--record-fps는 1~30 정수(초당 장 수)예요. ${USAGE}`;
   const chrome = (arg("chrome") ?? "headless-gpu") as ChromeGpu;
   if (!CHROME_GPU.includes(chrome)) return `--chrome은 ${CHROME_GPU.join("·")} 가운데 하나예요. ${USAGE}`;
   return {
-    recordPhone: argv.includes("--record-phone"), chrome,
+    recordPhone: argv.includes("--record-phone"), chrome, recordView, recordFps,
     clip, fake, steps, doneAfterMs, expectMs, expectSet: arg("expect-after") !== undefined, phone: arg("phone") ?? "http://127.0.0.1:8210", api: arg("api") ?? "http://127.0.0.1:8200", out: arg("out"), record,
     says: says.map((x) => ({ atMs: x!.ms, text: x!.text })), startAt: startAt as DemoScene | null, home: arg("home") ?? HOME, tailMs, maxMs, approveAfterMs,
     doneOn: doneOn.map((x) => ({ afterMs: x!.ms, text: x!.text })), camera,
@@ -756,11 +769,23 @@ export async function waitLoaded(tab: Pick<Page, "send">, url: string, o: { what
   throw new Error(`${o.what}를 ${Math.round(waitMs / 1000)}초 안에 다 불러오지 못했어요`);
 }
 
-/** 대시보드 탭·창: 크기를 DASH_SIZE(모바일 아님)로 맞추고 대시보드 <api>/로 옮긴 뒤 그 문서가 다 불러와질 때까지 기다린다(waitLoaded). */
-export async function openDashboard(tab: Pick<Page, "send">, api: string, o: { waitMs?: number; everyMs?: number } = {}): Promise<void> {
-  await withTimeout(tab.send("Emulation.setDeviceMetricsOverride", { width: DASH_SIZE[0], height: DASH_SIZE[1], deviceScaleFactor: 1, mobile: false }), 10_000, "대시보드 탭 크기");
-  await withTimeout(tab.send("Page.navigate", { url: `${api}/` }), 30_000, "대시보드 열기");
-  await waitLoaded(tab, `${api}/`, { what: "대시보드", ...o });
+/** 대시보드 창 크기: minimap 1280×720, top 1280×800. */
+const dashSizeOf = (view: DashView): [number, number] => (view === "minimap" ? MINIMAP_SIZE : DASH_SIZE);
+
+/** 녹화 모양: 대시보드 창 크기(dashSizeOf), ack 간격(1000/fps), mp4 fps, mp4 높이(폰도 녹화하면 기본 높이에 맞춰 붙이므로 없음, 아니면 창 높이). */
+export function recordSetup(a: Pick<Args, "recordView" | "recordFps" | "recordPhone">): { size: [number, number]; intervalMs: number; fps: number; height: number | undefined } {
+  const size = dashSizeOf(a.recordView);
+  return { size, intervalMs: 1000 / a.recordFps, fps: a.recordFps, height: a.recordPhone ? undefined : size[1] };
+}
+
+/** 대시보드 탭·창: 크기를 보기 창 크기(모바일 아님, dashSizeOf)로 맞추고 대시보드 <api>/(view minimap이면 <api>/?view=minimap)로 옮긴 뒤 그 문서가 다 불러와질 때까지 기다린다(waitLoaded). */
+export async function openDashboard(tab: Pick<Page, "send">, api: string, o: { waitMs?: number; everyMs?: number; view?: DashView } = {}): Promise<void> {
+  const view = o.view ?? "top";
+  const url = `${api}/${view === "minimap" ? "?view=minimap" : ""}`;
+  const [width, height] = dashSizeOf(view);
+  await withTimeout(tab.send("Emulation.setDeviceMetricsOverride", { width, height, deviceScaleFactor: 1, mobile: false }), 10_000, "대시보드 탭 크기");
+  await withTimeout(tab.send("Page.navigate", { url }), 30_000, "대시보드 열기");
+  await waitLoaded(tab, url, { what: "대시보드", waitMs: o.waitMs, everyMs: o.everyMs });
 }
 
 /** 대시보드 그림 간격 모으기 시작(window.__frameGaps)과 읽기. */
@@ -823,6 +848,8 @@ async function main(): Promise<number> {
   // --record: 시연 영상 <폴더>/<시각표 이름 줄기>.demo.mp4, 프레임은 옆 .frames 폴더(영상을 만들면 지움)
   const demo = args.record ? demoFile(resolve(ROOT, args.record), out) : null;
   const framesDir = demo ? demo.replace(/\.demo\.mp4$/, ".frames") : null;
+  // 녹화 창 크기·ack 간격·mp4 fps·높이(--record-view·--record-fps)
+  const shape = recordSetup(args);
   if (fakeMode && !existsSync(join(ROOT, "ui", "dist", "phone", "index.html"))) { console.error("ui/dist가 없어요: npm run heavy -- npm --prefix ui run build"); return 2; }
   const chromeExe = chromePath();
 
@@ -889,18 +916,18 @@ async function main(): Promise<number> {
       // 시연 녹화: 같은 크롬 새 창(탭은 폰 탭을 가린다)으로 대시보드를 판정 내내 띄우고, 트윈이 다 뜬 뒤 대시보드(--record-phone이면 폰도) 프레임을 받는다.
       // 「AR 시작」(영상 재생)은 녹화를 시작한 뒤에 누른다
       if (framesDir) {
-        dash = await openWindow(port, DASH_SIZE, (msg) => dashErrors.push(msg));
-        await openDashboard(dash, api);
+        dash = await openWindow(port, shape.size, (msg) => dashErrors.push(msg));
+        await openDashboard(dash, api, { view: args.recordView });
         const twinFrom = Date.now();
         await waitTwinReady(dash);
-        console.log(`[video-check] 대시보드 트윈 준비 ${((Date.now() - twinFrom) / 1000).toFixed(1)}초`);
+        console.log(`[video-check] 대시보드${args.recordView === "minimap" ? " 미니맵" : " 트윈"} 준비 ${((Date.now() - twinFrom) / 1000).toFixed(1)}초`);
         // 녹화하는 동안 대시보드 그림 간격(requestAnimationFrame)을 쌓는다(끝에 중앙값·p90·최대를 적는다)
         await dash.evaluate(FRAME_GAPS_START, 10_000).catch(() => {});
         rmSync(framesDir, { recursive: true, force: true });
-        rec = await startRecording(framesDir, [...(args.recordPhone ? [{ name: "phone", page: cdp, size: SIZE }] : []), { name: "dash", page: dash, size: DASH_SIZE }]);
+        rec = await startRecording(framesDir, [...(args.recordPhone ? [{ name: "phone", page: cdp, size: SIZE }] : []), { name: "dash", page: dash, size: shape.size }], { intervalMs: shape.intervalMs });
         const shown = await cdp.evaluate("document.visibilityState", 10_000).catch(() => "모름");
         if (args.recordPhone && shown !== "visible") recordNotes.push(`녹화: 폰 탭이 가려짐(visibilityState ${String(shown)})`);
-        console.log(`[video-check] 녹화 시작 · ${RECORD_FPS}fps · ${args.recordPhone ? "폰·대시보드" : "대시보드만"} · 크롬 ${args.chrome} · ${framesDir}`);
+        console.log(`[video-check] 녹화 시작 · ${shape.fps}fps · ${args.recordPhone ? "폰·대시보드" : args.recordView === "minimap" ? "미니맵만" : "대시보드만"} · 크롬 ${args.chrome} · ${framesDir}`);
       }
 
       // 폰 페이지 자기 자원을 못 받았으면(이 PC는 127.0.0.1 연결이 가끔 실패하고 크롬은 다시 받지 않는다) 「AR 시작」 전에 한 번 다시 읽는다
@@ -1096,7 +1123,7 @@ async function main(): Promise<number> {
         const n = (name: string) => recorded!.frames[name]?.length ?? 0;
         const fps = (name: string) => (n(name) / Math.max(recorded!.endMs / 1000, 0.001)).toFixed(1);
         console.log(`[video-check] 녹화 ${(recorded.endMs / 1000).toFixed(1)}초 · ${args.recordPhone ? `폰 ${n("phone")}장(${fps("phone")}fps) · ` : ""}대시보드 ${n("dash")}장(${fps("dash")}fps)${recorded.lost ? ` · 못 쓴 프레임 ${recorded.lost}장` : ""}`);
-        const made = await encodeDemo(framesDir, recorded, demo, { ...(args.recordPhone ? { phoneSize: SIZE } : {}), dashSize: DASH_SIZE });
+        const made = await encodeDemo(framesDir, recorded, demo, { ...(args.recordPhone ? { phoneSize: SIZE } : {}), dashSize: shape.size, fps: shape.fps, height: shape.height });
         encoded = true;
         if (made.ok) console.log(`[video-check] 시연 영상 ${demo}`);
         else { console.log(`[video-check] ${made.why}`); notes.push(`시연 영상 못 만듦: ${made.why}`); }
