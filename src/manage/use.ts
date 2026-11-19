@@ -10,12 +10,10 @@
 // - 처음 붙잡을 때 생각 말풍선에 상태 줄을 올린다(「사람이 마시는 중이라 지켜볼게요」).
 // - 쓴 사람이 떠남: 사람이 안 보이면(person_gone) 모두 푼다. World State는 사람을 한 묶음으로 세어 누가 나갔는지 가를 수 없으므로, 사람이 보이는 동안에는
 //   보인 사람 수가 줄어도(같이 있던 사람만 나갔을 수 있다) 지킨다. 다시 나타나면(since_ms가 바뀜) 새로 보고, 사라지기 전 사진의 늦은 답은 근거로 치지 않는다(usingNow).
-import { EXEC_TEXT, USE_THOUGHT } from "../labels.js";
-import { clearsAway, planObjectsOf, TASK_NAMES, taskOf, touchTarget, usingNow, type UseWhy } from "../tasks.js";
-import { OBJECT_NAME, STATE_TEXT } from "../../world/labels.js";
-import type { WorldView } from "../../contract/world.js";
-import { CONTENTS_HOLD } from "../robot/contents.js";
-import { Part, type Run } from "./core.js";
+import { USE_THOUGHT } from "../act/labels.js";
+import { TASK_NAMES, touchTarget, usingNow, type UseWhy } from "../act/tasks.js";
+import { OBJECT_NAME, STATE_TEXT } from "../world/labels.js";
+import type { WorldView } from "../contract/world.js";
 
 /** 옮김 표시(followed_by)를 따라가는 횟수 한도. */
 const FOLLOW_MAX = 5;
@@ -33,8 +31,17 @@ function thoughtOf(why: UseWhy, cls: string): string {
   return why.kind === "holding" ? USE_THOUGHT.holding(name) : USE_THOUGHT.using(name);
 }
 
-/** 쓰는 중 지킴. */
-export class UseWatch extends Part {
+export interface UseInputs {
+  world(): WorldView;
+  touching(): boolean;
+  tasks?(): readonly string[];
+  thought?(text: string): void;
+}
+
+/** 사용자가 물건을 쓰는 동안 그 물건에 다가가는 일을 막는다. */
+export class UseWatch {
+  constructor(private readonly o: UseInputs) {}
+
   /** 붙잡은 것(열쇠: id:<물건 id> 또는 cls:<종류>). */
   private readonly held = new Map<string, Hold>();
   /** 지금 보이는 사람이 나타난 때(World State since_ms). 바뀌면 다른 등장이다. */
@@ -50,7 +57,7 @@ export class UseWatch extends Part {
       if (!p.visible) return;
     }
     // 손대는 단계 중 보이는 사람은 폰을 든 사람일 수 있다: 그 사람으로 쓰는 중을 새로 붙잡지 않는다(2026-11-18 wide-mug q3)
-    if (this.core.touching()) return;
+    if (this.o.touching()) return;
     for (const cls of this.classes()) {
       const use = usingNow(world, cls);
       if (!use) continue;
@@ -62,7 +69,7 @@ export class UseWatch extends Part {
         this.held.set(key, { cls, id, why: use.why });
         added = true;
       }
-      if (added && !had && !this.core.stopped) this.o.thought?.(thoughtOf(use.why, cls), this.core.lastDecision ?? "use");
+      if (added && !had) this.o.thought?.(thoughtOf(use.why, cls));
     }
   }
 
@@ -87,32 +94,6 @@ export class UseWatch extends Part {
   /** 자동으로 그쪽으로 사람을 보내도 되는가(찾기·가까이 가서 보기 공통): 지금 행동 목록의 손대는 행동 대상 종류이고 사람이 쓰는 중이 아니다. */
   mayApproach(t: UseTarget): boolean {
     return !!t.cls && this.classes().has(t.cls) && !this.busy(t);
-  }
-
-  /** 계획 대상(손대는 행동)을 사람이 쓰는 중이면 첫 명령을 미룬다: 처음 미룰 때 「사람이 쓰는 중이라 기다려요」를 남기고 떠 있던 찾기·가까이 보기를 거둔다.
-   *  미룬 적이 있으면 표시해 둔다(풀린 뒤 첫 명령을 폰 대화·승인 대기 동안 미룬다). 미룬 지 holdMs가 지나면 닫는다. 미루거나 닫았으면 true. */
-  waits(r: Run): boolean {
-    const cls = touchTarget(r.decision.action);
-    const ids = cls ? planObjectsOf(r.plan.view, this.o.world(), cls, clearsAway(taskOf(r.decision.action), cls)).map((id) => r.alias.get(id) ?? id) : [];
-    const used = ids.length ? ids.some((id) => this.busy({ cls, id })) : this.busy({ cls, id: null });
-    if (!used) {
-      r.usedAt = null;
-      return false;
-    }
-    const now = this.clock.now();
-    r.useHeld = true;
-    if (r.usedAt === null) {
-      r.usedAt = now;
-      this.core.finder.release(r, true);
-      this.core.contents.pause(r);
-      this.core.emit(r.plan.view.id, "planned", EXEC_TEXT.inUse);
-    }
-    if (now - r.usedAt > CONTENTS_HOLD.holdMs) {
-      this.core.steps.finish(r, "failed", EXEC_TEXT.inUseLong);
-      return true;
-    }
-    r.since = now;
-    return true;
   }
 
   /** 지금 행동 목록(없으면 모든 행동)의 손대는 행동 대상 종류. */

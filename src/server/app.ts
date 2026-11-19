@@ -84,7 +84,7 @@ export interface AppOptions {
   say?: () => { text: string | null; safety?: true };
   /** 지금 행동 모드(눈치·코치, src/act/mode.ts). /events 접속 때 {type:"mode"}. 없으면 보내지 않는다. */
   actMode?: () => "noonchi" | "coach";
-  /** 마지막 미리 세운 목표(src/act/track/goal.ts). /events 접속 때 {type:"goal"}. 없거나 null이면 보내지 않는다. */
+  /** 마지막 미리 세운 목표(src/goal/watch.ts). /events 접속 때 {type:"goal"}. 없거나 null이면 보내지 않는다. */
   goalLast?: () => PendingGoal | null;
   /** 마지막 습관 FSM 그림 자료(src/brain/habit.ts). /events 접속 때 {type:"habit"}. 없거나 null이면 보내지 않는다. */
   habitLast?: () => HabitFsm | null;

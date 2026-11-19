@@ -35,7 +35,7 @@ export interface CheckInput {
   deviceSteps?: { deviceId: string; paired: boolean }[];
   /** 실행 추적이 놓기 단계를 끝낸 물건(이미 치운 것, src/act/robot/steps.ts placed). */
   placed?: Placed;
-  /** 미리 만든 계획(src/act/track/goal.ts)이면 그 기준 시각(사람이 떠나기 직전 GOAL_DEFAULTS.leaveSeenMs 앞, 집기 전 확인이면 떠난 때):
+  /** 미리 만든 계획(src/goal/watch.ts)이면 그 기준 시각(사람이 떠나기 직전 GOAL_DEFAULTS.leaveSeenMs 앞, 집기 전 확인이면 떠난 때):
    *  대상을 그때나 그 뒤에 봤으면 판단 뒤에 다시 본 것으로 보고 낡음 한도(staleMs)는 보지 않는다(2026-11-18 사용자 결정: 떠나기 직전에 본 컵이면 바로 시작,
    *  떠난 뒤 다시 봤는지는 집기 전에 본다, start.ts held). 없으면 판단 시각 뒤에 본 것만 다시 본 것이고 낡음 한도를 본다. */
   seenSince?: number;

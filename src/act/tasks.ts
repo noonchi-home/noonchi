@@ -28,11 +28,11 @@ export interface TaskSpec {
   /** 이 행동 계획의 단계 수 상한(없으면 8, src/agent/planTools.ts PLAN_LIMITS). */
   maxSteps?: number;
   /** 대상 물건에 손을 대는 행동(치우기·채우기·따르기): 대상이 안 보이면 마지막으로 본 자리로 찾으러 간다(src/act/robot/find.ts).
-   *  사람이 그 대상 종류를 쓰는 것을 보면 그 사람이 사라질 때까지 찾기·가까이 가서 보기·첫 명령을 미룬다(usingNow, src/act/track/use.ts).
+   *  사람이 그 대상 종류를 쓰는 것을 보면 그 사람이 사라질 때까지 찾기·가까이 가서 보기·첫 명령을 미룬다(usingNow, src/manage/use.ts).
    *  대상을 건드리지 않는 행동(그대로 두기)은 찾지 않는다. */
   touch?: true;
   /** 사람이 대상(target)을 다 쓰고 떠난 뒤 하는 일(치우기): 사람이 그 종류를 쓰는 것을 보면 습관 FSM이 다음 규칙으로 고를 때 미리 목표로 세우고 계획을 만들어 둔다
-   *  (src/brain/goal.ts goalAhead, src/act/track/goal.ts). 사람이 있는 동안 하는 일(채우기·따르기)은 아니다. */
+   *  (src/brain/goal.ts goalAhead, src/goal/watch.ts). 사람이 있는 동안 하는 일(채우기·따르기)은 아니다. */
   afterUse?: true;
   /** 집기 전에 늘 대상 안을 위에서 본다(컵 치우기, 2026-11-20 사용자 「아직도 컵안을 확인해달라는 내용이 없네」·고른 답 「늘 확인」): 위에서 보기를 하는 집이면
    *  계획 검사가 그 종류 첫 집기 앞에 컵 안 보기 단계를 넣고(src/agent/planTools.ts), 실행 추적이 위에서 본 내용물로 가른다
@@ -196,7 +196,7 @@ export type UseWhy = { kind: "act"; act: StateKey } | { kind: "holding" } | { ki
 /** 사람이 쓰는 것: 까닭과 쓰는 물건 id(World State 물건으로 알 때). ids가 null이면 무엇을 쓰는지 몰라 그 종류 전체다. */
 export interface Use { why: UseWhy; ids: string[] | null }
 
-/** 사람이 그 종류(물건·가전)를 지금 쓰는 중인가와 그 까닭·물건. 쓰는 중 지킴의 기준은 여기 하나다(실행 추적 src/act/track/use.ts가 사람이 모두 사라질 때까지 붙잡는다).
+/** 사람이 그 종류(물건·가전)를 지금 쓰는 중인가와 그 까닭·물건. 쓰는 중 지킴의 기준은 여기 하나다(실행 추적 src/manage/use.ts가 사람이 모두 사라질 때까지 붙잡는다).
  *  사람이 보일 때만, 그 사람이 나타난 뒤(since_ms) 찍힌 사진의 사실로 본다(사라지기 전 사진의 늦은 답은 다음 등장의 근거가 아니다):
  *  - 활동: 그 종류를 쓰는 활동(USE_ACTS, 마시는 중). 손에 든 그 종류 물건이 있으면 그 물건, 없으면 종류 전체.
  *  - 들고 있음: 사람이 그 종류나 무엇인지 모르는 물건을 든다(holdsTarget, 든 id가 World State 물건이면 그 물건, 모르면 종류 전체),

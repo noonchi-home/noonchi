@@ -1,4 +1,4 @@
-// 미리 세운 목표(src/act/track/goal.ts): 사람이 컵을 쓰는 것을 보면 습관 FSM 한 걸음 앞의 「컵 치우기」를 목표로 세우고 계획을 미리 만들어 둔다.
+// 미리 세운 목표(src/goal/watch.ts): 사람이 컵을 쓰는 것을 보면 습관 FSM 한 걸음 앞의 「컵 치우기」를 목표로 세우고 계획을 미리 만들어 둔다.
 // 사람이 떠나면 판단을 바로 부르게 하고, PAM이 같은 행동을 고르면 미리 만든 계획을 다시 검사해 첫 명령을 낸다(계획 모드를 다시 부르지 않는다).
 // 계획 모델은 같은 주소 자리의 가짜 OpenAI 서버(tests/helpers/planner.ts), 시계는 시험 시계(clock.t)다. smallFloor: 식탁 table_1 [7, 3], 싱크대 sink_1 [5, 1].
 import { mkdtempSync } from "node:fs";

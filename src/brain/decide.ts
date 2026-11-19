@@ -116,7 +116,7 @@ export class Decider {
     return this.lastState;
   }
 
-  /** 습관 FSM: 마지막으로 PAM에 보낸 기억(판본)과 마지막 판단의 사람 상태(미리 세울 목표가 읽는다, src/act/track/goal.ts).
+  /** 습관 FSM: 마지막으로 PAM에 보낸 기억(판본)과 마지막 판단의 사람 상태(미리 세울 목표가 읽는다, src/goal/watch.ts).
    *  판단 전이면 null. 기억을 새로 읽지 않는다(읽으면 그날 판본을 고정해 반성 판본이 그날부터 쓰이지 못한다). */
   habit(): { memory: PamMemory; kind: "list" | "fsm"; version: number; state: string | null } | null {
     return this.lastMem ? { ...this.lastMem, state: this.lastState } : null;
@@ -155,7 +155,7 @@ export class Decider {
     this.emitDecision(r);
   }
 
-  /** 다음 판단 타이머에 기다림 없이 PAM을 부르게 한다(미리 세운 목표의 사람이 떠남, src/act/track/goal.ts). 나가 있는 판단도 기다리지 않는다(동시 상한 위로 하나, src/world/trigger.ts).
+  /** 다음 판단 타이머에 기다림 없이 PAM을 부르게 한다(미리 세운 목표의 사람이 떠남, src/goal/watch.ts). 나가 있는 판단도 기다리지 않는다(동시 상한 위로 하나, src/world/trigger.ts).
    *  쉼(hold)은 그대로다. 앞서 나간 판단의 답이 늦게 오면 번호로 늦은 답이라 상태를 바꾸지 않는다. */
   nudge(): void {
     if (!this.stopped) this.o.trigger.nudge();

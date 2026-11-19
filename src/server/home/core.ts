@@ -103,7 +103,7 @@ export class HomeCore {
   saidSafety = false;
   /** 대시보드에 마지막으로 보낸 행동 모드. */
   modeSent: Mode | null = null;
-  /** 마지막 미리 세운 목표(src/act/track/goal.ts, 접속한 대시보드에 다시 보낸다). */
+  /** 마지막 미리 세운 목표(src/goal/watch.ts, 접속한 대시보드에 다시 보낸다). */
   goal: PendingGoal | null = null;
   /** 마지막으로 보낸 습관 FSM 그림 자료(src/brain/habit.ts, 접속한 대시보드에 다시 보낸다). 판단 전이면 null. */
   habit: HabitFsm | null = null;

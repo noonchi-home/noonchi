@@ -96,7 +96,7 @@ export const TOP_LOOK_MS = 60_000;
  *  submitted: 이 계획을 낸 submit_plan 인자(모델이 낸 그대로). 미리 만든 계획을 다른 판단으로 다시 낼 때 쓴다(resubmit). add·finish로 만든 계획은 없다. */
 export interface AgentPlan { view: PlanView; steps: AgentStep[]; task: string; submitted?: unknown }
 
-/** 계획 입력의 미리 세운 목표(src/act/track/goal.ts): 사람이 아직 대상을 쓰는 동안 만드는 계획이다. trigger는 그 습관 규칙의 트리거,
+/** 계획 입력의 미리 세운 목표(src/goal/watch.ts): 사람이 아직 대상을 쓰는 동안 만드는 계획이다. trigger는 그 습관 규칙의 트리거,
  *  on은 지금 상태에서 그 상태로 가는 글(없으면 null), object는 목표 물건(World State id): 계획 검사가 같은 종류의 다른 물건을 쓰는 단계를 버린다.
  *  stand: 목표 물건이 아직 면 위에 놓인 World State 물건이 아닐 때 사람이 다 쓰고 둘 자리에 둔 대신 물건(id는 object). 계획 모드가 World State 물건 맨 앞에 넣는다(withStand). */
 export interface PlanAhead { trigger: string; on: string | null; object: string; stand?: WorldObject }

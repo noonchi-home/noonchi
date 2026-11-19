@@ -19,8 +19,8 @@ import type { Coach } from "../robot/coach.js";
 import type { ContentsHold, Hold, IdlePeek } from "../robot/contents.js";
 import type { Find, Finder, FindSlot } from "../robot/find.js";
 import type { Cycle, CycleEnd, SafetyTracker } from "./safety.js";
-import type { UseWatch } from "./use.js";
-import type { GoalWatch } from "./goal.js";
+import { TaskManager, type UseWatch } from "../../manage/index.js";
+import type { GoalWatch } from "../../goal/index.js";
 import type { Dock, DockSlot } from "../robot/dock.js";
 import type { Starter } from "../robot/start.js";
 import type { Steps } from "../robot/steps.js";
@@ -71,10 +71,10 @@ export interface Run {
   window: string | null;
   /** 실행 전 찾기(실행 전 검사가 대상이 안 보여 막은 계획, src/act/robot/find.ts). 없으면 null. findHeld: 찾기로 붙잡은 적이 있다(풀린 첫 명령을 폰 대화·승인 대기 동안 미룬다). */
   find: Find | null; findHeld: boolean;
-  /** 사람이 계획 대상을 쓰는 중이라 첫 명령을 미루기 시작한 시각(src/act/track/use.ts waits). 아니면 null.
+  /** 사람이 계획 대상을 쓰는 중이라 첫 명령을 미루기 시작한 시각(src/manage/use.ts waits). 아니면 null.
    *  useHeld: 쓰는 중이라 미룬 적이 있다(풀린 첫 명령을 폰 대화·승인 대기 동안 미룬다). */
   usedAt: number | null; useHeld: boolean;
-  /** 미리 세운 목표(src/act/track/goal.ts)로 미리 만든 계획이면 그 목표 id와 사람이 떠난 때(실행 전 검사 seenSince). 아니면 null.
+  /** 미리 세운 목표(src/goal/watch.ts)로 미리 만든 계획이면 그 목표 id와 사람이 떠난 때(실행 전 검사 seenSince). 아니면 null.
    *  목표 실행은 첫 단계 전 승인을 묻지 않는다(사용자 결정 2026-11-18, approval.ts need). 위험 목록 가전 단계는 그 단계에서 늘 묻는다. */
   goal: string | null; seenSince: number | null;
   /** 미리 만든 계획이면 사람이 떠난 때(아니면 null). */
@@ -86,7 +86,7 @@ export interface Run {
 
 /** at: 같은 행동 다시 계획 간격(planGapMs)을 세려고 적은 시각. */
 /** prepared: 미리 만든 계획을 쓴 판단(goal.ts take): 그 목표 id와 실행 전 검사 기준(사람이 떠난 때). */
-export interface Job { decision: DecisionRecord; gen: number; abort: AbortController; at: number; prepared?: { goal: string; seenSince: number; leftAt: number } }
+export interface Job { decision: DecisionRecord; gen: number; abort: AbortController; at: number; resumedStep?: string | null; prepared?: { goal: string; seenSince: number; leftAt: number } }
 
 export const OPEN = new Set<ExecState>(["planned", "running", "verifying"]);
 export const clsOf = (w: WorldView, id: string) => w.objects.find((o) => o.id === id)?.cls ?? id.replace(/_\d+$/, "");
@@ -121,6 +121,7 @@ export class TrackCore {
   eye: { position: XZ; at: number } | null = null;
   /** 마지막으로 추정 눈(맞추기 전·다시 맞추는 중)을 받은 시각. 이보다 앞선 맞춘 눈은 지금 맞춘 것이 아니다. */
   eyeLostAt = Number.NEGATIVE_INFINITY;
+  readonly manager = new TaskManager<DecisionRecord>();
   robot!: RobotMachine;
   start!: Starter;
   steps!: Steps;

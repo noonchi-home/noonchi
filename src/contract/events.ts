@@ -139,7 +139,7 @@ export type BrainLog =
     fsm?: FsmStep | null;
     /** 판단이 버린 늦은 답(풀린 화살표를 다시 낸 답, src/brain/decide.ts): 행동 없이 기록만 한다. */
     late?: true;
-    /** 화살표 없는 PAM 답을 미리 세운 목표의 트리거로 보고 그 목표 행동을 action에 넣었다(src/act/track/goal.ts triggerOf). fsm은 PAM 답 그대로다. */
+    /** 화살표 없는 PAM 답을 미리 세운 목표의 트리거로 보고 그 목표 행동을 action에 넣었다(src/goal/watch.ts triggerOf). fsm은 PAM 답 그대로다. */
     goal?: true;
     /** 고른 행동이 어느 모드로 하는 행동인가(TaskSpec.coach, src/act/tasks.ts): 코치 행동이면 coach, 아니면 noonchi. 대기·실패는 null.
      *  대시보드 메시지 상자 머리(「코치 모드」·「눈치 모드」, 대기면 없음)가 이 값만 쓴다. 예전 기록에는 없다. */
@@ -335,7 +335,7 @@ export type ServerMessage =
   | { type: "say"; text: string | null; safety?: true }
   /** 지금 행동 모드(눈치·코치, src/act/mode.ts modeNow): 대시보드 마스코트 머리 위 모드 말풍선. 바뀔 때마다, 그리고 접속 때 한 번. */
   | { type: "mode"; mode: "noonchi" | "coach" }
-  /** 미리 세운 목표(src/act/track/goal.ts): 바뀔 때마다, 그리고 접속 때 마지막 것. 대시보드는 세움·떠남인 동안 메시지 상자 알약으로 보인다. */
+  /** 미리 세운 목표(src/goal/watch.ts): 바뀔 때마다, 그리고 접속 때 마지막 것. 대시보드는 세움·떠남인 동안 메시지 상자 알약으로 보인다. */
   | { type: "goal"; goal: PendingGoal }
   /** 습관 FSM 그림 자료(src/brain/habit.ts): 판단이 PAM에 보낸 기억 판본이 바뀔 때, 그리고 접속 때 마지막 것. 대시보드 메시지 상자 FSM 카드가 그린다. */
   | { type: "habit"; habit: HabitFsm }

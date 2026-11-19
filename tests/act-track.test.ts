@@ -5018,6 +5018,21 @@ describe("실행 추적: 계획 검사에서 버린 계획", () => {
 
 // 2026-11-18 wide-mug q3: 「컵을 들어 주세요」 중에 폰 든 사람이 보여 PAM이 「컵에 콜라 따라 주기」를 골랐고, 「새 판단으로 바뀜」으로 컵 치우기가 취소됐다
 describe("실행 추적: 손대는 단계 중 다른 행동 판단", () => {
+  it("집기 중 직접 받은 말 부탁은 집기가 끝나면 한 번만 계획 모드로 보낸다", async () => {
+    const s = setup();
+    await s.decide(decision);
+    s.t.onAnswer("plan:pam-1", "plan:pam-1:1", "done");
+    s.t.onRequest({ task: "사용자에게 물어보기", heard: "어떻게 할지 물어봐 줘", atMs: s.clock.t, afterSeq: 1 });
+    s.t.tick();
+    await s.t.idle();
+    expect(s.plans.current()?.id).toBe("plan:pam-1");
+    s.t.onAnswer("plan:pam-1", "plan:pam-1:2", "done");
+    s.t.tick();
+    await s.t.idle();
+    expect(s.plans.current()?.id).toBe("plan:say-1");
+    s.t.tick();
+    expect(s.exec().filter((e) => e.plan_id === "plan:say-1" && e.state === "running")).toHaveLength(1);
+  });
   it("집기·내려놓기 단계와 집은 물건을 들고 가는 동안에는 다른 행동 판단으로 계획을 바꾸지 않고 기록만 한다(계획이 끝난 뒤 다시 판단). 가기 단계에서는 바꾼다", async () => {
     const s = setup();
     s.t.onEye([1, 2]);

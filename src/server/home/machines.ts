@@ -1,6 +1,6 @@
 import { pamTasks } from "../../act/index.js";
-import type { GoalState, ManagerState, SafetyState } from "../../contract/machines.js";
-import { goalState, MachineLane, managerState, safetyState } from "../../machines/index.js";
+import type { GoalState, SafetyState } from "../../contract/machines.js";
+import { goalState, MachineLane, safetyState } from "../../machines/index.js";
 import { POSE_FALL } from "../../world/vocab.js";
 import type { HomeCore } from "./core.js";
 
@@ -8,7 +8,6 @@ import type { HomeCore } from "./core.js";
 export class HomeMachines {
   private readonly goals = new MachineLane<GoalState>();
   private readonly safety = new MachineLane<SafetyState>();
-  private readonly manager = new MachineLane<ManagerState>();
 
   sample(core: HomeCore): void {
     const out = core.out.act;
@@ -40,8 +39,8 @@ export class HomeMachines {
       out.push("/safety/changes", safe);
     }
     const mode = core.mode();
-    const m = this.manager.change(managerState({ emergency: current.state === "emergency", requested: f.requested,
-      goal: f.active || !!tracker.goal(), mode, tasks: pamTasks(mode, core.pamHeard) }), now);
+    const m = tracker.managerTransition({ emergency: current.state === "emergency", requested: f.requested,
+      goal: f.active || !!tracker.goal(), mode, tasks: pamTasks(mode, core.pamHeard) }, now);
     if (m) {
       out.push("/manager/state", m);
       out.push("/manager/changes", m);

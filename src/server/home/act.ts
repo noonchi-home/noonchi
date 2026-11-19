@@ -55,7 +55,7 @@ export function triggerConfigOf(env: Record<string, string | undefined>): Trigge
   return loadTriggerConfig(env, { pamModel: loadEndpoints(env).pam.model });
 }
 
-/** 미리 세운 목표(src/act/track/goal.ts)를 보낸다: 전환은 /brain/goal_changes(RELIABLE, 녹화·재생에 하나하나), 최신 보기는 /brain/goal(STATE, 늦게 붙은 노드),
+/** 미리 세운 목표(src/goal/watch.ts)를 보낸다: 전환은 /brain/goal_changes(RELIABLE, 녹화·재생에 하나하나), 최신 보기는 /brain/goal(STATE, 늦게 붙은 노드),
  *  대시보드에는 {type:"goal"}. 접속한 대시보드에 다시 보내려고 마지막 것을 둔다. 거울 노드(act)의 차례대로 보내기 줄로 낸다(src/bus/outbox.ts). */
 /** 승인 흐름 질문의 답 id(승인·거절, 계속·그만, src/act/prompts.ts). */
 const APPROVAL_IDS = new Set([...APPROVE, ...AGAIN].map((c) => c.id));
@@ -151,7 +151,7 @@ export function startAct(core: HomeCore): (event: BrainLog) => void {
       core.person?.onDecision(d);
       core.tracker?.onDecision(d);
     },
-    // 화살표 없는 답의 미리 세운 목표 트리거(src/act/track/goal.ts triggerOf): 판단 기록에도 그 목표 행동이 남는다
+    // 화살표 없는 답의 미리 세운 목표 트리거(src/goal/watch.ts triggerOf): 판단 기록에도 그 목표 행동이 남는다
     goalTrigger: (d) => core.tracker?.goalTrigger(d) ?? null,
   });
   core.decider = decide;
@@ -194,7 +194,7 @@ export function startAct(core: HomeCore): (event: BrainLog) => void {
       if (!task) return { ok: false, error: "행동 목록에 없는 행동" };
       return planner.plan(planCtx(d, task, ahead), signal);
     },
-    // 미리 세운 목표(src/act/track/goal.ts): PAM이 쓰는 습관 기억(마지막 판단 때 판본)과 마지막으로 맞은 상태로 목표를 세우고, 미리 만든 계획은 PAM 판단으로 다시 검사해 쓴다.
+    // 미리 세운 목표(src/goal/watch.ts): PAM이 쓰는 습관 기억(마지막 판단 때 판본)과 마지막으로 맞은 상태로 목표를 세우고, 미리 만든 계획은 PAM 판단으로 다시 검사해 쓴다.
     // 목표는 /brain/goal_changes·/brain/goal과 대시보드로 보내고, 사람이 떠나면 판단을 다음 타이머(250ms)에 바로 부른다
     habit: () => decide.habit(),
     reuse: (d, plan, rename) => {

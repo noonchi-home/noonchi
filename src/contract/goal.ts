@@ -1,4 +1,4 @@
-// 미리 세운 목표(src/act/track/goal.ts)의 바깥 모양: 노드 통로 /brain/goal(STATE, 최신 보기)·/brain/goal_changes(RELIABLE, 전환마다)와
+// 미리 세운 목표(src/goal/watch.ts)의 바깥 모양: 노드 통로 /brain/goal(STATE, 최신 보기)·/brain/goal_changes(RELIABLE, 전환마다)와
 // 대시보드 {type:"goal"}이 같은 것을 싣는다.
 import type { PlanView } from "./plan.js";
 

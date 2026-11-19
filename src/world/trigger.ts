@@ -51,7 +51,7 @@ export class Trigger {
   /** 엔진 프레임이 온 시각. */
   onFrame(atMs: number): void { this.lastFrame = Math.max(this.lastFrame, atMs); }
 
-  /** 다음 판단을 주기·최소 간격·나가 있는 판단을 기다리지 않고 부르게 한다(미리 세운 목표의 사람이 떠남, src/act/track/goal.ts).
+  /** 다음 판단을 주기·최소 간격·나가 있는 판단을 기다리지 않고 부르게 한다(미리 세운 목표의 사람이 떠남, src/goal/watch.ts).
    *  동시 상한 위로는 하나만 더 나가고, 멈춤(프레임 없음)은 지킨다. 부르면 풀린다. */
   nudge(): void { this.nudged = true; }
 

@@ -119,14 +119,14 @@ export const FIND_THOUGHT = {
   lost: (item: string) => `${josa(item, "을/를")} 못 찾았어요`,
 } as const;
 
-/** 쓰는 중 지킴(src/act/track/use.ts): 사람이 손대는 행동의 대상을 쓰는 것을 볼 때 생각 말풍선에 올리는 상태 줄(활동 이름·물건 이름). */
+/** 쓰는 중 지킴(src/manage/use.ts): 사람이 손대는 행동의 대상을 쓰는 것을 볼 때 생각 말풍선에 올리는 상태 줄(활동 이름·물건 이름). */
 export const USE_THOUGHT = {
   act: (label: string) => `사람이 ${label}이라 지켜볼게요`,
   holding: (item: string) => `사람이 ${josa(item, "을/를")} 들고 있어서 지켜볼게요`,
   using: (item: string) => `사람이 ${josa(item, "을/를")} 쓰는 중이라 지켜볼게요`,
 } as const;
 
-/** 미리 세운 목표(src/act/track/goal.ts): 메시지 상자 줄(클로이드가 하는 말, 「<규칙 조건> <행동 말>」, 조건은 src/world/labels.ts ruleIf·행동 말은 src/act/tasks.ts TASK_SAY). */
+/** 미리 세운 목표(src/goal/watch.ts): 메시지 상자 줄(클로이드가 하는 말, 「<규칙 조건> <행동 말>」, 조건은 src/world/labels.ts ruleIf·행동 말은 src/act/tasks.ts TASK_SAY). */
 export const GOAL_TEXT = {
   armed: (cond: string, will: string) => `${cond} ${will}`,
 } as const;
@@ -265,14 +265,16 @@ export const EXEC_TEXT = {
   finding: (item: string) => `${josa(item, "을/를")} 찾으러 가요`,
   findingSame: (item: string) => `${josa(item, "을/를")} 찾는 중이에요`,
   foundNew: "찾은 뒤 다시 판단",
-  /** 쓰는 중 지킴(src/act/track/use.ts): 사람이 계획 대상을 쓰는 중이라 첫 명령을 미룸, holdMs 넘게 이어져 닫음. */
+  /** 쓰는 중 지킴(src/manage/use.ts): 사람이 계획 대상을 쓰는 중이라 첫 명령을 미룸, holdMs 넘게 이어져 닫음. */
   inUse: "사람이 쓰는 중이라 기다려요",
   inUseLong: "사람이 쓰는 중이라 실행하지 않아요",
   /** 손대는 단계(집기·내려놓기·들고 가기) 중 받은 다른 행동 판단: 계획을 바꾸지 않는다(src/act/robot/start.ts). */
   handling: "물건을 다루는 중이라 새 판단을 미룸",
+  safetyWait: "안전 안내가 끝나면 부탁을 이어 갈게요.",
+  requestWait: "먼저 부탁하신 일을 하고 있어요.",
   /** 충전 자리 돌아가기(src/act/robot/dock.ts): 계획이 끝난 뒤 사용자 위치 확인·충전 자리로 가는 동안 받은 행동 판단. */
   docking: "충전 자리로 가는 중이라 새 일을 미룸",
-  /** 미리 세운 목표(src/act/track/goal.ts)와 같은 행동을 사람이 떠나기 전에 고른 판단: 목표가 맡는다(사람이 떠나면 판단을 다시 부른다). */
+  /** 미리 세운 목표(src/goal/watch.ts)와 같은 행동을 사람이 떠나기 전에 고른 판단: 목표가 맡는다(사람이 떠나면 판단을 다시 부른다). */
   goalWait: "다 쓰고 떠나면 할 일로 두었어요",
   beforeLeave: "사람이 떠나기 전 판단이라 쓰지 않음",
   goalSafety: "안전 알림이 있어 시작하지 않아요",

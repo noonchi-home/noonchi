@@ -14,17 +14,42 @@
 // - 준비한 계획을 쓰지 못하고 계획 모드로 넘어갈 때(take)도 까닭(다시 검사 오류 글 등)을 목표 error와 서버 로그 「준비한 계획 버림」에 남긴다
 //   (2026-11-18 g1 glass: 받아 쓰다 넘어간 계획 모드가 「계획이 맞지 않아 버림」만 남겨 왜 못 썼는지 몰랐다).
 // 상태(status: 세움·떠남·씀·버림)와 미리 만들기(prep)는 따로 바뀐다. 바뀔 때마다 o.onGoal로 낸다(서버가 /brain/goal_changes·/brain/goal과 대시보드로 보낸다).
-import type { DecisionRecord } from "../../contract/events.js";
-import type { GoalDrop, PendingGoal } from "../../contract/goal.js";
-import type { ObjClass, WorldObject, WorldView } from "../../contract/world.js";
-import { surfacePlace, type PlaneSurface } from "../../world/index.js";
-import type { AgentPlan, PlanResult } from "../../agent/index.js";
-import { decisionWorld, edgeLearned, goalAhead, seedTrigger, stateOfWorld, type GoalPick } from "../../brain/index.js";
-import { ruleIf } from "../../world/labels.js";
-import { GOAL_LOG, GOAL_TEXT } from "../labels.js";
-import { emergencyOf } from "../mode.js";
-import { carriesTarget, followedId, planObjectsOf, putAway, TASK_NAMES, TASK_SAY, targetOf, taskOf } from "../tasks.js";
-import { Part } from "./core.js";
+import type { DecisionRecord } from "../contract/events.js";
+import type { GoalDrop, PendingGoal } from "../contract/goal.js";
+import type { ObjClass, WorldObject, WorldView } from "../contract/world.js";
+import { surfacePlace, type PlaneSurface } from "../world/index.js";
+import type { AgentPlan, PlanResult } from "../agent/index.js";
+import { decisionWorld, edgeLearned, goalAhead, seedTrigger, stateOfWorld, type GoalPick } from "../brain/index.js";
+import { ruleIf } from "../world/labels.js";
+import { GOAL_LOG, GOAL_TEXT } from "../act/labels.js";
+import { emergencyOf } from "../manage/index.js";
+import { carriesTarget, followedId, planObjectsOf, putAway, TASK_NAMES, TASK_SAY, targetOf, taskOf } from "../act/tasks.js";
+import type { ExecState } from "../contract/events.js";
+import type { PlanAhead } from "../agent/index.js";
+import type { PamMemory } from "../brain/index.js";
+import type { Placed } from "../act/tasks.js";
+
+export interface GoalPorts {
+  world(): WorldView;
+  now(): number;
+  stopped(): boolean;
+  openState(): ExecState | null;
+  planning(): boolean;
+  docking(): boolean;
+  notices(): readonly string[];
+  placed(): Placed;
+  holding(): { cls: string; id: string | null }[];
+  planner(d: DecisionRecord, signal: AbortSignal, ahead?: PlanAhead): PlanResult | Promise<PlanResult>;
+  habit?(): { memory: PamMemory; kind: "list" | "fsm"; state: string | null; version: number } | null;
+  reuse?(d: DecisionRecord, plan: AgentPlan, rename?: Readonly<Record<string, string>>): PlanResult;
+  surfaces?(): PlaneSurface[];
+  tasks?(): readonly string[];
+  nudge?(): void;
+  onGoal?(g: PendingGoal): void;
+  thought?(text: string, decisionId: string): void;
+  log?(line: string): void;
+  goalArmMs?: number;
+}
 
 /** 목표를 세워 둘 수 있는 시간(ms, 사용자 답 30분)과, 사람이 떠난 뒤 PAM이 그 행동을 고르기를 기다리는 시간(ms, 사용자 답 15초),
  *  사람 곁 면으로 볼 거리(m, 사람 자리에서 면 가장자리까지: 면 가운데 거리 − 반지름),
@@ -56,7 +81,9 @@ interface Goal {
   job: { abort: AbortController; done: Promise<PlanResult> } | null;
 }
 
-export class GoalWatch extends Part {
+export class GoalWatch {
+  constructor(private readonly o: GoalPorts) {}
+
   private goal: Goal | null = null;
   private n = 0;
   /** 목표를 버리거나 쓴 등장(그 등장에서는 다시 세우지 않는다). */
@@ -69,7 +96,7 @@ export class GoalWatch extends Part {
 
   /** tick·World State 변화마다(쓰는 중 지킴 뒤에) 부른다. */
   update(): void {
-    if (this.core.stopped) return;
+    if (this.o.stopped()) return;
     if (this.goal) this.watch(this.goal);
     if (!this.goal) this.arm();
     if (this.goal) this.preplan(this.goal);
@@ -78,9 +105,9 @@ export class GoalWatch extends Part {
   private arm(): void {
     const world = this.o.world();
     const p = world.person;
-    if (!this.o.habit || !p.visible || p.since_ms === this.spent || this.core.open() || this.core.planning || this.core.dock.busy()) return;
-    if (emergencyOf({ world, offNotices: this.core.safety.offTrack().notices })) return;
-    const held = this.core.use.holding();
+    if (!this.o.habit || !p.visible || p.since_ms === this.spent || this.o.openState() || this.o.planning() || this.o.docking()) return;
+    if (emergencyOf({ world, offNotices: this.o.notices() })) return;
+    const held = this.o.holding();
     const habit = held.length ? this.o.habit() : null;
     if (!habit) return;
     const tasks = this.o.tasks?.() ?? TASK_NAMES;
@@ -88,7 +115,7 @@ export class GoalWatch extends Part {
     const state = ("states" in habit.memory ? stateOfWorld(habit.memory, world) : null) ?? habit.state;
     for (const h of held) {
       const pick = goalAhead({ memory: habit.memory, kind: habit.kind, state, tasks, cls: h.cls });
-      const objectId = h.id ?? targetOf({ target: h.cls as ObjClass }, world, this.core.steps.placed())?.id ?? null;
+      const objectId = h.id ?? targetOf({ target: h.cls as ObjClass }, world, this.o.placed())?.id ?? null;
       if (!pick) continue;
       const id = `goal-${++this.n}`;
       // 묻기 자리를 바꾼 배운 컵 치우기(seed와 같은 트리거)도 사용자가 정한 짧은 꼴
@@ -99,7 +126,7 @@ export class GoalWatch extends Part {
         pick, objectId, presence: p.since_ms, plan: null, planObject: null, surface: null, job: null,
         view: {
           id, action: pick.action, state: pick.state, trigger: pick.on, object: objectId, cls: h.cls, status: "armed", prep: "waiting", reason: null, text,
-          armed_ms: this.clock.now(), ready_ms: null, gone_ms: null, fired_ms: null, plan: null,
+          armed_ms: this.o.now(), ready_ms: null, gone_ms: null, fired_ms: null, plan: null,
         },
       };
       this.publish();
@@ -123,9 +150,9 @@ export class GoalWatch extends Part {
   }
 
   private preplan(g: Goal): void {
-    if (g.view.prep !== "waiting" || g.view.status !== "armed" || this.core.open() || this.core.planning) return;
+    if (g.view.prep !== "waiting" || g.view.status !== "armed" || this.o.openState() || this.o.planning()) return;
     const world = this.o.world();
-    const now = this.clock.now();
+    const now = this.o.now();
     const o = this.objectOf(g, world);
     // 대상이 면 위에 놓인 물건이면 그 물건으로, 아니면(손에 있음·아직 World State 물건이 아님) 사람이 다 쓰고 둘 자리의 대신 물건으로 만든다.
     // 손에 든 컵 자리로 만든 계획은 가기 단계 자리가 틀린다
@@ -152,7 +179,7 @@ export class GoalWatch extends Part {
       // 받은 계획의 그 종류 물건이 목표 물건뿐일 때만 둔다(컵이 둘이면 다른 컵 계획을 두지 않는다)
       if (r.ok && this.mine(g, r.plan)) {
         g.plan = r.plan;
-        this.set(g, { prep: "ready", ready_ms: this.clock.now(), plan: r.plan.view });
+        this.set(g, { prep: "ready", ready_ms: this.o.now(), plan: r.plan.view });
       } else {
         const error = r.ok ? GOAL_LOG.error.notMine : r.error;
         this.o.log?.(GOAL_LOG.log.failed(g.view.id, g.view.action, error));
@@ -172,13 +199,13 @@ export class GoalWatch extends Part {
       if (o && o.status !== "gone") return o;
       return this.onSurface(g, world, g.surface ?? o?.surface ?? null) ?? o;
     }
-    return this.onSurface(g, world, g.surface) ?? targetOf({ target: g.view.cls as ObjClass }, world, this.core.steps.placed()) ?? undefined;
+    return this.onSurface(g, world, g.surface) ?? targetOf({ target: g.view.cls as ObjClass }, world, this.o.placed()) ?? undefined;
   }
 
   /** 그 면 위 그 종류 물건(사라지지 않았고 치우지 않았고 손에 있지 않음) 가운데 가장 최근에 본 것. */
   private onSurface(g: Goal, world: WorldView, surface: string | null): WorldObject | undefined {
     if (!surface) return undefined;
-    const placed = this.core.steps.placed();
+    const placed = this.o.placed();
     return world.objects
       .filter((x) => x.cls === g.view.cls && x.status !== "gone" && x.surface === surface && !putAway(x, placed) && x.facts.place?.value !== "in_hand")
       .sort((a, b) => b.last_seen_ms - a.last_seen_ms)[0];
@@ -225,15 +252,15 @@ export class GoalWatch extends Part {
    *  - fired 뒤: 사람이 다시 보이면 back, 대상이 사라지고 그 면에 같은 종류 물건이 없으면 took, fireWaitMs 안에 PAM이 그 행동을 고르지 않으면 pam. */
   private watch(g: Goal): void {
     const world = this.o.world();
-    const now = this.clock.now();
+    const now = this.o.now();
     const p = world.person;
     const v = g.view;
-    if (emergencyOf({ world, offNotices: this.core.safety.offTrack().notices })) return this.drop("safety");
+    if (emergencyOf({ world, offNotices: this.o.notices() })) return this.drop("safety");
     if (!(this.o.tasks?.() ?? TASK_NAMES).includes(v.action)) return this.drop("mode");
-    if (this.core.dock.busy()) return this.drop("dock");
+    if (this.o.docking()) return this.drop("dock");
     // 다른 계획이 실제로 시작했을 때만(running·verifying) 버린다. 계획만 되어 기다리거나 막힌 계획·만드는 중인 계획은 목표가 그대로 맡는다(start.ts begin)
-    const run = this.core.open();
-    if (run && run.state !== "planned") return this.drop("replaced");
+    const run = this.o.openState();
+    if (run && run !== "planned") return this.drop("replaced");
     if (now - v.armed_ms > (this.o.goalArmMs ?? GOAL_DEFAULTS.armMs)) return this.drop("expired");
     const o = this.objectOf(g, world);
     // 정한 물건이 사라져 그 면의 같은 종류 물건으로 이어 가면 그 물건을 따라간다
@@ -250,14 +277,14 @@ export class GoalWatch extends Part {
     if (p.visible) {
       if (p.since_ms !== g.presence) return this.drop("back");
       // 정한 물건만 본다: 아직 모르는 물건(컵이 World State에 없음)은 사라졌다고 하지 않는다
-      if (g.objectId && (!o || o.status === "gone" || putAway(o, this.core.steps.placed()))) return this.drop("moved");
+      if (g.objectId && (!o || o.status === "gone" || putAway(o, this.o.placed()))) return this.drop("moved");
       return;
     }
     const waited = p.since_ms !== null && now - p.since_ms > GOAL_DEFAULTS.fireWaitMs;
     // 물건을 모르면 그 종류 컵이 보일 때까지 기다린다(사람 사라짐 뒤 컵 확정, g1 tall 0.7초). fireWaitMs가 지나도 없으면 들고 나간 것이다
     if (!o) return g.objectId || waited ? this.drop("took") : undefined;
     if (o.status === "gone") return this.drop("took");
-    if (putAway(o, this.core.steps.placed())) return this.drop("moved");
+    if (putAway(o, this.o.placed())) return this.drop("moved");
     if (o.facts.place?.value === "in_hand" || o.carried === true) {
       if (waited) this.drop("took");
       return;
@@ -361,7 +388,7 @@ export class GoalWatch extends Part {
           const again = reuse(d, r.plan, rename(id));
           if (again.ok) {
             // 목표를 뗀 뒤 기다리는 사이 안전 알림(쓰러짐 의심·끄기 안내)이 생겼으면 쓰지 않고 버린다: 실행 추적은 첫 명령 직전에 다시 보고 시작하지 않는다(start.ts tryStart, Codex 59447ec P1)
-            const unsafe = emergencyOf({ world: this.o.world(), offNotices: this.core.safety.offTrack().notices });
+            const unsafe = emergencyOf({ world: this.o.world(), offNotices: this.o.notices() });
             this.end(g, unsafe ? "dropped" : "used", unsafe ? "safety" : null);
             return again;
           }
@@ -410,7 +437,7 @@ export class GoalWatch extends Part {
   }
 
   private emit(view: PendingGoal): void {
-    if (!this.core.stopped) this.o.onGoal?.(view);
+    if (!this.o.stopped()) this.o.onGoal?.(view);
   }
 
   /** 미리 만드는 호출이 끝날 때까지 기다린다(시험용). */

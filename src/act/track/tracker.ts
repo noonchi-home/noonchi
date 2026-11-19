@@ -84,8 +84,8 @@ import type { ContentsLook } from "../robot/contents.js";
 import { OPEN, TrackCore, type TrackConfig } from "./core.js";
 import { SafetyTracker, type Cycle, type CycleEnd } from "./safety.js";
 import { Starter } from "../robot/start.js";
-import { UseWatch } from "./use.js";
-import { GoalWatch } from "./goal.js";
+import { UseWatch } from "../../manage/index.js";
+import { GoalWatch } from "../../goal/index.js";
 import { noticeTick } from "../robot/phone-line.js";
 export { DONE_NOTICE_MS } from "../robot/phone-line.js";
 
@@ -118,10 +118,10 @@ export interface TrackerOptions {
   world: () => WorldView;
   /** 계획 전 검사(src/act/check.ts checkDecision). 에이전트를 부르기 전에 본다. 없으면 통과. */
   precheck?: (d: DecisionRecord) => CheckResult;
-  /** 실행 전 검사(src/act/check.ts checkPlan). seenSince: 미리 만든 계획이면 사람이 떠난 때(CheckInput.seenSince, src/act/track/goal.ts). */
+  /** 실행 전 검사(src/act/check.ts checkPlan). seenSince: 미리 만든 계획이면 사람이 떠난 때(CheckInput.seenSince, src/goal/watch.ts). */
   check: (d: DecisionRecord, plan: PlanView, seenSince?: number) => CheckResult;
   /** 에이전트 계획 모드(src/agent/planner.ts). 판단 하나에 한 번 부른다. 새 판단·「그만」·멈춤이면 signal을 끊는다.
-   *  ahead가 있으면 미리 세운 목표의 계획이다(src/act/track/goal.ts, 계획 입력에 [미리 세운 목표] 줄, 목표 물건만 받는다). */
+   *  ahead가 있으면 미리 세운 목표의 계획이다(src/goal/watch.ts, 계획 입력에 [미리 세운 목표] 줄, 목표 물건만 받는다). */
   planner: (d: DecisionRecord, signal: AbortSignal, ahead?: PlanAhead) => PlanResult | Promise<PlanResult>;
   /** 사람 상태 FSM: 그날 기억(판본)과 마지막 판단의 사람 상태(src/brain/decide.ts fsmState). 사람이 쓰는 것을 보면 지금 상태에서 나가는 화살표로 목표를 세운다(goal.ts).
    *  없으면 목표를 세우지 않는다. */
@@ -247,8 +247,17 @@ export class ExecutionTracker {
     core.start = new Starter(core);
     core.safety = new SafetyTracker(core);
     core.answers = new Answers(core);
-    core.use = new UseWatch(core);
-    core.goal = new GoalWatch(core);
+    core.use = new UseWatch({
+      world: o.world, tasks: o.tasks, touching: () => core.touching(),
+      thought: (text) => { if (!core.stopped) o.thought?.(text, core.lastDecision ?? "use"); },
+    });
+    core.goal = new GoalWatch({
+      world: o.world, now: () => clock.now(), stopped: () => core.stopped, openState: () => core.open()?.state ?? null,
+      planning: () => !!core.planning, docking: () => core.dock.busy(), notices: () => core.safety.offTrack().notices,
+      placed: () => core.steps.placed(), holding: () => core.use.holding(), planner: o.planner, habit: o.habit,
+      reuse: o.reuse, surfaces: o.surfaces, tasks: o.tasks, nudge: o.nudge, onGoal: o.onGoal,
+      thought: o.thought, log: o.log, goalArmMs: o.goalArmMs,
+    });
     core.robot = new RobotMachine(core);
     this.core = core;
   }
@@ -262,6 +271,8 @@ export class ExecutionTracker {
   machineFacts() { return this.core.robot.facts(); }
 
   robotTransition(facts: RobotFacts, now: number) { return this.core.robot.transition(facts, now); }
+
+  managerTransition(facts: Parameters<TrackCore["manager"]["transition"]>[0], now: number) { return this.core.manager.transition(facts, now); }
 
   robotLast() { return this.core.robot.last(); }
 
@@ -356,8 +367,9 @@ export class ExecutionTracker {
   tick(): void {
     const core = this.core;
     const { steps, safety } = core;
-    const r = core.run;
     if (!core.stopped) safety.reminderTick();
+    if (!core.stopped && core.start.resumeRequest()) return;
+    const r = core.run;
     // 계획 전 찾기(대상이 안 보여 막은 판단)가 먼저, 계획 밖 가까이 가서 보기(판단 전 보기 B 뒤에도 모를 때)는 계획·찾기가 없을 때만 하고 막는 것이 생기면 거둔다
     // 사람이 손대는 행동 대상을 쓰는지 먼저 본다(쓰는 중이면 찾기·가까이 가서 보기가 그 종류로 사람을 보내지 않는다, use.ts)
     if (!core.stopped) core.use.update();
@@ -421,6 +433,7 @@ export class ExecutionTracker {
   /** 멈추면 더 기록하지 않고 폰에도 보내지 않는다. 만들던 계획과 멈춘 단계 알림은 끊는다. */
   stop(): void {
     const core = this.core;
+    core.manager.cancel();
     core.goal.stop();
     if (core.run) core.steps.endTop(core.run);
     if (core.run) core.contents.release(core.run);
