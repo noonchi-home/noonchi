@@ -17,7 +17,8 @@ import { pamClientFor, startFakePamLlm } from "./helpers/pam.js";
 import { ApprovalStore } from "../src/agent/approval.js";
 import { resubmit, type PlanAhead } from "../src/agent/planTools.js";
 import type { PlanResult } from "../src/agent/index.js";
-import { CUP_FSM_MEMORY } from "../src/brain/decision.js";
+import { CUP_FSM_MEMORY, type FsmMemory } from "../src/brain/decision.js";
+import { LEARNED_FSM_MEMORY } from "../scripts/learned-memory.js";
 import type { BrainLog, DecisionRecord } from "../src/contract/events.js";
 import type { PendingGoal } from "../src/contract/goal.js";
 import type { PlannedCommandMessage } from "../src/contract/phone.js";
@@ -25,7 +26,10 @@ import type { WorldObject, WorldSighting, WorldView } from "../src/contract/worl
 import type { PlaneSurface } from "../src/world/index.js";
 import { POSE_FALL } from "../src/world/vocab.js";
 import { smallFloor } from "./helpers/floor.js";
-import { cupSteps, idsFrom, planCalls, planContext, planTurn, startFakePlanner, testPlanner, type FakePlanner } from "./helpers/planner.js";
+import { cupSteps, fillSteps, idsFrom, planCalls, planContext, planTurn, startFakePlanner, testPlanner, type FakePlanner } from "./helpers/planner.js";
+import { SMALL_SCENE } from "./helpers/floor.js";
+import { floorPlanFrom } from "../src/layout/route.js";
+import type { FloorPlan } from "../src/layout/floor.js";
 
 let llm: FakePlanner;
 beforeAll(async () => { llm = await startFakePlanner(); });
@@ -33,8 +37,10 @@ afterAll(async () => { await llm.close(); });
 
 const NOONCHI = tasksFor("noonchi");
 const PLACES: Record<string, { label: string; position: [number, number, number] }> = {
-  table_1: { label: "식탁", position: [7, 0.75, 3] }, sink_1: { label: "싱크대", position: [5, 0.9, 1] },
+  table_1: { label: "식탁", position: [7, 0.75, 3] }, sink_1: { label: "싱크대", position: [5, 0.9, 1] }, fridge_1: { label: "냉장고", position: [7.5, 0.9, 0.5] },
 };
+/** 냉장고(fridge_1 [7.5, 0.5])를 더한 작은 평면도(채워 주기 계획). */
+const fridgeFloor = (): FloorPlan => floorPlanFrom({ ...structuredClone(SMALL_SCENE), objects: [...structuredClone(SMALL_SCENE.objects), { id: "fridge_1", type: "fridge", room: "kitchen", plan: { position: [7.5, 0.5] } }] });
 const fact = (value: string, at: number) => ({ value, at_ms: at, since_ms: at, certainty: "confirmed" as const });
 /** 식탁 위 컵. place in_hand면 면 없음. */
 const cupOn = (o: { id?: string; place?: string; seen: number; surface?: string | null; status?: WorldObject["status"]; followed_by?: string | null; position?: [number, number, number] }): WorldObject => ({
@@ -52,7 +58,7 @@ const pam = (id: string, seq: number, atMs: number, action: string | null = "컵
 /** 실행 추적 + 미리 세운 목표. person(who)로 사람을 바꾸고(나타나면 since_ms, 사라지면 그때가 since_ms), setObjects로 물건을 바꾼다.
  *  tick은 시계를 ms 움직이고, 있는 물건을 지금 본 것으로 고친 뒤 tracker.tick을 부른다. gone은 World State 사람 사라짐 변화처럼 onWorld를 부른다.
  *  승인 기억은 비어 있다(처음 하는 일): 목표로 시작한 실행은 묻지 않는다. */
-function goalSetup(o: { over?: Partial<TrackerOptions>; state?: string | null; objects?: WorldObject[]; where?: [number, number] } = {}) {
+function goalSetup(o: { over?: Partial<TrackerOptions>; state?: string | null; memory?: FsmMemory; objects?: WorldObject[]; where?: [number, number]; floor?: FloorPlan } = {}) {
   const clock = { t: 10_000, now() { return this.t; } };
   let who: Who = null;
   let since = 0;
@@ -76,7 +82,7 @@ function goalSetup(o: { over?: Partial<TrackerOptions>; state?: string | null; o
   const logs: BrainLog[] = [];
   const phone: PlannedCommandMessage[] = [];
   let nudged = 0;
-  const plans = new PlanHub(smallFloor(), () => {}, () => "t");
+  const plans = new PlanHub(o.floor ?? smallFloor(), () => {}, () => "t");
   const planner = testPlanner(llm);
   const approvals = new ApprovalStore(join(mkdtempSync(join(tmpdir(), "goal-")), "homes", "h", "approvals.json"), () => "t");
   const ctx = (d: DecisionRecord, ahead?: PlanAhead) => ({ ...planContext({ decision: d, world: w(), floor: plans.floor() }), ...(ahead ? { ahead } : {}) });
@@ -85,7 +91,8 @@ function goalSetup(o: { over?: Partial<TrackerOptions>; state?: string | null; o
     planner: (d, signal, ahead) => planner.plan(ctx(d, ahead), signal),
     check: (d, p, seenSince) => checkPlan({ decision: d, tasks: NOONCHI, plan: p, world: w(), nowMs: clock.t, staleMs: 3000, mode: "test", ...(seenSince !== undefined ? { seenSince } : {}) }),
     reuse: (d, plan, rename) => resubmit(plan, ctx(d), rename),
-    habit: () => ({ memory: CUP_FSM_MEMORY, kind: "fsm", state: o.state === undefined ? "drinking" : o.state, version: 1 }),
+    // 목표는 배운 화살표에서만 선다: 기본은 배운 뒤 기억(배우기 전 seed는 「배우기 전(seed) 기억이면…」 시험이 본다)
+    habit: () => ({ memory: o.memory ?? LEARNED_FSM_MEMORY, kind: "fsm", state: o.state === undefined ? "drinking" : o.state, version: 1 }),
     onGoal: (g) => goals.push(g), nudge: () => { nudged++; }, thought: (text) => thoughts.push(text),
     toPhone: (m) => phone.push(m), emit: (l) => logs.push(l), ...o.over,
   });
@@ -122,11 +129,26 @@ function goalSetup(o: { over?: Partial<TrackerOptions>; state?: string | null; o
 }
 
 describe("미리 세운 목표: 세우기와 미리 만들기", () => {
+  it("처음 상태가 drinking이 아니어도(판단 전 null) 사람이 마시는 중이면(World State 하는 일) 세운다", () => {
+    const s = goalSetup({ state: null });
+    s.person({ act: "drinking" });
+    s.tick();
+    expect(s.goals[0]).toMatchObject({ action: "컵 치우기", state: "drinking", status: "armed" });
+  });
+
+  it("배우기 전(seed) 기억이면 마시는 중이어도 세우지 않는다(떠날 때 화살표가 묻기라 목표가 없다)", () => {
+    const s = goalSetup({ memory: CUP_FSM_MEMORY });
+    s.person({ act: "drinking" });
+    s.tick();
+    s.tick();
+    expect(s.goals).toEqual([]);
+  });
+
   it("사람이 컵으로 마시는 것을 보면 「컵 치우기」 목표를 세우고 메시지 상자에 「컵을 두고 자리를 뜨면 컵을 치울게요」를 한 번 올린다. 폰 명령은 없다", async () => {
     const s = goalSetup();
     s.person({ act: "drinking" });
     s.tick();
-    expect(s.goals[0]).toMatchObject({ id: "goal-1", action: "컵 치우기", state: "left_cup", object: "cup_1", cls: "cup", status: "armed", prep: "waiting", reason: null, text: "컵을 두고 자리를 뜨면 컵을 치울게요" });
+    expect(s.goals[0]).toMatchObject({ id: "goal-1", action: "컵 치우기", state: "drinking", trigger: "사용자가 먹거나 마시기를 끝내고 다른 일로 넘어간다.", object: "cup_1", cls: "cup", status: "armed", prep: "waiting", reason: null, text: "컵을 두고 자리를 뜨면 컵을 치울게요" });
     expect(s.thoughts).toEqual([USE_THOUGHT.act("마시는 중"), "컵을 두고 자리를 뜨면 컵을 치울게요"]);
     for (let i = 0; i < 20; i++) s.tick();
     await s.t.idle();
@@ -340,7 +362,7 @@ describe("미리 세운 목표: 사람이 떠나면 PAM 확인 뒤 바로 시작
       const s = goalSetup({ over: { nudge: () => decider?.nudge() } });
       decider = new Decider({
         pam: pamClientFor(pamLlm), world: { view: () => s.world() }, trigger: new Trigger({ mode: "periodic", minGapMs: 3000, periodMs: 5000, idleStopMs: 1_800_000, liveMs: 10_000, maxInflight: 1 }, 0),
-        tasks: () => NOONCHI, memory: () => ({ memory: CUP_FSM_MEMORY, kind: "fsm", version: 1 }), emit: () => {}, offsetMinutes: 540, clock: s.clock, onDecision: (d) => s.t.onDecision(d),
+        tasks: () => NOONCHI, memory: () => ({ memory: LEARNED_FSM_MEMORY, kind: "fsm", version: 1 }), emit: () => {}, offsetMinutes: 540, clock: s.clock, onDecision: (d) => s.t.onDecision(d),
       });
       /** 서버 판단 타이머(250ms)와 같은 차례: 판단 → 실행 추적. */
       const loop = async () => { s.clock.t += 250; decider!.onFrame(); decider!.tick(); await decider!.idle(); s.tick(0); await s.t.idle(); };
@@ -595,12 +617,133 @@ describe("미리 세운 목표: 실제 영상 g1에서 드러난 것(2026-11-18)
     expect(n.goals.at(-1)).toMatchObject({ status: "dropped", reason: "took" });
   });
 
-  it("사람이 마시는 동안 PAM이 「컵 그대로 두기」(계획 없음)·막힌 판단을 골라도 그 일이 맡지 않았으니 목표를 버리지 않는다(g1 세 판 모두 마시는 중 그대로 두기 판단)", async () => {
+  /** 마시는 동안 계획을 준비해 둔 상태까지. */
+  async function ready(o: Parameters<typeof goalSetup>[0] = {}) {
+    const s = goalSetup(o);
+    s.person({ act: "drinking" });
+    s.tick();
+    await s.t.idle();
+    expect(s.t.goal()?.prep).toBe("ready");
+    return s;
+  }
+
+  // 2026-11-19 glass pfsm4-2: 마시는 중 PAM이 물 채우기 화살표를 잘못 골라 목표가 「다른 일이 맡음」으로 버려졌다. 그 계획은 쓰는 동안 첫 명령을 미루다
+  // 실행 전 검사(내용물 있음)에서 막힐 일이었다. 목표는 다른 일의 계획이 실제로 시작될 때(running)만 버린다
+  it("마시는 동안 다른 행동(컵에 물 채워 주기)이 골라져도 그 계획이 시작하지 않고 막혀 있으면 목표를 버리지 않고, 사람이 떠나면 목표 계획으로 시작한다", async () => {
+    const WATER = "컵에 물 채워 주기";
+    llm.scripts[WATER] = () => [planCalls(fillSteps({ fridge: "fridge_1", table: "table_1", cup: "cup_1", drink: "물" }))];
+    try {
+      const full = (seen: number): WorldObject => { const c = cupOn({ seen }); return { ...c, facts: { ...c.facts, contents: fact("has_contents", seen) } }; };
+      const s = goalSetup({ floor: fridgeFloor(), objects: [full(10_000)] });
+      s.person({ act: "drinking" });
+      s.tick();
+      await s.t.idle();
+      expect(s.t.goal()?.prep).toBe("ready");
+      await s.decide(pam("pam-4", 4, s.clock.t, WATER, true));
+      expect(s.plans.current()).toMatchObject({ id: "plan:pam-4", status: "planned" });
+      expect(s.commands()).toEqual([]);
+      expect(s.t.goal()).toMatchObject({ status: "armed", prep: "ready" });
+      s.tick();
+      s.gone();
+      s.tick();
+      expect(s.goals.some((g) => g.status === "dropped")).toBe(false);
+      expect(s.t.goal()).toMatchObject({ status: "fired" });
+      await s.decide(pam("pam-5", 5, s.clock.t));
+      expect(s.commands()[0]).toMatchObject({ id: "plan:pam-5", text: "식탁으로 가 주세요" });
+      expect(s.goals.at(-1)).toMatchObject({ status: "used", reason: null });
+    } finally {
+      delete llm.scripts[WATER];
+    }
+  });
+
+  it("다른 행동의 계획이 실제로 시작(running)하면 그때 목표를 「다른 일이 맡음」으로 버린다", async () => {
+    const s = await ready();
+    await s.decide(pam("pam-5", 5, s.clock.t, "사용자에게 물어보기", true));
+    expect(s.plans.current()).toMatchObject({ id: "plan:pam-5", status: "running" });
+    expect(s.goals.at(-1)).toMatchObject({ status: "dropped", reason: "replaced" });
+  });
+
+  // 2026-11-19 사용자 「이미 먹으면서 치우기 계획을 세웠는데, 자리 없다고 판단했는데 왜 제대로 동작을 안 해?」(glass pfsm4-2: 떠난 직후 PAM이 away·화살표 없음)
+  it("목표 트리거(goalTrigger): 떠난 뒤 PAM이 화살표 없이(−1) 상태만 목표 화살표의 도착(away, to *)으로 답하면 목표 행동이고, 그 행동의 판단은 준비한 계획으로 시작한다. 출발 상태(drinking) 그대로면 null", async () => {
+    const step = (state: string) => ({ state, from: null, next_index: -1, to: null, on: null, when: null, action: null, learned: false });
+    const same = await ready();
+    same.tick();
+    same.gone();
+    same.tick();
+    expect(same.t.goalTrigger({ ...pam("pam-2", 2, same.clock.t, null), fsm: step("drinking") })).toBeNull();
+    const s = await ready();
+    s.tick();
+    s.gone();
+    s.tick();
+    const d = { ...pam("pam-2", 2, s.clock.t, null), fsm: step("away") };
+    expect(s.t.goalTrigger(d)).toBe("컵 치우기");
+    const before = s.planCalls();
+    await s.decide({ ...d, action: "컵 치우기" });
+    expect(s.planCalls()).toBe(before);
+    expect(s.commands()[0]).toMatchObject({ id: "plan:pam-2", text: "식탁으로 가 주세요" });
+    expect(s.goals.at(-1)).toMatchObject({ status: "used", reason: null });
+  });
+
+  it("목표 트리거는 없다: 목표가 없음, 아직 떠나기 전(armed), 이미 행동이 있음, PAM이 다른 화살표 번호를 냄(행동 없는 화살표도 그 답을 따른다)", async () => {
+    const step = { state: "away", from: null, next_index: -1, to: null, on: null, when: null, action: null, learned: false };
+    const none = goalSetup();
+    expect(none.t.goalTrigger({ ...pam("pam-1", 1, none.clock.t, null), fsm: step })).toBeNull();
+    await none.decide({ ...pam("pam-1", 1, none.clock.t, null), fsm: step });
+    expect(none.commands()).toEqual([]);
+    const armed = await ready();
+    expect(armed.t.goalTrigger({ ...pam("pam-2", 2, armed.clock.t, null, true), fsm: step })).toBeNull();
+    // 마시는 중에서 행동 없이 TV를 보러 가는 화살표가 있는 기억: PAM이 그 화살표(번호 1)를 골랐으면 목표 행동으로 바꾸지 않는다
+    const memory = structuredClone(LEARNED_FSM_MEMORY);
+    memory.states.find((x) => x.id === "drinking")!.next.splice(1, 0, { to: "watching_tv", on: "사용자가 먹다가 TV를 보러 간다." });
+    const other = await ready({ memory });
+    other.tick();
+    other.gone();
+    other.tick();
+    expect(other.t.goal()).toMatchObject({ status: "fired" });
+    const tv = { state: "watching_tv", from: "drinking", next_index: 1, to: "watching_tv", on: "사용자가 먹다가 TV를 보러 간다.", when: null, action: null, learned: false };
+    expect(other.t.goalTrigger({ ...pam("pam-3", 3, other.clock.t, null), fsm: tv })).toBeNull();
+    expect(other.t.goalTrigger({ ...pam("pam-3", 3, other.clock.t, null), fsm: { ...step, state: "watching_tv" } })).toBe("컵 치우기");
+    expect(other.t.goalTrigger({ ...pam("pam-3", 3, other.clock.t, "사용자에게 물어보기"), fsm: step })).toBeNull();
+  });
+
+  // Codex(b5da6c36) P2: 목표 행동을 실행 추적 복사본에만 넣어 판단 기록에는 「대기」가 남았다(밤 채택 검사 robotSpans가 로봇이 한 행동을 못 찾음)
+  it("판단(Decider)이 목표 트리거를 물어 판단 기록·실행 추적에 목표 행동으로 낸다: 기록 action 「컵 치우기」(goal 표시, PAM 답 화살표는 그대로 없음)와 첫 명령", async () => {
+    const pamLlm = await startFakePamLlm({ predict: (v) => (/사람 안 보임/.test(v.observation_text)
+      ? { observation: "o", reasoning: "r", state: "away", from: null, next_index: -1 }
+      : v.last_state === "drinking" ? { observation: "o", reasoning: "r", state: "drinking", from: null, next_index: -1 } : { observation: "o", reasoning: "r", state: "drinking", from: "away", next_index: 0 }) });
+    try {
+      let decider: Decider | null = null;
+      const logs: BrainLog[] = [];
+      const s = goalSetup({ over: { nudge: () => decider?.nudge() } });
+      decider = new Decider({
+        pam: pamClientFor(pamLlm), world: { view: () => s.world() }, trigger: new Trigger({ mode: "periodic", minGapMs: 3000, periodMs: 5000, idleStopMs: 1_800_000, liveMs: 10_000, maxInflight: 1 }, 0),
+        tasks: () => NOONCHI, memory: () => ({ memory: LEARNED_FSM_MEMORY, kind: "fsm", version: 1 }), emit: (l) => logs.push(l), offsetMinutes: 540, clock: s.clock,
+        onDecision: (d) => s.t.onDecision(d), goalTrigger: (d) => s.t.goalTrigger(d),
+      });
+      const loop = async () => { s.clock.t += 250; decider!.onFrame(); decider!.tick(); await decider!.idle(); s.tick(0); await s.t.idle(); };
+      s.person({ act: "drinking" });
+      for (let i = 0; i < 4; i++) await loop();
+      expect(s.t.goal()?.prep).toBe("ready");
+      const goneAt = s.clock.t;
+      s.gone();
+      while (!s.commands().length && s.clock.t - goneAt < 6000) await loop();
+      expect(s.commands()[0]).toMatchObject({ text: "식탁으로 가 주세요" });
+      const fired = logs.filter((l): l is Extract<BrainLog, { type: "decision" }> => l.type === "decision" && l.action === "컵 치우기");
+      expect(fired).toHaveLength(1);
+      expect(fired[0]).toMatchObject({ goal: true, fsm: { state: "away", from: null, next_index: -1 } });
+      expect(s.commands()[0]!.id).toBe(`plan:${fired[0]!.id}`);
+      decider.stop();
+    } finally {
+      await pamLlm.close();
+    }
+  });
+
+  it("사람이 마시는 동안 PAM 판단이 대기(안 하기는 화살표 없음)면 그 일이 맡지 않았으니 목표를 버리지 않는다", async () => {
     const s = goalSetup();
     s.person({ act: "drinking" });
     s.tick();
     await s.t.idle();
-    await s.decide(pam("pam-1", 1, s.clock.t, "컵 그대로 두기", true));
+    await s.decide(pam("pam-1", 1, s.clock.t, null, true));
     expect(s.t.goal()).toMatchObject({ status: "armed", prep: "ready" });
     expect(s.goals.some((g) => g.status === "dropped")).toBe(false);
   });
@@ -846,6 +989,39 @@ describe("미리 세운 목표: 떠나기 직전에 본 컵으로 바로 시작"
     s.tick();
     s.tick();
     expect(s.commands().at(-1)).toMatchObject({ id: "plan:pam-2", text: "컵을 들어 주세요" });
+  });
+
+  // 2026-11-19 영상 모드(고정 자세)에서 드러남: 1단계를 폰 위치가 아니라 「완료」로 넘기면 떠난 뒤 컵을 아직 다시 못 봤을 때 붙잡힌 뒤 다시 보는 길이 없어 멈췄다
+  describe("1단계를 「완료」로 넘겼는데(폰 위치로는 끝나지 않음) 떠난 뒤 컵을 아직 다시 못 봤으면 붙잡았다가", () => {
+    async function answered() {
+      const s = await leftWith(1000);
+      await s.decide(pam("pam-2", 2, s.clock.t));
+      const first = s.commands()[0]!;
+      expect(first).toMatchObject({ id: "plan:pam-2", text: "식탁으로 가 주세요" });
+      expect(s.t.onAnswer(first.id, first.step, "done")).toBe(true);
+      await s.t.idle();
+      expect(s.commands().some((c) => c.text === "컵을 들어 주세요")).toBe(false);
+      return s;
+    }
+    it("그 뒤 사진에 컵이 보이면 「컵을 들어 주세요」로 간다", async () => {
+      const s = await answered();
+      s.freeze(false);
+      s.tick();
+      s.tick();
+      expect(s.commands().at(-1)).toMatchObject({ id: "plan:pam-2", text: "컵을 들어 주세요" });
+    });
+    it("다시 보기 기한이 지나도 안 보이면 그 자리로 찾으러 가고(멀면 「식탁으로 가 주세요」, 가까우면 「식탁 위를 비춰 주세요」), 못 찾으면 대상이 없다고 닫는다", async () => {
+      const s = await answered();
+      s.setObjects((xs) => xs.map((x) => ({ ...x, status: "gone" as const })));
+      for (let i = 0; i < 16; i++) s.tick();
+      expect(s.commands().at(-1)).toMatchObject({ id: "plan:pam-2", text: "식탁으로 가 주세요" });
+      expect(s.commands().at(-1)!.step).not.toBe("plan:pam-2:1");
+      s.setEye([7, 3]);
+      for (let i = 0; i < 8; i++) s.tick();
+      expect(s.commands().at(-1)).toMatchObject({ text: FIND_TEXT.aim("식탁") });
+      for (let i = 0; i < 280; i++) s.tick();
+      expect(s.logs.filter((l) => l.type === "execution").at(-1)).toMatchObject({ plan_id: "plan:pam-2", state: "failed", text: CHECK_TEXT.no_target });
+    });
   });
 
   it("사람이 마지막에 컵을 들고 나갔으면(떠난 뒤 사진에 컵이 없음) 식탁에 가서 집기 대신 그 자리를 찾고(「식탁 위를 비춰 주세요」), 못 찾으면 대상이 없다고 닫는다", async () => {

@@ -24,6 +24,9 @@ export const ASK_CHOICES: Record<"clear_keep" | "yes_no", ActionChoice[]> = {
   ],
 };
 
+/** 묻기 답 → 말 부탁: 「사용자에게 물어보기」 계획이 이 답으로 끝나면 그 행동을 말 부탁 길로 시작한다. 그대로 둬요는 하지 않는다. */
+export const ASK_FOLLOW: Readonly<Record<string, string>> = { clear: "컵 치우기" };
+
 /** 단계 명령 아래 「완료」 단추: 비전이 못 알아볼 때 사람이 지금 단계를 넘긴다. 말로 해도 같다. 다음 명령을 읽으므로 읽어 줄 글이 없다. */
 export const STEP_DONE: ActionChoice = { id: "done", label: "완료", words: ["완료", "다 했어", "다 했습니다"], reply: "", whole: true };
 

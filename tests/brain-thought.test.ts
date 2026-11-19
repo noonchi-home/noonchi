@@ -8,8 +8,11 @@ import { THOUGHT_KEEP, THOUGHT_KEEP_MS, decisionLines, lastStoredThoughts, store
 import { SAY_TEXT } from "../src/act/labels.js";
 import { TASK_NAMES, TASK_SAY } from "../src/act/tasks.js";
 import { RULE_IF } from "../src/world/labels.js";
+import { ASK_ACTION } from "../src/act/tasks.js";
 import { CUP_FSM_MEMORY } from "../src/brain/decision.js";
+import { LEARNED_FSM_MEMORY } from "../scripts/learned-memory.js";
 import type { BrainLog, ThoughtEvent, ThoughtMessage } from "../src/contract/events.js";
+import type { FsmStep } from "../src/contract/pam.js";
 
 type Decision = Extract<BrainLog, { type: "decision" }>;
 const LEFT_CUP = "사용자가 컵을 식탁 등에 두고 자리를 비웠고, 아무도 컵을 들거나 만지지 않는다.";
@@ -18,19 +21,32 @@ const decision = (id: string, action: string | null, fsm: Decision["fsm"] = null
   prediction: status === "valid" ? { observation: "관찰", reasoning: "물기도 닦아 두면 좋겠다", task_index: action ? 0 : -1 } : null,
   action, fsm, memory_version: 1, world: { objects: [], person_visible: false, vlm_missing: 0, yolo_missing: 0 },
 });
-const rule = (state: string | null, trigger: string | null = LEFT_CUP) => ({ state, trigger, learned: false, matched: true });
+/** 판단 기록 fsm(PAM 답의 상태·화살표). 기본은 화살표 없음. */
+const step = (o: Partial<FsmStep> = {}): FsmStep => ({ state: "away", from: null, next_index: -1, to: null, on: null, when: null, action: null, learned: false, ...o });
+/** 배운 뒤 기억에서 마시는 중을 떠나는 컵 치우기 화살표(seed 묻기 자리를 바꾼 것). */
+const LEAVE = LEARNED_FSM_MEMORY.states[0]!.next[0]!;
+const clearStep = () => step({ from: "drinking", next_index: 0, to: "*", on: LEAVE.on, action: "컵 치우기", learned: true });
 const texts = (events: ThoughtEvent[]) => events.flatMap((e) => e.messages.map((m) => m.text));
 const RULE_LINE = "컵을 두고 자리를 뜨면 치워도 된다고 하셨어요";
 
 describe("메시지 상자 문장(사실로만)", () => {
-  it("규칙대로 고른 행동은 「<맞은 규칙의 조건> <행동 허락> 된다고 하셨어요」 한 줄이다: 컵 치우기는 사용자가 정한 「컵을 두고 자리를 뜨면 치워도 된다고 하셨어요」", () => {
-    expect(decisionLines(decision("pam-1", "컵 치우기", rule("left_cup")))).toEqual([RULE_LINE]);
+  it("규칙대로 고른 행동은 「<맞은 화살표의 조건> <행동 허락> 된다고 하셨어요」 한 줄이다: 배운 컵 치우기는 사용자가 정한 「컵을 두고 자리를 뜨면 치워도 된다고 하셨어요」", () => {
+    expect(decisionLines(decision("pam-1", "컵 치우기", clearStep()))).toEqual([RULE_LINE]);
     // 사용자가 정한 짧은 꼴 그대로다(2026-11-18 사용자 바로잡음: 「아무도 안 만지면」 같은 덧조건은 넣지 않는다)
-    expect(decisionLines(decision("pam-1", "컵 치우기", rule("left_cup")))[0]).toBe("컵을 두고 자리를 뜨면 치워도 된다고 하셨어요");
+    expect(decisionLines(decision("pam-1", "컵 치우기", clearStep()))[0]).toBe("컵을 두고 자리를 뜨면 치워도 된다고 하셨어요");
   });
 
-  // Codex(b78b518 thought.ts:30): 상태 이름(「컵을 두고 자리를 뜨면」)으로 써서 「아무도 만지지 않을 때」 같은 규칙 조건을 빼고 허락한 것처럼 말했다
-  /** 시연 기억 규칙마다 조건형에 있어야 하는 말(그 규칙의 상황). */
+  it("허락 문장은 판단이 낸 화살표에서 만든다: seed 트리거면 RULE_IF(묻기 자리를 바꾼 배운 컵 치우기도), 새 트리거의 배운 화살표는 on·when을 줄이지 않고, 묻기·화살표 없음은 허락 문장이 없다", () => {
+    expect(decisionLines(decision("pam-1", "컵 치우기", step({ from: "drinking", next_index: 0, to: "*", on: LEAVE.on, action: "컵 치우기", learned: true })))).toEqual(["컵을 두고 자리를 뜨면 치워도 된다고 하셨어요"]);
+    // 배우기 전 떠날 때: 허락 문장 없이 로봇 말만(사용자 답 2026-11-19). 배운 뒤 컵 치우기는 허락 문장 다음 「컵을 치울게요.」
+    expect(decisionLines(decision("pam-2", "사용자에게 물어보기", step({ from: "drinking", next_index: 0, to: "*", on: LEAVE.on, action: "사용자에게 물어보기" })))).toEqual([]);
+    expect(SAY_TEXT.decided("사용자에게 물어보기")).toBe("컵을 치울지 여쭤볼게요.");
+    expect(SAY_TEXT.decided("컵 치우기")).toBe("컵을 치울게요.");
+    expect(decisionLines(decision("pam-3", "컵 치우기", step({ from: "drinking", next_index: 2, to: "*", on: "사용자가 외출하러 나간다.", when: "같이 마시는 중이었다.", action: "컵 치우기", learned: true })))[0]).toMatch(/^사용자가 외출하러 나간다\. 같이 마시는 중이었다면 /);
+    expect(decisionLines(decision("pam-4", null, step({ state: "drinking" })))).toEqual([]);
+  });
+
+  /** 시연 기억 화살표마다 조건형에 있어야 하는 말(그 화살표의 상황). */
   const MUST: Record<string, string[]> = {
     "컵 치우기": ["컵", "자리를 뜨"],
     "컵에 물 채워 주기": ["식사", "비면"],
@@ -40,37 +56,40 @@ describe("메시지 상자 문장(사실로만)", () => {
     "전자레인지로 데우기 알려 주기": ["전자레인지", "묻거나", "어떻게"],
   };
 
-  it("시연 기억의 규칙마다 사용자가 정한 짧은 꼴의 조건형이 있고 「아무도 안 만지면」 같은 덧조건은 없다. 표에 없는 트리거(배운 새 규칙)는 줄이지 않고 그대로 조건으로 쓴다", () => {
-    for (const st of CUP_FSM_MEMORY.states) for (const r of st.rules) {
-      const line = decisionLines(decision("pam-1", r.action, rule(st.id, r.trigger)))[0]!;
-      expect(RULE_IF[r.action], r.trigger).toBeTruthy();
-      expect(line, r.trigger).toBe(`${RULE_IF[r.action]} ${TASK_SAY[r.action]!.may} 된다고 하셨어요`);
+  it("시연 기억의 행동 화살표마다 사용자가 정한 짧은 꼴의 조건형이 있고 「아무도 안 만지면」 같은 덧조건은 없다. 새 트리거의 배운 화살표는 줄이지 않고 그대로 조건으로 쓴다", () => {
+    for (const st of LEARNED_FSM_MEMORY.states) st.next.forEach((e, i) => {
+      if (!e.action || e.action === ASK_ACTION) return;
+      const learned = !CUP_FSM_MEMORY.states.find((x) => x.id === st.id)!.next.some((x) => x.on === e.on && x.action === e.action);
+      const line = decisionLines(decision("pam-1", e.action, step({ from: st.id, next_index: i, to: e.to, on: e.on, when: e.when ?? null, action: e.action, learned })))[0]!;
+      expect(RULE_IF[e.action], e.on).toBeTruthy();
+      expect(line, e.on).toBe(`${RULE_IF[e.action]} ${TASK_SAY[e.action]!.may} 된다고 하셨어요`);
       // 짧은 꼴이다(메시지 상자 한 줄은 잘린다: 조건은 26자까지)
-      expect([...RULE_IF[r.action]!].length, r.action).toBeLessThanOrEqual(26);
-      for (const word of MUST[r.action] ?? []) expect(line, r.action).toContain(word);
+      expect([...RULE_IF[e.action]!].length, e.action).toBeLessThanOrEqual(26);
+      for (const word of MUST[e.action] ?? []) expect(line, e.action).toContain(word);
       // 덧조건(「아무도 안 만지면」·「들거나 만지지 않으면」)은 넣지 않는다
-      expect(line, r.action).not.toMatch(/아무도|만지/);
-    }
-    expect(decisionLines(decision("pam-1", "컵 치우기", { ...rule("night_rest", "사용자가 밤 열한 시 넘어 거실 불을 끄고 컵을 소파 옆에 둔다."), learned: true })))
+      expect(line, e.action).not.toMatch(/아무도|만지/);
+    });
+    expect(decisionLines(decision("pam-1", "컵 치우기", step({ from: "drinking", next_index: 2, to: "*", on: "사용자가 밤 열한 시 넘어 거실 불을 끄고 컵을 소파 옆에 둔다.", action: "컵 치우기", learned: true }))))
       .toEqual(["사용자가 밤 열한 시 넘어 거실 불을 끄고 컵을 소파 옆에 둔다면 치워도 된다고 하셨어요"]);
-    expect(decisionLines(decision("pam-1", "춤추기", { ...rule("left_cup", "음악이 나옴"), learned: true }))).toEqual(["「음악이 나옴」일 때 춤추기를 해도 된다고 하셨어요"]);
+    expect(decisionLines(decision("pam-1", "춤추기", step({ from: "drinking", next_index: 2, to: "drinking", on: "음악이 나옴", action: "춤추기", learned: true })))).toEqual(["「음악이 나옴」일 때 춤추기를 해도 된다고 하셨어요"]);
   });
 
-  it("규칙을 특정하지 못하면(규칙 여럿: 트리거 없음, 규칙 없이 고른 행동) 허락 문장은 없고, 대기·실패 판단도 줄이 없다", () => {
-    expect(decisionLines(decision("pam-1", "컵 치우기", { state: "left_cup", trigger: null, learned: false, matched: true }))).toEqual([]);
-    expect(decisionLines(decision("pam-1", "컵 치우기", { state: null, trigger: null, learned: true, matched: true }))).toEqual([]);
-    expect(decisionLines(decision("pam-1", "컵 치우기", { state: "left_cup", trigger: null, learned: false, matched: false }))).toEqual([]);
+  it("화살표 없음·화살표 행동과 고른 행동이 다름·묻기·대기·실패 판단은 허락 문장이 없다", () => {
+    expect(decisionLines(decision("pam-1", "컵 치우기", step()))).toEqual([]);
+    expect(decisionLines(decision("pam-1", "컵 치우기", step({ from: "drinking", next_index: 1, to: "drinking", on: "사용자가 마시던 것을 다 마시고 계속 먹는다.", when: "식탁에 앉아 있다.", action: "컵에 물 채워 주기" })))).toEqual([]);
     expect(decisionLines(decision("pam-1", "컵 치우기", null))).toEqual([]);
-    expect(decisionLines(decision("pam-1", null, { state: "drinking", trigger: null, learned: false, matched: false }))).toEqual([]);
-    expect(decisionLines(decision("pam-1", "컵 치우기", rule("left_cup"), "failed"))).toEqual([]);
+    expect(decisionLines(decision("pam-1", null, step({ state: "drinking" })))).toEqual([]);
+    expect(decisionLines(decision("pam-1", "컵 치우기", clearStep(), "failed"))).toEqual([]);
   });
 
-  it("행동 목록의 모든 행동은 허락형·클로이드 말(「~게요」)이 있고, 문장은 판단 기록의 사실(규칙·행동)로만 만들어 PAM 생각 글이나 목록에 없는 행동(물기 닦기)이 나오지 않는다", () => {
+  it("행동 목록의 모든 행동은 허락형·클로이드 말(「~게요」)이 있고, 문장은 판단 기록의 사실(화살표·행동)로만 만들어 PAM 생각 글이나 목록에 없는 행동(물기 닦기)이 나오지 않는다", () => {
     for (const action of TASK_NAMES) {
       expect(TASK_SAY[action]?.will, action).toMatch(/게요$/);
-      const [line] = decisionLines(decision("pam-1", action, rule("left_cup")));
-      expect(line, action).toBe(`${RULE_IF[action] ?? "사용자가 컵을 식탁 등에 두고 자리를 비웠고, 아무도 컵을 들거나 만지지 않는다면"} ${TASK_SAY[action]!.may} 된다고 하셨어요`);
-      expect(`${line} ${SAY_TEXT.decided(action)}`, action).not.toMatch(/물기|닦/);
+      const lines = decisionLines(decision("pam-1", action, step({ from: "drinking", next_index: 0, to: "*", on: LEFT_CUP, action })));
+      // 묻기는 허락 문장이 없다(로봇 말 「컵을 치울지 여쭤볼게요.」만)
+      if (action === ASK_ACTION) expect(lines).toEqual([]);
+      else expect(lines[0], action).toBe(`${RULE_IF[action] ?? "사용자가 컵을 식탁 등에 두고 자리를 비웠고, 아무도 컵을 들거나 만지지 않는다면"} ${TASK_SAY[action]!.may} 된다고 하셨어요`);
+      expect(`${lines.join(" ")} ${SAY_TEXT.decided(action)}`, action).not.toMatch(/물기|닦/);
     }
   });
 
@@ -84,7 +103,7 @@ describe("메시지 상자 문장 보내기(thoughtFeed)", () => {
     const sent: ThoughtEvent[] = [];
     const kept: ThoughtMessage[] = [];
     const feed = thoughtFeed({ send: (m) => sent.push(m), record: (m) => kept.push(m), clock: () => 2000 });
-    feed.decision(decision("pam-2", "컵 치우기", rule("left_cup")));
+    feed.decision(decision("pam-2", "컵 치우기", clearStep()));
     expect(sent).toEqual([{ type: "thought", messages: [{ id: "pam-2@2000:0", text: RULE_LINE, at_ms: 2000, decision: "pam-2" }] }]);
     expect(kept.map((m) => m.text)).toEqual([RULE_LINE]);
     expect(feed.last()).toEqual({ type: "thought", messages: kept });
@@ -94,10 +113,10 @@ describe("메시지 상자 문장 보내기(thoughtFeed)", () => {
     const sent: ThoughtEvent[] = [];
     let now = 1000;
     const feed = thoughtFeed({ send: (m) => sent.push(m), clock: () => now });
-    feed.decision(decision("pam-1", "컵 치우기", rule("left_cup")));
+    feed.decision(decision("pam-1", "컵 치우기", clearStep()));
     now = 2000;
-    feed.decision(decision("pam-2", "컵 치우기", rule("left_cup")));
-    feed.decision(decision("pam-3", null, { state: "left_cup", trigger: null, learned: false, matched: false }));
+    feed.decision(decision("pam-2", "컵 치우기", clearStep()));
+    feed.decision(decision("pam-3", null, step({ state: "away" })));
     expect(texts(sent)).toEqual([RULE_LINE]);
   });
 
@@ -115,7 +134,7 @@ describe("메시지 상자 문장 보내기(thoughtFeed)", () => {
     expect(sent.at(-1)!.messages.map((m) => m.text)).toEqual(["컵을 찾았어요"]);
     feed.close();
     feed.note("컵을 못 찾았어요", "pam-6");
-    feed.decision(decision("pam-7", "컵 치우기", rule("left_cup")));
+    feed.decision(decision("pam-7", "컵 치우기", clearStep()));
     expect(sent).toHaveLength(2);
     expect(kept.map((m) => m.text)).toEqual(["컵이 안 보여서 식탁 쪽을 다시 볼게요", "컵을 찾았어요"]);
   });
@@ -131,7 +150,7 @@ describe("메시지 상자 문장 보내기(thoughtFeed)", () => {
     const db = HistoryDb.open(":memory:");
     db.close();
     const feed = thoughtFeed({ send: () => { throw new Error("끊긴 소켓"); }, record: (m) => storeThought(db, "mokryeon_180b", m) });
-    feed.decision(decision("pam-1", "컵 치우기", rule("left_cup")));
+    feed.decision(decision("pam-1", "컵 치우기", clearStep()));
     expect(feed.last()!.messages.map((m) => m.text)).toEqual([RULE_LINE]);
   });
 
@@ -141,10 +160,10 @@ describe("메시지 상자 문장 보내기(thoughtFeed)", () => {
     const sent: ThoughtEvent[] = [];
     const feed = thoughtFeed({ send: (m) => sent.push(m), seed, clock: () => now });
     expect(feed.last()).toEqual({ type: "thought", messages: seed });
-    feed.decision(decision("pam-1", "컵 치우기", rule("left_cup")));
+    feed.decision(decision("pam-1", "컵 치우기", clearStep()));
     expect(sent).toEqual([]);
     now += THOUGHT_KEEP_MS + 10;
-    feed.decision(decision("pam-2", "컵 치우기", rule("left_cup")));
+    feed.decision(decision("pam-2", "컵 치우기", clearStep()));
     expect(texts(sent)).toEqual([RULE_LINE]);
     now += THOUGHT_KEEP_MS + 10;
     expect(feed.last()).toBeNull();

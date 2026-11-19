@@ -90,7 +90,7 @@ export const clsOf = (w: WorldView, id: string) => w.objects.find((o) => o.id ==
 
 /** 시간 값(TRACK_DEFAULTS 칸마다 받은 값 또는 기본값). */
 export interface TrackConfig {
-  repeatMs: number; visionMs: number; recheckMs: number; askMs: number; planGapMs: number; leftGapMs: number; stallMs: number; stallMax: number; offHoldMs: number; strayGapMs: number; strayMax: number;
+  repeatMs: number; visionMs: number; recheckMs: number; askMs: number; planGapMs: number; stallMs: number; stallMax: number; offHoldMs: number; strayGapMs: number; strayMax: number;
   tellHoldMs: number; rearmMs: number; showAskMs: number;
 }
 

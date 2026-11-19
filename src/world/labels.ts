@@ -7,7 +7,7 @@ export const OBJECT_NAME: Record<string, string> = Object.fromEntries(Object.ent
 
 /** PAM FSM 기억의 상태 id → 대시보드 생각 말풍선 「상태」 칩 글. 여기 없는 상태는 칩을 보이지 않는다.
  *  열쇠는 FSM 상태 id(src/brain/decision.ts CUP_FSM_MEMORY)다. 낱말 표 값과 이름이 같은 것이 있어도 다른 것이라, 낱말 목록 검사(tests/world-vocab.test.ts)와 헷갈리지 않게 따옴표로 쓴다. */
-export const FSM_STATE_TEXT: Record<string, string> = { "drinking": "먹거나 마시는 중", "watching_tv": "TV 보는 중", "left_cup": "컵을 두고 자리를 뜸", "cooking": "주방에서 할 일을 찾음" };
+export const FSM_STATE_TEXT: Record<string, string> = { "drinking": "먹거나 마시는 중", "watching_tv": "TV 보는 중", "cooking": "요리하는 중", "away": "자리에 없음" };
 /** 메시지 상자 문장(src/brain/thought.ts 「<조건> <허락> 된다고 하셨어요」)의 조건형: 시연 FSM 기억(src/brain/decision.ts CUP_FSM_MEMORY)의 규칙(행동마다 하나)
  *  사용자가 정한 짧은 조건형(「컵을 두고 자리를 뜨면」, 「아무도 안 만지면」 같은 덧조건은 넣지 않는다, 2026-11-18 사용자 바로잡음). 열쇠는 그 규칙의 행동이다. 반성으로 배운 규칙(트리거가 시연 기억과 다름)은 ruleIf가 그 트리거를 줄이지 않고 그대로 쓴다. */
 export const RULE_IF: Record<string, string> = {
@@ -21,12 +21,10 @@ export const RULE_IF: Record<string, string> = {
 /** 대시보드 FSM 카드 상태 넘김 화살표 글: 시연 FSM 기억(src/brain/decision.ts CUP_FSM_MEMORY)의 next on 글 → 짧은 글. 열쇠는 그 on 글 그대로다.
  *  여기 없는 글(반성으로 배운 넘김)은 src/brain/habit.ts가 끝 마침표만 떼어 그대로 쓴다. */
 export const NEXT_ON: Record<string, string> = {
-  "사용자가 TV를 보기 시작한다.": "TV를 보기 시작함",
-  "사용자가 컵을 두고 자리를 떠나 보이지 않는다.": "컵을 두고 떠남",
-  "사용자가 주방으로 가서 요리를 시작하려 한다.": "주방으로 감",
-  "사용자가 식탁에 앉아 먹기 시작한다.": "식탁에 앉아 먹음",
-  "사용자가 돌아와 컵을 다시 든다.": "돌아와 컵을 듦",
-  "사용자가 음식을 들고 식탁에 앉는다.": "음식 들고 앉음",
+  "사용자가 돌아와 먹거나 마신다.": "돌아와 먹거나 마심",
+  "사용자가 돌아와 TV를 본다.": "돌아와 TV를 봄",
+  "사용자가 돌아와 요리를 시작한다.": "돌아와 요리를 시작함",
+  "사용자가 요리를 마치고 먹기 시작한다.": "요리를 마치고 먹음",
 };
 /** 맞은 규칙 → 조건형: 시연 기억의 규칙(learned 아님)이면 RULE_IF의 그 행동 글, 아니면 트리거를 줄이지 않고 끝 마침표만 떼어 「~다면」(평서문 끝 「다」), 그 밖은 「「<트리거>」일 때」. */
 export function ruleIf(rule: { trigger: string; action: string; learned: boolean }): string {

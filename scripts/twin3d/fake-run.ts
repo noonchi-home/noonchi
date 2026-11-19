@@ -1,7 +1,7 @@
 // 대시보드 가짜 단계 자료(ui/src/dashboard/fake-run.json)를 만든다. 실행: npx tsx scripts/twin3d/fake-run.ts
 // 한양목련 실제 장면·평면도(loadScene·floorPlanFrom)로 컵 치우기 계획(에이전트 컵 계획이 맞춰야 할 모양 tests/helpers/cup-plan.ts, 로봇 [10.6, 8.6])을 짜고, 다섯 순간(0 지켜보기, 1~4 계획 단계)마다
 // 서버가 대시보드 /events로 보내는 메시지 묶음(plan·eye·brain decision·생각 메시지 thought·brain observe·seen·say·world·습관 FSM 그림 habit·목표 goal)을 적는다.
-// 지켜보기(0)는 사람이 식탁에서 컵으로 마시는 중이고 목표 「컵을 두고 자리를 뜨면 컵 치우기」가 서 있다(목표 줄이 메시지 상자에 있다). 계획 순간(1~4)은 사람이 떠난 뒤다(사람 안 보임, 목표 씀). 생각 메시지는 계획 순간의 컵 치우기 판단 규칙 줄(src/brain/thought.ts decisionLines, 지켜보기 판단은 줄 없음)이다. 판단(decision)은 생각 한 문장(reasoning)과 판단 때 지금 FSM(fsm, src/brain/decision.ts fsmNow: 지켜보기는 처음 상태)을 싣는다. 말은 sayLine에 그 단계 명령을 넣은 글이고, 계획 순간에는 그 앞 계획 순간의 말이 차례로 쌓여 있다.
+// 지켜보기(0)는 사람이 식탁에서 컵으로 마시는 중이고 목표 「컵을 두고 자리를 뜨면 컵 치우기」가 서 있다(목표 줄이 메시지 상자에 있다). 계획 순간(1~4)은 사람이 떠난 뒤다(사람 안 보임, 목표 씀). 생각 메시지는 계획 순간의 컵 치우기 판단 규칙 줄(src/brain/thought.ts decisionLines, 지켜보기 판단은 줄 없음)이다. 판단(decision)은 생각 한 문장(reasoning)과 PAM 답의 사람 상태·화살표(fsm, src/brain/decision.ts fsmStep: 지켜보기는 마시는 중 화살표 없음, 계획 순간은 배운 뒤 기억의 떠남 화살표)를 싣는다. 말은 sayLine에 그 단계 명령을 넣은 글이고, 계획 순간에는 그 앞 계획 순간의 말이 차례로 쌓여 있다.
 // 대시보드 폰 칸 그림은 시안 눈 그림(ui/public/debug-eye/, 세로 405×720)이고, 컵 모양(seen 마스크)은 시안 가로 그림 상자를 잘라 낸 자리만큼 옮긴 상자 안에 컵꼴로 채운 것이다.
 // 시각을 고정해서 다시 만들어도 같은 파일이 나온다.
 import { writeFileSync } from "node:fs";
@@ -11,12 +11,13 @@ import { modeNow } from "../../src/act/mode.js";
 import { planIdOf } from "../../src/act/tasks.js";
 import { assemblePlan, type DraftStep } from "../../src/agent/planShape.js";
 import type { FloorPlan } from "../../src/layout/floor.js";
-import { CUP_FSM_MEMORY, fsmNow } from "../../src/brain/decision.js";
 import { habitView } from "../../src/brain/habit.js";
 import type { PendingGoal } from "../../src/contract/goal.js";
 import { GOAL_TEXT } from "../../src/act/labels.js";
 import { TASK_SAY } from "../../src/act/tasks.js";
 import { ruleIf } from "../../src/world/labels.js";
+import { CUP_FSM_MEMORY, fsmStep } from "../../src/brain/decision.js";
+import { LEARNED_FSM_MEMORY } from "../learned-memory.js";
 import { decisionLines } from "../../src/brain/thought.js";
 import type { Mask } from "../../src/contract/observe.js";
 import type { BrainLog, EyeEvent, SeenEvent, ServerMessage } from "../../src/contract/events.js";
@@ -120,7 +121,7 @@ function coachMoment(fp: FloorPlan, world: WorldView): Moment {
   const decision: Extract<BrainLog, { type: "decision" }> = {
     type: "decision", at_ms: at, id: "pam-7", seq: 7, text_sent: "사람이 말함: 「들은 말 있음」", status: "valid",
     prediction: { observation: "사용자가 요리 방법을 물음", reasoning: "방법을 물어서 단계마다 알려 준다", task_index: 0 },
-    action: RAMEN, fsm: fsmNow(CUP_FSM_MEMORY, "fsm", RAMEN), assist: "coach", memory_version: 1,
+    action: RAMEN, fsm: fsmStep(CUP_FSM_MEMORY, { observation: "o", reasoning: "r", task_index: 0, state: "cooking", from: "cooking", next_index: 0 }), assist: "coach", memory_version: 1,
     world: { objects: [], person_visible: true, vlm_missing: 0, yolo_missing: 0 },
   };
   const command = (step: number, text: string): PlannedCommand => ({ type: "command", id: plan.id, step: plan.steps[step]!.id, text, vision: null, choices: [{ id: "done", label: "완료" }], target: null, speak: true });
@@ -138,7 +139,7 @@ function coachMoment(fp: FloorPlan, world: WorldView): Moment {
       { type: "say", text: say(plan, command(0, "수납장으로 가 주세요")) },
       { type: "say", text: say(plan, command(1, "냄비를 꺼내 주세요")) },
       { type: "mode", mode: modeNow({ world, offNotices: [], coaching: true, plan }) },
-      { type: "habit", habit: habitView(CUP_FSM_MEMORY, 1) },
+      { type: "habit", habit: habitView(LEARNED_FSM_MEMORY, 1) },
     ],
   };
 }
@@ -173,12 +174,12 @@ function build(): { moments: Moment[]; coach: Moment } {
     },
   };
   const left: WorldView = { ...world, person: { ...world.person, position: seat, position_ms: T0, room: table.room, room_label: "거실" } };
-  // 습관 FSM 그림(판본 1)과 목표: 컵 치우기 규칙(컵을 두고 자리를 뜸)
-  const habit: ServerMessage = { type: "habit", habit: habitView(CUP_FSM_MEMORY, 1) };
-  const clearRule = CUP_FSM_MEMORY.states.find((s) => s.id === "left_cup")!.rules[0]!;
-  const goalText = GOAL_TEXT.armed(ruleIf({ ...clearRule, learned: false }), TASK_SAY[ACTION]!.will);
+  // 습관 FSM 그림(배운 뒤 기억, 판본 1)과 목표: 마시는 중에서 떠나는 배운 컵 치우기 화살표(사용자가 정한 짧은 꼴 「컵을 두고 자리를 뜨면」)
+  const habit: ServerMessage = { type: "habit", habit: habitView(LEARNED_FSM_MEMORY, 1) };
+  const leave = LEARNED_FSM_MEMORY.states.find((s) => s.id === "drinking")!.next[0]!;
+  const goalText = GOAL_TEXT.armed(ruleIf({ trigger: leave.on, action: ACTION, learned: false }), TASK_SAY[ACTION]!.will);
   const goal: PendingGoal = {
-    id: "goal-1", action: ACTION, state: "left_cup", trigger: clearRule.trigger, object: cup.id, cls: "cup", status: "armed", prep: "ready", reason: null, text: goalText,
+    id: "goal-1", action: ACTION, state: "drinking", trigger: leave.on, object: cup.id, cls: "cup", status: "armed", prep: "ready", reason: null, text: goalText,
     armed_ms: T0 - 10_000, ready_ms: T0 - 6_000, gone_ms: null, fired_ms: null, plan: null,
   };
 
@@ -203,7 +204,10 @@ function build(): { moments: Moment[]; coach: Moment } {
       type: "decision", at_ms: n === 0 ? T0 : T0 + STEP_MS, id: n === 0 ? "pam-0" : decisionId, seq: n === 0 ? 1 : 2,
       text_sent: "컵 1개가 식탁 위에 있어요. 사람이 안 보여요.", status: "valid",
       prediction: { observation: OBSERVATION, reasoning: n === 0 ? "자리를 비운 지 얼마 안 됐어요." : "사람이 자리를 비운 뒤에도 컵이 식탁에 남아 있어요.", task_index: n === 0 ? -1 : 0 },
-      action: n === 0 ? null : ACTION, fsm: fsmNow(CUP_FSM_MEMORY, "fsm", n === 0 ? null : ACTION), assist: modeNow({ world, offNotices: [], coaching: false, action: n === 0 ? null : ACTION }), memory_version: 1,
+      // 지켜보기는 마시는 중 화살표 없음, 계획 순간은 배운 뒤 기억의 마시는 중 → 떠남(컵 치우기, learned)
+      action: n === 0 ? null : ACTION,
+      fsm: fsmStep(LEARNED_FSM_MEMORY, n === 0 ? { observation: "o", reasoning: "r", task_index: -1, state: "drinking", from: null, next_index: -1 } : { observation: "o", reasoning: "r", task_index: 0, state: "away", from: "drinking", next_index: 0 }),
+      assist: modeNow({ world, offNotices: [], coaching: false, action: n === 0 ? null : ACTION }), memory_version: 1,
       world: { objects: [{ id: cup.id, cls: cup.cls, status: cup.status, surface: cup.surface, surface_label: cup.surface_label, error_m: null, facts: {} }], person_visible: false, vlm_missing: 0, yolo_missing: 0 },
     };
     const shapes = cupShapes(eye, score);

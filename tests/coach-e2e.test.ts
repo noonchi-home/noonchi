@@ -120,6 +120,13 @@ async function start(o: { scene?: Scene } = {}) {
   return { scene, runtimeDir, cooktop, light, dash, phone, pump, history, commands, spoken, said, last, answer, say, replies, agentBodies, observerBodies, predicts, modes };
 }
 
+/** 라면 화살표는 요리하는 중 상태에 있다(직전 상태에서만 나간다): 사람이 요리하는 중으로 보이고, 판단이 그 상태를 본 뒤 말한다. */
+async function cooking() {
+  const s = await start({ scene: { dets: [PERSON], facts: { person: ["standing", "cooking"] } } });
+  await s.pump(() => s.dash.some((m) => m.type === "brain" && m.event.type === "decision" && m.event.fsm?.state === "cooking"), "요리하는 중 판단");
+  return s;
+}
+
 /** 「라면 끓이는 법 알려 줘」로 시작해 n번 단계 명령이 뜰 때까지 앞 단계를 「완료」로 넘긴다. 계획 id를 돌려준다. */
 async function toStep(s: Awaited<ReturnType<typeof start>>, n: number): Promise<string> {
   s.say(ASK_RAMEN);
@@ -135,7 +142,7 @@ async function toStep(s: Awaited<ReturnType<typeof start>>, n: number): Promise<
 
 describe("코치 모드: 라면 끓이기 알려 주기", () => {
   it("말로 시작해 단계마다 알려 주고, 다른 행동은 한 줄로 바로잡고, 혼잣말에 지금 할 일을 다시 알리고, 불 켜기 전에 묻고, 끝까지 가면 수업 기록을 남긴다. 들은 말은 기록에 남지 않는다", async () => {
-    const s = await start();
+    const s = await cooking();
     // 1 말 → 말 요청 에이전트는 답하지 않고(빈 글), PAM이 코치 목록에서 고른다 → 첫 명령
     s.say(ASK_RAMEN);
     await s.pump(() => s.replies().length > 0, "말의 답");
@@ -150,7 +157,7 @@ describe("코치 모드: 라면 끓이기 알려 주기", () => {
     expect(s.dash.find((m) => m.type === "brain" && m.event.type === "decision" && m.event.action === RAMEN)!.event).toMatchObject({ assist: "coach" });
     await s.pump(() => s.modes().at(-1) === "coach", "코치 모드");
     expect(s.modes()[0]).toBe("noonchi");
-    expect(Object.keys(chosen).sort()).toEqual(["final_time", "memory", "memory_kind", "observation_text", "role", "tasks"]);
+    expect(Object.keys(chosen).sort()).toEqual(["final_time", "last_state", "memory", "memory_kind", "observation_text", "role", "tasks"]);
     const during = s.predicts();
 
     // 2 「완료」·VLM 답(사람이 물건을 들고 있음)·말 「다 했어」로 단계를 넘긴다
@@ -255,7 +262,7 @@ describe("코치 모드: 라면 끓이기 알려 주기", () => {
   }, 120_000);
 
   it("인덕션을 켠 뒤 「그만」이면 계획을 취소하고 「…꺼 주세요」 명령을 보낸다. 「완료」로는 풀리지 않고 보이게 해 달라는 부탁으로 바뀌며, 허브 꺼짐을 보면 지운다", async () => {
-    const s = await start();
+    const s = await cooking();
     const planId = await toStep(s, 7);
     s.answer({ id: planId, step: `${planId}:7:hand` }, "approve");
     await s.pump(() => !!s.said("인덕션을 켜 주세요"), "켜라는 명령");

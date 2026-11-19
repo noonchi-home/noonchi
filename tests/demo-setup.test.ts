@@ -5,8 +5,10 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSy
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
-import type { FsmMemory } from "../src/brain/decision.js";
+import { CUP_FSM_MEMORY, type FsmMemory } from "../src/brain/decision.js";
 import { HistoryDb } from "../src/brain/history/db.js";
+import { learnedEdges, type EdgeLine } from "../src/brain/history/habits.js";
+import { LEARNED_FSM_MEMORY } from "../scripts/learned-memory.js";
 import { insidePolygon } from "../src/layout/home-plan.js";
 import { loadScene } from "../src/layout/scene.js";
 import { resolveHome } from "../src/layout/homes.js";
@@ -413,10 +415,37 @@ describe("오늘부터 쓰는 반성(reflect)", () => {
     const db = HistoryDb.open(join(dir, "noonchi.db"), 540);
     const v = db.memoryFor(TODAY)!;
     expect(v).toMatchObject({ source: "synthetic", appliesDay: TODAY });
-    expect((v.memory as FsmMemory).states.flatMap((s) => s.rules).some(silentAircon)).toBe(true);
+    expect(learnedEdges(CUP_FSM_MEMORY, v.memory as FsmMemory).some(silentAircon)).toBe(true);
     const row = db.list({ kinds: ["reflection"] }).at(-1)!;
     expect(row.data).toMatchObject({ synthetic: true, ok: true, version: v.version, applies_day: TODAY });
-    expect((row.data as { active: { action: string; trigger: string }[] }).active.some(silentAircon)).toBe(true);
+    expect((row.data as { active: EdgeLine[] }).active.some(silentAircon)).toBe(true);
     db.close();
   }, 60_000);
+});
+
+describe("배운 뒤 기억 넣기(learned)", () => {
+  it("learned는 서버를 끈 채 배운 뒤 기억을 오늘 판본으로 넣고 오늘 고정을 바꾼다", async () => {
+    const dir = join(tmp(), "day1");
+    await run(["day1", "--dir", dir, "--api", CLOSED]);
+    const logs = await run(["learned", "--dir", dir, "--api", CLOSED]);
+    const db = HistoryDb.open(join(dir, "noonchi.db"), 540);
+    expect(db.memoryVersion(db.pinnedMemory(TODAY)!)!.memory).toEqual(LEARNED_FSM_MEMORY);
+    expect(db.list({ kinds: ["reflection"] }).at(-1)!.data).toMatchObject({ synthetic: true, ok: true, applies_day: TODAY });
+    db.close();
+    expect(logs.at(-1)).toMatch(/^배운 뒤 기억 \d+판을 2026-11-14부터 쓰게 넣었어요$/);
+  });
+
+  it("learned는 그 폴더를 쓰는 서버가 켜져 있으면(폴더 잠금) 넣지 않고 멈춘다", async () => {
+    const dir = join(tmp(), "day1");
+    await run(["day1", "--dir", dir, "--api", CLOSED]);
+    const held = acquireServerLock(dir);
+    try {
+      await expect(run(["learned", "--dir", dir, "--api", CLOSED])).rejects.toThrow(/서버를 먼저 끄세요/);
+    } finally {
+      held.release();
+    }
+    const db = HistoryDb.open(join(dir, "noonchi.db"), 540);
+    expect(db.pinnedMemory(TODAY)).toBeNull();
+    db.close();
+  });
 });

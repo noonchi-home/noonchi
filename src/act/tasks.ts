@@ -17,8 +17,6 @@ export interface TaskSpec {
   name: string; description: string; allow: TaskAllow; target?: ObjClass; look?: readonly Facet[];
   /** 행동 조건: 대상 물건의 그 면이 이 값으로 확인돼야 한다(계획 전 검사는 확인된 반대 값이면 막고, 실행 전 검사는 모르면 보류, src/act/check.ts). 면은 look 안이다. */
   want?: Partial<Record<Facet, StateKey>>;
-  /** false면 계획을 만들지 않는 행동이다. 판단 기록과 생각 말풍선에만 보인다. */
-  plan?: false;
   /** 집는 물건 종류. 없으면 target이다. */
   carry?: ObjClass;
   /** 코치 행동이 다루는 물건 종류(VLM이 상자로 찾아 World State에 넣는다, src/world/vocab.ts VLM_FIND). */
@@ -36,6 +34,8 @@ export interface TaskSpec {
   /** 사람이 대상(target)을 다 쓰고 떠난 뒤 하는 일(치우기): 사람이 그 종류를 쓰는 것을 보면 습관 FSM이 다음 규칙으로 고를 때 미리 목표로 세우고 계획을 만들어 둔다
    *  (src/brain/goal.ts goalAhead, src/act/track/goal.ts). 사람이 있는 동안 하는 일(채우기·따르기)은 아니다. */
   afterUse?: true;
+  /** 반성·채택 검사로 새 화살표를 배울 수 있는 행동(사용자 답: 컵 치우기, 말없이 TV 보기 시작 → 에어컨 켜기). seed 행동 화살표(묻기 빼고)는 이 칸과 상관없이 사용자가 정한 습관이라 늘 둔다. */
+  learn?: true;
 }
 
 const HAND = ["go", "pick", "place"] as const;
@@ -44,23 +44,19 @@ const FILL: TaskAllow = { kinds: ["go", "pick", "do", "place"], need: ["go", "pi
 
 export const TASKS: Record<string, TaskSpec> = {
   "컵 치우기": {
-    name: "컵 치우기", description: "사람이 자리를 비운 뒤 식탁 등에 남은 컵을 사람이 싱크대에 넣게 한다.", target: "cup", touch: true, afterUse: true,
+    name: "컵 치우기", description: "사람이 자리를 비운 뒤 식탁 등에 남은 컵을 사람이 싱크대에 넣게 한다.", target: "cup", touch: true, afterUse: true, learn: true,
     allow: { kinds: HAND, need: HAND },
   },
-  "사용자에게 물어보기": { name: "사용자에게 물어보기", description: "컵 안을 확인할 수 없는 등 애매할 때 폰으로 사용자에게 어떻게 할지 묻는다.", allow: { kinds: ["ask", "say"], need: ["ask"] } },
+  "사용자에게 물어보기": { name: "사용자에게 물어보기", description: "치울지 아직 모르는 때(배우기 전 습관, 컵 안이 안 보임 등) 폰으로 사용자에게 어떻게 할지 묻는다.", allow: { kinds: ["ask", "say"], need: ["ask"] } },
   "세탁물 건조기로 옮기기": {
     name: "세탁물 건조기로 옮기기", description: "세탁기가 멈추면 사람이 세탁물을 꺼내 건조기에 넣게 하고 건조기를 시작한다.",
     allow: { kinds: ["wait", ...HAND, "device", "ask", "say"], need: [...HAND, "device"], devices: { kinds: ["dryer"], tools: ["start"] } },
   },
   "에어컨 켜기": {
-    name: "에어컨 켜기", description: "더울 때 사람이 있는 방의 에어컨을 켠다.",
+    name: "에어컨 켜기", description: "더울 때 사람이 있는 방의 에어컨을 켠다.", learn: true,
     allow: { kinds: ["device", "say"], need: ["device"], devices: { kinds: ["aircon"], tools: ["turn_on"] } },
   },
   // 컵 갈래(2026-11-13): 끝에 더해 앞 넷의 task_index를 지킨다. 물·콜라를 가르는 사실(먹는 중·TV 보는 중)은 FSM 기억(src/brain/decision.ts CUP_FSM_MEMORY)에 있다
-  "컵 그대로 두기": {
-    name: "컵 그대로 두기", description: "사람이 자리를 비웠지만 컵에 음료가 남아 있어 치우지 않고 그대로 둔다.", target: "cup", look: ["contents"], want: { contents: "has_contents" }, plan: false,
-    allow: { kinds: [], need: [] },
-  },
   "컵에 물 채워 주기": {
     name: "컵에 물 채워 주기", description: "사람이 식사 중인데 컵이 비어 있으면 사람이 냉장고에서 물병을 꺼내 와 컵에 물을 따르게 한다.", target: "cup", touch: true, look: ["contents"], want: { contents: "empty" },
     carry: "bottle", carryUnseen: true, allow: FILL,
@@ -86,6 +82,11 @@ export const TASKS: Record<string, TaskSpec> = {
 /** 모든 행동 이름(검사·tasks.json 견주기). PAM에 보내는 목록은 지금 모드를 따른다(src/act/mode.ts pamTasks). */
 export const TASK_NAMES: readonly string[] = Object.keys(TASKS);
 
+/** 배우는 행동(TaskSpec.learn): 반성 후보는 이 행동만 받고, 채택 검사를 지난 후보만 로봇 FSM 화살표가 된다. */
+export const LEARNED_ACTIONS: readonly string[] = TASK_NAMES.filter((n) => TASKS[n]!.learn === true);
+/** 배우기 전 떠날 때 하는 행동(seed 묻기 화살표). */
+export const ASK_ACTION = "사용자에게 물어보기";
+
 /** 그 행동이 어느 모드로 하는 행동인가: 코치 행동(TaskSpec.coach)이면 coach, 그 밖의 목록 행동이면 noonchi, 대기(null)·목록 밖이면 null.
  *  판단 기록 assist와 대시보드 메시지 상자 머리(「코치 모드」·「눈치 모드」)의 기준은 이 하나다. */
 export function modeOf(action: string | null): "noonchi" | "coach" | null {
@@ -97,10 +98,9 @@ export function modeOf(action: string | null): "noonchi" | "coach" | null {
  *  「컵을 치울게요.」). 표에 없는 행동은 「<행동>을 해도」·「<행동>을 할게요」. 행동 목록에 없는 일은 문장에 나오지 않는다. */
 export const TASK_SAY: Readonly<Record<string, { may: string; will: string }>> = {
   "컵 치우기": { may: "치워도", will: "컵을 치울게요" },
-  "사용자에게 물어보기": { may: "여쭤봐도", will: "폰으로 여쭤볼게요" },
+  "사용자에게 물어보기": { may: "여쭤봐도", will: "컵을 치울지 여쭤볼게요" },
   "세탁물 건조기로 옮기기": { may: "세탁물을 건조기로 옮겨도", will: "세탁물을 건조기로 옮길게요" },
   "에어컨 켜기": { may: "에어컨을 켜도", will: "에어컨을 켤게요" },
-  "컵 그대로 두기": { may: "그대로 둬도", will: "컵을 그대로 둘게요" },
   "컵에 물 채워 주기": { may: "물을 채워 드려도", will: "컵에 물을 채울게요" },
   "컵에 콜라 따라 주기": { may: "콜라를 따라 드려도", will: "컵에 콜라를 따를게요" },
   "라면 끓이기 알려 주기": { may: "알려 드려도", will: "라면 끓이는 법을 알려 드릴게요" },

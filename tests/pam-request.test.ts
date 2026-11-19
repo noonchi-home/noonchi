@@ -1,14 +1,17 @@
-// pam-predict/2·pam-reflect/2 요청 모양: 사진 칸이 없고, 논문 판단 규칙 문장은 그대로 두고 사진 자리에 관찰 텍스트를 넣는다.
+// pam-predict/3·pam-reflect/3 요청 모양: 사진 칸이 없고, 논문 판단 규칙 문장은 그대로 두고 사진 자리에 관찰 텍스트를 넣는다.
 import { describe, expect, it } from "vitest";
-import { PamRequestError, buildPredictMessages, buildReflectMessages, predictRequest, pyIsoformat, reflectRequest } from "../src/brain/pam/index.js";
+import { PREDICT_STATE, PamRequestError, buildPredictMessages, buildReflectMessages, predictRequest, pyIsoformat, reflectRequest } from "../src/brain/pam/index.js";
 
-const MEMORY = { initial_state: "drinking", states: [
-  { id: "drinking", description: "마시는 중", rules: [], next: [{ to: "left_cup", on: "컵을 두고 떠남" }] },
-  { id: "left_cup", description: "컵을 두고 자리를 비움", rules: [{ trigger: "빈 컵이 식탁에 남음", action: "컵 치우기" }], next: [] }] };
+const MEMORY = { initial_state: "away", states: [
+  { id: "drinking", description: "마시는 중", activity: ["drinking"], next: [{ to: "*", on: "컵을 두고 떠남", action: "컵 치우기" }] },
+  { id: "away", description: "자리에 없음", activity: [], next: [{ to: "drinking", on: "돌아와 마심" }] }] };
 const LIST = { rules: [{ trigger: "빈 컵이 식탁에 남음", action: "컵 치우기" }] };
-const P = { contract: "pam-predict/2", final_time: "2026-11-07T21:00:08.000+09:00", observation_text: "21:00:00 사람 보임\n21:00:04 사람 안 보임",
-  memory_kind: "fsm", memory: MEMORY, tasks: ["컵 치우기", "사용자에게 물어보기"] };
-const R = { contract: "pam-reflect/2", day: "2026-11-07", memory_kind: "fsm", memory: MEMORY, observation_text: "07:58:02 사람 보임",
+const P = { contract: "pam-predict/3", final_time: "2026-11-07T21:00:08.000+09:00", observation_text: "21:00:00 사람 보임\n21:00:04 사람 안 보임",
+  memory_kind: "fsm", memory: MEMORY, tasks: ["컵 치우기", "사용자에게 물어보기"], last_state: null };
+const CANDIDATES = { initial_state: "away", states: [
+  { id: "drinking", description: "마시는 중", activity: ["drinking"], next: [], rules: [{ to: "*", action: "컵 치우기", candidates: [{ on: "컵을 두고 떠남" }] }] },
+  { id: "away", description: "자리에 없음", activity: [], next: [{ to: "drinking", on: "돌아와 마심" }], rules: [] }] };
+const R = { contract: "pam-reflect/3", day: "2026-11-07", memory_kind: "fsm_candidates", memory: CANDIDATES, observation_text: "07:58:02 사람 보임",
   action_summary: "08:10:40 컵 치우기 부탁", feedback: "다 마신 뒤에만 치워 줘" };
 const texts = (b: ReturnType<typeof buildReflectMessages>) => (b.messages[1]!.content as { text: string }[]).map((p) => p.text).join("\n");
 
@@ -18,6 +21,13 @@ describe("요청 모양", () => {
       { ...P, final_time: "2026-11-07T21:00:08" }, { ...P, contract: "pam-predict/1" }]) {
       expect(() => predictRequest(bad)).toThrow(PamRequestError);
     }
+  });
+
+  it("pam-predict/3: 직전 사람 상태(last_state, 글 또는 null)를 받고, 옛 계약 pam-predict/2·last_state 없음은 거절한다", () => {
+    expect(predictRequest(P).last_state).toBeNull();
+    expect(predictRequest({ ...P, last_state: "drinking" }).last_state).toBe("drinking");
+    const { last_state: _, ...noState } = P;
+    for (const bad of [{ ...P, contract: "pam-predict/2" }, noState, { ...P, last_state: "" }]) expect(() => predictRequest(bad)).toThrow(PamRequestError);
   });
 
   it("반성 글 크기 상한(코드 포인트)과 모르는 칸", () => {
@@ -56,8 +66,11 @@ describe("메시지", () => {
     expect(system).toContain(JSON.stringify(MEMORY, null, 2));
     expect(system).not.toMatch(/\{(window|fsm_block)\}/);
     expect(user.every((p) => p.type === "text")).toBe(true);
-    expect(user[0]!.text).toBe("Wall-clock time of the final observation: 2026-11-07T21:00:08+09:00");
-    expect(user[1]!.text).toContain("21:00:04 사람 안 보임");
+    expect(user[0]!.text).toBe(`${PREDICT_STATE}unknown`);
+    expect(user[1]!.text).toBe("Wall-clock time of the final observation: 2026-11-07T21:00:08+09:00");
+    expect(user[2]!.text).toContain("21:00:04 사람 안 보임");
+    const known = buildPredictMessages(predictRequest({ ...P, last_state: "drinking" })).messages[1]!.content as { text: string }[];
+    expect(known[0]!.text).toBe("Person state at the previous decision: drinking");
     expect(built.generation).toEqual({ temperature: 0.3, enable_thinking: false });
   });
 

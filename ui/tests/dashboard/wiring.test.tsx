@@ -105,13 +105,13 @@ describe("대시보드 자료 연결", () => {
     history.replaceState(null, "", "/");
   });
 
-  it("순간 2(컵 집기)를 받으면 단계 2, 말풍선 카드 말, 시간 줄 사람 줄 지금 상태는 컵을 두고 자리를 뜸이고 로봇 줄 지금 단계는 컵 집기, 마스코트는 늘 왼쪽을 본다", async () => {
+  it("순간 2(컵 집기)를 받으면 단계 2, 말풍선 카드 말, 시간 줄 사람 줄 지금 상태는 자리에 없음이고 로봇 줄 지금 단계는 컵 집기, 마스코트는 늘 왼쪽을 본다", async () => {
     const clock = vi.spyOn(Date, "now").mockReturnValue(lastOf(2) + 1000);
     await mount(false);
     send(moment(2));
     expect(document.querySelector("[data-progress]")).toBeNull();
     expect(sayLine()).toHaveTextContent("컵을 들게요.");
-    expect(rowText("person").at(-1)).toBe("컵을 두고 자리를 뜸");
+    expect(rowText("person").at(-1)).toBe("자리에 없음");
     expect(rowText("robot").at(-1)).toBe("컵 집기");
     expect(document.querySelector('[data-timeline-card] [data-row=robot] [data-tone=brand]')).toHaveTextContent("컵 집기");
     clock.mockRestore();
@@ -127,7 +127,7 @@ describe("대시보드 자료 연결", () => {
     expect(screen.getByRole("region", { name: "마스코트" }).querySelector<HTMLElement>("[data-mascot-turn]")!.style.transform).toBe("scaleX(-1)");
     expect(sayLine()).toHaveTextContent("컵을 두고 자리를 뜨면 컵을 치울게요");
     // 순간 0의 판단(seq 1)은 순간 2의 판단(seq 2)보다 늦게 온 옛 판단이라 사람 줄 지금 상태는 그대로다
-    expect(rowText("person").at(-1)).toBe("컵을 두고 자리를 뜸");
+    expect(rowText("person").at(-1)).toBe("자리에 없음");
     expect(talk().querySelector("[data-goal-line], [data-talk-goal]")).toBeNull();
     expect(document.querySelector("[data-timeline-card]")).not.toHaveTextContent("목표");
     clock.mockRestore();
@@ -136,7 +136,7 @@ describe("대시보드 자료 연결", () => {
   it("판단 없이 반성 사건만 와도 메시지 상자에 그 규칙 두 줄이 쌓인다. 칩은 없다", async () => {
     await mount(false);
     expect(messageTexts()).toEqual([]);
-    const rule = { state: "watching_tv", trigger: "사용자가 소파에 앉아 TV를 보기 시작한다.", action: "에어컨 켜기" };
+    const rule = { from: "away", to: "watching_tv", on: "사용자가 소파에 앉아 TV를 보기 시작한다.", when: null, action: "에어컨 켜기" };
     send([{ type: "brain", replay: true, event: { type: "reflection", at_ms: 5, day: "2026-11-13", ok: true, version: 3, applies_day: "2026-11-14", text: "반성 완료", learned: [rule], active: [rule], dropped: [] } }]);
     expect(messageTexts()).toEqual(["사용자가 소파에 앉아 TV를 보기 시작한다", "새로 배운 습관이에요"]);
     expect(document.querySelector("[data-thought], [data-thought-chips]")).toBeNull();
@@ -205,6 +205,12 @@ describe("대시보드 자료 연결", () => {
     expect(phonePane().querySelector('[data-detection], [data-slot="bounding-box"]')).toBeNull();
   });
 
+  it("실제 폰 명령 자막(phone_command)은 비전 미니맵만 보기(?view=minimap)에만 있고 대시보드에는 없다", async () => {
+    await mount(true);
+    send([{ type: "phone_command", text: "식탁으로 가 주세요" }]);
+    expect(document.querySelector("[data-phone-command]")).toBeNull();
+  });
+
   it("소켓이 닫히면 「연결 끊김 · 다시 연결 중」 칩이 생기고 다시 열리면 없어진다", async () => {
     await mount(false);
     send(moment(2));
@@ -258,7 +264,7 @@ describe("가짜 단계(?debug=steps)", () => {
     expect(img.getAttribute("src")).toBe("/debug-eye/eye-table-near.webp");
     expect(document.querySelector("[data-mode-text]")).toHaveTextContent(/^눈치 모드$/);
     expect(talk().querySelector("[data-talk-pill]")).toBeNull();
-    expect(rowText("person")).toEqual(["먹거나 마시는 중", "컵을 두고 자리를 뜸"]);
+    expect(rowText("person")).toEqual(["먹거나 마시는 중", "자리에 없음"]);
     expect(rowText("robot")).toEqual(["지켜봄", "식탁으로 가기", "컵 집기"]);
     expect(document.querySelector("[data-timeline-card] [data-slot=timeline-drop-region]")).toHaveTextContent("4.0초");
     expect([...phonePane().querySelectorAll("[data-detection-label]")].map((t) => t.textContent?.split(" ")[0])).toEqual(["컵"]);

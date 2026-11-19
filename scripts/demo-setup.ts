@@ -4,7 +4,8 @@
 //   start <cup|tv|microwave|kitchen> [--api URL]         서버의 지금 집이 한양목련 180B일 때 그 장면 시작 위치를 넣는다
 //   reflect --chain [--api URL] [--from 1일차] [--to 6일차]  1~6일을 차례로 반성한다(된 날은 건너뛴다)
 //   reflect [--api URL] [--day 어제]                      어제를 반성해 오늘부터 쓰게 한다(폰을 켜기 전에)
-//   reflect --scripted [--dir runtime/demo/week]          서버를 끈 채 합성 판본(말없이 에어컨 켜는 습관)을 오늘부터로 넣는다
+//   reflect --scripted [--dir runtime/demo/week]          서버를 끈 채 합성 마지막 판본(배운 컵 치우기·말없이 에어컨)을 오늘부터로 넣는다
+//   learned [--dir runtime/demo/day1]                     서버를 끈 채 배운 뒤 기억(떠나면 바로 컵 치우기)을 오늘 판본으로 넣는다(치우기를 보는 시연·영상)
 // 한 폴더 안에서 판본·날 고정을 지우거나 덮지 않는다. 다시 할 때는 서버를 끄고 week --fresh부터 한다.
 import { existsSync, mkdirSync, readdirSync, renameSync, rmdirSync, rmSync, writeFileSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
@@ -13,7 +14,7 @@ import dotenv from "dotenv";
 import { LessonStore, lessonsPath } from "../src/act/lessons.js";
 import { ApprovalStore, approvalsPath } from "../src/agent/approval.js";
 import { CUP_FSM_MEMORY, type FsmMemory } from "../src/brain/decision.js";
-import { learnedRules } from "../src/brain/history/habits.js";
+import { learnedEdges, type EdgeLine } from "../src/brain/history/habits.js";
 import { HistoryDb, historyTzMinutes } from "../src/brain/history/db.js";
 import { REFLECT_TEXT } from "../src/brain/history/labels.js";
 import { isDay } from "../src/brain/history/summary.js";
@@ -24,6 +25,7 @@ import { loadScene } from "../src/layout/scene.js";
 import { TASKS } from "../src/act/tasks.js";
 import { describeStart, parseStartPose, startPosePath, type DescribeObject } from "../src/phone/sync/start.js";
 import { DEMO_STARTS, startFor, type DemoScene } from "./demo-start.js";
+import { saveLearned } from "./learned-memory.js";
 import { seedHistory } from "./seed-history.js";
 
 export const DEMO_HOME = "mokryeon_180b";
@@ -36,9 +38,8 @@ const RAMEN_RUN = [
   { label: "인덕션으로 가기", alone: true }, { label: "냄비 올리기", alone: false }, { label: "인덕션 켜기", alone: false }, { label: "면과 스프 넣기", alone: false },
   { label: "인덕션 끄기", alone: false },
 ];
-/** 말없이 에어컨을 켜는 규칙인가: 에어컨 켜기 규칙 가운데 seed 덥다 규칙이 아닌 것. */
-const SEED_RULES = CUP_FSM_MEMORY.states.flatMap((s) => s.rules);
-export const silentAircon = (r: { trigger: string; action: string }) => r.action === "에어컨 켜기" && !SEED_RULES.some((x) => x.trigger === r.trigger && x.action === r.action);
+/** 말없이 에어컨을 켜는 화살표인가: 자리에 없음 → TV 보는 중 진입 화살표의 에어컨 켜기(배운 것). 덥다·부채질 화살표(정한 습관)는 아니다. */
+export const silentAircon = (r: EdgeLine) => r.action === "에어컨 켜기" && r.from === "away" && r.to === "watching_tv";
 
 /** 멈춤: 까닭을 찍고 끝낸다(종료 코드 1). */
 export class DemoStop extends Error {}
@@ -53,7 +54,6 @@ export interface DemoDeps {
   writeMarker?: (path: string, text: string) => void;
 }
 
-type RuleLine = { state: string; trigger: string; action: string };
 type MemoryDay = { ok: true; day: string; pinned: number | null; uses: { version: number; source: string; appliesDay: string | null; day: string | null } | null; latest: number | null };
 
 const addDays = (day: string, n: number) => new Date(Date.parse(`${day}T00:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10);
@@ -187,11 +187,11 @@ export async function demoSetup(argv: string[], deps: DemoDeps): Promise<void> {
     throw new DemoStop(`서버가 꺼졌는지 알 수 없어요(${api}: ${why}). 서버를 끈 뒤 다시 하세요`);
   };
   const lastReflection = async () => {
-    const r = await call<{ rows: { data: { learned?: RuleLine[]; active?: RuleLine[] } | null }[] }>("GET", "/api/history?kinds=reflection&limit=1");
+    const r = await call<{ rows: { data: { learned?: EdgeLine[]; active?: EdgeLine[] } | null }[] }>("GET", "/api/history?kinds=reflection&limit=1");
     const data = r.rows.at(-1)?.data ?? {};
     return { learned: data.learned ?? [], active: data.active ?? [] };
   };
-  const rulesLine = (rs: RuleLine[]) => (rs.length ? rs.map((x) => `${x.state}: ${x.trigger} → ${x.action}`).join(" / ") : "없음");
+  const rulesLine = (rs: EdgeLine[]) => (rs.length ? rs.map((x) => `${x.from} → ${x.to}: ${x.on} → ${x.action}`).join(" / ") : "없음");
 
   const [cmd, scene] = argv;
   if (cmd === "day1" || cmd === "week") {
@@ -264,26 +264,53 @@ export async function demoSetup(argv: string[], deps: DemoDeps): Promise<void> {
     const db = HistoryDb.open(dbPath, tz);
     try {
       if (db.pinnedMemory(today) !== null) throw new DemoStop(`오늘(${today}) 기억이 이미 고정됐어요. 폰을 켜기 전에 넣어야 해요. week --fresh로 다시 시작하세요`);
-      // 합성 대본 판본(scripted + habit)의 마지막 판본: 서버와 같은 기록 DB 함수로 만든다
+      // 합성 대본 판본(scripted)의 마지막 판본(memoryAfter(6): 배운 컵 치우기·말없이 에어컨): 서버와 같은 기록 DB 함수로 만든다
       const yesterday = addDays(today, -1);
       const scratch = HistoryDb.open(":memory:", tz);
       let memory: FsmMemory;
       try {
-        const r = seedHistory(scratch, { home: DEMO_HOME, end: yesterday, memories: "scripted", habit: true, twinDir });
+        const r = seedHistory(scratch, { home: DEMO_HOME, end: yesterday, memories: "scripted", twinDir });
         memory = scratch.memoryVersion(r.latest!.version)!.memory as FsmMemory;
       } finally {
         scratch.close();
       }
       const before = (db.memoryFor(today)?.memory as FsmMemory | undefined) ?? CUP_FSM_MEMORY;
-      const keep = (rs: RuleLine[]) => rs.filter((x) => !TASKS[x.action]?.coach);
-      const learned = keep(learnedRules(before, memory));
-      const active = keep(learnedRules(CUP_FSM_MEMORY, memory));
+      const keep = (rs: EdgeLine[]) => rs.filter((x) => !TASKS[x.action]?.coach);
+      const learned = keep(learnedEdges(before, memory));
+      const active = keep(learnedEdges(CUP_FSM_MEMORY, memory));
       const version = db.saveMemory({ kind: "fsm", memory, day: yesterday, appliesDay: today, source: "synthetic" });
       db.add("reflection", now(), REFLECT_TEXT.done(version, today), { data: { day: yesterday, ok: true, version, applies_day: today, synthetic: true, learned, active, dropped: [] } });
       log(`합성 판본 ${version}판을 ${today}부터 쓰게 넣었어요. 영상 자막: 합성 기록으로 만든 습관`);
       log(`  쓰는 습관: ${rulesLine(active)}`);
     } finally {
       db.close();
+      folder.release();
+    }
+    return;
+  }
+
+  if (cmd === "learned") {
+    const dir = resolve(arg("--dir") ?? join("runtime", "demo", "day1"));
+    const dbPath = join(dir, "noonchi.db");
+    if (!existsSync(dbPath)) throw new DemoStop(`기록 DB가 없어요(${dbPath}). day1부터 하세요`);
+    // 그 폴더의 잠금을 쥔 채로 넣는다(그동안 서버가 이 폴더로 뜨지 못한다)
+    const folder = holdFolder(dir);
+    try {
+      await requireServerOff();
+      const db = HistoryDb.open(dbPath, tz);
+      try {
+        const before = (db.memoryFor(today)?.memory as FsmMemory | undefined) ?? CUP_FSM_MEMORY;
+        const version = saveLearned(db, today);
+        const memory = db.memoryVersion(version)!.memory as FsmMemory;
+        const keep = (rs: EdgeLine[]) => rs.filter((x) => !TASKS[x.action]?.coach);
+        db.add("reflection", now(), REFLECT_TEXT.done(version, today), {
+          data: { day: addDays(today, -1), ok: true, version, applies_day: today, synthetic: true, learned: keep(learnedEdges(before, memory)), active: keep(learnedEdges(CUP_FSM_MEMORY, memory)), dropped: [] },
+        });
+        log(`배운 뒤 기억 ${version}판을 ${today}부터 쓰게 넣었어요`);
+      } finally {
+        db.close();
+      }
+    } finally {
       folder.release();
     }
     return;
@@ -325,7 +352,7 @@ export async function demoSetup(argv: string[], deps: DemoDeps): Promise<void> {
     return;
   }
 
-  throw new DemoStop("쓰는 법: day1 | week | start <cup|tv|microwave|kitchen> | reflect [--chain | --scripted]");
+  throw new DemoStop("쓰는 법: day1 | week | learned | start <cup|tv|microwave|kitchen> | reflect [--chain | --scripted]");
 }
 
 function sceneOf(twinDir: string) {

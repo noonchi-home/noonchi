@@ -195,7 +195,9 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
     if (reflecting) throw new HttpError(409, REFLECT_TEXT.running);
     // 반성 사건은 지금 집의 대시보드로 보내고 집 묶음에도 넘긴다(말풍선 카드가 배운 습관을 말한다)
     const job = runReflection(db, pam, day, {
-      signal: closing.signal,
+      signal: closing.signal, log,
+      // 시각 찾기·검사 결과 사본: runtime/homes/<집>/habit
+      ...(current ? { dir: join(runtimeDir, "homes", current.twin.home.id, "habit") } : {}),
       emit: (event) => {
         current?.app.broadcast({ type: "brain", event });
         if (event.type === "reflection") current?.onReflection(event);

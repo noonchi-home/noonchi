@@ -7,17 +7,21 @@
 //   npx tsx scripts/seed-history.ts [--home mokryeon_180b] [--end YYYY-MM-DD] [--days 7]
 //   npx tsx scripts/seed-history.ts --clear
 // 서버는 판단·요청마다 기록 DB를 읽으므로 다시 켜지 않아도 된다. 오늘 판단이 이미 기억 판본을 정했으면 합성 기억은 다음 날부터 쓴다.
+// 이야기(2026-11-18 확정): 날마다 아침 커피 뒤 한 번 컵을 두고 떠나고, 1·2일째는 묻고(답 「치워 주세요」 → 컵 치우기), 둘째 밤 채택 검사를 지나 3일째부터 바로 치운다.
+// 말없이 에어컨: 1일째 「아 덥다」는 클로이드가 켜고, 2·3일째 사람이 말없이 켜고, 셋째 밤 통과해 4일째부터 TV를 보기 시작하면 클로이드가 켠다.
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import dotenv from "dotenv";
 import { checkPlan } from "../src/act/check.js";
+import { EXEC_TEXT } from "../src/act/labels.js";
 import { planIdOf, targetOf, TASK_NAMES, TASKS } from "../src/act/tasks.js";
 import { PlanDraft, type PlanResult } from "../src/agent/planTools.js";
 import { ExecutionTracker } from "../src/act/track/tracker.js";
 import { memoryApprovals } from "../src/agent/approval.js";
-import { josa } from "../src/shared/korean.js";
-import { CUP_FSM_MEMORY, CUP_TASKS, isoWithOffset, type FsmMemory } from "../src/brain/decision.js";
+import { ANY_STATE, CUP_FSM_MEMORY, CUP_TASKS, fsmStep, isoWithOffset, validateMemory, type FsmMemory } from "../src/brain/decision.js";
+import { adoptKey, adoptedFsm, checkCandidate, type CheckDay } from "../src/brain/pam/adopt.js";
 import type { BrainLog, DecisionRecord } from "../src/contract/events.js";
+import type { CandidateFsm } from "../src/contract/pam.js";
 import type { PlanView, XZ } from "../src/contract/plan.js";
 import type { ControlMode } from "../src/contract/setup.js";
 import type { Facet, ObjClass, WorldChange, WorldChangeKind, WorldEye, WorldFact, WorldObject, WorldPerson, WorldView } from "../src/contract/world.js";
@@ -118,6 +122,8 @@ class Week {
   private frameAt: number | null = null;
   private plans!: PlanHub;
   private tracker!: ExecutionTracker;
+  /** 그날 장면이 따르는 기억(판단 기록의 사람 상태·화살표를 이 기억으로 만든다). */
+  private story: FsmMemory = CUP_FSM_MEMORY;
   readonly reflections: { version: number; appliesDay: string }[] = [];
 
   /** seedOnly: 날마다 판본을 넣지 않는 주(memories none)의 seed 판본. 판단은 그 판본을 쓰고 그날 기억을 고정하지 않는다. */
@@ -146,9 +152,10 @@ class Week {
     this.t += Math.round(sec * 1000);
   }
 
-  /** 서버를 켠다: World State·판단 번호·계획·실행 추적을 새로 둔다. 가전 시작 상태는 적지 않고 기억만 한다. */
-  boot(day: string, hms: string): void {
+  /** 서버를 켠다: World State·판단 번호·계획·실행 추적을 새로 둔다. 가전 시작 상태는 적지 않고 기억만 한다. story: 그날 장면이 따르는 기억. */
+  boot(day: string, hms: string, story: FsmMemory): void {
     this.day = day;
+    this.story = story;
     this.at(hms);
     Object.assign(this, { seq: 0, frame: 0, objects: new Map(), counters: new Map(), recent: [], summary: "", vlmMissing: 0 });
     this.person = { visible: false, since_ms: this.t, last_seen_ms: null, count: 0, room: null, room_label: null, position: null, near: [], holding: [], position_ms: null, answered_ms: null, facts: {} };
@@ -156,8 +163,12 @@ class Week {
     this.tracker = new ExecutionTracker({
       plans: this.plans, world: () => this.view(), floor: () => this.plans.floor(), toPhone: () => {}, emit: (l) => this.brain.emit(l), approvals: this.approvals,
       clock: { now: () => this.t },
-      // 합성 일주일은 처음 하는 일 묻기를 켠 때의 지난 기록이다(첫날 컵 치우기 승인·거절 답이 반성 자료). 지금 서버는 끔(src/agent/approval.ts ASK_FIRST_TIME)
-      askFirst: true,
+      // 묻기 답 「치워 주세요」 → 말 부탁(컵 치우기) 판단을 서버처럼 판단 기록에 남긴다(src/brain/decide.ts logSpeech)
+      sentSeq: () => this.seq,
+      onSpeech: (d) => this.brain.emit({
+        type: "decision", at_ms: this.t, id: d.id, seq: d.seq, text_sent: d.textSent, status: d.status, prediction: d.prediction, action: d.action, fsm: null,
+        memory_version: d.memoryVersion, world: d.world, ...(d.source ? { source: d.source } : {}), ...(d.via ? { via: d.via } : {}),
+      }),
       check: (d, p) => checkPlan({ decision: d, tasks: [...CUP_TASKS], plan: p, world: this.view(), nowMs: this.t, staleMs: 3000, mode: "test" }),
       // OpenAI를 부르지 않으므로 에이전트가 낼 도구 호출(컵 치우기 네 단계·물어보기)을 같은 계획 검사(PlanDraft)에 넣는다
       planner: (d) => this.plan(d),
@@ -195,6 +206,16 @@ class Week {
   device(d: Device, attr: string, to: unknown): void {
     this.twin.set(d.id, { ...this.twin.get(d.id), [attr]: to });
     this.devices.emit(this.state(d.id), { label: d.label, kind: d.kind });
+  }
+
+  /** 클로이드가 판단(planId)의 가전 명령을 한다: 그 계획의 실행 기록(판단 → 실행 중 → 완료)과 가전 바뀜. 밤 흐름이 로봇이 한 구간(못 봄)으로 센다. */
+  robotDevice(planId: string, d: Device, attr: string, to: unknown): void {
+    const run = (state: "decided" | "running" | "done") => this.brain.emit({ type: "execution", at_ms: this.t, plan_id: planId, state, text: EXEC_TEXT[state] });
+    run("decided");
+    run("running");
+    this.wait(4);
+    this.device(d, attr, to);
+    run("done");
   }
 
   /** 폰 눈(맞춘 자세) 자리. 계획 출발점과 이동 단계 확인에도 쓴다. */
@@ -296,24 +317,26 @@ class Week {
     this.brain.emit({ type: "observe", at_ms: this.t, frame_id: `e${++this.frame}`, captured_at_ms: this.t - 1200, yolo: null, vlm: null, vlm_missing: reason });
   }
 
-  /** PAM 판단 하나: 지금 World State 관찰 텍스트 + 그날 기억 판본 + 행동 목록. 답(action·observation·reasoning)은 시나리오가 정한다. */
-  /** track false: 실행 추적에 넘기지 않는다(컵 대본이 아닌 판단, 그 결과는 부른 쪽이 기록한다). */
-  decide(action: string | null, observation: string, reasoning: string, o: { track?: boolean } = {}): string {
+  /** PAM 판단 하나: 지금 World State 관찰 텍스트 + 그날 기억 판본 + 행동 목록. 답(사람 상태 state·일어난 화살표 edge·observation·reasoning)은 시나리오가 정하고,
+   *  행동은 그 화살표의 행동이어야 한다(그날 기억을 따른다). track false: 실행 추적에 넘기지 않는다(컵 대본이 아닌 판단, 그 결과는 부른 쪽이 기록한다). */
+  decide(action: string | null, observation: string, reasoning: string, o: { state: string; edge?: { from: string; next: number }; track?: boolean }): string {
     this.wait(0.25);
     const atMs = this.t;
     const view = this.view();
     const textSent = textFromWorld(view, this.recent, { nowMs: atMs, offsetMinutes: this.db.offsetMinutes });
-    const mem = this.seedOnly !== null ? { version: this.seedOnly } : memoryForDay(this.db, this.day, { patch: false });
+    const mem = this.seedOnly !== null ? { version: this.seedOnly } : memoryForDay(this.db, this.day);
     const seq = ++this.seq;
     // 판단은 돕는 방식 자동처럼 모든 행동 가운데 고른다(앞 둘의 순서는 컵 행동과 같다)
     const tasks: string[] = [...TASK_NAMES];
-    const prediction = { observation, reasoning, task_index: action === null ? -1 : tasks.indexOf(action) };
+    const prediction = { observation, reasoning, task_index: action === null ? -1 : tasks.indexOf(action), state: o.state, from: o.edge?.from ?? null, next_index: o.edge?.next ?? -1 };
+    const fsm = fsmStep(this.story, prediction);
+    if (fsm.action !== action) throw new Error(`${this.stamp()}: 판단 ${action ?? "대기"}가 그날 기억의 화살표 행동(${fsm.action ?? "없음"})과 달라요`);
     const d: DecisionRecord = {
       id: `pam-${seq}`, seq, atMs, textSent, finalTime: isoWithOffset(atMs, this.db.offsetMinutes), status: "valid", prediction, action,
-      memoryVersion: mem.version, world: decisionWorld(view),
+      memoryVersion: mem.version, world: decisionWorld(view), fsm,
     };
     this.wait(1.9);
-    this.brain.emit({ type: "decision", at_ms: this.t, id: d.id, seq, text_sent: textSent, status: "valid", prediction, action, memory_version: mem.version, world: d.world });
+    this.brain.emit({ type: "decision", at_ms: this.t, id: d.id, seq, text_sent: textSent, status: "valid", prediction, action, fsm, memory_version: mem.version, world: d.world });
     if (o.track !== false) this.tracker.onDecision(d);
     return planIdOf(d.id);
   }
@@ -337,9 +360,9 @@ class Week {
     return open;
   }
 
-  /** 실제 폰 답 단추(src/server/home/phone.ts onChoice와 같다). */
-  tap(choice: string): void {
-    this.wait(3);
+  /** 실제 폰 답 단추(src/server/home/phone.ts onChoice와 같다). waited: 이미 정한 시각으로 옮겨 두었다(3초 기다리지 않는다). */
+  tap(choice: string, o: { waited?: boolean } = {}): void {
+    if (!o.waited) this.wait(3);
     const open = this.open();
     const picked = open.choices.find((c) => c.id === choice);
     if (!picked || !this.tracker.onAnswer(open.planId, open.stepId, choice)) throw new Error(`${this.stamp()}: ${choice} 답을 받지 않았어요`);
@@ -400,210 +423,188 @@ class Week {
   }
 }
 
-/** 합성 일주일은 컵을 두고 떠나면 치우는 습관(2026-11-16)을 배우기 전 기록이다: left_cup은 그때 규칙(비면 치우기, 남으면 두기, 안이 안 보이면 묻기)이고
- *  판단 기록(「left_cup 규칙대로 묻는다」)도 그 규칙을 따른다. 서버가 이 DB로 판단하면 습관을 가장 새 판본에 한 번 넣는다(src/brain/decision.ts SEED_PATCHES). */
-const PAST_LEFT_CUP = [
-  { trigger: "사용자가 자리를 비웠고 컵이 비어 있으며 아무도 컵을 들거나 만지지 않는다.", action: "컵 치우기" },
-  { trigger: "사용자가 자리를 비웠지만 컵에 음료가 남아 있다.", action: "컵 그대로 두기" },
-  { trigger: "사용자가 자리를 비웠고 컵 안을 확인할 수 없다.", action: "사용자에게 물어보기" },
-];
-/** 습관 전 seed: 지금 seed(CUP_FSM_MEMORY)에서 left_cup 규칙만 그때 규칙으로. */
-export const PAST_SEED: FsmMemory = {
-  ...CUP_FSM_MEMORY,
-  states: CUP_FSM_MEMORY.states.map((s) => (s.id === "left_cup" ? { ...s, rules: PAST_LEFT_CUP.map((r) => ({ ...r })) } : s)),
+/** 마시는 중에서 떠나는 seed 묻기 화살표의 on(합성 컵 치우기 후보의 사건). */
+export const LEAVE_ON = CUP_FSM_MEMORY.states.find((s) => s.id === "drinking")!.next.find((e) => e.to === ANY_STATE)!.on;
+/** 데모 「2-습관」: 말없이 TV를 보기 시작하면 에어컨(배우는 습관, 사용자 답 2026-11-19). 자리에 없음 → TV 보는 중 seed 진입 화살표의 on(「사용자가 돌아와 TV를 본다.」). */
+export const TV_START_ON = CUP_FSM_MEMORY.states.find((s) => s.id === "away")!.next.find((e) => e.to === "watching_tv")!.on;
+/** 합성 반성이 내는 후보 FSM: seed 모양에 마시는 중 → * 컵 치우기 후보 하나(seed 묻기 화살표와 같은 on)와
+ *  자리에 없음 → TV 보는 중 에어컨 켜기 후보 하나(seed 진입 화살표와 같은 on). 같은 사건은 한 상태에 한 번이라 후보가 그 진입 화살표 자리를 맡는다
+ *  (로봇 FSM은 seed 화살표를 그대로 두고 통과한 후보만 그 자리에 붙인다, adoptedFsm). */
+export const SYNTH_CANDIDATES: CandidateFsm = {
+  initial_state: CUP_FSM_MEMORY.initial_state,
+  states: CUP_FSM_MEMORY.states.map((s) => ({
+    id: s.id, description: s.description, activity: [...s.activity],
+    next: s.next.filter((e) => !e.action && !(s.id === "away" && e.on === TV_START_ON)).map(({ to, on }) => ({ to, on })),
+    rules: s.id === "drinking" ? [{ to: ANY_STATE, action: "컵 치우기", candidates: [{ on: LEAVE_ON }] }]
+      : s.id === "away" ? [{ to: "watching_tv", action: "에어컨 켜기", candidates: [{ on: TV_START_ON }] }] : [],
+  })),
 };
+const KEYS = { clear: adoptKey("drinking", "컵 치우기", { on: LEAVE_ON }), aircon: adoptKey("away", "에어컨 켜기", { on: TV_START_ON }) } as const;
 
-/** i번째 날 반성이 남기는 기억(PAM fsm 모양). 습관 전 seed(PAST_SEED)를 바탕으로 날마다 상태(morning_coffee·away·night)를 더한다.
- *  seed 규칙(컵 갈래·묻기·덥다·요리)은 상태 자리 그대로 모두 남는다. 첫날 답에서 밤에는 묻지 않는다는 것을 배운다.
- *  habit이면 말없이 에어컨을 켜는 규칙을 watching_tv(없으면 evening_tv)에 더한다(reflect --scripted의 마지막 판본만). */
-export function memoryAfter(i: number, h: Pick<HomeInfo, "table" | "side" | "livingAc">, habit = false): FsmMemory {
-  const T = h.table.label;
-  const m = structuredClone(PAST_SEED);
-  const state = (id: string) => m.states.find((s) => s.id === id)!;
-  const leftCup = state("left_cup");
-  leftCup.description += ` 컵은 ${T} 위에 있다. 사용자는 다 마시고 자리를 뜨면 컵을 치워 주기를 바란다.${i >= 3 ? " 컵 안이 안 보여 물으면 치워 달라고 답한다." : ""}`;
-  leftCup.next.push({ to: "night", on: "22시가 넘는다." });
-  state("watching_tv").next.push({ to: "night", on: "22시가 넘는다." });
-  const night = {
-    id: "night",
-    // 밤에는 할 일이 없다: 행동 목록 밖 행동(대기)을 규칙으로 두지 않고 기다린다는 것을 설명에 적는다
-    description: `22시가 넘은 밤이다. 사용자는 밤에는 폰으로 묻지 않기를 바란다. 22시 이후 사용자가 자리를 비웠고 ${h.side.label} 위나 ${T} 위에 컵이 남아 있어도 컵을 그대로 두고 아침까지 기다린다.${i >= 1 ? ` 23시쯤 ${josa(h.livingAc.label, "을/를")} 끄고 침실로 간다.` : ""}`,
-    rules: [],
-    next: [{ to: i >= 1 ? "morning_coffee" : "drinking", on: `다음 날 아침 사용자가 ${T}에 앉아 커피를 마신다.` }],
+/** 날마다 장면의 정한 때(기록 시간대 시:분:초). 셈이 보는 때(떠남·답·외출·TV 시작·사람이 켠 에어컨)는 이 시각에 맞춰 둔다(weekMarks가 같은 표를 읽는다).
+ *  평일은 7시쯤 커피 뒤 떠나고 8시 30분쯤 나가 밖에서 먹고 돌아와 바로 TV, 금요일은 21시쯤 돌아온다. 주말은 늦게 일어나 낮에 나갔다 저녁에 돌아온다. */
+export function dayTimes(day: string, i: number) {
+  const dow = new Date(`${day}T00:00:00Z`).getUTCDay();
+  const weekend = dow === 0 || dow === 6;
+  const base = weekend
+    ? { boot: "08:20:00", bedOff: "08:24:30", coffee: "08:41:12", leaveSee: "09:25:30", out: "11:50:20", tv: "19:41:30" }
+    : { boot: "06:50:00", bedOff: "06:55:10", coffee: "07:02:14", leaveSee: "07:40:30", out: "08:28:40", tv: dow === 5 ? "21:14:00" : "19:44:00" };
+  const sec = (hms: string) => { const [h, m, x] = hms.split(":").map(Number); return h! * 3600 + m! * 60 + x!; };
+  const hms = (s: number) => new Date(s * 1000).toISOString().slice(11, 19);
+  const leave = sec(base.leaveSee) + 4;
+  const tv = sec(base.tv);
+  return {
+    weekend, ...base, tea: "22:41:15", end: "23:04:30", bedOn: "23:12:40", reflect: "23:30:00",
+    /** 커피 뒤 사람이 컵을 두고 떠난 때(떠나는 프레임 두 장 뒤). 1·2일째 「치워 주세요」 답은 그 26초 뒤. 외출 문을 나선 때. */
+    leave: hms(leave), answer: hms(leave + 26), gone: hms(sec(base.out) + 30),
+    /** 2·3일째 사람이 말없이 거실 에어컨을 켜는 때(TV 시작 40·50초 뒤). 아니면 null. */
+    personAc: i === 1 || i === 2 ? hms(tv + 30 + 10 * i) : null,
   };
-  if (i >= 1) {
-    leftCup.next.push({ to: "away", on: "사용자가 외출하러 집을 나간다." });
-    m.initial_state = "morning_coffee";
-    m.states.push(
-      {
-        id: "morning_coffee", description: `${i >= 5 ? "평일 7시쯤, 주말 8시 40분쯤" : "평일 7시쯤"} 사용자가 일어나 ${T}에서 컵으로 커피를 마신다. 컵은 사용 중이다.`, rules: [],
-        next: [{ to: "left_cup", on: `사용자가 컵을 ${T}에 두고 일어나 자리를 떠난다.` }],
-      },
-      {
-        id: "away", description: `평일 8시 30분쯤부터 18시 30분쯤까지 사용자가 집에 없다.${i >= 4 ? " 금요일에는 21시쯤 돌아오기도 한다." : ""}`, rules: [],
-        next: [{ to: "drinking", on: `사용자가 돌아와 ${T}에 그릇과 컵을 놓고 먹는다.` }, { to: "watching_tv", on: "사용자가 돌아와 거실 소파에 앉아 TV를 본다." }],
-      },
-    );
-  }
-  m.states.push(night);
-  if (habit) (m.states.find((s) => s.id === "watching_tv") ?? m.states.find((s) => s.id === "evening_tv"))!.rules.push({ trigger: "사용자가 소파에 앉아 TV를 보기 시작한다.", action: "에어컨 켜기" });
-  return m;
+}
+/** 로봇이 그 일을 한 구간(못 봄)으로 보는 길이(초): 컵 치우기 네 단계·에어컨 켜기가 다 드는 길이. */
+const ROBOT_SPAN_S = { clear: 120, aircon: 60 } as const;
+/** weekMarks가 날짜를 받지 않으면 쓰는 주(월~일). 셈(n·k·못 봄)은 요일과 상관없다. */
+const WEEK_REF = ["2026-11-02", "2026-11-03", "2026-11-04", "2026-11-05", "2026-11-06", "2026-11-07", "2026-11-08"];
+
+/** 합성 n일치 채택 검사 입력(장면 표 dayTimes에서 바로 뽑음, 모델 안 부름). 시각은 자정부터 초, 하루 창은 켠 때부터 반성 때까지.
+ *  clear: 후보 = 아침 커피 뒤 떠난 때, 행동·답 = 1·2일째 「치워 주세요」 답 때, 안 보인 구간 = 집에 없는 때 + 3일째부터 로봇이 치운 구간.
+ *  aircon: 후보 = 집에 돌아와 소파에서 TV를 보기 시작한 때(자리에 없음에서), 행동 = 2·3일째 사람이 거실 에어컨을 켠 때,
+ *  안 보인 구간 = 집에 없는 때 + 로봇이 거실 에어컨을 켠 구간(1일째 「아 덥다」, 4일째부터 배운 화살표). */
+export function weekMarks(n: number, which: "clear" | "aircon" = "clear", days: readonly string[] = WEEK_REF): CheckDay[] {
+  if (n > days.length) throw new Error(`weekMarks: ${n}일치를 만들 날이 ${days.length}일뿐이에요`);
+  const sec = (hms: string) => { const [h, m, x] = hms.split(":").map(Number); return h! * 3600 + m! * 60 + x!; };
+  return days.slice(0, n).map((day, i) => {
+    const t = dayTimes(day, i);
+    const absent: [number, number] = [sec(t.gone), sec(t.tv)];
+    const day0 = { start: sec(t.boot), end: sec(t.reflect) };
+    if (which === "clear") {
+      const leave = sec(t.leave);
+      const asked = i < 2 ? [sec(t.answer)] : [];
+      return { ...day0, candidate: [leave], action: asked, answered: asked, unseen: [absent, ...(i >= 2 ? [[leave, leave + ROBOT_SPAN_S.clear] as [number, number]] : [])] };
+    }
+    const tv = sec(t.tv);
+    const robot = i === 0 || i >= 3;
+    return { ...day0, candidate: [tv], action: t.personAc ? [sec(t.personAc)] : [], unseen: [absent, ...(robot ? [[tv, tv + ROBOT_SPAN_S.aircon] as [number, number]] : [])] };
+  });
 }
 
-/** 아침 커피: 앉아 마시다 다 마시고 자리를 뜨면 컵을 치운다. 첫날은 처음 하는 일이라 승인을 묻는다: 잠깐 자리를 뜬 첫 번째는 「거절」, 다 마신 두 번째는 「승인」. */
-function morning(w: Week, i: number, start: string, weekend: boolean): void {
+/** i번째 날(0부터) 밤 반성이 남기는 로봇 FSM. 상태는 seed 넷 그대로이고 배우는 화살표는 채택 검사(src/brain/pam/adopt.ts)가 정한다:
+ *  컵 치우기는 둘째 밤(i = 1)에 통과해 3일째부터, 말없이 에어컨은 셋째 밤(i = 2)에 통과해 4일째부터.
+ *  시간 습관(평일 7시 커피, 밤에는 묻지 않기)은 설명에만 적는다. */
+export function memoryAfter(i: number, h: { table: { label: string } }): FsmMemory {
+  const passed = new Set((["clear", "aircon"] as const).filter((w) => checkCandidate(weekMarks(i + 1, w)).passed).map((w) => KEYS[w]));
+  const m = adoptedFsm(SYNTH_CANDIDATES, passed, CUP_FSM_MEMORY);
+  const state = (id: string) => m.states.find((s) => s.id === id)!;
+  if (i >= 1) state("drinking").description += ` ${i >= 5 ? "평일 7시쯤, 주말 8시 40분쯤" : "평일 7시쯤"} 일어나 ${h.table.label}에서 커피를 마신다.`;
+  if (i >= 1) state("away").description = `평일 8시 30분쯤부터 저녁까지 사용자가 집에 없다.${i >= 4 ? " 금요일에는 21시쯤 돌아오기도 한다." : ""} 22시가 넘으면 폰으로 묻지 않기를 바란다.`;
+  return validateMemory(m, "fsm") as FsmMemory;
+}
+
+/** 그날 장면이 따르는 기억: 1일째 seed, 그 뒤는 전날 밤 반성이 남긴 기억(scripted 판본과 같다. memories none이어도 장면 이야기는 같다). */
+const storyMemory = (i: number, h: { table: { label: string } }): FsmMemory => (i === 0 ? CUP_FSM_MEMORY : memoryAfter(i - 1, h));
+
+/** 아침 커피: 앉아 마시다 컵을 두고 떠난다(하루 한 번). 1·2일째는 떠날 때 묻고 「치워 주세요」 답 뒤 치우고, 3일째부터는 바로 치운다. */
+function morning(w: Week, i: number, t: ReturnType<typeof dayTimes>): void {
   const { table } = w.home;
-  w.at(start);
+  w.at(t.coffee);
   w.personIn();
   w.see("A person stands next to the dining table.", { person: ["standing"] }, 2);
-  w.decide(null, "사람이 식탁 옆에 서 있고 식탁 위에는 아무것도 없다.", "아침 커피를 막 시작하는 때라 지금 도울 일이 없다.");
+  w.decide(null, "사람이 식탁 옆에 서 있고 식탁 위에는 아무것도 없다.", "아침 커피를 막 시작하는 때라 지금 도울 일이 없다.", { state: "away" });
   w.wait(140);
   const cup = w.put("cup", table);
   w.see("A person sits at the dining table with a mug of coffee.", { person: ["sitting", "drinking"], [cup]: ["on_table", "has_contents"] }, 3);
-  w.decide(null, "사람이 식탁에 앉아 컵으로 커피를 마시고 있다.", "컵을 쓰는 중이라 지금 치우면 방해가 된다.");
+  w.decide(null, "사람이 식탁에 앉아 컵으로 커피를 마시고 있다.", "자리에 없다가 마시는 중으로 넘어갔고 컵을 쓰는 중이라 기다린다.", { state: "drinking", edge: { from: "away", next: 0 } });
   if (i % 3 === 2) { // 가끔 VLM 답이 늦는다
     w.wait(300);
     w.missing("timeout");
     w.missing("timeout");
   }
-  w.wait(weekend ? 1500 : 900);
+  w.wait(t.weekend ? 1500 : 900);
   w.see("A person sits at the dining table drinking from a mug.", { person: ["sitting", "drinking"], [cup]: ["on_table", "has_contents"] }, 2);
-  if (i === 0) {
-    w.wait(260);
-    w.see("A person stands up from the dining table.", { person: ["standing"], [cup]: ["on_table", "empty"] }, 2);
-    w.personOut();
-    w.decide("컵 치우기", "사람이 자리를 떠났고 식탁 위 컵이 비어 있다.", "left_cup 규칙대로 사람이 두고 간 빈 컵을 싱크대로 치운다.");
-    w.start("An empty mug is on the dining table.", { [cup]: ["on_table", "empty"] });
-    w.say("거절");
-    w.wait(400);
-    w.personIn();
-    w.see("A person sits at the dining table and pours coffee into the mug.", { person: ["sitting", "holding_object"], [cup]: ["on_table", "has_contents"] }, 3);
-    w.decide(null, "사람이 돌아와 컵에 커피를 다시 따랐다.", "drinking 단계로 돌아와 컵을 다시 쓰는 중이라 치우지 않는다.");
-    w.wait(1000);
-  } else w.wait(500);
+  w.at(t.leaveSee);
   w.see("A person puts the mug down and stands up.", { person: ["standing"], [cup]: ["on_table", "empty"] }, 2);
   w.personOut();
-  w.decide("컵 치우기", "사람이 컵을 비우고 식탁을 떠났다.", i === 0
-    ? "left_cup 규칙대로 비운 컵을 싱크대로 치운다."
-    : "사용자는 다 마시고 자리를 뜨면 컵을 치워 주기를 바라므로 left_cup 규칙대로 치운다.");
-  w.start("An empty mug is on the dining table.", { [cup]: ["on_table", "empty"] });
-  if (i === 0) w.tap("approve");
+  const leave = { state: "away", edge: { from: "drinking", next: 0 } };
+  if (i < 2) {
+    w.decide("사용자에게 물어보기", "사람이 컵을 두고 식탁을 떠났다.", "마시는 중에서 떠나는 화살표대로 컵을 치울지 묻는다.", leave);
+    w.start("An empty mug is on the dining table.", { [cup]: ["on_table", "empty"] });
+    w.at(t.answer);
+    w.tap("clear", { waited: true });
+    w.start("An empty mug is on the dining table.", { [cup]: ["on_table", "empty"] });
+  } else {
+    w.decide("컵 치우기", "사람이 컵을 두고 식탁을 떠났다.", "마시는 중에서 떠나는 화살표대로 두고 간 컵을 싱크대로 치운다.", leave);
+    w.start("An empty mug is on the dining table.", { [cup]: ["on_table", "empty"] });
+  }
   w.clearCup(cup, i === 0 ? { sink: "tap" } : i === 2 ? { table: "다 했어" } : {});
 }
 
-/** 외출·귀가: 식탁 옆을 지나 나가고, 저녁에 돌아온다. */
-function away(w: Week, out: string, back: string): void {
-  w.at(out);
+/** 외출: 식탁 옆을 지나 나간다(밖에서 먹고 TV를 보러 돌아온다). */
+function away(w: Week, t: ReturnType<typeof dayTimes>): void {
+  w.at(t.out);
   w.personIn();
   w.see("A person in a coat walks past the dining table.", { person: ["standing"] }, 2);
-  w.decide(null, "외출 옷을 입은 사람이 식탁 옆을 지나간다.", "식탁에 치울 컵이 없어 기다린다.");
-  w.wait(20);
+  w.decide(null, "외출 옷을 입은 사람이 식탁 옆을 지나간다.", "식탁에 치울 컵이 없어 기다린다.", { state: "away" });
+  w.at(t.gone);
   w.personOut();
   w.see("The dining table is clear.", {}, 2);
-  w.decide(null, "사람이 현관 쪽으로 나가 보이지 않는다.", "away 단계라 지금 도울 일이 없다.");
-  w.at(back);
-  w.personIn();
-  w.see("A person stands near the dining table holding a bag.", { person: ["standing", "holding_object"] }, 2);
-  w.decide(null, "사람이 집에 돌아와 식탁 옆에 서 있다.", "식탁에 치울 컵이 없어 기다린다.");
+  w.decide(null, "사람이 현관 쪽으로 나가 보이지 않는다.", "자리에 없음이라 지금 도울 일이 없다.", { state: "away" });
 }
 
-/** 식사: 그릇과 컵으로 먹고 자리를 뜨면 컵을 치운다. ask면 컵 안이 안 보여 먼저 묻고 「치워 주세요」 답 뒤에 치운다. */
-function meal(w: Week, start: string, o: { ask?: boolean; lunch?: boolean } = {}): void {
-  const { table } = w.home;
-  w.at(start);
-  w.eye(w.home.eye.rest);
-  const bowl = w.put("bowl", table);
-  const cup = w.put("cup", table);
-  w.see(`A person eats ${o.lunch ? "lunch" : "dinner"} at the dining table with a bowl and a cup.`,
-    { person: ["sitting", "eating"], [bowl]: ["on_table", "has_contents"], [cup]: ["on_table", "has_contents"] }, 3);
-  w.decide(null, "사람이 식탁에서 그릇과 컵으로 밥을 먹고 있다.", "식사 중이라 그릇과 컵을 쓰고 있어 기다린다.");
-  w.wait(1650);
-  w.see("A person stands up from the dining table after eating.", { person: ["standing"], [bowl]: ["on_table", "empty"], [cup]: ["on_table", o.ask ? "contents_unknown" : "empty"] }, 2);
-  w.personOut();
-  if (o.ask) {
-    w.decide("사용자에게 물어보기", "사람이 식탁을 떠났고 컵 안이 보이지 않는다.", "22시 전이고 컵 안을 확인할 수 없어 left_cup 규칙대로 사용자에게 묻는다.");
-    w.tap("clear");
-    w.see("An empty cup and an empty bowl are on the dining table.", { [bowl]: ["on_table", "empty"], [cup]: ["on_table", "empty"] }, 2);
-    w.decide("컵 치우기", "식탁 위 컵이 비어 있고 사용자가 치워 달라고 답했다.", "사용자 답대로 left_cup 규칙의 컵 치우기를 한다.");
-  } else {
-    w.decide("컵 치우기", "사람이 식사를 마치고 식탁을 떠났고 컵이 비어 있다.", "사용자는 자리를 뜨면 컵을 치워 주기를 바라므로 빈 컵을 싱크대로 치운다.");
-  }
-  w.start("An empty cup and an empty bowl are on the dining table.", { [bowl]: ["on_table", "empty"], [cup]: ["on_table", "empty"] });
-  w.clearCup(cup);
-  w.wait(60);
-  w.gone(bowl);
-  w.see("The dining table is clear.", {}, 2);
-}
-
-/** TV와 거실 에어컨. 폰은 소파 쪽을 본다. 앉은 뒤 20~60초 안에 거실 에어컨이 켜진다: 1일차(i 0)는 「아 덥다」 말을 듣고 클로이드가 켜고(에어컨 켜기 판단),
- *  그 뒤로는 사람이 말없이 스스로 켠다. 끝나면 에어컨을 끄고 자리를 뜬다. teaAt이면 그때 거실 테이블에 찻잔을 두고, 떠날 때 남긴다(그 판단은 부른 쪽이 한다). */
-function tv(w: Week, i: number, start: string, end: string, teaAt?: string): string | null {
+/** 돌아와 바로 TV(자리에 없음 → TV 보는 중)와 거실 에어컨. 폰은 소파 쪽을 본다. 1일째는 「아 덥다」 말을 듣고 클로이드가 켜고(덥다 화살표),
+ *  2·3일째는 사람이 말없이 스스로 켜고(판단은 대기), 4일째부터는 배운 화살표(자리에 없음 → TV 보는 중)로 클로이드가 켠다.
+ *  TV를 보며 거실 테이블에 찻잔을 두고 마시다, 끝나면 에어컨을 끄고 찻잔을 들고 침실로 간다(치우기 아님). */
+function tv(w: Week, i: number, t: ReturnType<typeof dayTimes>): void {
   const { side, livingAc } = w.home;
-  w.at(start);
+  w.at(t.tv);
   w.eye(w.home.eye.sofa);
   w.personIn();
-  w.see("A person sits on the sofa watching TV.", { person: ["sitting"] }, 3);
-  if (i === 0) {
-    w.wait(12);
-    w.heard("아 덥다");
-    w.decide("에어컨 켜기", "사람이 거실 소파에서 TV를 보다가 덥다고 말했다.", "덥다고 말해서 watching_tv 규칙대로 거실 에어컨을 켠다.", { track: false });
-    w.wait(4);
+  w.see("A person sits on the sofa watching TV.", { person: ["sitting", "watching_tv"] }, 3);
+  const start = { state: "watching_tv", edge: { from: "away", next: 1 } };
+  if (i >= 3) {
+    const plan = w.decide("에어컨 켜기", "사람이 돌아와 거실 소파에 앉아 TV를 본다.", "자리에 없다가 TV를 보기 시작하면 에어컨을 켜는 화살표대로 거실 에어컨을 켠다.", { ...start, track: false });
+    w.robotDevice(plan, livingAc, "power", "on");
   } else {
-    w.decide(null, "사람이 거실 소파에 앉아 TV를 보고 있다.", "watching_tv 단계에서 치울 빈 컵이 보이지 않는다.");
-    w.wait(18 + (i * 7) % 25);
+    w.decide(null, "사람이 돌아와 거실 소파에 앉아 TV를 본다.", "자리에 없다가 TV 보는 중으로 넘어갔고 지금 도울 일이 없다.", start);
+    if (i === 0) {
+      w.wait(12);
+      w.heard("아 덥다");
+      const plan = w.decide("에어컨 켜기", "사람이 거실 소파에서 TV를 보다가 덥다고 말했다.", "덥다고 말해서 TV 보는 중 화살표대로 거실 에어컨을 켠다.", { state: "watching_tv", edge: { from: "watching_tv", next: 1 }, track: false });
+      w.robotDevice(plan, livingAc, "power", "on");
+    } else {
+      w.at(t.personAc!);
+      w.device(livingAc, "power", "on");
+    }
   }
-  w.device(livingAc, "power", "on");
-  let tea: string | null = null;
-  if (teaAt) {
-    w.at(teaAt);
-    tea = w.put("cup", side);
-    w.see("A person sits on the sofa holding a cup of tea.", { person: ["sitting", "holding_object"], [tea]: ["on_table", "has_contents"] }, 3);
-    w.decide(null, "사람이 소파에서 컵으로 차를 마시고 있다.", "컵을 쓰는 중이라 기다린다.");
-  }
-  w.at(end);
+  w.at(t.tea);
+  const tea = w.put("cup", side);
+  w.see("A person sits on the sofa holding a cup of tea.", { person: ["sitting", "watching_tv", "holding_object"], [tea]: ["on_table", "has_contents"] }, 3);
+  w.decide(null, "사람이 소파에서 TV를 보며 컵으로 차를 마시고 있다.", "TV 보는 중이고 컵을 쓰는 중이라 기다린다.", { state: "watching_tv" });
+  w.at(t.end);
   w.device(livingAc, "power", "off");
   w.wait(90);
-  w.see(tea ? "A cup is left on the coffee table in a dim living room." : "A person stands up from the sofa.",
-    { person: ["standing"], ...(tea ? { [tea]: ["on_table", "contents_unknown"] } : {}) }, 2);
+  w.see("A person stands up from the sofa holding a cup of tea.", { person: ["standing", "holding_object"], [tea]: ["in_hand"] }, 2);
   w.personOut();
-  if (!tea) w.decide(null, "사람이 소파에서 일어나 거실을 떠났다.", "치울 컵이 보이지 않아 기다린다.");
-  return tea;
+  w.gone(tea);
+  w.decide(null, "사람이 찻잔을 들고 거실을 떠났다.", "찻잔을 들고 갔고 남은 컵이 없어 기다린다.", { state: "away" });
 }
 
-/** 하루: 평일은 7시쯤 일어나 커피, 8시 30분쯤 나가 18시 30분쯤 돌아와 저녁, TV, 23시 30분쯤 잔다. 주말은 늦게 일어나 점심도 먹는다. */
-function liveDay(w: Week, day: string, i: number, o: { scripted: boolean; habit: boolean }): void {
-  const dow = new Date(`${day}T00:00:00Z`).getUTCDay();
-  const weekend = dow === 0 || dow === 6;
-  w.boot(day, weekend ? "08:20:00" : "06:50:00");
+/** 하루: 아침 커피, 외출, 돌아와 TV, 23시 30분쯤 잔다. */
+function liveDay(w: Week, day: string, i: number, o: { scripted: boolean }): void {
+  const t = dayTimes(day, i);
+  w.boot(day, t.boot, storyMemory(i, w.home));
   if (i === 0) {
     w.wait(5);
     w.mode("test");
   }
-  w.at(weekend ? "08:24:30" : "06:55:10");
+  w.at(t.bedOff);
   w.device(w.home.bedAc, "power", "off");
-  morning(w, i, weekend ? "08:41:12" : "07:02:14", weekend);
-  if (weekend) {
-    meal(w, "12:31:40", { lunch: true });
-    if (dow === 6) away(w, "13:52:10", "17:48:30");
-    else tv(w, i, "15:04:20", "17:08:40");
-    meal(w, "18:56:05");
-  } else if (dow === 5) {
-    away(w, "08:28:40", "21:06:15");
-  } else {
-    away(w, "08:28:40", "18:36:10");
-    meal(w, "19:02:30", { ask: dow === 4 });
-  }
-  const tea = tv(w, i, dow === 5 ? "21:14:00" : weekend ? "19:41:30" : "19:44:00", "23:04:30", "22:41:15")!;
-  if (i === 0) {
-    w.decide("사용자에게 물어보기", "사람이 자리를 떠났고 거실 테이블 위 컵 안이 보이지 않는다.", "컵 안을 확인할 수 없어 left_cup 규칙대로 사용자에게 묻는다.");
-    w.say("그대로 둬요. 밤에는 묻지 마세요");
-  } else {
-    w.decide(null, `밤 23시에 사람이 침실로 가고 거실 테이블에 컵 ${tea}이 남았다.`, "night 단계라 밤에는 묻지 않고 아침까지 둔다.");
-  }
-  w.at("23:12:40");
+  morning(w, i, t);
+  away(w, t);
+  tv(w, i, t);
+  w.at(t.bedOn);
   w.device(w.home.bedAc, "power", "on");
-  w.at("23:30:00");
-  if (o.scripted) w.reflect(memoryAfter(i, w.home, o.habit));
+  w.at(t.reflect);
+  if (o.scripted) w.reflect(memoryAfter(i, w.home));
 }
 
 export interface SeedOptions {
@@ -615,10 +616,8 @@ export interface SeedOptions {
   days?: number;
   /** 트윈 폴더(기본 TWIN_STUDIO_DIR → 저장소 twin/). */
   twinDir?: string;
-  /** scripted: 지금처럼 날마다 대본 판본과 반성 줄을 넣는다. none: seed 판본 하나만 넣고 날마다 판본·반성 줄·날 고정을 넣지 않는다(실제 반성을 이어 돌릴 때). 기본 scripted. */
+  /** scripted: 날마다 그날 밤 반성이 남길 판본(memoryAfter)과 반성 줄을 넣는다. none: seed 판본 하나만 넣고 날마다 판본·반성 줄·날 고정을 넣지 않는다(실제 반성을 이어 돌릴 때). 기본 scripted. */
   memories?: "scripted" | "none";
-  /** scripted에서 참이면 마지막 판본에 말없이 에어컨을 켜는 규칙을 더한다(reflect --scripted). */
-  habit?: boolean;
 }
 
 export interface SeedResult {
@@ -642,11 +641,11 @@ export function seedHistory(db: HistoryDb, o: SeedOptions): SeedResult {
   const home = loadHome(o.home, o.twinDir);
   const cleared = db.removeSynthetic();
   const days = Array.from({ length: n }, (_, i) => addDays(o.end, i - n + 1));
-  const seed = db.saveMemory({ kind: "fsm", memory: PAST_SEED, day: null, appliesDay: null, source: "synthetic" });
+  const seed = db.saveMemory({ kind: "fsm", memory: CUP_FSM_MEMORY, day: null, appliesDay: null, source: "synthetic" });
   const scripted = (o.memories ?? "scripted") === "scripted";
   const w = new Week(marked(db), home, scripted ? null : seed);
   try {
-    days.forEach((day, i) => liveDay(w, day, i, { scripted, habit: scripted && o.habit === true && i === n - 1 }));
+    days.forEach((day, i) => liveDay(w, day, i, { scripted }));
   } finally {
     w.close();
   }

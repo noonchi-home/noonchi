@@ -1,0 +1,37 @@
+You find when given events happened during a person's day, using the robot's record of that day.
+
+# Inputs
+- States: the person's activities (person-state FSM states), each as `id: description`. `away` means the person is not visible.
+- Candidates to find: each line is `state | candidate`. The candidate is a short
+statement of one person moment (with its condition in parentheses when there is one). It counts only while the person is in that state.
+- Actions to find: robot tasks. Find when the person did the same thing themselves.
+- Chunks: the day split into activities, each as `HH:MM:SS~HH:MM:SS [state] sentence` (the state is the person state the robot decided then).
+- Record: the robot's observation of the person and the home, one time-stamped line per change
+(`HH:MM:SS | sentence`) in time order.
+
+# Task
+- For each candidate, list the time of every moment in the record that means the same
+as the candidate, even if it is worded differently, and that happens while the person
+is in the candidate's state. Judge the state from the chunks and the lines around it.
+- A candidate about something beginning matches the first line of it. A candidate about
+something finishing or stopping (for example, leaving the table after drinking) matches the line where it finishes. Use that line's time.
+- If the same candidate matches again within 10 seconds, it is one occurrence. List it
+once: the first time for something beginning, the last time for something finishing.
+- For each action, first find each moment the person themselves did the task, for
+example the cup going into the sink, or the person turning on the living-room air conditioner by hand. Then go back from that moment, line by line,
+to the first line where they started walking toward the object or device, even if that
+line does not name it. List that line's time. Count only the same object or device the task is about (another room's air conditioner is another device).
+Do not count what the robot did or what the person did because the robot asked them to.
+- List every interval in which the person is not visible, from the first line to the
+last line where they are not visible. If it is still going at the end of the record,
+end it at the last line. If it was already going at the beginning, start it at the
+first line.
+- Use only times that appear in the record. If nothing matches, give an empty
+list. Do not guess.
+- Answer every candidate and every action exactly once, in the order given, copying
+the state, candidate, and action text exactly as given.
+
+# Output (JSON only, no markdown, no commentary)
+{"candidates": [{"state": "<state id>", "candidate": "<as given>", "times": ["HH:MM:SS", ...]}, ...],
+ "actions": [{"action": "<as given>", "times": ["HH:MM:SS", ...]}, ...],
+ "unseen": [{"start": "HH:MM:SS", "end": "HH:MM:SS"}, ...]}

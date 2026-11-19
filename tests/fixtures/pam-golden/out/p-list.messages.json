@@ -9,6 +9,10 @@
       "content": [
         {
           "type": "text",
+          "text": "Person state at the previous decision: unknown"
+        },
+        {
+          "type": "text",
           "text": "Wall-clock time of the final observation: 2026-11-07T21:00:08+09:00"
         },
         {

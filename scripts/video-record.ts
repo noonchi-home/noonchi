@@ -1,7 +1,7 @@
 // 시연 녹화(scripts/video-check.ts --record): 같은 크롬의 대시보드 창(--record-phone이면 폰 탭도)을 CDP Page.startScreencast로 받아 폴더에 JPEG로 쓰고,
 // 끝나면 ffmpeg로 대시보드 한 화면(폰도 받았으면 왼쪽 폰·오른쪽 대시보드를 높이 맞춰 나란히) mp4 하나(H.264, yuv420p, RECORD_FPS)로 합친다.
 // 프레임은 받은 시각을 붙여 두고, concat 목록의 프레임마다 다음 프레임까지 보이게 해 영상 길이가 녹화한 실제 시간과 같다.
-// ack는 앞 ack에서 RECORD_MS 뒤에 보낸다(크롬은 ack를 받아야 다음 프레임을 보내므로 화면마다 초당 약 10장).
+// ack는 앞 ack에서 RECORD_MS(intervalMs를 주면 그 값) 뒤에 보낸다(크롬은 ack를 받아야 다음 프레임을 보내므로 화면마다 초당 약 10장, video-check --record-fps면 그 장 수).
 // 녹화 시작 답이 화면마다 START_TIMEOUT_MS 안에 오지 않거나 오류면 리스너·타이머·녹화를 정리하고 오류를 낸다.
 import { spawn } from "node:child_process";
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
@@ -26,6 +26,21 @@ export interface Frame { file: string; ms: number }
 export interface Recorded { endMs: number; frames: Record<string, Frame[]>; lost: number }
 export type ScreencastPage = Pick<Page, "send" | "on">;
 export interface Recording { stop(): Promise<Recorded> }
+
+/** 미니맵 녹화 장면 폴더 안 판 기록 파일 이름(scripts/minimap-cut.ts가 읽는다). */
+export const CUT_RUN_FILE = "run.json";
+/** 판 기록(video-check가 미니맵 녹화 끝에 쓴다). startMs는 녹화 시작 이 PC 시계(서버와 같은 PC라 서버 시계)이고 frames ms는 거기서 센다.
+ *  t0·sync는 폰 페이지 재생 시작 서버 시각과 [서버 시각, 영상 시각] 짝, clips는 바꾼 단계 영상(영상 시각·길이), firstDurationMs는 첫 영상 길이(모르면 null). */
+export interface CutRun {
+  startMs: number;
+  endMs: number;
+  size: [number, number];
+  frames: Frame[];
+  t0: number;
+  sync: [number, number][];
+  firstDurationMs: number | null;
+  clips: { video_ms: number; clip: string; duration_ms?: number }[];
+}
 
 /** 녹화 폴더 안의 시연 영상 파일: 시각표 파일 이름 줄기(.timeline.md·.md 뺌) + .demo.mp4. */
 export function demoFile(recordDir: string, timelineFile: string): string {
@@ -152,13 +167,13 @@ export async function startRecording(
   };
 }
 
-/** 녹화를 mp4 하나로: dir에 concat 목록(phone.txt·dash.txt)을 쓰고 dir에서 ffmpeg를 돌린다. 되면 프레임 폴더를 지운다.
+/** 녹화를 mp4 하나로: dir에 concat 목록(phone.txt·dash.txt)을 쓰고 dir에서 ffmpeg를 돌린다(fps·height가 없으면 RECORD_FPS·RECORD_HEIGHT). 되면 프레임 폴더를 지운다(keepFrames면 둔다).
  *  ffmpeg가 없거나 실패하면 프레임 폴더를 남기고 까닭과 폴더를 돌려준다. */
 export async function encodeDemo(
   dir: string,
   rec: Recorded,
   out: string,
-  o: { phoneSize?: [number, number]; dashSize: [number, number]; ffmpeg?: string },
+  o: { phoneSize?: [number, number]; dashSize: [number, number]; fps?: number; height?: number; keepFrames?: boolean; ffmpeg?: string },
 ): Promise<{ ok: true } | { ok: false; why: string }> {
   // 폰 화면은 녹화했을 때만(--record-phone) 붙인다
   const withPhone = rec.frames.phone !== undefined && o.phoneSize !== undefined;
@@ -167,7 +182,7 @@ export async function encodeDemo(
   if (!dash || (withPhone && !phone)) return { ok: false, why: `${dash ? "폰" : "대시보드"} 프레임이 없어요. 프레임 폴더: ${dir}` };
   if (phone) writeFileSync(join(dir, "phone.txt"), phone);
   writeFileSync(join(dir, "dash.txt"), dash);
-  const args = ffmpegArgs({ ...(phone ? { phone: "phone.txt", phoneSize: o.phoneSize } : {}), dash: "dash.txt", out, seconds: rec.endMs / 1000, dashSize: o.dashSize });
+  const args = ffmpegArgs({ ...(phone ? { phone: "phone.txt", phoneSize: o.phoneSize } : {}), dash: "dash.txt", out, seconds: rec.endMs / 1000, dashSize: o.dashSize, fps: o.fps, height: o.height });
   const result = await new Promise<{ code: number | null; missing: boolean; err: string }>((done) => {
     let err = "";
     const proc = spawn(o.ffmpeg ?? "ffmpeg", args, { cwd: dir, stdio: ["ignore", "ignore", "pipe"] });
@@ -178,6 +193,6 @@ export async function encodeDemo(
   });
   if (result.missing) return { ok: false, why: `ffmpeg가 없어요. 프레임 폴더만 남겼어요: ${dir}` };
   if (result.code !== 0) return { ok: false, why: `ffmpeg 실패(끝 코드 ${result.code}): ${result.err.trim().split(/\r?\n/).slice(-3).join(" / ")}. 프레임 폴더: ${dir}` };
-  for (let i = 0; i < 5; i++) { try { rmSync(dir, { recursive: true, force: true }); break; } catch { await new Promise((r) => setTimeout(r, 300)); } }
+  if (!o.keepFrames) for (let i = 0; i < 5; i++) { try { rmSync(dir, { recursive: true, force: true }); break; } catch { await new Promise((r) => setTimeout(r, 300)); } }
   return { ok: true };
 }

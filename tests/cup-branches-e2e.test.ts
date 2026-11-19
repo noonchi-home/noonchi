@@ -19,6 +19,8 @@ import { ScriptedDetector, det } from "./helpers/detectors.js";
 import { cupBranchPredict, startFakePamLlm, type FakePamLlm, type PredictView, pamLlmEnv } from "./helpers/pam.js";
 import { CUP_SCRIPTS, FILL_SCRIPTS, plannerRespond } from "./helpers/planner.js";
 import { openPhone, openWebSocket } from "./helpers/ws.js";
+import { useLearnedMemory } from "./helpers/memory.js";
+import type { FsmMemory } from "../src/brain/decision.js";
 
 type Msg = Record<string, any>;
 let srv: RunningServer | undefined;
@@ -62,6 +64,8 @@ async function start(scene: Scene, approved: string[]) {
   });
   pam = await startFakePamLlm({ predict: cupBranchPredict });
   const runtimeDir = mkdtempSync(join(tmpdir(), "rt-"));
+  // 치우기를 보는 시험은 배운 뒤 기억(합성 3일째부터의 로봇 FSM)으로 돈다. seed 기억이면 떠날 때 묻는다
+  useLearnedMemory(runtimeDir);
   mkdirSync(join(runtimeDir, "homes", "apartment"), { recursive: true });
   writeFileSync(join(runtimeDir, "homes", "apartment", "approvals.json"), JSON.stringify({ always: Object.fromEntries(approved.map((a) => [`task:${a}`, "2026-11-13T00:00:00.000Z"])), never: {} }));
   srv = await startServer({
@@ -97,32 +101,47 @@ async function start(scene: Scene, approved: string[]) {
   const spoken = () => phone.filter((m) => m.type === "command" && m.speak);
   const said = (text: string) => spoken().find((m) => m.text === text);
   const answer = (m: Msg) => ws.send(JSON.stringify({ type: "answer", id: m.id, step: m.step, choice: "done" }));
-  return { dash, phone, pump, hold, history, spoken, said, answer };
+  /** 판단이 사람을 마시는 중(drinking)으로 본 뒤 사람이 떠난다(떠남 화살표는 직전 상태 drinking에서만 나간다). */
+  const leaveAfterDrinking = async (scene: Scene) => {
+    await pump(() => dash.some((m) => m.type === "brain" && m.event.type === "decision" && m.event.fsm?.state === "drinking"));
+    scene.dets = scene.dets.filter((d) => d !== PERSON);
+    const { person: _, ...rest } = scene.facts;
+    scene.facts = rest;
+  };
+  return { dash, phone, pump, hold, history, spoken, said, answer, leaveAfterDrinking };
 }
 
 describe("컵 장면 갈래", () => {
-  it("빈 컵 + 사람 없음 → 컵 치우기: 실제 폰 첫 명령은 「식탁으로 가 주세요」", async () => {
-    const s = await start({ dets: [CUP], facts: { cup: ["on_table", "empty"] } }, ["컵 치우기"]);
+  it("빈 컵 + 마시던 사람이 떠남 → 컵 치우기: 실제 폰 첫 명령은 「식탁으로 가 주세요」", async () => {
+    const scene: Scene = { dets: [PERSON, CUP], facts: { person: ["sitting", "drinking"], cup: ["on_table", "empty"] } };
+    const s = await start(scene, ["컵 치우기"]);
+    await s.leaveAfterDrinking(scene);
     await s.pump(() => s.spoken().length > 0);
     expect(s.spoken()[0]).toMatchObject({ text: "식탁으로 가 주세요", kind: "go" });
     // 컵 치우기는 내용물과 상관없이 바로 첫 명령을 낸다. 내용물은 그 뒤에도 비전으로 계속 확정된다
     await s.pump(async () => (await s.history("world")).some((r) => r.text === "컵 cup_1 비어 있음"));
     expect((await s.history("decision")).map((r) => r.text)).toContain("컵 치우기");
     expect((pam!.bodies.at(-1) as PredictView).tasks).toEqual(tasksFor("noonchi"));
+    // 계획 모드 차례마다 기록 DB planner 줄(계획 id·차례·시간·통과 여부, data에 낸 단계)
+    const rounds = await s.history("planner");
+    expect(rounds.at(-1)).toMatchObject({ kind: "planner", text: expect.stringMatching(/^계획 모드 1\/3차례 \d+\.\d초 · 통과$/), data: { task: "컵 치우기", n: 1, error: null, last: true } });
+    expect(rounds.at(-1)!.subject).toMatch(/^plan:pam-\d+$/);
+    expect(((rounds.at(-1)!.data as { steps: { kind: string }[] }).steps).map((x) => x.kind)).toEqual(["go", "pick", "go", "place"]);
   }, 60_000);
 
-  it("물이 남은 컵 + 사람 없음 → 컵 치우기(컵을 두고 떠나면 치우는 습관, 내용물과 상관없음): 실제 폰 첫 명령은 「식탁으로 가 주세요」이고 그대로 두기는 고르지 않는다", async () => {
-    const s = await start({ dets: [CUP], facts: { cup: ["on_table", "has_contents"] } }, ["컵 치우기"]);
+  it("물이 남은 컵 + 마시던 사람이 떠남 → 컵 치우기(컵을 두고 떠나면 치우는 습관, 내용물과 상관없음): 실제 폰 첫 명령은 「식탁으로 가 주세요」", async () => {
+    const scene: Scene = { dets: [PERSON, CUP], facts: { person: ["sitting", "drinking"], cup: ["on_table", "has_contents"] } };
+    const s = await start(scene, ["컵 치우기"]);
+    await s.leaveAfterDrinking(scene);
     await s.pump(() => s.spoken().length > 0);
     expect(s.spoken()[0]).toMatchObject({ text: "식탁으로 가 주세요", kind: "go" });
     // 컵 치우기는 내용물과 상관없이 바로 첫 명령을 낸다. 내용물은 그 뒤에도 비전으로 계속 확정된다
     await s.pump(async () => (await s.history("world")).some((r) => r.text === "컵 cup_1 내용물 있음"));
     const decisions = (await s.history("decision")).map((r) => r.text);
     expect(decisions).toContain("컵 치우기");
-    expect(decisions).not.toContain("컵 그대로 두기");
-    // PAM에 보낸 seed 기억의 left_cup은 습관 하나다
-    const left = (pam!.bodies.at(-1)!.memory as { states: { id: string; rules: { action: string }[] }[] }).states.find((x) => x.id === "left_cup")!;
-    expect(left.rules.map((r) => r.action)).toEqual(["컵 치우기"]);
+    // PAM에 보낸 기억은 배운 뒤 기억이다: 마시는 중에서 떠나는 화살표의 행동이 컵 치우기다
+    const drinking = (pam!.bodies.at(-1)!.memory as FsmMemory).states.find((x) => x.id === "drinking")!;
+    expect(drinking.next.find((e) => e.to === "*")!.action).toBe("컵 치우기");
   }, 60_000);
 
   it("사람이 먹는 중 + 빈 컵 → 컵에 물 채워 주기: 네 명령이 차례로 오고, 병 집기는 병이 손에 있음으로 보일 때, 따르기는 컵이 내용물 있음일 때 「완료」 없이 넘어가 계획이 끝난다. PAM에는 사진이 가지 않는다", async () => {
@@ -166,16 +185,16 @@ describe("컵 장면 갈래", () => {
     expect(s.dash.find((m) => m.type === "brain" && m.event.type === "decision" && `plan:${m.event.id}` === planId)!.event).toMatchObject({ action: "컵에 물 채워 주기", fsm: { state: "drinking" } });
     const says = s.dash.filter((m) => m.type === "say").map((m) => m.text as string);
     expect(says).toEqual(expect.arrayContaining(["컵에 물을 채울게요.", "냉장고로 갈게요.", "물병을 꺼낼게요.", "컵에 물을 따를게요.", "컵에 물 채워 주기를 마쳤어요."]));
-    // PAM 판단 요청 그대로: 칸 여섯, 사진 칸 없음, 실제로 나간 LLM 본문에도 사진 없음
+    // PAM 판단 요청 그대로: 칸 일곱(직전 사람 상태 포함), 사진 칸 없음, 실제로 나간 LLM 본문에도 사진 없음
     expect(pam!.bodies.length).toBeGreaterThan(0);
     for (const r of pam!.requests) expect(JSON.stringify(r)).not.toMatch(/data:image|base64|"image_url"|"type":"image/);
     for (const b of pam!.bodies) {
-      expect(Object.keys(b).sort()).toEqual(["final_time", "memory", "memory_kind", "observation_text", "role", "tasks"]);
+      expect(Object.keys(b).sort()).toEqual(["final_time", "last_state", "memory", "memory_kind", "observation_text", "role", "tasks"]);
       expect(b.role).toBe("predict");
       expect((b as PredictView).tasks).toEqual(tasksFor("noonchi"));
     }
     expect(pam!.bodies.some((b) => /\[지속\] 사람 먹는 중/.test(String(b.observation_text)) && /컵 cup_1 .*비어 있음/.test(String(b.observation_text)))).toBe(true);
-    // 기억은 새 seed(상태 넷)다
-    expect((pam!.bodies[0]!.memory as { states: { id: string }[] }).states.map((x) => x.id)).toEqual(["drinking", "watching_tv", "left_cup", "cooking"]);
+    // 기억은 사람 활동 FSM(상태 넷)이다
+    expect((pam!.bodies[0]!.memory as { states: { id: string }[] }).states.map((x) => x.id)).toEqual(["drinking", "watching_tv", "cooking", "away"]);
   }, 90_000);
 });

@@ -8,6 +8,7 @@ export type PamMessage = { role: "system"; content: string } | { role: "user"; c
 export interface Generation { temperature: number; enable_thinking: boolean }
 export interface Built { messages: PamMessage[]; generation: Generation }
 
+export const PREDICT_STATE = "Person state at the previous decision: ";
 export const PREDICT_TIME = "Wall-clock time of the final observation: ";
 export const PREDICT_LOG = "Observation log (oldest to newest):\n";
 export const REFLECT_LOG = "Today's observations, provided as a chronological time-stamped log:\n";
@@ -23,7 +24,8 @@ const adapt = (id: PromptId) => adapted.get(id) ?? adapted.set(id, adaptPrompt(l
 /** 노닌치 바꾸기를 적용한 프롬프트(가짜 LLM 서버가 요청을 되읽을 때도 쓴다). */
 export const adaptedTemplate = (id: PromptId): string => adapt(id).text;
 export const adaptation = (id: PromptId): Adaptation => adapt(id).adaptation;
-const generation = (role: "predictor" | "reflector"): Generation => {
+/** 그 역할의 생성 설정(논문 config/paper.json). 기억 뜻 검사는 반성 값을 쓴다. */
+export const generation = (role: "predictor" | "reflector"): Generation => {
   const c = loadPaperConfig()[role];
   return { temperature: c.temperature, enable_thinking: c.enable_thinking };
 };
@@ -40,7 +42,7 @@ export function buildPredictMessages(r: PredictRequest): Built {
   return {
     messages: [
       { role: "system", content: render(template, Object.fromEntries(Object.entries(values).filter(([k]) => needed.has(k)))) },
-      { role: "user", content: [{ type: "text", text: PREDICT_TIME + r.final_time }, { type: "text", text: PREDICT_LOG + r.observation_text }] },
+      { role: "user", content: [{ type: "text", text: PREDICT_STATE + (r.last_state ?? "unknown") }, { type: "text", text: PREDICT_TIME + r.final_time }, { type: "text", text: PREDICT_LOG + r.observation_text }] },
     ],
     generation: generation("predictor"),
   };
@@ -51,7 +53,8 @@ export function buildReflectMessages(r: ReflectRequest): Built {
   if (r.feedback) text += REFLECT_FEEDBACK + r.feedback;
   return {
     messages: [
-      { role: "system", content: adaptedTemplate(`reflector_${r.memory_kind}_update`) },
+      // 후보 FSM 반성은 fsm 반성 프롬프트(노닌치 바꾸기가 후보 FSM 답 모양으로 바꾼다)
+      { role: "system", content: adaptedTemplate(r.memory_kind === "list" ? "reflector_list_update" : "reflector_fsm_update") },
       { role: "user", content: [{ type: "text", text: REFLECT_LOG + r.observation_text }, { type: "text", text }] },
     ],
     generation: generation("reflector"),

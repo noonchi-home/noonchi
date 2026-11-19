@@ -1,6 +1,7 @@
 // 시연 네 장면(가짜 서버, 자동 모드 auto, 한양목련): 시연 준비 명령(scripts/demo-setup.ts day1·week)이 쓴 폴더(승인·시작 위치·수업 기록)로 서버를 띄우고
 // 폰 엔진 프레임 → YOLO(대본)·VLM(가짜 OpenAI 호환 서버, 장면 대본) → World State → PAM(시험용 PAM 자리 demoPredict·demoReflect) → 계획 모드(가짜 서버 대본) → 실제 폰 명령.
-// 1 빈 컵 치우기(눈치), 2 「아 덥다」로 에어컨(눈치)·3 말이 없으면 켜지 않음, 4 합성 7일 반성 뒤 말없이 에어컨(배운 습관), 5 전자레인지 코치(카메라 근거),
+// 1 빈 컵 치우기(배운 뒤 기억, 눈치), 1-묻기(seed 기억: 떠나면 묻고 「치워 주세요」 뒤 치움), 2 「아 덥다」로 에어컨(눈치)·3 말이 없으면 켜지 않음,
+// 4 합성 7일 밤 흐름(채택 검사) 뒤 말없이 에어컨(배운 화살표), 5 전자레인지 코치(카메라 근거),
 // 6 라면 코치(허브 근거: 인덕션 카메라 근거는 Task 11b 뒤), 7 PAM 요청에는 사진 칸이 없고 계약 판본이 맞다.
 // 가짜 PAM·가짜 모델·대본 감지기는 tests/helpers/에만 둔다.
 import { mkdtempSync } from "node:fs";
@@ -24,7 +25,8 @@ import { alignOnServer } from "./helpers/align.js";
 import { ScriptedDetector, det } from "./helpers/detectors.js";
 import { turnOf } from "./helpers/llm.js";
 import { isObserving, observerRespond } from "./helpers/observer.js";
-import { DEMO_AIRCON_RULE, DEMO_RAMEN_HABIT, demoPredict, demoReflect, startFakePamLlm, type FakePamLlm, pamLlmEnv } from "./helpers/pam.js";
+import { DEMO_AIRCON_RULE, DEMO_RAMEN_HABIT, demoPredict, demoReflect, startFakePamLlm, type FakePamLlm, type MarkView, pamLlmEnv } from "./helpers/pam.js";
+import { weekMark } from "./helpers/week.js";
 import { CUP_SCRIPTS, microwaveScripts, planCalls, plannerRespond, ramenScripts } from "./helpers/planner.js";
 import { heardAtOf, openPhone, openWebSocket } from "./helpers/ws.js";
 
@@ -55,6 +57,8 @@ afterEach(async (ctx) => {
  *  합성 대본은 날마다 요일로 갈려서(scripts/seed-history.ts liveDay: 주말·금요일 외출·목요일 저녁 질문) 오늘 요일이 바뀌면 기록 줄 차례가 바뀐다.
  *  정답 파일(history-golden)은 이 수요일에 만들었으므로, 어느 날 돌려도 같게 시계를 이 때로 고정한다(2026-11-19 목요일에 실패한 까닭). */
 const WEEK_TODAY = Date.parse("2026-11-18T12:00:00+09:00");
+/** 합성 주의 날(WEEK_TODAY 앞 7일). */
+const WEEK_DAYS = ["2026-11-11", "2026-11-12", "2026-11-13", "2026-11-14", "2026-11-15", "2026-11-16", "2026-11-17"];
 
 const TZ = { HISTORY_TZ_MINUTES: "540" };
 /** 꺼진 서버 주소(시연 준비 명령은 서버가 꺼져 있어야 폴더를 쓴다). */
@@ -93,11 +97,13 @@ const MW_BOX: Detection["box"] = [200, 140, 80, 80];
 /** 장면: 감지(YOLO 대본)와 감지 종류마다 VLM이 내는 사실 값. */
 interface Scene { dets: Detection[]; facts: Record<string, string[]> }
 
-async function start(o: { scene: Scene; kind?: "day1" | "week"; view?: View }) {
+/** learned: day1 뒤 배운 뒤 기억을 오늘 판본으로 넣는다(demo-setup learned). mark: 밤 흐름 시각 찾기 가짜 답(없으면 물은 것마다 빈 시각). */
+async function start(o: { scene: Scene; kind?: "day1" | "week"; view?: View; learned?: boolean; mark?: (v: MarkView) => unknown }) {
   const scene = o.scene;
   const kind = o.kind ?? "day1";
   const dir = join(mkdtempSync(join(tmpdir(), "demo-e2e-")), kind);
   await demoSetup([kind, "--dir", dir, "--api", CLOSED], { env: TZ, log: () => {} });
+  if (o.learned) await demoSetup(["learned", "--dir", dir, "--api", CLOSED], { env: TZ, log: () => {} });
   const planning = plannerRespond({
     ...CUP_SCRIPTS, ...ramenScripts(2), ...microwaveScripts(60),
     "에어컨 켜기": () => [planCalls([{ kind: "device", label: "거실 에어컨 켜기", target: AIRCON, tool: "turn_on", timeout_s: 60 }])],
@@ -121,7 +127,7 @@ async function start(o: { scene: Scene; kind?: "day1" | "week"; view?: View }) {
       return t.round === 0 ? { calls: [{ name: "leave_it", args: { reason: "시킨 말이 아니라서" } }] } : { text: "" };
     },
   });
-  pam = await startFakePamLlm({ predict: demoPredict, reflect: demoReflect });
+  pam = await startFakePamLlm({ predict: demoPredict, reflect: demoReflect, ...(o.mark ? { mark: o.mark } : {}) });
   srv = await startServer({
     env: { HUB: "memory", PORT: "0", HOME_ID: "mokryeon_180b", RUNTIME_DIR: dir, PHONE_PORT: "0", PHONE_HOST: "127.0.0.1", PAM_PERIOD_MS: "1500", PAM_MIN_GAP_MS: "1000",
       BRAIN: "1", VLM_BASE_URL: `${fake.url}/v1`, ...pamLlmEnv(pam), OPENAI_API_KEY: "fake-key", OPENAI_BASE_URL: `${fake.url}/v1`, ...TZ },
@@ -162,6 +168,9 @@ async function start(o: { scene: Scene; kind?: "day1" | "week"; view?: View }) {
     throw new Error(`${ms / 1000}초 안에 오지 않음: ${what} · 실제 폰 ${JSON.stringify(commands().slice(-2))} · 실행 ${JSON.stringify(ran)}`);
   };
   const decisions = () => dash.filter((m) => m.type === "brain" && m.event.type === "decision").map((m) => m.event);
+  /** 메시지 상자 줄(생각 메시지)과 말풍선 말. */
+  const thoughts = () => dash.filter((m) => m.type === "thought").flatMap((m) => (m.messages ?? []).map((t: { text: string }) => t.text));
+  const says = () => dash.filter((m) => m.type === "say").map((m) => m.text as string);
   const command = (step: string) => commands().find((m) => m.step === step);
   const answer = (m: Msg, choice = "done") => ws.send(JSON.stringify({ type: "answer", id: m.id, step: m.step, choice }));
   // 새 폰처럼 말할 때 떠 있던 명령(at)을 싣는다
@@ -179,7 +188,14 @@ async function start(o: { scene: Scene; kind?: "day1" | "week"; view?: View }) {
       expect(b.role, pam!.calls[i]).toBe(pam!.calls[i]);
     });
   };
-  return { server, dir, scene, dash, phone, ws, wait, pump, commands, command, answer, say, decisions, history, done, pamChecked };
+  /** 판단이 사람을 마시는 중(drinking)으로 본 뒤 사람이 떠난다(떠남 화살표는 직전 상태 drinking에서만 나간다). */
+  const leaveAfterDrinking = async () => {
+    await pump(() => decisions().some((e) => e.fsm?.state === "drinking"), "마시는 중 판단");
+    scene.dets = scene.dets.filter((d) => d !== PERSON);
+    const { person: _, ...rest } = scene.facts;
+    scene.facts = rest;
+  };
+  return { server, dir, scene, dash, phone, ws, wait, pump, commands, command, answer, say, decisions, thoughts, says, history, done, pamChecked, leaveAfterDrinking };
 }
 
 describe("시연 네 장면(자동 모드, 한양목련, 가짜 서버)", () => {
@@ -187,13 +203,31 @@ describe("시연 네 장면(자동 모드, 한양목련, 가짜 서버)", () => 
     expect(DEMO_APPROVALS).toEqual(expect.arrayContaining(["컵 치우기", "에어컨 켜기", RAMEN, MW_TASK]));
   });
 
-  it("1 빈 컵: 사람이 자리를 비웠고 식탁 컵이 비면 첫 명령 「식탁으로 가 주세요」, 판단 사건은 눈치(noonchi)·배운 규칙 아님", async () => {
-    const s = await start({ scene: { dets: [det("cup", 0.9, CUP_BOX, 41)], facts: { cup: ["on_table", "empty"] } }, view: CUP_VIEW });
+  it("1 빈 컵(배운 뒤 기억): 마시던 사람이 자리를 비웠고 식탁 컵이 있으면 배운 화살표로 치운다. 메시지 상자는 허락 문장 뒤 치울게요, 첫 명령 「식탁으로 가 주세요」, 판단 사건은 눈치(noonchi)·배운 화살표", async () => {
+    const s = await start({ scene: { dets: [PERSON, det("cup", 0.9, CUP_BOX, 41)], facts: { person: ["sitting", "drinking"], cup: ["on_table", "empty"] } }, view: CUP_VIEW, learned: true });
+    await s.leaveAfterDrinking();
     await s.pump(() => s.commands().some((m) => m.text === "식탁으로 가 주세요"), "첫 명령");
     expect(s.commands()[0]).toMatchObject({ text: "식탁으로 가 주세요", choices: [{ id: "done", label: "완료" }] });
+    expect(s.thoughts()).toContain("컵을 두고 자리를 뜨면 치워도 된다고 하셨어요");
+    expect(s.says().some((t) => /컵을 치울게요\.$/.test(t))).toBe(true);
     // 컵 치우기는 내용물과 상관없이 바로 첫 명령을 낸다. 내용물은 그 뒤에도 비전으로 계속 확정된다
     await s.pump(() => s.server.history.list({ kinds: ["world"], limit: 5000 }).some((r) => r.text === "컵 cup_1 비어 있음"), "내용물 확정");
-    expect(s.decisions().find((e) => e.action === "컵 치우기")).toMatchObject({ assist: "noonchi", fsm: { learned: false } });
+    expect(s.decisions().find((e) => e.action === "컵 치우기")).toMatchObject({ assist: "noonchi", fsm: { from: "drinking", learned: true } });
+    s.pamChecked();
+  }, 120_000);
+
+  it("1-묻기(seed 기억): 사람이 컵을 두고 떠나면 「컵을 치울지 여쭤볼게요.」(허락 문장 없음)와 폰 「컵을 치울까요?」, 「치워 주세요」 답 뒤 첫 명령 「식탁으로 가 주세요」. 목표는 서지 않는다", async () => {
+    const s = await start({ scene: { dets: [PERSON, det("cup", 0.9, CUP_BOX, 41)], facts: { person: ["sitting", "drinking"], cup: ["on_table", "empty"] } }, view: CUP_VIEW });
+    await s.leaveAfterDrinking();
+    await s.pump(() => s.commands().some((m) => m.text === "컵을 치울까요?"), "묻기");
+    expect(s.decisions().find((e) => e.action === "사용자에게 물어보기")).toMatchObject({ assist: "noonchi", fsm: { from: "drinking", learned: false } });
+    expect(s.says()).toContain("컵을 치울지 여쭤볼게요.");
+    expect(s.thoughts().some((t) => t.endsWith("된다고 하셨어요"))).toBe(false);
+    expect(s.commands().some((m) => m.text === "식탁으로 가 주세요")).toBe(false);
+    s.answer(s.commands().find((m) => m.text === "컵을 치울까요?")!, "clear");
+    await s.pump(() => s.commands().some((m) => m.text === "식탁으로 가 주세요"), "답 뒤 첫 명령");
+    expect(s.decisions().find((e) => e.action === "컵 치우기")).toMatchObject({ source: "speech", via: "answer" });
+    expect(await s.history("goal")).toEqual([]);
     s.pamChecked();
   }, 120_000);
 
@@ -218,9 +252,9 @@ describe("시연 네 장면(자동 모드, 한양목련, 가짜 서버)", () => 
     s.pamChecked();
   }, 120_000);
 
-  it("4 합성 7일(관찰만)을 날마다 반성하면 날마다 다음 날부터 쓰고 7일 판본은 오늘부터다. 라면 습관은 빠지고 요리 규칙은 seed 글이며, 말없이 TV를 보면 배운 습관으로 에어컨을 켠다", async () => {
+  it("4 합성 7일(관찰만)을 밤 흐름으로 날마다 반성하면 날마다 다음 날부터 쓰고 7일 판본은 오늘부터다. 채택 검사로 컵 치우기와 말없는 에어컨 화살표가 붙고, 라면 습관은 빠지며 요리·덥다 화살표는 seed 그대로다. 말없이 TV를 보면 배운 화살표로 에어컨을 켠다", async () => {
     restoreClock = fixClock(WEEK_TODAY);
-    const s = await start({ kind: "week", scene: { dets: [PERSON], facts: { person: ["watching_tv"] } } });
+    const s = await start({ kind: "week", scene: { dets: [PERSON], facts: { person: ["watching_tv"] } }, mark: weekMark(() => srv!.history, WEEK_DAYS) });
     const db = s.server.history;
     const today = db.dayOf(Date.now());
     const day = (k: number) => new Date(Date.parse(`${today}T00:00:00Z`) + k * 86_400_000).toISOString().slice(0, 10);
@@ -234,22 +268,30 @@ describe("시연 네 장면(자동 모드, 한양목련, 가짜 서버)", () => 
     const uses = (await (await fetchRetry(`${s.server.url}/api/memory/day/${today}`)).json()) as Msg;
     expect(uses.uses).toMatchObject({ version: last!.version, appliesDay: today });
     const memory = db.memoryVersion(last!.version)!.memory as FsmMemory;
-    const rules = (id: string) => memory.states.find((x) => x.id === id)!.rules;
-    expect(rules("watching_tv")).toContainEqual(DEMO_AIRCON_RULE);
-    expect(memory.states.flatMap((x) => x.rules).some((r) => r.trigger === DEMO_RAMEN_HABIT.trigger)).toBe(false);
-    expect(rules("cooking")).toEqual(CUP_FSM_MEMORY.states.find((x) => x.id === "cooking")!.rules);
+    const next = (id: string) => memory.states.find((x) => x.id === id)!.next;
+    const seed = (id: string) => CUP_FSM_MEMORY.states.find((x) => x.id === id)!.next;
+    expect(next("away")).toContainEqual(DEMO_AIRCON_RULE);
+    expect(next("drinking").find((e) => e.to === "*")!.action).toBe("컵 치우기");
+    expect(next("watching_tv")).toEqual(seed("watching_tv"));
+    expect(next("cooking")).toEqual(seed("cooking"));
+    expect(memory.states.flatMap((x) => x.next).some((e) => e.on === DEMO_RAMEN_HABIT.on)).toBe(false);
     const reflections = db.list({ kinds: ["reflection"], limit: 50 });
     expect(reflections.some((r) => ((r.data as { dropped?: { action: string; reason: string }[] } | null)?.dropped ?? []).some((d) => d.action === RAMEN && d.reason === "coach"))).toBe(true);
-    // 말없이 TV를 보는 장면: 오늘 판본의 배운 습관으로 에어컨을 켠다
-    await s.pump(() => s.server.hub.get(AIRCON)?.twin.power === "on", "배운 습관으로 에어컨", 30_000);
-    expect(s.decisions().find((e) => e.action === "에어컨 켜기")).toMatchObject({ assist: "noonchi", fsm: { learned: true } });
+    // 밤마다 채택 검사: 컵 치우기는 둘째 밤, 말없는 에어컨은 셋째 밤부터 통과
+    const passed = (action: string) => reflections.filter((r) => (r.data as { ok?: boolean }).ok).map((r) => ((r.data as { checks?: { action: string; passed: boolean }[] }).checks ?? []).some((c) => c.action === action && c.passed));
+    expect(passed("컵 치우기")).toEqual([false, true, true, true, true, true, true]);
+    expect(passed("에어컨 켜기")).toEqual([false, false, true, true, true, true, true]);
+    // 말없이 TV를 보는 장면: 오늘 판본의 배운 화살표(자리에 없음 → TV 보는 중)로 에어컨을 켠다. 첫 판단은 직전 상태를 처음 상태(자리에 없음)로 본다
+    await s.pump(() => s.server.hub.get(AIRCON)?.twin.power === "on", "배운 화살표로 에어컨", 30_000);
+    expect(s.decisions().find((e) => e.action === "에어컨 켜기")).toMatchObject({ assist: "noonchi", fsm: { from: "away", learned: true } });
     s.pamChecked();
   }, 120_000);
 
   it("5 전자레인지 앞에서 「이거 어떻게 하지」: 명령이 Task 12 표의 서버 글 차례대로 오고, 5번은 승인 질문이 먼저이며 승인 뒤 VLM 쓰는 중이면 넘어가고, 6번 동안 꺼짐을 보면 7번이 바로 끝나 8·9번 뒤 끝난다. 끄기 안내가 없고 폰 글은 서버 글 틀이다", async () => {
-    const scene: Scene = { dets: [det("microwave", 0.9, MW_BOX)], facts: { microwave: ["closed", "not_in_use"] } };
+    // 전자레인지 화살표는 요리하는 중 상태에 있다: 사람이 요리하는 중으로 보인다
+    const scene: Scene = { dets: [PERSON, det("microwave", 0.9, MW_BOX)], facts: { person: ["standing", "cooking"], microwave: ["closed", "not_in_use"] } };
     const s = await start({ scene, view: MW_VIEW });
-    await s.pump(() => s.decisions().length > 0, "첫 판단");
+    await s.pump(() => s.decisions().some((e) => e.fsm?.state === "cooking"), "요리하는 중 판단");
     s.say("이거 어떻게 하지");
     await s.pump(() => !!s.commands().find((m) => m.text === "전자레인지로 가 주세요"), "1번");
     const planId = s.commands().find((m) => m.text === "전자레인지로 가 주세요")!.id as string;
@@ -295,9 +337,10 @@ describe("시연 네 장면(자동 모드, 한양목련, 가짜 서버)", () => 
   }, 120_000);
 
   it("6 「라면 끓이는 법 알려 줘」: 첫 명령 「수납장으로 가 주세요」, 6번 「냄비를 인덕션에 올려 주세요」, 7번 전에 승인 질문, 12번은 허브 꺼짐으로 끝나 끄기 안내가 없다. 판단 사건은 코치", async () => {
-    const s = await start({ scene: { dets: [PERSON], facts: { person: ["standing"] } } });
+    // 라면 화살표는 요리하는 중 상태에 있다: 사람이 요리하는 중으로 보인다
+    const s = await start({ scene: { dets: [PERSON], facts: { person: ["standing", "cooking"] } } });
     const cooktop = s.server.twin.devices.find((d) => d.kind === "cooktop")!.id;
-    await s.pump(() => s.decisions().length > 0, "첫 판단");
+    await s.pump(() => s.decisions().some((e) => e.fsm?.state === "cooking"), "요리하는 중 판단");
     s.say("라면 끓이는 법 알려 줘");
     await s.pump(() => s.commands().some((m) => m.text === "수납장으로 가 주세요"), "1번");
     const first = s.commands().find((m) => m.text === "수납장으로 가 주세요")!;

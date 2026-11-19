@@ -119,20 +119,6 @@ describe("말풍선 카드 글", () => {
       expect(say({ plan: coach("planned"), command: off, offWait: null })).toBe("불을 끌게요.");
     });
   });
-  it("그대로 둔 지 20초 안이면 「컵을 그대로 둘게요.」, 그 뒤에는 지켜보는 글. 열린 계획이나 그 뒤에 끝난 계획이 있으면 그 글이 먼저다", () => {
-    const left = { atMs: T - 5000 };
-    expect(say({ left })).toBe("컵을 그대로 둘게요.");
-    expect(say({ left, world: world("식탁") })).toBe("컵을 그대로 둘게요.");
-    expect(say({ left: { atMs: T - SAY_DONE_MS } })).toBe("컵을 그대로 둘게요.");
-    expect(say({ left: { atMs: T - SAY_DONE_MS - 1 } })).toBe("지켜보고 있어요.");
-    expect(say({ left: { atMs: T - SAY_DONE_MS - 1 }, world: world("식탁") })).toBe("식탁을 보고 있어요.");
-    expect(say({ left: null })).toBe("지켜보고 있어요.");
-    expect(say({ left, plan: plan("running"), command: cmd("plan:d1:1") })).toBe("식탁으로 갈게요.");
-    // 앞서 끝난 계획보다 그대로 둔 것이 새것이면 그대로 둔 글, 그대로 둔 뒤에 끝난 계획이면 끝낸 일
-    expect(say({ left, plan: plan("done", "컵 치우기", T - 8000) })).toBe("컵을 그대로 둘게요.");
-    expect(say({ left, plan: plan("done", "컵 치우기", T - 2000) })).toBe("컵을 다 치웠어요.");
-    expect(say({ left, look: { place: "컵", atMs: T } })).toBe("컵을 가까이 보고 있어요.");
-  });
   it("가까이 보는 중이면 6초 동안 계획이 있든 없든 「싱크대를 가까이 보고 있어요.」, 승인 질문 중에도 같다. 6초가 지나면 앞 글로 돌아간다", () => {
     const look = { place: "싱크대", atMs: T };
     expect(SAY_LOOK_MS).toBe(6000);

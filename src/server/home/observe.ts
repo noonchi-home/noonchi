@@ -75,13 +75,15 @@ export function startWorld(core: HomeCore): void {
 /** 프레임마다 생기는 분석 없음은 observe 기록으로 남기므로 world_change로 다시 보내지 않는다. */
 const PER_FRAME = new Set(["vlm_missing", "yolo_missing"]);
 
-/** 거울이 받은 집 상태 변화를 통로 전 관찰 흐름과 같은 차례로 넘긴다: world_change 기록(프레임마다 분석 없음 빼고) → 실행 추적 → 판단.
+/** 거울이 받은 집 상태 변화를 통로 전 관찰 흐름과 같은 차례로 넘긴다: world_change 기록(프레임마다 분석 없음 빼고) → 실행 추적 → 시간 줄 사람 줄(사람 변화일 때) → 판단.
  *  들은 말(heard)은 판단에만 넘기고 실행 추적에는 넘기지 않으며, 기록·대시보드에는 표시(HEARD_MARK, KEEP_HEARD_TEXT면 말 그대로)만 남긴다. */
-export function routeWorldChanges(core: Pick<HomeCore, "nowMs" | "keepHeard" | "tracker" | "decider">, emit: (event: BrainLog) => void, changes: WorldChange[]): void {
+export function routeWorldChanges(core: Pick<HomeCore, "nowMs" | "keepHeard" | "tracker" | "decider"> & Partial<Pick<HomeCore, "person" | "view">>, emit: (event: BrainLog) => void, changes: WorldChange[]): void {
   const seen = changes.filter((c) => c.kind !== "heard");
   for (const c of seen) if (!PER_FRAME.has(c.kind)) emit({ type: "world_change", at_ms: core.nowMs(), kind: c.kind, text: c.text });
   for (const c of changes) if (c.kind === "heard") emit({ type: "world_change", at_ms: core.nowMs(), kind: "heard", text: core.keepHeard ? c.text : HEARD_MARK });
   if (seen.length) core.tracker?.onWorld(seen);
+  const world = seen.some((c) => c.kind.startsWith("person")) ? core.view?.() : null;
+  if (world) core.person?.onWorld(world, core.nowMs());
   core.decider?.onChanges(changes);
 }
 

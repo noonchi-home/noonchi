@@ -10,9 +10,8 @@ export function startSay(core: HomeCore): void {
   // 끝난 지 20초·가까이 보기 6초·외부 연락 결과 20초는 계획 updatedAt(PlanHub, Date.now)과 같은 시계로 잰다
   core.speak = () => {
     const { tracker } = core;
-    const leftAt = tracker?.leftAt() ?? null;
     const toldAt = tracker?.toldAt() ?? null;
-    const { text, safety } = sayOf({ plan: plans.current(), command: core.command, world: core.view(), nowMs: Date.now(), look: core.lookSay, left: leftAt === null ? null : { atMs: leftAt },
+    const { text, safety } = sayOf({ plan: plans.current(), command: core.command, world: core.view(), nowMs: Date.now(), look: core.lookSay,
       told: toldAt === null ? null : { atMs: toldAt }, quiet: tracker?.quietStep() ?? null, reflected: core.reflected, offWait: tracker?.offWaiting() ?? null,
       offTold: tracker?.offTold() ?? null, service: core.serviceSaid });
     // 지금 행동 모드(모드 말풍선)는 말과 같은 때 다시 보고 바뀔 때만 보낸다

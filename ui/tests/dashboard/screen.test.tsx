@@ -301,7 +301,7 @@ describe("대시보드 메시지 상자(트윈 아래쪽 하나, 생각 말풍�
     draw(screenAt(2));
     const row = (id: string) => card().querySelector<HTMLElement>(`[data-slot=timeline-row][data-row=${id}]`)!;
     const slots = (id: string) => [...row(id).querySelectorAll<HTMLElement>("[data-slot=timeline-slot]")];
-    expect(slots("person").map((s) => s.textContent)).toEqual(["먹거나 마시는 중", "컵을 두고 자리를 뜸"]);
+    expect(slots("person").map((s) => s.textContent)).toEqual(["먹거나 마시는 중", "자리에 없음"]);
     expect(slots("robot").map((s) => [s.textContent, s.dataset.tone])).toEqual([["지켜봄", "plain"], ["식탁으로 가기", "muted"], ["컵 집기", "brand"]]);
     // 보이는 때(지금에서 SPAN초 앞까지) 밖만 있는 구간은 없다
     const old = { id: "old", row: "robot" as const, from: TIMELINE_NOW - (TIMELINE_SPAN_S + 30) * 1000, to: TIMELINE_NOW - (TIMELINE_SPAN_S + 5) * 1000, text: "옛 단계", tone: "muted" as const };

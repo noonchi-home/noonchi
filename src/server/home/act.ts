@@ -3,11 +3,12 @@
 import { ExecutionTracker, LessonStore, Looker, PlanHub, checkDecision, checkPlan, deviceRunner, lessonsPath, loadActConfig, pamTasks } from "../../act/index.js";
 import { lookTargets, taskOf, type TaskSpec } from "../../act/tasks.js";
 import { deviceViews, placesOf, resubmit, type PlaceInfo, type PlanAhead, type PlanContext } from "../../agent/index.js";
-import { Decider, PamClient, habitView, lastStoredThoughts, memoryForDay, pamSettings, storeThought, thoughtFeed } from "../../brain/index.js";
+import { Decider, PamClient, PersonLane, habitView, lastStoredThoughts, memoryForDay, pamSettings, storeThought, thoughtFeed, type FsmMemory } from "../../brain/index.js";
 import type { BrainLog, DecisionRecord } from "../../contract/events.js";
 import type { PendingGoal } from "../../contract/goal.js";
 import type { HabitFsm } from "../../contract/habit.js";
 import { GOAL_LOG } from "../../act/labels.js";
+import { AGAIN, APPROVE } from "../../act/prompts.js";
 import type { HistoryDb } from "../../brain/index.js";
 import type { WorldInput, WorldView } from "../../contract/world.js";
 import type { SignalHub } from "../../devices/index.js";
@@ -51,6 +52,13 @@ function worldInput(core: HomeCore, i: WorldInput): void {
 
 /** 미리 세운 목표(src/act/track/goal.ts)를 보낸다: 전환은 /brain/goal_changes(RELIABLE, 녹화·재생에 하나하나), 최신 보기는 /brain/goal(STATE, 늦게 붙은 노드),
  *  대시보드에는 {type:"goal"}. 접속한 대시보드에 다시 보내려고 마지막 것을 둔다. 거울 노드(act)의 차례대로 보내기 줄로 낸다(src/bus/outbox.ts). */
+/** 승인 흐름 질문의 답 id(승인·거절, 계속·그만, src/act/prompts.ts). */
+const APPROVAL_IDS = new Set([...APPROVE, ...AGAIN].map((c) => c.id));
+/** 대시보드 비전 미니맵 자막 글: 지금 실제 폰 명령 글, 승인 흐름 질문이거나 명령이 없으면 null. */
+export function captionOf(c: { text: string; choices: readonly { id: string }[] } | null): string | null {
+  return c && !c.choices.some((x) => APPROVAL_IDS.has(x.id)) ? c.text : null;
+}
+
 export function publishGoal(core: Pick<HomeCore, "out" | "app" | "goal">, g: PendingGoal): void {
   core.goal = g;
   core.out.act?.push("/brain/goal_changes", { goal: g });
@@ -140,6 +148,8 @@ export function startAct(core: HomeCore): (event: BrainLog) => void {
     core.app?.broadcast({ type: "brain", event });
     history.brain(event);
     if (event.type === "decision") feed.decision(event);
+    // 실행 기록: 기다리던 화살표의 행동이 시작되면 판단의 직전 상태를 넘긴다(src/brain/decide.ts onExecution)
+    if (event.type === "execution") core.decider?.onExecution(event.plan_id, event.state);
   };
   // 판단 호출(src/brain/decide.ts): World State 관찰 텍스트 + 기억 + 행동 목록으로 PAM(src/brain/pam/)을 부른다.
   // 기억은 그날 처음 정한 판본(src/brain/history/reflect.ts). 관찰 텍스트 시각은 기록 DB와 같은 시간대
@@ -148,14 +158,27 @@ export function startAct(core: HomeCore): (event: BrainLog) => void {
     pam: new PamClient({ settings: pamSettings(env), timeoutMs: Number.isFinite(pamTimeout) && pamTimeout > 0 ? pamTimeout : undefined }),
     // 행동 목록은 지금 모드를 따르고(들은 말이 있으면 말로 부탁한 코치 행동도), 판단 기록의 모드는 그 판단 뒤의 지금 모드다(src/act/mode.ts)
     world: { view }, trigger: new Trigger(loadTriggerConfig(env), now()), tasks: (heard) => pamTasks(core.mode(), heard), mode: (action) => core.mode(action),
-    memory: () => memoryForDay(history.db, history.db.dayOf(now())), emit, offsetMinutes: history.db.offsetMinutes, clock: ctx.brain?.clock,
+    memory: () => memoryForDay(history.db, history.db.dayOf(now()), { log: ctx.log }), emit, offsetMinutes: history.db.offsetMinutes, clock: ctx.brain?.clock,
     // 행동 중 기다리기·기기 단계 동안은 PAM을 부르지 않는다(실행 추적이 조건을 본다)
     hold: () => (core.tracker?.waiting() ?? false) || (core.tracker?.coaching() ?? false),
     keepHeard: () => core.keepHeard,
-    // 판단 → 계획 → 실행 전 검사 → 실행 추적(src/act/)
-    onDecision: (d) => core.tracker?.onDecision(d),
+    // 판단 → 시간 줄 사람 줄 → 계획 → 실행 전 검사 → 실행 추적(src/act/)
+    onDecision: (d) => {
+      core.person?.onDecision(d);
+      core.tracker?.onDecision(d);
+    },
+    // 화살표 없는 답의 미리 세운 목표 트리거(src/act/track/goal.ts triggerOf): 판단 기록에도 그 목표 행동이 남는다
+    goalTrigger: (d) => core.tracker?.goalTrigger(d) ?? null,
   });
   core.decider = decide;
+  // 시간 줄 사람 줄(src/brain/person.ts): 판단의 PAM 답 상태와 판단 사이 World State 하는 일(판단이 쓰는 기억으로)로 지금 사람 상태를 갖고 바뀔 때만 대시보드로 보낸다
+  core.person = new PersonLane({
+    emit: (m) => core.app?.broadcast(m),
+    memory: () => {
+      const h = decide.habit();
+      return h && h.kind === "fsm" && "states" in h.memory ? (h.memory as FsmMemory) : null;
+    },
+  });
   // 실행 전 검사(src/act/check.ts): 시험 모드에서는 짝지은 실제 가전 단계를 막는다
   const deviceSteps = (p: PlanView) => p.steps.flatMap((s) => (s.target?.deviceId
     ? [{ deviceId: s.target.deviceId, paired: signals.sources()[s.target.deviceId]?.kind === "thinq" }] : []));
@@ -171,6 +194,8 @@ export function startAct(core: HomeCore): (event: BrainLog) => void {
   });
   core.tracker = new ExecutionTracker({
     plans, floor: () => plans.floor(), world: view, emit, clock: ctx.brain?.clock, approvals, devices, offsetMinutes: history.db.offsetMinutes,
+    // 말 부탁(request_task·묻기 답): 그때까지 보낸 마지막 PAM 요청 번호로 앞선 PAM 판단을 가르고, 만든 판단은 판단 기록으로 남긴다
+    sentSeq: () => decide.sentSeq(), onSpeech: (d) => decide.logSpeech(d), onRefused: (planId) => decide.onRefused(planId),
     // 계획 전 검사(LLM 없음) → 에이전트 계획 모드 한 번. 손 자리는 맞춘 눈(PlanHub 평면도의 로봇 자리)
     // 실행 추적이 놓기 단계를 끝낸 물건(placed)도 이미 치운 것으로 본다
     precheck: (d) => checkDecision({ decision: d, tasks: d.tasks ?? pamTasks(core.mode(), false), world: view(), nowMs: now(), placed: core.tracker?.placed() }),
@@ -196,8 +221,12 @@ export function startAct(core: HomeCore): (event: BrainLog) => void {
     nudge: () => decide.nudge(),
     // 실제 폰 명령(src/contract/phone.ts). 폰 서버가 지금 명령을 기억해 새로 붙은 폰에도 보낸다. 명령 대상 자리는 배치(면이면 윗면 가운데)에서
     toPhone: (m) => {
+      const shown = captionOf(core.command);
       if (m.type === "command") core.command = m;
       else if (!m.id || core.command?.id === m.id) core.command = null;
+      // 대시보드 비전 미니맵 자막: 명령 글이 바뀔 때만(지우면 null). 승인 흐름 질문(승인·거절, 계속·그만)은 싣지 않는다(대시보드에는 승인을 보이지 않는다)
+      const text = captionOf(core.command);
+      if (text !== shown) core.app?.broadcast({ type: "phone_command", text });
       // 안전 명령(끄기 안내·부탁)은 실제 폰에서 승인 대기 카드보다 먼저 보인다: 가린 동안 승인 시간 제한을 멈춘다
       policy.pause(core.command?.grade === "safety");
       core.phone?.command(m);

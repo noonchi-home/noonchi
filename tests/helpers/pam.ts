@@ -1,15 +1,24 @@
 // 시험용 PAM LLM 자리(OpenAI 호환 /v1/chat/completions, GET /v1/models): 서버 안 PamClient(src/brain/pam/)가 보낸 판단·반성 메시지를 되읽어
 // 요청 값(관찰 텍스트·기억·행동 목록 등)으로 기록하고, 정해진 답 글을 낸다. 서버에는 PAM_LLM_BASE_URL=url(pamLlmEnv)로 붙인다.
 import { createServer, type ServerResponse } from "node:http";
-import { adaptedTemplate, PamClient, pamSettings, PREDICT_LOG, PREDICT_TIME, REFLECT_FEEDBACK, REFLECT_LOG, REFLECT_MEMORY, REFLECT_SUMMARY } from "../../src/brain/pam/index.js";
+import { adaptedTemplate, CHUNKING_PROMPT, MARKING_PROMPT, MEMORY_CHECK_HEAD, MEMORY_CHECK_PROMPT, NIGHT_HEAD, NONE, PamClient, pamSettings, PREDICT_LOG, PREDICT_STATE, PREDICT_TIME, REFLECT_FEEDBACK, REFLECT_LOG, REFLECT_MEMORY, REFLECT_SUMMARY } from "../../src/brain/pam/index.js";
+import { ANY_STATE, AWAY_STATE, CUP_FSM_MEMORY, type FsmMemory } from "../../src/brain/decision.js";
+import { STATES } from "../../src/world/vocab.js";
 import { listenRetry } from "../../src/shared/net.js";
 
-type Pred = { observation: string; reasoning: string; task_index: number };
-/** 판단 요청 값(메시지에서 되읽음). final_time은 메시지에 쓴 Python isoformat 꼴이다. */
-export type PredictView = { role: "predict"; final_time: string; observation_text: string; memory_kind: "list" | "fsm"; memory: unknown; tasks: string[] };
+/** 시험 판단 답: list 기억은 task_index, fsm 기억은 state·from·next_index(pam-predict/3). fsm 요청에 task_index로 내면 fsmAnswer가 화살표로 바꾼다. */
+type Pred = { observation: string; reasoning: string; task_index?: number; state?: string; from?: string | null; next_index?: number };
+/** 판단 요청 값(메시지에서 되읽음). final_time은 메시지에 쓴 Python isoformat 꼴이다. last_state는 직전 사람 상태(unknown이면 null). */
+export type PredictView = { role: "predict"; final_time: string; observation_text: string; memory_kind: "list" | "fsm"; memory: unknown; tasks: string[]; last_state: string | null };
 /** 반성 요청 값(메시지에서 되읽음). */
-export type ReflectView = { role: "reflect"; memory_kind: "list" | "fsm"; memory: unknown; observation_text: string; action_summary: string; feedback: string | null };
-export type PamView = PredictView | ReflectView;
+export type ReflectView = { role: "reflect"; memory_kind: "list" | "fsm_candidates"; memory: unknown; observation_text: string; action_summary: string; feedback: string | null };
+/** 기억 뜻 검사 요청 값(src/brain/pam/memoryCheck.ts): 검사할 후보 FSM. */
+export type CheckView = { role: "check"; memory: { initial_state: string; states: { id: string; [k: string]: unknown }[] }; observation_text?: undefined };
+/** 덩어리 기록 요청 값: 그날 기록 줄(`HH:MM:SS | 글`). */
+export type ChunkView = { role: "chunk"; lines: string[]; observation_text?: undefined; memory?: undefined };
+/** 시각 찾기 요청 값: 상태 줄, 물은 (상태, 후보 글), 행동, 덩어리 줄, 기록 줄. */
+export type MarkView = { role: "mark"; states: string[]; candidates: [string, string][]; actions: string[]; chunks: string[]; lines: string[]; observation_text?: undefined; memory?: undefined };
+export type PamView = PredictView | ReflectView | CheckView | ChunkView | MarkView;
 export interface FakePamLlm {
   /** 서버의 PAM_LLM_BASE_URL(…/v1). */
   url: string;
@@ -26,8 +35,16 @@ export interface FakePamLlmOptions {
   predict?: (v: PredictView) => Pred | string;
   /** 반성 답(기본은 받은 기억 그대로). 문자열이면 답 글 그대로. */
   reflect?: (v: ReflectView) => unknown;
+  /** 기억 뜻 검사 답(기본 통과 { ok: true, items: [] }). 문자열이면 답 글 그대로. */
+  check?: (v: CheckView) => unknown;
+  /** 덩어리 기록 답(기본 기록 줄마다 한 덩어리). */
+  chunk?: (v: ChunkView) => unknown;
+  /** 시각 찾기 답(기본 물은 것마다 빈 시각, 안 보인 구간 없음). */
+  mark?: (v: MarkView) => unknown;
   /** 갈래별 HTTP 상태(예: { predict: 500 }). */
   status?: Partial<Record<PamView["role"], number>>;
+  /** 갈래별 답 사용량(기본 0). */
+  usage?: Partial<Record<PamView["role"], { prompt_tokens: number; completion_tokens: number }>>;
 }
 
 /** 서버에 넘길 PAM LLM 환경(가짜 서버 주소, 실제 키 대신 가짜 키). */
@@ -60,23 +77,71 @@ function unrender(template: string, text: string): Record<string, string> | null
 export function pamView(body: { messages: { content: string | { text: string }[] }[] }): PamView {
   const system = body.messages[0]!.content as string;
   const parts = (body.messages[1]!.content as { text: string }[]).map((p) => p.text);
+  if (system === MEMORY_CHECK_PROMPT) return { role: "check", memory: JSON.parse(parts[0]!.substring(MEMORY_CHECK_HEAD.length)) };
+  const list = (text: string, head: string) => { const rest = text.substring(head.length); return rest === NONE ? [] : rest.split("\n"); };
+  if (system === CHUNKING_PROMPT) return { role: "chunk", lines: list(parts[0]!, NIGHT_HEAD.record) };
+  if (system === MARKING_PROMPT) {
+    return {
+      role: "mark", states: list(parts[0]!, NIGHT_HEAD.states), candidates: list(parts[1]!, NIGHT_HEAD.candidates).map((l) => { const i = l.indexOf(" | "); return [l.substring(0, i), l.substring(i + 3)] as [string, string]; }),
+      actions: list(parts[2]!, NIGHT_HEAD.actions), chunks: list(parts[3]!, NIGHT_HEAD.chunks), lines: list(parts[4]!, NIGHT_HEAD.record),
+    };
+  }
   for (const kind of ["fsm", "list"] as const) {
     const v = unrender(adaptedTemplate(`predictor_${kind}`), system);
     if (v) {
+      const last = parts[0]!.substring(PREDICT_STATE.length);
       return { role: "predict", memory_kind: kind, memory: JSON.parse(v[kind === "fsm" ? "fsm_block" : "rules_block"]!),
         tasks: v.tasks_block!.split("\n").map((l, i) => l.substring(`${i}: `.length)),
-        final_time: parts[0]!.substring(PREDICT_TIME.length), observation_text: parts[1]!.substring(PREDICT_LOG.length) };
+        final_time: parts[1]!.substring(PREDICT_TIME.length), observation_text: parts[2]!.substring(PREDICT_LOG.length), last_state: last === "unknown" ? null : last };
     }
     if (system === adaptedTemplate(`reflector_${kind}_update`)) {
       const t = parts[1]!;
       const s = t.indexOf(REFLECT_SUMMARY);
       const rest = t.substring(s + REFLECT_SUMMARY.length);
       const f = rest.indexOf(REFLECT_FEEDBACK);
-      return { role: "reflect", memory_kind: kind, memory: JSON.parse(t.substring(REFLECT_MEMORY.length, s)), observation_text: parts[0]!.substring(REFLECT_LOG.length),
+      // fsm 반성 프롬프트는 후보 FSM 반성(fsm_candidates)이 쓴다
+      return { role: "reflect", memory_kind: kind === "fsm" ? "fsm_candidates" : kind, memory: JSON.parse(t.substring(REFLECT_MEMORY.length, s)), observation_text: parts[0]!.substring(REFLECT_LOG.length),
         action_summary: f < 0 ? rest : rest.substring(0, f), feedback: f < 0 ? null : rest.substring(f + REFLECT_FEEDBACK.length) };
     }
   }
-  throw new Error("PAM 판단·반성 메시지가 아닙니다");
+  throw new Error("PAM 판단·반성·뜻 검사 메시지가 아닙니다");
+}
+
+/** 관찰 텍스트 [지속] 사람 줄로 본 사람 상태(PAM이 관찰로 지금 상태를 정하듯): 안 보이면 away, 하는 일이 기억 상태의 activity에 들면 그 상태, 모르면 null. */
+function seenState(v: PredictView, m: FsmMemory): string | null {
+  const lines = v.observation_text.split("\n").filter((l) => l.startsWith("[지속] 사람 ")).map((l) => l.substring("[지속] 사람 ".length));
+  if (lines.some((l) => l.startsWith("안 보임"))) return m.states.some((s) => s.id === AWAY_STATE) ? AWAY_STATE : null;
+  for (const [k, s] of Object.entries(STATES)) {
+    if (s.facet !== "activity" || !lines.some((l) => l.startsWith(s.label))) continue;
+    const owner = m.states.find((x) => x.activity.includes(k));
+    if (owner) return owner.id;
+  }
+  return null;
+}
+
+/** fsm 요청에 행동 번호(task_index)로 낸 시험 답을 pam-predict/3 답(state·from·next_index)으로 바꾼다(시험 도우미만 찾는다). 화살표는 직전 상태(last_state, 모르면 처음 상태)에서만 찾는다
+ *  (Codex 1b07d3e2 P2: 다른 상태의 화살표를 찾으면 직전 상태가 틀린 판단을 가렸다):
+ *  1) 직전 상태에 그 행동 화살표가 있고 관찰과 어긋나지 않으면 그것(state는 도착, "*"면 관찰한 다른 상태, 모르면 away. "*"는 아직 직전 상태로 보이면,
+ *  이름 있는 도착은 관찰한 상태가 다르면 켜지 않는다). 2) 아니면 관찰한 사람 상태가 직전 상태와 다르고
+ *  직전 상태에 그 상태로 가는 행동 없는 화살표가 있으면 그것(사람 상태가 바뀐 화살표). 3) 그 밖은 화살표 없음(-1, state는 관찰한 상태, 모르면 직전 상태).
+ *  그래서 기억에 그 행동 화살표가 없으면 몰래 치우지 않고, 사람이 그 상태에 있는 것을 본 판단이 먼저 있어야 그 상태의 화살표가 켜진다. 이미 state를 낸 답과 list 요청은 그대로다. */
+export function fsmAnswer(v: PredictView, a: Pred): Pred {
+  if (v.memory_kind !== "fsm" || a.task_index === undefined || "state" in a) return a;
+  const m = v.memory as FsmMemory;
+  const { task_index, ...rest } = a;
+  const action = task_index >= 0 ? v.tasks[task_index] : undefined;
+  const previous = v.last_state ?? m.initial_state;
+  const seen = seenState(v, m);
+  const from = m.states.find((x) => x.id === previous);
+  const fits = (e: FsmMemory["states"][number]["next"][number]) => (e.to === ANY_STATE ? seen !== previous : seen === null || seen === e.to);
+  const i = from && action !== undefined ? from.next.findIndex((e) => e.action === action && fits(e)) : -1;
+  if (from && i >= 0) {
+    const to = from.next[i]!.to;
+    return { ...rest, state: to !== ANY_STATE ? to : seen !== null && seen !== previous ? seen : AWAY_STATE, from: previous, next_index: i };
+  }
+  const j = from && seen !== null && seen !== previous ? from.next.findIndex((e) => e.to === seen && !e.action) : -1;
+  if (j >= 0) return { ...rest, state: seen!, from: previous, next_index: j };
+  return { ...rest, state: seen ?? previous, from: null, next_index: -1 };
 }
 
 /** 관찰 텍스트 [지속] 물건 줄(면 줄 하나 + 사실마다 한 줄)을 컵마다 한 글로 묶어, 싱크대 안이 아닌 첫 컵의 글(없으면 빈 글). */
@@ -121,8 +186,8 @@ export function coachPredict(body: Record<string, unknown>): Pred {
 }
 
 /** 시연 네 장면 시험의 PAM 답(시험 대역, tests/demo-e2e.test.ts): 관찰 텍스트의 들은 말·[지속] 사실과 받은 기억으로 고르고, 번호는 요청 tasks에서 이름으로 찾는다.
- *  사람 안 보임 + 손에 없는 컵 → 컵 치우기(seed 습관), 들은 말 「아 덥다」 → 에어컨 켜기,
- *  기억에 「소파에 앉아 TV를 보기 시작」 에어컨 규칙이 있고 사람이 TV 보는 중 → 에어컨 켜기, 들은 말 「이거 어떻게…」 + 전자레인지 보임 → 전자레인지로 데우기 알려 주기,
+ *  사람 안 보임 + 손에 없는 컵 → 기억의 마시는 중에서 떠나는 화살표 행동(배우기 전 묻기, 배운 뒤 컵 치우기), 들은 말 「아 덥다」 → 에어컨 켜기,
+ *  기억의 자리에 없음 → TV 보는 중 화살표에 에어컨 켜기가 있고(배운 말없는 에어컨) 사람이 TV 보는 중 → 에어컨 켜기, 들은 말 「이거 어떻게…」 + 전자레인지 보임 → 전자레인지로 데우기 알려 주기,
  *  들은 말에 「라면」 → 라면 끓이기 알려 주기, 그 밖 → 대기(-1). 답 글에는 들은 말을 옮기지 않는다. */
 export function demoPredict(body: Record<string, unknown>): Pred {
   const tasks = body.tasks as string[];
@@ -131,36 +196,52 @@ export function demoPredict(body: Record<string, unknown>): Pred {
   const said = (re: RegExp) => [...text.matchAll(/사람이 말함: 「([^」]*)」/g)].some((m) => re.test(m[1]!));
   const has = (head: string) => facts.some((l) => l.startsWith(head));
   const pick = (action: string, observation: string, reasoning: string): Pred => ({ observation, reasoning, task_index: tasks.indexOf(action) });
-  const memory = body.memory as { states?: { rules: { trigger: string; action: string }[] }[] } | undefined;
-  const habit = (memory?.states ?? []).some((s) => s.rules.some((r) => r.action === "에어컨 켜기" && r.trigger.includes("소파에 앉아 TV를 보기 시작")));
+  const states = ((body.memory as { states?: unknown } | undefined)?.states ?? []) as { id: string; next?: { to: string; on: string; action?: string }[] }[];
+  const next = (id: string) => (Array.isArray(states) ? states.find((s) => s.id === id)?.next ?? [] : []);
+  const habit = next("away").some((e) => e.to === DEMO_AIRCON_RULE.to && e.on === DEMO_AIRCON_RULE.on && e.action === DEMO_AIRCON_RULE.action);
+  const leave = next("drinking").find((e) => e.to === ANY_STATE && e.action)?.action ?? "컵 치우기";
   if (said(/아 덥다/)) return pick("에어컨 켜기", "사용자가 덥다고 말함", "더워해서 에어컨을 켠다");
   if (said(/이거 어떻게/) && /전자레인지/.test(text)) return pick("전자레인지로 데우기 알려 주기", "전자레인지 앞에서 쓰는 법을 물음", "방법을 물어서 단계마다 알려 준다");
   if (said(/라면/)) return pick("라면 끓이기 알려 주기", "사용자가 요리 방법을 물음", "방법을 물어서 단계마다 알려 준다");
   if (habit && has("사람 TV 보는 중")) return pick("에어컨 켜기", "사용자가 소파에서 TV를 봄", "배운 습관대로 에어컨을 켠다");
   const cup = cupFacts(facts);
-  if (cup && has("사람 안 보임") && !cup.includes("손에 있음")) return pick("컵 치우기", "사람이 컵을 두고 자리를 비움", "컵을 두고 떠나면 치우는 습관대로 치운다");
+  if (cup && has("사람 안 보임") && !cup.includes("손에 있음")) return pick(leave, "사람이 컵을 두고 자리를 비움", "마시는 중에서 떠나는 화살표대로 한다");
   return { observation: "할 일이 보이지 않음", reasoning: "맞는 규칙이 없어 기다린다", task_index: -1 };
 }
 
-/** 에어컨 습관 규칙(반성이 배우는 것)과 라면 습관 규칙(코치 행동이라 반성 뒤 검사가 빼는 것). */
-export const DEMO_AIRCON_RULE = { trigger: "사용자가 소파에 앉아 TV를 보기 시작한다.", action: "에어컨 켜기" };
-export const DEMO_RAMEN_HABIT = { trigger: "저녁 7시에 사용자가 식탁에 앉는다.", action: "라면 끓이기 알려 주기" };
+/** 말없는 에어컨 화살표(반성 후보, 채택 검사를 지나면 자리에 없음 상태에 붙는다): seed 진입 화살표 「사용자가 돌아와 TV를 본다.」에 에어컨 켜기.
+ *  라면 습관 후보(코치 행동이라 반성 뒤 검사가 뺀다). */
+export const DEMO_AIRCON_RULE = { to: "watching_tv", on: CUP_FSM_MEMORY.states.find((s) => s.id === "away")!.next.find((e) => e.to === "watching_tv")!.on, action: "에어컨 켜기" };
+export const DEMO_RAMEN_HABIT = { on: "저녁 7시에 사용자가 식탁에 앉는다.", action: "라면 끓이기 알려 주기" };
+const DEMO_LEAVE_ON = CUP_FSM_MEMORY.states.find((s) => s.id === "drinking")!.next.find((e) => e.to === ANY_STATE)!.on;
 
-/** 시연 반성 답(시험 대역): 받은 기억의 watching_tv에 에어컨 습관 규칙을, drinking에 라면 습관 규칙을 더하고(이미 있으면 그대로),
- *  seed 요리 규칙 트리거에 덧붙임을 단 기억을 돌려준다. 반성 뒤 검사(coachGuard)가 라면 습관을 빼고 요리 규칙 글을 seed로 되돌린다. */
+/** 시연 반성 답(시험 대역, 후보 FSM 종류): 받은 후보 FSM에 마시는 중 → * 컵 치우기 후보, 자리에 없음 → TV 보는 중 에어컨 켜기 후보,
+ *  마시는 중 → 요리하는 중 라면 습관 후보를 더한다(이미 있으면 그대로). 반성 뒤 검사(settingsGuard)가 라면 습관을 빼고, 채택 검사가 나머지를 정한다. */
 export function demoReflect(body: Record<string, unknown>): unknown {
-  const memory = structuredClone(body.memory) as { states: { id: string; rules: { trigger: string; action: string }[] }[] };
-  const state = (id: string) => memory.states.find((s) => s.id === id);
-  const add = (id: string, rule: { trigger: string; action: string }) => {
-    const s = state(id);
-    if (s && !s.rules.some((r) => r.trigger === rule.trigger && r.action === rule.action)) s.rules.push({ ...rule });
+  const memory = structuredClone(body.memory) as { states: { id: string; next: { to: string; on: string }[]; rules: { to: string; action: string; candidates: { on: string; when?: string }[] }[] }[] };
+  // 같은 사건은 한 상태에 한 번: 후보가 행동 없는 화살표 자리를 맡는다(seed 화살표는 로봇 FSM이 그대로 둔다)
+  const add = (id: string, rule: { to: string; action: string; on: string }) => {
+    const s = memory.states.find((x) => x.id === id);
+    if (!s) return;
+    s.next = s.next.filter((e) => e.on !== rule.on);
+    const same = s.rules.find((r) => r.action === rule.action);
+    if (!same) s.rules.push({ to: rule.to, action: rule.action, candidates: [{ on: rule.on }] });
+    else if (!same.candidates.some((c) => c.on === rule.on)) same.candidates.push({ on: rule.on });
   };
-  add("watching_tv", DEMO_AIRCON_RULE);
-  add("drinking", DEMO_RAMEN_HABIT);
-  const cook = state("cooking")?.rules.find((r) => r.action === "라면 끓이기 알려 주기");
-  if (cook && !cook.trigger.includes("라면 봉지")) cook.trigger = `${cook.trigger.replace(/\.$/, "")} 또는 라면 봉지를 든다.`;
+  add("drinking", { to: ANY_STATE, action: "컵 치우기", on: DEMO_LEAVE_ON });
+  add("away", DEMO_AIRCON_RULE);
+  add("drinking", { to: "cooking", ...DEMO_RAMEN_HABIT });
   return memory;
 }
+
+const fsmAnswerOf = (v: PredictView, a: Pred | string): Pred | string => (typeof a === "string" ? a : fsmAnswer(v, a));
+/** 기본 덩어리: 기록 줄마다 한 덩어리(같은 시각 줄은 하나로). */
+const everyLine = (v: ChunkView) => ({ chunks: [...new Map(v.lines.map((l) => [l.substring(0, 8), l])).values()].map((l) => ({ start: l.substring(0, 8), end: l.substring(0, 8), text: l.substring(11) })) });
+/** 기본 시각 찾기: 물은 것마다 빈 시각, 안 보인 구간 없음. */
+const nothingFound = (v: MarkView) => ({ candidates: v.candidates.map(([state, candidate]) => ({ state, candidate, times: [] })), actions: v.actions.map((action) => ({ action, times: [] })), unseen: [] });
+
+const usageOf = (u?: { prompt_tokens: number; completion_tokens: number }) =>
+  ({ prompt_tokens: u?.prompt_tokens ?? 0, completion_tokens: u?.completion_tokens ?? 0, total_tokens: (u?.prompt_tokens ?? 0) + (u?.completion_tokens ?? 0) });
 
 export async function startFakePamLlm(o: FakePamLlmOptions = {}): Promise<FakePamLlm> {
   const bodies: PamView[] = [];
@@ -183,10 +264,11 @@ export async function startFakePamLlm(o: FakePamLlmOptions = {}): Promise<FakePa
     calls.push(v.role);
     const status = o.status?.[v.role];
     if (status && status !== 200) return send(res, status, { error: { message: "시험 오류" } });
-    const answer = v.role === "predict" ? (o.predict?.(v) ?? WAIT) : (o.reflect?.(v) ?? v.memory);
+    const answer = v.role === "predict" ? fsmAnswerOf(v, o.predict?.(v) ?? WAIT) : v.role === "check" ? (o.check?.(v) ?? { ok: true, items: [] })
+      : v.role === "chunk" ? (o.chunk?.(v) ?? everyLine(v)) : v.role === "mark" ? (o.mark?.(v) ?? nothingFound(v)) : (o.reflect?.(v) ?? v.memory);
     const content = typeof answer === "string" ? answer : JSON.stringify(answer);
     send(res, 200, { id: "fake", object: "chat.completion", created: 0, model: body.model,
-      choices: [{ index: 0, message: { role: "assistant", content }, finish_reason: "stop" }], usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 } });
+      choices: [{ index: 0, message: { role: "assistant", content }, finish_reason: "stop" }], usage: usageOf(o.usage?.[v.role]) });
   });
   const { port } = await listenRetry(server, 0, "127.0.0.1");
   return {

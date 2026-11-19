@@ -84,6 +84,18 @@ describe("tools: 에이전트·MCP 공용 도구", () => {
     expect(TOOLS.find((t) => t.name === "leave_it")).toMatchObject({ title: "넘기기", readOnly: true });
   });
 
+  it("request_task 도구는 행동 목록 이름만 받는다(서버가 받은 부탁을 실행 추적 말 부탁 길로 넘긴다)", async () => {
+    const { hub, policy } = makeHome();
+    const asked: string[] = [];
+    const backend = { ...localBackend(hub, policy, ROOMS), request: (task: string) => { asked.push(task); return { ok: true }; } };
+    expect(await runTool("request_task", { task: "컵 치우기" }, backend, AGENT_TOOLS)).toMatchObject({ ok: true });
+    expect(await runTool("request_task", { task: "컵 닦기" }, backend, AGENT_TOOLS)).toMatchObject({ ok: false });
+    expect(asked).toEqual(["컵 치우기"]);
+    // 서버 안 에이전트만 쓴다(MCP에는 없다). 받을 곳이 없는 backend면 받지 않는다
+    expect(MCP_TOOLS.some((t) => t.name === "request_task")).toBe(false);
+    expect(await runTool("request_task", { task: "컵 치우기" }, localBackend(hub, policy, ROOMS), AGENT_TOOLS)).toMatchObject({ ok: false });
+  });
+
   it("turn_on은 상태를 바꾸고 결과에 상태를 담는다", async () => {
     const { hub, policy } = makeHome();
     const r = await runTool("turn_on", { device_id: "tv_living" }, localBackend(hub, policy, ROOMS));
@@ -639,7 +651,9 @@ describe("시스템 프롬프트·공급자 선택", () => {
     expect(p).toContain("tv_living");
     expect(p).toContain("승인");
     expect(p).toMatch(/짧게/);
-    expect(p.split("\n")).toContain("- 가전 제어·배치·외부 연락 요청이 아닌 말(혼잣말, 하는 법을 묻는 말, 주변 대화)에는 leave_it만 부르고 답 글을 쓰지 않는다.");
+    expect(p.split("\n")).toContain("- 가전 제어·배치·외부 연락·할 일 부탁이 아닌 말(혼잣말, 주변 대화)에는 leave_it만 부르고 답 글을 쓰지 않는다.");
+    // 로봇 할 일 목록의 일을 부탁하면 request_task(기억에 그 화살표가 없어도 계획 모드로 간다)
+    expect(p).toMatch(/할 일 목록의 일을 부탁하면.*request_task로 넘긴다/);
     expect(p).toMatch(/AS센터 전화를 부탁하면 call_service\(kind as_center.*보호자 연락이 필요하면 call_service\(kind guardian.*늘 사용자 승인을 먼저 묻는다/);
   });
 
@@ -784,7 +798,7 @@ describe("공급자 배선(가짜 API)", () => {
   });
 
   it("도구를 꼭 부르게 하면(requireTool) openai는 required·병렬 끔, anthropic은 auto·병렬 끔. forceTool이 먼저다. 응답 사용량을 돌려준다", async () => {
-    const usage = { input_tokens: 100, input_tokens_details: { cached_tokens: 40 }, output_tokens: 7, output_tokens_details: { reasoning_tokens: 0 }, total_tokens: 107 };
+    const usage = { input_tokens: 100, input_tokens_details: { cached_tokens: 40 }, output_tokens: 7, output_tokens_details: { reasoning_tokens: 3 }, total_tokens: 107 };
     const resp = (output: unknown[]) => ({ id: "resp_1", object: "response", created_at: 0, model: "gpt-5.5", status: "completed", output, parallel_tool_calls: false, tool_choice: "required", tools: [], usage });
     const call = resp([{ type: "function_call", id: "fc_1", call_id: "call_1", name: "turn_on", arguments: "{}", status: "completed" }]);
     const msg = (content: unknown[], stop: string) => ({ id: "msg_1", type: "message", role: "assistant", model: "claude-opus-5-5", content, stop_reason: stop, stop_sequence: null,
@@ -797,7 +811,8 @@ describe("공급자 배선(가짜 API)", () => {
       const openai = new OpenAIProvider({ apiKey: "test-key", baseURL: oapi.url + "/v1" });
       const r = await openai.step(openai.createState(), { system: "s", tools: [tool], allowTools: true, requireTool: true });
       expect(r.calls).toHaveLength(1);
-      expect(r.usage).toEqual({ model: "gpt-5.5", input: 100, cached: 40, output: 7 });
+      // 생각 토큰(output 가운데)도 알려 주면 남긴다(계획 모드 차례 기록이 생각이 켜졌는지 본다)
+      expect(r.usage).toEqual({ model: "gpt-5.5", input: 100, cached: 40, output: 7, reasoning: 3 });
       await openai.step(openai.createState(), { system: "s", tools: [tool], allowTools: true, requireTool: true, forceTool: "turn_on" });
       await openai.step(openai.createState(), { system: "s", tools: [tool], allowTools: false, requireTool: true });
       expect(oapi.seen[0]!.body).toMatchObject({ tool_choice: "required", parallel_tool_calls: false });

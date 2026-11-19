@@ -18,8 +18,10 @@
 | 문맥 길이·입력 한도 | `budget.ts` | `tests/pam-budget.test.ts` |
 | 모델·주소·전송 칸·사용량 | `llm.ts`, `settings.ts`, `config/transport.json`, `src/infer/endpoints.ts`(모드별 주소) | `tests/pam-llm.test.ts` |
 | 판단 부르기(언제·무엇을 넘기나) | `src/brain/decide.ts` | `tests/world-decide.test.ts`, `tests/brain-pam.test.ts` |
-| 기억 모양·seed 기억 | `src/brain/decision.ts` | `tests/brain-decision.test.ts`, `tests/pam-answer.test.ts` |
-| 반성 흐름·습관 거르기 | `src/brain/history/reflect.ts`, `src/brain/history/habits.ts` | `tests/history-reflect.test.ts`, `tests/history-habits.test.ts` |
+| 기억 모양(사람 상태 FSM: 상태·화살표)·seed 기억·후보 FSM 검사 | `src/brain/decision.ts` | `tests/brain-decision.test.ts`, `tests/pam-answer.test.ts` |
+| 판단 답(`pam-predict/3`: state·from·next_index → 서버가 행동을 정함) | `answer.ts`, `src/brain/decide.ts` | `tests/pam-answer.test.ts`, `tests/world-decide.test.ts` |
+| 밤 흐름(덩어리 기록 → 반성 → 검사 → 시각 찾기 → 채택 검사 → 저장) | `src/brain/history/night.ts`, `night.ts`(메시지), `marks.ts`, `adopt.ts`, `memoryCheck.ts`, `scenarios/noonchi/chunking.txt`·`marking.txt`·`memory_check.txt` | `tests/history-night.test.ts`, `tests/pam-adopt.test.ts`, `tests/pam-marks.test.ts`, `tests/pam-memory-check.test.ts` |
+| 기억 판본·습관 거르기 | `src/brain/history/reflect.ts`, `src/brain/history/habits.ts` | `tests/history-reflect.test.ts`, `tests/history-habits.test.ts` |
 | 관찰 글(PAM이 받는 집 상태 글) | `src/world/text.ts` | `tests/world-text.test.ts` |
 | 행동 목록 | `src/act/tasks.ts`(`scenarios/noonchi/tasks.json`과 같아야 해요) | `tests/act-tasks.test.ts`, `tests/pam-scenario.test.ts` |
 

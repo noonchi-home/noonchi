@@ -17,6 +17,7 @@ import { ScriptedDetector, det } from "./helpers/detectors.js";
 import { startFakePamLlm, type FakePamLlm, pamLlmEnv } from "./helpers/pam.js";
 import { CUP_SCRIPTS, plannerRespond } from "./helpers/planner.js";
 import { openPhone, openWebSocket } from "./helpers/ws.js";
+import { useLearnedMemory } from "./helpers/memory.js";
 
 type Msg = Record<string, any>;
 let srv: RunningServer | undefined;
@@ -58,7 +59,9 @@ describe("영상 모드 처음부터 끝까지", () => {
         const parts = (body.messages as { role: string; content: unknown }[]).filter((m) => m.role === "user").flatMap((m) => (Array.isArray(m.content) ? m.content : [{ text: m.content }]));
         const text = parts.map((p: { text?: unknown }) => (typeof p.text === "string" ? p.text : "")).join("\n");
         const dets = JSON.parse(/Detections: (\[.*\])/.exec(text)?.[1] ?? "[]") as { id: string; class: string }[];
-        return JSON.stringify({ scene: "kitchen", observations: dets.filter((d) => d.class === "cup").map((d) => ({ object_id: d.id, state: "on_table" })), summary: "컵" });
+        // 사람은 식탁에서 컵으로 마시는 중이다(떠남 화살표 컵 치우기는 직전 상태 drinking에서만 나간다). 컵을 쓰는 중이라 미리 세운 목표로 시작하고,
+        // 고정 자세라 1단계는 폰 위치로 끝나지 않아 「완료」로 넘긴다(떠난 뒤 컵을 다시 보면 2단계로, 2026-11-19 여기서 멈췄다)
+        return JSON.stringify({ scene: "kitchen", observations: dets.flatMap((d) => (d.class === "cup" ? [{ object_id: d.id, state: "on_table" }] : d.class === "person" ? [{ object_id: d.id, state: "drinking" }] : [])), summary: "컵" });
       },
       respond: plannerRespond(CUP_SCRIPTS),
     });
@@ -70,6 +73,8 @@ describe("영상 모드 처음부터 끝까지", () => {
         : { observation: "사람이 식탁에 있음", reasoning: "기다린다", task_index: -1 };
     } });
     const runtimeDir = mkdtempSync(join(tmpdir(), "rt-video-"));
+    // 치우기를 보는 시험은 배운 뒤 기억(합성 3일째부터의 로봇 FSM)으로 돈다. seed 기억이면 떠날 때 묻는다
+    useLearnedMemory(runtimeDir);
     mkdirSync(join(runtimeDir, "homes", "mokryeon_180b"), { recursive: true });
     writeFileSync(join(runtimeDir, "homes", "mokryeon_180b", "approvals.json"), JSON.stringify({ always: { "task:컵 치우기": "2026-11-11T00:00:00.000Z" }, never: {} }));
     let calls = 0;

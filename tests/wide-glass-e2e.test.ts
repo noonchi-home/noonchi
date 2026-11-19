@@ -22,6 +22,7 @@ import { startServer, type RunningServer } from "../src/server/start.js";
 import { pamLlmEnv, startFakePamLlm, type FakePamLlm } from "./helpers/pam.js";
 import { CUP_SCRIPTS, plannerRespond } from "./helpers/planner.js";
 import { openPhone, openWebSocket } from "./helpers/ws.js";
+import { useLearnedMemory } from "./helpers/memory.js";
 
 type Msg = Record<string, any>;
 const VIDEOS = process.env.PHONE_VIDEO_DIR ?? join(import.meta.dirname, "..", "runtime", "videos");
@@ -94,16 +95,17 @@ describe.skipIf(!canRun)("가로 유리컵 영상(실제 감지, 가짜 모델) 
       },
       respond: plannerRespond(CUP_SCRIPTS),
     });
-    // 실제 녹화처럼: 사람이 보이면(확인된 컵이 아직 없어도) 「컵 그대로 두기」, 사람이 떠난 뒤 컵이 남으면 「컵 치우기」, 그 밖은 대기
+    // 실제 녹화처럼: 사람이 떠난 뒤 컵이 남으면 「컵 치우기」, 그 밖(사람이 보이는 동안 포함)은 대기(안 하기는 화살표 없음)
     pam = await startFakePamLlm({ predict: (b) => {
       const text = b.observation_text;
       const tasks = b.tasks;
       const cup = /컵 cup_\d/.test(text);
-      if (/^\[지속\] 사람 보임/m.test(text)) return { observation: "사람이 컵으로 마시는 중", reasoning: "더 마실 수 있다", task_index: tasks.indexOf("컵 그대로 두기") };
       if (cup && /^\[지속\] 사람 안 보임/m.test(text)) return { observation: "사람이 떠나고 컵이 남음", reasoning: "컵을 치운다", task_index: tasks.indexOf("컵 치우기") };
       return { observation: "지켜봄", reasoning: "기다린다", task_index: -1 };
     } });
     const runtimeDir = mkdtempSync(join(tmpdir(), "rt-glass-"));
+    // 치우기를 보는 시험은 배운 뒤 기억(합성 3일째부터의 로봇 FSM)으로 돈다. seed 기억이면 떠날 때 묻는다
+    useLearnedMemory(runtimeDir);
     mkdirSync(join(runtimeDir, "homes", "mokryeon_180b"), { recursive: true });
     writeFileSync(join(runtimeDir, "homes", "mokryeon_180b", "approvals.json"), JSON.stringify({ always: { "task:컵 치우기": "2026-11-11T00:00:00.000Z" }, never: {} }));
     const detector = await OnnxDetector.create({ modelPath: join(MODELS_DIR, DETECTOR_MODEL.file), posePath: join(MODELS_DIR, POSE_MODEL.file), provider: "cpu" });
@@ -170,9 +172,8 @@ describe.skipIf(!canRun)("가로 유리컵 영상(실제 감지, 가짜 모델) 
     expect(gone, JSON.stringify(timeline)).toBeGreaterThan(0);
     expect(timeline.slice(0, gone).filter((t) => t.startsWith("command:")), JSON.stringify(timeline)).toEqual([]);
     expect(timeline.slice(0, gone).filter((t) => /^thought:사람이 .+ 지켜볼게요$/.test(t)), JSON.stringify(timeline)).toHaveLength(1);
-    const kept = timeline.indexOf("decision:컵 그대로 두기");
-    expect(kept).toBeGreaterThanOrEqual(0);
-    expect(kept).toBeLessThan(gone);
+    // 사람이 보이는 동안 PAM 판단은 대기라 행동 판단이 없다
+    expect(timeline.slice(0, gone).filter((t) => t.startsWith("decision:")), JSON.stringify(timeline)).toEqual([]);
     // 찾기·계획 밖 가까이 가서 보기 명령은 한 번도 나가지 않았다
     expect(phone.filter((m) => m.type === "command" && /^(find|peek):/.test(String(m.id)))).toEqual([]);
   }, 240_000);

@@ -17,7 +17,7 @@ function decision(seq: number, at: number, state: string | null, action: string 
     type: "brain",
     event: {
       type: "decision", at_ms: at, id: `pam-${seq}`, seq, text_sent: "관찰", status, prediction: null, action,
-      fsm: state === null ? null : { state, trigger: null, learned: false, matched: action !== null }, memory_version: 1,
+      fsm: state === null ? null : { state, from: null, next_index: -1, to: null, on: null, when: null, action, learned: false }, memory_version: 1,
       world: { objects: [], person_visible: false, vlm_missing: 0, yolo_missing: 0 },
     },
   };
@@ -27,7 +27,7 @@ function decision(seq: number, at: number, state: string | null, action: string 
 const T = 1_794_214_800_000;
 const s = (sec: number) => T + Math.round(sec * 1000);
 const GOAL: PendingGoal = {
-  id: "goal-1", action: "컵 치우기", state: "left_cup", trigger: "사용자가 컵을 식탁 등에 두고 자리를 비웠다.", object: "cup_1", cls: "cup", status: "armed", prep: "ready",
+  id: "goal-1", action: "컵 치우기", state: "drinking", trigger: "사용자가 먹거나 마시기를 끝내고 다른 일로 넘어간다.", object: "cup_1", cls: "cup", status: "armed", prep: "ready",
   reason: null, text: "컵을 두고 자리를 뜨면 컵을 치울게요", armed_ms: s(4.1), ready_ms: s(13.5), gone_ms: null, fired_ms: null, plan: null,
 };
 /** 컵 치우기 계획: 첫 두 단계를 시작한 것(식탁으로 가기 19.1~19.2초, 컵 집기 19.2초~). */
@@ -46,12 +46,28 @@ describe("시간 줄 자료(timelineOf)", () => {
 
   it("사람 줄: 유효한 판단의 습관 FSM 상태가 바뀐 때마다 구간을 이어 간다(이름은 습관 그림의 상태 이름). 상태를 모르는 판단·실패한 판단은 구간을 바꾸지 않는다", () => {
     const t = timelineOf(feed([
-      habit, decision(1, s(3), "drinking"), decision(2, s(8), "drinking"), decision(3, s(10), null), decision(4, s(12), "left_cup", "컵 치우기", "failed"),
-      decision(5, s(17.3), "left_cup", "컵 치우기"),
+      habit, decision(1, s(3), "drinking"), decision(2, s(8), "drinking"), decision(3, s(10), null), decision(4, s(12), "away", "컵 치우기", "failed"),
+      decision(5, s(17.3), "away", "컵 치우기"),
     ]))!;
     expect(t.spans.filter((x) => x.row === "person").map(({ from, to, text }) => ({ from, to, text }))).toEqual([
       { from: s(3), to: s(17.3), text: "먹거나 마시는 중" },
-      { from: s(17.3), to: null, text: "컵을 두고 자리를 뜸" },
+      { from: s(17.3), to: null, text: "자리에 없음" },
+    ]);
+  });
+
+  // 사람 상태 FSM(2026-11-19): 서버가 사람 상태가 바뀔 때마다 person 메시지(판단 PAM 답과 판단 사이 World State 하는 일, 이름은 서버가 붙임)를 보낸다
+  it("사람 줄: person 메시지를 받으면 그 상태 이름·때(since_ms)로 구간을 잇고, 그 뒤로는 판단 상태로 잇지 않는다(임시 상태도 서버 이름 그대로)", () => {
+    const person = (state: string, name: string, at: number, source: "decision" | "world" = "world"): ServerMessage =>
+      ({ type: "person", state, name, since_ms: at, source, decision_id: source === "decision" ? "pam-9" : null });
+    const t = timelineOf(feed([
+      habit, decision(1, s(1), "watching_tv"), person("drinking", "먹거나 마시는 중", s(2)), decision(2, s(3), "watching_tv"),
+      person("~reading", "읽는 중", s(9)), person("away", "자리에 없음", s(15.8), "decision"),
+    ]))!;
+    expect(t.spans.filter((x) => x.row === "person").map(({ from, to, text }) => ({ from, to, text }))).toEqual([
+      { from: s(1), to: s(2), text: "TV 보는 중" },
+      { from: s(2), to: s(9), text: "먹거나 마시는 중" },
+      { from: s(9), to: s(15.8), text: "읽는 중" },
+      { from: s(15.8), to: null, text: "자리에 없음" },
     ]);
   });
 

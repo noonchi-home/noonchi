@@ -1,14 +1,16 @@
 import { describe, expect, it } from "vitest";
 import {
-  CUP_FSM_MEMORY, CUP_MEMORY, CUP_TASKS, checkInput, fsmNow, fsmRuleOf, isoWithOffset,
-  validateMemory, validatePrediction, validateTasks, type DecisionInput, type FsmMemory,
+  CUP_FSM_MEMORY, CUP_MEMORY, CUP_TASKS, PERSON_ACTIVITIES, checkInput, isoWithOffset,
+  validateCandidateFsm, validateMemory, validatePrediction, validateTasks, type DecisionInput, type FsmMemory,
 } from "../src/brain/decision.js";
+import { candidateFsmOf } from "../src/brain/pam/adopt.js";
+import { MEMORY_CHECK_PROMPT } from "../src/brain/pam/memoryCheck.js";
 import { FSM_STATE_TEXT } from "../src/world/labels.js";
-import { TASK_NAMES } from "../src/act/tasks.js";
-import { STATES } from "../src/world/vocab.js";
+import { LEARNED_ACTIONS } from "../src/act/tasks.js";
+import { LEARNED_FSM_MEMORY, learnedFsm } from "../scripts/learned-memory.js";
 
 const input = (over: Partial<DecisionInput> = {}): DecisionInput => ({
-  text: "12:00:00 사람 보임", finalTime: "2026-11-04T12:00:08.000+09:00", memory: CUP_MEMORY, memoryKind: "list", tasks: [...CUP_TASKS],
+  text: "12:00:00 사람 보임", finalTime: "2026-11-04T12:00:08.000+09:00", memory: CUP_MEMORY, memoryKind: "list", tasks: [...CUP_TASKS], lastState: null,
   facts: { contents: "empty" }, ...over,
 });
 
@@ -25,13 +27,12 @@ describe("PAM 계약 검사(Python PAM과 같은 규칙, 검사 글도 같다)",
     expect(() => validateMemory({ rules: [{ trigger: "a" }] }, "list")).toThrow();
   });
 
-  it("fsm 기억은 상태 id가 겹치지 않고, 시작·전이 대상이 있어야 한다", () => {
-    const ok = { initial_state: "s1", states: [
-      { id: "s1", description: "d", rules: [], next: [{ to: "s2", on: "e" }] },
-      { id: "s2", description: "d", rules: [{ trigger: "t", action: "a" }], next: [] },
+  it("fsm 기억은 상태 id가 겹치지 않고, 전이 대상이 있어야 한다", () => {
+    const ok = { initial_state: "away", states: [
+      { id: "away", description: "d", activity: [], next: [{ to: "s2", on: "e" }] },
+      { id: "s2", description: "d", activity: ["reading"], next: [{ to: "*", on: "t", action: "컵 치우기" }] },
     ] };
     expect(validateMemory(ok, "fsm")).toBeTruthy();
-    expect(() => validateMemory({ ...ok, initial_state: "x" }, "fsm")).toThrow(/initial_state/);
     expect(() => validateMemory({ ...ok, states: [ok.states[0], { ...ok.states[0] }] }, "fsm")).toThrow(/duplicate/);
     expect(() => validateMemory({ ...ok, states: [ok.states[0]] }, "fsm")).toThrow(/unknown state/);
     expect(() => validateMemory(ok, "tree" as "fsm")).toThrow();
@@ -70,117 +71,7 @@ describe("판단 입력(텍스트)", () => {
   });
 });
 
-describe("고른 행동의 FSM 상태(대시보드 생각 말풍선 「상태」 칩)", () => {
-  it("seed만 있는 기억에서 고른 행동의 규칙이 하나면 그 상태와 트리거를 주고, 배운 규칙이 없다(learned false)", () => {
-    const left = CUP_FSM_MEMORY.states.find((s) => s.id === "left_cup")!;
-    expect(fsmRuleOf(CUP_FSM_MEMORY, "fsm", "컵 치우기")).toEqual({ state: "left_cup", trigger: left.rules[0]!.trigger, learned: false });
-    // 컵을 두고 떠나면 치우는 습관 하나만 있다(그대로 두기·물어보기 규칙 없음)
-    expect(left.rules).toEqual([{ trigger: "사용자가 컵을 식탁 등에 두고 자리를 비웠고, 아무도 컵을 들거나 만지지 않는다.", action: "컵 치우기" }]);
-    expect(fsmRuleOf(CUP_FSM_MEMORY, "fsm", "사용자에게 물어보기")).toBeNull();
-  });
-
-  it("지금 FSM(fsmNow): 규칙이 있는 행동은 그 상태·트리거(matched), 대기·규칙 없는 행동은 직전 상태(처음이면 기억의 처음 상태)에 트리거 없음, list 기억이면 null", () => {
-    const left = CUP_FSM_MEMORY.states.find((s) => s.id === "left_cup")!;
-    expect(fsmNow(CUP_FSM_MEMORY, "fsm", "컵 치우기")).toEqual({ state: "left_cup", trigger: left.rules[0]!.trigger, learned: false, matched: true });
-    expect(fsmNow(CUP_FSM_MEMORY, "fsm", null)).toEqual({ state: CUP_FSM_MEMORY.initial_state, trigger: null, learned: false, matched: false });
-    // 직전에 상태를 정할 수 없었으면(null) 대기도 「정할 수 없음」이다(처음 상태와 다르다)
-    expect(fsmNow(CUP_FSM_MEMORY, "fsm", null, null)).toEqual({ state: null, trigger: null, learned: false, matched: false });
-    expect(fsmNow(CUP_FSM_MEMORY, "fsm", null, "left_cup")).toEqual({ state: "left_cup", trigger: null, learned: false, matched: false });
-    expect(fsmNow(CUP_FSM_MEMORY, "fsm", "사용자에게 물어보기", "left_cup")).toEqual({ state: "left_cup", trigger: null, learned: false, matched: false });
-    expect(fsmNow(CUP_MEMORY, "list", "컵 치우기")).toBeNull();
-  });
-
-  // 반성이 배운 규칙: seed에 없는 트리거·행동 쌍
-  const HOT = { trigger: "사용자가 덥다고 말하거나 더워서 부채질을 한다.", action: "에어컨 켜기" };
-  const TV = { trigger: "사용자가 TV를 보러 소파에 앉는다.", action: "에어컨 켜기" };
-  const withRules = (add: Record<string, { trigger: string; action: string }[]>, extra: FsmMemory["states"] = []): FsmMemory => ({
-    ...CUP_FSM_MEMORY,
-    states: [...CUP_FSM_MEMORY.states.map((s) => ({ ...s, rules: [...s.rules, ...(add[s.id] ?? [])] })), ...extra],
-  });
-
-  // Codex(f905eac decision.ts:281): 그 행동 규칙이 여러 상태에 있으면 그 규칙이 없는 직전 상태를 지금 상태로 보였다
-  it("지금 FSM(fsmNow): 고른 행동의 규칙이 여러 상태에 있으면 상태를 정할 수 없어 null이다(직전 상태로 메우지 않는다)", () => {
-    const memory = withRules({ watching_tv: [HOT], drinking: [TV] });
-    expect(fsmNow(memory, "fsm", "에어컨 켜기", "left_cup")).toEqual({ state: null, trigger: null, learned: true, matched: true });
-  });
-
-  // Codex(d64a383 decide.ts:106): 반성으로 기억이 바뀌어 옛 상태가 지워져도 직전 상태로 남았다
-  it("지금 FSM(fsmNow): 직전 상태가 지금 기억에 없으면(반성으로 지워짐) 기억의 처음 상태다", () => {
-    expect(fsmNow(CUP_FSM_MEMORY, "fsm", null, "gone_state")).toEqual({ state: CUP_FSM_MEMORY.initial_state, trigger: null, learned: false, matched: false });
-  });
-
-  it("seed 덥다 규칙과 배운 TV 규칙이 둘 다 watching_tv에 있으면 에어컨 켜기는 그 상태이고 트리거는 모르며 배운 규칙이 있다", () => {
-    expect(fsmRuleOf(withRules({ watching_tv: [HOT, TV] }), "fsm", "에어컨 켜기")).toEqual({ state: "watching_tv", trigger: null, learned: true });
-  });
-
-  it("배운 규칙이 다른 상태(evening_tv)에 있으면 상태도 트리거도 모르고 배운 규칙이 있다", () => {
-    const evening: FsmMemory["states"][number] = { id: "evening_tv", description: "저녁에 TV를 본다", rules: [TV], next: [] };
-    expect(fsmRuleOf(withRules({ watching_tv: [HOT] }, [evening]), "fsm", "에어컨 켜기")).toEqual({ state: null, trigger: null, learned: true });
-  });
-
-  it("의도 파악 seed 규칙: TV 보는 중에 덥다고 말하거나 부채질하면 에어컨 켜기다(seed 규칙이라 배운 규칙이 아니다)", () => {
-    expect(fsmRuleOf(CUP_FSM_MEMORY, "fsm", "에어컨 켜기")).toMatchObject({ state: "watching_tv", learned: false });
-    expect(CUP_FSM_MEMORY.states.find((s) => s.id === "watching_tv")!.rules).toContainEqual({ trigger: "사용자가 덥다고 말하거나 더워서 부채질을 한다.", action: "에어컨 켜기" });
-  });
-
-  it("컵 FSM 기억은 상태 넷(먹는 중·TV 보는 중·자리를 뜸·요리)이고 모양이 맞으며, 규칙의 행동은 모두 행동 목록에 있다", () => {
-    expect(validateMemory(CUP_FSM_MEMORY, "fsm")).toBe(CUP_FSM_MEMORY);
-    expect(CUP_FSM_MEMORY.initial_state).toBe("drinking");
-    expect(CUP_FSM_MEMORY.states.map((s) => s.id)).toEqual(["drinking", "watching_tv", "left_cup", "cooking"]);
-    for (const s of CUP_FSM_MEMORY.states) for (const r of s.rules) expect(TASK_NAMES, `${s.id}: ${r.action}`).toContain(r.action);
-  });
-
-  it("요리 상태(cooking)의 규칙이 코치 행동 「전자레인지로 데우기 알려 주기」도 고른다. 상태 설명은 만들거나 데우려 할 때다", () => {
-    expect(fsmRuleOf(CUP_FSM_MEMORY, "fsm", "전자레인지로 데우기 알려 주기")).toEqual({
-      state: "cooking", trigger: "사용자가 전자레인지 앞에서 쓰는 법을 묻거나 이거 어떻게 하냐고 말한다.", learned: false,
-    });
-    expect(CUP_FSM_MEMORY.states.find((s) => s.id === "cooking")!.description).toBe("사용자가 주방에서 음식을 만들거나 데우려 한다. 방법을 묻거나 무엇을 할지 몰라 멈춰 있으면 단계마다 알려 준다.");
-    expect(FSM_STATE_TEXT.cooking).toBe("주방에서 할 일을 찾음");
-  });
-
-  it("요리 상태(cooking)의 규칙이 코치 행동 「라면 끓이기 알려 주기」를 고르고, 다른 상태마다 요리로 가는 길이 있다", () => {
-    expect(fsmRuleOf(CUP_FSM_MEMORY, "fsm", "라면 끓이기 알려 주기")).toEqual({
-      state: "cooking", trigger: "사용자가 라면 끓이는 법을 알려 달라고 말했거나, 주방에서 라면을 끓이려다 무엇을 해야 할지 모르겠다고 말한다.", learned: false,
-    });
-    const cooking = CUP_FSM_MEMORY.states.find((s) => s.id === "cooking")!;
-    expect(cooking.next).toEqual([{ to: "drinking", on: "사용자가 음식을 들고 식탁에 앉는다." }]);
-    for (const s of CUP_FSM_MEMORY.states.filter((x) => x.id !== "cooking")) {
-      expect(s.next, s.id).toContainEqual({ to: "cooking", on: "사용자가 주방으로 가서 요리를 시작하려 한다." });
-    }
-    expect(FSM_STATE_TEXT.cooking).toBe("주방에서 할 일을 찾음");
-  });
-
-  it("컵 갈래 seed: 자리를 뜨면 내용물과 상관없이 치우기(습관), 물은 먹는 중, 콜라는 TV 보는 중. 그대로 두기·물어보기 규칙은 없다", () => {
-    const at = (action: string) => fsmRuleOf(CUP_FSM_MEMORY, "fsm", action);
-    expect(at("컵 치우기")).toEqual({ state: "left_cup", trigger: "사용자가 컵을 식탁 등에 두고 자리를 비웠고, 아무도 컵을 들거나 만지지 않는다.", learned: false });
-    expect(at("컵 그대로 두기")).toBeNull();
-    expect(at("사용자에게 물어보기")).toBeNull();
-    expect(at("컵에 물 채워 주기")).toEqual({ state: "drinking", trigger: "사용자가 식탁에서 먹는 중이고 식탁 위 컵이 비어 있으며 컵을 들거나 만지지 않는다.", learned: false });
-    expect(at("컵에 콜라 따라 주기")).toEqual({ state: "watching_tv", trigger: "사용자가 TV를 보는 중이고 곁의 컵이 비어 있으며 컵을 들거나 만지지 않는다.", learned: false });
-    // 물·콜라를 가르는 사실은 관찰 텍스트 낱말(먹는 중·TV 보는 중)이다
-    expect(STATES.eating.label).toBe("먹는 중");
-    expect(STATES.watching_tv.label).toBe("TV 보는 중");
-  });
-
-  it("대기·기억에 없는 행동·list 기억이면 null이다", () => {
-    expect(fsmRuleOf(CUP_FSM_MEMORY, "fsm", null)).toBeNull();
-    expect(fsmRuleOf(CUP_FSM_MEMORY, "fsm", "창문 닫기")).toBeNull();
-    expect(fsmRuleOf(CUP_MEMORY, "list", "컵 치우기")).toBeNull();
-  });
-
-  it("같은 행동이 여러 상태에 있으면 상태·트리거를 모르고, 한 상태 안에 여러 번 있으면 상태만 안다. seed에 없는 규칙이면 배운 규칙이다", () => {
-    const two: FsmMemory = {
-      initial_state: "a",
-      states: [
-        { id: "a", description: "가", rules: [{ trigger: "ㄱ", action: "컵 치우기" }], next: [] },
-        { id: "b", description: "나", rules: [{ trigger: "ㄴ", action: "컵 치우기" }], next: [] },
-      ],
-    };
-    expect(fsmRuleOf(two, "fsm", "컵 치우기")).toEqual({ state: null, trigger: null, learned: true });
-    const twice: FsmMemory = { initial_state: "a", states: [{ id: "a", description: "가", rules: [{ trigger: "ㄱ", action: "컵 치우기" }, { trigger: "ㄴ", action: "컵 치우기" }], next: [] }] };
-    expect(fsmRuleOf(twice, "fsm", "컵 치우기")).toEqual({ state: "a", trigger: null, learned: true });
-  });
-
+describe("사람 활동 FSM 상태 이름표", () => {
   it("컵 FSM 기억의 상태마다 화면용 짧은 한국어 이름표가 있다(12자 아래, 영어 id가 아니다)", () => {
     for (const s of CUP_FSM_MEMORY.states) {
       const label = FSM_STATE_TEXT[s.id];
@@ -190,6 +81,80 @@ describe("고른 행동의 FSM 상태(대시보드 생각 말풍선 「상태」
       // 영어 id가 아니다(「TV」는 한국어 화면 글에 쓰는 낱말이라 뺀다)
       expect(label!.replace(/TV/g, ""), s.id).not.toMatch(/[A-Za-z_()（）]/);
     }
-    expect(FSM_STATE_TEXT).toMatchObject({ cooking: "주방에서 할 일을 찾음", drinking: "먹거나 마시는 중", watching_tv: "TV 보는 중", left_cup: "컵을 두고 자리를 뜸" });
+    expect(FSM_STATE_TEXT).toMatchObject({ drinking: "먹거나 마시는 중", watching_tv: "TV 보는 중", away: "자리에 없음" });
+  });
+});
+
+describe("사람 활동 FSM 코드 검사", () => {
+  const base = () => structuredClone(CUP_FSM_MEMORY) as FsmMemory;
+  const drink = (m: FsmMemory) => m.states.find((s) => s.id === "drinking")!;
+  it("seed는 사람 상태 넷이고 처음은 자리에 없음, 행동은 화살표에만, 물건 조건이 없다", () => {
+    expect(validateMemory(CUP_FSM_MEMORY, "fsm")).toBe(CUP_FSM_MEMORY);
+    expect(CUP_FSM_MEMORY.initial_state).toBe("away");
+    expect(CUP_FSM_MEMORY.states.map((s) => s.id)).toEqual(["drinking", "watching_tv", "cooking", "away"]);
+    expect(CUP_FSM_MEMORY.states.some((s) => "rules" in s)).toBe(false);
+    expect(drink(CUP_FSM_MEMORY).next[0]).toEqual({ to: "*", on: "사용자가 먹거나 마시기를 끝내고 다른 일로 넘어간다.", action: "사용자에게 물어보기" });
+  });
+  it("seed에는 컵 치우기 화살표가 없고(배우는 습관) 사용자가 정한 습관 화살표는 있다. 배운 뒤 기억은 마시는 중에서 떠나는 묻기 화살표 자리만 컵 치우기다", () => {
+    const actions = (m: FsmMemory) => m.states.flatMap((s) => s.next.flatMap((e) => (e.action ? [e.action] : [])));
+    expect(LEARNED_ACTIONS).toEqual(["컵 치우기", "에어컨 켜기"]);
+    expect(actions(CUP_FSM_MEMORY)).not.toContain("컵 치우기");
+    expect(actions(CUP_FSM_MEMORY)).toEqual(expect.arrayContaining(["컵에 물 채워 주기", "컵에 콜라 따라 주기", "에어컨 켜기", "라면 끓이기 알려 주기", "전자레인지로 데우기 알려 주기"]));
+    expect(validateMemory(LEARNED_FSM_MEMORY, "fsm")).toBe(LEARNED_FSM_MEMORY);
+    expect(drink(LEARNED_FSM_MEMORY).next[0]).toEqual({ ...drink(CUP_FSM_MEMORY).next[0]!, action: "컵 치우기" });
+    expect(LEARNED_FSM_MEMORY.states.map((s) => s.next.length)).toEqual(CUP_FSM_MEMORY.states.map((s) => s.next.length));
+    expect(learnedFsm(["drinking", "watching_tv"]).states.find((s) => s.id === "watching_tv")!.next.find((e) => e.to === "*")).toMatchObject({ when: "같이 마시는 중이었다.", action: "컵 치우기" });
+  });
+  it("같은 (출발·사건·조건) 화살표 둘은 거절한다. 조건이 다르면 된다", () => {
+    const m = base();
+    drink(m).next.push({ ...drink(m).next[0]!, action: "컵 치우기" });
+    expect(() => validateMemory(m, "fsm")).toThrow(/duplicate transition/);
+    const ok = base();
+    drink(ok).next.push({ ...drink(ok).next[0]!, when: "같이 TV를 보는 중이었다.", action: "컵 치우기" });
+    expect(validateMemory(ok, "fsm")).toBe(ok);
+  });
+  it("목록 밖 행동·안 하기 행동은 거절한다", () => {
+    const m = base(); drink(m).next[0]!.action = "컵 닦기";
+    expect(() => validateMemory(m, "fsm")).toThrow(/not an action/);
+    const keep = base(); drink(keep).next[0]!.action = "컵 그대로 두기";
+    expect(() => validateMemory(keep, "fsm")).toThrow(/not an action/);
+  });
+  it("행동 없는 \"*\" 화살표, 상태 12개 초과, 자리에 없음이 없거나 처음 상태가 아니면 거절한다", () => {
+    const any = base(); drink(any).next.push({ to: "*", on: "사용자가 일어난다." });
+    expect(() => validateMemory(any, "fsm")).toThrow(/needs an action/);
+    const many = base();
+    const free = PERSON_ACTIVITIES.filter((a) => !many.states.some((s) => s.activity.includes(a)));
+    for (let i = 0; i < 9; i++) many.states.push({ id: `extra_${i}`, description: "사용자가 다른 일을 한다.", activity: [free[i]!], next: [] });
+    expect(() => validateMemory(many, "fsm")).toThrow(/at most 12 states/);
+    const first = base(); first.initial_state = "drinking";
+    expect(() => validateMemory(first, "fsm")).toThrow(/initial_state: must be 'away'/);
+    const noAway = base(); noAway.states = noAway.states.filter((s) => s.id !== "away").map((s) => ({ ...s, next: s.next.filter((e) => e.to !== "away") })); noAway.initial_state = "drinking";
+    expect(() => validateMemory(noAway, "fsm")).toThrow(/'away' state is required/);
+  });
+  it("모양: 없는 상태로 가는 화살표, 모르는 하는 일 값, 한 값이 두 상태에, 자리에 없음 밖의 상태에 하는 일 값 없음, 옛 모양(rules)", () => {
+    const to = base(); drink(to).next.push({ to: "nap", on: "사용자가 잔다." });
+    expect(() => validateMemory(to, "fsm")).toThrow(/unknown state identifier 'nap'/);
+    const act = base(); drink(act).activity.push("flying");
+    expect(() => validateMemory(act, "fsm")).toThrow(/unknown activity 'flying'/);
+    const two = base(); two.states[1]!.activity.push("drinking");
+    expect(() => validateMemory(two, "fsm")).toThrow(/activity 'drinking' is in two states/);
+    const none = base(); drink(none).activity = [];
+    expect(() => validateMemory(none, "fsm")).toThrow(/needs at least one activity/);
+    const old = { initial_state: "away", states: [{ id: "away", description: "d", rules: [], next: [] }] };
+    expect(() => validateMemory(old, "fsm")).toThrow(/incorrect fields/);
+  });
+});
+
+// 2026-11-19 사용자 「그래 그렇게 해」(glass pfsm4-2: 마시는 중 물 채우기 화살표를 잘못 일으켜 목표가 버려짐): 물 채우기는 식탁에 앉아 있을 때만. 사람 자세는 사람 쪽 사실이다
+describe("seed 물 채우기 화살표 조건", () => {
+  const water = (m: FsmMemory) => m.states.find((st) => st.id === "drinking")!.next.find((e) => e.action === "컵에 물 채워 주기");
+  it("drinking 자기 화살표(물 채우기)는 조건 「식탁에 앉아 있다.」를 갖고, 배운 뒤 기억도 같다", () => {
+    expect(water(CUP_FSM_MEMORY)).toEqual({ to: "drinking", on: "사용자가 마시던 것을 다 마시고 계속 먹는다.", when: "식탁에 앉아 있다.", action: "컵에 물 채워 주기" });
+    expect(water(LEARNED_FSM_MEMORY)).toEqual(water(CUP_FSM_MEMORY));
+  });
+  it("코드 검사(기억·후보 FSM)가 받고, 뜻 검사 지시문은 사람 자세를 사람 쪽 조건으로 받는다", () => {
+    expect(validateMemory(structuredClone(CUP_FSM_MEMORY), "fsm")).toEqual(CUP_FSM_MEMORY);
+    expect(() => validateCandidateFsm(structuredClone(candidateFsmOf(CUP_FSM_MEMORY)) as never, CUP_FSM_MEMORY)).not.toThrow();
+    expect(MEMORY_CHECK_PROMPT).toMatch(/posture/);
   });
 });

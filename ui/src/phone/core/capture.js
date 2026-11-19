@@ -69,7 +69,7 @@ export function createGrabber(gl, { flipY = true } = {}) {
 
   const encoder = createEncoder();
 
-  /** marks(초점 표시, project.js focusMarks)가 있으면 화면용 프레임 위에 고리를 그린다. 사진에는 넘기지 않는다.
+  /** marks(명령 대상, project.js focusMarks)가 있으면 화면용 프레임 위에 실제 폰 화면과 같은 표시(화면 밖 세모, marks.js)를 그린다. 사진에는 넘기지 않는다.
    *  pixels의 버퍼는 워커로 넘어가므로 부른 뒤에는 쓰지 않는다. */
   function toJpeg(pixels, width, height, quality, marks = []) {
     return encoder.encode(pixels, width, height, quality, marks);

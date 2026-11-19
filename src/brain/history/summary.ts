@@ -13,6 +13,9 @@ const PREFIX: Partial<Record<HistoryKind, string>> = { decision: SUMMARY_TEXT.de
 const bytes = (s: string) => Buffer.byteLength(s, "utf8");
 const joinedBytes = (lines: string[]) => lines.reduce((a, l) => a + bytes(l) + 1, 0);
 
+/** 줄을 budget 바이트 안으로(넘으면 최근 줄부터 담고 첫 줄에 「앞선 기록 N줄 생략」): 밤 흐름 덩어리 기록이 쓴다. */
+export const fitLines = (lines: string[], budget: number): string => fit(lines, budget).text;
+
 /** 다 들어가면 그대로. 아니면 최근 줄부터 budget 바이트까지 담고 뺀 줄 수를 첫 줄에 적는다. tail은 늘 끝에 둔다. */
 function fit(lines: string[], budget: number, tail: string[] = []): { text: string; dropped: number } {
   const all = [...lines, ...tail];
@@ -31,8 +34,13 @@ export function isDay(day: string): boolean {
 }
 
 export function daySummary(db: HistoryDb, day: string, o: { maxBytes?: number; caps?: { observation: number; action: number } } = {}): DaySummary {
+  // 판단 줄에는 그 판단의 사람 상태(판단 기록 fsm.state, 임시 상태 포함)를 붙인다: 반성이 기억에 없던 활동을 본다
+  const stateOf = (data: unknown) => (data as { fsm?: { state?: unknown } | null } | null)?.fsm?.state;
   const lines = (kinds: HistoryKind[]) =>
-    collapseLines(db.list({ day, kinds, limit: 10_000_000 }).map((r) => ({ atMs: r.at_ms, text: `${PREFIX[r.kind] ?? ""}${r.text}` })), db.offsetMinutes);
+    collapseLines(db.list({ day, kinds, limit: 10_000_000 }).map((r) => {
+      const state = r.kind === "decision" ? stateOf(r.data) : undefined;
+      return { atMs: r.at_ms, text: `${PREFIX[r.kind] ?? ""}${r.text}${typeof state === "string" ? SUMMARY_TEXT.state(state) : ""}` };
+    }), db.offsetMinutes);
   const observed = lines(OBSERVED);
   const acted = lines(ACTED);
   const counts = db.counts(day);

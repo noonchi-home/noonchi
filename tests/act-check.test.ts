@@ -44,7 +44,7 @@ describe("실행 전 검사: 미리 만든 계획의 기준(seenSince)", () => {
 describe("행동 조건(내용물)", () => {
   type C = { value: string; certainty: "confirmed" | "inferred" };
   const fill = (contents?: C, over: Partial<WorldObject> = {}) => base({
-    decision: { ...base().decision, action: "컵에 물 채워 주기" }, tasks: ["컵에 물 채워 주기", "컵 그대로 두기"],
+    decision: { ...base().decision, action: "컵에 물 채워 주기" }, tasks: ["컵에 물 채워 주기"],
     world: { ...base().world, objects: [obj({ facts: contents ? { contents: { ...contents, at_ms: 9_000, since_ms: 9_000 } } : {}, ...over })] },
   });
   const pre = (i: CheckInput) => checkDecision({ decision: i.decision, tasks: i.tasks, world: i.world });
@@ -52,12 +52,6 @@ describe("행동 조건(내용물)", () => {
     expect(pre(fill({ value: "has_contents", certainty: "confirmed" }))).toEqual({ ok: false, reason: "contents_mismatch", text: CHECK_TEXT.contents_mismatch });
     expect(pre(fill({ value: "empty", certainty: "inferred" }))).toEqual({ ok: true });
     expect(pre(fill({ value: "empty", certainty: "confirmed" }))).toEqual({ ok: true });
-  });
-  it("계획 없는 행동(그대로 두기)은 모르면 계획 전 검사가 막는다(묻지 않는다)", () => {
-    const keep = (c?: C) => ({ ...fill(c), decision: { ...base().decision, action: "컵 그대로 두기" } });
-    expect(pre(keep({ value: "has_contents", certainty: "inferred" }))).toMatchObject({ ok: false, reason: "unknown_contents" });
-    expect(pre(keep({ value: "has_contents", certainty: "confirmed" }))).toEqual({ ok: true });
-    expect(pre(keep({ value: "empty", certainty: "confirmed" }))).toMatchObject({ reason: "contents_mismatch" });
   });
   it("실행 전 검사: 계획의 대상 컵이 모르면 unknown_contents와 그 컵 id, 확인된 반대 값이면 contents_mismatch. 낡음·들고 있음 뒤에 본다", () => {
     expect(checkPlan(fill({ value: "empty", certainty: "inferred" }))).toEqual({ ok: false, reason: "unknown_contents", text: CHECK_TEXT.unknown_contents, object: "cup_1" });
@@ -176,8 +170,8 @@ describe("실행 전 검사", () => {
     const emptyCup = (over: Partial<WorldObject> = {}) => obj({ ...over, facts: { contents: { value: "empty", at_ms: 9_000, since_ms: 9_000, certainty: "confirmed" }, ...over.facts } });
     const fill = (over: Partial<CheckInput> = {}): CheckInput => base({
       world: { ...base().world, objects: [emptyCup()] },
-      decision: { ...base().decision, action: "컵에 물 채워 주기", prediction: { observation: "o", reasoning: "r", task_index: 5 } },
-      tasks: ["컵 치우기", "사용자에게 물어보기", "세탁물 건조기로 옮기기", "에어컨 켜기", "컵 그대로 두기", "컵에 물 채워 주기", "컵에 콜라 따라 주기"],
+      decision: { ...base().decision, action: "컵에 물 채워 주기", prediction: { observation: "o", reasoning: "r", task_index: 4 } },
+      tasks: ["컵 치우기", "사용자에게 물어보기", "세탁물 건조기로 옮기기", "에어컨 켜기", "컵에 물 채워 주기", "컵에 콜라 따라 주기"],
       plan: {
         ...base().plan!, legs: [{ stepId: "s1", end: 1 }, { stepId: "s3", end: 1 }],
         steps: [
@@ -278,9 +272,8 @@ describe("찾을 자리(lostTarget): 대상이 안 보일 때 마지막으로 �
     expect(lostTarget({ world: w, cls: "cup", now: 10_000, freshMs: 3000, objectId: "cup_1", seenAfter: 9_500 })).toMatchObject({ objectId: "cup_1", at_ms: 9_000 });
     expect(lostTarget({ world: w, cls: "cup", now: 10_000, freshMs: 3000, objectId: "cup_1", seenAfter: 8_000 })).toBeNull();
   });
-  it("찾기는 대상에 손을 대는 행동(TaskSpec.touch: 치우기·채우기·따르기)만 한다. 그대로 두기는 하지 않는다", () => {
+  it("찾기는 대상에 손을 대는 행동(TaskSpec.touch: 치우기·채우기·따르기)만 한다", () => {
     expect(["컵 치우기", "컵에 물 채워 주기", "컵에 콜라 따라 주기"].map((n) => TASKS[n]!.touch)).toEqual([true, true, true]);
-    expect(TASKS["컵 그대로 두기"]!.touch).toBeUndefined();
     expect(Object.values(TASKS).filter((t) => t.touch && !t.target)).toEqual([]);
   });
   it("objectId를 주면 그 물건의 자리만 낸다(다른 컵 자리가 더 새도)", () => {

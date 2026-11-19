@@ -1,7 +1,7 @@
 // LLM 답 검사. 원문을 고치지 않는다: 완전한 JSON 객체만 받고(마크다운 울타리·앞뒤 글·중복 키·NaN 같은 상수 거절), invalid는 대기(-1)와 구분한다.
 // 검사 글은 Python PAM과 같다. JSON 문법 오류 글만 다르다.
 import type { Prediction } from "../../contract/pam.js";
-import { ContractError, validateMemory, validatePrediction, type PamMemory } from "../decision.js";
+import { ContractError, validateFsmPrediction, validateMemory, validatePrediction, type FsmMemory, type PamMemory } from "../decision.js";
 import { pyRepr } from "./py.js";
 import { PyJsonFail, readPyJson } from "./pyjson.js";
 
@@ -13,10 +13,11 @@ export interface ParsedPrediction {
   errors: string[];
 }
 
-export function parsePrediction(raw: string, tasks: string[]): ParsedPrediction {
+/** fsm이 있으면(fsm 기억과 요청의 직전 상태) 답은 사람 상태·화살표(validateFsmPrediction, 행동은 서버가 화살표에서 만든다), 아니면 task_index 답. */
+export function parsePrediction(raw: string, tasks: string[], fsm?: { memory: FsmMemory; lastState: string | null }): ParsedPrediction {
   const result: ParsedPrediction = { status: "invalid", raw_response: raw, prediction: null, selected_action: null, errors: [] };
   try {
-    const prediction = validatePrediction(readPyJson(raw), tasks);
+    const prediction = fsm ? validateFsmPrediction(readPyJson(raw), fsm.memory, tasks, fsm.lastState) : validatePrediction(readPyJson(raw), tasks);
     result.status = "valid";
     result.prediction = prediction;
     result.selected_action = prediction.task_index === -1 ? null : tasks[prediction.task_index]!;

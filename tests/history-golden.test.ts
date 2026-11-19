@@ -53,6 +53,12 @@ describe("기록 DB 같음 시험의 모양", () => {
     expect(during).not.toContain("[있음] decision 컵 치우기 valid");
   });
 
+  it("계획이 시작될 때 나가 있던 요청의 같은 화살표 반복 답(판단이 버린 늦은 답)과 그 「앞선 판단」 메모는 빼고, 그 밖의 「앞선 판단」 메모는 남긴다", () => {
+    const stale: Row[] = [["decision", "대기", "pam-3", { status: "valid", late: true }], ["execution", "앞선 판단이라 쓰지 않음", "plan:pam-3"]];
+    expect(day([...plan, ...stale])).toEqual(day(plan));
+    expect(day([...plan, ["decision", "대기", "pam-4"], ["execution", "앞선 판단이라 쓰지 않음", "plan:pam-4"]])).toContain("[있음] execution 앞선 판단이라 쓰지 않음");
+  });
+
   it("판단 id가 날마다 다시 1부터라 대기 판단이 다른 날 계획 id와 겹쳐도 대기 판단은 [있음]에 남는다(대기는 계획을 시작하지 않는다)", () => {
     const rows = day([["decision", "대기", "pam-2"], ...plan, ["decision", "대기", "pam-5"]]);
     expect(rows).toContain("[있음] decision 대기 valid");

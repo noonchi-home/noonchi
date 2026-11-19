@@ -1,5 +1,6 @@
 // 실행 추적의 미리 세운 목표(GoalWatch, 2026-11-18 사용자 결정 「컵을 마시는 걸 볼 때 다 마시면 치워야겠다는 목표를 세우고, 사용자가 사라지면 관련된 행동을 계획하고 실행」).
-// - 세우기: 쓰는 중 지킴(use.ts)이 사람이 쓰는 종류를 붙잡으면 습관 FSM을 한 걸음 앞서 읽어(src/brain/goal.ts goalAhead) 사람이 떠난 뒤 할 일을 목표로 세운다.
+// - 세우기: 쓰는 중 지킴(use.ts)이 사람이 쓰는 종류를 붙잡으면 사람 상태 FSM의 지금 상태(World State 하는 일로 정한 것이 먼저, 없으면 마지막 판단 상태)에서
+//   나가는 화살표를 읽어(src/brain/goal.ts goalAhead) 사람이 떠난 뒤 할 일을 목표로 세운다. 목표는 배운 화살표에서만 선다(배우기 전 떠날 때는 묻기라 목표가 없다).
 //   다른 계획이 열려 있거나 만드는 중이거나, 안전 알림이 있거나, 충전 자리로 돌아가는 중이면 세우지 않는다.
 //   한 등장(World State 사람 since_ms)에 한 번만 세운다(버리거나 쓴 뒤 같은 등장에서 다시 세우지 않아 계획 모드를 되풀이해 부르지 않는다).
 //   처음 세울 때 메시지 상자에 「<규칙 조건> <행동 말>」 한 줄(클로이드 말, 사실로만: 「컵을 두고 자리를 뜨면 컵을 치울게요」)을 올린다.
@@ -18,7 +19,7 @@ import type { GoalDrop, PendingGoal } from "../../contract/goal.js";
 import type { ObjClass, WorldObject, WorldView } from "../../contract/world.js";
 import { surfacePlace, type PlaneSurface } from "../../world/index.js";
 import type { AgentPlan, PlanResult } from "../../agent/index.js";
-import { decisionWorld, fsmRuleOf, goalAhead, type GoalPick } from "../../brain/index.js";
+import { decisionWorld, edgeLearned, goalAhead, seedTrigger, stateOfWorld, type GoalPick } from "../../brain/index.js";
 import { ruleIf } from "../../world/labels.js";
 import { GOAL_LOG, GOAL_TEXT } from "../labels.js";
 import { emergencyOf } from "../mode.js";
@@ -83,18 +84,21 @@ export class GoalWatch extends Part {
     const habit = held.length ? this.o.habit() : null;
     if (!habit) return;
     const tasks = this.o.tasks?.() ?? TASK_NAMES;
+    // 지금 상태: World State 하는 일로 정한 것이 먼저(판단 전에도 목표가 4초쯤 선다), 없으면 마지막 판단의 상태
+    const state = ("states" in habit.memory ? stateOfWorld(habit.memory, world) : null) ?? habit.state;
     for (const h of held) {
-      const pick = goalAhead({ memory: habit.memory, kind: habit.kind, state: habit.state, tasks, cls: h.cls });
+      const pick = goalAhead({ memory: habit.memory, kind: habit.kind, state, tasks, cls: h.cls });
       const objectId = h.id ?? targetOf({ target: h.cls as ObjClass }, world, this.core.steps.placed())?.id ?? null;
       if (!pick) continue;
       const id = `goal-${++this.n}`;
-      const learned = fsmRuleOf(habit.memory, habit.kind, pick.action)?.learned ?? false;
+      // 묻기 자리를 바꾼 배운 컵 치우기(seed와 같은 트리거)도 사용자가 정한 짧은 꼴
+      const learned = edgeLearned(pick.state, { on: pick.on, action: pick.action }) && !seedTrigger(pick.state, pick.on, pick.when);
       const will = TASK_SAY[pick.action]?.will;
-      const text = will ? GOAL_TEXT.armed(ruleIf({ trigger: pick.trigger, action: pick.action, learned }), will) : null;
+      const text = will ? GOAL_TEXT.armed(ruleIf({ trigger: pick.when ? `${pick.on} ${pick.when}` : pick.on, action: pick.action, learned }), will) : null;
       this.goal = {
         pick, objectId, presence: p.since_ms, plan: null, planObject: null, surface: null, job: null,
         view: {
-          id, action: pick.action, state: pick.state, trigger: pick.trigger, object: objectId, cls: h.cls, status: "armed", prep: "waiting", reason: null, text,
+          id, action: pick.action, state: pick.state, trigger: pick.on, object: objectId, cls: h.cls, status: "armed", prep: "waiting", reason: null, text,
           armed_ms: this.clock.now(), ready_ms: null, gone_ms: null, fired_ms: null, plan: null,
         },
       };
@@ -107,10 +111,13 @@ export class GoalWatch extends Part {
   /** 계획 모드에 넘기는 목표 기록(판단 기록 모양, PAM 판단이 아니라 prediction이 없다). 계획 id는 plan:goal-n이고, 쓸 때 PAM 판단 id로 다시 낸다(resubmit). */
   private record(g: Goal, world: WorldView, now: number): DecisionRecord {
     const habit = this.o.habit?.();
-    const rule = habit ? fsmRuleOf(habit.memory, habit.kind, g.view.action) : null;
     return {
       id: g.view.id, seq: 0, atMs: now, textSent: "", finalTime: new Date(now).toISOString(), status: "valid", prediction: null, action: g.view.action,
-      fsm: { state: g.view.state, trigger: g.view.trigger, learned: rule?.learned ?? false, matched: true }, memoryVersion: habit?.version ?? 0,
+      fsm: {
+        state: g.view.state, from: g.view.state, next_index: g.pick.index, to: g.pick.to, on: g.pick.on, when: g.pick.when, action: g.view.action,
+        learned: edgeLearned(g.pick.state, { on: g.pick.on, action: g.pick.action }),
+      },
+      memoryVersion: habit?.version ?? 0,
       tasks: [...(this.o.tasks?.() ?? TASK_NAMES)], world: decisionWorld(world),
     };
   }
@@ -132,7 +139,7 @@ export class GoalWatch extends Part {
     const abort = new AbortController();
     let out: PlanResult | Promise<PlanResult>;
     try {
-      out = this.o.planner(this.record(g, world, now), abort.signal, { trigger: g.pick.trigger, on: g.pick.on, object: g.planObject, ...(stand ? { stand } : {}) });
+      out = this.o.planner(this.record(g, world, now), abort.signal, { trigger: g.pick.on, on: g.pick.when ?? g.pick.on, object: g.planObject, ...(stand ? { stand } : {}) });
     } catch (e) {
       out = { ok: false, error: (e as Error).message };
     }
@@ -210,7 +217,7 @@ export class GoalWatch extends Part {
   }
 
   /** 목표가 아직 맞는지 보고, 사람이 떠났으면 fired로 바꾼다. 맞지 않으면 버리고 지금 길(PAM 판단 → 계획 모드)로 돌아간다:
-   *  안전 알림(safety) → 지금 행동 목록에 없음(mode, 코치 모드) → 충전 자리 복귀 중(dock) → 다른 계획이 열렸거나 다른 행동 계획을 만드는 중(replaced) → 세운 지 armMs(expired).
+   *  안전 알림(safety) → 지금 행동 목록에 없음(mode, 코치 모드) → 충전 자리 복귀 중(dock) → 다른 계획이 실제로 시작함(replaced) → 세운 지 armMs(expired).
    *  대상이 사라져도 그 면에 같은 종류 물건이 있으면 그 물건으로 이어 간다(objectOf, 같은 컵을 VLM이 두 id로 잡았다).
    *  - 사람이 보이는 동안: 다른 등장이면 back, 대상이 이어진 물건 없이 사라지거나 치워지면 moved.
    *  - 사람이 떠남: 대상이 없으면 took(들고 나감). 손에 있음으로 남아 있으면 떠난 때부터 fireWaitMs 기다린 뒤 took. 그대로 있으면 떠난 때를 실어 fired로 바꾸고
@@ -224,7 +231,9 @@ export class GoalWatch extends Part {
     if (emergencyOf({ world, offNotices: this.core.safety.offTrack().notices })) return this.drop("safety");
     if (!(this.o.tasks?.() ?? TASK_NAMES).includes(v.action)) return this.drop("mode");
     if (this.core.dock.busy()) return this.drop("dock");
-    if (this.core.open() || (this.core.planning && this.core.planning.decision.action !== v.action)) return this.drop("replaced");
+    // 다른 계획이 실제로 시작했을 때만(running·verifying) 버린다. 계획만 되어 기다리거나 막힌 계획·만드는 중인 계획은 목표가 그대로 맡는다(start.ts begin)
+    const run = this.core.open();
+    if (run && run.state !== "planned") return this.drop("replaced");
     if (now - v.armed_ms > (this.o.goalArmMs ?? GOAL_DEFAULTS.armMs)) return this.drop("expired");
     const o = this.objectOf(g, world);
     // 정한 물건이 사라져 그 면의 같은 종류 물건으로 이어 가면 그 물건을 따라간다
@@ -260,6 +269,19 @@ export class GoalWatch extends Part {
 
   /** 목표와 같은 행동인데 사람이 떠난 뒤의 판단이 아닌가(아직 쓰는 중이거나, 떠난 것이 집 상태에 반영되기 전에 보낸 판단): 판단 받기는 그 판단으로 계획을 만들지 않고 기록만 한다.
    *  쓰는 동안 만든 계획은 쓰는 중 기다림 한도(30초)를 넘으면 닫히므로 목표가 맡고, 사람이 떠나면 목표가 판단을 다시 부른다. */
+  /** 화살표 없는 PAM 답(next_index −1, from null)의 목표 트리거: 사람이 떠난 목표(fired)이고 떠난 것이 반영된 뒤 보낸 판단(afterLeave)이며, 그 답의 사람 상태가
+   *  목표를 세운 화살표의 출발 상태가 아니고 도착(to, '*'면 다른 상태 아무것)이면 목표 행동. 화살표에 when이 있으면 서버가 그 조건을 볼 수 없어 null.
+   *  상태는 PAM 답 그대로이고 목표 화살표 하나만 본다(다른 화살표를 고르지 않는다). PAM이 다른 화살표 번호를 냈으면(행동 없는 화살표도) 그 답을 따른다(Codex b5da6c36 P2). 그 밖은 null.
+   *  판단(src/brain/decide.ts goalTrigger)이 판단 기록을 내기 전에 물어 판단 기록·실행 추적이 같은 행동을 받는다. */
+  triggerOf(d: DecisionRecord): string | null {
+    const g = this.goal;
+    const v = g?.view;
+    if (!g || !v || d.action || d.status !== "valid" || !d.fsm || d.fsm.next_index !== -1 || d.fsm.from !== null || g.pick.when !== null) return null;
+    const state = d.fsm.state;
+    if (state === g.pick.state || (g.pick.to !== "*" && state !== g.pick.to)) return null;
+    return this.afterLeave(d, v) ? v.action : null;
+  }
+
   holds(d: DecisionRecord): boolean {
     const v = this.goal?.view;
     return !!v && d.action === v.action && !this.afterLeave(d, v);

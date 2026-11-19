@@ -8,6 +8,8 @@
 [집 상태] world VLM: 집
 [집 상태] world 주방·식당 전자레인지 microwave_kitchen 닫힘
 [집 상태] world 주방·식당 전자레인지 microwave_kitchen 꺼져 있음
+[집 상태] detection 사람 보임
+[집 상태] world 사람 주방·식당에 있음
 [집 상태] world 주방·식당 전자레인지 microwave_kitchen 쓰는 중
 [집 상태] world 주방 전자레인지 켜짐 · 카메라로 봄
 [집 상태] world 주방·식당 전자레인지 microwave_kitchen 꺼져 있음

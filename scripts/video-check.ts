@@ -1,5 +1,5 @@
 // npx tsx scripts/video-check.ts --clip cup-demo.mp4 [--step <종류>:<낱말>:<영상.mp4> ...] [--phone http://127.0.0.1:8210] [--api http://127.0.0.1:8200]
-//   [--done-after 3] [--out runtime/videos/cup-demo.<시각>.timeline.md] [--expect-after 36.3] [--record <폴더>] [--fake]
+//   [--done-after 3] [--out runtime/videos/cup-demo.<시각>.timeline.md] [--expect-after 36.3] [--record <폴더>] [--record-view <top|minimap>] [--record-fps 10] [--fake]
 //   [--say <초>:<글> ...] [--start-at <cup|tv|microwave|kitchen>] [--home mokryeon_180b] [--tail 30] [--max 1800] [--approve <초>] [--done-on <초>:<명령 글> ...]
 //   [--fov <도>] [--pitch <도>] [--h <m>]
 // --fov·--pitch·--h: 영상 모드 카메라(세로 시야각 20~120, 숙인 각 -89~89, 높이 0.2~3). 준 것만 폰 주소에 fov=·pitch=·h=로 붙고, 없으면 폰 페이지 기본값(60°, -25°, 1.4m).
@@ -37,10 +37,16 @@
 // 녹화하는 동안 대시보드 그림 간격을 재 적는다. 끝 사진은 그 창으로 바로 찍는다. 크롬을 끈 뒤 ffmpeg로 대시보드(폰도 받았으면 나란히) mp4 하나
 // (H.264, yuv420p, 10fps, 실제 시간 길이)를 <폴더>/<시각표 이름 줄기>.demo.mp4로 만든다. --chrome은 크롬 그리기 방식(기본 headless-gpu)이다.
 // ffmpeg가 없거나 실패하면 <폴더>/<줄기>.frames 프레임 폴더를 남기고 판정 줄 위에 적는다.
+// --record-view minimap: 녹화 대시보드를 <api>/?view=minimap(비전 미니맵만, 3D 트윈 없음)으로 1280×720 창에 열고 mp4도 1280×720이다. 기본 top(대시보드 전체). 끝 사진도 그 창이다.
+// --record-fps: 녹화 초당 장 수(1~30, 기본 10). ack 간격(1000/fps)과 mp4 fps가 그 값이다.
+// minimap 보기는 mp4를 만든 뒤에도 <줄기>.frames 장면 폴더를 두고 판 기록 run.json(녹화 시작 시각·장면·폰 페이지 짝·단계 영상·첫 영상 길이)을 남긴다.
+// scripts/minimap-cut.ts가 그것으로 붙잡기를 뺀 이은 영상(<줄기>.minimap.mp4)을 만든다.
 // 영상은 소리 없이 「AR 시작」 누름에서 튼다. launchChrome은 자동 재생 플래그를 받지 않지만 소리 없는 재생은 크롬 기본값으로 된다.
+// 오늘 기억: 영상을 틀기 전에 GET /api/memory/day/<오늘>의 uses.memory를 본다(memoryGate). 마시는 중에서 떠나는 배운 컵 치우기 화살표가 없으면(seed·옛 모양)
+// 크롬을 띄우지 않고 끝 코드 1과 판정 줄(서버를 끄고 demo-setup learned로 넣으라는 글). 있으면 시각표 머리에 「기억 <v>판 · <source>」 한 줄.
 // --fake: 실제 모델 없이 같은 프로세스에서 스스로 시험한다. 본 서버(HUB=memory, 한양목련, 새 RUNTIME_DIR, 영상·단계 영상은 공용 runtime/videos에서 바로 읽음, BRAIN=1, PAM 1초마다)와
 // 가짜 OpenAI(VLM: 컵 식탁 위, 계획: 컵 치우기 네 단계), 가짜 PAM(컵이 있고 사람이 안 보이면 컵 치우기), 대본 YOLO(첫 프레임부터 30초 사람+컵, 그 뒤 컵만)를 띄운다.
-// 식탁 1.5m 앞 시작 자리와 컵 치우기 승인을 미리 둔다. 기본 --expect-after는 대본 사람 시간(30초), 기본 --out은 <clip>.fake.timeline.md다.
+// 식탁 1.5m 앞 시작 자리와 컵 치우기 승인, 임시 runtime의 배운 뒤 기억(scripts/learned-memory.ts saveLearned, 오늘 판본)을 미리 둔다. 기본 --expect-after는 대본 사람 시간(30초), 기본 --out은 <clip>.fake.timeline.md다.
 // 사람 사라짐, PAM 컵 치우기, 사람 사라짐 뒤 첫 명령, 네 단계 끝, 계획 끝, 영상 끝, 트윈 눈·컵 줄 중 하나라도 없으면 끝 코드 1. ui/dist 빌드가 있어야 한다.
 // 스스로 시험은 계획이 닫혀도 첫 영상이 멈출(끝·붙잡기) 때까지 본다(영상 끝 줄을 보려고). 기본 --expect-after는 대본 사람 시간(서버 시계)을 영상 시각으로 옮긴 값이다.
 // 잠금: npm run heavy -- 로 부르면 그 잠금(TWIN3D_HEAVY_PID) 안에서 돌고 크롬 pid를 그 잠금에 더한다. 혼자 부르면 withHeavy로 잡는다.
@@ -52,12 +58,15 @@ import type { Detection } from "../src/contract/observe.js";
 import type { HistoryRow } from "../src/contract/history.js";
 import type { WorldObject, WorldView } from "../src/contract/world.js";
 import { EXEC_TEXT } from "../src/act/labels.js";
+import { ANY_STATE, isOldFsm } from "../src/brain/decision.js";
+import { HistoryDb, historyTzMinutes } from "../src/brain/history/db.js";
+import { saveLearned } from "./learned-memory.js";
 import { CLASSES, STATES } from "../src/world/vocab.js";
 import { KINDS, type DeviceKind } from "../src/devices/kinds.js";
 import { withTimeout } from "./twin3d/capture-lib.js";
 import { CHROME_GPU, chromePath, closeChrome, devtoolsPort, launchChrome, openPage, openTab, openWindow, type Chrome, type ChromeGpu, type Page } from "./twin3d/cdp.js";
 import { heldLock, withHeavy, type Lock } from "./twin3d/heavy.js";
-import { demoFile, encodeDemo, RECORD_FPS, startRecording, type Recorded, type Recording } from "./video-record.js";
+import { CUT_RUN_FILE, demoFile, encodeDemo, RECORD_FPS, startRecording, type CutRun, type Recorded, type Recording } from "./video-record.js";
 import { det } from "../tests/helpers/detectors.js";
 import type { SceneJson } from "../src/contract/layout.js";
 import type { OffTrack } from "../src/contract/plan.js";
@@ -75,16 +84,19 @@ const STEP_ARG = /^(?:go|pick|place|do):[a-z_]+:[A-Za-z0-9_-]{1,64}\.(?:mp4|webm
 const SIZE: [number, number] = [390, 844];
 /** 대시보드 사진 탭 크기와 열고 기다리는 시간 */
 const DASH_SIZE: [number, number] = [1280, 800];
+/** 비전 미니맵만 보기(?view=minimap) 창 크기: 16:9 미니맵 칸이 창을 채운다. */
+const MINIMAP_SIZE: [number, number] = [1280, 720];
 const DASH_WAIT_MS = 8_000;
 /** 마지막 눈 줄에서 이만큼(m) 옮기면 눈 줄을 다시 쓴다 */
 const EYE_MOVE_M = 0.5;
-const HISTORY_KINDS = "detection,decision,plan,execution,look,goal";
+/** 시각표(timeline)가 줄로 만드는 서버 기록 종류. GET /api/history의 kinds로 가져온다. */
+export const FETCH_KINDS: readonly string[] = ["detection", "decision", "plan", "execution", "look", "goal", "planner"];
 /** 영상이 끝난 뒤 남은 답 누르기·계획 끝을 더 기다리는 시간 */
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 // 표
 
-export type Kind = "사람 등장" | "사람 사라짐" | "물건 등장" | "물건 사라짐" | "PAM 판단" | "목표" | "계획" | "단계" | "명령" | "영상" | "트윈" | "가까이 보기" | "말" | "누름" | "끝";
+export type Kind = "사람 등장" | "사람 사라짐" | "물건 등장" | "물건 사라짐" | "PAM 판단" | "목표" | "계획" | "단계" | "명령" | "영상" | "트윈" | "가까이 보기" | "계획 모드" | "말" | "누름" | "끝";
 /** 표 한 줄. ms는 영상 시각, n은 묶은 줄 수. */
 export interface Row { ms: number; kind: Kind; text: string; n: number }
 /** 폰 페이지가 남긴 명령(window.__noonchiVideo.commands). */
@@ -167,6 +179,8 @@ export function timeline(t0: number | ((atMs: number) => number), history: Histo
     } else if (h.kind === "goal") {
       // 미리 세운 목표의 전환(세움·계획 준비됨·사람 떠남·씀·버림, 서버 goalRecorder)
       raw.push({ ms, kind: "목표", text: h.text, n: 1, from: `goal:${h.subject ?? ""}` });
+    } else if (h.kind === "planner") {
+      raw.push({ ms, kind: "계획 모드", text: h.text, n: 1, from: "planner" });
     } else if (h.kind === "execution") {
       const state = (h.data as { state?: string } | null)?.state ?? "";
       if (!EXEC_PLAIN.has(h.text)) raw.push({ ms, kind: EXEC_END.has(state) ? "끝" : "계획", text: h.text, n: 1, from: "execution" });
@@ -396,10 +410,26 @@ export function verdict(rows: Row[], commands: VideoCommand[], history: HistoryR
 }
 
 /** markdown 문서. warnings(짝 넘침)는 시각표 위에, notes(끝까지 돌지 않음·페이지 오류·사진 못 남김)는 판정 줄 위에, extra(단계 판정 줄)는 판정 줄 뒤에, image(대시보드 사진 경로)는 끝에 쓴다. */
-export function markdown(o: { clip: string; mode: string; ranAt: string; rows: Row[]; notes: string[]; verdict: string; extra?: string[]; cost: string; image?: string; warnings?: string[] }): string {
+/** 배운 뒤 기억인가: 새 모양(상태 안 rules가 아님)이고 마시는 중에서 떠나는(to "*") 컵 치우기 화살표가 있다. */
+export function hasLearnedClear(memory: unknown): boolean {
+  if (!memory || typeof memory !== "object" || isOldFsm(memory)) return false;
+  const states = (memory as { states?: unknown }).states;
+  if (!Array.isArray(states)) return false;
+  const drinking = states.find((s) => (s as { id?: unknown })?.id === "drinking") as { next?: unknown } | undefined;
+  return Array.isArray(drinking?.next) && drinking.next.some((e) => (e as { to?: unknown; action?: unknown })?.to === ANY_STATE && (e as { action?: unknown }).action === "컵 치우기");
+}
+
+/** 영상 전 오늘 기억 확인: GET /api/memory/day/<오늘> 답의 uses.memory가 배운 뒤 기억이면 시각표 머리 줄, 아니면 판정 줄(runtimeDir: 서버 RUNTIME_DIR 글). */
+export function memoryGate(answer: unknown, runtimeDir: string): { ok: true; line: string } | { ok: false; why: string } {
+  const uses = (answer as { uses?: { version?: unknown; source?: unknown; memory?: unknown } | null } | null)?.uses;
+  if (uses && hasLearnedClear(uses.memory)) return { ok: true, line: `기억 ${String(uses.version)}판 · ${String(uses.source)}` };
+  return { ok: false, why: `오늘 기억에 배운 컵 치우기가 없어요. 서버를 끄고 npx tsx scripts/demo-setup.ts learned --dir ${runtimeDir}로 넣은 뒤 다시 켜 주세요` };
+}
+
+export function markdown(o: { clip: string; mode: string; ranAt: string; memory?: string; rows: Row[]; notes: string[]; verdict: string; extra?: string[]; cost: string; image?: string; warnings?: string[] }): string {
   const cell = (s: string) => s.replace(/\|/g, "\\|").replace(/\r?\n/g, " ");
   return [
-    `# 영상 판정 · ${o.clip}`, "", `${o.ranAt} · ${o.mode}`, "", ...(o.warnings ?? []).flatMap((w) => [w, ""]),
+    `# 영상 판정 · ${o.clip}`, "", `${o.ranAt} · ${o.mode}`, "", ...(o.memory ? [o.memory, ""] : []), ...(o.warnings ?? []).flatMap((w) => [w, ""]),
     "| 영상 시각 | 종류 | 글 |", "|---|---|---|",
     ...o.rows.map((r) => `| ${clock(r.ms)} | ${r.kind} | ${cell(rowText(r))} |`),
     "", ...o.notes.flatMap((n) => [n, ""]), o.verdict, "", ...(o.extra ?? []).flatMap((n) => [n, ""]), o.cost, "",
@@ -571,8 +601,8 @@ const START: [number, number] = [9.9612 - 1.5, 3.9242];
 const CUP: Detection = det("cup", 0.9, [160, 300, 40, 20], 41);
 const PERSON: Detection = det("person", 0.9, [100, 60, 160, 420], 0);
 
-/** personUntil: 대본 YOLO가 사람을 내지 않기 시작하는 서버 시각(첫 엔진 프레임 전이면 null). */
-interface Fake { api: string; phone: string; logs: string[]; personUntil(): number | null; close(): Promise<void> }
+/** personUntil: 대본 YOLO가 사람을 내지 않기 시작하는 서버 시각(첫 엔진 프레임 전이면 null). runtimeDir: 임시 RUNTIME_DIR. */
+interface Fake { api: string; phone: string; runtimeDir: string; logs: string[]; personUntil(): number | null; close(): Promise<void> }
 
 async function startFake(clip: string, steps: string[]): Promise<Fake> {
   const [{ startFakeOpenAI }, { startFakePamLlm, pamLlmEnv }, { ScriptedDetector }, { CUP_SCRIPTS, plannerRespond }, { startServer }] = await Promise.all([
@@ -585,6 +615,9 @@ async function startFake(clip: string, steps: string[]): Promise<Fake> {
   const runtimeDir = mkdtempSync(join(tmpdir(), "video-check-"));
   mkdirSync(join(runtimeDir, "homes", HOME), { recursive: true });
   writeFileSync(join(runtimeDir, "homes", HOME, "approvals.json"), JSON.stringify({ always: { "task:컵 치우기": "2026-11-11T00:00:00.000Z" }, never: {} }));
+  // 치우기를 보는 판정은 배운 뒤 기억(오늘 판본)으로 돈다. seed 기억이면 떠날 때 묻는다
+  const db = HistoryDb.open(join(runtimeDir, "noonchi.db"), historyTzMinutes(process.env));
+  try { saveLearned(db, db.dayOf(Date.now())); } finally { db.close(); }
   const logs: string[] = [];
   const closers: (() => Promise<unknown>)[] = [];
   const close = async () => {
@@ -630,7 +663,7 @@ async function startFake(clip: string, steps: string[]): Promise<Fake> {
     closers.push(() => srv.close());
     const saved = await fetch(`${srv.url}/api/phone/start-pose`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ position: START, yaw_deg: 0 }) });
     if (!saved.ok) throw new Error(`시작 자리 저장 실패: HTTP ${saved.status} ${await saved.text()}`);
-    return { api: srv.url, phone: new URL(srv.phoneUrls[0]!).origin, logs, personUntil: () => (first === null ? null : first + FAKE_PERSON_MS), close };
+    return { api: srv.url, phone: new URL(srv.phoneUrls[0]!).origin, runtimeDir, logs, personUntil: () => (first === null ? null : first + FAKE_PERSON_MS), close };
   } catch (e) {
     await close();
     throw e;
@@ -639,7 +672,7 @@ async function startFake(clip: string, steps: string[]): Promise<Fake> {
 
 // 돌리기
 
-const USAGE = "쓰는 법: npx tsx scripts/video-check.ts --clip <이름.mp4> [--step <종류>:<낱말>:<영상.mp4> ...] [--phone http://127.0.0.1:8210] [--api http://127.0.0.1:8200] [--done-after 3] [--out <파일.md>] [--expect-after 36.3] [--record <폴더>] [--fake]"
+const USAGE = "쓰는 법: npx tsx scripts/video-check.ts --clip <이름.mp4> [--step <종류>:<낱말>:<영상.mp4> ...] [--phone http://127.0.0.1:8210] [--api http://127.0.0.1:8200] [--done-after 3] [--out <파일.md>] [--expect-after 36.3] [--record <폴더>] [--record-view <top|minimap>] [--record-fps 10] [--fake]"
   + " [--say <초>:<글> ...] [--start-at <cup|tv|microwave|kitchen>] [--home mokryeon_180b] [--tail 30] [--max 1800] [--approve <초>] [--done-on <초>:<명령 글> ...]"
   + " [--fov <도>] [--pitch <도>] [--h <m>]";
 
@@ -655,7 +688,12 @@ export interface Args {
   camera: Camera;
   /** --record-phone: 녹화에 폰 화면도 붙인다(기본은 대시보드만). --chrome: 크롬 그리기 방식(기본 headless-gpu). */
   recordPhone: boolean; chrome: ChromeGpu;
+  /** --record-view: 녹화 대시보드 보기(top 대시보드 전체, minimap 비전 미니맵만). --record-fps: 녹화 초당 장 수. */
+  recordView: DashView; recordFps: number;
 }
+
+/** 대시보드 보기: top 대시보드 전체, minimap 비전 미니맵만(주소 ?view=minimap). */
+export type DashView = "top" | "minimap";
 
 /** 인자(process.argv.slice(2)) → 판 설정, 틀리면 까닭 글. --step은 여러 번 받고, 있으면 --done-after 기본이 0이다. --record는 시연 영상 폴더. */
 export function parseArgs(argv: string[]): Args | string {
@@ -701,10 +739,14 @@ export function parseArgs(argv: string[]): Args | string {
     if (!raw?.trim() || raw.startsWith("--") || !Number.isFinite(v) || v < lo || v > hi) return `--fov는 20~120(도), --pitch는 -89~89(도), --h는 0.2~3(m) 숫자예요. ${USAGE}`;
     camera[k] = v;
   }
+  const recordView = argv.includes("--record-view") ? arg("record-view") : "top";
+  if (recordView !== "top" && recordView !== "minimap") return `--record-view는 top·minimap 가운데 하나예요. ${USAGE}`;
+  const recordFps = argv.includes("--record-fps") ? Number(arg("record-fps")) : RECORD_FPS;
+  if (!Number.isInteger(recordFps) || recordFps < 1 || recordFps > 30) return `--record-fps는 1~30 정수(초당 장 수)예요. ${USAGE}`;
   const chrome = (arg("chrome") ?? "headless-gpu") as ChromeGpu;
   if (!CHROME_GPU.includes(chrome)) return `--chrome은 ${CHROME_GPU.join("·")} 가운데 하나예요. ${USAGE}`;
   return {
-    recordPhone: argv.includes("--record-phone"), chrome,
+    recordPhone: argv.includes("--record-phone"), chrome, recordView, recordFps,
     clip, fake, steps, doneAfterMs, expectMs, expectSet: arg("expect-after") !== undefined, phone: arg("phone") ?? "http://127.0.0.1:8210", api: arg("api") ?? "http://127.0.0.1:8200", out: arg("out"), record,
     says: says.map((x) => ({ atMs: x!.ms, text: x!.text })), startAt: startAt as DemoScene | null, home: arg("home") ?? HOME, tailMs, maxMs, approveAfterMs,
     doneOn: doneOn.map((x) => ({ afterMs: x!.ms, text: x!.text })), camera,
@@ -732,11 +774,23 @@ export async function waitLoaded(tab: Pick<Page, "send">, url: string, o: { what
   throw new Error(`${o.what}를 ${Math.round(waitMs / 1000)}초 안에 다 불러오지 못했어요`);
 }
 
-/** 대시보드 탭·창: 크기를 DASH_SIZE(모바일 아님)로 맞추고 대시보드 <api>/로 옮긴 뒤 그 문서가 다 불러와질 때까지 기다린다(waitLoaded). */
-export async function openDashboard(tab: Pick<Page, "send">, api: string, o: { waitMs?: number; everyMs?: number } = {}): Promise<void> {
-  await withTimeout(tab.send("Emulation.setDeviceMetricsOverride", { width: DASH_SIZE[0], height: DASH_SIZE[1], deviceScaleFactor: 1, mobile: false }), 10_000, "대시보드 탭 크기");
-  await withTimeout(tab.send("Page.navigate", { url: `${api}/` }), 30_000, "대시보드 열기");
-  await waitLoaded(tab, `${api}/`, { what: "대시보드", ...o });
+/** 대시보드 창 크기: minimap 1280×720, top 1280×800. */
+const dashSizeOf = (view: DashView): [number, number] => (view === "minimap" ? MINIMAP_SIZE : DASH_SIZE);
+
+/** 녹화 모양: 대시보드 창 크기(dashSizeOf), ack 간격(1000/fps), mp4 fps, mp4 높이(폰도 녹화하면 기본 높이에 맞춰 붙이므로 없음, 아니면 창 높이). */
+export function recordSetup(a: Pick<Args, "recordView" | "recordFps" | "recordPhone">): { size: [number, number]; intervalMs: number; fps: number; height: number | undefined } {
+  const size = dashSizeOf(a.recordView);
+  return { size, intervalMs: 1000 / a.recordFps, fps: a.recordFps, height: a.recordPhone ? undefined : size[1] };
+}
+
+/** 대시보드 탭·창: 크기를 보기 창 크기(모바일 아님, dashSizeOf)로 맞추고 대시보드 <api>/(view minimap이면 <api>/?view=minimap)로 옮긴 뒤 그 문서가 다 불러와질 때까지 기다린다(waitLoaded). */
+export async function openDashboard(tab: Pick<Page, "send">, api: string, o: { waitMs?: number; everyMs?: number; view?: DashView } = {}): Promise<void> {
+  const view = o.view ?? "top";
+  const url = `${api}/${view === "minimap" ? "?view=minimap" : ""}`;
+  const [width, height] = dashSizeOf(view);
+  await withTimeout(tab.send("Emulation.setDeviceMetricsOverride", { width, height, deviceScaleFactor: 1, mobile: false }), 10_000, "대시보드 탭 크기");
+  await withTimeout(tab.send("Page.navigate", { url }), 30_000, "대시보드 열기");
+  await waitLoaded(tab, url, { what: "대시보드", waitMs: o.waitMs, everyMs: o.everyMs });
 }
 
 /** 대시보드 그림 간격 모으기 시작(window.__frameGaps)과 읽기. */
@@ -799,6 +853,8 @@ async function main(): Promise<number> {
   // --record: 시연 영상 <폴더>/<시각표 이름 줄기>.demo.mp4, 프레임은 옆 .frames 폴더(영상을 만들면 지움)
   const demo = args.record ? demoFile(resolve(ROOT, args.record), out) : null;
   const framesDir = demo ? demo.replace(/\.demo\.mp4$/, ".frames") : null;
+  // 녹화 창 크기·ack 간격·mp4 fps·높이(--record-view·--record-fps)
+  const shape = recordSetup(args);
   if (fakeMode && !existsSync(join(ROOT, "ui", "dist", "phone", "index.html"))) { console.error("ui/dist가 없어요: npm run heavy -- npm --prefix ui run build"); return 2; }
   const chromeExe = chromePath();
 
@@ -817,10 +873,14 @@ async function main(): Promise<number> {
     // --record: 판정 내내 띄운 대시보드 창, 녹화, 대시보드 창 오류(판정에 넣지 않음), 녹화 쪽 적을 것
     let dash: Page | undefined;
     let rec: Recording | undefined;
+    // 녹화 시작 이 PC 시계(미니맵 이은 영상 판 기록 run.json의 startMs)
+    let recStartMs = 0;
     let recorded: Recorded | undefined;
     let encoded = false;
     const dashErrors: string[] = [];
     const recordNotes: string[] = [];
+    // 시각표 머리 줄: 어느 기억으로 돌았는지(memoryGate)
+    let memoryLine: string | undefined;
     try {
       fake = fakeMode ? await startFake(clip, steps) : undefined;
       const api = (fake?.api ?? args.api).replace(/\/+$/, "");
@@ -832,6 +892,15 @@ async function main(): Promise<number> {
       if (!before) throw new Error(`서버에 닿지 못함: ${api}/api/plan`);
       const used = usedServer(before.plan, await getJson<BrainNow>(`${api}/api/brain`));
       if (used) throw new Error(used);
+      // 오늘 기억: 배운 컵 치우기 화살표가 없으면 영상을 틀지 않는다(seed 기억이면 떠날 때 묻는다)
+      const today = new Date(Date.now() + historyTzMinutes(process.env) * 60_000).toISOString().slice(0, 10);
+      const gate = memoryGate(await getJson(`${api}/api/memory/day/${today}`), fake?.runtimeDir ?? "<서버 RUNTIME_DIR>");
+      if (!gate.ok) {
+        console.log(`[video-check] ${gate.why}`);
+        return 1;
+      }
+      memoryLine = gate.line;
+      console.log(`[video-check] ${gate.line}`);
       // --start-at: 폰 페이지를 열기 전에 그 장면 시작 위치를 넣는다(지금 집이 다르면 시작하지 않는다)
       if (args.startAt) {
         const why = await sendStartPose(api, args.startAt, args.home);
@@ -854,18 +923,19 @@ async function main(): Promise<number> {
       // 시연 녹화: 같은 크롬 새 창(탭은 폰 탭을 가린다)으로 대시보드를 판정 내내 띄우고, 트윈이 다 뜬 뒤 대시보드(--record-phone이면 폰도) 프레임을 받는다.
       // 「AR 시작」(영상 재생)은 녹화를 시작한 뒤에 누른다
       if (framesDir) {
-        dash = await openWindow(port, DASH_SIZE, (msg) => dashErrors.push(msg));
-        await openDashboard(dash, api);
+        dash = await openWindow(port, shape.size, (msg) => dashErrors.push(msg));
+        await openDashboard(dash, api, { view: args.recordView });
         const twinFrom = Date.now();
         await waitTwinReady(dash);
-        console.log(`[video-check] 대시보드 트윈 준비 ${((Date.now() - twinFrom) / 1000).toFixed(1)}초`);
+        console.log(`[video-check] 대시보드${args.recordView === "minimap" ? " 미니맵" : " 트윈"} 준비 ${((Date.now() - twinFrom) / 1000).toFixed(1)}초`);
         // 녹화하는 동안 대시보드 그림 간격(requestAnimationFrame)을 쌓는다(끝에 중앙값·p90·최대를 적는다)
         await dash.evaluate(FRAME_GAPS_START, 10_000).catch(() => {});
         rmSync(framesDir, { recursive: true, force: true });
-        rec = await startRecording(framesDir, [...(args.recordPhone ? [{ name: "phone", page: cdp, size: SIZE }] : []), { name: "dash", page: dash, size: DASH_SIZE }]);
+        recStartMs = Date.now();
+        rec = await startRecording(framesDir, [...(args.recordPhone ? [{ name: "phone", page: cdp, size: SIZE }] : []), { name: "dash", page: dash, size: shape.size }], { intervalMs: shape.intervalMs });
         const shown = await cdp.evaluate("document.visibilityState", 10_000).catch(() => "모름");
         if (args.recordPhone && shown !== "visible") recordNotes.push(`녹화: 폰 탭이 가려짐(visibilityState ${String(shown)})`);
-        console.log(`[video-check] 녹화 시작 · ${RECORD_FPS}fps · ${args.recordPhone ? "폰·대시보드" : "대시보드만"} · 크롬 ${args.chrome} · ${framesDir}`);
+        console.log(`[video-check] 녹화 시작 · ${shape.fps}fps · ${args.recordPhone ? "폰·대시보드" : args.recordView === "minimap" ? "미니맵만" : "대시보드만"} · 크롬 ${args.chrome} · ${framesDir}`);
       }
 
       // 폰 페이지 자기 자원을 못 받았으면(이 PC는 127.0.0.1 연결이 가끔 실패하고 크롬은 다시 받지 않는다) 「AR 시작」 전에 한 번 다시 읽는다
@@ -923,6 +993,8 @@ async function main(): Promise<number> {
       let commands: VideoCommand[] = [];
       let clips: VideoClip[] = [];
       let duration: number | null = null;
+      // 첫 영상 길이(단계 영상으로 바꾸기 전에 본 길이): 미니맵 이은 영상이 첫 영상 끝 붙잡기를 뺀다
+      let firstDurationMs: number | null = null;
       const clipStart = () => clips.at(-1)?.video_ms ?? 0;
       for (;;) {
         seen = await read();
@@ -931,6 +1003,7 @@ async function main(): Promise<number> {
         commands = seen.record?.commands ?? commands;
         clips = seen.record?.clips ?? clips;
         duration = seen.duration ?? duration;
+        if (!clips.length && seen.duration !== null) firstDurationMs = seen.duration * 1000;
         for (const c of clips.slice(knownClips)) {
           console.log(`[video-check] ${clock(c.video_ms)} 단계 영상 ${c.clip}`);
           clipAt = Date.now();
@@ -999,7 +1072,7 @@ async function main(): Promise<number> {
         const cost = costLine(await getJson<BrainNow>(`${api}/api/brain`));
         mkdirSync(dirname(out), { recursive: true });
         writeFileSync(out, markdown({
-          clip, mode: fakeMode ? "가짜 서버" : `실제 서버 ${api}`, ranAt: new Date().toLocaleString("sv-SE"), rows: [],
+          clip, mode: fakeMode ? "가짜 서버" : `실제 서버 ${api}`, ranAt: new Date().toLocaleString("sv-SE"), memory: memoryLine, rows: [],
           notes: [`끝까지 돌지 않음: ${unfinished.join(", ")}`], verdict: "판정: 짝 넘침으로 하지 않음", cost, warnings: [syncWarn],
         }));
         console.log(`[video-check] ${out}`);
@@ -1013,7 +1086,7 @@ async function main(): Promise<number> {
       if (t0 !== firstT0) console.log(`[video-check] 서버 시계 t0=${t0} (처음 ${firstT0})`);
 
       // 서버 기록·VLM 비용. 새 서버로만 시작하니 /api/brain 합계가 이번 판 값이다
-      const hist = await fetch(`${api}/api/history?since=${Math.min(firstT0, t0)}&kinds=${HISTORY_KINDS}&limit=5000`);
+      const hist = await fetch(`${api}/api/history?since=${Math.min(firstT0, t0)}&kinds=${FETCH_KINDS.join(",")}&limit=5000`);
       if (!hist.ok) throw new Error(`기록을 받지 못함: HTTP ${hist.status}`);
       const history = ((await hist.json()) as { rows: HistoryRow[] }).rows;
       const brain = await getJson<BrainNow>(`${api}/api/brain`);
@@ -1061,7 +1134,12 @@ async function main(): Promise<number> {
         const n = (name: string) => recorded!.frames[name]?.length ?? 0;
         const fps = (name: string) => (n(name) / Math.max(recorded!.endMs / 1000, 0.001)).toFixed(1);
         console.log(`[video-check] 녹화 ${(recorded.endMs / 1000).toFixed(1)}초 · ${args.recordPhone ? `폰 ${n("phone")}장(${fps("phone")}fps) · ` : ""}대시보드 ${n("dash")}장(${fps("dash")}fps)${recorded.lost ? ` · 못 쓴 프레임 ${recorded.lost}장` : ""}`);
-        const made = await encodeDemo(framesDir, recorded, demo, { ...(args.recordPhone ? { phoneSize: SIZE } : {}), dashSize: DASH_SIZE });
+        // 미니맵 보기: 장면 폴더를 두고 판 기록(run.json)을 남긴다. scripts/minimap-cut.ts가 붙잡기를 뺀 이은 영상을 만든다
+        if (args.recordView === "minimap") {
+          const run: CutRun = { startMs: recStartMs, endMs: recorded.endMs, size: shape.size, frames: recorded.frames.dash ?? [], t0, sync: seen.record?.sync ?? [], firstDurationMs, clips };
+          writeFileSync(join(framesDir, CUT_RUN_FILE), JSON.stringify(run));
+        }
+        const made = await encodeDemo(framesDir, recorded, demo, { ...(args.recordPhone ? { phoneSize: SIZE } : {}), dashSize: shape.size, fps: shape.fps, height: shape.height, keepFrames: args.recordView === "minimap" });
         encoded = true;
         if (made.ok) console.log(`[video-check] 시연 영상 ${demo}`);
         else { console.log(`[video-check] ${made.why}`); notes.push(`시연 영상 못 만듦: ${made.why}`); }
@@ -1076,7 +1154,7 @@ async function main(): Promise<number> {
       if (stepLine) console.log(stepLine);
       console.log(cost);
       mkdirSync(dirname(out), { recursive: true });
-      writeFileSync(out, markdown({ clip, mode: fakeMode ? "가짜 서버" : `실제 서버 ${api}`, ranAt: new Date().toLocaleString("sv-SE"), rows, notes, verdict: v.text, extra: stepLine ? [stepLine] : [], cost, image, ...(places ? { warnings: [`${places.ok ? "판정 통과" : "판정 실패"} · ${places.text}`] } : {}) }));
+      writeFileSync(out, markdown({ clip, mode: fakeMode ? "가짜 서버" : `실제 서버 ${api}`, ranAt: new Date().toLocaleString("sv-SE"), memory: memoryLine, rows, notes, verdict: v.text, extra: stepLine ? [stepLine] : [], cost, image, ...(places ? { warnings: [`${places.ok ? "판정 통과" : "판정 실패"} · ${places.text}`] } : {}) }));
       console.log(`[video-check] ${out}`);
 
       if (pageErrors.length) console.log(`[video-check] 페이지 오류\n${pageErrors.slice(0, 20).join("\n")}`);

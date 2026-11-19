@@ -39,9 +39,13 @@
             "action": null,
             "fsm": {
               "state": "drinking",
-              "trigger": null,
-              "learned": false,
-              "matched": false
+              "from": null,
+              "next_index": -1,
+              "to": null,
+              "on": null,
+              "when": null,
+              "action": null,
+              "learned": false
             },
             "assist": "noonchi",
             "memory_version": 1,
@@ -179,7 +183,7 @@
           "type": "habit",
           "habit": {
             "version": 1,
-            "initial": "drinking",
+            "initial": "away",
             "states": [
               {
                 "id": "drinking",
@@ -192,43 +196,29 @@
                 "learned": false
               },
               {
-                "id": "left_cup",
-                "name": "컵을 두고 자리를 뜸",
+                "id": "cooking",
+                "name": "요리하는 중",
                 "learned": false
               },
               {
-                "id": "cooking",
-                "name": "주방에서 할 일을 찾음",
+                "id": "away",
+                "name": "자리에 없음",
                 "learned": false
               }
             ],
             "transitions": [
               {
                 "from": "drinking",
+                "to": "*",
+                "trigger": "컵을 두고 자리를 뜨면",
+                "action": "컵 치우기",
+                "learned": true
+              },
+              {
+                "from": "drinking",
                 "to": "drinking",
                 "trigger": "식사 중 컵이 비면",
                 "action": "컵에 물 채워 주기",
-                "learned": false
-              },
-              {
-                "from": "drinking",
-                "to": "watching_tv",
-                "trigger": "TV를 보기 시작함",
-                "action": null,
-                "learned": false
-              },
-              {
-                "from": "drinking",
-                "to": "left_cup",
-                "trigger": "컵을 두고 떠남",
-                "action": null,
-                "learned": false
-              },
-              {
-                "from": "drinking",
-                "to": "cooking",
-                "trigger": "주방으로 감",
-                "action": null,
                 "learned": false
               },
               {
@@ -247,44 +237,9 @@
               },
               {
                 "from": "watching_tv",
-                "to": "drinking",
-                "trigger": "식탁에 앉아 먹음",
-                "action": null,
-                "learned": false
-              },
-              {
-                "from": "watching_tv",
-                "to": "left_cup",
-                "trigger": "컵을 두고 떠남",
-                "action": null,
-                "learned": false
-              },
-              {
-                "from": "watching_tv",
-                "to": "cooking",
-                "trigger": "주방으로 감",
-                "action": null,
-                "learned": false
-              },
-              {
-                "from": "left_cup",
-                "to": "left_cup",
-                "trigger": "컵을 두고 자리를 뜨면",
-                "action": "컵 치우기",
-                "learned": false
-              },
-              {
-                "from": "left_cup",
-                "to": "drinking",
-                "trigger": "돌아와 컵을 듦",
-                "action": null,
-                "learned": false
-              },
-              {
-                "from": "left_cup",
-                "to": "cooking",
-                "trigger": "주방으로 감",
-                "action": null,
+                "to": "*",
+                "trigger": "사용자가 TV 보기를 끝내고 다른 일로 넘어간다. 같이 마시는 중이었다면",
+                "action": "사용자에게 물어보기",
                 "learned": false
               },
               {
@@ -304,7 +259,28 @@
               {
                 "from": "cooking",
                 "to": "drinking",
-                "trigger": "음식 들고 앉음",
+                "trigger": "요리를 마치고 먹음",
+                "action": null,
+                "learned": false
+              },
+              {
+                "from": "away",
+                "to": "drinking",
+                "trigger": "돌아와 먹거나 마심",
+                "action": null,
+                "learned": false
+              },
+              {
+                "from": "away",
+                "to": "watching_tv",
+                "trigger": "돌아와 TV를 봄",
+                "action": null,
+                "learned": false
+              },
+              {
+                "from": "away",
+                "to": "cooking",
+                "trigger": "돌아와 요리를 시작함",
                 "action": null,
                 "learned": false
               }
@@ -316,8 +292,8 @@
           "goal": {
             "id": "goal-1",
             "action": "컵 치우기",
-            "state": "left_cup",
-            "trigger": "사용자가 컵을 식탁 등에 두고 자리를 비웠고, 아무도 컵을 들거나 만지지 않는다.",
+            "state": "drinking",
+            "trigger": "사용자가 먹거나 마시기를 끝내고 다른 일로 넘어간다.",
             "object": "cup_1",
             "cls": "cup",
             "status": "armed",
@@ -365,9 +341,13 @@
             "action": null,
             "fsm": {
               "state": "drinking",
-              "trigger": null,
-              "learned": false,
-              "matched": false
+              "from": null,
+              "next_index": -1,
+              "to": null,
+              "on": null,
+              "when": null,
+              "action": null,
+              "learned": false
             },
             "assist": "noonchi",
             "memory_version": 1,
@@ -508,10 +488,14 @@
             },
             "action": "컵 치우기",
             "fsm": {
-              "state": "left_cup",
-              "trigger": "사용자가 컵을 식탁 등에 두고 자리를 비웠고, 아무도 컵을 들거나 만지지 않는다.",
-              "learned": false,
-              "matched": true
+              "state": "away",
+              "from": "drinking",
+              "next_index": 0,
+              "to": "*",
+              "on": "사용자가 먹거나 마시기를 끝내고 다른 일로 넘어간다.",
+              "when": null,
+              "action": "컵 치우기",
+              "learned": true
             },
             "assist": "noonchi",
             "memory_version": 1,
@@ -639,7 +623,7 @@
           "type": "habit",
           "habit": {
             "version": 1,
-            "initial": "drinking",
+            "initial": "away",
             "states": [
               {
                 "id": "drinking",
@@ -652,43 +636,29 @@
                 "learned": false
               },
               {
-                "id": "left_cup",
-                "name": "컵을 두고 자리를 뜸",
+                "id": "cooking",
+                "name": "요리하는 중",
                 "learned": false
               },
               {
-                "id": "cooking",
-                "name": "주방에서 할 일을 찾음",
+                "id": "away",
+                "name": "자리에 없음",
                 "learned": false
               }
             ],
             "transitions": [
               {
                 "from": "drinking",
+                "to": "*",
+                "trigger": "컵을 두고 자리를 뜨면",
+                "action": "컵 치우기",
+                "learned": true
+              },
+              {
+                "from": "drinking",
                 "to": "drinking",
                 "trigger": "식사 중 컵이 비면",
                 "action": "컵에 물 채워 주기",
-                "learned": false
-              },
-              {
-                "from": "drinking",
-                "to": "watching_tv",
-                "trigger": "TV를 보기 시작함",
-                "action": null,
-                "learned": false
-              },
-              {
-                "from": "drinking",
-                "to": "left_cup",
-                "trigger": "컵을 두고 떠남",
-                "action": null,
-                "learned": false
-              },
-              {
-                "from": "drinking",
-                "to": "cooking",
-                "trigger": "주방으로 감",
-                "action": null,
                 "learned": false
               },
               {
@@ -707,44 +677,9 @@
               },
               {
                 "from": "watching_tv",
-                "to": "drinking",
-                "trigger": "식탁에 앉아 먹음",
-                "action": null,
-                "learned": false
-              },
-              {
-                "from": "watching_tv",
-                "to": "left_cup",
-                "trigger": "컵을 두고 떠남",
-                "action": null,
-                "learned": false
-              },
-              {
-                "from": "watching_tv",
-                "to": "cooking",
-                "trigger": "주방으로 감",
-                "action": null,
-                "learned": false
-              },
-              {
-                "from": "left_cup",
-                "to": "left_cup",
-                "trigger": "컵을 두고 자리를 뜨면",
-                "action": "컵 치우기",
-                "learned": false
-              },
-              {
-                "from": "left_cup",
-                "to": "drinking",
-                "trigger": "돌아와 컵을 듦",
-                "action": null,
-                "learned": false
-              },
-              {
-                "from": "left_cup",
-                "to": "cooking",
-                "trigger": "주방으로 감",
-                "action": null,
+                "to": "*",
+                "trigger": "사용자가 TV 보기를 끝내고 다른 일로 넘어간다. 같이 마시는 중이었다면",
+                "action": "사용자에게 물어보기",
                 "learned": false
               },
               {
@@ -764,7 +699,28 @@
               {
                 "from": "cooking",
                 "to": "drinking",
-                "trigger": "음식 들고 앉음",
+                "trigger": "요리를 마치고 먹음",
+                "action": null,
+                "learned": false
+              },
+              {
+                "from": "away",
+                "to": "drinking",
+                "trigger": "돌아와 먹거나 마심",
+                "action": null,
+                "learned": false
+              },
+              {
+                "from": "away",
+                "to": "watching_tv",
+                "trigger": "돌아와 TV를 봄",
+                "action": null,
+                "learned": false
+              },
+              {
+                "from": "away",
+                "to": "cooking",
+                "trigger": "돌아와 요리를 시작함",
                 "action": null,
                 "learned": false
               }
@@ -776,8 +732,8 @@
           "goal": {
             "id": "goal-1",
             "action": "컵 치우기",
-            "state": "left_cup",
-            "trigger": "사용자가 컵을 식탁 등에 두고 자리를 비웠고, 아무도 컵을 들거나 만지지 않는다.",
+            "state": "drinking",
+            "trigger": "사용자가 먹거나 마시기를 끝내고 다른 일로 넘어간다.",
             "object": "cup_1",
             "cls": "cup",
             "status": "used",
@@ -822,9 +778,13 @@
             "action": null,
             "fsm": {
               "state": "drinking",
-              "trigger": null,
-              "learned": false,
-              "matched": false
+              "from": null,
+              "next_index": -1,
+              "to": null,
+              "on": null,
+              "when": null,
+              "action": null,
+              "learned": false
             },
             "assist": "noonchi",
             "memory_version": 1,
@@ -967,10 +927,14 @@
             },
             "action": "컵 치우기",
             "fsm": {
-              "state": "left_cup",
-              "trigger": "사용자가 컵을 식탁 등에 두고 자리를 비웠고, 아무도 컵을 들거나 만지지 않는다.",
-              "learned": false,
-              "matched": true
+              "state": "away",
+              "from": "drinking",
+              "next_index": 0,
+              "to": "*",
+              "on": "사용자가 먹거나 마시기를 끝내고 다른 일로 넘어간다.",
+              "when": null,
+              "action": "컵 치우기",
+              "learned": true
             },
             "assist": "noonchi",
             "memory_version": 1,
@@ -1098,7 +1062,7 @@
           "type": "habit",
           "habit": {
             "version": 1,
-            "initial": "drinking",
+            "initial": "away",
             "states": [
               {
                 "id": "drinking",
@@ -1111,43 +1075,29 @@
                 "learned": false
               },
               {
-                "id": "left_cup",
-                "name": "컵을 두고 자리를 뜸",
+                "id": "cooking",
+                "name": "요리하는 중",
                 "learned": false
               },
               {
-                "id": "cooking",
-                "name": "주방에서 할 일을 찾음",
+                "id": "away",
+                "name": "자리에 없음",
                 "learned": false
               }
             ],
             "transitions": [
               {
                 "from": "drinking",
+                "to": "*",
+                "trigger": "컵을 두고 자리를 뜨면",
+                "action": "컵 치우기",
+                "learned": true
+              },
+              {
+                "from": "drinking",
                 "to": "drinking",
                 "trigger": "식사 중 컵이 비면",
                 "action": "컵에 물 채워 주기",
-                "learned": false
-              },
-              {
-                "from": "drinking",
-                "to": "watching_tv",
-                "trigger": "TV를 보기 시작함",
-                "action": null,
-                "learned": false
-              },
-              {
-                "from": "drinking",
-                "to": "left_cup",
-                "trigger": "컵을 두고 떠남",
-                "action": null,
-                "learned": false
-              },
-              {
-                "from": "drinking",
-                "to": "cooking",
-                "trigger": "주방으로 감",
-                "action": null,
                 "learned": false
               },
               {
@@ -1166,44 +1116,9 @@
               },
               {
                 "from": "watching_tv",
-                "to": "drinking",
-                "trigger": "식탁에 앉아 먹음",
-                "action": null,
-                "learned": false
-              },
-              {
-                "from": "watching_tv",
-                "to": "left_cup",
-                "trigger": "컵을 두고 떠남",
-                "action": null,
-                "learned": false
-              },
-              {
-                "from": "watching_tv",
-                "to": "cooking",
-                "trigger": "주방으로 감",
-                "action": null,
-                "learned": false
-              },
-              {
-                "from": "left_cup",
-                "to": "left_cup",
-                "trigger": "컵을 두고 자리를 뜨면",
-                "action": "컵 치우기",
-                "learned": false
-              },
-              {
-                "from": "left_cup",
-                "to": "drinking",
-                "trigger": "돌아와 컵을 듦",
-                "action": null,
-                "learned": false
-              },
-              {
-                "from": "left_cup",
-                "to": "cooking",
-                "trigger": "주방으로 감",
-                "action": null,
+                "to": "*",
+                "trigger": "사용자가 TV 보기를 끝내고 다른 일로 넘어간다. 같이 마시는 중이었다면",
+                "action": "사용자에게 물어보기",
                 "learned": false
               },
               {
@@ -1223,7 +1138,28 @@
               {
                 "from": "cooking",
                 "to": "drinking",
-                "trigger": "음식 들고 앉음",
+                "trigger": "요리를 마치고 먹음",
+                "action": null,
+                "learned": false
+              },
+              {
+                "from": "away",
+                "to": "drinking",
+                "trigger": "돌아와 먹거나 마심",
+                "action": null,
+                "learned": false
+              },
+              {
+                "from": "away",
+                "to": "watching_tv",
+                "trigger": "돌아와 TV를 봄",
+                "action": null,
+                "learned": false
+              },
+              {
+                "from": "away",
+                "to": "cooking",
+                "trigger": "돌아와 요리를 시작함",
                 "action": null,
                 "learned": false
               }
@@ -1235,8 +1171,8 @@
           "goal": {
             "id": "goal-1",
             "action": "컵 치우기",
-            "state": "left_cup",
-            "trigger": "사용자가 컵을 식탁 등에 두고 자리를 비웠고, 아무도 컵을 들거나 만지지 않는다.",
+            "state": "drinking",
+            "trigger": "사용자가 먹거나 마시기를 끝내고 다른 일로 넘어간다.",
             "object": "cup_1",
             "cls": "cup",
             "status": "used",
@@ -1285,9 +1221,13 @@
             "action": null,
             "fsm": {
               "state": "drinking",
-              "trigger": null,
-              "learned": false,
-              "matched": false
+              "from": null,
+              "next_index": -1,
+              "to": null,
+              "on": null,
+              "when": null,
+              "action": null,
+              "learned": false
             },
             "assist": "noonchi",
             "memory_version": 1,
@@ -1432,10 +1372,14 @@
             },
             "action": "컵 치우기",
             "fsm": {
-              "state": "left_cup",
-              "trigger": "사용자가 컵을 식탁 등에 두고 자리를 비웠고, 아무도 컵을 들거나 만지지 않는다.",
-              "learned": false,
-              "matched": true
+              "state": "away",
+              "from": "drinking",
+              "next_index": 0,
+              "to": "*",
+              "on": "사용자가 먹거나 마시기를 끝내고 다른 일로 넘어간다.",
+              "when": null,
+              "action": "컵 치우기",
+              "learned": true
             },
             "assist": "noonchi",
             "memory_version": 1,
@@ -1547,7 +1491,7 @@
           "type": "habit",
           "habit": {
             "version": 1,
-            "initial": "drinking",
+            "initial": "away",
             "states": [
               {
                 "id": "drinking",
@@ -1560,43 +1504,29 @@
                 "learned": false
               },
               {
-                "id": "left_cup",
-                "name": "컵을 두고 자리를 뜸",
+                "id": "cooking",
+                "name": "요리하는 중",
                 "learned": false
               },
               {
-                "id": "cooking",
-                "name": "주방에서 할 일을 찾음",
+                "id": "away",
+                "name": "자리에 없음",
                 "learned": false
               }
             ],
             "transitions": [
               {
                 "from": "drinking",
+                "to": "*",
+                "trigger": "컵을 두고 자리를 뜨면",
+                "action": "컵 치우기",
+                "learned": true
+              },
+              {
+                "from": "drinking",
                 "to": "drinking",
                 "trigger": "식사 중 컵이 비면",
                 "action": "컵에 물 채워 주기",
-                "learned": false
-              },
-              {
-                "from": "drinking",
-                "to": "watching_tv",
-                "trigger": "TV를 보기 시작함",
-                "action": null,
-                "learned": false
-              },
-              {
-                "from": "drinking",
-                "to": "left_cup",
-                "trigger": "컵을 두고 떠남",
-                "action": null,
-                "learned": false
-              },
-              {
-                "from": "drinking",
-                "to": "cooking",
-                "trigger": "주방으로 감",
-                "action": null,
                 "learned": false
               },
               {
@@ -1615,44 +1545,9 @@
               },
               {
                 "from": "watching_tv",
-                "to": "drinking",
-                "trigger": "식탁에 앉아 먹음",
-                "action": null,
-                "learned": false
-              },
-              {
-                "from": "watching_tv",
-                "to": "left_cup",
-                "trigger": "컵을 두고 떠남",
-                "action": null,
-                "learned": false
-              },
-              {
-                "from": "watching_tv",
-                "to": "cooking",
-                "trigger": "주방으로 감",
-                "action": null,
-                "learned": false
-              },
-              {
-                "from": "left_cup",
-                "to": "left_cup",
-                "trigger": "컵을 두고 자리를 뜨면",
-                "action": "컵 치우기",
-                "learned": false
-              },
-              {
-                "from": "left_cup",
-                "to": "drinking",
-                "trigger": "돌아와 컵을 듦",
-                "action": null,
-                "learned": false
-              },
-              {
-                "from": "left_cup",
-                "to": "cooking",
-                "trigger": "주방으로 감",
-                "action": null,
+                "to": "*",
+                "trigger": "사용자가 TV 보기를 끝내고 다른 일로 넘어간다. 같이 마시는 중이었다면",
+                "action": "사용자에게 물어보기",
                 "learned": false
               },
               {
@@ -1672,7 +1567,28 @@
               {
                 "from": "cooking",
                 "to": "drinking",
-                "trigger": "음식 들고 앉음",
+                "trigger": "요리를 마치고 먹음",
+                "action": null,
+                "learned": false
+              },
+              {
+                "from": "away",
+                "to": "drinking",
+                "trigger": "돌아와 먹거나 마심",
+                "action": null,
+                "learned": false
+              },
+              {
+                "from": "away",
+                "to": "watching_tv",
+                "trigger": "돌아와 TV를 봄",
+                "action": null,
+                "learned": false
+              },
+              {
+                "from": "away",
+                "to": "cooking",
+                "trigger": "돌아와 요리를 시작함",
                 "action": null,
                 "learned": false
               }
@@ -1684,8 +1600,8 @@
           "goal": {
             "id": "goal-1",
             "action": "컵 치우기",
-            "state": "left_cup",
-            "trigger": "사용자가 컵을 식탁 등에 두고 자리를 비웠고, 아무도 컵을 들거나 만지지 않는다.",
+            "state": "drinking",
+            "trigger": "사용자가 먹거나 마시기를 끝내고 다른 일로 넘어간다.",
             "object": "cup_1",
             "cls": "cup",
             "status": "used",
@@ -1738,9 +1654,13 @@
             "action": null,
             "fsm": {
               "state": "drinking",
-              "trigger": null,
-              "learned": false,
-              "matched": false
+              "from": null,
+              "next_index": -1,
+              "to": null,
+              "on": null,
+              "when": null,
+              "action": null,
+              "learned": false
             },
             "assist": "noonchi",
             "memory_version": 1,
@@ -1887,10 +1807,14 @@
             },
             "action": "컵 치우기",
             "fsm": {
-              "state": "left_cup",
-              "trigger": "사용자가 컵을 식탁 등에 두고 자리를 비웠고, 아무도 컵을 들거나 만지지 않는다.",
-              "learned": false,
-              "matched": true
+              "state": "away",
+              "from": "drinking",
+              "next_index": 0,
+              "to": "*",
+              "on": "사용자가 먹거나 마시기를 끝내고 다른 일로 넘어간다.",
+              "when": null,
+              "action": "컵 치우기",
+              "learned": true
             },
             "assist": "noonchi",
             "memory_version": 1,
@@ -2018,7 +1942,7 @@
           "type": "habit",
           "habit": {
             "version": 1,
-            "initial": "drinking",
+            "initial": "away",
             "states": [
               {
                 "id": "drinking",
@@ -2031,43 +1955,29 @@
                 "learned": false
               },
               {
-                "id": "left_cup",
-                "name": "컵을 두고 자리를 뜸",
+                "id": "cooking",
+                "name": "요리하는 중",
                 "learned": false
               },
               {
-                "id": "cooking",
-                "name": "주방에서 할 일을 찾음",
+                "id": "away",
+                "name": "자리에 없음",
                 "learned": false
               }
             ],
             "transitions": [
               {
                 "from": "drinking",
+                "to": "*",
+                "trigger": "컵을 두고 자리를 뜨면",
+                "action": "컵 치우기",
+                "learned": true
+              },
+              {
+                "from": "drinking",
                 "to": "drinking",
                 "trigger": "식사 중 컵이 비면",
                 "action": "컵에 물 채워 주기",
-                "learned": false
-              },
-              {
-                "from": "drinking",
-                "to": "watching_tv",
-                "trigger": "TV를 보기 시작함",
-                "action": null,
-                "learned": false
-              },
-              {
-                "from": "drinking",
-                "to": "left_cup",
-                "trigger": "컵을 두고 떠남",
-                "action": null,
-                "learned": false
-              },
-              {
-                "from": "drinking",
-                "to": "cooking",
-                "trigger": "주방으로 감",
-                "action": null,
                 "learned": false
               },
               {
@@ -2086,44 +1996,9 @@
               },
               {
                 "from": "watching_tv",
-                "to": "drinking",
-                "trigger": "식탁에 앉아 먹음",
-                "action": null,
-                "learned": false
-              },
-              {
-                "from": "watching_tv",
-                "to": "left_cup",
-                "trigger": "컵을 두고 떠남",
-                "action": null,
-                "learned": false
-              },
-              {
-                "from": "watching_tv",
-                "to": "cooking",
-                "trigger": "주방으로 감",
-                "action": null,
-                "learned": false
-              },
-              {
-                "from": "left_cup",
-                "to": "left_cup",
-                "trigger": "컵을 두고 자리를 뜨면",
-                "action": "컵 치우기",
-                "learned": false
-              },
-              {
-                "from": "left_cup",
-                "to": "drinking",
-                "trigger": "돌아와 컵을 듦",
-                "action": null,
-                "learned": false
-              },
-              {
-                "from": "left_cup",
-                "to": "cooking",
-                "trigger": "주방으로 감",
-                "action": null,
+                "to": "*",
+                "trigger": "사용자가 TV 보기를 끝내고 다른 일로 넘어간다. 같이 마시는 중이었다면",
+                "action": "사용자에게 물어보기",
                 "learned": false
               },
               {
@@ -2143,7 +2018,28 @@
               {
                 "from": "cooking",
                 "to": "drinking",
-                "trigger": "음식 들고 앉음",
+                "trigger": "요리를 마치고 먹음",
+                "action": null,
+                "learned": false
+              },
+              {
+                "from": "away",
+                "to": "drinking",
+                "trigger": "돌아와 먹거나 마심",
+                "action": null,
+                "learned": false
+              },
+              {
+                "from": "away",
+                "to": "watching_tv",
+                "trigger": "돌아와 TV를 봄",
+                "action": null,
+                "learned": false
+              },
+              {
+                "from": "away",
+                "to": "cooking",
+                "trigger": "돌아와 요리를 시작함",
                 "action": null,
                 "learned": false
               }
@@ -2155,8 +2051,8 @@
           "goal": {
             "id": "goal-1",
             "action": "컵 치우기",
-            "state": "left_cup",
-            "trigger": "사용자가 컵을 식탁 등에 두고 자리를 비웠고, 아무도 컵을 들거나 만지지 않는다.",
+            "state": "drinking",
+            "trigger": "사용자가 먹거나 마시기를 끝내고 다른 일로 넘어간다.",
             "object": "cup_1",
             "cls": "cup",
             "status": "used",
@@ -2316,9 +2212,13 @@
           "action": "라면 끓이기 알려 주기",
           "fsm": {
             "state": "cooking",
-            "trigger": "사용자가 라면 끓이는 법을 알려 달라고 말했거나, 주방에서 라면을 끓이려다 무엇을 해야 할지 모르겠다고 말한다.",
-            "learned": false,
-            "matched": true
+            "from": "cooking",
+            "next_index": 0,
+            "to": "cooking",
+            "on": "사용자가 라면 끓이는 법을 알려 달라고 말했거나, 라면을 끓이다 무엇을 해야 할지 모르겠다고 말한다.",
+            "when": null,
+            "action": "라면 끓이기 알려 주기",
+            "learned": false
           },
           "assist": "coach",
           "memory_version": 1,
@@ -2372,7 +2272,7 @@
         "type": "habit",
         "habit": {
           "version": 1,
-          "initial": "drinking",
+          "initial": "away",
           "states": [
             {
               "id": "drinking",
@@ -2385,43 +2285,29 @@
               "learned": false
             },
             {
-              "id": "left_cup",
-              "name": "컵을 두고 자리를 뜸",
+              "id": "cooking",
+              "name": "요리하는 중",
               "learned": false
             },
             {
-              "id": "cooking",
-              "name": "주방에서 할 일을 찾음",
+              "id": "away",
+              "name": "자리에 없음",
               "learned": false
             }
           ],
           "transitions": [
             {
               "from": "drinking",
+              "to": "*",
+              "trigger": "컵을 두고 자리를 뜨면",
+              "action": "컵 치우기",
+              "learned": true
+            },
+            {
+              "from": "drinking",
               "to": "drinking",
               "trigger": "식사 중 컵이 비면",
               "action": "컵에 물 채워 주기",
-              "learned": false
-            },
-            {
-              "from": "drinking",
-              "to": "watching_tv",
-              "trigger": "TV를 보기 시작함",
-              "action": null,
-              "learned": false
-            },
-            {
-              "from": "drinking",
-              "to": "left_cup",
-              "trigger": "컵을 두고 떠남",
-              "action": null,
-              "learned": false
-            },
-            {
-              "from": "drinking",
-              "to": "cooking",
-              "trigger": "주방으로 감",
-              "action": null,
               "learned": false
             },
             {
@@ -2440,44 +2326,9 @@
             },
             {
               "from": "watching_tv",
-              "to": "drinking",
-              "trigger": "식탁에 앉아 먹음",
-              "action": null,
-              "learned": false
-            },
-            {
-              "from": "watching_tv",
-              "to": "left_cup",
-              "trigger": "컵을 두고 떠남",
-              "action": null,
-              "learned": false
-            },
-            {
-              "from": "watching_tv",
-              "to": "cooking",
-              "trigger": "주방으로 감",
-              "action": null,
-              "learned": false
-            },
-            {
-              "from": "left_cup",
-              "to": "left_cup",
-              "trigger": "컵을 두고 자리를 뜨면",
-              "action": "컵 치우기",
-              "learned": false
-            },
-            {
-              "from": "left_cup",
-              "to": "drinking",
-              "trigger": "돌아와 컵을 듦",
-              "action": null,
-              "learned": false
-            },
-            {
-              "from": "left_cup",
-              "to": "cooking",
-              "trigger": "주방으로 감",
-              "action": null,
+              "to": "*",
+              "trigger": "사용자가 TV 보기를 끝내고 다른 일로 넘어간다. 같이 마시는 중이었다면",
+              "action": "사용자에게 물어보기",
               "learned": false
             },
             {
@@ -2497,7 +2348,28 @@
             {
               "from": "cooking",
               "to": "drinking",
-              "trigger": "음식 들고 앉음",
+              "trigger": "요리를 마치고 먹음",
+              "action": null,
+              "learned": false
+            },
+            {
+              "from": "away",
+              "to": "drinking",
+              "trigger": "돌아와 먹거나 마심",
+              "action": null,
+              "learned": false
+            },
+            {
+              "from": "away",
+              "to": "watching_tv",
+              "trigger": "돌아와 TV를 봄",
+              "action": null,
+              "learned": false
+            },
+            {
+              "from": "away",
+              "to": "cooking",
+              "trigger": "돌아와 요리를 시작함",
               "action": null,
               "learned": false
             }

@@ -8,7 +8,8 @@
 // 이미 올린 말(최근 메시지)과 같은 줄은 다시 올리지 않는다. 새 줄은 id(판단 id@시각:차례)·판단 id·시각을 붙여 보내고(send) 기록 DB(thought, 집 id 포함)에
 // 하나씩 남긴다. 최근 것은 새로 붙은 대시보드·다시 띄운 서버에 다시 보낸다. 닫으면(close, 집·서버 종료) 보내지 않는다. 보내기·기록 오류는 받아 넘긴다.
 import { josa } from "../shared/korean.js";
-import { TASK_SAY } from "../act/tasks.js";
+import { ASK_ACTION, TASK_SAY } from "../act/tasks.js";
+import { seedTrigger } from "./decision.js";
 import { ruleIf } from "../world/labels.js";
 import type { BrainLog, ThoughtEvent, ThoughtMessage } from "../contract/events.js";
 import type { HistoryDb } from "./history/db.js";
@@ -23,12 +24,15 @@ type Decision = Extract<BrainLog, { type: "decision" }>;
 /** 같은 말인가(빈칸·끝 마침표 차이는 같다). */
 const same = (a: string, b: string) => a.replace(/\s+/g, "").replace(/[.。]+$/, "") === b.replace(/\s+/g, "").replace(/[.。]+$/, "");
 
-/** 판단 기록 → 메시지 상자 문장(사실로만): 맞은 규칙 하나의 허락 한 줄. 행동을 고른 유효 판단이 아니거나 규칙을 특정하지 못하면 빈 목록. */
+/** 판단 기록 → 메시지 상자 문장(사실로만): 판단이 낸 화살표(PAM 답) 하나의 허락 한 줄. 행동을 고른 유효 판단이 아니거나 화살표가 없거나 그 행동이 아니면 빈 목록.
+ *  묻기는 허락 문장이 없다: 로봇 말 「컵을 치울지 여쭤볼게요.」(SAY_TEXT.decided)만 나간다(사용자 답 2026-11-19).
+ *  배운 화살표라도 seed와 같은 트리거(묻기 자리를 바꾼 컵 치우기)면 사용자가 정한 짧은 꼴(RULE_IF), 새 트리거면 on·when을 줄이지 않는다. */
 export function decisionLines(e: Decision): string[] {
-  const action = e.action;
-  const trigger = e.status === "valid" && action && e.fsm?.matched ? e.fsm.trigger : null;
-  if (!action || !trigger) return [];
-  return [`${ruleIf({ trigger, action, learned: e.fsm?.learned ?? false })} ${TASK_SAY[action]?.may ?? `${josa(action, "을/를")} 해도`} 된다고 하셨어요`];
+  const f = e.status === "valid" ? e.fsm : null;
+  if (!e.action || !f?.on || f.action !== e.action) return [];
+  if (e.action === ASK_ACTION) return [];
+  const short = !f.learned || (f.from !== null && seedTrigger(f.from, f.on, f.when));
+  return [`${ruleIf({ trigger: f.when ? `${f.on} ${f.when}` : f.on, action: e.action, learned: !short })} ${TASK_SAY[e.action]?.may ?? `${josa(e.action, "을/를")} 해도`} 된다고 하셨어요`];
 }
 
 export interface ThoughtFeed {

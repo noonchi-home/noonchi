@@ -21,6 +21,9 @@ describe("parseMessage", () => {
     };
     expect(parseMessage(JSON.stringify({ type: "goal", goal }))).toEqual({ type: "goal", goal });
   });
+  it("사람 줄 메시지도 받는다(받지 않으면 시간 줄 사람 줄이 비어 있다)", () => {
+    expect(parseMessage('{"type":"person","state":"drinking","name":"먹거나 마시는 중","since_ms":1,"source":"world","decision_id":null}')?.type).toBe("person");
+  });
   it("모르는 type·깨진 JSON은 null", () => {
     expect(parseMessage("{oops")).toBeNull();
     expect(parseMessage(JSON.stringify({ type: "nope" }))).toBeNull();

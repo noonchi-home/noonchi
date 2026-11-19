@@ -15,7 +15,7 @@ export interface PendingGoal {
   /** goal-<번호>(실행 추적 안에서 하나씩, 세대다). */
   id: string;
   action: string;
-  /** 그 규칙이 있는 FSM 상태 id와 트리거 글. */
+  /** 세운 때의 사람 상태 id와 그 상태에서 나가는 화살표의 사건(on) 글. */
   state: string;
   trigger: string;
   /** 대상 World State 물건 id(지금 따라가는 id, 아직 모르면 null)와 종류. */

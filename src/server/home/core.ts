@@ -3,7 +3,7 @@
 // 칸은 그 잇기가 채우기 전에는 읽지 않는다. 말풍선 카드 speak는 say.ts가 채우기 전까지 아무것도 하지 않는다.
 import { modeNow, type ExecutionTracker, type LessonStore, type Looker, type Mode, type PlanHub, type loadActConfig } from "../../act/index.js";
 import type { Agent, ApprovalStore, Observer, PlaceInfo, Planner, Policy } from "../../agent/index.js";
-import type { Decider, ThoughtFeed } from "../../brain/index.js";
+import type { Decider, PersonLane, ThoughtFeed } from "../../brain/index.js";
 import type { BrainLog, SeenEvent } from "../../contract/events.js";
 import type { PendingGoal } from "../../contract/goal.js";
 import type { HabitFsm } from "../../contract/habit.js";
@@ -103,6 +103,8 @@ export class HomeCore {
   goal: PendingGoal | null = null;
   /** 마지막으로 보낸 습관 FSM 그림 자료(src/brain/habit.ts, 접속한 대시보드에 다시 보낸다). 판단 전이면 null. */
   habit: HabitFsm | null = null;
+  /** 시간 줄 사람 줄 자료(src/brain/person.ts): 판단·World State로 정한 지금 사람 상태(접속한 대시보드에 마지막 것을 다시 보낸다). */
+  person: PersonLane | null = null;
   lookSay: { place: string; atMs: number } | null = null;
   reflected: { atMs: number; learned: number; active: number } | null = null;
   serviceSaid: { text: string; atMs: number } | null = null;

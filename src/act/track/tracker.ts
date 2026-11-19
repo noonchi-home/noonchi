@@ -1,8 +1,6 @@
 // 실행 추적: 판단 → 계획(에이전트 계획 모드) → 실행 중 → 완료 또는 실패. 단계마다 execution 기록을 낸다(plan_id는 plan:<판단 id>).
 // 판단 하나마다 한 번만 정한다: 늦은 답·판단 실패·대기·진행 중(또는 계획을 만드는 중)인 행동과 같은 행동은 기록만 하고, 계획 전 검사(LLM 없음)를
 // 통과하면 에이전트를 계획 모드로 한 번 부른다(planner). 같은 행동은 planGapMs 안에 다시 부르지 않는다(「가까이 본 뒤 다시 판단」으로 닫은 계획은 세지 않는다). 주기 tick은 에이전트를 부르지 않는다.
-// 계획을 만들지 않는 행동(TaskSpec.plan false, 컵 그대로 두기): 계획 전 검사를 통과하면 에이전트를 부르지 않고 실제 폰에도 보내지 않으며
-// 그 판단 줄에 「그대로 둠」만 남긴다(leftGapMs에 한 번). 진행 중인 다른 계획은 바꾸지 않는다. 대시보드 말풍선 카드는 leftAt()으로 그 시각을 본다.
 // 손으로 켜는 위험 가전(코치 계획의 do 단계, AgentStep.hand가 위험 목록 가전을 켬): 그 단계가 되면 명령보다 먼저 안전 문구와 함께 묻는다(승인·거절, 단계 id :hand).
 // 승인 뒤에만 켜라는 명령을 보내고, 거절이면 취소로 닫는다. 답은 기억하지 않는다(다음 판에도 또 묻는다). 묻는 동안은 「완료」·말·비전으로 넘어가지 않는다.
 // 켜라는 명령을 보낸 가전은 작동 한 번이 끝난 것을 확인할 때까지 「켠 것」(hot)으로 본다. 켜기 회차(Run.onAt: 회차 번호·켜라고 한 시각·부탁 시각)는 풀어도 남는다.
@@ -105,8 +103,17 @@ export interface DeviceRunner {
   cancel(token: string): void;
 }
 
+/** 말 부탁(말 요청 에이전트 request_task·묻기 답): 행동 이름, 들은 말, 받은 때, 그때까지 보낸 마지막 PAM 요청 번호. */
+export interface SpeechRequest { task: string; heard: string; atMs: number; afterSeq: number; via?: "answer" }
+
 export interface TrackerOptions {
   plans: PlanHub;
+  /** 지금까지 보낸 마지막 PAM 요청 번호(src/brain/decide.ts sentSeq). 묻기 답 → 말 부탁이 afterSeq로 쓴다. 없으면 0. */
+  sentSeq?: () => number;
+  /** 말 부탁으로 만든 판단(source speech)을 받는다: 서버가 판단 기록으로 남긴다(src/brain/decide.ts logSpeech). */
+  onSpeech?: (d: DecisionRecord) => void;
+  /** 계획 전 검사가 분명한 까닭으로 막은 판단의 계획 id(src/act/track/start.ts): 서버가 판단에 넘겨 그 화살표를 기다리지 않게 한다(src/brain/decide.ts onRefused). */
+  onRefused?: (planId: string) => void;
   world: () => WorldView;
   /** 계획 전 검사(src/act/check.ts checkDecision). 에이전트를 부르기 전에 본다. 없으면 통과. */
   precheck?: (d: DecisionRecord) => CheckResult;
@@ -115,9 +122,9 @@ export interface TrackerOptions {
   /** 에이전트 계획 모드(src/agent/planner.ts). 판단 하나에 한 번 부른다. 새 판단·「그만」·멈춤이면 signal을 끊는다.
    *  ahead가 있으면 미리 세운 목표의 계획이다(src/act/track/goal.ts, 계획 입력에 [미리 세운 목표] 줄, 목표 물건만 받는다). */
   planner: (d: DecisionRecord, signal: AbortSignal, ahead?: PlanAhead) => PlanResult | Promise<PlanResult>;
-  /** 습관 FSM: 그날 기억(판본)과 판단이 마지막으로 맞은 상태(src/brain/decide.ts fsmState). 사람이 쓰는 것을 보면 한 걸음 앞 규칙으로 목표를 세운다(goal.ts).
+  /** 사람 상태 FSM: 그날 기억(판본)과 마지막 판단의 사람 상태(src/brain/decide.ts fsmState). 사람이 쓰는 것을 보면 지금 상태에서 나가는 화살표로 목표를 세운다(goal.ts).
    *  없으면 목표를 세우지 않는다. */
-  habit?: () => { memory: PamMemory; kind: "list" | "fsm"; state: string | null | undefined; version: number } | null;
+  habit?: () => { memory: PamMemory; kind: "list" | "fsm"; state: string | null; version: number } | null;
   /** 미리 만든 계획을 지금 판단·World State로 다시 검사해 그 판단의 계획으로 낸다(src/agent/planTools.ts resubmit). 없으면 미리 만든 계획을 쓰지 않는다.
    *  rename: 계획의 물건 id → 지금 묶을 World State id(대신 물건·같은 컵의 다른 id, goal.ts take). */
   reuse?: (d: DecisionRecord, plan: AgentPlan, rename?: Readonly<Record<string, string>>) => PlanResult;
@@ -160,8 +167,6 @@ export interface TrackerOptions {
   askMs?: number;
   /** 같은 행동의 계획을 다시 만들기 전 기다리는 시간(ms). */
   planGapMs?: number;
-  /** 계획 없는 행동(그대로 두기)의 기록을 다시 남기기 전 기다리는 시간(ms). */
-  leftGapMs?: number;
   /** 수업 기록(코치 계획의 잘한 단계 말 줄이기). 없으면 기록하지 않고 모든 명령을 읽는다. */
   lessons?: LessonBook;
   /** 코치 계획 중 다른 행동을 본 것 같을 때(관찰 모드 계기 off_track, src/act/look.ts). 받았으면 true(그때만 센다). 없으면 부르지 않는다. */
@@ -221,7 +226,7 @@ export interface TrackerOptions {
 /** 기본값: 다시 읽기 30초, 비전 상태 0.5초에 한 번, 검사 3초, 승인 답 2분, 같은 행동 다시 계획 15초, 그대로 두기 기록 60초에 한 번, 멈춘 단계 8초·단계마다 3번,
  *  끄기 안내 다시 읽기 2분, 다시 걸기 10분, 끄기 단계 부탁 20초. 단계 시간 한도는 계획 단계마다 있다. */
 export const TRACK_DEFAULTS = {
-  repeatMs: 30_000, visionMs: 500, recheckMs: 3000, askMs: 120_000, planGapMs: 15_000, leftGapMs: 60_000, stallMs: 8000, stallMax: 3, offHoldMs: 120_000, strayGapMs: 6000, strayMax: 2, tellHoldMs: 8000,
+  repeatMs: 30_000, visionMs: 500, recheckMs: 3000, askMs: 120_000, planGapMs: 15_000, stallMs: 8000, stallMax: 3, offHoldMs: 120_000, strayGapMs: 6000, strayMax: 2, tellHoldMs: 8000,
   rearmMs: 600_000, showAskMs: 20_000,
 } as const;
 
@@ -232,7 +237,7 @@ export class ExecutionTracker {
     const clock = o.clock ?? { now: () => Date.now() };
     const cfg: TrackConfig = {
       repeatMs: o.repeatMs ?? TRACK_DEFAULTS.repeatMs, visionMs: o.visionMs ?? TRACK_DEFAULTS.visionMs, recheckMs: o.recheckMs ?? TRACK_DEFAULTS.recheckMs,
-      askMs: o.askMs ?? TRACK_DEFAULTS.askMs, planGapMs: o.planGapMs ?? TRACK_DEFAULTS.planGapMs, leftGapMs: o.leftGapMs ?? TRACK_DEFAULTS.leftGapMs,
+      askMs: o.askMs ?? TRACK_DEFAULTS.askMs, planGapMs: o.planGapMs ?? TRACK_DEFAULTS.planGapMs,
       stallMs: o.stallMs ?? TRACK_DEFAULTS.stallMs, stallMax: o.stallMax ?? TRACK_DEFAULTS.stallMax, offHoldMs: o.offHoldMs ?? TRACK_DEFAULTS.offHoldMs,
       strayGapMs: o.strayGapMs ?? TRACK_DEFAULTS.strayGapMs, strayMax: o.strayMax ?? TRACK_DEFAULTS.strayMax, tellHoldMs: o.tellHoldMs ?? TRACK_DEFAULTS.tellHoldMs,
       rearmMs: o.rearmMs ?? TRACK_DEFAULTS.rearmMs, showAskMs: o.showAskMs ?? TRACK_DEFAULTS.showAskMs,
@@ -257,14 +262,14 @@ export class ExecutionTracker {
     return r && { planId: r.plan.view.id, state: r.state };
   }
 
+  /** 화살표 없는 PAM 답이 미리 세운 목표의 트리거면 그 목표 행동(goal.ts triggerOf), 아니면 null. 판단(Decider goalTrigger)이 기록을 내기 전에 묻는다. */
+  goalTrigger(d: DecisionRecord): string | null {
+    return this.core.goal.triggerOf(d);
+  }
+
   /** 미리 세운 목표(goal.ts). 없으면 null. */
   goal(): PendingGoal | null {
     return this.core.goal.current();
-  }
-
-  /** 마지막으로 「그대로 둠」을 기록한 시각(Date.now 시계, 계획 updatedAt과 같은 시계). 없으면 null. */
-  leftAt(): number | null {
-    return this.core.start.leftAt();
   }
 
   /** 실제 폰에 띄운 지금 명령·질문(답을 기다리는 중). 승인·다시 묻기·질문 단계는 질문(ask), 그 밖은 부탁(command). 없으면 null. */
@@ -274,6 +279,11 @@ export class ExecutionTracker {
 
   onDecision(d: DecisionRecord): void {
     this.core.start.onDecision(d);
+  }
+
+  /** 말 부탁: 들은 말 부탁을 판단 기록 꼴(source speech)로 만들어 판단 받기 길에 넣는다(계획 전 검사·계획 모드·승인·실행이 PAM 판단과 같다). */
+  onRequest(r: SpeechRequest): void {
+    this.core.start.request(r);
   }
 
   /** 폰 눈(맞춘 자세)의 평면 자리 [x, z]. 맞추기 전 추정 눈은 쓰지 않는다. 이동 단계는 다음 tick에 본다. */

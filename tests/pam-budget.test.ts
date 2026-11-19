@@ -2,12 +2,15 @@
 import { describe, expect, it } from "vitest";
 import { PamBudgetError, buildReflectMessages, checkBudget, pamLimits, reflectRequest } from "../src/brain/pam/index.js";
 
-const MEMORY = { initial_state: "drinking", states: [
-  { id: "drinking", description: "마시는 중", rules: [], next: [{ to: "left_cup", on: "컵을 두고 떠남" }] },
-  { id: "left_cup", description: "컵을 두고 자리를 비움", rules: [{ trigger: "빈 컵이 식탁에 남음", action: "컵 치우기" }], next: [] }] };
+const MEMORY = { initial_state: "away", states: [
+  { id: "drinking", description: "마시는 중", activity: ["drinking"], next: [{ to: "*", on: "컵을 두고 떠남", action: "컵 치우기" }] },
+  { id: "away", description: "자리에 없음", activity: [], next: [{ to: "drinking", on: "돌아와 마심" }] }] };
 const S = { maxModelLen: 32768, maxTokens: { predictor: 2048, reflector: 16384 } };
-const reflect = (obs: string, actions: string) => buildReflectMessages(reflectRequest({ contract: "pam-reflect/2", day: "2026-11-07",
-  memory_kind: "fsm", memory: MEMORY, observation_text: obs, action_summary: actions, feedback: null })).messages;
+const CANDIDATES = { initial_state: "away", states: [
+  { id: "drinking", description: "마시는 중", activity: ["drinking"], next: [], rules: [{ to: "*", action: "컵 치우기", candidates: [{ on: "컵을 두고 떠남" }] }] },
+  { id: "away", description: "자리에 없음", activity: [], next: [{ to: "drinking", on: "돌아와 마심" }], rules: [] }] };
+const reflect = (obs: string, actions: string) => buildReflectMessages(reflectRequest({ contract: "pam-reflect/3", day: "2026-11-07",
+  memory_kind: "fsm_candidates", memory: CANDIDATES, observation_text: obs, action_summary: actions, feedback: null })).messages;
 
 describe("문맥 길이", () => {
   it("알린 한도 안의 글은 max_tokens와 함께 들어간다", () => {

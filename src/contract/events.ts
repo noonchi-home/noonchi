@@ -10,7 +10,7 @@ import type { ControlMode } from "./setup.js";
 import type { CameraView, Mask, SceneObservation } from "./observe.js";
 import type { DetLabel } from "../world/vocab.js";
 import type { VlmMissing, WorldChangeKind, WorldView, YoloMissing } from "./world.js";
-import type { Prediction, FsmAt } from "./pam.js";
+import type { Prediction, FsmStep } from "./pam.js";
 import type { ServiceKind } from "./service.js";
 
 // 좌표
@@ -134,13 +134,18 @@ export type BrainLog =
     type: "decision"; at_ms: number; id: string; seq: number; text_sent: string; status: "valid" | "failed";
     /** 이번 판단의 PAM LLM 사용량(답을 받았을 때만, 틀린 답·잘린 답이어도). 예전 기록에는 없다. */
     usage?: PamUsage;
-    prediction: { observation: string; reasoning: string; task_index: number } | null; action: string | null;
-    /** 판단 때 지금 FSM(src/brain/decision.ts fsmNow): 고른 행동의 규칙이 있으면(matched) 그 상태·트리거, 대기·규칙 없는 행동이면 직전 상태(처음이면 기억의 처음 상태)에
-     *  트리거 없음. seed에 없는 규칙이 있으면 learned. 실패·list 기억이면 null. 예전 기록에는 없거나 matched가 없다. */
-    fsm?: { state: string | null; trigger: string | null; learned: boolean; matched?: boolean } | null;
+    prediction: Prediction | null; action: string | null;
+    /** PAM 답의 사람 상태와 일어난 화살표(src/brain/decision.ts fsmStep). 실패·list 기억·말 부탁이면 null. 예전 기록에는 없거나 옛 모양이다. */
+    fsm?: FsmStep | null;
+    /** 판단이 버린 늦은 답(풀린 화살표를 다시 낸 답, src/brain/decide.ts): 행동 없이 기록만 한다. */
+    late?: true;
+    /** 화살표 없는 PAM 답을 미리 세운 목표의 트리거로 보고 그 목표 행동을 action에 넣었다(src/act/track/goal.ts triggerOf). fsm은 PAM 답 그대로다. */
+    goal?: true;
     /** 고른 행동이 어느 모드로 하는 행동인가(TaskSpec.coach, src/act/tasks.ts): 코치 행동이면 coach, 아니면 noonchi. 대기·실패는 null.
      *  대시보드 메시지 상자 머리(「코치 모드」·「눈치 모드」, 대기면 없음)가 이 값만 쓴다. 예전 기록에는 없다. */
     assist?: "noonchi" | "coach" | null;
+    /** 말 부탁(말 요청 에이전트 request_task·묻기 답)으로 만든 판단: PAM을 부르지 않았다. via answer는 묻기 답에서 온 부탁. 예전 기록·PAM 판단에는 없다. */
+    source?: "speech"; via?: "answer";
     error?: string; memory_version: number; world: DecisionWorld;
   }
   /** reason: 그 실행 기록의 까닭(계획 검사에서 버린 계획이면 첫 틀린 단계와 이유). 없으면 칸이 없다. */
@@ -151,10 +156,14 @@ export type BrainLog =
     type: "reflection"; at_ms: number; day: string; ok: boolean; version: number | null; applies_day: string | null; text: string;
     /** 이번 반성의 PAM LLM 사용량(답을 받았을 때만). 예전 기록에는 없다. */
     usage?: PamUsage;
-    /** 이번 반성이 새로 더한 규칙, 새 판본에서 지금 적용 중인 seed에 없는 규칙(둘 다 코치 행동 빼고), 반성 뒤 검사가 뺀 규칙(src/brain/history/habits.ts). 성공한 fsm 반성에만 있다. */
-    learned?: { state: string; trigger: string; action: string }[];
-    active?: { state: string; trigger: string; action: string }[];
-    dropped?: { state: string; trigger: string; action: string; kept: boolean; reason: "habit" | "chance" | "too_few" | "coach" | "unchanged"; seen?: number; fired?: number; p?: number; conditions?: string[] }[];
+    /** 이번 반성이 새로 더한 화살표, 새 로봇 판본에서 seed에 없는 화살표(둘 다 코치 행동 빼고), 반성 뒤 검사가 뺀 후보(src/brain/history/habits.ts). 성공한 fsm 반성에만 있다. */
+    learned?: { from: string; to: string; on: string; when: string | null; action: string }[];
+    active?: { from: string; to: string; on: string; when: string | null; action: string }[];
+    dropped?: { from: string; to: string; on: string; action: string; kept: boolean; reason: "habit" | "chance" | "too_few" | "coach" | "unchanged" | "settings"; seen?: number; fired?: number; p?: number; conditions?: string[] }[];
+    /** 반성이 낸 기억을 쓰지 않은 까닭(코드 검사·뜻 검사를 두 번 다 지나지 못함). fsm 반성에서 통과했으면 null. 예전 기록에는 없다. */
+    rejected?: string | null;
+    /** 채택 검사 결과(후보마다 n·k·못 봄·비율·p0·p·통과, src/brain/pam/adopt.ts). 검사한 후보가 있을 때만. */
+    checks?: { state: string; action: string; on: string; when: string | null; n: number; k: number; unknown: number; rate: number; base_rate: number; p0: number; p_value: number; passed: boolean }[];
   }
   /** 관찰 모드가 고른 것 하나(src/act/look.ts): 까닭(A 멈춘 단계·B 판단 전 보기), 대상 id, 고른 도구와 모델이 댄 까닭, 기록 글, 결과(가까이 보기 결과·부탁을 보냈는가, 기다리기는 null).
    *  A면 그 계획·단계 id가 있다. */
@@ -297,6 +306,11 @@ export interface PhotoRecord {
   pose_note?: "not_aligned";
 }
 
+/** 시간 줄 사람 줄 자료(src/brain/person.ts PersonLane): 사람 상태가 바뀔 때만 하나. state는 사람 상태 FSM 상태 id(임시 상태 ~<값>),
+ *  name은 화면 이름(FSM_STATE_TEXT, 임시 상태는 STATE_TEXT), since_ms는 그 상태가 된 때(판단 시각이거나 World State를 받은 때),
+ *  source는 정한 곳(판단의 PAM 답·판단 사이 World State 하는 일), decision_id는 판단 id(World State면 null). */
+export interface PersonMessage { type: "person"; state: string; name: string; since_ms: number; source: "decision" | "world"; decision_id: string | null }
+
 /** /events로 화면이 받는 메시지 전체. 서버의 send·broadcast와 같은 모양이다(src/server/app.ts·home/, src/observe/pipeline.ts, src/phone/feed.ts). */
 export type ServerMessage =
   | { type: "hello"; devices: number; provider: string | null; hub: string; home: string | null }
@@ -324,7 +338,12 @@ export type ServerMessage =
   /** 미리 세운 목표(src/act/track/goal.ts): 바뀔 때마다, 그리고 접속 때 마지막 것. 대시보드는 세움·떠남인 동안 메시지 상자 알약으로 보인다. */
   | { type: "goal"; goal: PendingGoal }
   /** 습관 FSM 그림 자료(src/brain/habit.ts): 판단이 PAM에 보낸 기억 판본이 바뀔 때, 그리고 접속 때 마지막 것. 대시보드 메시지 상자 FSM 카드가 그린다. */
-  | { type: "habit"; habit: HabitFsm };
+  | { type: "habit"; habit: HabitFsm }
+  /** 시간 줄 사람 줄: 사람 상태가 바뀔 때, 그리고 접속 때 마지막 것. */
+  | PersonMessage
+  /** 지금 실제 폰에 낸 명령 한 줄(명령 text, src/contract/phone.ts). 명령을 지우면(command_clear) null, 승인 흐름 질문(승인·거절, 계속·그만)은 싣지 않고 null. 글이 바뀔 때마다, 그리고 접속 때 명령이 있으면 한 번.
+   *  대시보드 비전 미니맵만 보기(?view=minimap)가 아래쪽 자막으로 보인다. */
+  | { type: "phone_command"; text: string | null };
 
 export interface DecisionRecord {
   id: string;
@@ -337,8 +356,12 @@ export interface DecisionRecord {
   prediction: Prediction | null;
   /** 고른 행동(대기·실패면 null). */
   action: string | null;
-  /** 고른 행동의 FSM 규칙 자리(그때 보낸 기억에서 찾는다). 대기·실패·못 찾으면 null. */
-  fsm?: FsmAt | null;
+  /** PAM 답의 사람 상태와 일어난 화살표(src/brain/decision.ts fsmStep). 실패·list 기억이면 null. */
+  fsm?: FsmStep | null;
+  /** 판단이 버린 늦은 답(풀린 화살표를 같은 번호 이하 요청이 다시 낸 답): action은 null이고 실행 추적은 「앞선 판단이라 쓰지 않음」으로 기록만 한다. */
+  late?: true;
+  /** 화살표 없는 PAM 답을 미리 세운 목표의 트리거로 보고 그 목표 행동을 action에 넣었다(판단 goalTrigger). fsm은 PAM 답 그대로다. */
+  goal?: true;
   error?: string;
   /** 이번 판단의 PAM LLM 사용량(답을 받았을 때만). */
   usage?: PamUsage;
@@ -346,4 +369,10 @@ export interface DecisionRecord {
   /** 이 판단에 보낸 행동 목록(돕는 방식마다 다르다). 계획 전·실행 전 검사가 이 목록으로 본다. */
   tasks?: string[];
   world: DecisionWorld;
+  /** 말 부탁(말 요청 에이전트 request_task·묻기 답)으로 만든 판단(src/act/track/start.ts request): seq는 0이고 PAM 판단 번호와 섞지 않는다. */
+  source?: "speech";
+  /** 묻기 답(「치워 주세요」)에서 온 말 부탁. */
+  via?: "answer";
+  /** 말 부탁을 받은 때까지 판단이 보낸 마지막 PAM 요청 번호(src/brain/decide.ts sentSeq): 이 번호 이하 요청의 PAM 판단은 이 부탁의 계획을 바꾸지 않는다. */
+  afterSeq?: number;
 }

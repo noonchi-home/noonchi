@@ -1,41 +1,35 @@
-// 미리 세울 목표 고르기(src/brain/goal.ts): 습관 FSM의 지금 상태와 한 걸음 뒤 상태에서, 사람이 쓰는 종류에 손대는 「떠난 뒤 하는 일」(afterUse) 규칙 하나를 고른다.
+// 미리 세울 목표 고르기(src/brain/goal.ts): 사람 상태 FSM의 지금 상태에서 나가는 화살표 가운데, 사람이 쓰는 종류에 손대는 「떠난 뒤 하는 일」(afterUse) 행동 하나를 고른다.
 import { describe, expect, it } from "vitest";
 import { goalAhead } from "../src/brain/goal.js";
-import { CUP_FSM_MEMORY, type FsmMemory } from "../src/brain/decision.js";
+import { CUP_FSM_MEMORY } from "../src/brain/decision.js";
 import { TASKS, tasksFor } from "../src/act/tasks.js";
+import { LEARNED_FSM_MEMORY, learnedFsm } from "../scripts/learned-memory.js";
 
-const NOONCHI = tasksFor("noonchi");
-const LEFT_CUP = CUP_FSM_MEMORY.states.find((s) => s.id === "left_cup")!;
-const pick = (state: string | null | undefined, o: { cls?: string; tasks?: readonly string[]; memory?: FsmMemory } = {}) =>
-  goalAhead({ memory: o.memory ?? CUP_FSM_MEMORY, kind: "fsm", state, tasks: o.tasks ?? NOONCHI, cls: o.cls ?? "cup" });
-
-describe("미리 세울 목표 고르기(습관 FSM 한 걸음 앞)", () => {
-  it("마시는 중(drinking)에 컵을 쓰면 한 걸음 뒤 left_cup의 「컵 치우기」를 고르고, next 글은 컵을 두고 떠나는 글이다", () => {
-    expect(pick("drinking")).toEqual({ state: "left_cup", trigger: LEFT_CUP.rules[0]!.trigger, action: "컵 치우기", on: "사용자가 컵을 두고 자리를 떠나 보이지 않는다." });
+describe("goalAhead (사람 상태 FSM)", () => {
+  const tasks = tasksFor("noonchi");
+  it("배운 뒤 기억에서 마시는 중이면 그 상태에서 나가는 배운 화살표의 손대는 다 쓴 뒤 행동(컵 치우기)을 고른다", () => {
+    expect(goalAhead({ memory: LEARNED_FSM_MEMORY, kind: "fsm", state: "drinking", tasks, cls: "cup" })).toEqual({
+      state: "drinking", index: 0, to: "*", on: "사용자가 먹거나 마시기를 끝내고 다른 일로 넘어간다.", when: null, action: "컵 치우기",
+    });
   });
-
-  it("판단 전(undefined)이면 처음 상태(drinking)에서 보고, 앞 판에 치워 left_cup에 머물러 있으면 그 상태의 규칙으로 고른다", () => {
-    expect(pick(undefined)?.action).toBe("컵 치우기");
-    expect(pick("left_cup")).toMatchObject({ state: "left_cup", action: "컵 치우기", on: null });
+  it("배우기 전(seed)에는 떠날 때 화살표가 묻기라 목표를 세우지 않는다(목표는 배운 화살표에서만)", () => {
+    expect(goalAhead({ memory: CUP_FSM_MEMORY, kind: "fsm", state: "drinking", tasks, cls: "cup" })).toBeNull();
+    expect(goalAhead({ memory: CUP_FSM_MEMORY, kind: "fsm", state: "watching_tv", tasks, cls: "cup" })).toBeNull();
   });
-
-  it("afterUse 행동만 고른다: TV 보는 중 한 걸음 뒤의 「컵에 콜라 따라 주기」는 컵에 손대는 행동이어도 사람이 있는 동안 하는 일이라 빠진다", () => {
+  it("TV 보는 중에서도 그 상태의 컵 치우기를 배웠으면 세운다(옛 FSM은 처음 상태가 아니면 못 골랐다)", () => {
+    expect(goalAhead({ memory: LEARNED_FSM_MEMORY, kind: "fsm", state: "watching_tv", tasks, cls: "cup" })).toBeNull();
+    expect(goalAhead({ memory: learnedFsm(["drinking", "watching_tv"]), kind: "fsm", state: "watching_tv", tasks, cls: "cup" })).toMatchObject({ when: "같이 마시는 중이었다.", action: "컵 치우기" });
+  });
+  it("상태를 모르면, 자기 화살표(물 채우기)뿐이면, 다른 종류면 세우지 않는다", () => {
+    expect(goalAhead({ memory: LEARNED_FSM_MEMORY, kind: "fsm", state: null, tasks, cls: "cup" })).toBeNull();
+    expect(goalAhead({ memory: LEARNED_FSM_MEMORY, kind: "fsm", state: "cooking", tasks, cls: "cup" })).toBeNull();
+    expect(goalAhead({ memory: LEARNED_FSM_MEMORY, kind: "fsm", state: "drinking", tasks, cls: "bowl" })).toBeNull();
+  });
+  it("afterUse 행동만 고른다: 컵에 손대는 채우기·따르기는 사람이 있는 동안 하는 일이라 빠지고, 지금 행동 목록에 없으면(코치 모드) 세우지 않는다", () => {
     expect(TASKS["컵 치우기"]!.afterUse).toBe(true);
     expect(TASKS["컵에 콜라 따라 주기"]!.afterUse).toBeUndefined();
     expect(TASKS["컵에 물 채워 주기"]!.afterUse).toBeUndefined();
-    expect(pick("watching_tv")?.action).toBe("컵 치우기");
-  });
-
-  it("세우지 않는 때: 쓰는 종류가 다름(병), 지금 행동 목록에 없음(코치 모드), list 기억, 한 걸음 안에 없음(cooking)", () => {
-    expect(pick("drinking", { cls: "bottle" })).toBeNull();
-    expect(pick("drinking", { tasks: tasksFor("coach") })).toBeNull();
-    expect(goalAhead({ memory: { rules: [{ trigger: "t", action: "컵 치우기" }] }, kind: "list", state: undefined, tasks: NOONCHI, cls: "cup" })).toBeNull();
-    expect(pick("cooking")).toBeNull();
-  });
-
-  it("지금 상태를 정할 수 없으면(null) 모든 상태를 보고, 반성이 같은 행동 규칙을 다른 상태에 더해도 행동이 하나라 고르며 한 걸음 뒤 상태의 규칙을 먼저 본다", () => {
-    expect(pick(null)?.action).toBe("컵 치우기");
-    const learned: FsmMemory = { ...CUP_FSM_MEMORY, states: CUP_FSM_MEMORY.states.map((s) => (s.id === "drinking" ? { ...s, rules: [...s.rules, { trigger: "배운 트리거", action: "컵 치우기" }] } : s)) };
-    expect(pick("drinking", { memory: learned })).toMatchObject({ state: "left_cup", action: "컵 치우기" });
+    expect(goalAhead({ memory: LEARNED_FSM_MEMORY, kind: "fsm", state: "drinking", tasks: tasksFor("coach"), cls: "cup" })).toBeNull();
+    expect(goalAhead({ memory: { rules: [{ trigger: "t", action: "컵 치우기" }] }, kind: "list", state: "drinking", tasks, cls: "cup" })).toBeNull();
   });
 });

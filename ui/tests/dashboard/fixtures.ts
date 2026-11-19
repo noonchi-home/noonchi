@@ -15,6 +15,7 @@ import { habitView } from "../../../src/brain/habit.ts";
 import { taskOf } from "../../../src/act/tasks.ts";
 import { BOX_NAME } from "../../src/dashboard/words";
 import type { SeenEvent } from "../../../src/contract/events.ts";
+import { LEARNED_FSM_MEMORY } from "../../../scripts/learned-memory.ts";
 
 export const PHONE_URL = "http://192.168.0.7:8210/phone/";
 
@@ -94,7 +95,7 @@ export const PLAN = planAt(1);
 
 export const CLEAR_CUP = "컵 치우기";
 export const REASON = "사람이 자리를 비운 뒤에도 컵이 식탁에 남아 있어요.";
-export const LEFT_CUP_STATE = "컵을 두고 자리를 뜸";
+export const LEFT_CUP_STATE = "자리에 없음";
 /** 메시지 상자 줄(src/brain/thought.ts 규칙 줄, 이어 말풍선 말): 컵 치우기 판단의 흐름(허락받은 규칙 → 클로이드가 할 일). */
 export const MESSAGES = [
   { id: "pam-1@1794214809000:0", text: "컵을 두고 자리를 뜨면 치워도 된다고 하셨어요" },
@@ -105,7 +106,7 @@ export const TALK: Talk = { lines: MESSAGES };
 /** 지켜보기의 메시지 상자(말풍선 카드 말 한 줄). */
 export const WATCH_TALK: Talk = { lines: [{ id: "say@0:0", text: "지켜보고 있어요." }] };
 /** 시연 습관 FSM 그림(서버 src/brain/habit.ts habitView, 판본 1). */
-export const HABIT = habitView(CUP_FSM_MEMORY, 1);
+export const HABIT = habitView(LEARNED_FSM_MEMORY, 1);
 /** 시간 줄의 지금(ms, 화면 시험은 이 때로 멈춰 그린다)과 그보다 sec초 앞. */
 export const TIMELINE_NOW = 1_794_214_830_000;
 const ago = (sec: number) => TIMELINE_NOW - Math.round(sec * 1000);
@@ -129,17 +130,17 @@ export const TIMELINE_CLEAR: TimelineData = {
   gap: { from: ago(9.3), to: ago(6), text: "3.3초" },
 };
 
-/** 컵 갈래 판단 고정 자료: 행동, 그 규칙이 있는 FSM 상태 id·트리거(src/brain/decision.ts CUP_FSM_MEMORY와 같다, data.test.ts가 견준다), PAM의 생각 한 문장. */
-export interface Branch { action: string; state: string; trigger: string; reasoning: string }
+/** 컵 갈래 판단 고정 자료: 행동, 일어난 화살표(출발 상태 from·번호 index·도착 to·사건 on·조건 when, 배운 뒤 기억 src/brain/decision.ts CUP_FSM_MEMORY와 같은 글),
+ *  그 뒤 사람 상태(state), seed에 없던 화살표인가(learned), PAM의 생각 한 문장. */
+export interface Branch { action: string; state: string; from: string; index: number; to: string; on: string; when?: string; learned?: boolean; reasoning: string }
 export const BRANCHES = {
-  clear: { action: CLEAR_CUP, state: "left_cup", trigger: "사용자가 컵을 식탁 등에 두고 자리를 비웠고, 아무도 컵을 들거나 만지지 않는다.", reasoning: REASON },
-  leave: { action: "컵 그대로 두기", state: "left_cup", trigger: "사용자가 자리를 비웠지만 컵에 음료가 남아 있다.", reasoning: "컵에 음료가 남아 있어 돌아와서 마실 수 있어요." },
-  water: { action: "컵에 물 채워 주기", state: "drinking", trigger: "사용자가 식탁에서 먹는 중이고 식탁 위 컵이 비어 있으며 컵을 들거나 만지지 않는다.", reasoning: "식사 중인데 컵이 비어 있어요." },
-  cola: { action: "컵에 콜라 따라 주기", state: "watching_tv", trigger: "사용자가 TV를 보는 중이고 곁의 컵이 비어 있으며 컵을 들거나 만지지 않는다.", reasoning: "TV를 보는 중인데 컵이 비어 있어요." },
+  clear: { action: CLEAR_CUP, state: "away", from: "drinking", index: 0, to: "*", on: "사용자가 먹거나 마시기를 끝내고 다른 일로 넘어간다.", learned: true, reasoning: REASON },
+  water: { action: "컵에 물 채워 주기", state: "drinking", from: "drinking", index: 1, to: "drinking", on: "사용자가 마시던 것을 다 마시고 계속 먹는다.", when: "식탁에 앉아 있다.", reasoning: "식사 중인데 컵이 비어 있어요." },
+  cola: { action: "컵에 콜라 따라 주기", state: "watching_tv", from: "watching_tv", index: 0, to: "watching_tv", on: "사용자가 TV를 보며 마시던 것을 다 마신다.", when: "같이 마시는 중이었다.", reasoning: "TV를 보는 중인데 컵이 비어 있어요." },
 } as const satisfies Record<string, Branch>;
 /** 코치 판단 고정 자료(라면 끓이기 알려 주기, FSM 상태 cooking)와 13단계 계획(사람 단계·알림·기다리기). */
 export const COACH: Branch = {
-  action: "라면 끓이기 알려 주기", state: "cooking", trigger: "사용자가 라면 끓이는 법을 알려 달라고 말했거나, 주방에서 라면을 끓이려다 무엇을 해야 할지 모르겠다고 말한다.",
+  action: "라면 끓이기 알려 주기", state: "cooking", from: "cooking", index: 0, to: "cooking", on: "사용자가 라면 끓이는 법을 알려 달라고 말했거나, 라면을 끓이다 무엇을 해야 할지 모르겠다고 말한다.",
   reasoning: "라면 끓이는 법을 물어봤어요.",
 };
 const COACH_STEPS: [PlanStep["kind"], string][] = [
@@ -158,7 +159,7 @@ export const COACH_SAY = { retold: "다시 알려 줬어요.", quiet: "냄비 �
 
 /** 「그대로 두기」를 고른 뒤 말풍선 카드 말(src/act/labels.ts SAY_TEXT.left). */
 export const LEFT_SAY = "컵을 그대로 둘게요.";
-const BRANCH_TASKS = ["컵 치우기", "사용자에게 물어보기", "세탁물 건조기로 옮기기", "에어컨 켜기", "컵 그대로 두기", "컵에 물 채워 주기", "컵에 콜라 따라 주기", "라면 끓이기 알려 주기"];
+const BRANCH_TASKS = ["컵 치우기", "사용자에게 물어보기", "세탁물 건조기로 옮기기", "에어컨 켜기", "컵에 물 채워 주기", "컵에 콜라 따라 주기", "라면 끓이기 알려 주기"];
 
 /** 판단 방송 한 줄. b가 null이면 대기(-1). */
 export function branchDecision(b: Branch | null, seq: number): ServerMessage {
@@ -167,7 +168,9 @@ export function branchDecision(b: Branch | null, seq: number): ServerMessage {
     event: {
       type: "decision", at_ms: 1_794_214_804_000 + seq * 5000, id: `pam-${seq}`, seq, text_sent: "관찰", status: "valid",
       prediction: { observation: "관찰", reasoning: b?.reasoning ?? "할 일이 없어요.", task_index: b ? BRANCH_TASKS.indexOf(b.action) : -1 },
-      action: b?.action ?? null, fsm: b ? { state: b.state, trigger: b.trigger, learned: false, matched: true } : { state: "drinking", trigger: null, learned: false, matched: false },
+      action: b?.action ?? null,
+      fsm: b ? { state: b.state, from: b.from, next_index: b.index, to: b.to, on: b.on, when: b.when ?? null, action: b.action, learned: b.learned ?? false }
+        : { state: "drinking", from: null, next_index: -1, to: null, on: null, when: null, action: null, learned: false },
       assist: b ? (taskOf(b.action)?.coach ? "coach" : "noonchi") : null, memory_version: 1,
       world: { objects: [], person_visible: false, vlm_missing: 0, yolo_missing: 0 },
     },

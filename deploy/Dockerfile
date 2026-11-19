@@ -10,6 +10,8 @@ RUN npm --prefix ui ci
 COPY src src
 # ui 빌드는 twin/을 읽는다: vite @viewer 별칭(twin/apartment/viewer)과 타입 검사하는 3D 트윈 시험의 장면·구운 목록 JSON
 COPY twin twin
+# ui 시험 고정 자료가 배운 뒤 기억(scripts/learned-memory.ts)을 읽는다(ui tsconfig가 시험도 타입 검사한다)
+COPY scripts/learned-memory.ts scripts/learned-memory.ts
 COPY ui ui
 RUN npm --prefix ui run build
 

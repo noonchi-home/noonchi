@@ -2,14 +2,21 @@
 // 에이전트 계획 모드를 한 번 부른다. 받은 계획은 실행 전 검사·승인·끄기 안내·폰 판본을 거쳐 첫 단계를 시작한다(tryStart).
 // 계획 없는 행동(그대로 두기)의 기록과 같은 행동 다시 계획 간격도 여기서 센다.
 import { CONTENTS_HOLD } from "./contents.js";
+import type { CheckFail } from "../check.js";
 import type { DecisionRecord } from "../../contract/events.js";
 import { needsPhone, objectNames, type AgentStep, type PlanResult } from "../../agent/index.js";
 import { APPROVAL_TEXT, EXEC_TEXT } from "../labels.js";
 import { quietLabels } from "../lessons.js";
-import { carriesTarget, planIdOf, planObjectsOf, taskOf } from "../tasks.js";
-import { saidIn } from "../../world/labels.js";
+import { TASK_NAMES, carriesTarget, planIdOf, planObjectsOf, taskOf } from "../tasks.js";
+import { CHANGE_TEXT, saidIn } from "../../world/labels.js";
+import { decisionWorld, isoWithOffset } from "../../brain/index.js";
+import type { SpeechRequest } from "./tracker.js";
 import { emergencyOf } from "../mode.js";
 import { Part, clsOf, type Job, type Run } from "./core.js";
+
+/** 계획 전 검사가 막은 까닭 가운데 분명한 것(더 봐도 바뀌지 않음): 이미 치움·확인된 내용물 반대·행동 목록 밖.
+ *  대상이 안 보임(no_target)은 확정 전 컵일 수 있는 모름이라 넣지 않는다(판단이 그 화살표를 기다려 컵이 확정되면 다시 켠다). */
+const SETTLED: ReadonlySet<CheckFail> = new Set<CheckFail>(["in_sink", "contents_mismatch", "unknown_task"]);
 
 /** 판단 받기·계획 시작. */
 export class Starter extends Part {
@@ -17,25 +24,44 @@ export class Starter extends Part {
   private readonly planAt = new Map<string, number>();
   private gen = 0;
   private lastSeq = 0;
-  /** 마지막으로 「그대로 둠」을 기록한 시각: 간격을 세는 실행 추적 시계(leftNoteAt)와 말풍선 카드가 보는 Date.now 시계(leftWallAt). */
-  private leftNoteAt = Number.NEGATIVE_INFINITY;
-  private leftWallAt: number | null = null;
-
-  /** 마지막으로 「그대로 둠」을 기록한 시각(Date.now 시계, 계획 updatedAt과 같은 시계). 없으면 null. */
-  leftAt(): number | null {
-    return this.leftWallAt;
+  /** 마지막 말 부탁을 받은 때까지 보낸 PAM 요청 번호(afterSeq). 말 부탁의 대상을 찾는 중이거나 계획을 만드는 중이거나 열려 있는 동안 이 번호 이하 PAM 판단은 쓰지 않는다. */
+  private lastSpeechSeq = 0;
+  private speechN = 0;
+  /** 말 부탁을 판단 기록 꼴(id say-<번호>, source speech, seq 0, 들은 말 한 줄)로 만들어 판단 받기 길(onDecision)에 넣는다. */
+  request(r: SpeechRequest): void {
+    const core = this.core;
+    if (core.stopped) return;
+    const tasks = [...TASK_NAMES];
+    const d: DecisionRecord = {
+      id: `say-${++this.speechN}`, seq: 0, atMs: r.atMs, textSent: CHANGE_TEXT.heard(r.heard), finalTime: isoWithOffset(r.atMs, this.o.offsetMinutes ?? 540),
+      status: "valid", prediction: { observation: EXEC_TEXT.spoken, reasoning: EXEC_TEXT.spoken, task_index: tasks.indexOf(r.task) }, action: r.task,
+      memoryVersion: 0, tasks, world: decisionWorld(this.o.world()), source: "speech", afterSeq: r.afterSeq, ...(r.via ? { via: r.via } : {}),
+    };
+    this.o.onSpeech?.(d);
+    this.onDecision(d);
   }
 
   onDecision(d: DecisionRecord): void {
     const core = this.core;
     if (core.stopped) return;
-    if (d.seq < this.lastSeq) return this.note(d, EXEC_TEXT.late);
-    // 받은 가장 새 판단 번호: 기록만 한 판단(같은 행동 등)보다 먼저 보낸 판단이 늦게 와도 쓰지 않는다
-    this.lastSeq = d.seq;
+    // 판단이 버린 늦은 답(풀린 화살표를 다시 낸 답): 기록만
+    if (d.late) return this.note(d, EXEC_TEXT.late);
+    // 말 부탁은 PAM 판단 번호와 섞지 않는다: seq 검사를 건너뛰고 받은 때까지 보낸 PAM 요청 번호만 둔다(순서는 밀리초가 아니라 번호로 본다)
+    if (d.source === "speech") this.lastSpeechSeq = d.afterSeq ?? 0;
+    else {
+      if (d.seq < this.lastSeq) return this.note(d, EXEC_TEXT.late);
+      // 받은 가장 새 판단 번호: 기록만 한 판단(같은 행동 등)보다 먼저 보낸 판단이 늦게 와도 쓰지 않는다
+      this.lastSeq = d.seq;
+      // 말 부탁을 받은 때부터(그 대상을 계획 전에 찾는 중이거나 계획을 만드는 중이어도) 그 전에 보낸 요청의 PAM 판단은 쓰지 않는다
+      const speech = core.planning?.decision.source === "speech" || core.open()?.decision.source === "speech"
+        || core.finding?.first.source === "speech" || core.finding?.decision.source === "speech";
+      if (speech && d.seq <= this.lastSpeechSeq) return this.note(d, EXEC_TEXT.late);
+    }
     core.lastDecision = d.id;
     // 기다리기·기기 단계 전에 보낸 판단이 그 뒤에 오면 낡은 관찰이라 쓰지 않는다(다시 부르는 판단이 새 관찰로 정한다)
     if (d.atMs < core.quietFrom && core.open()?.decision.action !== d.action) return this.note(d, EXEC_TEXT.late);
     if (d.status !== "valid") return this.note(d, EXEC_TEXT.decisionFailed);
+    // 화살표 없는 답의 목표 트리거는 판단이 기록 전에 action으로 넣어 온다(src/brain/decide.ts goalTrigger, goal.ts triggerOf)
     if (!d.action) return this.note(d, EXEC_TEXT.wait);
     // 미리 세운 목표와 같은 행동인데 사람이 떠난 뒤의 판단이 아니면 목표가 맡는다(사람이 떠나면 판단을 다시 부른다, goal.ts)
     if (core.goal.holds(d)) return this.note(d, EXEC_TEXT.goalWait);
@@ -58,25 +84,19 @@ export class Starter extends Part {
     const pre = this.o.precheck?.(d) ?? { ok: true };
     if (!pre.ok) {
       // 대상이 안 보이면 마지막으로 본 자리로 찾으러 간다(찾을 자리가 없으면 지금처럼 닫는다)
-      if ((pre.reason === "no_target" || pre.reason === "in_sink") && core.finder.start(d, pre.text)) return this.takeover(d);
+      if ((pre.reason === "no_target" || pre.reason === "in_sink") && core.finder.start(d, pre.text)) return;
       core.emit(planIdOf(d.id), "decided");
       core.emit(planIdOf(d.id), "failed", pre.text);
+      // 분명한 까닭이면 판단이 그 화살표를 기다리지 않게 알린다(15초 동안 같은 막음을 되풀이하지 않게). 싱크대 안이어도 찾을 후보 자리가 남았으면
+      // (확정 전 새 컵일 수 있다) 모름이라 알리지 않는다
+      if (SETTLED.has(pre.reason) && !(pre.reason === "in_sink" && core.finder.candidate(d))) this.o.onRefused?.(planIdOf(d.id));
       return;
     }
     const now = this.clock.now();
-    // 계획을 만들지 않는 행동(컵 그대로 두기): 에이전트를 부르지 않고 그 판단 줄에 기록만 한다. 열린 계획·만들던 계획은 건드리지 않는다
-    if (taskOf(d.action)?.plan === false) {
-      if (now - this.leftNoteAt < this.cfg.leftGapMs) return;
-      this.leftNoteAt = now;
-      this.leftWallAt = Date.now();
-      core.emit(planIdOf(d.id), "decided");
-      return core.emit(planIdOf(d.id), "done", EXEC_TEXT.left);
-    }
     const last = this.planAt.get(d.action);
     if (last !== undefined && now - last < this.cfg.planGapMs) return this.note(d, EXEC_TEXT.held);
     this.planAt.set(d.action, now);
-    // 다른 행동의 계획이 맡으면 미리 세운 목표를 버리고 지금 길로(goal.ts). 계획 없는 행동(그대로 두기)·막힌 판단은 맡지 않으니 그대로 둔다
-    this.takeover(d);
+    // 미리 세운 목표는 여기서 버리지 않는다: 다른 행동의 계획이 실제로 시작할 때(begin) 버린다. 골라졌다가 막히면(계획 실패·쓰는 중·실행 전 검사) 목표가 그대로 맡는다
     // 계획을 만드는 중이던 다른 행동은 끊고 버린다(답이 와도 쓰지 않는다)
     this.dropPlanning(EXEC_TEXT.superseded);
     const job: Job = { decision: d, gen: ++this.gen, abort: new AbortController(), at: now };
@@ -127,7 +147,8 @@ export class Starter extends Part {
     if (d.action && this.planAt.get(d.action) === at) this.planAt.delete(d.action);
   }
 
-  /** 다른 행동의 판단이 일을 맡았다(계획을 만들기 시작하거나 대상을 찾으러 감): 미리 세운 목표를 버린다. 같은 행동이면 목표가 이어 간다. */
+  /** 다른 행동의 계획이 실제로 시작했다(실행 전 검사를 지나 running, begin): 미리 세운 목표를 버린다. 같은 행동이면 목표가 이어 간다.
+   *  (2026-11-19 glass pfsm4-2: 마시는 중 잘못 고른 물 채우기가 계획만 되고 쓰는 중이라 기다렸는데 목표를 버려, 떠난 뒤 치우지 않았다) */
   private takeover(d: DecisionRecord): void {
     const goal = this.core.goal.current();
     if (goal && goal.action !== d.action) this.core.goal.drop("replaced");
@@ -300,6 +321,7 @@ export class Starter extends Part {
   }
 
   private begin(r: Run): void {
+    this.takeover(r.decision);
     this.core.step(r, "running");
     if (r.plan.steps.length === 0) return this.core.steps.finish(r, "done");
     this.verifyFrom(r);

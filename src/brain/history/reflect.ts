@@ -1,114 +1,34 @@
-// 하루 끝 반성: 그날 관찰 텍스트 + 행동 요약 + 사용자 피드백 → pam-reflect/2 → 새 기억 판본.
+// 기억 판본(그날 판단이 쓰는 판본 고르기·고정, 옛 모양 기억이면 새 seed로 다시 시작)과 하루 끝 반성의 입구.
 // 새 판본은 다음 날부터 쓴다. 그날 판단은 그날 처음 정한 판본만 쓴다(논문 memory_lifecycle: fixed_during_day, following_day).
-// 다음 날 판단이 이미 판본을 정했으면 그다음 날부터 쓴다. 보내기 전에 PamClient.limits()의 입력 한도(reflect_input_bytes)에서
-// 기억 JSON·피드백 크기를 빼고 그 안으로 하루 요약을 줄인다. 칸마다 pam-reflect/2 상한도 넘지 않게 하고, 피드백은 최근 것부터 담는다.
-// 결과는 기록 DB(reflection)와 판단 기록(brain)에 남긴다.
-// fsm 기억은 저장 전에 반성 뒤 검사를 거친다(src/brain/history/habits.ts): 코치 규칙 지키기 → 습관 거르기(기본 모두 남기기) → 코치 규칙 지키기 → 모양 검사.
-import { TASKS } from "../../act/tasks.js";
-import { CUP_FSM_MEMORY, MAX_REFLECT_TEXT, SEED_PATCHES, patchMemory, validateMemory, type FsmMemory, type PamMemory } from "../decision.js";
+// 하루 끝 반성은 밤 흐름(src/brain/history/night.ts runNight)이다: 덩어리 기록 → 반성(후보 FSM) → 코드·뜻 검사 → 시각 찾기 → 채택 검사 → 로봇 FSM → 한 트랜잭션 저장.
+import { CUP_FSM_MEMORY, isOldFsm, validateMemory, type PamMemory } from "../decision.js";
 import type { PamClient } from "../pam/index.js";
-import type { BrainLog, PamUsage } from "../../contract/events.js";
 import type { HistoryDb } from "./db.js";
-import { coachGuard, keepAll, learnedRules, type HabitFilter, type HabitRuleNote, type RuleLine } from "./habits.js";
-import { REFLECT_TEXT } from "./labels.js";
-import { daySummary } from "./summary.js";
-
-const nextDay = (day: string) => new Date(Date.parse(`${day}T00:00:00Z`) + 86_400_000).toISOString().slice(0, 10);
-const bytes = (s: string) => Buffer.byteLength(s, "utf8");
-
-/** 최근 줄부터 max 바이트까지 담는다(시각 순으로 돌려줌). */
-function latestWithin(lines: string[], max: number): string[] {
-  const out: string[] = [];
-  let used = 0;
-  for (let i = lines.length - 1; i >= 0; i--) {
-    const b = bytes(lines[i]!) + (out.length ? 1 : 0);
-    if (used + b > max) break;
-    out.unshift(lines[i]!);
-    used += b;
-  }
-  return out;
-}
-/** 그날 기록이 있다고 보는 종류. */
-const DAY_KINDS = ["detection", "world", "device", "vlm", "yolo", "decision", "execution", "feedback"] as const;
+import type { EdgeLine, HabitRuleNote } from "./habits.js";
+import { MEMORY_TEXT } from "./labels.js";
+import { runNight, type NightOptions } from "./night.js";
 
 export interface DayMemory { memory: PamMemory; kind: "list" | "fsm"; version: number }
-/** ok면 learned(이번에 새로 더한 규칙)·active(새 판본의 규칙 가운데 seed에 없는 것)·dropped(반성 뒤 검사가 뺀 규칙)를 함께 준다. learned·active는 코치 행동을 뺀다. */
-export type ReflectResult = { ok: true; version: number; appliesDay: string; learned: RuleLine[]; active: RuleLine[]; dropped: HabitRuleNote[] } | { ok: false; error: string; empty?: true };
-
-/** 습관 거르기에 넘기는 기록 종류. */
-const HABIT_KINDS = ["world", "device", "decision", "execution", "feedback"] as const;
+/** ok면 learned(이번에 새로 더한 화살표)·active(새 로봇 판본의 화살표 가운데 seed에 없는 것)·dropped(반성 뒤 검사가 뺀 후보)를 함께 준다. learned·active는 코치 행동을 뺀다.
+ *  version은 새 로봇 판본(fsm) 번호다. */
+export type ReflectResult = { ok: true; version: number; appliesDay: string; learned: EdgeLine[]; active: EdgeLine[]; dropped: HabitRuleNote[] } | { ok: false; error: string; empty?: true };
 
 /** 그날 고정한 판본. 없으면 그날 쓸 수 있는 가장 새 판본을 고정하고, 판본이 하나도 없으면 컵 FSM 기억을 seed로 저장한다.
  *  seed 판본 올리기: 그날 쓸 판본이 seed인데 내용이 지금 코드의 seed(CUP_FSM_MEMORY)와 다르고(JSON 글 비교) DB에서 가장 새 판본도 seed면,
  *  지금 seed 판본(가장 새 판본이 이미 그것이면 그 판본, 아니면 새로 저장)을 그날에 다시 고정한다.
- *  가장 새 판본이 반성 판본(또는 합성 기록)이면 건드리지 않는다: seed는 seed 뒤에만 올리므로 새 seed가 반성 판본을 덮지 않는다. */
-export function memoryForDay(db: HistoryDb, day: string, o: { patch?: boolean } = {}): DayMemory {
-  const cur = dayMemory(db, day);
-  // 합성 기록을 만드는 동안(scripts/seed-history.ts, 습관을 배우기 전 기록)과 지난날 반성(그날 판본 그대로)은 넣지 않는다
-  return o.patch === false ? cur : patchedForDay(db, day, cur);
-}
-
-/** seed 바뀜(SEED_PATCHES)을 이미 배운 기억(반성·합성 판본)에 넣는다. 그 바뀜을 처음 본 때의 가장 새 판본까지(경계, meta seed_patch:<id>)만 넣고
- *  그 뒤 판본(반성이 고친 기억에서 다시 배운 것)은 둔다. 넣는 것은 판본마다 한 번(meta seed_patch:<id>:<판본>): 그날 쓰는 판본을 먼저, 가장 새 판본을 나중에 고쳐
- *  가장 새 판본을 고친 것이 가장 높은 판본이 되게 한다(앞으로의 날이 옛 판본을 고친 것을 쓰지 않게). 가장 새 판본에 고칠 것이 없으면(이미 습관이 있음·경계 뒤 판본)
- *  옛 판본을 고친 것보다 앞서게 같은 내용으로 다시 저장한다. 그날 쓰던 판본을 고쳤으면 그날을 고친 판본으로 다시 고정한다.
- *  seed 판본은 seed 올리기가 맡는다. */
-function patchedForDay(db: HistoryDb, day: string, cur: DayMemory): DayMemory {
-  let out = cur;
-  for (const patch of SEED_PATCHES) {
-    let edge = db.seedPatch(patch.id);
-    if (edge === null) {
-      edge = db.latestMemoryVersion() ?? cur.version;
-      db.markSeedPatch(patch.id, edge);
-    }
-    const head = db.latestMemoryVersion();
-    if (head === null) continue;
-    const pin = (made: number) => {
-      db.pinMemory(day, made, true);
-      out = { memory: validateMemory(db.memoryVersion(made)!.memory as never, "fsm"), kind: "fsm", version: made };
-    };
-    // 그날 판본이 가장 새 판본이 아니면 그것을 먼저 고친다
-    let copied = false;
-    if (cur.version !== head && cur.version <= edge) {
-      const made = patchVersion(db, patch, cur.version);
-      if (made !== null) {
-        pin(made);
-        copied = made > head;
-      }
-    }
-    const headMade = head <= edge ? patchVersion(db, patch, head) : null;
-    if (headMade !== null && headMade > head) {
-      if (out.version === head) pin(headMade);
-    } else if (copied) {
-      // 옛 그날 판본을 고친 것이 가장 높은 판본이 됐다: 가장 새 판본을 그대로 다시 저장해 앞서게 한다(다음 날이 그 배운 규칙을 잃지 않게)
-      const src = db.memoryVersion(head)!;
-      db.saveMemory({ kind: src.kind, memory: src.memory, day: src.day, appliesDay: src.appliesDay, source: src.source });
-    }
-  }
-  return out;
-}
-
-/** 판본 하나에 seed 바뀜을 넣은 판본(같은 출처·적용일). 넣을 것이 없으면(seed·list·그 상태 없음·이미 같음) null. 판본마다 한 번만 만든다. */
-function patchVersion(db: HistoryDb, patch: (typeof SEED_PATCHES)[number], base: number): number | null {
-  const key = `${patch.id}:${base}`;
-  const done = db.seedPatch(key);
-  if (done !== null) return done === base ? null : done;
-  const m = db.memoryVersion(base);
-  const memory = m && m.kind === "fsm" && m.source !== "seed" ? patchMemory(validateMemory(m.memory as never, "fsm") as FsmMemory, patch) : null;
-  if (!m || !memory || JSON.stringify(memory) === JSON.stringify(m.memory)) {
-    db.markSeedPatch(key, base);
-    return null;
-  }
-  const version = db.saveMemory({ kind: "fsm", memory, day: m.day, appliesDay: m.appliesDay, source: m.source });
-  db.markSeedPatch(key, version);
-  return version;
+ *  가장 새 판본이 반성 판본(또는 합성 기록)이면 건드리지 않는다: seed는 seed 뒤에만 올리므로 새 seed가 반성 판본을 덮지 않는다.
+ *  옛 모양 기억(상태 안 rules, isOldFsm)은 옮기지 않는다: 새 seed 판본으로 다시 시작하고(가장 새 판본이 이미 지금 seed면 그 판본) log에 한 줄 남긴다(2026-11-18 사용자 답). */
+export function memoryForDay(db: HistoryDb, day: string, o: { log?: (line: string) => void } = {}): DayMemory {
+  return dayMemory(db, day, o);
 }
 
 /** 반성이 읽는 그날 기억: 고정·저장하지 않는다. 그날 고정 판본 → 그날 쓸 판본 → 지금 seed 차례(dayMemory와 같은 골라내기). */
-function readDayMemory(db: HistoryDb, day: string): { memory: PamMemory; kind: "list" | "fsm" } {
+export function readDayMemory(db: HistoryDb, day: string): { memory: PamMemory; kind: "list" | "fsm" } {
   const pinned = db.pinnedMemory(day);
   const m = pinned !== null ? db.memoryVersion(pinned) : db.memoryFor(day);
   if (!m) return { memory: CUP_FSM_MEMORY, kind: "fsm" };
+  // 옛 모양 기억은 읽지 않는다(새 seed로 반성한다)
+  if (m.kind === "fsm" && isOldFsm(m.memory)) return { memory: CUP_FSM_MEMORY, kind: "fsm" };
   const seed = JSON.stringify(CUP_FSM_MEMORY);
   if (m.source === "seed" && JSON.stringify(m.memory) !== seed && db.memoryVersion(db.latestMemoryVersion() ?? m.version)?.source === "seed") {
     return { memory: CUP_FSM_MEMORY, kind: "fsm" };
@@ -116,10 +36,18 @@ function readDayMemory(db: HistoryDb, day: string): { memory: PamMemory; kind: "
   return { memory: validateMemory(m.memory, m.kind), kind: m.kind };
 }
 
-function dayMemory(db: HistoryDb, day: string): DayMemory {
+function dayMemory(db: HistoryDb, day: string, o: { log?: (line: string) => void }): DayMemory {
   const pinned = db.pinnedMemory(day);
   const m = pinned !== null ? db.memoryVersion(pinned) : db.memoryFor(day);
   const seed = JSON.stringify(CUP_FSM_MEMORY);
+  if (m && m.kind === "fsm" && isOldFsm(m.memory)) {
+    const latest = db.memoryVersion(db.latestMemoryVersion() ?? m.version);
+    const version = latest && latest.source === "seed" && JSON.stringify(latest.memory) === seed
+      ? latest.version : db.saveMemory({ kind: "fsm", memory: CUP_FSM_MEMORY, day: null, appliesDay: null, source: "seed" });
+    db.pinMemory(day, version, true);
+    o.log?.(MEMORY_TEXT.restart(m.version));
+    return { memory: CUP_FSM_MEMORY, kind: "fsm", version };
+  }
   if (m && m.source === "seed" && JSON.stringify(m.memory) !== seed) {
     const latest = db.memoryVersion(db.latestMemoryVersion() ?? m.version);
     if (latest?.source === "seed") {
@@ -137,71 +65,13 @@ function dayMemory(db: HistoryDb, day: string): DayMemory {
   return { memory: CUP_FSM_MEMORY, kind: "fsm", version };
 }
 
-/** filter: 습관 거르기(기본 keepAll, 기록 줄을 읽지 않고 rows는 빈 목록). windowDays: 따로 넘긴 거르기에 주는 지난 기록 날 수(기본 30, 반성한 날 포함). */
-/** signal로 끊으면(서버를 끌 때) PAM 요청을 끊고 기록 DB에 아무것도 쓰지 않는다. */
-export async function runReflection(db: HistoryDb, pam: PamClient, day: string, o: { now?: () => number; emit?: (l: BrainLog) => void; filter?: HabitFilter; windowDays?: number; signal?: AbortSignal } = {}): Promise<ReflectResult> {
-  const now = o.now ?? (() => Date.now());
-  let usage: PamUsage | undefined;
-  const done = (ok: boolean, text: string, version: number | null, appliesDay: string | null, found?: { learned: RuleLine[]; active: RuleLine[]; dropped: HabitRuleNote[] }) => {
-    const at = now();
-    const used = usage ? { usage } : {};
-    db.add("reflection", at, text, { data: { day, ok, version, applies_day: appliesDay, ...found, ...used } });
-    o.emit?.({ type: "reflection", at_ms: at, day, ok, version, applies_day: appliesDay, text, ...found, ...used });
-  };
-  if (!db.list({ day, kinds: [...DAY_KINDS], limit: 1 }).length) {
-    done(false, REFLECT_TEXT.failed(REFLECT_TEXT.empty), null, null);
-    return { ok: false, empty: true, error: REFLECT_TEXT.empty };
-  }
-  try {
-    // 그날 판본을 읽기만 한다(습관을 넣거나 날 고정·seed 판본을 남기지 않는다: 끊긴 반성이 다른 반성의 적용일을 밀지 않게)
-    const cur = readDayMemory(db, day);
-    const feedback = latestWithin(db.list({ day, kinds: ["feedback"] }).map((r) => r.text), MAX_REFLECT_TEXT.feedback).join("\n") || null;
-    const limits = await pam.limits();
-    // 요약이 비면 대신 보내는 글(관찰 없음·행동 없음)도 한도 안에 들게 미리 뺀다
-    const maxBytes = limits.reflect_input_bytes - bytes(JSON.stringify(cur.memory, null, 2)) - bytes(feedback ?? "") - bytes(REFLECT_TEXT.noObservation) - bytes(REFLECT_TEXT.noAction);
-    if (maxBytes <= 0) throw new Error(REFLECT_TEXT.tooBig);
-    const summary = daySummary(db, day, { maxBytes, caps: MAX_REFLECT_TEXT });
-    let memory = await pam.reflect({
-      day, memory_kind: cur.kind, memory: cur.memory, observation_text: summary.observation_text || REFLECT_TEXT.noObservation,
-      action_summary: summary.action_summary || REFLECT_TEXT.noAction, feedback,
-    }, cur.kind, { signal: o.signal, onUsage: (u) => { usage = u; } });
-    if (o.signal?.aborted) return { ok: false, error: REFLECT_TEXT.cancelled };
-    let learned: RuleLine[] = [];
-    let active: RuleLine[] = [];
-    let dropped: HabitRuleNote[] = [];
-    if (cur.kind === "fsm") {
-      // 반성 뒤 검사: 코치 규칙은 seed 그대로, 습관 거르기, 거르기가 코치 규칙을 바꾸지 못하게 한 번 더, 그 뒤 모양 검사
-      const previous = cur.memory as FsmMemory;
-      const first = coachGuard(CUP_FSM_MEMORY, validateMemory(memory, "fsm") as FsmMemory);
-      const windowDays = o.windowDays ?? 30;
-      const dayStart = Date.parse(`${day}T00:00:00Z`) - db.offsetMinutes * 60_000;
-      // 기록 줄은 따로 넘긴 거르기만 읽는다: 기본(keepAll)은 쓰지 않으니 30일 기록을 올리지 않는다(기록 DB가 커도 서버를 멈추지 않게)
-      const rows = o.filter ? db.list({ since: dayStart - (windowDays - 1) * 86_400_000, until: dayStart + 86_400_000 - 1, kinds: [...HABIT_KINDS], limit: Number.MAX_SAFE_INTEGER }) : [];
-      const filtered = await (o.filter ?? keepAll)({ day, windowDays, offsetMinutes: db.offsetMinutes, previous, proposed: first.memory, rows });
-      if (o.signal?.aborted) return { ok: false, error: REFLECT_TEXT.cancelled };
-      const second = coachGuard(CUP_FSM_MEMORY, filtered.memory);
-      memory = validateMemory(second.memory, "fsm");
-      dropped = [...first.notes, ...filtered.notes, ...second.notes].filter((n) => !n.kept);
-      learned = learnedRules(previous, memory as FsmMemory).filter((r) => !TASKS[r.action]?.coach);
-      active = learnedRules(CUP_FSM_MEMORY, memory as FsmMemory).filter((r) => !TASKS[r.action]?.coach);
-    }
-    // 저장 바로 전에도 끊겼는지 본다(끊긴 반성은 날 고정·새 판본·성공 기록을 남기지 않는다)
-    if (o.signal?.aborted) return { ok: false, error: REFLECT_TEXT.cancelled };
-    // 끝난 반성만 그날 판본을 고정한다(판본이 없으면 seed를 저장한다). 읽을 때는 고정하지 않았다
-    memoryForDay(db, day, { patch: false });
-    let appliesDay = nextDay(day);
-    while (db.pinnedMemory(appliesDay) !== null) appliesDay = nextDay(appliesDay);
-    const version = db.saveMemory({ kind: cur.kind, memory, day, appliesDay, source: "reflection" });
-    const text = REFLECT_TEXT.done(version, appliesDay) + (learned.length ? ` · ${REFLECT_TEXT.learned(learned.length)}` : "");
-    done(true, text, version, appliesDay, { learned, active, dropped });
-    return { ok: true, version, appliesDay, learned, active, dropped };
-  } catch (e) {
-    // 서버를 끄느라 끊었으면 기록하지 않는다(닫히는 DB에 쓰지 않는다)
-    if (o.signal?.aborted) return { ok: false, error: REFLECT_TEXT.cancelled };
-    const error = (e as Error).message;
-    done(false, REFLECT_TEXT.failed(error), null, null);
-    return { ok: false, error };
-  }
+/** 하루 끝 반성 = 밤 흐름(src/brain/history/night.ts runNight): 덩어리 기록 → 반성 → 검사 → 시각 찾기 → 채택 검사 → 로봇 FSM → 한 트랜잭션 저장.
+ *  filter: 습관 거르기(기본 keepAll, 기록 줄을 읽지 않는다). windowDays: 따로 넘긴 거르기에 주는 지난 기록 날 수(기본 30, 반성한 날 포함).
+ *  dir: 시각 찾기·검사 결과 사본 폴더(runtime/homes/<집>/habit). signal로 끊으면(서버를 끌 때) PAM 요청을 끊고 기록 DB에 아무것도 쓰지 않는다. */
+export async function runReflection(db: HistoryDb, pam: PamClient, day: string, o: NightOptions = {}): Promise<ReflectResult> {
+  const r = await runNight(db, pam, day, o);
+  if (!r.ok) return { ok: false, error: r.error, ...(r.empty ? { empty: true as const } : {}) };
+  return { ok: true, version: r.version, appliesDay: r.appliesDay, learned: r.learned, active: r.active, dropped: r.dropped };
 }
 
 /** REFLECT_AT: 매일 반성할 시각 HH:MM(기록 시간대). 비우면 23:30, off면 끔. 틀린 값이면 시작을 막는다. */

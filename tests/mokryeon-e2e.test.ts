@@ -12,10 +12,12 @@ import { encodeFramePacket } from "../src/phone/packet.js";
 import { APPROVAL_TEXT } from "../src/act/labels.js";
 import { startServer, type RunningServer } from "../src/server/start.js";
 import { ScriptedDetector, det } from "./helpers/detectors.js";
+import type { Detection } from "../src/contract/observe.js";
 import { startFakePamLlm, type FakePamLlm, pamLlmEnv } from "./helpers/pam.js";
 import { CUP_SCRIPTS, plannerRespond } from "./helpers/planner.js";
 import { heardAtOf, openPhone, openWebSocket } from "./helpers/ws.js";
 import { alignOnServer } from "./helpers/align.js";
+import { useLearnedMemory } from "./helpers/memory.js";
 
 type Msg = Record<string, any>;
 let srv: RunningServer | undefined;
@@ -45,17 +47,22 @@ const EYE: [number, number, number] = [9.9612 - 1.5, 1.5, 3.9242];
 // 상자 아래 가운데가 480×360 화면 한가운데
 const CUP_BOX: [number, number, number, number] = [220, 160, 40, 20];
 const TABLE_ID = "dining_table_978b20c7";
+const PERSON = det("person", 0.9, [40, 40, 120, 280]);
 
 describe("한양목련 처음부터 끝까지", () => {
   it("컵 치우기를 처음 하면 실제 폰에 승인·거절 두 단추로 묻고, 「승인」 뒤 네 단계를 돌며, 대시보드는 판단·명령 글만 받고, 다음에는 묻지 않는다", async () => {
     let cupPlace = "on_table";
+    // 떠남 화살표(컵 치우기)는 직전 상태 drinking(먹거나 마시는 중)에서만 나간다: 사람이 먹다가 떠난다.
+    // 먹는 중은 컵을 쓰지 않아 미리 세운 목표가 서지 않는다(목표 실행은 승인을 묻지 않아 이 시험이 보는 승인 길을 지나지 않는다)
+    const personAct = "eating";
+    const people: Detection[] = [];
     fake = await startFakeOpenAI({
       reply: (body) => {
         if (body?.response_format?.json_schema?.name !== "scene_observation") return null;
         const parts = (body.messages as { role: string; content: unknown }[]).filter((m) => m.role === "user").flatMap((m) => (Array.isArray(m.content) ? m.content : [{ text: m.content }]));
         const text = parts.map((p: { text?: unknown }) => (typeof p.text === "string" ? p.text : "")).join("\n");
-        const dets = JSON.parse(/Detections: (\[.*\])/.exec(text)?.[1] ?? "[]") as { id: string }[];
-        return JSON.stringify({ scene: "kitchen", observations: dets.map((d) => ({ object_id: d.id, state: cupPlace })), summary: "컵" });
+        const dets = JSON.parse(/Detections: (\[.*\])/.exec(text)?.[1] ?? "[]") as { id: string; class: string }[];
+        return JSON.stringify({ scene: "kitchen", observations: dets.map((d) => ({ object_id: d.id, state: d.class === "person" ? personAct : cupPlace })), summary: "컵" });
       },
       // 에이전트 계획 모드: 같은 가짜 서버가 컵 치우기 도구 호출(지금 서버와 같은 네 단계)을 낸다
       respond: plannerRespond(CUP_SCRIPTS),
@@ -64,10 +71,12 @@ describe("한양목련 처음부터 끝까지", () => {
     pam = await startFakePamLlm({ predict: (b) => (/컵 cup_\d/.test(String(b.observation_text))
       ? { observation: "빈 컵이 식탁에 남음", reasoning: "자리를 비워 컵을 치운다", task_index: 0 } : { observation: "컵 없음", reasoning: "할 일 없음", task_index: -1 }) });
     const runtimeDir = mkdtempSync(join(tmpdir(), "rt-"));
+    // 치우기를 보는 시험은 배운 뒤 기억(합성 3일째부터의 로봇 FSM)으로 돈다. seed 기억이면 떠날 때 묻는다
+    useLearnedMemory(runtimeDir);
     srv = await startServer({
       env: { HUB: "memory", PORT: "0", HOME_ID: "mokryeon_180b", RUNTIME_DIR: runtimeDir, PHONE_PORT: "0", PHONE_HOST: "127.0.0.1",
         BRAIN: "1", VLM_BASE_URL: `${fake.url}/v1`, ...pamLlmEnv(pam), OPENAI_API_KEY: "fake-key", OPENAI_BASE_URL: `${fake.url}/v1` },
-      brain: { detector: new ScriptedDetector(() => [det("cup", 0.9, CUP_BOX, 41)]) }, log: () => {},
+      brain: { detector: new ScriptedDetector(() => [...people, det("cup", 0.9, CUP_BOX, 41)]) }, log: () => {},
       // 처음 하는 일 승인 길을 끝까지 본다: 처음 하는 일 묻기를 켜 본다(기본 끔, 기본 흐름은 tests/noonchi-e2e.test.ts)
       askFirst: true,
     });
@@ -100,9 +109,17 @@ describe("한양목련 처음부터 끝까지", () => {
     };
     const spoken = () => phone.filter((m) => m.type === "command" && m.speak);
     const said = (text: string) => spoken().find((m) => m.text === text);
+    /** 사람이 보여 판단이 마시는 중 상태로 본 뒤 떠난다. */
+    const visitThenLeave = async () => {
+      const from = dash.length;
+      people.push(PERSON);
+      await pump(() => dash.slice(from).some((m) => m.type === "brain" && m.event.type === "decision" && m.event.fsm?.state === "drinking"));
+      people.splice(0);
+    };
 
     // 1 판단 → 처음 하는 일이라 실제 폰에 승인 질문(답 둘). 계획은 아직 planned
     const ask = APPROVAL_TEXT.ask("컵 치우기");
+    await visitThenLeave();
     await pump(() => !!said(ask));
     const asked = said(ask)!;
     const planId = asked.id as string;
@@ -161,11 +178,14 @@ describe("한양목련 처음부터 끝까지", () => {
     expect(dash.some((m) => m.type === "brain" && m.event.type === "observe" && "boxes" in m.event)).toBe(false);
     const shown = JSON.stringify(dash);
     for (const word of [ask, "할까요", "승인", "거절", ":approve"]) expect(shown).not.toContain(word);
+    // 미니맵 자막(phone_command)은 단계 명령만 싣고 승인 질문은 싣지 않는다(대시보드에는 승인을 보이지 않는다)
+    expect(dash.filter((m) => m.type === "phone_command").map((m) => m.text)).toEqual(expect.arrayContaining(["식탁으로 가 주세요", "컵을 들어 주세요", "싱크대로 가 주세요", "컵을 싱크대에 넣어 주세요"]));
 
     // 4 답은 기억 파일에 남고, 다음 판단은 묻지 않고 바로 첫 명령
     const memory = JSON.parse(readFileSync(join(runtimeDir, "homes", "mokryeon_180b", "approvals.json"), "utf8")) as Record<string, unknown>;
     expect(memory).toEqual({ always: { "task:컵 치우기": expect.any(String) } });
     cupPlace = "on_table";
+    await visitThenLeave();
     await pump(() => spoken().some((m) => m.id !== planId && m.text === "식탁으로 가 주세요"));
     const next = spoken().filter((m) => m.id !== planId && !String(m.id).startsWith("dock:"));
     expect(next.map((m) => m.text)).toEqual(["식탁으로 가 주세요"]);

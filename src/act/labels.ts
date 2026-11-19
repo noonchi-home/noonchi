@@ -66,8 +66,6 @@ export const SAY_TEXT = {
   offWait: (device: string) => `${device} 꺼짐을 기다리고 있어요.`,
   /** 다른 계획이 도는 동안 닫힌 계획의 가전이 다시 켜져 끄기 안내가 줄에서 기다릴 때(20초). */
   rearmed: (device: string) => `${josa(device, "이/가")} 다시 켜졌어요.`,
-  /** 계획 없는 행동(컵 그대로 두기)을 고른 뒤. */
-  left: "컵을 그대로 둘게요.",
   done: (goal: string) => DONE[goal] ?? `${josa(goal, "을/를")} 마쳤어요.`,
   stopped: (goal: string) => `${josa(goal, "을/를")} 그만뒀어요.`,
 };
@@ -240,11 +238,11 @@ export const placeShort = (type: string): string | undefined => PLACE_SHORT[type
 export const EXEC_TEXT = {
   decided: "판단", planned: "계획", running: "실행 중", verifying: "결과 확인", done: "완료", failed: "실패",
   wait: "대기", decisionFailed: "판단 실패", superseded: "새 판단으로 바뀜", noPlan: "계획을 만들 수 없음", stopped: "사용자가 그만둠",
-  timeout: "단계가 시간 안에 끝나지 않음", noAnswer: "답을 받지 못함", same: "같은 행동을 진행 중", late: "앞선 판단이라 쓰지 않음",
+  timeout: "단계가 시간 안에 끝나지 않음", noAnswer: "답을 받지 못함", same: "같은 행동을 진행 중", late: "앞선 판단이라 쓰지 않음", spoken: "사람이 말로 부탁함",
   answered: (label: string) => `완료: ${label}`,
   badPlan: "계획이 맞지 않아 버림", held: "방금 계획한 일이라 잠시 뒤 다시 봄", deviceFailed: "가전 명령이 실패함",
   deviceUnverified: "가전 명령 결과를 확인하지 못함", busy: "할 일 중 기다리는 동안이라 쓰지 않음",
-  closerNewer: "가까이 본 뒤 다시 판단", left: "그대로 둠",
+  closerNewer: "가까이 본 뒤 다시 판단",
   /** 켠 위험 가전 끄기 안내가 남아 새 계획 시작을 미룸(그 가전 이름). */
   deferred: (device: string) => `${device} 꺼짐 확인 전이라 새 일을 미룸`,
   /** 판본이 맞는 실제 폰이 없어 폰이 필요한 계획 시작을 미룸. 계획 도중 폰이 없어 물을 수 없어 닫음. 말할 때와 다른 명령에 온 말 답을 버림. */

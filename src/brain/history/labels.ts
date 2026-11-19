@@ -14,6 +14,8 @@ export const SUMMARY_TEXT = {
   execution: "클로이드 실행: ",
   feedback: "사용자: ",
   dropped: (n: number) => `앞선 기록 ${n}줄 생략`,
+  /** 판단 줄 끝에 붙이는 그 판단의 사람 상태(임시 상태 ~<하는 일 값> 포함). */
+  state: (s: string) => ` · 사람 상태 ${s}`,
   tally: (vlm: number, vlmMissing: number, yoloMissing: number) => `[하루] VLM 분석 ${vlm}장 · VLM 분석 없음 ${vlmMissing}장 · YOLO 분석 없음 ${yoloMissing}장`,
 };
 
@@ -30,7 +32,23 @@ export const REFLECT_TEXT = {
   cancelled: "서버를 끄느라 반성을 멈췄어요",
   noObservation: "관찰 없음",
   noAction: "행동 없음",
-  learned: (n: number) => `새 규칙 ${n}개를 배웠어요`,
+  learned: (n: number) => `새 화살표 ${n}개를 배웠어요`,
+  /** 반성이 낸 기억이 코드 검사·뜻 검사를 두 번 다 지나지 못해 새 판본을 저장하지 않음. */
+  rejected: (why: string) => `반성 기억을 쓰지 않아요 · ${why}`,
+  /** 다시 반성할 때 피드백 끝에 붙이는 까닭. */
+  retry: (why: string) => `기억 검사 까닭: ${why}`,
+};
+
+/** 기억 판본 글(서버 로그). */
+export const MEMORY_TEXT = { restart: (version: number) => `옛 모양 기억 ${version}판이라 새 seed로 다시 시작해요` };
+
+/** 밤 흐름 글: 반성 입력에 붙이는 지난 검사 결과(모델이 읽는 영어 머리, 후보 줄), 서버 로그 줄. */
+export const NIGHT_TEXT = {
+  checksHead: "Check results:",
+  check: (state: string, candidate: string, action: string, n: number, k: number, passed: boolean) => `${state} | ${candidate} | ${action} | n=${n} k=${k} ${passed ? "passed" : "not passed"}`,
+  chunkFailed: (why: string) => `덩어리 기록 실패라 하루 요약으로 반성해요 · ${why}`,
+  copyFailed: (why: string) => `밤 흐름 사본을 쓰지 못했어요 · ${why}`,
+  markFailed: (day: string, why: string) => `${day} 시각 찾기 실패라 그날은 이번 채택 검사에서 빼요 · ${why}`,
 };
 
 /** 폰 부탁·질문의 답과 그동안의 말(반성 피드백). */

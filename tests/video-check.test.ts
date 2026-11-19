@@ -2,13 +2,18 @@
 // 인자(--step·--record), 트윈 줄, 영상 줄, 단계 판정 줄, 영상 끝 뒤 더 보기.
 // scripts/video-record.ts: 시연 영상 이름, ffmpeg concat 목록·명령, ack 간격, 가짜 페이지로 프레임 받기, ffmpeg가 없을 때.
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
+import jpeg from "jpeg-js";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { HistoryRow } from "../src/contract/history.js";
 import type { WorldEye, WorldObject, WorldView } from "../src/contract/world.js";
 import { dockId, isDockStep } from "../src/act/dock-step.js";
-import { SEND_SAY, clickChoice, clock, costLine, judgeInput, judgeState, markdown, parseArgs, phoneUrl, plannedClicks, sendStartPose, mainPlan, planState, stepPlaces, stepVerdict, timeline, verdict, twinRows, usedServer, roomLabels, ownAssetFailures, videoClock, runTimeline, clipEnd, syncWarning, mustStop, openDashboard, waitLoaded, waitTwinReady, frameGapLine, type ClickRule, type Row, type VideoCommand } from "../scripts/video-check.js";
+import { CUP_FSM_MEMORY } from "../src/brain/decision.js";
+import { LEARNED_FSM_MEMORY } from "../scripts/learned-memory.js";
+import { HISTORY_KINDS as DB_KINDS } from "../src/brain/history/db.js";
+import { FETCH_KINDS, SEND_SAY, hasLearnedClear, memoryGate, clickChoice, clock, costLine, judgeInput, judgeState, markdown, parseArgs, phoneUrl, plannedClicks, sendStartPose, mainPlan, planState, stepPlaces, stepVerdict, timeline, verdict, twinRows, usedServer, roomLabels, ownAssetFailures, videoClock, runTimeline, clipEnd, syncWarning, mustStop, openDashboard, recordSetup, waitLoaded, waitTwinReady, frameGapLine, type ClickRule, type Row, type VideoCommand } from "../scripts/video-check.js";
 import { createServer, type Server } from "node:http";
 import { listenRetry } from "../src/shared/net.js";
 import type { SceneJson } from "../src/contract/layout.js";
@@ -338,6 +343,23 @@ describe("video-check", () => {
     expect(rows.map((r) => [clock(r.ms), r.kind, r.text])).toEqual([
       ["00:14.0", "목표", "세움 · 컵 치우기"], ["00:15.6", "목표", "사람 떠남 · 판단 부름"], ["00:19.5", "목표", "계획 준비됨"], ["00:30.0", "목표", "버림 · PAM이 고르지 않음"],
     ]);
+  });
+
+  // 2026-11-18 tall e1: 미리 만들기 실패가 「3번 안에 못 냄」만 보여 차례마다 무엇을 버렸는지 시각표에서 몰랐다
+  it("시각표는 계획 모드 차례 기록(planner)을 「계획 모드」 줄로 넣는다", () => {
+    const row = (id: number, at_ms: number, text: string): HistoryRow => ({ id, at_ms, day: "2026-11-18", kind: "planner", subject: "plan:goal-1", text, data: { n: id } });
+    const rows = timeline(0, [row(1, 7_300, "계획 모드 1/3차례 2.4초 · 버림 · 2번 단계: until이 조건 낱말 모양이 아닙니다: any.1: 쓰지 않는 키 follow."), row(2, 9_800, "계획 모드 2/3차례 2.5초 · 통과")], []);
+    expect(rows.map((r) => [clock(r.ms), r.kind, r.text])).toEqual([
+      ["00:07.3", "계획 모드", "계획 모드 1/3차례 2.4초 · 버림 · 2번 단계: until이 조건 낱말 모양이 아닙니다: any.1: 쓰지 않는 키 follow."],
+      ["00:09.8", "계획 모드", "계획 모드 2/3차례 2.5초 · 통과"],
+    ]);
+  });
+
+  // 2026-11-19 plan1: 서버가 planner 줄을 남겨도 시각표가 가져오는 기록 종류(kinds)에 없어 「계획 모드」 줄이 시각표에 없었다
+  it("시각표가 줄로 만드는 기록 종류는 모두 서버에서 가져온다(FETCH_KINDS)", () => {
+    const shown = DB_KINDS.filter((kind) => timeline(0, [{ id: 1, at_ms: 1_000, day: "2026-11-19", kind, subject: "s", text: "글", data: null }], []).length > 0);
+    expect(shown).toContain("planner");
+    expect(shown.filter((k) => !FETCH_KINDS.includes(k))).toEqual([]);
   });
 
   it("비용 줄: /api/brain이 없으면 모름, 가까이 보기·관찰 모드가 없으면 앞 글 그대로, 있으면 횟수와 비용(모르면 비용 모름)", () => {
@@ -1011,4 +1033,130 @@ describe("녹화는 대시보드 한 화면만, 트윈이 다 뜬 뒤 시작", (
     expect(at("await waitTwinReady(dash")).toBeLessThan(at("rec = await startRecording("));
     expect(at("rec = await startRecording(")).toBeLessThan(at("cdp.evaluate(CLICK_START"));
   });
+});
+
+describe("영상 전 오늘 기억 확인", () => {
+  it("배운 컵 치우기 화살표가 있는 기억만 영상을 튼다(seed·옛 모양이면 멈춘다)", () => {
+    expect(hasLearnedClear(LEARNED_FSM_MEMORY)).toBe(true);
+    expect(hasLearnedClear(CUP_FSM_MEMORY)).toBe(false);
+    expect(hasLearnedClear({ initial_state: "drinking", states: [{ id: "left_cup", description: "d", rules: [{ trigger: "t", action: "컵 치우기" }], next: [] }] })).toBe(false);
+    expect(hasLearnedClear(null)).toBe(false);
+  });
+
+  it("GET /api/memory/day 답으로 정한다: 배운 기억이면 시각표 머리 줄 「기억 <v>판 · <source>」, 아니면 서버를 끄고 learned로 넣으라는 판정 줄", () => {
+    expect(memoryGate({ uses: { version: 3, source: "synthetic", memory: LEARNED_FSM_MEMORY } }, "runtime/demo/day1")).toEqual({ ok: true, line: "기억 3판 · synthetic" });
+    const why = "오늘 기억에 배운 컵 치우기가 없어요. 서버를 끄고 npx tsx scripts/demo-setup.ts learned --dir runtime/demo/day1로 넣은 뒤 다시 켜 주세요";
+    expect(memoryGate({ uses: { version: 1, source: "seed", memory: CUP_FSM_MEMORY } }, "runtime/demo/day1")).toEqual({ ok: false, why });
+    expect(memoryGate({ uses: null }, "runtime/demo/day1")).toEqual({ ok: false, why });
+    expect(memoryGate(null, "<서버 RUNTIME_DIR>")).toMatchObject({ ok: false, why: expect.stringContaining("learned --dir <서버 RUNTIME_DIR>로") });
+    const md = markdown({ clip: "cup.mp4", mode: "가짜 서버", ranAt: "2026-11-19 10:00:00", memory: "기억 3판 · synthetic", rows: [], notes: [], verdict: "판정: 명령 없음", cost: "VLM 0장" });
+    expect(md.split("\n").slice(0, 5)).toEqual(["# 영상 판정 · cup.mp4", "", "2026-11-19 10:00:00 · 가짜 서버", "", "기억 3판 · synthetic"]);
+  });
+});
+
+// 2026-11-19 교수님 「컵 시연 영상 중 미니맵 부분만 영상으로」 → 사용자 「미니맵만 크게 새로 녹화」: 녹화 창을 비전 미니맵만(?view=minimap) 1280×720으로, 초당 장 수는 --record-fps
+describe("미니맵만 녹화(--record-view minimap, --record-fps)", () => {
+  it("--record-view minimap이면 녹화 보기가 minimap, 없으면 top, 다른 값이면 까닭을 알려 준다", () => {
+    const a = parseArgs(["--clip", "wide.mp4", "--record", "out", "--record-view", "minimap"]);
+    if (typeof a === "string") throw new Error(a);
+    expect(a.recordView).toBe("minimap");
+    const plain = parseArgs(["--clip", "wide.mp4", "--record", "out"]);
+    if (typeof plain === "string") throw new Error(plain);
+    expect(plain.recordView).toBe("top");
+    for (const bad of [["--record-view", "side"], ["--record-view"], ["--record-view", "--fake"]]) {
+      expect(parseArgs(["--clip", "wide.mp4", "--record", "out", ...bad]), bad.join(" ")).toMatch(/--record-view는 top·minimap/);
+    }
+  });
+
+  it("--record-fps는 녹화 초당 장 수(1~30 정수)이고 없으면 10이다. 범위 밖·숫자 아님이면 까닭을 알려 준다", () => {
+    const a = parseArgs(["--clip", "wide.mp4", "--record", "out", "--record-fps", "20"]);
+    if (typeof a === "string") throw new Error(a);
+    expect(a.recordFps).toBe(20);
+    const plain = parseArgs(["--clip", "wide.mp4", "--record", "out"]);
+    if (typeof plain === "string") throw new Error(plain);
+    expect(plain.recordFps).toBe(10);
+    for (const bad of [["--record-fps", "0"], ["--record-fps", "31"], ["--record-fps", "2.5"], ["--record-fps", "많이"], ["--record-fps"], ["--record-fps", "--fake"]]) {
+      expect(parseArgs(["--clip", "wide.mp4", "--record", "out", ...bad]), bad.join(" ")).toMatch(/--record-fps는 1~30/);
+    }
+  });
+
+  it("녹화 모양(recordSetup): minimap은 창 1280×720·영상 높이 720, top은 1280×800·높이 800, 폰도 녹화하면 높이는 기본(800). ack 간격은 1000/fps", () => {
+    expect(recordSetup({ recordView: "minimap", recordFps: 20, recordPhone: false })).toEqual({ size: [1280, 720], intervalMs: 50, fps: 20, height: 720 });
+    expect(recordSetup({ recordView: "top", recordFps: 10, recordPhone: false })).toEqual({ size: [1280, 800], intervalMs: 100, fps: 10, height: 800 });
+    expect(recordSetup({ recordView: "minimap", recordFps: 20, recordPhone: true })).toEqual({ size: [1280, 720], intervalMs: 50, fps: 20, height: undefined });
+  });
+
+  it("view minimap이면 대시보드 창을 1280×720으로 맞추고 <api>/?view=minimap으로 연다. 없으면 1280×800, <api>/", async () => {
+    const calls: { method: string; params?: { url?: string; width?: number; height?: number } }[] = [];
+    const tab = {
+      send: async (method: string, params?: { url?: string; width?: number; height?: number }) => {
+        calls.push({ method, params });
+        return method === "Runtime.evaluate" ? { result: { result: { value: ["http://127.0.0.1:8200", "complete"] } } } : {};
+      },
+    };
+    await openDashboard(tab as never, "http://127.0.0.1:8200", { waitMs: 5_000, everyMs: 1, view: "minimap" });
+    await openDashboard(tab as never, "http://127.0.0.1:8200", { waitMs: 5_000, everyMs: 1 });
+    expect(calls.filter((c) => c.method === "Page.navigate").map((c) => c.params!.url)).toEqual(["http://127.0.0.1:8200/?view=minimap", "http://127.0.0.1:8200/"]);
+    expect(calls.filter((c) => c.method === "Emulation.setDeviceMetricsOverride").map((c) => [c.params!.width, c.params!.height])).toEqual([[1280, 720], [1280, 800]]);
+  });
+
+  it("main은 녹화 창·녹화·영상 합치기에 recordSetup 값을 쓴다", () => {
+    const src = readFileSync(new URL("../scripts/video-check.ts", import.meta.url), "utf8");
+    expect(src).toContain("openWindow(port, shape.size");
+    expect(src).toContain("openDashboard(dash, api, { view: args.recordView })");
+    expect(src).toMatch(/startRecording\(framesDir, .*\{ name: \"dash\", page: dash, size: shape\.size \}\], \{ intervalMs: shape\.intervalMs \}\)/);
+    expect(src).toMatch(/encodeDemo\(framesDir, recorded, demo, \{.*dashSize: shape\.size, fps: shape\.fps, height: shape\.height[,}]/);
+  });
+
+  const ffmpegHere = spawnSync("ffmpeg", ["-version"]).status === 0 && spawnSync("ffprobe", ["-version"]).status === 0;
+  it.skipIf(!ffmpegHere)("encodeDemo는 받은 fps·높이로 mp4를 만든다(초당 20장, 높이 그대로)", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "video-record-"));
+    try {
+      mkdirSync(join(dir, "dash"));
+      const frames = Array.from({ length: 20 }, (_, i) => {
+        const data = Buffer.alloc(64 * 36 * 4, i * 10);
+        writeFileSync(join(dir, "dash", `${String(i + 1).padStart(6, "0")}.jpg`), jpeg.encode({ data, width: 64, height: 36 }, 80).data);
+        return { file: `dash/${String(i + 1).padStart(6, "0")}.jpg`, ms: i * 50 };
+      });
+      const out = join(tmpdir(), `video-record-${process.pid}-${Date.now()}.demo.mp4`);
+      try {
+        const r = await encodeDemo(dir, { endMs: 1000, frames: { dash: frames }, lost: 0 }, out, { dashSize: [64, 36], fps: 20, height: 36 });
+        expect(r).toEqual({ ok: true });
+        const probe = spawnSync("ffprobe", ["-v", "error", "-select_streams", "v:0", "-count_frames", "-show_entries", "stream=width,height,r_frame_rate,nb_read_frames", "-of", "json", out], { encoding: "utf8" });
+        const s = (JSON.parse(probe.stdout) as { streams: Record<string, unknown>[] }).streams[0];
+        expect(s).toMatchObject({ width: 64, height: 36, r_frame_rate: "20/1", nb_read_frames: "20" });
+      } finally {
+        rmSync(out, { force: true });
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }, 60_000);
+});
+
+// 2026-11-19 사용자 「그냥 하나의 영상으로, 결정론적으로」: 미니맵 녹화는 장면 폴더와 판 기록(run.json)을 남겨 scripts/minimap-cut.ts가 이은 영상을 만든다
+describe("미니맵 녹화는 이은 영상 재료를 남긴다", () => {
+  it("main: minimap 보기면 장면 폴더를 지우지 않고(keepFrames) 녹화 시작 시각·장면·짝·영상 조각·첫 영상 길이를 run.json(CUT_RUN_FILE)에 쓴다", () => {
+    const src = readFileSync(new URL("../scripts/video-check.ts", import.meta.url), "utf8");
+    expect(src).toMatch(/encodeDemo\(framesDir, recorded, demo, \{.*keepFrames: args\.recordView === "minimap"/);
+    expect(src).toContain("join(framesDir, CUT_RUN_FILE)");
+    expect(src).toMatch(/recStartMs = Date\.now\(\);\s*\n\s*rec = await startRecording\(/);
+    expect(src).toMatch(/startMs: recStartMs, endMs: recorded\.endMs, size: shape\.size, frames: recorded\.frames\.dash \?\? \[\], t0, sync: seen\.record\?\.sync \?\? \[\], firstDurationMs, clips/);
+  });
+
+  const ffmpegHere = spawnSync("ffmpeg", ["-version"]).status === 0;
+  it.skipIf(!ffmpegHere)("encodeDemo keepFrames면 mp4를 만든 뒤에도 장면 폴더를 그대로 둔다", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "video-record-"));
+    const out = join(tmpdir(), `video-record-keep-${process.pid}-${Date.now()}.demo.mp4`);
+    try {
+      mkdirSync(join(dir, "dash"));
+      writeFileSync(join(dir, "dash", "000001.jpg"), jpeg.encode({ data: Buffer.alloc(64 * 36 * 4, 90), width: 64, height: 36 }, 80).data);
+      const r = await encodeDemo(dir, { endMs: 500, frames: { dash: [{ file: "dash/000001.jpg", ms: 0 }] }, lost: 0 }, out, { dashSize: [64, 36], height: 36, keepFrames: true });
+      expect(r).toEqual({ ok: true });
+      expect(existsSync(join(dir, "dash", "000001.jpg"))).toBe(true);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+      rmSync(out, { force: true });
+    }
+  }, 60_000);
 });

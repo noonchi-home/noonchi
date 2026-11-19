@@ -10,7 +10,7 @@ export type { DecisionRow, HistoryKind, HistoryRow } from "../../contract/histor
 
 /** 기록 종류 전부(GET /api/history의 kinds 검사). */
 export const HISTORY_KINDS: readonly HistoryKind[] = [
-  "device", "detection", "vlm", "yolo", "world", "pam_text", "mode", "decision", "plan", "execution", "reflection", "feedback", "photo", "link", "trigger", "look", "thought", "service", "bus_gap", "goal",
+  "device", "detection", "vlm", "yolo", "world", "pam_text", "mode", "decision", "plan", "execution", "reflection", "feedback", "photo", "link", "trigger", "look", "thought", "service", "bus_gap", "goal", "planner",
 ];
 
 const SCHEMA = `
@@ -44,10 +44,16 @@ export interface StoredPhoto { id: string; atMs: number; path: string; origin: "
 
 /** 기억 판본 하나. appliesDay는 쓰기 시작하는 날(seed는 null). */
 export type MemorySource = "seed" | "reflection" | "synthetic";
-/** day: 그 판본을 만든 반성의 날(seed는 null). */
+/** 기억 종류: 실행 기억(list·fsm, 판단이 PAM에 보내는 것)과 후보 판본(fsm_candidates, 반성이 낸 후보 FSM. 다음 밤 반성 입력으로만 읽는다). */
+export type MemoryKind = "list" | "fsm" | "fsm_candidates";
+/** 실행 기억 판본 하나. day: 그 판본을 만든 반성의 날(seed는 null). */
 export interface MemoryVersion { version: number; kind: "list" | "fsm"; memory: unknown; appliesDay: string | null; source: MemorySource; day: string | null }
-type RawMemory = { version: number; kind: "list" | "fsm"; memory: string; applies_day: string | null; source: MemorySource; day: string | null };
-const memoryRow = (r: RawMemory): MemoryVersion => ({ version: r.version, kind: r.kind, memory: JSON.parse(r.memory) as unknown, appliesDay: r.applies_day, source: r.source, day: r.day });
+/** 후보 판본 하나(fsm_candidates). */
+export interface CandidateVersion { version: number; kind: "fsm_candidates"; memory: unknown; appliesDay: string | null; source: MemorySource; day: string | null }
+type RawMemory = { version: number; kind: MemoryKind; memory: string; applies_day: string | null; source: MemorySource; day: string | null };
+const memoryRow = <T extends MemoryVersion | CandidateVersion>(r: RawMemory): T => ({ version: r.version, kind: r.kind, memory: JSON.parse(r.memory) as unknown, appliesDay: r.applies_day, source: r.source, day: r.day }) as T;
+/** 실행 기억만 고르는 조건(후보 판본은 판단 기억으로 뽑히지 않는다). */
+const EXEC = "kind != 'fsm_candidates'";
 
 type RawRow = Omit<HistoryRow, "data"> & { data: string | null };
 const parseRow = (r: RawRow): HistoryRow => ({ ...r, data: r.data === null ? null : JSON.parse(r.data) as unknown });
@@ -91,27 +97,61 @@ export class HistoryDb {
   }
 
   /** 기억 판본을 저장하고 새 번호를 돌려준다(1부터). appliesDay가 없으면(seed) 어느 날에나 쓸 수 있다. synthetic은 합성 기록(scripts/seed-history.ts)이다. */
-  saveMemory(m: { kind: "list" | "fsm"; memory: unknown; day: string | null; appliesDay: string | null; source: MemorySource }): number {
+  saveMemory(m: { kind: MemoryKind; memory: unknown; day: string | null; appliesDay: string | null; source: MemorySource }): number {
     const next = (this.db.prepare("SELECT COALESCE(MAX(version), 0) + 1 AS v FROM memories").get() as { v: number }).v;
     this.db.prepare("INSERT INTO memories(version, created_ms, day, applies_day, kind, memory, source) VALUES (?, ?, ?, ?, ?, ?, ?)")
       .run(next, Date.now(), m.day, m.appliesDay, m.kind, JSON.stringify(m.memory), m.source);
     return next;
   }
 
-  /** 그날 쓸 수 있는 판본(applies_day가 없거나 그날 이전) 중 가장 새 것. */
+  /** 그날 쓸 수 있는 실행 기억 판본(applies_day가 없거나 그날 이전) 중 가장 새 것. */
   memoryFor(day: string): MemoryVersion | null {
-    const r = this.db.prepare("SELECT version, kind, memory, applies_day, source, day FROM memories WHERE applies_day IS NULL OR applies_day <= ? ORDER BY version DESC LIMIT 1").get(day);
-    return r ? memoryRow(r as RawMemory) : null;
+    const r = this.db.prepare(`SELECT version, kind, memory, applies_day, source, day FROM memories WHERE ${EXEC} AND (applies_day IS NULL OR applies_day <= ?) ORDER BY version DESC LIMIT 1`).get(day);
+    return r ? memoryRow<MemoryVersion>(r as RawMemory) : null;
   }
 
-  /** 가장 새 판본 번호(언제부터 쓰는지와 상관없이). 없으면 null. */
+  /** 가장 새 실행 기억 판본 번호(언제부터 쓰는지와 상관없이). 없으면 null. */
   latestMemoryVersion(): number | null {
-    return (this.db.prepare("SELECT MAX(version) AS v FROM memories").get() as { v: number | null }).v;
+    return (this.db.prepare(`SELECT MAX(version) AS v FROM memories WHERE ${EXEC}`).get() as { v: number | null }).v;
   }
 
+  /** 실행 기억 판본 하나(후보 판본 번호면 null). */
   memoryVersion(version: number): MemoryVersion | null {
-    const r = this.db.prepare("SELECT version, kind, memory, applies_day, source, day FROM memories WHERE version = ?").get(version);
-    return r ? memoryRow(r as RawMemory) : null;
+    const r = this.db.prepare(`SELECT version, kind, memory, applies_day, source, day FROM memories WHERE version = ? AND ${EXEC}`).get(version);
+    return r ? memoryRow<MemoryVersion>(r as RawMemory) : null;
+  }
+
+  /** 실행 기억 판본 전부(번호 차례). */
+  memoryVersions(): MemoryVersion[] {
+    return (this.db.prepare(`SELECT version, kind, memory, applies_day, source, day FROM memories WHERE ${EXEC} ORDER BY version`).all() as unknown as RawMemory[]).map((r) => memoryRow<MemoryVersion>(r));
+  }
+
+  /** 그날 이전에 저장한 가장 새 후보 판본(applies_day가 없거나 그날 이전): 그날 밤 반성의 입력. 없으면 null. */
+  candidatesFor(day: string): CandidateVersion | null {
+    const r = this.db.prepare("SELECT version, kind, memory, applies_day, source, day FROM memories WHERE kind = 'fsm_candidates' AND (applies_day IS NULL OR applies_day <= ?) ORDER BY version DESC LIMIT 1").get(day);
+    return r ? memoryRow<CandidateVersion>(r as RawMemory) : null;
+  }
+
+  /** 밤 저장 하나(BEGIN IMMEDIATE): 로봇 판본·후보 판본·반성 기록을 함께 쓰고, 어느 하나라도 던지면 모두 되돌린 뒤 다시 던진다.
+   *  reflection은 로봇 판본 번호로 반성 기록 줄(시각·글·data)을 만든다. */
+  saveNight(o: { day: string; appliesDay: string; robot: unknown; candidates: unknown; reflection: (robot: number) => { atMs: number; text: string; data: unknown } }): { robot: number; candidates: number } {
+    this.db.exec("BEGIN IMMEDIATE");
+    try {
+      const robot = this.saveMemory({ kind: "fsm", memory: o.robot, day: o.day, appliesDay: o.appliesDay, source: "reflection" });
+      const candidates = this.saveMemory({ kind: "fsm_candidates", memory: o.candidates, day: o.day, appliesDay: o.appliesDay, source: "reflection" });
+      const r = o.reflection(robot);
+      this.add("reflection", r.atMs, r.text, { data: r.data });
+      this.db.exec("COMMIT");
+      return { robot, candidates };
+    } catch (e) {
+      this.db.exec("ROLLBACK");
+      throw e;
+    }
+  }
+
+  /** 그날까지 기록이 있는 날(차례). kinds가 없으면 모든 종류. */
+  daysUpTo(day: string, kinds: readonly HistoryKind[] = ["detection", "world", "device", "vlm", "yolo", "decision", "execution", "feedback"]): string[] {
+    return (this.db.prepare(`SELECT DISTINCT day FROM events WHERE day <= ? AND kind IN (${kinds.map(() => "?").join(",")}) ORDER BY day`).all(day, ...kinds) as { day: string }[]).map((r) => r.day);
   }
 
   /** 그날 판단에 고정한 판본(meta memory_day:<날짜>). */
@@ -122,19 +162,11 @@ export class HistoryDb {
 
   /** 그날 판본을 고정한다. 이미 고정한 날은 바꾸지 않는다. replace면 바꾼다(코드의 seed가 바뀌어 seed 판본을 올릴 때만, src/brain/history/reflect.ts). */
   pinMemory(day: string, version: number, replace = false): void {
+    const kind = (this.db.prepare("SELECT kind FROM memories WHERE version = ?").get(version) as { kind: MemoryKind } | undefined)?.kind;
+    if (kind === "fsm_candidates") throw new Error(`memory ${version}: not an execution memory`);
     this.db.prepare(`INSERT INTO meta(key, value) VALUES (?, ?) ON CONFLICT(key) DO ${replace ? "UPDATE SET value = excluded.value" : "NOTHING"}`).run(`memory_day:${day}`, String(version));
   }
 
-  /** 이미 배운 기억에 넣는 seed 바뀜(src/brain/decision.ts SEED_PATCHES)의 표시(meta seed_patch:<열쇠>): <id>는 넣을 판본의 경계, <id>:<판본>은 그 판본을 고친 판본. 없으면 null. */
-  seedPatch(id: string): number | null {
-    const r = this.db.prepare("SELECT value FROM meta WHERE key = ?").get(`seed_patch:${id}`) as { value: string } | undefined;
-    return r ? Number(r.value) : null;
-  }
-
-  /** seed 바뀜 하나를 넣었다고 적는다(한 DB에 한 번). */
-  markSeedPatch(id: string, version: number): void {
-    this.db.prepare("INSERT INTO meta(key, value) VALUES (?, ?) ON CONFLICT(key) DO NOTHING").run(`seed_patch:${id}`, String(version));
-  }
 
   /** 디스크에 둔 사진 하나(photo 사진 찍기, dataset 시험 자료). 보관 기간이 지나면 retention.sweep이 지운다. */
   addPhoto(p: StoredPhoto): void {
