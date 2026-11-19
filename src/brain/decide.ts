@@ -50,6 +50,9 @@ export interface DeciderOptions {
   memory: () => { memory: PamMemory; kind: "list" | "fsm"; version: number };
   emit: (log: BrainLog) => void;
   onDecision?: (d: DecisionRecord) => void;
+  /** 화살표 없는 유효한 답(행동 없음)이 미리 세운 목표의 트리거면 그 목표 행동(실행 추적 goal.ts triggerOf), 아니면 null.
+   *  있으면 판단 기록·onDecision에 그 행동(goal 표시)으로 낸다: 기록과 실행이 같은 행동을 본다(밤 채택 검사 robotSpans, Codex b5da6c36 P2). */
+  goalTrigger?: (d: DecisionRecord) => string | null;
   /** 관찰 텍스트·마지막 관찰 시각의 시간대(분). */
   offsetMinutes: number;
   clock?: { now(): number };
@@ -241,6 +244,8 @@ export class Decider {
 
   private finish(r: DecisionRecord): void {
     if (this.stopped) return;
+    const action = r.status === "valid" && r.action === null && !r.late ? this.o.goalTrigger?.(r) ?? null : null;
+    if (action) r = { ...r, action, goal: true };
     this.emitDecision(r);
     this.o.onDecision?.(r);
   }
@@ -252,7 +257,7 @@ export class Decider {
       // 이 판단 뒤의 지금 모드(서버가 정하는 한 곳, src/act/mode.ts)
       assist: this.o.mode ? this.o.mode(r.action) : modeOf(r.action),
       ...(r.error ? { error: r.error } : {}), ...(r.usage ? { usage: r.usage } : {}), memory_version: r.memoryVersion, world: r.world,
-      ...(r.source ? { source: r.source } : {}), ...(r.via ? { via: r.via } : {}), ...(r.late ? { late: r.late } : {}),
+      ...(r.source ? { source: r.source } : {}), ...(r.via ? { via: r.via } : {}), ...(r.late ? { late: r.late } : {}), ...(r.goal ? { goal: r.goal } : {}),
     });
   }
 

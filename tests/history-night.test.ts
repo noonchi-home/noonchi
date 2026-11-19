@@ -10,6 +10,7 @@ import { candidateFsmOf } from "../src/brain/pam/adopt.js";
 import { HistoryDb } from "../src/brain/history/db.js";
 import { answerActions, answerTimes, robotSpans, runNight, type NightResult } from "../src/brain/history/night.js";
 import { memoryForDay } from "../src/brain/history/reflect.js";
+import { recordBrainLog } from "../src/brain/history/recorder.js";
 import type { CandidateFsm } from "../src/contract/pam.js";
 import { pamClientFor, startFakePamLlm, type ChunkView, type MarkView } from "./helpers/pam.js";
 
@@ -88,6 +89,21 @@ describe("밤 흐름: 채택 검사", () => {
     } finally {
       await pam.close();
     }
+  });
+
+  // Codex(b5da6c36) P2: 화살표 없는 PAM 답을 미리 세운 목표의 트리거로 시작한 실행도 로봇이 한 구간이다(판단 기록에 목표 행동이 남는다)
+  it("목표 트리거로 시작한 판단(goal, 화살표 없음)도 판단 기록 글이 그 행동이라 robotSpans가 그 실행을 찾는다", () => {
+    const db = HistoryDb.open(":memory:");
+    const day = "2026-11-12";
+    recordBrainLog(db, {
+      type: "decision", at_ms: at(day, "08:00:01"), id: "pam-9", seq: 9, text_sent: "t", status: "valid", prediction: { observation: "o", reasoning: "r", task_index: -1 },
+      action: "컵 치우기", goal: true, fsm: { state: "away", from: null, next_index: -1, to: null, on: null, when: null, action: null, learned: false }, memory_version: 1,
+      world: { objects: [], person_visible: false, vlm_missing: 0, yolo_missing: 0 },
+    });
+    recordBrainLog(db, { type: "execution", at_ms: at(day, "08:00:03"), plan_id: "plan:pam-9", state: "running", text: "실행 중" });
+    recordBrainLog(db, { type: "execution", at_ms: at(day, "08:01:40"), plan_id: "plan:pam-9", state: "done", text: "완료" });
+    expect(db.list({ day, kinds: ["decision"] }).map((r) => [r.text, (r.data as { goal?: true }).goal])).toEqual([["컵 치우기", true]]);
+    expect(robotSpans(db, day, "컵 치우기")).toEqual([[t("08:00:03"), t("08:01:40")]]);
   });
 
   // Codex(1b07d3e2 P2): 로봇 실행 구간을 안 보인 구간에 더해도, 그 안에서 사람이 폰 명령대로 한 행동을 시각 찾기가 행동으로 표시하면 checkCandidate가 먼저 따라온 것으로 셌다

@@ -74,7 +74,7 @@ export function recordBrainLog(db: HistoryDb, l: BrainLog): void {
         subject: l.id, data: {
           seq: l.seq, prediction: l.prediction, status: l.status, memory_version: l.memory_version, world: l.world, ...(l.usage ? { usage: l.usage } : {}),
           // 사람 상태·화살표(덩어리 기록·반성이 그 판단의 사람 상태를 본다), 말 부탁·늦은 답 표시
-          ...(l.fsm ? { fsm: l.fsm } : {}), ...(l.source ? { source: l.source } : {}), ...(l.via ? { via: l.via } : {}), ...(l.late ? { late: l.late } : {}),
+          ...(l.fsm ? { fsm: l.fsm } : {}), ...(l.source ? { source: l.source } : {}), ...(l.via ? { via: l.via } : {}), ...(l.late ? { late: l.late } : {}), ...(l.goal ? { goal: l.goal } : {}),
         },
       });
       return;

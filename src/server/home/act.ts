@@ -167,6 +167,8 @@ export function startAct(core: HomeCore): (event: BrainLog) => void {
       core.person?.onDecision(d);
       core.tracker?.onDecision(d);
     },
+    // 화살표 없는 답의 미리 세운 목표 트리거(src/act/track/goal.ts triggerOf): 판단 기록에도 그 목표 행동이 남는다
+    goalTrigger: (d) => core.tracker?.goalTrigger(d) ?? null,
   });
   core.decider = decide;
   // 시간 줄 사람 줄(src/brain/person.ts): 판단의 PAM 답 상태와 판단 사이 World State 하는 일(판단이 쓰는 기억으로)로 지금 사람 상태를 갖고 바뀔 때만 대시보드로 보낸다

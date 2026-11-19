@@ -139,6 +139,8 @@ export type BrainLog =
     fsm?: FsmStep | null;
     /** 판단이 버린 늦은 답(풀린 화살표를 다시 낸 답, src/brain/decide.ts): 행동 없이 기록만 한다. */
     late?: true;
+    /** 화살표 없는 PAM 답을 미리 세운 목표의 트리거로 보고 그 목표 행동을 action에 넣었다(src/act/track/goal.ts triggerOf). fsm은 PAM 답 그대로다. */
+    goal?: true;
     /** 고른 행동이 어느 모드로 하는 행동인가(TaskSpec.coach, src/act/tasks.ts): 코치 행동이면 coach, 아니면 noonchi. 대기·실패는 null.
      *  대시보드 메시지 상자 머리(「코치 모드」·「눈치 모드」, 대기면 없음)가 이 값만 쓴다. 예전 기록에는 없다. */
     assist?: "noonchi" | "coach" | null;
@@ -358,6 +360,8 @@ export interface DecisionRecord {
   fsm?: FsmStep | null;
   /** 판단이 버린 늦은 답(풀린 화살표를 같은 번호 이하 요청이 다시 낸 답): action은 null이고 실행 추적은 「앞선 판단이라 쓰지 않음」으로 기록만 한다. */
   late?: true;
+  /** 화살표 없는 PAM 답을 미리 세운 목표의 트리거로 보고 그 목표 행동을 action에 넣었다(판단 goalTrigger). fsm은 PAM 답 그대로다. */
+  goal?: true;
   error?: string;
   /** 이번 판단의 PAM LLM 사용량(답을 받았을 때만). */
   usage?: PamUsage;

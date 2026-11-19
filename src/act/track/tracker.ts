@@ -262,6 +262,11 @@ export class ExecutionTracker {
     return r && { planId: r.plan.view.id, state: r.state };
   }
 
+  /** 화살표 없는 PAM 답이 미리 세운 목표의 트리거면 그 목표 행동(goal.ts triggerOf), 아니면 null. 판단(Decider goalTrigger)이 기록을 내기 전에 묻는다. */
+  goalTrigger(d: DecisionRecord): string | null {
+    return this.core.goal.triggerOf(d);
+  }
+
   /** 미리 세운 목표(goal.ts). 없으면 null. */
   goal(): PendingGoal | null {
     return this.core.goal.current();

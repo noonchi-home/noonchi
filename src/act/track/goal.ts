@@ -269,13 +269,14 @@ export class GoalWatch extends Part {
 
   /** 목표와 같은 행동인데 사람이 떠난 뒤의 판단이 아닌가(아직 쓰는 중이거나, 떠난 것이 집 상태에 반영되기 전에 보낸 판단): 판단 받기는 그 판단으로 계획을 만들지 않고 기록만 한다.
    *  쓰는 동안 만든 계획은 쓰는 중 기다림 한도(30초)를 넘으면 닫히므로 목표가 맡고, 사람이 떠나면 목표가 판단을 다시 부른다. */
-  /** 화살표 없는 PAM 답(next_index −1)의 목표 트리거: 사람이 떠난 목표(fired)이고 떠난 것이 반영된 뒤 보낸 판단(afterLeave)이며, 그 답의 사람 상태가
+  /** 화살표 없는 PAM 답(next_index −1, from null)의 목표 트리거: 사람이 떠난 목표(fired)이고 떠난 것이 반영된 뒤 보낸 판단(afterLeave)이며, 그 답의 사람 상태가
    *  목표를 세운 화살표의 출발 상태가 아니고 도착(to, '*'면 다른 상태 아무것)이면 목표 행동. 화살표에 when이 있으면 서버가 그 조건을 볼 수 없어 null.
-   *  상태는 PAM 답 그대로이고 목표 화살표 하나만 본다(다른 화살표를 고르지 않는다). 그 밖은 null. */
+   *  상태는 PAM 답 그대로이고 목표 화살표 하나만 본다(다른 화살표를 고르지 않는다). PAM이 다른 화살표 번호를 냈으면(행동 없는 화살표도) 그 답을 따른다(Codex b5da6c36 P2). 그 밖은 null.
+   *  판단(src/brain/decide.ts goalTrigger)이 판단 기록을 내기 전에 물어 판단 기록·실행 추적이 같은 행동을 받는다. */
   triggerOf(d: DecisionRecord): string | null {
     const g = this.goal;
     const v = g?.view;
-    if (!g || !v || d.action || d.status !== "valid" || !d.fsm || g.pick.when !== null) return null;
+    if (!g || !v || d.action || d.status !== "valid" || !d.fsm || d.fsm.next_index !== -1 || d.fsm.from !== null || g.pick.when !== null) return null;
     const state = d.fsm.state;
     if (state === g.pick.state || (g.pick.to !== "*" && state !== g.pick.to)) return null;
     return this.afterLeave(d, v) ? v.action : null;

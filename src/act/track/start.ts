@@ -61,14 +61,8 @@ export class Starter extends Part {
     // 기다리기·기기 단계 전에 보낸 판단이 그 뒤에 오면 낡은 관찰이라 쓰지 않는다(다시 부르는 판단이 새 관찰로 정한다)
     if (d.atMs < core.quietFrom && core.open()?.decision.action !== d.action) return this.note(d, EXEC_TEXT.late);
     if (d.status !== "valid") return this.note(d, EXEC_TEXT.decisionFailed);
-    if (!d.action) {
-      // 화살표 없는 답이어도 사람 상태가 미리 세운 목표의 화살표대로 바뀌었으면(떠난 뒤 drinking → away) 그 목표의 트리거다(goal.ts triggerOf)
-      const action = core.goal.triggerOf(d);
-      if (!action) return this.note(d, EXEC_TEXT.wait);
-      this.o.log?.(`[실행 추적] ${planIdOf(d.id)} 목표 ${core.goal.current()?.id ?? ""} 트리거: PAM 상태 ${d.fsm?.state ?? ""}(화살표 없음) → ${action}`);
-      // 그 목표 행동의 판단으로 다시 받는다(아래 검사·미리 만든 계획 쓰기는 그대로)
-      return this.onDecision({ ...d, action });
-    }
+    // 화살표 없는 답의 목표 트리거는 판단이 기록 전에 action으로 넣어 온다(src/brain/decide.ts goalTrigger, goal.ts triggerOf)
+    if (!d.action) return this.note(d, EXEC_TEXT.wait);
     // 미리 세운 목표와 같은 행동인데 사람이 떠난 뒤의 판단이 아니면 목표가 맡는다(사람이 떠나면 판단을 다시 부른다, goal.ts)
     if (core.goal.holds(d)) return this.note(d, EXEC_TEXT.goalWait);
     // 계획이 끝난 뒤 사용자 위치 확인·충전 자리로 가는 동안은 새 일을 미룬다(충전 자리에서 시작한다, dock.ts).
