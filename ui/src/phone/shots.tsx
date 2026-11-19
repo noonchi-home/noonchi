@@ -10,7 +10,7 @@ import "../styles.css";
 import { color } from "../../../src/design/tokens.ts";
 import { drawOverlay, fitCanvas, overlayEdges, type Drawn } from "./draw";
 import { SHOTS, SHOT_NAMES, type ShotName } from "./fixtures";
-import { clipIssues, introIssues, layoutIssues, modalIssues, MODAL_ZONE, type Box } from "./layout-check";
+import { bubbleIssues, clipIssues, introIssues, layoutIssues, modalIssues, MODAL_ZONE, type Box } from "./layout-check";
 import { PhoneScreen } from "./PhoneScreen";
 import type { PhoneActions } from "./state";
 
@@ -23,7 +23,7 @@ const act: PhoneActions = {
 const ZONE_NAMES: Record<string, string> = { top: "위 줄", thumb: "엄지 자리" };
 const zoneOf = (el: Element) =>
   el.closest("[role=alertdialog]") ? MODAL_ZONE : ZONE_NAMES[el.closest("[data-phone-zone]")?.getAttribute("data-phone-zone") ?? ""];
-const rect = (el: Element): Box => {
+const rect = (el: Element | Range): Box => {
   const r = el.getBoundingClientRect();
   return { left: r.left, top: r.top, right: r.right, bottom: r.bottom };
 };
@@ -50,7 +50,16 @@ function measureOverlay(drawn: Drawn): string[] {
     .map((el) => ({ name: el.dataset.phoneText!, line: lineHeight(el), scroll: { width: el.scrollWidth, height: el.scrollHeight }, client: { width: el.clientWidth, height: el.clientHeight } }));
   const modals = [...root.querySelectorAll<HTMLElement>("[role=alertdialog]")].filter((el) => el.getClientRects().length > 0)
     .map((el) => ({ name: el.querySelector("h2")?.textContent ?? "", scroll: { width: el.scrollWidth, height: el.scrollHeight }, client: { width: el.clientWidth, height: el.clientHeight } }));
-  return [...layoutIssues({ width: innerWidth, height: innerHeight }, targets, panels, drawn.arrows), ...clipIssues(texts), ...modalIssues(modals)];
+  // 위 줄 명령 말풍선: 말풍선 자리, 글 범위(Range), 말풍선 안 좌우 여백 합
+  const bubbles = [...root.querySelectorAll<HTMLElement>("[data-phone-zone=top] [data-phone-text]")].filter((el) => el.getClientRects().length > 0).flatMap((el) => {
+    const glass = el.closest("[data-slot=liquid-glass]");
+    if (!glass || !el.parentElement) return [];
+    const range = document.createRange();
+    range.selectNodeContents(el);
+    const pad = parseFloat(getComputedStyle(el.parentElement).paddingLeft) + parseFloat(getComputedStyle(el.parentElement).paddingRight);
+    return [{ name: el.dataset.phoneText!, box: rect(glass), text: rect(range), pad }];
+  });
+  return [...layoutIssues({ width: innerWidth, height: innerHeight }, targets, panels, drawn.arrows), ...clipIssues(texts), ...modalIssues(modals), ...bubbleIssues({ width: innerWidth, height: innerHeight }, bubbles)];
 }
 
 /** 처음 화면이 보이면 「AR 시작」 단추가 첫 화면 안에 있는지 잰다. */

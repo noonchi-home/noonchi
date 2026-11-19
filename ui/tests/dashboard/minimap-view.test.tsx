@@ -157,6 +157,18 @@ describe("비전 미니맵만(?view=minimap)", () => {
     expect(layout(top.getAttribute("class")!.split(/\s+/))).toEqual(layout(phoneZone));
   });
 
+  // 2026-11-20 사용자 「말풍선 글자 크기만큼만 나오게 해 줘」: 명령 말풍선은 남은 너비를 채우지 않고 글 너비만큼(줄어들 수 있어 긴 명령은 줄을 바꾼다)
+  it("명령 말풍선은 늘어나지 않고(flex-1·grow·w-full 없음) 줄어들 수 있다(min-w-0). 실제 폰도 같은 부품이다", async () => {
+    await mount(true);
+    send([{ type: "phone_command", text: "컵을 들어 주세요" }]);
+    const bubble = document.querySelector<HTMLElement>("main > [data-phone-line] > [data-phone-zone=top]")!.lastElementChild!;
+    const words = (bubble.getAttribute("class") ?? "").split(/\s+/);
+    expect(bubble.getAttribute("data-slot")).toBe("liquid-glass");
+    expect(words.filter((w) => /^(flex-1|grow|flex-grow|w-full|flex-auto)$/.test(w))).toEqual([]);
+    expect(words).toContain("min-w-0");
+    expect(bubble.querySelector("[data-phone-text=명령]")).toHaveClass("break-keep");
+  });
+
   it("창이 16:9가 아니면(1280×800) 칸은 가운데 1280×720이다", async () => {
     windowSize(1280, 800);
     await mount(true);

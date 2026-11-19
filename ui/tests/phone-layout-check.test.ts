@@ -3,7 +3,7 @@
 // 위 줄·엄지 자리는 가운데 조준점(28px)과 그 칸 밖 단추를 가리면 안 된다(모달 안 단추는 그 위에 뜨므로 보지 않는다). 위 줄은 상태 표시줄 아래(36px부터).
 // 화면 밖 화살표는 칸과 단추에 겹치지 않아야 한다. 명령·비전 상태 글은 잘리지 않아야 한다. 처음 화면은 AR 시작 단추가 첫 화면 안.
 import { describe, expect, it } from "vitest";
-import { clipIssues, introIssues, layoutIssues, modalIssues } from "../src/phone/layout-check";
+import { bubbleIssues, clipIssues, introIssues, layoutIssues, modalIssues } from "../src/phone/layout-check";
 
 const box = (left: number, top: number, right: number, bottom: number) => ({ left, top, right, bottom });
 const PORTRAIT = { width: 390, height: 844 };
@@ -85,5 +85,19 @@ describe("처음 화면 배치 검사", () => {
     expect(introIssues({ width: 360, height: 780 }, box(32, 760, 328, 808))).toEqual(["「AR 시작」 단추가 첫 화면 밖이에요(32,760–328,808 / 360×780)"]);
     expect(introIssues(LANDSCAPE, box(216, 379, 628, 427))).toEqual(["「AR 시작」 단추가 첫 화면 밖이에요(216,379–628,427 / 844×390)"]);
     expect(introIssues(PORTRAIT, null)).toEqual(["「AR 시작」 단추가 없어요"]);
+  });
+});
+
+// 2026-11-20 사용자 「말풍선 글자 크기만큼만 나오게 해 줘」: 위 줄 명령 말풍선은 글 너비(좌우 여백 더하기)만큼만 차지하고 화면 안에 있다
+describe("명령 말풍선 너비 검사", () => {
+  it("말풍선이 글 너비 + 좌우 여백보다 넓으면(화면 너비로 늘어남) 문제, 글에 맞으면 괜찮다", () => {
+    const wide = { name: "명령", box: box(72, 36, 1264, 84), text: box(86, 48, 210, 72), pad: 28 };
+    expect(bubbleIssues({ width: 1280, height: 720 }, [wide])).toEqual(["「명령」 말풍선이 글보다 넓어요(1192 / 글 124 + 여백 28)"]);
+    expect(bubbleIssues({ width: 1280, height: 720 }, [{ ...wide, box: box(72, 36, 224, 84) }])).toEqual([]);
+  });
+  it("긴 명령은 화면 안에서 줄을 바꾼다: 말풍선이 화면 밖으로 나가면 문제", () => {
+    const long = { name: "명령", box: box(72, 36, 374, 132), text: box(86, 48, 360, 120), pad: 28 };
+    expect(bubbleIssues(PORTRAIT, [long])).toEqual([]);
+    expect(bubbleIssues(PORTRAIT, [{ ...long, box: box(72, 36, 420, 132), text: box(86, 48, 406, 120) }])).toEqual(["「명령」 말풍선이 화면 밖이에요(72,36–420,132 / 390×844)"]);
   });
 });

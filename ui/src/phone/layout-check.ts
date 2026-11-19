@@ -3,6 +3,7 @@
 // 위 줄(미어캣·명령)·엄지 자리 칸은 가운데 조준점(28px)과 그 칸 밖 단추를 가리지 않는다. 모달 안 단추는 칸 위에 뜨므로 보지 않는다.
 // 위 줄 첫 내용(미어캣 단추)은 상태 표시줄 아래, 화면 위에서 36px부터 시작한다.
 // 명령·비전 상태 글(data-phone-text)은 …나 줄 자름으로 잘리지 않는다. 화면 밖 세모는 칸·단추와 겹치지 않는다.
+// 위 줄 명령 말풍선은 글 너비(좌우 여백 더하기)만큼만 차지하고 화면 안에 있다(긴 명령은 줄을 바꾼다).
 // 모달 내용은 옆으로 넘치지 않는다(가로 화면에서 단추 줄이 모달보다 넓으면 상태 칩이 잘린다). 위아래는 모달 안에서 스크롤한다.
 // 처음 화면은 「AR 시작」 단추가 스크롤하지 않은 첫 화면 안에 있어야 한다(세로·가로 모두).
 
@@ -64,6 +65,20 @@ export function clipIssues(texts: TextBox[]): string[] {
   return texts
     .filter((t) => t.scroll.width > t.client.width + 1 || t.scroll.height - t.client.height >= t.line / 2)
     .map((t) => `「${t.name}」 글이 잘려요(${t.scroll.width}×${t.scroll.height} / ${t.client.width}×${t.client.height})`);
+}
+
+/** 위 줄 명령 말풍선(box)과 그 안 글이 차지한 자리(text, 글 범위), 말풍선 안 좌우 여백 합(pad): 말풍선이 글 너비 + 여백보다 2px 넘게 넓으면
+ *  (남은 너비로 늘어남) 문제, 화면 밖으로 나가면 문제다(2026-11-20 사용자 「말풍선 글자 크기만큼만 나오게 해 줘」). */
+export function bubbleIssues(view: { width: number; height: number }, bubbles: { name: string; box: Box; text: Box; pad: number }[]): string[] {
+  const size = `${view.width}×${view.height}`;
+  return bubbles.flatMap((b) => {
+    const width = Math.round(b.box.right - b.box.left);
+    const text = Math.round(b.text.right - b.text.left);
+    const issues: string[] = [];
+    if (width > text + b.pad + 2) issues.push(`「${b.name}」 말풍선이 글보다 넓어요(${width} / 글 ${text} + 여백 ${Math.round(b.pad)})`);
+    if (!inside(b.box, view.width, view.height)) issues.push(`「${b.name}」 말풍선이 화면 밖이에요(${where(b.box)} / ${size})`);
+    return issues;
+  });
 }
 
 /** 모달(이름, 내용 크기 scroll, 보이는 크기 client): 내용이 옆으로 1px 넘게 넘치면 문제다. 위아래는 모달 안에서 스크롤한다. */
