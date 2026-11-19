@@ -168,25 +168,27 @@ export class Looker {
       planId: h.planId, abort, signal: AbortSignal.any([abort.signal, h.signal]), phase: "act",
     };
     this.job = job;
-    const p: Promise<void> = this.topOnly(job, h.spot, sinceMs, topLook).catch(() => {}).finally(() => {
+    let result: CloserResult | null = null;
+    const p: Promise<void> = this.topOnly(job, h.spot, sinceMs, topLook).then((r) => { result = r; }, () => {}).finally(() => {
       if (this.job === job) this.job = null;
       this.running.delete(p);
-      h.done();
+      h.done(result);
     });
     this.running.add(p);
     return true;
   }
 
   /** 위에서 보고 look 기록 하나(첫 장 VLM 전에 끊기면 기록 없음). 넣지 않은 장의 까닭을 덧붙인다. */
-  private async topOnly(job: Job, spot: LookSpot, sinceMs: number, topLook: NonNullable<LookerOptions["topLook"]>): Promise<void> {
+  private async topOnly(job: Job, spot: LookSpot, sinceMs: number, topLook: NonNullable<LookerOptions["topLook"]>): Promise<CloserResult | null> {
     this.o.onLook?.(spot);
     const r = await topLook(spot, sinceMs, job.signal).catch((): CloserResult => ({ ok: false, why: "error" }));
-    if (this.stopped || (!r.ok && r.why === "aborted")) return;
+    if (this.stopped || (!r.ok && r.why === "aborted")) return null;
     this.count.looks++;
     const drops = r.ok ? (r.top ?? []).flatMap((t) => (t.why ? [LOOK_TEXT.topDrop[t.why]] : [])) : [];
     const detail = r.ok ? r.found.map((f) => `${f.id ?? f.cls} ${f.score} ${f.facts.join(" ")}`.trim()).join(", ") : "";
     const text = [LOOK_TEXT.closer(spot.label, closerText(r)), ...new Set(drops)].join(" · ");
     this.record(job, { tool: "look_closer", reason: job.goal }, spot, text, r, detail);
+    return r;
   }
 
   /** 관찰 모드 없이 가까이 보고 look 기록 하나(감지를 합치기 전에 끊기면 기록 없음). */

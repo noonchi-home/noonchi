@@ -34,6 +34,10 @@ export interface TaskSpec {
   /** 사람이 대상(target)을 다 쓰고 떠난 뒤 하는 일(치우기): 사람이 그 종류를 쓰는 것을 보면 습관 FSM이 다음 규칙으로 고를 때 미리 목표로 세우고 계획을 만들어 둔다
    *  (src/brain/goal.ts goalAhead, src/act/track/goal.ts). 사람이 있는 동안 하는 일(채우기·따르기)은 아니다. */
   afterUse?: true;
+  /** 집기 전에 늘 대상 안을 위에서 본다(컵 치우기, 2026-11-20 사용자 「아직도 컵안을 확인해달라는 내용이 없네」·고른 답 「늘 확인」): 위에서 보기를 하는 집이면
+   *  계획 검사가 그 종류 첫 집기 앞에 컵 안 보기 단계를 넣고(src/agent/planTools.ts), 실행 추적이 위에서 본 내용물로 가른다
+   *  (비었음 → 집기, 남음 → 버려도 될지 묻기, 모름 → 그만둠, src/act/track/steps.ts topStep). 컵 내용물은 습관 FSM에 넣지 않는다(실행 쪽 규칙). */
+  topLook?: true;
   /** 반성·채택 검사로 새 화살표를 배울 수 있는 행동(사용자 답: 컵 치우기, 말없이 TV 보기 시작 → 에어컨 켜기). seed 행동 화살표(묻기 빼고)는 이 칸과 상관없이 사용자가 정한 습관이라 늘 둔다. */
   learn?: true;
 }
@@ -44,7 +48,7 @@ const FILL: TaskAllow = { kinds: ["go", "pick", "do", "place"], need: ["go", "pi
 
 export const TASKS: Record<string, TaskSpec> = {
   "컵 치우기": {
-    name: "컵 치우기", description: "사람이 자리를 비운 뒤 식탁 등에 남은 컵을 사람이 싱크대에 넣게 한다.", target: "cup", touch: true, afterUse: true, learn: true,
+    name: "컵 치우기", description: "사람이 자리를 비운 뒤 식탁 등에 남은 컵을 사람이 싱크대에 넣게 한다.", target: "cup", touch: true, afterUse: true, learn: true, topLook: true,
     allow: { kinds: HAND, need: HAND },
   },
   "사용자에게 물어보기": { name: "사용자에게 물어보기", description: "치울지 아직 모르는 때(배우기 전 습관, 컵 안이 안 보임 등) 폰으로 사용자에게 어떻게 할지 묻는다.", allow: { kinds: ["ask", "say"], need: ["ask"] } },

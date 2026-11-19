@@ -391,6 +391,7 @@ export function createVideoAr({ link, params, hooks, deps }) {
     // 명령 세대: 새 단계 영상 명령·지우기마다 오른다. 예약 타이머와 재생을 기다리는 바꾸기는 세대가 다르면 버린다
     let cmdGen = 0;
     let lastCmdId = null;
+    let aboveAim = null;
     let lastKey = null; // 마지막으로 받은 명령 id:단계(같은 명령이 다시 오면 비전 상태만 바뀐 것)
     // 영상 모드: 자세 흉내
     let posedKey = null; // 단계 영상 칸 없이 자세만 옮기기로 한 명령 id:단계(같은 명령이 다시 와도 다시 하지 않는다)
@@ -687,7 +688,16 @@ export function createVideoAr({ link, params, hooks, deps }) {
         const key = `${cmd.id}:${cmd.step}`;
         const fresh = key !== lastKey;
         // 같은 명령이 이어서 다시 오면(비전 상태만 바뀜) 이미 줄에 넣은 것은 그대로 둔다(대상이 그제야 붙었으면 아래에서 넣는다)
-        if (!fresh && switched.has(key)) return;
+        if (!fresh && switched.has(key)) {
+          if (aboveAim?.key === key && cmd.view === "above" && Array.isArray(cmd.target?.ar)) {
+            const at = cmd.target.ar;
+            if (at.some((v, i) => Math.abs(v - aboveAim.at[i]) > 0.02)) {
+              aboveAim.at = at;
+              if (aboveAim.playing) holdAbove(at);
+            }
+          }
+          return;
+        }
         // 새 명령(다른 id·단계, 단계 영상이 없는 질문·승인도): 앞 명령의 반응 시간 예약과 조각 없는 걷기를 멈춘다. 줄에 든 조각과 그 걷기는 그대로다
         if (fresh) {
           lastKey = key;
@@ -705,7 +715,12 @@ export function createVideoAr({ link, params, hooks, deps }) {
         lastCmdId = cmd.id;
         // go는 걷기(near_m이 있으면 그 거리 안까지), view above면 위에서 비추기, 그 밖은 그 자리에서 바라보기. clipMs: 조각이 실제로 도는 시간(조각과 함께 걷기)
         const stopM = typeof cmd.near_m === "number" ? Math.min(WALK_STOP_M, cmd.near_m * NEAR_WALK) : WALK_STOP_M;
-        const pose = target && (cmd.kind === "go" ? (clipMs) => startWalk(target, stopM, clipMs) : cmd.view === "above" ? () => holdAbove(target) : () => face(target));
+        const aim = target && cmd.view === "above" ? { key, at: target, playing: false } : null;
+        aboveAim = aim;
+        const pose = target && (cmd.kind === "go" ? (clipMs) => startWalk(target, stopM, clipMs) : aim ? () => {
+          aim.playing = true;
+          holdAbove(aim.at);
+        } : () => face(target));
         const later = (fn) => {
           const timer = setTimeout(() => {
             reactTimers.delete(timer);

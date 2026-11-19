@@ -5,7 +5,7 @@
 import type { Facet, WorldChange } from "../../contract/world.js";
 import type { SceneObservation } from "../../contract/observe.js";
 import { CHANGE_TEXT, OBJECT_NAME, fixtureName } from "../labels.js";
-import { FACT_FRESH_MS, NOW_FACETS, POSE_HOLD, STATES, VLM_ONLY, type ClassKey, type StateKey, type StateOf, type Target } from "../vocab.js";
+import { FACT_FRESH_MS, INSIDE_VISIBLE, NOW_FACETS, POSE_HOLD, STATES, VLM_ONLY, type ClassKey, type StateKey, type StateOf, type Target } from "../vocab.js";
 import { PERSON, Part, fits, type Facts, type Obj } from "./core.js";
 import { inBasin, surfacePlace } from "../place.js";
 
@@ -187,6 +187,7 @@ export class SceneFacts extends Part {
     const bodies = new Set<string>();
     /** 안 내용 답: 몸통을 먼저 넣고(불투명이면 버림) 확인 줄을 낸다. */
     const contents: [Obj, StateOf<"contents">][] = [];
+    const inside = new Set(scene.observations.filter((o) => o.state === INSIDE_VISIBLE).map((o) => ids.get(o.object_id)));
     const hidden = new Set(scene.observations.filter((o) => (VLM_ONLY as readonly string[]).includes(o.state)).map((o) => ids.get(o.object_id)).filter((x): x is string => !!x));
     for (const ob of scene.observations) {
       if (!(ob.state in STATES)) continue;
@@ -235,7 +236,9 @@ export class SceneFacts extends Part {
     }
     for (const id of bodies) core.contents.settle(core.objects.get(id)!);
     for (const [obj, value] of contents) {
-      const { changes: c } = core.contents.see(obj, frameId, capturedAtMs, value, 0);
+      if (hidden.has(obj.id) || contents.some(([other, v]) => other === obj && v !== value)) continue;
+      const direct = inside.has(obj.id) && (value === "empty" || value === "has_contents");
+      const { changes: c } = core.contents.see(obj, frameId, capturedAtMs, value, direct ? 2 : 0);
       if (obj.confirmed && obj.status !== "gone") changes.push(...c);
     }
     // 이 프레임에서 본 대상의 지금만 맞는 사실: 이 답에 없으면 지운다(더 새 답의 사실, 같은 원본 프레임을 잘라 본 답의 사실은 그대로)

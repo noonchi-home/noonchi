@@ -46,6 +46,9 @@ export const AGAIN: ActionChoice[] = [
   { id: "stop", label: "그만", words: ["그만"], reply: "알겠어요. 그만할게요", whole: true },
 ];
 
-/** 실제 폰 질문의 답 묶음 전부: 물어보기 답 묶음(ASK_CHOICES), 승인, 시간 초과 다시 묻기. 새 질문 답 묶음은 여기에 더한다.
+/** 컵 안 보기 뒤 음료가 남았을 때 묻는 답: 치워 주세요면 이어서 치우고, 그대로 둬요면 치우지 않고 끝낸다. 단추 글은 물어보기 답과 같다. */
+export const LEFTOVER: ActionChoice[] = ASK_PROMPT.choices;
+
+/** 실제 폰 질문의 답 묶음 전부: 물어보기 답 묶음(ASK_CHOICES), 승인, 시간 초과 다시 묻기, 남은 음료 질문. 새 질문 답 묶음은 여기에 더한다.
  *  tests/voice-answers.test.ts가 답마다 그 글자로 말하면 그 답인지 본다(실제 폰 질문은 말로 답할 수 있다). */
-export const QUESTION_CHOICES: Readonly<Record<string, readonly ActionChoice[]>> = { ...ASK_CHOICES, approve: APPROVE, again: AGAIN };
+export const QUESTION_CHOICES: Readonly<Record<string, readonly ActionChoice[]>> = { ...ASK_CHOICES, approve: APPROVE, again: AGAIN, leftover: LEFTOVER };

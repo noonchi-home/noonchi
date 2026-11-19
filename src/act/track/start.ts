@@ -5,9 +5,9 @@ import { CONTENTS_HOLD } from "./contents.js";
 import type { CheckFail } from "../check.js";
 import type { DecisionRecord } from "../../contract/events.js";
 import { needsPhone, objectNames, type AgentStep, type PlanResult } from "../../agent/index.js";
-import { APPROVAL_TEXT, EXEC_TEXT } from "../labels.js";
+import { APPROVAL_TEXT, CHECK_TEXT, EXEC_TEXT } from "../labels.js";
 import { quietLabels } from "../lessons.js";
-import { TASK_NAMES, carriesTarget, planIdOf, planObjectsOf, taskOf } from "../tasks.js";
+import { TASK_NAMES, carriesTarget, followedId, planIdOf, planObjectsOf, putAway, taskOf } from "../tasks.js";
 import { CHANGE_TEXT, saidIn } from "../../world/labels.js";
 import { decisionWorld, isoWithOffset } from "../../brain/index.js";
 import type { SpeechRequest } from "./tracker.js";
@@ -83,6 +83,13 @@ export class Starter extends Part {
     // 행동 중 기다리기·기기 단계에는 다른 판단으로 바꾸지 않는다(그동안 판단도 멈춘다, waiting)
     if (open && core.waiting()) return this.note(d, EXEC_TEXT.busy);
     if (this.closerNewer(d)) return this.note(d, EXEC_TEXT.closerNewer);
+    // 남은 음료를 그대로 두라고 한 컵만 남았으면 치우지 않는다(사람이 다시 보일 때까지, steps.ts leftover). 판단이 그 화살표를 기다리지 않게 알린다
+    if (this.kept(d)) {
+      core.emit(planIdOf(d.id), "decided");
+      core.emit(planIdOf(d.id), "failed", CHECK_TEXT.kept);
+      this.o.onRefused?.(planIdOf(d.id));
+      return;
+    }
     const pre = this.o.precheck?.(d) ?? { ok: true };
     if (!pre.ok) {
       // 대상이 안 보이면 마지막으로 본 자리로 찾으러 간다(찾을 자리가 없으면 지금처럼 닫는다)
@@ -133,6 +140,18 @@ export class Starter extends Part {
       const before = then.get(o.id);
       return (o.closer_rev?.[f] ?? 0) !== (before?.closer_rev?.[f] ?? 0) && before?.facts[f]?.value !== o.facts[f]?.value;
     }));
+  }
+
+  /** 집기 전에 안을 보는 행동(TaskSpec.topLook)인데 보이는 그 종류 물건(치운 것 빼고)이 모두 그대로 두라고 한 컵인가. 사람이 그 답 뒤에 다시 보이면 그 컵을 푼다. */
+  private kept(d: DecisionRecord): boolean {
+    const core = this.core;
+    const spec = taskOf(d.action);
+    if (!spec?.topLook || !spec.target || !core.kept.size) return false;
+    const world = this.o.world();
+    for (const [id, at] of core.kept) if (world.person.visible && (world.person.since_ms ?? 0) > at) core.kept.delete(id);
+    const kept = new Set([...core.kept.keys()].map((id) => followedId(world, id)));
+    const left = world.objects.filter((o) => o.cls === spec.target && o.status === "present" && !putAway(o, core.steps.placed()));
+    return left.length > 0 && left.every((o) => kept.has(o.id));
   }
 
   /** 사람이 떠나 목표가 판단을 부른 뒤 온, 떠나기 전 관찰의 다른 행동 판단인가(goal.ts beforeLeave). 사람이 말로 한 부탁과 비상은 아니다. */
@@ -223,7 +242,7 @@ export class Starter extends Part {
       asking: null, askAt: now, watch: null, others, alias: new Map([...ids].map((id) => [id, id])), carried: new Set(), placeAt: (id) => (id ? this.o.floor().objects.get(id)?.position ?? null : null), deadline: now, again: false, device: "idle", gen: 0,
       looks: 0, lookAt: Number.NEGATIVE_INFINITY, stepEnd: null, gapAt: job.at, onAt: new Map(), ends: new Map(), offAsked: -1, deferred: false, phoneWait: false, phone: false,
       strays: 0, strayAt: Number.NEGATIVE_INFINITY, strayNear: null, told: null, helped: false,
-      quiet: taskOf(r.plan.task)?.coach ? quietLabels(this.o.lessons?.get(r.plan.task) ?? null) : new Set(), quietOn: false, outcomes: [], hold: null, window: null, heldIds: new Set(), busyAt: null, usedAt: null,
+      quiet: taskOf(r.plan.task)?.coach ? quietLabels(this.o.lessons?.get(r.plan.task) ?? null) : new Set(), quietOn: false, outcomes: [], hold: null, top: null, window: null, heldIds: new Set(), busyAt: null, usedAt: null,
       // 미리 만든 계획은 쓰는 중이라 미룬 계획처럼 첫 명령을 폰 대화·승인 대기 동안 미룬다(사람 요청이 먼저)
       useHeld: !!job.prepared, goal: job.prepared?.goal ?? null, seenSince: job.prepared?.seenSince ?? null, leftAt: job.prepared?.leftAt ?? null, verify: null,
       // 계획 전 찾기에서 찾은 뒤 만든 계획이면 찾기로 붙잡았던 계획처럼 첫 명령을 폰 대화·승인 대기 동안 미룬다

@@ -62,6 +62,8 @@ function restLine({ plan, command, world, nowMs, told = null, quiet = null, refl
     const step = sent ? plan.steps.find((s) => s.id === sent.step) : undefined;
     const key = sent ? cupKey(step?.label, sent.text) : null;
     if (key) return SAY_TEXT.will(STEP_COMMAND[key], step?.label ?? STEP_LABEL[key]);
+    // 컵 안 보기(위에서 비추기, src/act/track/steps.ts topStep)
+    if (step && sent!.view === "above") return SAY_TEXT.lookIn(sent!.target?.label ?? step.label);
     if (step) return sent!.choices.length === 0 ? SAY_TEXT.said : SAY_TEXT.will(sent!.text, step.label);
     const active = plan.steps.find((s) => s.status === "active");
     if (active?.kind === "wait") return SAY_TEXT.waiting(active.label);

@@ -1,5 +1,6 @@
 // marks.js의 형(테스트에서 TypeScript로 부른다).
-export interface FocusMark { id: string; label: string; u: number; v: number; off: boolean; angle: number }
+import type { FocusMark } from "../state";
+export type { FocusMark } from "../state";
 /** CanvasRenderingContext2D·OffscreenCanvasRenderingContext2D 중 marks.js가 쓰는 것. */
 export interface MarkContext {
   lineWidth: number; strokeStyle: unknown; fillStyle: unknown; lineJoin?: unknown;

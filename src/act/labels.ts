@@ -55,6 +55,8 @@ export const SAY_TEXT = {
     return hit ? `${command.replace(new RegExp(`${hit[0]}$`), hit[1])}.` : `${josa(label, "을/를")} 할게요.`;
   },
   said: "폰으로 알렸어요.",
+  /** 컵 안 보기 단계(위에서 비추기 명령)를 띄운 동안. */
+  lookIn: (item: string) => `${item} 안을 볼게요.`,
   waiting: (label: string) => `${josa(label, "을/를")} 기다리고 있어요.`,
   device: (label: string) => `${josa(label, "을/를")} 하고 있어요.`,
   asked: "폰으로 물어봤어요.",
@@ -87,6 +89,7 @@ export const CHECK_TEXT = {
   unreachable: "갈 수 있는 길이 없어 실행하지 않아요",
   device_mode: "시험 모드라 실제 가전은 부르지 않아요",
   unknown_contents: "대상 물건 안을 몰라 실행하지 않아요",
+  kept: "그대로 두기로 한 물건이라 실행하지 않아요",
   contents_mismatch: "대상 물건 안이 맞지 않아 실행하지 않아요",
 } as const;
 
@@ -94,6 +97,12 @@ export const CHECK_TEXT = {
 export const PEEK_TEXT = {
   go: (item: string) => `${item} 가까이 가 주세요`,
   above: (item: string) => `${item} 안이 보이게 위에서 비춰 주세요`,
+} as const;
+
+/** 컵 안 보기 단계(src/act/track/steps.ts topStep): 단계 이름과 남은 음료 질문. 명령 글은 가까이 가서 보기의 위에서 비추기와 같다(PEEK_TEXT.above). */
+export const TOP_TEXT = {
+  label: (item: string) => `${item} 안 보기`,
+  ask: "남은 음료를 버리고 치울까요?",
 } as const;
 
 /** 찾기(src/act/track/find.ts): 대상이 안 보일 때 마지막으로 본 자리로 폰을 든 사람을 보내는 명령(「주세요」로 끝남). 면이 있으면 가기는 계획의 가기 글(STEP_TEXT go:가기)을 쓴다. */
@@ -243,6 +252,7 @@ export const EXEC_TEXT = {
   badPlan: "계획이 맞지 않아 버림", held: "방금 계획한 일이라 잠시 뒤 다시 봄", deviceFailed: "가전 명령이 실패함",
   deviceUnverified: "가전 명령 결과를 확인하지 못함", busy: "할 일 중 기다리는 동안이라 쓰지 않음",
   closerNewer: "가까이 본 뒤 다시 판단",
+  kept: "그대로 두기로 함", topUnknown: "위에서 봐도 컵 안을 몰라 그만둠",
   /** 켠 위험 가전 끄기 안내가 남아 새 계획 시작을 미룸(그 가전 이름). */
   deferred: (device: string) => `${device} 꺼짐 확인 전이라 새 일을 미룸`,
   /** 판본이 맞는 실제 폰이 없어 폰이 필요한 계획 시작을 미룸. 계획 도중 폰이 없어 물을 수 없어 닫음. 말할 때와 다른 명령에 온 말 답을 버림. */

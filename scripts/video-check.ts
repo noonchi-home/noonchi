@@ -11,6 +11,7 @@
 //   at은 폰 페이지가 화면이 바뀔 때마다 실제 폰 말과 같은 heardAtOf로 남긴 기록(__noonchiVideo.at) 그대로다(없으면 none).
 // --start-at: 폰 페이지를 열기 전에 그 장면 시작 위치(scripts/demo-start.ts)를 서버에 넣는다. 서버의 지금 집이 --home이 아니면 판정을 시작하지 않는다.
 // --approve: 단계 id가 :approve·:hand로 끝나는 질문에만 그 초 뒤 「승인」, --done-on: 위 줄이 그 글과 같은 명령에만 그 초 뒤 「완료」를 누른다.
+// --answer <초>:<답 단추 글>(여러 번): 위 줄이 「?」로 끝나는 질문(승인·켜기 질문 빼고, 남은 음료 질문 등)에 그 초 뒤 그 글 답 단추를 누른다(없으면 누르지 않는다).
 //   누를 때 지금 명령의 계획 id·단계 id·위 줄이 예약한 것과 모두 같을 때만 누른다. 누른 것은 시각표에 「누름」 줄.
 // 끝내기(judgeState): 계획이 닫혔고 누를 답이 없고 끄기 추적(hot·끄기 안내, GET /api/plan의 같은 답)이 남지 않으면 끝, 영상이 멈춘(첫 영상 끝·단계 영상 마지막 장면 붙잡기) 뒤 --tail초,
 // 지금 영상 길이 + 60초, 판 전체 --max초. 끄기 안내가 남은 채 끝나면 「끝까지 돌지 않음」에 남긴다.
@@ -537,8 +538,8 @@ export function judgeState(o: {
   return "watch";
 }
 
-/** 누르기 규칙: --approve(승인 질문), --done-on(그 글 명령), --done-after(모든 새 명령의 첫 단추). 0이면 안 누름. */
-export interface ClickRule { approveAfterMs: number; doneOn: { afterMs: number; text: string }[]; doneAfterMs: number }
+/** 누르기 규칙: --approve(승인 질문), --done-on(그 글 명령), --answer(질문의 그 글 답 단추), --done-after(모든 새 명령의 첫 단추). 0이면 안 누름. */
+export interface ClickRule { approveAfterMs: number; doneOn: { afterMs: number; text: string }[]; doneAfterMs: number; answers: { afterMs: number; label: string }[] }
 /** 새 명령 하나에 예약할 누르기(없으면 빈 목록). 단추 글로 고른다: 승인 질문이면 「승인」, done-on 글이면 「완료」, done-after면 첫 단추(지금 동작). */
 export interface PlannedClick { at: number; label: string | null; id: string; step: string; text: string }
 export function plannedClicks(cmd: VideoCommand, rule: ClickRule, now: number): PlannedClick[] {
@@ -550,6 +551,7 @@ export function plannedClicks(cmd: VideoCommand, rule: ClickRule, now: number): 
   if (isOffStep(cmd.step) || isDockStep(cmd.step) || isDoneStep(cmd.step)) return out;
   if (rule.approveAfterMs > 0 && /:(approve|hand)$/.test(cmd.step)) out.push(at(rule.approveAfterMs, "승인"));
   for (const d of rule.doneOn) if (d.text === cmd.text) out.push(at(d.afterMs, "완료"));
+  if (/\?$/.test(cmd.text.trim()) && !/:(approve|hand)$/.test(cmd.step)) for (const a of rule.answers) out.push(at(a.afterMs, a.label));
   if (!out.length && rule.doneAfterMs > 0) out.push(at(rule.doneAfterMs, null));
   return out;
 }
@@ -720,7 +722,7 @@ async function startFake(clip: string, steps: string[]): Promise<Fake> {
 
 const USAGE = "쓰는 법: npx tsx scripts/video-check.ts --clip <이름.mp4> [--step <종류>:<낱말>:<영상.mp4> ...] [--phone http://127.0.0.1:8210] [--api http://127.0.0.1:8200] [--done-after 3] [--out <파일.md>] [--expect-after 36.3] [--record <폴더>] [--record-view <top|minimap>] [--record-fps 10] [--fake]"
   + " [--say <초>:<글> ...] [--start-at <cup|tv|microwave|kitchen>] [--home mokryeon_180b] [--tail 30] [--max 1800] [--approve <초>] [--done-on <초>:<명령 글> ...]"
-  + " [--fov <도>] [--pitch <도>] [--h <m>] [--rate 1]";
+  + " [--fov <도>] [--pitch <도>] [--h <m>] [--rate 1] [--answer <초>:<답 단추 글> ...]";
 
 /** 영상 모드 카메라(폰 주소 fov·pitch·h): 준 값만 있다. 없는 값은 폰 페이지 기본값(세로 시야각 60°, pitch −25°, 높이 1.4m). */
 export interface Camera { fov?: number; pitch?: number; h?: number }
@@ -731,6 +733,8 @@ export interface Args {
   /** expectSet: --expect-after를 적었는가(아니면 스스로 시험은 대본 사람 시간을 영상 시각으로 옮겨 쓴다). */
   clip: string; fake: boolean; steps: string[]; doneAfterMs: number; expectMs: number; expectSet: boolean; phone: string; api: string; out: string | undefined; record: string | undefined;
   says: { atMs: number; text: string }[]; startAt: DemoScene | null; home: string; tailMs: number; maxMs: number; approveAfterMs: number; doneOn: { afterMs: number; text: string }[];
+  /** --answer: 질문에 누를 답 단추 글과 기다릴 시간. */
+  answers: { afterMs: number; label: string }[];
   camera: Camera;
   /** --record-phone: 녹화에 폰 화면도 붙인다(기본은 대시보드만). --chrome: 크롬 그리기 방식(기본 headless-gpu). */
   recordPhone: boolean; chrome: ChromeGpu;
@@ -755,7 +759,7 @@ export function parseArgs(argv: string[]): Args | string {
   if (argv.includes("--record") && (!record || record.startsWith("--"))) return "--record 뒤에 시연 영상을 남길 폴더를 주세요: --record <폴더>";
   const fake = argv.includes("--fake");
   // --step·--approve·--done-on이 있으면 --done-after 기본은 0이다(고른 명령에만 누른다)
-  const doneAfterMs = Number(arg("done-after") ?? (steps.length || argv.includes("--approve") || argv.includes("--done-on") ? "0" : "3")) * 1000;
+  const doneAfterMs = Number(arg("done-after") ?? (steps.length || argv.includes("--approve") || argv.includes("--done-on") || argv.includes("--answer") ? "0" : "3")) * 1000;
   const expectMs = Number(arg("expect-after") ?? (fake ? String(FAKE_PERSON_MS / 1000) : "36.3")) * 1000;
   if (!Number.isFinite(doneAfterMs) || doneAfterMs < 0 || !Number.isFinite(expectMs)) return "--done-after·--expect-after는 0 이상 숫자(초)예요";
   // <초>:<글>: 초는 0 이상 숫자, 글은 비지 않고 60자까지
@@ -768,6 +772,8 @@ export function parseArgs(argv: string[]): Args | string {
   if (says.includes(null)) return `--say는 <초>:<글(60자까지)>예요. ${USAGE}`;
   const doneOn = timed("--done-on", 200);
   if (doneOn.includes(null)) return `--done-on은 <초>:<명령 글>이에요. ${USAGE}`;
+  const answers = timed("--answer", 20);
+  if (answers.includes(null)) return `--answer는 <초>:<답 단추 글>이에요. ${USAGE}`;
   const startAt = arg("start-at") ?? null;
   if (startAt !== null && !Object.hasOwn(DEMO_STARTS, startAt)) return `--start-at은 ${Object.keys(DEMO_STARTS).join("·")} 가운데 하나예요. ${USAGE}`;
   const sec = (k: string, fallback: number, lo: number, hi: number) => {
@@ -800,7 +806,7 @@ export function parseArgs(argv: string[]): Args | string {
     recordPhone: argv.includes("--record-phone"), chrome, recordView, recordFps, rate,
     clip, fake, steps, doneAfterMs, expectMs, expectSet: arg("expect-after") !== undefined, phone: arg("phone") ?? "http://127.0.0.1:8210", api: arg("api") ?? "http://127.0.0.1:8200", out: arg("out"), record,
     says: says.map((x) => ({ atMs: x!.ms, text: x!.text })), startAt: startAt as DemoScene | null, home: arg("home") ?? HOME, tailMs, maxMs, approveAfterMs,
-    doneOn: doneOn.map((x) => ({ afterMs: x!.ms, text: x!.text })), camera,
+    doneOn: doneOn.map((x) => ({ afterMs: x!.ms, text: x!.text })), answers: answers.map((x) => ({ afterMs: x!.ms, label: x!.text })), camera,
   };
 }
 
@@ -1034,7 +1040,7 @@ async function main(): Promise<number> {
       let clipAt = Date.now();
       const runStart = Date.now();
       let due: PlannedClick[] = [];
-      const rule: ClickRule = { approveAfterMs: args.approveAfterMs, doneOn: args.doneOn, doneAfterMs };
+      const rule: ClickRule = { approveAfterMs: args.approveAfterMs, doneOn: args.doneOn, doneAfterMs, answers: args.answers };
       const saysLeft = [...args.says].sort((a, b) => a.atMs - b.atMs);
       const said: { at: number; text: string }[] = [];
       const pressed: { ms: number; at: number; label: string; text: string }[] = [];

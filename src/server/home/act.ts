@@ -197,6 +197,8 @@ export function startAct(core: HomeCore): (event: BrainLog) => void {
   const planCtx = (d: DecisionRecord, task: TaskSpec, ahead?: PlanAhead): PlanContext => ({
     decision: d, task, world: view(), floor: plans.floor(), places: core.places(), names: placeNames, rooms: twin.rooms, devices: deviceViews(signals), nowIso: new Date(now()).toISOString(),
     placed: new Map(core.tracker?.placed() ?? []), ...(task.coach ? { lesson: lessons.get(task.name) } : {}), ...(ahead ? { ahead } : {}),
+    // 관찰 흐름이 위에서 본 사진으로 컵 안을 본다(topReady·lookContents top): 컵 치우기 계획에 컵 안 보기 단계가 든다
+    topLook: true,
   });
   core.tracker = new ExecutionTracker({
     plans, floor: () => plans.floor(), world: view, emit, clock: ctx.brain?.clock, approvals, devices, offsetMinutes: history.db.offsetMinutes,
@@ -302,6 +304,8 @@ export function startLooker(core: HomeCore, emit: (event: BrainLog) => void): vo
     frame: () => observed.latest(), world: () => liveDevices(core.view()!, core.signals),
     tell: (planId, stepId, mode) => tracking.tell(planId, stepId, mode), emit, targets: lookTargets, placed: () => tracking.placed(), clock: ctx.brain?.clock,
     onLook: (spot) => {
+      // 컵 안을 보는 명령은 이미 화면에 있다. 같은 컵의 6초 알림이 다음 집기 명령을 가리지 않게 한다.
+      if (core.command?.view === "above" && core.command.target?.id === spot.id) return;
       core.lookSay = { place: spot.label, atMs: Date.now() };
       core.speak();
     },

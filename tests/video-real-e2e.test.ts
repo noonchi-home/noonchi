@@ -10,7 +10,8 @@ import type WebSocket from "ws";
 import { startFakeOpenAI, type FakeServer } from "../scripts/fake-openai.js";
 import type { HistoryRow } from "../src/contract/history.js";
 import type { WorldView } from "../src/contract/world.js";
-import { encodeFramePacket } from "../src/phone/packet.js";
+import { PEEK_TEXT } from "../src/act/labels.js";
+import { alignPhone, CUP_BOX, cupPos, frameOf, SINK_VIEW, topLook } from "./helpers/top-look.js";
 import { videoSession } from "../src/phone/server.js";
 import { fetchRetry } from "../src/shared/net.js";
 import { startServer, type RunningServer } from "../src/server/start.js";
@@ -42,10 +43,14 @@ const inbox = (list: Msg[]) => (ws: WebSocket) => ws.on("message", (d, bin) => {
 /** 컵 치우기 대본을 query(""이면 실제 연결, ?video=이면 영상 연결)로 처음부터 끝까지 돌리고, 계획 id를 PLAN으로 바꾼 결과를 모은다. */
 async function cupRun(query: string, videoDir: string) {
   let cupPlace = "on_table";
+  const top = topLook();
+  let above: [number, number, number] | null = null;
   // 떠남 화살표(컵 치우기)는 직전 상태 drinking(먹거나 마시는 중)에서만 나간다: 사람이 먹다가 떠난다(먹는 중은 컵을 쓰지 않아 미리 세운 목표가 서지 않는다)
   const people: Detection[] = [];
   fake = await startFakeOpenAI({
     reply: (body) => {
+      const seen = top.reply(body);
+      if (seen) return seen;
       if (body?.response_format?.json_schema?.name !== "scene_observation") return null;
       const parts = (body.messages as { role: string; content: unknown }[]).filter((m) => m.role === "user").flatMap((m) => (Array.isArray(m.content) ? m.content : [{ text: m.content }]));
       const text = parts.map((p: { text?: unknown }) => (typeof p.text === "string" ? p.text : "")).join("\n");
@@ -64,7 +69,7 @@ async function cupRun(query: string, videoDir: string) {
   srv = await startServer({
     env: { HUB: "memory", PORT: "0", RUNTIME_DIR: runtimeDir, PHONE_PORT: "0", PHONE_HOST: "127.0.0.1", PHONE_VIDEO_DIR: videoDir,
       BRAIN: "1", VLM_BASE_URL: `${fake.url}/v1`, ...pamLlmEnv(pam), OPENAI_API_KEY: "fake-key", OPENAI_BASE_URL: `${fake.url}/v1` },
-    brain: { detector: new ScriptedDetector(() => [...people, det("cup", 0.9, [220, 160, 40, 20], 41)]) }, log: () => {},
+    brain: { detector: new ScriptedDetector(top.detect(() => [...people, det("cup", 0.9, CUP_BOX, 41)])) }, log: () => {},
   });
   const dash: Msg[] = [];
   sockets.push(await openWebSocket(`${srv.url.replace(/^http/, "ws")}/events`, { setup: inbox(dash) }));
@@ -72,11 +77,12 @@ async function cupRun(query: string, videoDir: string) {
   const phone: Msg[] = [];
   const ws = await openPhone(`ws://${phoneUrl.host}/phone/events${query}`, { options: { origin: phoneUrl.origin }, setup: inbox(phone) });
   sockets.push(ws);
+  await alignPhone(srv, ws, phone, dash);
   let n = 0;
   const pump = async (until: () => boolean | Promise<boolean>) => {
     for (const end = Date.now() + 15_000; Date.now() < end; ) {
       if (await until()) return;
-      ws.send(encodeFramePacket({ kind: "engine", width: 480, height: 360, captured_at: Date.now(), time_err_ms: 0 }, Buffer.from([0xff, 0xd8, n++ % 256, n >> 8])));
+      ws.send(frameOf(top, above, n++, cupPlace === "in_sink" ? SINK_VIEW : undefined));
       await new Promise((r) => setTimeout(r, 150));
     }
     throw new Error("조건이 15초 안에 맞지 않음");
@@ -90,7 +96,10 @@ async function cupRun(query: string, videoDir: string) {
   await pump(() => !!said("식탁으로 가 주세요"));
   const planId = said("식탁으로 가 주세요")!.id as string;
   ws.send(JSON.stringify({ type: "answer", id: planId, step: said("식탁으로 가 주세요")!.step, choice: "done" }));
+  await pump(() => !!said(PEEK_TEXT.above("컵")));
+  above = cupPos(dash, "cup_1");
   await pump(() => !!said("컵을 들어 주세요"));
+  above = null;
   cupPlace = "in_hand";
   await pump(() => !!said("싱크대로 가 주세요"));
   ws.send(JSON.stringify({ type: "say", text: "다 했어", at: heardAtOf(phone) }));
@@ -126,7 +135,7 @@ describe("영상 연결과 실제 연결은 서버에서 같다", () => {
     const video = await cupRun("?video=cup-demo.mp4", videoDir);
     expect(video).toEqual(real);
     // 대본이 실제로 네 명령·완료·컵 싱크대 안까지 갔는지(빈 결과끼리 같아 통과하지 않게)
-    expect(real.commands.filter((m: Msg) => m.type === "command").map((m: Msg) => m.text)).toEqual(["식탁으로 가 주세요", "컵을 들어 주세요", "싱크대로 가 주세요", "컵을 싱크대에 넣어 주세요", "컵을 다 치웠어요."]);
+    expect(real.commands.filter((m: Msg) => m.type === "command").map((m: Msg) => m.text)).toEqual(["식탁으로 가 주세요", PEEK_TEXT.above("컵"), "컵을 들어 주세요", "싱크대로 가 주세요", "컵을 싱크대에 넣어 주세요", "컵을 다 치웠어요."]);
     expect(real.steps).toEqual(["판단", "계획", "실행 중", "완료"]);
     expect(real.cup.place).toBe("in_sink");
   }, 90_000);

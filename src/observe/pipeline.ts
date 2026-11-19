@@ -26,7 +26,7 @@ import type { FrameHeader, EyeEvent } from "../phone/index.js";
 import { OBJECT_NAME, YOLO_TEXT } from "../world/labels.js";
 import { boxShape, cupInside, inView, pixelOf, topBox, topPairOf, topView } from "../world/index.js";
 import { CLOSER_NEW_FRAMES, accepts, closerObject, type CloserPass } from "../world/index.js";
-import { cropBox, cropJpeg, LOOK_MARGIN, onCropEdge, toCropBox, toFrameDetection, type Box, type LookSpot } from "./crop.js";
+import { cropBox, cropJpeg, LOOK_MARGIN, onCropEdge, toFrameBox, toFrameDetection, type Box, type LookSpot } from "./crop.js";
 import { captureTime, FrameRing, sha256 } from "./ring.js";
 import { analyzeScene, CLOSER_NOTE, TOP_NOTE, type SceneDetection } from "./scene.js";
 import { topDropOf } from "./top.js";
@@ -194,6 +194,7 @@ export class ObservationPipeline {
   private readonly clock: { now(): number };
   /** VLM 프레임의 YOLO 감지(번호·종류·상자, 엔진 프레임 픽셀): VLM이 det를 비워 답한 물건을 상자 겹침으로 잇는다(linkDets). */
   private readonly detsOf = new Map<string, SceneDetection[]>();
+  private readonly frameBoxes = new WeakMap<EngineFrame, Pick<Detection, "label" | "box">[]>();
   /** 대시보드로 보낸 마지막 seen의 촬영 시각: 그보다 옛 사진의 감지는 보내지 않는다(미니맵이 과거로 돌아가지 않게). */
   private seenAt = Number.NEGATIVE_INFINITY;
   private readonly queue: EngineFrame[] = [];
@@ -381,6 +382,7 @@ export class ObservationPipeline {
       this.o.world.send({ kind: "yolo_missing", frame_id: frame.id, observed_ms: frame.capturedAtMs, yolo: "error" });
     }
     const sceneDets: SceneDetection[] = (dets ?? []).map((d, i) => ({ id: `d${i + 1}`, class: d.label, box: d.box, score: d.score, foot: d.foot }));
+    this.frameBoxes.set(frame, (dets ?? []).map(({ label, box }) => ({ label, box })));
     this.detsOf.set(frame.id, sceneDets);
     this.pool.submit(frame, sceneDets); // 상한을 넘으면 풀이 VLM 분석 없음(cap)을 onResult로 낸다
   }
@@ -651,10 +653,12 @@ export class ObservationPipeline {
         if (!last) return this.closerMiss(this.closed ? "closed" : "error");
         break;
       }
-      const box = toCropBox(frameBox, crop, frame);
+      const boxes = [...(this.frameBoxes.get(frame) ?? []), ...dets.map((d) => ({ label: d.label, box: toFrameBox(d.box, crop, frame) }))];
       const id = `${frame.id}.t${++this.closerSeq}`;
       this.topIds.add(id);
-      const answer = this.pool.submitCloser({ ...frame, id, jpeg, sha256: sha256(jpeg), crop }, [{ id: "d1", class: start.cls, box, score: 1 }], signal);
+      // 위에서 비출 때는 컵이 사진 전체를 채울 수 있다. 감지기는 잘라 보되 내용물을 읽는 모델은 테두리와 수면을 함께 본다.
+      const photo: Box = [0, 0, frame.width, frame.height];
+      const answer = this.pool.submitCloser({ ...frame, id, crop: photo }, [{ id: "d1", class: start.cls, box: frameBox, score: 1 }], signal);
       const r: VlmResult = answer ? await answer : { frameId: id, capturedAtMs: frame.capturedAtMs, scene: null, missing: "cap", costUsd: 0 };
       this.topIds.delete(id);
       this.closerCount.costUsd += r.costUsd;
@@ -673,7 +677,7 @@ export class ObservationPipeline {
       const objects = this.o.world.view()?.objects ?? [];
       const d = topDropOf({
         start: start.position!, now: objects.find((o) => o.id === start.id), others: objects.filter((o) => o.id !== start.id && o.cls === start.cls && o.status !== "gone"),
-        scene: r.scene, dets, box,
+        scene: r.scene, dets: boxes, box: frameBox, frame,
       });
       if ("drop" in d) {
         top.push({ frame_id: id, kept: false, why: d.drop });

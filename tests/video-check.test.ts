@@ -725,13 +725,26 @@ describe("video-check", () => {
   });
 
   describe("골라서 답하기(plannedClicks·clickChoice)", () => {
-    const rule = (o: Partial<ClickRule> = {}): ClickRule => ({ approveAfterMs: 0, doneOn: [], doneAfterMs: 0, ...o });
+    const rule = (o: Partial<ClickRule> = {}): ClickRule => ({ approveAfterMs: 0, doneOn: [], doneAfterMs: 0, answers: [], ...o });
     const cmd = (step: string, text: string, id = "plan:pam-3"): VideoCommand => ({ video_ms: 0, id, step, text });
     it("--approve 2면 :hand·:approve 질문에만 2초 뒤 「승인」, 전자레인지 문 명령에는 없음", () => {
       expect(plannedClicks(cmd("plan:pam-3:5:hand", "그릇이 뜨거워져요. 전자레인지를 켤까요?"), rule({ approveAfterMs: 2000 }), 100))
         .toEqual([{ at: 2100, label: "승인", id: "plan:pam-3", step: "plan:pam-3:5:hand", text: "그릇이 뜨거워져요. 전자레인지를 켤까요?" }]);
       expect(plannedClicks(cmd("plan:pam-3:approve", "라면 끓이기 알려 주기를 할까요?"), rule({ approveAfterMs: 2000 }), 0)).toHaveLength(1);
       expect(plannedClicks(cmd("plan:pam-3:2", "전자레인지 문을 열어 주세요"), rule({ approveAfterMs: 2000 }), 0)).toEqual([]);
+    });
+    // 2026-11-20: 머그는 컵 안에 음료가 남아 「남은 음료를 버리고 치울까요?」가 나온다. 영상 시험은 「치워 주세요」로 답해 끝까지 간다
+    it("--answer 2:치워 주세요면 질문(「?」로 끝나는 글, 승인·켜기 질문은 --approve)에만 2초 뒤 그 답 단추를 누른다. 있으면 --done-after 기본은 0이다", () => {
+      const a = parseArgs(["--clip", "a.mp4", "--answer", "2:치워 주세요"]);
+      if (typeof a === "string") throw new Error(a);
+      expect(a.answers).toEqual([{ afterMs: 2000, label: "치워 주세요" }]);
+      expect(a.doneAfterMs).toBe(0);
+      const r = rule({ answers: a.answers });
+      expect(plannedClicks(cmd("plan:pam-3:2:leftover", "남은 음료를 버리고 치울까요?"), r, 100)).toEqual([{ at: 2100, label: "치워 주세요", id: "plan:pam-3", step: "plan:pam-3:2:leftover", text: "남은 음료를 버리고 치울까요?" }]);
+      expect(plannedClicks(cmd("plan:pam-3:2", "컵 안이 보이게 위에서 비춰 주세요"), r, 0)).toEqual([]);
+      expect(plannedClicks(cmd("plan:pam-3:approve", "컵 치우기를 할까요?"), r, 0)).toEqual([]);
+      expect(parseArgs(["--clip", "a.mp4", "--answer", "치워 주세요"])).toMatch(/--answer는 <초>:<답 단추 글>/);
+      expect(parseArgs(["--clip", "a.mp4"])).toMatchObject({ answers: [] });
     });
     it("계획을 마친 완료 문장(done:<계획 id>)에는 --done-after가 있어도 누르기를 예약하지 않는다", () => {
       expect(doneId("plan:pam-1")).toBe("done:plan:pam-1");
@@ -744,7 +757,7 @@ describe("video-check", () => {
         const a = parseArgs(["--clip", "a.mp4", ...flags]);
         if (typeof a === "string") throw new Error(a);
         expect(a.doneAfterMs, flags.join(" ")).toBe(0);
-        const r = { approveAfterMs: a.approveAfterMs, doneOn: a.doneOn, doneAfterMs: a.doneAfterMs };
+        const r = { approveAfterMs: a.approveAfterMs, doneOn: a.doneOn, doneAfterMs: a.doneAfterMs, answers: a.answers };
         expect(plannedClicks(cmd("plan:pam-3:4:again", "물 받기를 계속할까요?"), r, 0), flags.join(" ")).toEqual([]);
       }
       const given = parseArgs(["--clip", "a.mp4", "--approve", "2", "--done-after", "3"]);
@@ -790,7 +803,7 @@ describe("video-check", () => {
     const planned = { id: "plan:pam-3", step: "plan:pam-3:3", text: "그릇을 전자레인지에 넣어 주세요", label: "완료" };
 
     it("step이 off:인 끄기 안내 명령에는 --done-after·--done-on·--approve 어떤 누르기도 예약하지 않는다. 같은 글의 라면 12번 명령에는 --done-on이 눌린다", () => {
-      const rule: ClickRule = { approveAfterMs: 1_000, doneOn: [{ afterMs: 10_000, text: "인덕션을 꺼 주세요" }], doneAfterMs: 3_000 };
+      const rule: ClickRule = { approveAfterMs: 1_000, doneOn: [{ afterMs: 10_000, text: "인덕션을 꺼 주세요" }], doneAfterMs: 3_000, answers: [] };
       const off: VideoCommand = { video_ms: 0, id: "plan:pam-1", step: "off:plan:pam-1:induction_1:1", text: "인덕션을 꺼 주세요" };
       expect(plannedClicks(off, rule, 0)).toEqual([]);
       expect(plannedClicks({ ...off, step: "off:plan:pam-1:induction_1:1", text: "인덕션이 보이게 폰을 가까이 대 주세요" }, rule, 0)).toEqual([]);

@@ -195,6 +195,26 @@ describe("plan1 차례 기록에서 찾은 첫 차례 실수", () => {
   });
 });
 
+// 2026-11-20 사용자 「아직도 컵안을 확인해달라는 내용이 없네」, 고른 답 「늘 확인」: 모델이 빼먹지 않게 서버가 넣는다
+describe("컵 안 보기 단계(서버가 넣음)", () => {
+  it("위에서 보기를 하는 집(topLook)의 컵 치우기 계획은 첫 컵 집기 바로 앞에 컵 안 보기(do, 위에서 비추기, 끝 조건 없음)를 넣고 번호를 다시 매긴다. 미리 만든 계획 다시 내기도 같다", () => {
+    const top = { ...ctx(), topLook: true as const };
+    const r = new PlanDraft(top).submit({ steps: cupSteps(IDS) });
+    if (!r.ok) throw new Error(r.error);
+    expect(r.plan.steps.map((x) => [x.id, x.kind, x.label, x.look ?? null])).toEqual([
+      ["plan:pam-5:1", "go", "식탁으로 가기", null], ["plan:pam-5:2", "do", "컵 안 보기", "top"], ["plan:pam-5:3", "pick", "컵 집기", null],
+      ["plan:pam-5:4", "go", "싱크대로 가기", null], ["plan:pam-5:5", "place", "컵 내려놓기", null],
+    ]);
+    expect(r.plan.steps[1]).toMatchObject({ target: "cup_1", object: null, command: "컵 안이 보이게 위에서 비춰 주세요", until: null, onTimeout: "fail" });
+    expect(r.plan.view.steps.map((x) => [x.id, x.label])).toEqual(r.plan.steps.map((x) => [x.id, x.label]));
+    const again = resubmit({ ...r.plan, submitted: { steps: cupSteps(IDS) } }, top);
+    expect(again.ok ? again.plan.steps.map((x) => x.look ?? null) : again.error).toEqual([null, "top", null, null, null]);
+    // 위에서 보기를 하지 않는 집은 모델이 낸 넷 그대로
+    const plain = new PlanDraft(ctx()).submit({ steps: cupSteps(IDS) });
+    expect(plain.ok ? plain.plan.steps.map((x) => x.kind) : plain.error).toEqual(["go", "pick", "go", "place"]);
+  });
+});
+
 describe("until 모양 오류의 자리(conditionProblems)", () => {
   it("합집합 오류(「Invalid input」)를 그 자리 조건 종류의 까닭으로 내려가 말한다", () => {
     // 2026-11-18 전: 놓기 조건 안 한 칸의 자리 사실 값이 틀리면 「(전체): Invalid input」만 돌려줘 어디를 고칠지 몰랐다

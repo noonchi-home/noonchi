@@ -4,15 +4,17 @@
 // 따르기 창: 그 자리에서 하는 일 단계의 끝 조건이 그 물건 내용물을 보면 그 단계 동안 그 물건(지금 따라가는 id)의 창을 연다(o.contentsAction).
 // 따라가는 id가 바뀌면 창도 옮기고, 단계가 바뀌거나 계획이 닫히면 닫는다.
 import type { PhoneStepKind, PlannedCommand } from "../../contract/phone.js";
+import type { CloserResult } from "../../contract/events.js";
 import type { Facet, WorldEye, WorldObject, WorldView } from "../../contract/world.js";
 import type { LookSpot } from "../../observe/index.js";
-import { AGAIN_TEXT, APPROVAL_TEXT, CAUTION_TEXT, EXEC_TEXT, SAY_TEXT, VISION_TEXT } from "../labels.js";
+import { AGAIN_TEXT, APPROVAL_TEXT, CAUTION_TEXT, EXEC_TEXT, SAY_TEXT, TOP_TEXT, VISION_TEXT } from "../labels.js";
 import { roomAt } from "../../layout/index.js";
 import { OBJECT_NAME, PLACE_UNKNOWN, STATE_TEXT, onSurface } from "../../world/labels.js";
-import { ConditionWatch, type Condition, type ConditionContext } from "../../world/index.js";
+import { ConditionWatch, TOP_CONFIRM, type Condition, type ConditionContext } from "../../world/index.js";
 import { NEAR_M } from "../../world/vocab.js";
 import { HUMAN_KINDS, selfStopWait, type AgentStep, type ToolResult } from "../../agent/index.js";
-import { clearsAway, taskOf, type Placed } from "../tasks.js";
+import { clearsAway, followedId, sureValue, taskOf, type Placed } from "../tasks.js";
+import { CONTENTS_HOLD } from "./contents.js";
 import { doneId } from "../done-step.js";
 import { Part, choicesOf, clsOf, type Run } from "./core.js";
 
@@ -164,7 +166,9 @@ export class Steps extends Part {
     const prev = r.plan.steps[r.at];
     const step = r.plan.steps[i]!;
     const now = this.clock.now();
+    const insideSince = prev?.kind === "go" ? r.stepAt : now;
     r.stepEnd?.abort();
+    this.endTop(r);
     Object.assign(r, {
       at: i, stepAt: now, spokeAt: now, visionAt: now, deadline: now + step.timeoutMs, asking: null, watch: step.until ? new ConditionWatch(step.until) : null,
       again: false, device: "idle", gen: r.gen + 1, looks: 0, lookAt: Number.NEGATIVE_INFINITY, stepEnd: new AbortController(),
@@ -184,6 +188,18 @@ export class Steps extends Part {
       r.watch = null;
       return this.core.approval.ask(r, { why: "hand" }, CAUTION_TEXT.ask(step.caution ?? "", this.core.handLabel(step.hand!.deviceId, step.target)), `${step.id}:hand`);
     }
+    // 컵 안 보기: 위에서는 YOLO가 컵을 못 잡아 사라짐으로 셀 수 있어 보기 지킴을 건다(가까이 가서 보기의 위에서 비추기와 같다)
+    if (step.look === "top" && step.target) {
+      const id = ours(r, step.target, this.o.world())[0]?.id ?? r.alias.get(step.target) ?? step.target;
+      r.top = { objectId: id, asked: false, doneAt: null, seen: null, end: new AbortController(), guarded: !!this.o.guardObject };
+      this.o.guardObject?.(id, true);
+      const seen = this.inside(r, step, insideSince);
+      if (seen) {
+        this.finishTop(r, step, seen);
+        return;
+      }
+      r.top.since = insideSince;
+    }
     this.show(r, step);
   }
 
@@ -197,7 +213,7 @@ export class Steps extends Part {
       type: "command", id: r.plan.view.id, step: step.id, text: (human ? step.command : step.kind === "ask" ? step.prompt?.text : step.text) ?? step.label,
       vision: human ? this.vision(r, step, world) : null, choices: choicesOf(r, step).map(({ id, label }) => ({ id, label })),
       target: human ? this.target(r, step, world) : null, speak: !r.quietOn,
-      ...(human ? { kind: step.kind as PhoneStepKind } : {}),
+      ...(human ? { kind: step.kind as PhoneStepKind } : {}), ...(step.look === "top" ? { view: "above" as const } : {}),
     };
     // 알림 글은 판본이 맞는 폰이 없거나 끄기 안내가 명령 줄에 떠 있으면 보내지 않는다(폰 없이 도는 가전 계획, 명령 줄에는 하나만)
     if (step.kind === "say" && (!this.core.start.phoneOk() || this.core.safety.shownOff())) return;
@@ -262,6 +278,12 @@ export class Steps extends Part {
       return true;
     }
     if (step.kind === "device" && r.device !== "done" && r.device !== "sent") return false;
+    if (step.look === "top") return this.topStep(r, step);
+    const next = r.plan.steps[r.at + 1];
+    if (!r.asking && step.kind === "go" && next?.look === "top" && this.inside(r, next, r.stepAt)) {
+      this.advance(r);
+      return true;
+    }
     // 따라가는 컵이 새 id로 이어졌으면 따르기 창도 옮긴다
     if (step.kind === "do") this.window(r, windowOf(step));
     const world = this.o.world();
@@ -282,6 +304,113 @@ export class Steps extends Part {
       this.core.answers.send(r.sent);
     }
     return false;
+  }
+
+  /** 컵 안 보기 단계 한 걸음(tick·World State 변화마다): 단계를 띄운 뒤(stepAt) 그 컵 안을 내려다본 VLM 프레임 쌍이 모이면(topReady) 위에서 보기를 부탁하고,
+   *  끝나면(못 봐도) 그 컵 내용물로 가른다. 비었음 → 다음 단계(집기), 남음 → 실제 폰 질문 「남은 음료를 버리고 치울까요?」(leftover),
+   *  모름 → 사진이 이어질 settleMs를 기다린 뒤 그만둔다(사용자에게 비었는지 묻지 않는다, 내용물 보류와 같다). 옆 사진으로 내용물을 알아도 늘 위에서 본다.
+   *  위에서 보기 담당이 없으면 바로 끝난 것으로 본다. 넘기거나 닫았으면 true. */
+  private topStep(r: Run, step: AgentStep): boolean {
+    let t = r.top;
+    if (!t) return false;
+    const now = this.clock.now();
+    const world = this.o.world();
+    const id = followedId(world, t.objectId);
+    if (id !== t.objectId) {
+      this.endTop(r);
+      t = r.top = { objectId: id, asked: false, doneAt: null, seen: null, end: new AbortController(), guarded: !!this.o.guardObject };
+      this.o.guardObject?.(id, true);
+      if (step.target) r.alias.set(step.target, id);
+    }
+    const o = world.objects.find((x) => x.id === id && x.status !== "gone");
+    const seen = this.inside(r, step, t.since ?? r.stepAt);
+    if (seen) return this.finishTop(r, step, seen);
+    const target = o?.size_m?.center ?? o?.position;
+    if (!t.asked && target && r.sent && (!r.sent.target || r.sent.target.id !== id || target.some((v, i) => Math.abs(v - r.sent!.target!.position[i]!) > 0.02))) {
+      r.sent = { ...r.sent, speak: false, target: { id, label: OBJECT_NAME[o!.cls] ?? o!.cls, position: target } };
+      this.core.answers.send(r.sent);
+    }
+    const since = t.retryAfter ?? r.stepAt;
+    const retry = t.retryAfter !== undefined && t.doneAt !== null && now - t.doneAt < CONTENTS_HOLD.settleMs;
+    if ((t.doneAt === null || retry) && !t.asked) {
+      if (!this.o.lookContents) t.doneAt = now;
+      else if (o?.position && this.o.topReady?.(o.id, since)) {
+        const job = t;
+        const done = (result?: CloserResult | null) => {
+          if (r.top !== job) return;
+          job.doneAt = this.clock.now();
+          if (!result?.ok) return;
+          const facts = result.found.find((found) => found.id === job.objectId)?.facts;
+          const value = facts?.[0];
+          if (facts?.length === 2 && facts[1] === value && (value === "empty" || value === "has_contents")) {
+            job.seen = { value, at: result.captured_at_ms };
+          } else if (job.retryAfter === undefined && !result.top?.some((f) => f.why === "moved" || f.why === "crowded")) {
+            job.retryAfter = result.captured_at_ms + 1;
+            job.asked = false;
+          }
+        };
+        const previousDone = t.doneAt;
+        t.asked = true;
+        t.doneAt = null;
+        if (!this.o.lookContents({
+          planId: r.plan.view.id, objectId: o.id, spot: { id: o.id, label: OBJECT_NAME[o.cls] ?? o.cls, position: o.size_m?.center ?? o.position }, signal: t.end.signal,
+          top: { sinceMs: since }, done,
+        })) {
+          t.asked = false;
+          t.doneAt = previousDone;
+        }
+      }
+    }
+    if (t.doneAt === null) return false;
+    const v = o && o.id === t.objectId && t.seen && (o.facts.contents?.at_ms ?? 0) >= t.seen.at && sureValue(o, "contents") === t.seen.value ? t.seen.value : null;
+    if (v !== null) return this.finishTop(r, step, v);
+    if (now - t.doneAt < CONTENTS_HOLD.settleMs) return false;
+    this.finish(r, "failed", EXEC_TEXT.topUnknown);
+    return true;
+  }
+
+  /** 이번 이동 또는 비추기 중 같은 컵의 입구 안을 직접 확인한 두 장. */
+  private inside(r: Run, step: AgentStep, since: number): "empty" | "has_contents" | null {
+    if (!step.target) return null;
+    const world = this.o.world();
+    const id = followedId(world, r.alias.get(step.target) ?? step.target);
+    const cup = world.objects.find((o) => o.id === id && o.status === "present");
+    const fact = cup?.facts.contents;
+    const pair = fact?.inside_ms;
+    if (!cup || cup.carried || cup.facts.place?.value === "in_hand" || !pair || pair[0] < since || this.clock.now() - pair[1] > TOP_CONFIRM.gapMs) return null;
+    return fact.certainty === "confirmed" && (fact.value === "empty" || fact.value === "has_contents") ? fact.value : null;
+  }
+
+  private finishTop(r: Run, step: AgentStep, value: "empty" | "has_contents"): true {
+    this.endTop(r);
+    if (value === "empty") this.advance(r);
+    else {
+      r.helped = true;
+      this.core.approval.ask(r, { why: "leftover" }, TOP_TEXT.ask, `${step.id}:leftover`);
+    }
+    return true;
+  }
+
+  /** 컵 안 보기를 거둔다: 보기 지킴을 풀고 위에서 보기 부탁을 끊는다. */
+  endTop(r: Run): void {
+    const t = r.top;
+    if (!t) return;
+    r.top = null;
+    t.end.abort();
+    if (t.guarded) this.o.guardObject?.(t.objectId, false);
+  }
+
+  /** 남은 음료 질문의 답: 「치워 주세요」면 다음 단계(집기)로 이어 가고, 「그대로 둬요」면 치우지 않고 계획을 끝낸다(취소). 그 컵은 사람이 다시 보일 때까지 치우지 않는다(start.ts kept). */
+  leftover(r: Run, choice: string): void {
+    r.asking = null;
+    if (choice !== "keep") return this.advance(r);
+    const step = this.core.stepOf(r);
+    const target = step?.target ?? null;
+    if (target) {
+      const id = ours(r, target, this.o.world())[0]?.id ?? r.alias.get(target) ?? target;
+      this.core.kept.set(id, this.clock.now());
+    }
+    this.finish(r, "failed", EXEC_TEXT.kept, "cancelled");
   }
 
   /** 시간 한도를 넘은 단계: on_timeout이 ask이고 아직 묻지 않았으면 실제 폰에 계속할지 한 번 묻고, 아니면 실패로 닫는다. */
@@ -449,7 +578,7 @@ export class Steps extends Part {
   private target(r: Run, step: AgentStep, world: WorldView): PlannedCommand["target"] {
     const thing = step.kind === "pick" ? step.object : step.kind === "do" ? step.target : null;
     const obj = thing ? ours(r, thing, world).find((o) => o.status !== "gone") : undefined;
-    if (obj?.position) return { id: obj.id, label: OBJECT_NAME[obj.cls] ?? obj.cls, position: obj.position };
+    if (obj?.position) return { id: obj.id, label: OBJECT_NAME[obj.cls] ?? obj.cls, position: step.look === "top" ? obj.size_m?.center ?? obj.position : obj.position };
     const id = step.target;
     const at = id ? this.o.locate?.(id) : undefined;
     return id && at ? { id, label: at.label, position: at.position } : null;
@@ -465,6 +594,7 @@ export class Steps extends Part {
   /** close: 계획을 닫을 상태. null이면 닫지 않는다(새 계획이 PlanHub.onDecision으로 취소로 닫는다). */
   finish(r: Run, state: "done" | "failed", text?: string, close: "done" | "failed" | "cancelled" | null = state): void {
     this.core.contents.release(r);
+    this.endTop(r);
     this.core.finder.release(r);
     this.window(r, null);
     this.focus(r, null);

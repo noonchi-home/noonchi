@@ -13,6 +13,8 @@ export type { DeviceStateKey, Facet, FixtureClass, ObjClass };
  *  다른 값이 들어오면 없어진다. 판단 뒤에 가까이 보기가 바꾼 면인지는 이것이 아니라 물건의 closer_rev로 본다(전체 사진이 값을 바꾸면 이것은 없어진다). */
 export interface WorldFact {
   value: string; at_ms: number; since_ms: number; certainty: "confirmed" | "inferred"; closer_ms?: number;
+  /** 내용물이 같은 것을 입구 안쪽에서 직접 본 두 원본 사진의 촬영 시각. */
+  inside_ms?: [number, number];
 }
 
 export interface WorldObject {

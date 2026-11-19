@@ -12,13 +12,15 @@
 [판단·실행·답] execution 대상 물건이 이미 싱크대 안이라 실행하지 않아요
 [집 상태] world VLM: 컵
 [집 상태] detection 사람 보임
-[집 상태] detection 컵 cup_1 보임
+[집 상태] world 사람 주방·식당에 있음
+[집 상태] detection 컵 cup_1 보임 · 식탁 위
 [집 상태] detection 사람 안 보임
+[집 상태] world 컵 cup_1 비어 있음
 [집 상태] world 컵 cup_1 손에 있음
 [집 상태] world 컵 cup_1 싱크대 안
 [집 상태] detection 사람 보임
 [집 상태] detection 사람 안 보임
-[집 상태] world 컵 cup_1 식탁 위
+[집 상태] world 컵 cup_1 조리대 위
 [집 상태] detection 사람 보임
 [집 상태] detection 사람 안 보임
 [있음] decision 대기 valid

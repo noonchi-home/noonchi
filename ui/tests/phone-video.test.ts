@@ -1065,6 +1065,34 @@ describe("영상 입력 모드: 단계 영상·걷기", () => {
       expect((window as unknown as { __noonchiVideo: { clips: { clip: string }[] } }).__noonchiVideo.clips.map((c) => c.clip)).toEqual(["go-table.mp4"]);
     });
 
+    // 2026-11-20: 집기 조각 셋은 모두 「안을 내려다본 뒤 들어 올림」으로 찍혔다(runtime/videos/LABELS.md). 컵 안 보기가 집기 조각을 틀기 시작하고 집기는 그 조각을 이어 간다
+    it("컵 안 보기(do:cup, 위에서 비추기)가 집기 조각을 틀기 시작해 폰을 컵 위로 옮기고, 이어 온 「컵을 들어 주세요」는 같은 조각을 다시 틀지 않는다", async () => {
+      fakeTimers();
+      const TOPQ = "?clip=cup-empty.mp4&step=go:table:go-table.mp4&step=do:cup:pick-cup.mp4&step=pick:cup:pick-cup.mp4";
+      const { ws, urls, videos, video, sent, startAr } = make({}, TOPQ);
+      await startAr();
+      ws.push(ALIGNED);
+      video.end();
+      ws.push(goTable());
+      await after(1500);
+      expect(urls.slice(1)).toEqual(["/phone/videos/go-table.mp4"]);
+      ws.push(command({ step: "plan:pam-1:2", text: "컵 안이 보이게 위에서 비춰 주세요", vision: "컵", kind: "do", view: "above", target: CUP, choices: [], speak: true }));
+      const center = { ...CUP, ar: [CUP.ar[0]! + 0.42, CUP.ar[1]!, CUP.ar[2]!] };
+      ws.push(command({ step: "plan:pam-1:2", text: "컵 안이 보이게 위에서 비춰 주세요", vision: "컵", kind: "do", view: "above", target: center, choices: [], speak: false }));
+      videos[1]!.end();
+      await after(200);
+      expect(urls.slice(1)).toEqual(["/phone/videos/go-table.mp4", "/phone/videos/pick-cup.mp4"]);
+      // 컵 입구 바로 위 0.4m
+      expect(lastPose(sent).position[1]).toBeCloseTo(CUP.ar[1]! + 0.4, 5);
+      expect(Math.abs(lastPose(sent).position[0] - center.ar[0]!)).toBeLessThan(0.021);
+      ws.push(pickCup({ step: "plan:pam-1:3" }));
+      await after(3000);
+      videos[2]!.end();
+      await after(3000);
+      expect(urls.slice(1)).toEqual(["/phone/videos/go-table.mp4", "/phone/videos/pick-cup.mp4"]);
+      expect((window as unknown as { __noonchiVideo: { clips: { clip: string }[] } }).__noonchiVideo.clips.map((c) => c.clip)).toEqual(["go-table.mp4", "pick-cup.mp4"]);
+    });
+
     it("go 조각의 걷기는 조각 길이에 맞춰 조각이 끝날 때 멈출 자리(대상 0.6m 앞)에 닿는다. 다음 명령이 와도 조각이 도는 동안은 계속 걷는다", async () => {
       fakeTimers();
       const { ws, sent, video, startAr } = make({}, STEPS, { later: { duration: 4 } as never });

@@ -34,6 +34,17 @@ function scene(view: CameraView | null = null, seen: Detection = cup) {
 }
 
 describe("내용물 확인", () => {
+  it("좌표가 없어도 그 컵 입구 안을 직접 본 서로 다른 두 사진에만 확인 시각을 붙인다", () => {
+    const s = scene();
+    s.say(4, "opaque", "empty");
+    s.say(5, "opaque", "empty");
+    expect(s.cupNow().facts.contents?.inside_ms).toBeUndefined();
+    s.say(6, "interior_visible", "empty");
+    s.say(6, "interior_visible", "empty");
+    expect(s.cupNow().facts.contents?.inside_ms).toBeUndefined();
+    s.say(8, "interior_visible", "empty");
+    expect(s.cupNow().facts.contents).toMatchObject({ value: "empty", certainty: "confirmed", inside_ms: [6000, 8000] });
+  });
   it("같은 값이 서로 다른 사진 3장이고 처음과 마지막이 4초 넘게 이어져야 확인됨이다. 그 전은 짐작이고 변화 줄이 없다", () => {
     const s = scene();
     expect(s.lines(s.say(1, "empty"))).toEqual([]);

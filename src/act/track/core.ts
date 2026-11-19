@@ -11,7 +11,7 @@ import type { ConditionWatch } from "../../world/index.js";
 import { HUMAN_KINDS, type AgentPlan, type AgentStep } from "../../agent/index.js";
 import { DEVICE_UNKNOWN, EXEC_TEXT } from "../labels.js";
 import type { StepOutcome } from "../lessons.js";
-import { AGAIN, APPROVE, STEP_DONE, type ActionChoice } from "../prompts.js";
+import { AGAIN, APPROVE, LEFTOVER, STEP_DONE, type ActionChoice } from "../prompts.js";
 import type { Answers } from "./answers.js";
 import type { Approvals, Asking } from "./approval.js";
 import type { Coach } from "./coach.js";
@@ -61,6 +61,8 @@ export interface Run {
   outcomes: StepOutcome[];
   /** 내용물 보류(실행 전 검사가 컵 안을 몰라 막음, src/act/track/contents.ts). 없으면 null. */
   hold: Hold | null;
+  /** 지금 단계가 컵 안 보기면 그 위에서 보기(src/act/track/steps.ts topStep). 아니면 null. */
+  top: TopLook | null;
   /** 내용물 보류로 붙잡은 컵 id(보류에서 풀려 첫 명령을 보낼 때 폰 대화·승인 대기를 보고, 그 컵 내용물은 「가까이 본 뒤 다시 판단」에서 뺀다).
    *  busyAt: 폰 대화·승인 대기 때문에 첫 명령을 미루기 시작한 시각. */
   heldIds: Set<string>; busyAt: number | null;
@@ -106,6 +108,8 @@ export class TrackCore {
   foundFor: string | null = null;
   /** 계획이 끝난 뒤 충전 자리 돌아가기(src/act/track/dock.ts): 명령 id dock:<번호>와 그 상태. 없으면 null. */
   docking: DockSlot | null = null;
+  /** 남은 음료를 그대로 두라고 한 컵(World State id → 그 답을 받은 때). 사람이 그 뒤에 다시 보이면 푼다(start.ts kept). */
+  kept = new Map<string, number>();
   /** 계획을 마친 완료 문장(실제 폰 명령 줄, phone-line.ts noticeTick): 명령 id done:<계획 id>, 글, 마친 때, 띄웠는가. */
   notice: { id: string; text: string; since: number; sent: boolean } | null = null;
   /** 마지막으로 받은 판단 id(쓰는 중 지킴의 상태 줄이 붙는 판단). 없으면 null. */
@@ -205,8 +209,23 @@ export abstract class Part {
 /** 승인 질문은 승인·거절, 다시 묻기는 계속·그만, 사람 단계는 「완료」 하나, 질문은 그 답들, 알림·기다리기·기기는 없음. */
 export function choicesOf(r: Run, step: AgentStep | undefined): ActionChoice[] {
   if (r.asking?.why === "again") return AGAIN;
+  if (r.asking?.why === "leftover") return LEFTOVER;
   if (r.asking) return APPROVE;
   if (!step) return [];
   if (step.kind === "ask") return step.prompt?.choices ?? [];
+  // 컵 안 보기는 단추 없이 위에서 본 사진으로만 넘긴다(가까이 가서 보기의 위에서 비추기와 같다)
+  if (step.look === "top") return [];
   return HUMAN_KINDS.includes(step.kind) ? [STEP_DONE] : [];
+}
+
+/** 컵 안 보기 단계의 위에서 보기: 대상 컵(계획 물건 id), 위에서 보기를 부탁했는가, 끝난 때(못 봐도), 끊는 신호, 보기 지킴을 걸었는가. */
+export interface TopLook {
+  since?: number;
+  objectId: string;
+  asked: boolean;
+  doneAt: number | null;
+  seen: { value: "empty" | "has_contents"; at: number } | null;
+  retryAfter?: number;
+  end: AbortController;
+  guarded: boolean;
 }

@@ -13,7 +13,7 @@ import { assemblePlan } from "./planShape.js";
 import type { WorldObject, WorldView } from "../contract/world.js";
 import type { RoomSpec } from "../contract/devices.js";
 import type { FloorPlan } from "../layout/index.js";
-import { ALL_ACTS, CAUTION_LINE, DEVICE_VERB, EXTRA_ITEMS, ITEM_CLASS, NOTICES, NOTICE_KEYS, STEP_ACTS, STEP_LABEL, STEP_TEXT, noticeLabel, type StepAct } from "../act/labels.js";
+import { ALL_ACTS, CAUTION_LINE, DEVICE_VERB, EXTRA_ITEMS, ITEM_CLASS, NOTICES, NOTICE_KEYS, PEEK_TEXT, STEP_ACTS, STEP_LABEL, STEP_TEXT, TOP_TEXT, noticeLabel, type StepAct } from "../act/labels.js";
 import { KINDS, KIND_ORDER, kindEntry } from "../devices/kinds.js";
 import { KIND_LABELS, findTypeRule } from "../devices/index.js";
 import { placeName, type PlaceNames } from "../layout/index.js";
@@ -85,7 +85,12 @@ export interface AgentStep {
   until: Condition | null;
   timeoutMs: number;
   onTimeout: "ask" | "fail";
+  /** top: 서버가 넣은 컵 안 보기 단계(do, 위에서 비추기, 모델은 쓰지 않음). 끝은 위에서 본 사진이고 가르기는 실행 추적이 한다(src/act/track/steps.ts topStep). */
+  look?: "top";
 }
+
+/** 컵 안 보기 단계의 시간 한도(ms). 이 안에 위에서 본 사진이 모이지 않으면 실패로 닫는다. */
+export const TOP_LOOK_MS = 60_000;
 
 /** 검사를 통과한 계획: 화면 계획(PlanView, 단계 순서·id가 steps와 같다)과 실행 단계.
  *  submitted: 이 계획을 낸 submit_plan 인자(모델이 낸 그대로). 미리 만든 계획을 다른 판단으로 다시 낼 때 쓴다(resubmit). add·finish로 만든 계획은 없다. */
@@ -136,6 +141,8 @@ export interface PlanContext {
   names?: PlaceNames;
   /** 미리 세운 목표의 계획이면 그 목표(입력에 [미리 세운 목표] 줄, 계획 검사는 목표 물건만 받는다). */
   ahead?: PlanAhead;
+  /** 위에서 보기를 하는 집(관찰 흐름이 위에서 본 사진으로 컵 안을 본다, 서버가 넘긴다): 집기 전에 늘 안을 보는 행동(TaskSpec.topLook)의 계획에 컵 안 보기 단계를 넣는다. */
+  topLook?: true;
 }
 
 
@@ -378,6 +385,20 @@ export class PlanDraft {
         const names = [s.object, s.target, ...(s.until ? objectNames(s.until) : [])].filter((n): n is string => !!n && !!worldObject(this.ctx.world, n));
         const other = names.find((n) => n !== goal && this.clsOf(n) === cls);
         if (other) return { ok: false, error: `${i + 1}번 단계: 미리 세운 목표의 물건은 ${goal}입니다(받지 않는 물건: ${other})` };
+      }
+    }
+    // 집기 전에 늘 대상 안을 위에서 본다(TaskSpec.topLook, 위에서 보기를 하는 집 ctx.topLook): 그 종류 물건 첫 집기 바로 앞에 서버가 컵 안 보기 단계를 넣는다.
+    // 모델이 쓰지 않는 단계라 빼먹을 수 없고, 미리 만든 계획·다시 내기도 같은 검사를 지나 같은 단계가 든다
+    if (task.topLook && this.ctx.topLook && task.target) {
+      const at = steps.findIndex((s) => s.kind === "pick" && !!s.object && this.clsOf(s.object) === task.target);
+      if (at >= 0) {
+        const o = steps[at]!.object!;
+        const name = OBJECT_NAME[this.clsOf(o) as keyof typeof OBJECT_NAME] ?? this.clsOf(o);
+        steps.splice(at, 0, {
+          id: "", kind: "do", label: TOP_TEXT.label(name), target: o, object: null, command: PEEK_TEXT.above(name), prompt: null, text: null,
+          device: null, hand: null, caution: null, until: null, timeoutMs: TOP_LOOK_MS, onTimeout: "fail", look: "top",
+        });
+        steps.forEach((s, i) => { s.id = `${id}:${i + 1}`; });
       }
     }
     const draft: DraftStep[] = steps.map((s, i) => ({ kind: VIEW_KIND[s.kind], label: s.label, ...this.viewTarget(s, steps[i + 1]) }));

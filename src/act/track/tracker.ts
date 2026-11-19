@@ -402,7 +402,7 @@ export class ExecutionTracker {
   /** 가까이 보는 차례인가(찾기 비추기·가까이 보기, 내용물 보류 잘라 보기·위에서 보기). */
   looking(): boolean {
     const core = this.core;
-    return !core.stopped && (core.finder.looking() || core.contents.looking());
+    return !core.stopped && (!!core.run?.top || core.finder.looking() || core.contents.looking());
   }
 
   /** VLM 사진 간격을 줄일 때인가(src/observe/pipeline.ts vlmFast, FAST_VLM_MS 1초): 가까이 보는 차례이거나 미리 세운 목표가 서 있는 동안(세움·떠남).
@@ -421,6 +421,7 @@ export class ExecutionTracker {
   stop(): void {
     const core = this.core;
     core.goal.stop();
+    if (core.run) core.steps.endTop(core.run);
     if (core.run) core.contents.release(core.run);
     if (core.run) core.finder.release(core.run);
     core.contents.dropIdle();

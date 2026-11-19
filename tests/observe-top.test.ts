@@ -41,7 +41,7 @@ function topReply(states: string[][], gate?: (n: number) => Promise<void> | unde
     sent.push(body);
     await gate?.(i);
     const obs: SceneObservation["observations"] = (states[i] ?? states.at(-1)!).map((state) => ({ object_id: "d1", state: state as SceneObservation["observations"][number]["state"] }));
-    return JSON.stringify({ scene: "kitchen", observations: obs, summary: "위에서 본 컵" });
+    return JSON.stringify({ scene: "kitchen", observations: obs, objects: [], summary: "위에서 본 컵" });
   };
   return { reply, sent };
 }
@@ -71,6 +71,7 @@ function setup(vlm: VlmClient, crop: () => Detection[] = () => [BOWL]) {
     if (dets.length) sides.set(sha256(jpeg), dets);
     clock.t = Math.max(clock.t, atMs + 5);
     p.onEngine(jpeg, { kind: "engine", width: 480, height: 360, captured_at: atMs, time_err_ms: 0 }, eyeOfView(view), view, atMs + 5);
+    return jpeg;
   };
   const cup = () => world.view(clock.now()).objects.find((o) => o.cls === "cup")!;
   return { p, world, frame, clock, cup };
@@ -111,13 +112,15 @@ describe("위에서 보기(topLook)", () => {
     fake = await startFakeOpenAI({ reply: t.reply });
     const s = setup(fakeVlm(fake));
     await seeCup(s);
-    s.frame(8000, ABOVE);
-    s.frame(10_000, ABOVE);
+    const photos = [s.frame(8000, ABOVE), s.frame(10_000, ABOVE)];
     await s.p.idle();
     const r = await s.p.topLook(spotOf(s.cup()), 7000);
     expect(r).toMatchObject({ ok: true, frames: 2, found: [{ id: "cup_1", cls: "cup", score: 1, facts: ["empty", "empty"] }], vlm: "ok", top: [{ kept: true }, { kept: true }] });
     expect(t.sent).toHaveLength(2);
-    for (const body of t.sent) {
+    for (const [i, body] of t.sent.entries()) {
+      // 이미 가까이 다가간 폰 사진은 가장자리까지 보낸다. 컵이 화면을 채우면 가운데만 잘라서는 수면과 테두리를 구별할 수 없다.
+      const image = body.messages.flatMap((msg: any) => msg.content).find((p: any) => p.type === "image_url");
+      expect(image.image_url.url === `data:image/jpeg;base64,${photos[i]!.toString("base64")}`).toBe(true);
       const m = /Detections: (\[.*\])/.exec(requestText(body));
       const dets: { id: string; class: string; box: number[] }[] = JSON.parse(m![1]!);
       expect(dets).toEqual([expect.objectContaining({ id: "d1", class: "cup" })]);
@@ -153,6 +156,17 @@ describe("위에서 보기(topLook)", () => {
     s.frame(10_000, ABOVE);
     await s.p.idle();
     expect(await s.p.topLook(spotOf(s.cup()), 7000)).toMatchObject({ ok: true, top: [{ why: "no_vessel" }, { why: "no_vessel" }] });
+  });
+
+  it("컵 테두리가 잘려 확대 사진에서 놓쳐도 같은 원본 사진의 목표 상자 안 그릇 감지는 쓴다", async () => {
+    const t = topReply([["empty"]]);
+    fake = await startFakeOpenAI({ reply: t.reply });
+    const s = setup(fakeVlm(fake), () => []);
+    await seeCup(s);
+    s.frame(8000, ABOVE, [BOWL]);
+    s.frame(10_000, ABOVE, [BOWL]);
+    await s.p.idle();
+    expect(await s.p.topLook(spotOf(s.cup()), 7000)).toMatchObject({ ok: true, top: [{ kept: true }, { kept: true }] });
   });
 
   it("첫 답 뒤 컵이 0.35m 옮겨지면 둘째 장은 넣지 않고 moved로 끝난다", async () => {
@@ -213,7 +227,15 @@ describe("위에서 본 장 거르기(topDropOf)", () => {
   });
   const scene = (...states: string[]): SceneObservation => ({ scene: "k", observations: states.map((state) => ({ object_id: "d1", state: state as SceneObservation["observations"][number]["state"] })), summary: "s" });
   const box: [number, number, number, number] = [150, 100, 180, 160];
-  const base = { start: [1, 0.75, 0] as V3, now: cup(), others: [] as WorldObject[], scene: scene("empty"), dets: [BOWL], box };
+  const base = { start: [1, 0.75, 0] as V3, now: cup(), others: [] as WorldObject[], scene: scene("empty"), dets: [BOWL], box, frame: { width: 480, height: 360 } };
+  it("투명한 컵을 감지기가 놓쳐도 VLM이 같은 사진 목표 자리에서 찾았으면 내용물을 받는다", () => {
+    const object = { id: "v1", cls: "cup", det: "d1", box: { x: 0.4, y: 0.35, w: 0.2, h: 0.3 } };
+    const frame = { width: 480, height: 360 };
+    const check = (o: typeof object) => topDropOf({ ...base, frame, dets: [], scene: { ...scene("empty"), objects: [o] } });
+    expect(check(object)).toEqual({ value: "empty" });
+    expect(check({ ...object, box: { ...object.box, x: 0 } })).toEqual({ drop: "no_vessel" });
+    expect(check({ ...object, det: "d2" })).toEqual({ drop: "no_vessel" });
+  });
   it("차례: 옮겨짐 → VLM 답 없음 → not_visible → 내용물 값 없음 → 그릇 감지 없음 → 같은 종류 가까이. 다 거치면 그 값", () => {
     expect(topDropOf(base)).toEqual({ value: "empty" });
     expect(topDropOf({ ...base, now: cup({ position: [1.2, 0.75, 0] }) })).toEqual({ drop: "moved" });

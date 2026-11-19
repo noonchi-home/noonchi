@@ -16,7 +16,7 @@
 // 카메라 화면을 못 보내면(core/ar.js 알림) 그 AR 동안 cameraOff로 두어 설정 모달에 「카메라 · 못 보냄」을 남긴다.
 // 위치 맞춤: 시작 위치가 있으면 AR을 켤 때 「여기서 시작」(시작 위치 맞추기)을 띄운다(state.ts onStatus). 단추나 말 「여기서 시작」이면
 // 마지막 폰 자세와 원점으로 {type:"start"}를 보낸다. 그 뒤 서버가 걸으면서 물건·벽 모양으로 맞춘다(src/phone/sync).
-// 명령 대상: 명령에 실린 대상(target, AR 자리) 하나만, 위 줄·엄지 자리에 그 명령이 보일 때만(handOf) 넘긴다. 화면 안이면 그리지 않고 화면 밖이거나 칸에 가리면 그쪽 세모를 그린다(draw.ts). 에이전트 초점(focus)은
+// 명령 대상: 명령에 실린 대상(target, AR 자리) 하나만, 위 줄·엄지 자리에 그 명령이 보일 때만(handOf) 넘긴다. 이동 중에는 갈 방향을, 화면 밖이거나 칸에 가리면 그쪽을 세모로 가리킨다(draw.ts). 에이전트 초점(focus)은
 // 명령이 없을 때만 AR에 넘긴다(대시보드로 가는 화면 프레임에만 그려지고 실제 폰 화면에는 그리지 않는다). 조준점은 물건 자리 맞추기 때만(draw.aim).
 // 영상 입력 모드(?clip=, core/video-ar.js): 카메라 입력만 다르고 지시·소리 읽기·완료 판단·트윈 반영은 실제 모드와 같다(tests/video-mode-parity.test.ts).
 // 카메라 대신 영상을 틀고 고정 자세로 바로 맞춘다(start fixed). 지원은 바로 되고(WebXR·https 없어도), 마이크로 늘 듣기만 끈다(답은 화면 단추).
@@ -316,7 +316,7 @@ export function createPhoneController(deps: ControllerDeps): PhoneController {
       lastGrade = { id: m.id, step: m.step, grade: m.grade ?? "command" };
       armTalk();
       set((v) => ({ ...v, command: { id: m.id, step: m.step, text: m.text, vision: m.vision, choices: m.choices, target: m.target?.id ?? null, ...(m.grade === "safety" ? { safety: true as const } : {}) } }));
-      ar.setFocus(m.target ? [m.target] : [], COMMAND_FOCUS_MS);
+      ar.setFocus(m.target ? [m.kind === "go" ? { ...m.target, walking: true } : m.target] : [], COMMAND_FOCUS_MS);
       if (ar.videoTime) logVideoCommand(ar.videoTime(), m);
       ar.command?.(m);
       if (m.speak) {

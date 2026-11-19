@@ -19,7 +19,7 @@ import type { BrainLog, CloserResult, DecisionRecord } from "../src/contract/eve
 import type { HeardAt, PlannedCommand, PlannedCommandMessage } from "../src/contract/phone.js";
 import type { WorldChange, WorldObject, WorldView } from "../src/contract/world.js";
 import { PlanHub } from "../src/act/hub.js";
-import { APPROVAL_TEXT, CAUTION_TEXT, CHECK_TEXT, DOCK_TEXT, EXEC_TEXT, CAUTION_LINE, PEEK_TEXT, STEP_COMMAND, STEP_LABEL, USE_THOUGHT, type TellMode } from "../src/act/labels.js";
+import { APPROVAL_TEXT, CAUTION_TEXT, CHECK_TEXT, DOCK_TEXT, EXEC_TEXT, CAUTION_LINE, PEEK_TEXT, STEP_COMMAND, STEP_LABEL, TOP_TEXT, USE_THOUGHT, type TellMode } from "../src/act/labels.js";
 import { CONTENTS_HOLD, PEEK } from "../src/act/track/contents.js";
 import { FIND } from "../src/act/track/find.js";
 import { DOCK } from "../src/act/track/dock.js";
@@ -146,6 +146,193 @@ function setup(over: Partial<TrackerOptions> & { w?: () => WorldView; check?: ()
   };
   return { t, decide, decisions, answer, logs, phone, clock, plans, exec, commands, spoken, last, steps, approvals, heard };
 }
+
+// 2026-11-20 사용자 「아직도 컵안을 확인해달라는 내용이 없네」, 고른 답: 컵 안 확인은 「늘 확인」, 음료가 남았으면 「버려도 될지 묻기」
+describe("컵 치우기: 집기 전에 늘 컵 안을 위에서 본다", () => {
+  /** 위에서 보기를 하는 집(계획 맥락 topLook): 계획 검사가 컵 안 보기 단계를 넣는다. 위에서 본 사진 쌍(topReady)과 위에서 보기(lookContents)는 시험이 정한다. */
+  function topSetup() {
+    let w = world([cup("present")]);
+    let latestPairStart = -Infinity;
+    const looks: ContentsLook[] = [];
+    const guards: [string, boolean][] = [];
+    const planner = testPlanner(llm);
+    const s = setup({
+      w: () => w,
+      planner: (d, signal) => planner.plan({ ...planContext({ decision: d, world: w, floor: smallFloor() }), topLook: true }, signal),
+      topReady: (_id, since) => latestPairStart >= since, lookContents: (h) => { looks.push(h); return true; }, guardObject: (id, on) => { guards.push([id, on]); },
+    });
+    /** 컵 안 값(확인됨)을 지금 시계로 둔다. null이면 모름. */
+    const contents = (value: string | null) => {
+      const c = cup("present", undefined, s.clock.t);
+      w = world([value ? { ...c, facts: { contents: { value, at_ms: s.clock.t, since_ms: s.clock.t, certainty: "confirmed" } } } : c]);
+    };
+    /** 식탁으로 가기를 「완료」로 넘겨 컵 안 보기까지. */
+    const toTop = async () => {
+      await s.decide(decision);
+      expect(s.last()).toMatchObject({ step: "plan:pam-1:1", text: "식탁으로 가 주세요" });
+      expect(s.t.onAnswer("plan:pam-1", "plan:pam-1:1", "done")).toBe(true);
+    };
+    /** 위에서 본 사진 쌍이 모이고 위에서 보기가 끝난다(그 결과로 컵 안 값 value). */
+    const seeTop = (value: string | null, photos: string[] = value ? [value, value] : []) => {
+      latestPairStart = s.clock.t;
+      const count = looks.length;
+      s.clock.t += 500;
+      s.t.tick();
+      expect(looks).toHaveLength(count + 1);
+      contents(value);
+      looks[count]!.done({ ok: true, frame_id: `top-${count}`, captured_at_ms: s.clock.t, crop: [0, 0, 100, 100], frames: 2, vlm: "ok",
+        summary: null, found: [{ id: "cup_1", cls: "cup", score: 1, facts: photos }] });
+      s.t.onWorld();
+      s.t.tick();
+    };
+    return { ...s, contents, toTop, seeTop, looks, guards, setWorld: (v: WorldView) => { w = v; } };
+  }
+
+  it("다섯 단계 차례: 식탁으로 가기 → 컵 안 보기(위에서 비추기, 단추 없음, 보기 지킴) → 비었으면 컵 집기 → 싱크대로 가기 → 컵 내려놓기", async () => {
+    const s = topSetup();
+    await s.toTop();
+    expect(s.plans.current()!.steps.map((x) => x.label)).toEqual(["식탁으로 가기", TOP_TEXT.label("컵"), STEP_LABEL.pickCup, STEP_LABEL.goSink, STEP_LABEL.placeCup]);
+    expect(s.last()).toMatchObject({ step: "plan:pam-1:2", text: PEEK_TEXT.above("컵"), kind: "do", view: "above", choices: [], speak: true, target: { id: "cup_1" } });
+    expect(s.guards).toEqual([["cup_1", true]]);
+    // 위에서 본 사진 쌍이 모이기 전에는 넘기지 않고, 「완료」 단추도 없다
+    s.clock.t += 2000;
+    s.t.tick();
+    expect(s.looks).toEqual([]);
+    expect(s.t.onAnswer("plan:pam-1", "plan:pam-1:2", "done")).toBe(false);
+    s.seeTop("empty");
+    expect(s.looks[0]).toMatchObject({ planId: "plan:pam-1", objectId: "cup_1", top: { sinceMs: expect.any(Number) } });
+    expect(s.last()).toMatchObject({ step: "plan:pam-1:3", text: "컵을 들어 주세요" });
+    expect(s.guards).toEqual([["cup_1", true], ["cup_1", false]]);
+    for (const n of [3, 4]) expect(s.t.onAnswer("plan:pam-1", `plan:pam-1:${n}`, "done")).toBe(true);
+    expect(s.spoken()).toEqual(["식탁으로 가 주세요", PEEK_TEXT.above("컵"), "컵을 들어 주세요", "싱크대로 가 주세요", "컵을 싱크대에 넣어 주세요"]);
+  });
+
+  it("옆 사진으로 컵 안을 이미 알아도(비었음) 늘 위에서 본다: 위에서 보기가 끝날 때까지 집기로 넘기지 않는다", async () => {
+    const s = topSetup();
+    s.contents("empty");
+    await s.toTop();
+    expect(s.last()).toMatchObject({ step: "plan:pam-1:2", view: "above" });
+    s.clock.t += 5000;
+    s.t.onWorld();
+    s.t.tick();
+    expect(s.last()).toMatchObject({ step: "plan:pam-1:2" });
+    s.seeTop("empty");
+    expect(s.last()).toMatchObject({ step: "plan:pam-1:3", text: "컵을 들어 주세요" });
+  });
+
+  it.each(["empty", "has_contents"] as const)("도착 좌표보다 먼저 그 컵 안이 확인되면 접근과 확인을 마친다 (%s)", async (value) => {
+    const s = topSetup();
+    await s.decide(decision);
+    expect(s.last()).toMatchObject({ step: "plan:pam-1:1" });
+    const from = s.clock.t;
+    s.clock.t += 2000;
+    const seen = (id: string, start: number) => ({ ...cup("present", undefined, s.clock.t), id,
+      facts: { contents: { value, certainty: "confirmed" as const, at_ms: s.clock.t, since_ms: start, inside_ms: [start, s.clock.t] as [number, number] } } });
+    s.setWorld(world([cup("present", undefined, s.clock.t), seen("cup_2", from)]));
+    s.t.onWorld();
+    s.setWorld(world([seen("cup_1", from - 1)]));
+    s.t.onWorld();
+    expect(s.last()).toMatchObject({ step: "plan:pam-1:1" });
+    s.setWorld(world([seen("cup_1", from)]));
+    s.t.onWorld();
+    expect(s.last()?.text).toBe(value === "empty" ? "컵을 들어 주세요" : TOP_TEXT.ask);
+    expect(s.looks).toHaveLength(0);
+    expect(s.spoken()).not.toContain(PEEK_TEXT.above("컵"));
+  });
+
+  it("음료가 남았으면 실제 폰에 「남은 음료를 버리고 치울까요?」(치워 주세요·그대로 둬요)를 묻고, 「치워 주세요」(말로도)면 컵 집기로 이어 간다", async () => {
+    const s = topSetup();
+    await s.toTop();
+    s.seeTop("has_contents");
+    expect(s.last()).toEqual({
+      type: "command", id: "plan:pam-1", step: "plan:pam-1:2:leftover", text: TOP_TEXT.ask, vision: null,
+      choices: [{ id: "clear", label: "치워 주세요" }, { id: "keep", label: "그대로 둬요" }], target: null, speak: true, grade: "question",
+    });
+    expect(s.plans.current()).toMatchObject({ status: "running" });
+    expect(s.heard("치워 주세요")).toMatchObject({ id: "clear" });
+    expect(s.last()).toMatchObject({ step: "plan:pam-1:3", text: "컵을 들어 주세요" });
+  });
+
+  it("컵 안을 비추는 동안 새로 잰 컵 가운데를 폰에 조용히 보내고 사진을 자주 받는다", async () => {
+    const s = topSetup();
+    await s.toTop();
+    const c = cup("present", undefined, s.clock.t);
+    const center: [number, number, number] = [1.2, 0.75, 1.5];
+    s.setWorld(world([{ ...c, size_m: { width: 0.1, height: 0.15, center } }]));
+    s.clock.t += 1500;
+    s.t.onWorld();
+    s.t.tick();
+    expect(s.last()).toMatchObject({ view: "above", speak: false, target: { id: c.id, position: center } });
+    expect(s.t.fastVlm()).toBe(true);
+    s.t.stop();
+    expect(s.guards.at(-1)).toEqual([c.id, false]);
+    expect(s.t.fastVlm()).toBe(false);
+  });
+
+  it.each([{ photos: [] }, { photos: ["empty"] }, { photos: ["empty", "has_contents"] }])("위 사진 두 장이 같은 답을 주지 않으면 옆 사진의 비었음으로 집지 않는다 ($photos)", async ({ photos }) => {
+    const s = topSetup();
+    s.contents("empty");
+    await s.toTop();
+    s.seeTop("empty", photos);
+    s.clock.t += CONTENTS_HOLD.settleMs;
+    s.t.tick();
+    expect(s.exec().at(-1)).toMatchObject({ state: "failed", text: EXEC_TEXT.topUnknown });
+  });
+
+  it("앞 사진에서 컵 안이 모호하면 기다리는 동안 새 사진 쌍으로 한 번 다시 보고 남은 음료를 묻는다", async () => {
+    const s = topSetup();
+    await s.toTop();
+    s.seeTop(null);
+    s.t.tick();
+    expect(s.looks).toHaveLength(1);
+    s.clock.t += 1600;
+    s.seeTop("has_contents");
+    expect(s.looks[1]!.top!.sinceMs).toBeGreaterThan(s.looks[0]!.top!.sinceMs);
+    expect(s.last()).toMatchObject({ text: TOP_TEXT.ask, grade: "question" });
+  });
+
+  it("「그대로 둬요」면 치우지 않고 계획을 끝낸다(완료 문장 없음). 그 컵만 남았으면 다음 판단도 치우지 않고, 사람이 다시 보이면 다시 치울 수 있다", async () => {
+    const s = topSetup();
+    await s.toTop();
+    s.seeTop("has_contents");
+    expect(s.t.onAnswer("plan:pam-1", "plan:pam-1:2:leftover", "keep")).toBe(true);
+    expect(s.plans.current()).toMatchObject({ status: "cancelled" });
+    expect(s.exec().filter((l) => l.plan_id === "plan:pam-1").at(-1)).toMatchObject({ state: "failed", text: EXEC_TEXT.kept });
+    s.t.tick();
+    expect(s.phone.some((m) => m.type === "command" && m.id.startsWith("done:"))).toBe(false);
+    const sent = s.commands().length;
+    await s.decide({ ...decision, id: "pam-2", seq: 2, atMs: s.clock.t });
+    expect(s.exec().filter((l) => l.plan_id === "plan:pam-2").map((l) => [l.state, l.text])).toEqual([["decided", EXEC_TEXT.decided], ["failed", CHECK_TEXT.kept]]);
+    expect(s.commands().filter((c) => c.id === "plan:pam-2")).toHaveLength(0);
+    // 사람이 다시 보였다가 떠난 뒤의 판단은 다시 치운다
+    s.clock.t += 1000;
+    const c = cup("present", undefined, s.clock.t);
+    s.setWorld({ ...world([c]), person: { ...world([c]).person, visible: true, since_ms: s.clock.t } });
+    s.clock.t += 10_000;
+    await s.decide({ ...decision, id: "pam-3", seq: 3, atMs: s.clock.t });
+    expect(s.commands().length).toBeGreaterThan(sent);
+    expect(s.last()).toMatchObject({ id: "plan:pam-3", text: "식탁으로 가 주세요" });
+  });
+
+  it("위에서 봐도 모르면 사진을 더 기다린 뒤(settleMs) 그만둔다: 사용자에게 비었는지 묻지 않는다", async () => {
+    const s = topSetup();
+    await s.toTop();
+    s.seeTop(null);
+    expect(s.plans.current()).toMatchObject({ status: "running" });
+    s.clock.t += CONTENTS_HOLD.settleMs;
+    s.t.tick();
+    expect(s.plans.current()).toMatchObject({ status: "failed" });
+    expect(s.exec().at(-1)).toMatchObject({ state: "failed", text: EXEC_TEXT.topUnknown });
+    expect(s.commands().some((c) => c.text === TOP_TEXT.ask || c.choices.length > 1)).toBe(false);
+    expect(s.guards.at(-1)).toEqual(["cup_1", false]);
+  });
+
+  it("위에서 보기를 하지 않는 집(계획 맥락 topLook 없음)·컵 치우기가 아닌 행동의 계획에는 컵 안 보기 단계가 없다", async () => {
+    const s = setup();
+    await s.decide(decision);
+    expect(s.plans.current()!.steps.map((x) => x.label)).toEqual([STEP_LABEL.goTable, STEP_LABEL.pickCup, STEP_LABEL.goSink, STEP_LABEL.placeCup]);
+  });
+});
 
 describe("실행 추적: 단계마다 실제 폰 명령", () => {
   // 가로 유리컵 실제 판 r5(2026-11-18): 집기·내려놓기 중 들린 컵·놓인 컵이 새 id가 돼 단계가 늦거나 끝나지 않았다. 실행 추적이 지금 대상을 World State에 알린다

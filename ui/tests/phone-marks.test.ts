@@ -4,6 +4,7 @@
 import { describe, expect, it } from "vitest";
 import { twin } from "../../src/design/tokens.ts";
 import { drawMarks } from "../src/phone/core/marks.js";
+import { focusMarks } from "../src/phone/core/project.js";
 import { drawOverlay } from "../src/phone/draw";
 import type { FocusMark } from "../src/phone/state";
 
@@ -30,6 +31,16 @@ const IN: FocusMark = { id: "sink_1", label: "주방·식당 싱크대", u: 0.5,
 const OFF: FocusMark = { id: "sink_1", label: "주방·식당 싱크대", u: 0.02, v: 0.5, off: true, angle: 180 };
 
 describe("폰 화면 프레임 표시(drawMarks)", () => {
+  it("싱크대로 걷는 동안에는 앞에 목적지가 들어와도 핸드폰과 녹화 모두 진행 방향을 가리킨다", () => {
+    const identity = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
+    const marks = focusMarks([{ id: "sink_1", label: "싱크대", ar: [0, 0, 0], walking: true }], identity, identity);
+    const frame = recorder(), screen = recorder();
+    drawMarks(frame.ctx, marks, 780, 439);
+    drawOverlay(screen.ctx as unknown as CanvasRenderingContext2D, { width: 780, height: 439 }, { marks, aim: false, hit: false, hitEstimated: false });
+    expect(frame.ops.filter((o) => o.op === "fill")).toHaveLength(1);
+    expect(frame.ops).toEqual(screen.ops.filter((o) => o.op !== "clear"));
+    expect(frame.ops.some((o) => o.op === "text" || o.op === "arc")).toBe(false);
+  });
   it("화면 안 대상: 아무것도 그리지 않는다(고리·이름표 없음)", () => {
     const { ctx, ops } = recorder();
     drawMarks(ctx, [IN], 780, 439);

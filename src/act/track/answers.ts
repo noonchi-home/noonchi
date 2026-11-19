@@ -67,6 +67,7 @@ export class Answers extends Part {
     if (a?.why === "plan") approval.approvedPlan(r, picked.id as ApprovalAnswer);
     else if (a?.why === "device") approval.approvedDevice(r, a.token, picked.id as ApprovalAnswer);
     else if (a?.why === "hand") approval.approvedHand(r, picked.id as ApprovalAnswer);
+    else if (a?.why === "leftover") steps.leftover(r, picked.id);
     else if (a?.why === "again") {
       if (picked.id === "continue") steps.resume(r);
       else steps.finish(r, "failed", EXEC_TEXT.stopped, "cancelled");

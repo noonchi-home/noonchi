@@ -184,10 +184,12 @@ export const sameDrinkware = (a: string, b: string): boolean =>
 
 /** VLM이 낼 수 있지만 사실로 쌓지 않는 값: 감지 목록의 물건이 가려 안 보임. */
 export const VLM_ONLY = ["not_visible"] as const;
+/** 이 사진에서 입구 너머 바닥이나 내용물을 직접 보았다는 근거. 물건 상태로 저장하지 않는다. */
+export const INSIDE_VISIBLE = "interior_visible" as const;
 /** 관절만 정하는 사실 값(pose). */
 type PoseOnly = { [K in StateKey]: (typeof STATES)[K] extends { pose: true } ? K : never }[StateKey];
 /** VLM 스키마 enum: 관절만 정하는 값을 뺀 사실 값 전부 + VLM만 내는 값. */
-export const SCENE_STATES = [...(Object.keys(STATES) as StateKey[]).filter((k): k is Exclude<StateKey, PoseOnly> => !("pose" in STATES[k])), ...VLM_ONLY] as const;
+export const SCENE_STATES = [...(Object.keys(STATES) as StateKey[]).filter((k): k is Exclude<StateKey, PoseOnly> => !("pose" in STATES[k])), ...VLM_ONLY, INSIDE_VISIBLE] as const;
 
 /** 지금만 맞는 면: 그 대상을 본 프레임의 VLM 답에 없으면 지운다. 사람의 자리(소파 위·침대 위·의자 위·바닥)도 일어나면 바뀌므로 지운다.
  *  하는 일(activity)은 이어지는 일, 순간 동작(moment)은 그 답의 사진들 사이에 일어난 일이다. */

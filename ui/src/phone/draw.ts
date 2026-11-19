@@ -1,7 +1,7 @@
 // 실제 폰 AR 위 그림(components.json F5·F13 「그림(규칙 밖)」): 조준점과 명령 대상 쪽 세모를 canvas에 그린다. 이름표는 없다.
 // 조준점은 물건 자리 맞추기 때만(scene.aim): 28px(심 3px, 안팎 흰 테 2px·숯색 1px), 맞으면 가운데 점(지름 10px)을 채운다. 맨 위에 그린다.
 // 색은 못 맞춤 aim.miss, 맞춤 aim.hit, 어림 바닥에 닿음 aim.estimated(모양은 맞춤과 같다).
-// 명령 대상: 화면 안이면 그리지 않는다(고리 없음). 화면 밖이면 그쪽을 가리키는 세모(22×28px) 하나.
+// 걷는 동안 목적지가 앞에 보이면 아래쪽에 진행 방향 세모를 둔다. 화면 밖이면 그쪽 가장자리에 둔다. 물건 위에는 고리를 그리지 않는다.
 // 화면 밖 세모는 덮개 칸을 비킨다: 그릴 때 잰 위 줄(미어캣·명령) 아래 8px부터 엄지 자리 위 8px까지, 옆은 화면 가장자리 8px 안(가로·세로 같다).
 // 화면 안이어도 대상이 위 줄·엄지 자리 칸에 가리거나 칸 가장자리 NEAR_PANEL 안이면 그 칸 가장자리에 그쪽(위·아래)을 가리키는 세모를 그린다.
 import { twin } from "../../../src/design/tokens.ts";
@@ -135,13 +135,17 @@ function underPanel(y: number, height: number, edges: Edges): number | null {
   return null;
 }
 
-/** 명령 대상 표시: 화면 밖이거나 칸에 가린 대상 쪽 세모만, 화면 안이면 그리지 않는다(고리·이름표 없음). 그린 세모의 자리.
+/** 명령 대상 표시: 화면 밖이거나 칸에 가리면 가장자리 세모, 화면에 보이는 이동 목적지는 화면 아래 갈 방향 세모. 그린 세모의 자리.
  *  실제 폰 화면(drawOverlay)과 폰이 보내는 화면 프레임(core/marks.js drawMarks, 칸 없음)이 같이 쓴다: 두 그림은 같은 규칙·같은 모양이다. */
 export function drawTargets(ctx: CanvasRenderingContext2D, size: { width: number; height: number }, marks: readonly FocusMark[], edges: Edges = NO_EDGES): ArrowBox[] {
   const arrows: ArrowBox[] = [];
   for (const m of marks) {
     const toward = m.off ? m.angle : underPanel(m.v * size.height, size.height, edges);
     if (toward !== null) arrows.push({ name: m.label, box: drawArrow(ctx, { ...m, angle: toward }, size, edges) });
+    else if (m.walking) {
+      const angle = -90 + Math.atan2(m.u - 0.5, 0.5) * 180 / Math.PI;
+      arrows.push({ name: m.label, box: drawArrow(ctx, { ...m, u: 0.5, v: 0.78, angle }, size, edges) });
+    }
   }
   return arrows;
 }

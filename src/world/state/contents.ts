@@ -222,7 +222,11 @@ export class ContentsBook extends Part {
     const sure = s.sure;
     const body = obj.facts.body;
     const opaque = !!body && this.opaque(obj);
-    if (sure?.top) return { value: sure.value, at_ms: sure.atMs, since_ms: sure.sinceMs, certainty: s.doubt ? "inferred" : "confirmed" };
+    if (sure?.top) {
+      const observed = !s.doubt && topRun(s.photos);
+      return { value: sure.value, at_ms: sure.atMs, since_ms: sure.sinceMs, certainty: s.doubt ? "inferred" : "confirmed",
+        ...(observed && observed.value === sure.value ? { inside_ms: [observed.pair[0].at, observed.pair[1].at] as [number, number] } : {}) };
+    }
     if (opaque) return { value: "contents_unknown", at_ms: body.at_ms, since_ms: body.since_ms, certainty: "confirmed" };
     const run = streakOf(s.photos);
     if (sure) return { value: sure.value, at_ms: sure.atMs, since_ms: sure.sinceMs, certainty: s.doubt ? "inferred" : "confirmed" };

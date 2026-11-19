@@ -24,7 +24,7 @@ export interface ArHooks {
   onPerf(): void;
   note(text: string): void;
 }
-export interface FocusTargetAr { id: string; label: string; ar: [number, number, number] }
+export interface FocusTargetAr { id: string; label: string; ar: [number, number, number]; walking?: boolean }
 export interface PhoneAr {
   readonly state: ArState;
   start(overlay: object): Promise<void>;

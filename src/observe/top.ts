@@ -17,7 +17,7 @@ const dist3 = (a: V3, b: V3) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]
 
 /** 위에서 본 장 하나의 거르기. start: 위에서 보기를 시작한 때 컵 자리, now: 답이 왔을 때 그 컵(없으면 undefined), others: 같은 종류 다른 물건,
  *  scene: 그 장 VLM 답(없으면 null), dets: 잘라 키운 사진의 감지(그 사진 픽셀), box: d1 상자(그 사진 픽셀). */
-export function topDropOf(o: { start: V3; now: WorldObject | undefined; others: readonly WorldObject[]; scene: SceneObservation | null; dets: readonly Detection[]; box: Box }): { drop: TopDrop } | { value: "empty" | "has_contents" } {
+export function topDropOf(o: { start: V3; now: WorldObject | undefined; others: readonly WorldObject[]; scene: SceneObservation | null; dets: readonly Pick<Detection, "label" | "box">[]; box: Box; frame: { width: number; height: number } }): { drop: TopDrop } | { value: "empty" | "has_contents" } {
   const now = o.now;
   if (!now || now.status === "gone" || now.followed_by || !now.position || dist3(now.position, o.start) > TOP_SAME_M) return { drop: "moved" };
   if (!o.scene) return { drop: "vlm_missing" };
@@ -28,11 +28,15 @@ export function topDropOf(o: { start: V3; now: WorldObject | undefined; others: 
   const value = contents.size === 1 ? [...contents][0] : undefined;
   if (value !== "empty" && value !== "has_contents") return { drop: "no_contents" };
   const [bx, by, bw, bh] = o.box;
-  const inside = (d: Detection) => {
-    const cx = d.box[0] + d.box[2] / 2, cy = d.box[1] + d.box[3] / 2;
+  const inside = ([x, y, w, h]: Box) => {
+    const cx = x + w / 2, cy = y + h / 2;
     return cx >= bx && cx <= bx + bw && cy >= by && cy <= by + bh;
   };
-  if (!o.dets.some((d) => VESSELS.has(d.label) && inside(d))) return { drop: "no_vessel" };
+  const visual = o.scene.objects?.filter((v) => VESSELS.has(v.cls) && inside([
+    v.box.x * o.frame.width, v.box.y * o.frame.height, v.box.w * o.frame.width, v.box.h * o.frame.height,
+  ])) ?? [];
+  if (visual.length > 1) return { drop: "crowded" };
+  if (!o.dets.some((d) => VESSELS.has(d.label) && inside(d.box)) && visual[0]?.det !== "d1") return { drop: "no_vessel" };
   if (o.others.some((x) => x.position && dist3(x.position, o.start) <= TOP_SAME_M)) return { drop: "crowded" };
   return { value };
 }
