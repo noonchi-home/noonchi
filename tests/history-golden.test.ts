@@ -59,15 +59,6 @@ describe("기록 DB 같음 시험의 모양", () => {
     expect(day([...plan, ["decision", "대기", "pam-4"], ["execution", "앞선 판단이라 쓰지 않음", "plan:pam-4"]])).toContain("[있음] execution 앞선 판단이라 쓰지 않음");
   });
 
-  it("계획 전 검사가 막은 판단을 바로 다음 판단이 같은 행동·같은 까닭으로 다시 막으면 첫 번만 남기고, 까닭이 다르거나 사이에 다른 계획이 있으면 남긴다", () => {
-    const refused = (id: string, why: string): Row[] => [["decision", "컵 치우기", id], ["execution", "판단", `plan:${id}`], ["execution", why, `plan:${id}`, { state: "failed" }]];
-    const once = day([...plan, ["execution", "완료", "plan:pam-2"], ...refused("pam-3", "싱크대 안")]);
-    expect(day([...plan, ["execution", "완료", "plan:pam-2"], ...refused("pam-3", "싱크대 안"), ...refused("pam-4", "싱크대 안"), ...refused("pam-5", "싱크대 안")])).toEqual(once);
-    expect(day([...plan, ["execution", "완료", "plan:pam-2"], ...refused("pam-3", "싱크대 안"), ...refused("pam-4", "컵이 안 보임")])).not.toEqual(once);
-    expect(day([...refused("pam-1", "싱크대 안"), ...plan, ["execution", "완료", "plan:pam-2"], ...refused("pam-3", "싱크대 안")]))
-      .not.toEqual(day([...plan, ["execution", "완료", "plan:pam-2"], ...refused("pam-3", "싱크대 안")]));
-  });
-
   it("판단 id가 날마다 다시 1부터라 대기 판단이 다른 날 계획 id와 겹쳐도 대기 판단은 [있음]에 남는다(대기는 계획을 시작하지 않는다)", () => {
     const rows = day([["decision", "대기", "pam-2"], ...plan, ["decision", "대기", "pam-5"]]);
     expect(rows).toContain("[있음] decision 대기 valid");

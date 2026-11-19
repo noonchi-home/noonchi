@@ -2,6 +2,7 @@
 // 에이전트 계획 모드를 한 번 부른다. 받은 계획은 실행 전 검사·승인·끄기 안내·폰 판본을 거쳐 첫 단계를 시작한다(tryStart).
 // 계획 없는 행동(그대로 두기)의 기록과 같은 행동 다시 계획 간격도 여기서 센다.
 import { CONTENTS_HOLD } from "./contents.js";
+import type { CheckFail } from "../check.js";
 import type { DecisionRecord } from "../../contract/events.js";
 import { needsPhone, objectNames, type AgentStep, type PlanResult } from "../../agent/index.js";
 import { APPROVAL_TEXT, EXEC_TEXT } from "../labels.js";
@@ -12,6 +13,10 @@ import { decisionWorld, isoWithOffset } from "../../brain/index.js";
 import type { SpeechRequest } from "./tracker.js";
 import { emergencyOf } from "../mode.js";
 import { Part, clsOf, type Job, type Run } from "./core.js";
+
+/** 계획 전 검사가 막은 까닭 가운데 분명한 것(더 봐도 바뀌지 않음): 이미 치움·확인된 내용물 반대·행동 목록 밖.
+ *  대상이 안 보임(no_target)은 확정 전 컵일 수 있는 모름이라 넣지 않는다(판단이 그 화살표를 기다려 컵이 확정되면 다시 켠다). */
+const SETTLED: ReadonlySet<CheckFail> = new Set<CheckFail>(["in_sink", "contents_mismatch", "unknown_task"]);
 
 /** 판단 받기·계획 시작. */
 export class Starter extends Part {
@@ -81,6 +86,9 @@ export class Starter extends Part {
       if ((pre.reason === "no_target" || pre.reason === "in_sink") && core.finder.start(d, pre.text)) return this.takeover(d);
       core.emit(planIdOf(d.id), "decided");
       core.emit(planIdOf(d.id), "failed", pre.text);
+      // 분명한 까닭이면 판단이 그 화살표를 기다리지 않게 알린다(15초 동안 같은 막음을 되풀이하지 않게). 싱크대 안이어도 찾을 후보 자리가 남았으면
+      // (확정 전 새 컵일 수 있다) 모름이라 알리지 않는다
+      if (SETTLED.has(pre.reason) && !(pre.reason === "in_sink" && core.finder.candidate(d))) this.o.onRefused?.(planIdOf(d.id));
       return;
     }
     const now = this.clock.now();

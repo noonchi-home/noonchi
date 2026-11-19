@@ -7,6 +7,9 @@
 [판단·실행·답] decision 컵 치우기 valid
 [판단·실행·답] execution 판단
 [판단·실행·답] execution 대상 물건이 이미 싱크대 안이라 실행하지 않아요
+[판단·실행·답] decision 컵 치우기 valid
+[판단·실행·답] execution 판단
+[판단·실행·답] execution 대상 물건이 이미 싱크대 안이라 실행하지 않아요
 [집 상태] world VLM: 컵
 [집 상태] detection 사람 보임
 [집 상태] detection 컵 cup_1 보임

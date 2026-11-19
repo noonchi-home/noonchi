@@ -274,6 +274,34 @@ describe("판단 호출", () => {
     d.stop();
   });
 
+  // 2026-11-19 조정자 결정: 계획 전 검사가 분명한 까닭(컵이 싱크대 안 등)으로 막으면 그 화살표를 기다리지 않는다(15초 동안 같은 막음을 되풀이하지 않게)
+  it("계획 전 검사가 분명한 까닭으로 막은 판단(onRefused)이면 그 화살표를 풀어 다음 요청의 직전 상태는 넘어간 상태다. 그 전에 보낸 같은 화살표 답은 늦은 답이다. 막지 않으면 그대로 기다린다", async () => {
+    const leave = { observation: "o", reasoning: "r", state: "away", from: "drinking", next_index: 0 };
+    const none = { observation: "o", reasoning: "r", state: "away", from: null, next_index: -1 };
+    async function run(refuse: boolean) {
+      const answers = [arrive, leave, leave, none];
+      pam = await startFakePamLlm({ predict: () => answers.shift()! });
+      const records: DecisionRecord[] = [];
+      const d = new Decider({ pam: pamClientFor(pam), world: emptyWorld(), trigger: event(), tasks: () => [...CUP_TASKS], memory, emit: () => {}, onDecision: (r) => records.push(r), offsetMinutes: 540, clock: { now: () => 10_000 } });
+      const send = () => { d.onChanges([{ kind: "person_gone", at_ms: 10_000, subject: "person", text: "사람 안 보임", meaningful: true }]); d.tick(); };
+      send(); await d.idle();                // pam-1: 돌아와 마심
+      send(); await d.idle();                // pam-2: drinking → * 컵 치우기
+      send();                                // pam-3을 보냄(답 전)
+      if (refuse) d.onRefused("plan:pam-2"); // pam-2를 계획 전 검사가 싱크대 안으로 막음
+      await d.idle();
+      send(); await d.idle();                // pam-4
+      const lastStates = (pam.bodies as { last_state: string | null }[]).map((b) => b.last_state);
+      await pam.close();
+      pam = undefined;
+      return { records, lastStates };
+    }
+    const refused = await run(true);
+    expect(refused.records[2]).toMatchObject({ id: "pam-3", action: null, late: true });
+    expect(refused.lastStates).toEqual([null, "drinking", "drinking", "away"]);
+    const kept = await run(false);
+    expect(kept.lastStates).toEqual([null, "drinking", "drinking", "drinking"]);
+  });
+
   describe("풀린 화살표의 늦은 답은 번호로 버린다", () => {
     const leave = { observation: "o", reasoning: "r", state: "away", from: "drinking", next_index: 0 };
     const none = { observation: "o", reasoning: "r", state: "away", from: null, next_index: -1 };

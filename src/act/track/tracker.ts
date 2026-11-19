@@ -112,6 +112,8 @@ export interface TrackerOptions {
   sentSeq?: () => number;
   /** 말 부탁으로 만든 판단(source speech)을 받는다: 서버가 판단 기록으로 남긴다(src/brain/decide.ts logSpeech). */
   onSpeech?: (d: DecisionRecord) => void;
+  /** 계획 전 검사가 분명한 까닭으로 막은 판단의 계획 id(src/act/track/start.ts): 서버가 판단에 넘겨 그 화살표를 기다리지 않게 한다(src/brain/decide.ts onRefused). */
+  onRefused?: (planId: string) => void;
   world: () => WorldView;
   /** 계획 전 검사(src/act/check.ts checkDecision). 에이전트를 부르기 전에 본다. 없으면 통과. */
   precheck?: (d: DecisionRecord) => CheckResult;

@@ -93,6 +93,15 @@ export class Finder extends Part {
     return true;
   }
 
+  /** 그 판단 행동의 대상을 찾을 후보 자리가 남았는가(계획 전 찾기 start와 같은 기준): 안 보이는 확인 물건의 마지막 자리나 후보 자리(sightings) 가운데
+   *  최근에 찾아보고 못 찾은 자리가 아닌 것. 대상 종류가 없는 행동이면 false. */
+  candidate(d: DecisionRecord): boolean {
+    const cls = touchTarget(d.action);
+    if (!cls) return false;
+    const now = this.clock.now();
+    return lostTarget({ world: this.o.world(), cls, placed: this.core.steps.placed(), away: this.core.steps.awayIds(), now, freshMs: PRECHECK_FRESH_MS, resting: (s) => this.resting(s, now) }) !== null;
+  }
+
   /** 찾는 동안 받은 같은 행동 판단: 가장 새 것으로 바꿔 두고 true(기록은 start.ts가 남긴다). 찾는 중이 아니거나 다른 행동이면 false. */
   same(d: DecisionRecord): boolean {
     const q = this.core.finding;

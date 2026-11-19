@@ -4052,6 +4052,34 @@ describe("실행 추적: 안 보이는 대상은 마지막으로 본 자리로 �
     expect(s.last()).toMatchObject({ text: "식탁으로 가 주세요", target: { label: "식탁" }, vision: expect.stringMatching(/^식탁까지 /) });
   });
 
+  // 2026-11-19 조정자 결정: 분명한 까닭(싱크대 안·내용물 반대)으로 막으면 판단의 화살표를 풀게 알린다(onRefused). 모름(대상이 안 보임·찾을 후보가 남음)은 지금처럼 기다린다
+  it("계획 전 검사가 분명한 까닭으로 막으면(찾을 후보 없는 싱크대 안·확인된 내용물 반대) 그 판단을 onRefused로 알리고, 대상이 안 보임·찾을 후보가 남은 싱크대 안은 알리지 않는다", async () => {
+    const inSink = { ...cup("present", "in_sink", 9_000), surface: "sink_1", surface_label: "싱크대" };
+    const refusedOf = async (o: Parameters<typeof findSetup>[0], first?: DecisionRecord) => {
+      const refused: string[] = [];
+      const s = findSetup({ ...o, over: { onRefused: (id) => refused.push(id) } });
+      if (first) await s.decide(first);
+      await s.decide({ ...decision, id: "pam-2", seq: 2 });
+      return { s, refused };
+    };
+    const sink = await refusedOf({ objects: [inSink], sightings: null });
+    expect(sink.s.exec().at(-1)).toMatchObject({ plan_id: "plan:pam-2", state: "failed", text: CHECK_TEXT.in_sink });
+    expect(sink.refused).toEqual(["plan:pam-2"]);
+    // 찾을 후보 자리가 남았는데 다른 계획이 열려 있어 찾기를 시작하지 못한 싱크대 안: 아직 모름
+    const candidate = await refusedOf({ objects: [inSink] }, ask("pam-1", 1));
+    expect(candidate.s.exec().at(-1)).toMatchObject({ plan_id: "plan:pam-2", state: "failed", text: CHECK_TEXT.in_sink });
+    expect(candidate.refused).toEqual([]);
+    const unseen = await refusedOf({ objects: [], sightings: null });
+    expect(unseen.s.exec().at(-1)).toMatchObject({ plan_id: "plan:pam-2", state: "failed", text: CHECK_TEXT.no_target });
+    expect(unseen.refused).toEqual([]);
+    const full: WorldObject = { ...cup("present", "on_table", 9_000), facts: { place: { value: "on_table", at_ms: 9_000, since_ms: 9_000, certainty: "confirmed" }, contents: { value: "has_contents", at_ms: 9_000, since_ms: 9_000, certainty: "confirmed" } } };
+    const refill: string[] = [];
+    const f = findSetup({ objects: [full], sightings: null, over: { onRefused: (id) => refill.push(id) } });
+    await f.decide({ ...decision, id: "pam-3", seq: 3, action: "컵에 물 채워 주기" });
+    expect(f.exec().at(-1)).toMatchObject({ plan_id: "plan:pam-3", state: "failed", text: CHECK_TEXT.contents_mismatch });
+    expect(refill).toEqual(["plan:pam-3"]);
+  });
+
   // Codex(1b07d3e2 P2): 말 부탁이 계획 전 찾기 중이면 보호 대상에서 빠져, 부탁 전에 보낸 요청의 PAM 답이 찾기를 다른 계획으로 갈아 치웠다
   it("말 부탁이 계획 전 찾기 중이어도 그 부탁 전에 보낸 요청의 PAM 판단은 늦은 답으로 기록만 하고 찾기를 바꾸지 않는다. 뒤에 보낸 요청의 판단은 받는다", async () => {
     const s = findSetup();

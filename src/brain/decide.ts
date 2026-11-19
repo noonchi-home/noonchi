@@ -63,7 +63,8 @@ export class Decider {
    *  풀릴 때까지 다음 요청의 직전 상태는 이 출발 상태라 PAM이 같은 화살표를 다시 낼 수 있다(Codex 8ab2d06 P2: 컵 확정 전 판단을 목표가 버리면 직전 상태가 이미
    *  away라 컵이 확정된 뒤 화살표가 없어 치우기가 시작되지 않았다). 처음 낸 때(at)와 화살표(from·next)는 지키고, 같은 화살표를 다시 낸 판단은
    *  계획 id만 더한다(Codex b28711d P2: 덮어쓰면 처음 계획의 running으로 풀리지 않고 5초마다 늘어 15초 한도가 끝나지 않았다).
-   *  그 화살표의 어느 판단이든 실행이 시작되면(실행 기록 running·done), 다른 화살표가 오면, 처음 낸 때부터 PENDING_EDGE_MS가 지나면 푼다. */
+   *  그 화살표의 어느 판단이든 실행이 시작되거나(실행 기록 running·done) 계획 전 검사가 분명한 까닭으로 막으면(onRefused), 다른 화살표가 오면,
+   *  처음 낸 때부터 PENDING_EDGE_MS가 지나면 푼다. */
   private pending: { from: string; next: number; plans: Set<string>; at: number } | null = null;
   /** 실행이 시작돼 푼 화살표와 그때까지 보낸 마지막 PAM 요청 번호. 그 번호 이하 요청의 같은 화살표 답(늦게 온 반복 답)은 통째로 버린다:
    *  pending도 되살리지 않고 행동도 실행 추적에 넘기지 않는다(판단 기록 late, 실행 기록 「앞선 판단」). 순서는 시각이 아니라 번호로 본다
@@ -101,9 +102,19 @@ export class Decider {
 
   /** 실행 기록(서버가 실행 추적 emit에서 넘긴다): 기다리던 화살표의 행동이 시작되면(running·done) 푼다. */
   onExecution(planId: string, state: ExecState): void {
+    if (state === "running" || state === "done") this.release(planId);
+  }
+
+  /** 실행 추적이 그 판단을 계획 전 검사의 분명한 까닭(이미 치움·확인된 내용물 반대 등, src/act/track/start.ts)으로 막았다: 행동이 시작된 것처럼 그 화살표를 푼다.
+   *  기다리면 15초 동안 주기 판단마다 같은 화살표가 다시 켜져 같은 막음을 되풀이한다(2026-11-19 조정자 결정). 모름(대상이 안 보임)으로 막은 판단은 알리지 않는다. */
+  onRefused(planId: string): void {
+    this.release(planId);
+  }
+
+  /** 기다리던 화살표를 그 판단(계획 id)이 냈으면 푼다. 그때까지 보낸 마지막 요청 번호 이하 요청의 같은 화살표 답은 늦은 답이다. */
+  private release(planId: string): void {
     const p = this.pending;
-    if (!p?.plans.has(planId) || (state !== "running" && state !== "done")) return;
-    // 그때까지 보낸 마지막 요청 번호: 그 번호 이하 요청의 같은 화살표 답은 늦은 답이다
+    if (!p?.plans.has(planId)) return;
     this.released = { from: p.from, next: p.next, seq: this.seq };
     this.pending = null;
   }
