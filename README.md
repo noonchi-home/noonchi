@@ -2,7 +2,8 @@
 
 <h1>NOONCHI (twin-home)</h1>
 
-**A server that lets the home robot CLOiD watch the home, learn people's habits, plan tasks ahead, and guide people through them**
+**A server that lets the home robot CLOiD watch the home, 
+learn people's habits, plan tasks ahead, and guide people through them**
 
 noonchi-home | Software Engineering 26-2
 
