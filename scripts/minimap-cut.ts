@@ -5,7 +5,10 @@
 // 재생 시작 전과 조각 사이·끝의 마지막 장면 붙잡기(hold)는 뺀다. 받은 차례대로 이은 시각이 앞 장면보다 앞으로 가는 장면만 두고,
 // 그 시각으로 ffmpeg concat(scripts/video-record.ts encodeDemo, fps 필터로 일정한 초당 장수)에 넣어 H.264 mp4 하나를 만든다. 같은 판이면 늘 같은 파일이다.
 // 기본 출력은 장면 폴더 옆 <줄기>.minimap.mp4(…/wide-glass.pfsm4.frames → …/wide-glass.pfsm4.minimap.mp4). 장면 폴더는 지우지 않는다. 판정·시험 기록은 건드리지 않는다.
-// --lag-ms: 대시보드 화면이 폰 장면을 보이기까지 늦는 시간(ms, 기본 0). 장면을 그만큼 앞 영상 시각으로 옮긴다.
+// 장면 기록(run.json scenes: [미니맵에 보인 시각, 그 장면 촬영 시각], 서버 시계)이 있으면 녹화 장면마다 그때 보인 장면의 촬영 시각을 영상 시각으로 옮긴다:
+// 미니맵은 장면을 마스크 지연만큼 늦게 보여 그 장면의 마스크를 얹으므로(ui/src/dashboard/scene-sync.ts), 장면 시각으로 이으면 늦지 않고 원본 영상 시각과 맞는다.
+// 보인 장면이 아직 없던 녹화 장면은 뺀다. 기록이 없는 옛 판은 받은 시각으로 옮긴다.
+// --lag-ms: 대시보드 화면이 폰 장면을 보이기까지 늦는 시간(ms, 기본 0). 장면을 그만큼 앞 영상 시각으로 옮긴다(장면 기록이 있으면 녹화가 화면보다 늦게 받은 시간).
 // 완료 문장(run.json doneMs)이 있으면 마지막 조각 끝에서 완료 문장 + 2초까지 마지막 장면 붙잡기를 남긴다(doneTail). 남긴 길이를 찍는다.
 // 빠르기(run.json rate, 0.75면 원본보다 느리게 튼 판)는 이은 영상에도 그대로 둔다: 이은 영상 시각 = 원본 영상 시각 ÷ 빠르기.
 import { existsSync, readFileSync } from "node:fs";
@@ -50,6 +53,16 @@ export function doneTail(segs: readonly Segment[], doneMs: number | null, rate: 
   return to > last.to ? { from: last.to, to, at: last.at + (last.to - last.from) } : null;
 }
 
+/** 서버 시각 atMs에 미니맵에 보이던 장면의 촬영 시각: 장면 기록(보인 차례)에서 보인 시각이 atMs 이하인 마지막 장면. 그 전이면 null. */
+export function sceneAt(scenes: readonly (readonly [number, number])[], atMs: number): number | null {
+  let lo = 0, hi = scenes.length - 1, hit = -1;
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    if (scenes[mid]![0] <= atMs) { hit = mid; lo = mid + 1; } else hi = mid - 1;
+  }
+  return hit < 0 ? null : scenes[hit]![1];
+}
+
 /** 녹화 장면 → 이은 장면: 받은 차례대로 이은 시각이 앞 장면보다 앞으로 가는 장면만(ms = 이은 시각 ÷ 빠르기).
  *  endMs는 녹화된 마지막 장면의 이은 시각 + tailMs(한 장, 기본 초당 20장의 50ms)이고 조각 길이 합(끝 붙잡기 포함)을 넘지 않는다:
  *  계획이 끝나 마지막 영상 중간에 녹화를 끝내도 녹화 안 된 나머지를 마지막 장면으로 늘이지 않는다(Codex b5da6c36 P3). heldMs는 끝 붙잡기 길이(이은 시각). */
@@ -61,8 +74,12 @@ export function cutFrames(run: CutRun, lagMs = 0, tailMs = 50): { frames: Frame[
   const segs = tail ? [...play, tail] : play;
   const frames: Frame[] = [];
   let lastCut = -Infinity;
+  // 장면 기록이 있으면 그때 보인 장면의 촬영 시각, 없으면 받은 시각
+  const shownAt = run.scenes?.length ? (at: number) => sceneAt(run.scenes!, at) : (at: number) => at;
   for (const f of run.frames) {
-    const c = cutTime(toVideo(run.startMs + f.ms - lagMs), segs);
+    const at = shownAt(run.startMs + f.ms - lagMs);
+    if (at === null) continue;
+    const c = cutTime(toVideo(at), segs);
     if (c === null || c <= lastCut) continue;
     lastCut = c;
     frames.push({ file: f.file, ms: Math.round(c / rate) });
