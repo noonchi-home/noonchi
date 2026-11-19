@@ -2,7 +2,7 @@
 // 설정에서 저장한 시작 자리(식탁 1.5m 앞, 식탁을 봄)가 곧 카메라 자리라 reset → start fixed면 바로 맞춤(출처 video).
 // 그 뒤 250ms마다 같은 epoch·자세·투영으로 pose와 엔진 프레임 → YOLO(대본: 처음 6장 사람+컵, 그 뒤 컵만)·VLM(가짜 OpenAI 호환 서버, 컵은 식탁 위)
 // → World State → PAM(시험용 PAM 자리: 사람이 없고 컵이 남으면 컵 치우기) → 에이전트 계획 모드(가짜 서버 도구 호출) → 승인한 일이라 바로 첫 명령
-// → 「완료」 네 번으로 네 단계 → 실행 done. 카메라가 움직이지 않으므로 이동 단계도 「완료」로 넘긴다. 면인 명령 대상(식탁·싱크대)은 윗면 가운데로 온다.
+// → 「완료」 네 번과 컵 안 확인으로 다섯 단계 → 실행 done. 카메라가 움직이지 않으므로 이동 단계도 「완료」로 넘긴다. 면인 명령 대상(식탁·싱크대)은 윗면 가운데로 온다.
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -17,6 +17,8 @@ import { ScriptedDetector, det } from "./helpers/detectors.js";
 import { startFakePamLlm, type FakePamLlm, pamLlmEnv } from "./helpers/pam.js";
 import { CUP_SCRIPTS, plannerRespond } from "./helpers/planner.js";
 import { openPhone, openWebSocket } from "./helpers/ws.js";
+import { PEEK_TEXT } from "../src/act/labels.js";
+import { INSIDE_VISIBLE } from "../src/world/vocab.js";
 import { useLearnedMemory } from "./helpers/memory.js";
 
 type Msg = Record<string, any>;
@@ -49,10 +51,11 @@ const PITCH = Math.atan2(1.5 - 0.75, 1.5);
 const POSITION: Vec3 = [0, 1.5, 0];
 const ORIENTATION: Quat = [Math.sin(-PITCH / 2), 0, 0, Math.cos(-PITCH / 2)];
 const EPOCH = "video-1";
-const STEPS = ["식탁으로 가 주세요", "컵을 들어 주세요", "싱크대로 가 주세요", "컵을 싱크대에 넣어 주세요"];
+const STEPS = ["식탁으로 가 주세요", PEEK_TEXT.above("컵"), "컵을 들어 주세요", "싱크대로 가 주세요", "컵을 싱크대에 넣어 주세요"];
 
 describe("영상 모드 처음부터 끝까지", () => {
   it("고정 시작 자세는 바로 맞춤(video)이고, 사람이 사라진 뒤에만 컵 치우기 명령이 대상·거리와 함께 오며, 「완료」 네 번이면 실행이 끝난다", async () => {
+    let inside = false;
     fake = await startFakeOpenAI({
       reply: (body) => {
         if (body?.response_format?.json_schema?.name !== "scene_observation") return null;
@@ -61,7 +64,7 @@ describe("영상 모드 처음부터 끝까지", () => {
         const dets = JSON.parse(/Detections: (\[.*\])/.exec(text)?.[1] ?? "[]") as { id: string; class: string }[];
         // 사람은 식탁에서 컵으로 마시는 중이다(떠남 화살표 컵 치우기는 직전 상태 drinking에서만 나간다). 컵을 쓰는 중이라 미리 세운 목표로 시작하고,
         // 고정 자세라 1단계는 폰 위치로 끝나지 않아 「완료」로 넘긴다(떠난 뒤 컵을 다시 보면 2단계로, 2026-11-19 여기서 멈췄다)
-        return JSON.stringify({ scene: "kitchen", observations: dets.flatMap((d) => (d.class === "cup" ? [{ object_id: d.id, state: "on_table" }] : d.class === "person" ? [{ object_id: d.id, state: "drinking" }] : [])), summary: "컵" });
+        return JSON.stringify({ scene: "kitchen", observations: dets.flatMap((d) => (d.class === "cup" ? (inside ? ["on_table", INSIDE_VISIBLE, "empty"] : ["on_table"]).map((state) => ({ object_id: d.id, state })) : d.class === "person" ? [{ object_id: d.id, state: "drinking" }] : [])), summary: "컵" });
       },
       respond: plannerRespond(CUP_SCRIPTS),
     });
@@ -151,13 +154,19 @@ describe("영상 모드 처음부터 끝까지", () => {
     const cup = dash.filter((m) => m.type === "world").at(-1)!.world.objects.find((o: Msg) => o.cls === "cup");
     expect(cup).toMatchObject({ surface: TABLE_ID });
 
-    // 3 「완료」 네 번 → 네 단계 → 실행 done
+    // 3 「완료」 네 번과 컵 안 확인 → 다섯 단계 → 실행 done
     const planId = first.id as string;
     for (const [i, text] of STEPS.entries()) {
       await until(() => spoken().some((m) => m.id === planId && m.text === text), text);
       const cmd = spoken().find((m) => m.id === planId && m.text === text)!;
       expect(cmd.step).toBe(`${planId}:${i + 1}`);
-      ws.send(JSON.stringify({ type: "answer", id: planId, step: cmd.step, choice: "done" }));
+      if (cmd.view === "above") {
+        expect(cmd.choices).toEqual([]);
+        inside = true; // 영상 조각에서는 컵 안이 보이지만 시험의 고정 카메라 좌표는 그대로다.
+      } else {
+        inside = false;
+        ws.send(JSON.stringify({ type: "answer", id: planId, step: cmd.step, choice: "done" }));
+      }
     }
     await until(() => phone.some((m) => m.type === "command_clear" && m.id === planId), "명령 지우기");
     await until(() => dash.some((m) => m.type === "brain" && m.event.type === "execution" && m.event.plan_id === planId && m.event.state === "done"), "실행 done");
@@ -168,7 +177,7 @@ describe("영상 모드 처음부터 끝까지", () => {
     // 싱크볼이 있는 싱크대는 조리대 가운데([5.853, 0.761])가 아니라 싱크볼 가운데([5.86, 0.693])다. 수평 거리는 시작 자리(AR 원점)에서 잰 것과 같다
     const targetOf = (text: string) => spoken().find((m) => m.id === planId && m.text === text)!.target;
     expect(first.target.ar[1]).toBeCloseTo(0.75, 3);
-    for (const text of [STEPS[2]!, STEPS[3]!]) {
+    for (const text of [STEPS[3]!, STEPS[4]!]) {
       const t = targetOf(text);
       expect(t.id).toBe("sink_counter_kitchen");
       expect(t.ar[1]).toBeCloseTo(0.9, 3);

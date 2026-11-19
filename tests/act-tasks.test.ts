@@ -24,10 +24,11 @@ describe("행동 목록", () => {
       const t = TASKS[name]!;
       expect(t.name).toBe(name);
       expect(t.description.length).toBeGreaterThan(5);
-      const more = [...(t.coach ? ["coach"] : []), ...(t.maxSteps ? ["maxSteps"] : []), ...(t.target ? ["target"] : []), ...(t.look ? ["look"] : []), ...(t.want ? ["want"] : []), ...(t.learn ? ["learn"] : []), ...(t.carry ? ["carry"] : []), ...(t.carryUnseen ? ["carryUnseen"] : []), ...(t.touch ? ["touch"] : []), ...(t.afterUse ? ["afterUse"] : []), ...(t.uses ? ["uses"] : [])];
+      const more = [...(t.coach ? ["coach"] : []), ...(t.maxSteps ? ["maxSteps"] : []), ...(t.target ? ["target"] : []), ...(t.look ? ["look"] : []), ...(t.want ? ["want"] : []), ...(t.learn ? ["learn"] : []), ...(t.carry ? ["carry"] : []), ...(t.carryUnseen ? ["carryUnseen"] : []), ...(t.touch ? ["touch"] : []), ...(t.topLook ? ["topLook"] : []), ...(t.afterUse ? ["afterUse"] : []), ...(t.uses ? ["uses"] : [])];
       expect(Object.keys(t).sort()).toEqual(["allow", "description", "name", ...more].sort());
       expect(t.allow.kinds.length).toBeGreaterThan(0);
     }
+    expect(TASKS["컵 치우기"]!.topLook).toBe(true);
     expect(TASKS["컵 치우기"]!.allow.kinds).toEqual(["go", "pick", "place"]);
     expect(TASKS["사용자에게 물어보기"]!.allow).toEqual({ kinds: ["ask", "say"], need: ["ask"] });
     expect(TASKS["컵 치우기"]!.allow.need).toEqual(["go", "pick", "place"]);
