@@ -93,17 +93,19 @@ NOONCHI는 이 저장소 하나로 AWS EC2 GPU 서버 한 대에서 돈다. CPU�
 | `THINQ_TOKEN` | 실제 모드를 쓸 때만 |
 
 - 키는 `.env`에만 둔다. 이미지에는 들어가지 않는다.
-- `.env`는 compose 파일 안의 `${…}`(모델 이름·포트·GPU 몫·문맥 길이)와 컨테이너 설정에 쓰인다. 다른 env 파일은 `--env-file`로 준다: `docker compose --env-file prod.env --profile gpu up -d`
-- 컨테이너는 `compose.yaml`의 서비스마다 적은 이름만 받는다. 키는 그 키를 쓰는 서비스만 받는다: `OPENAI_API_KEY`·`ANTHROPIC_API_KEY`·`VLM_API_KEY`·`PAM_LLM_API_KEY`·`THINQ_TOKEN`·`THINQ_API_KEY`·`PLAN_TOKEN`은 noonchi, `HF_TOKEN`은 vLLM 두 개, `VLLM_API_KEY`는 noonchi·vLLM 두 개(`scripts/compose-keys.ts`, 시험이 본다). 새 설정을 컨테이너에 넘기려면 그 서비스의 `environment`에 이름을 더한다. 셸에 같은 이름이 있으면 셸 값이 앞선다.
+- 배포 파일은 `deploy/`에 있다(`Dockerfile`·`Dockerfile.dockerignore`·`compose.yaml`). 명령은 저장소 뿌리(`/srv/noonchi`)에서 `-f deploy/compose.yaml`로 준다.
+- `.env`는 저장소 뿌리에 두고 늘 `--env-file .env`로 준다. compose는 스스로는 `deploy/`의 `.env`만 읽어서, 빼면 키와 설정이 빠진 채 뜬다.
+- `.env`는 compose 파일 안의 `${…}`(모델 이름·포트·GPU 몫·문맥 길이)와 컨테이너 설정에 쓰인다. 다른 env 파일도 `--env-file`로 준다: `docker compose --env-file prod.env -f deploy/compose.yaml --profile gpu up -d`
+- 컨테이너는 `deploy/compose.yaml`의 서비스마다 적은 이름만 받는다. 키는 그 키를 쓰는 서비스만 받는다: `OPENAI_API_KEY`·`ANTHROPIC_API_KEY`·`VLM_API_KEY`·`PAM_LLM_API_KEY`·`THINQ_TOKEN`·`THINQ_API_KEY`·`PLAN_TOKEN`은 noonchi, `HF_TOKEN`은 vLLM 두 개, `VLLM_API_KEY`는 noonchi·vLLM 두 개(`scripts/compose-keys.ts`, 시험이 본다). 새 설정을 컨테이너에 넘기려면 그 서비스의 `environment`에 이름을 더한다. 셸에 같은 이름이 있으면 셸 값이 앞선다.
 - 컨테이너 안의 주소·포트·데이터 폴더(`HOST`, `PORT`, `PHONE_PORT`, `RUNTIME_DIR=/data`, 영상 모드 영상 폴더 `PHONE_VIDEO_DIR=/data/videos`, `MATTER_TRANSPORT=local`)는 compose가 정한다. 컨테이너 안 주소는 밖에서 열 수 없어 대시보드 폰 주소는 `PHONE_URL`뿐이다(`PHONE_LAN_URLS=0`). 호스트 포트만 `NOONCHI_PORT`(기본 8200)·`NOONCHI_PHONE_PORT`(기본 8210)로 바꾼다.
 
 ## 4. 띄우기
 
 ```bash
-docker compose up -d --build                  # openai: CPU 서비스만(noonchi)
-docker compose --profile gpu up -d --build    # vllm: vLLM 두 개를 더한다
-docker compose ps                             # 모두 healthy인지
-curl -s http://127.0.0.1:8200/api/health      # ready.ok가 true인지
+docker compose --env-file .env -f deploy/compose.yaml up -d --build                  # openai: CPU 서비스만(noonchi)
+docker compose --env-file .env -f deploy/compose.yaml --profile gpu up -d --build    # vllm: vLLM 두 개를 더한다
+docker compose --env-file .env -f deploy/compose.yaml ps                             # 모두 healthy인지
+curl -s http://127.0.0.1:8200/api/health                                             # ready.ok가 true인지
 ```
 
 - vLLM 이미지는 `vllm/vllm-openai:v0.17.0`(Qwen3-VL·Qwen3.5 지원)이다. 바꿀 때만 `VLLM_IMAGE`에 적는다. vllm-pam은 vllm-vlm이 healthy가 된 뒤에 뜬다. 처음에는 모델을 받느라 수십 분 걸린다.
@@ -113,7 +115,7 @@ curl -s http://127.0.0.1:8200/api/health      # ready.ok가 true인지
     ```bash
     curl -s http://127.0.0.1:8410/v1/models
     curl -s http://127.0.0.1:8420/v1/models
-    docker compose --profile gpu logs --tail 50 vllm-vlm vllm-pam
+    docker compose --env-file .env -f deploy/compose.yaml --profile gpu logs --tail 50 vllm-vlm vllm-pam
     ```
 
 - `VLLM_API_KEY`를 넣었으면 위 두 명령에 `-H "Authorization: Bearer $VLLM_API_KEY"`를 붙인다.
@@ -128,8 +130,8 @@ curl -s http://127.0.0.1:8200/api/health      # ready.ok가 true인지
 ## 6. 멈추기·고치기
 
 ```bash
-docker compose --profile gpu down             # 볼륨은 남는다
-git pull && docker compose --profile gpu up -d --build
+docker compose --env-file .env -f deploy/compose.yaml --profile gpu down    # 볼륨은 남는다
+git pull && docker compose --env-file .env -f deploy/compose.yaml --profile gpu up -d --build
 ```
 
 - 인스턴스를 멈추면 대시보드·폰·판단이 함께 멈춘다. 데이터는 EBS에 남는다.
@@ -138,7 +140,7 @@ git pull && docker compose --profile gpu up -d --build
 ## 7. 키 없는 확인(개발 PC·CI)
 
 ```bash
-docker build -t noonchi:check .
+docker build -f deploy/Dockerfile -t noonchi:check .
 npx tsx scripts/container-smoke.ts
 ```
 
@@ -146,6 +148,6 @@ npx tsx scripts/container-smoke.ts
 - 호스트 포트는 `CHECK_HUB_PORT`(기본 `8500`)·`CHECK_PHONE_PORT`(기본 `8510`)로 바꾼다. 예: `CHECK_PHONE_PORT=8515 npx tsx scripts/container-smoke.ts`. 둘이 겹치거나 포트가 아니면 띄우기 전에 멈춘다. 8520~8529는 화면 캡처 서버 자리라 기본값으로 쓰지 않는다.
 - `INFERENCE_MODE=vllm`으로 VLM·PAM LLM·에이전트 주소를 모두 `http://fake-openai:8500/v1`에 붙인다. 실제 AI API를 부르지 않는다.
 - `ready.ok` true, 에이전트 답 「가짜 답」, `ready.pam`(PAM LLM 주소 응답), 엔진 프레임 뒤 서버 안 PAM 판단 한 번(가짜 PAM LLM은 대기, 기록 DB `decision` 줄), 트윈·기록 DB, 폰 화면, 이미지 안 YOLO(`/api/brain`의 `detector`가 `yolo26s-seg`, `pose`가 `yolo26n-pose`, 엔진 프레임 분석 수), 호스트에서 보낸 계획(토큰 없으면 403, `PLAN_TOKEN`을 붙이면 200), `/api/health` 폰 주소가 확인용 `PHONE_URL` 하나뿐인지, `docker stop` 뒤 종료 코드 0, 멈춘 noonchi 컨테이너에 onnxruntime 원격 측정 파일(`~/.cache/Microsoft/DeveloperTools/.onnxruntime`)이 없는지(`docker diff`)를 본 뒤 볼륨까지 지운다.
-- 띄우기 전에 모든 키에 확인용 값을 넣은 env 파일로 `docker compose --profile gpu --profile check config`를 풀어, 키가 그 키를 쓰는 서비스에만 가는지 본다.
+- 띄우기 전에 모든 키에 확인용 값을 넣은 env 파일로 `docker compose --env-file <확인용 env> -f deploy/compose.yaml --profile gpu --profile check config`를 풀어, 키가 그 키를 쓰는 서비스에만 가는지 본다.
 - noonchi 이미지는 저장소 `models/`의 `yolo26s-seg.onnx`·`yolo26n-pose.onnx`를 복사하고 sha256을 확인한다. 모델을 받지 않는다.
 - noonchi 이미지는 onnxruntime 원격 측정(기기 id·측정 DB를 쓰고 HTTPS로 보냄)을 `ORT_DISABLE_TELEMETRY=1`로 끈다(onnxruntime `docs/Privacy.md` 「Disabling Telemetry」).

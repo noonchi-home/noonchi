@@ -73,7 +73,7 @@ const KEYPOINTS = 17;
 /** YOLO26 입력 한 변(감지·관절 같은 레터박스). */
 const INPUT_SIZE = 640;
 
-/** 감지·관절 모델(저장소 models/에 커밋). sha256은 Dockerfile 확인 줄과 같다(scripts/brain-yolo-fetch.ts가 확인). */
+/** 감지·관절 모델(저장소 models/에 커밋). sha256은 deploy/Dockerfile 확인 줄과 같다(scripts/brain-yolo-fetch.ts가 확인). */
 /** 감지는 yolo26s-seg: nano는 실제 영상의 흰 머그·유리컵을 0~0.31점으로만 봐 World State 컵 기준(0.4)에 못 미쳤다(2026-11-16 밤 판정 A·B·C).
  *  s는 같은 장면 0.59~0.88점, 360×640 한 장 DirectML 약 144ms(nano 72ms). */
 export const DETECTOR_MODEL = { file: "yolo26s-seg.onnx", sha256: "705f24bb2c5aa0a25921c82768054e5792a59264b3a6d5066c6fbad57afb7a32" } as const;

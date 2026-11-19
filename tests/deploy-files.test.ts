@@ -1,4 +1,4 @@
-// 배포 파일(Dockerfile·compose.yaml·.dockerignore·.env.example·키 없는 컨테이너 확인)이 배포 규칙을 지키는지 본다.
+// 배포 파일(deploy/의 Dockerfile·compose.yaml·compose.dev.yaml·Dockerfile.dockerignore, .env.example, 키 없는 컨테이너 확인)이 배포 규칙을 지키는지 본다.
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -7,11 +7,12 @@ import { parse } from "yaml";
 import { isKeyName, KEY_OWNERS } from "../scripts/compose-keys.js";
 import { DETECTOR_MODEL, POSE_MODEL } from "../src/observe/detector.js";
 
+const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const read = (p: string) => readFileSync(new URL(`../${p}`, import.meta.url), "utf8");
 type Service = { environment?: Record<string, unknown> | string[]; env_file?: unknown };
 /** 서비스가 받는 설정 이름(값을 정한 것과 .env에서 받는 것). */
 const envNames = (s: Service) => (Array.isArray(s.environment) ? s.environment.map((e) => e.split("=")[0]!) : Object.keys(s.environment ?? {}));
-const services = () => (parse(read("compose.yaml"), { merge: true }) as { services: Record<string, Service> }).services;
+const services = () => (parse(read("deploy/compose.yaml"), { merge: true }) as { services: Record<string, Service> }).services;
 /** 서버 코드(src/)가 읽는 설정 이름. */
 function serverEnvNames(): Set<string> {
   const root = fileURLToPath(new URL("../src", import.meta.url));
@@ -26,7 +27,7 @@ const NOT_FOR_CONTAINER = new Set(["TWIN_STUDIO_DIR", "PHONE_PHOTO_DIR", "BRAIN_
 
 describe("배포 파일", () => {
   it("Dockerfile: Node 22.15 이상 22.x, 운영 의존성만, 화면 빌드, 트윈 포함, 저장소 models/의 YOLO26 두 개 sha256 검사", () => {
-    const d = read("Dockerfile");
+    const d = read("deploy/Dockerfile");
     expect(d).toMatch(/node:22\.(1[5-9]|[2-9]\d)\.\d+-bookworm-slim/);
     expect(d).toContain("npm ci --omit=dev");
     expect(d).toContain("npm --prefix ui run build");
@@ -44,14 +45,14 @@ describe("배포 파일", () => {
   });
 
   it("Dockerfile: 실행 이미지는 onnxruntime 원격 측정(기기 id·측정 DB·HTTPS 전송)을 끈다", () => {
-    const d = read("Dockerfile");
+    const d = read("deploy/Dockerfile");
     // onnxruntime v1.31.1 docs/Privacy.md "Disabling Telemetry": ORT_DISABLE_TELEMETRY=1을 onnxruntime이 뜨기 전에 준다
     const run = d.slice(d.lastIndexOf("FROM "));
     expect(run).toContain("ORT_DISABLE_TELEMETRY=1");
   });
 
   it("compose: 포트는 127.0.0.1만, gpu 프로필 vLLM 두 개(태그 고정·내건 이름·GPU 몫·캐시·차례로 뜸), 볼륨·env_file·상태 검사", () => {
-    const c = parse(read("compose.yaml"), { merge: true }) as { services: Record<string, any>; volumes: Record<string, unknown> };
+    const c = parse(read("deploy/compose.yaml"), { merge: true }) as { services: Record<string, any>; volumes: Record<string, unknown> };
     for (const [name, s] of Object.entries(c.services)) {
       for (const p of s.ports ?? []) expect(String(p), name).toMatch(/^127\.0\.0\.1:/);
       expect(s.healthcheck, name).toBeTruthy();
@@ -59,7 +60,7 @@ describe("배포 파일", () => {
     expect(c.services.noonchi.volumes).toContain("noonchi-data:/data");
     // 영상 모드 영상은 볼륨 /data/videos에 둔다(기본 공용 폴더 /app/runtime/videos는 볼륨 밖이라 이미지마다 비어 있다)
     expect(c.services.noonchi.environment.PHONE_VIDEO_DIR).toBe("/data/videos");
-    const run = read("Dockerfile").slice(read("Dockerfile").lastIndexOf("FROM "));
+    const run = read("deploy/Dockerfile").slice(read("deploy/Dockerfile").lastIndexOf("FROM "));
     expect(run.replace(/\\\r?\n/g, " ")).toMatch(/^ENV .*\bPHONE_VIDEO_DIR=\/data\/videos\b/m);
     expect(c.services.noonchi.profiles).toBeUndefined();
     for (const [name, served] of [["vllm-vlm", "vlm"], ["vllm-pam", "pam"]] as const) {
@@ -80,7 +81,7 @@ describe("배포 파일", () => {
   });
 
   it("compose: PAM 서비스가 없고(판단·반성은 noonchi 안), noonchi가 PAM LLM 설정을 받으며, check 프로필 가짜 서버가 있다", () => {
-    const c = parse(read("compose.yaml"), { merge: true }) as { services: Record<string, any> };
+    const c = parse(read("deploy/compose.yaml"), { merge: true }) as { services: Record<string, any> };
     expect(c.services.pam).toBeUndefined();
     expect(c.services.noonchi.depends_on?.pam).toBeUndefined();
     const env = Object.keys(c.services.noonchi.environment ?? {});
@@ -113,7 +114,7 @@ describe("배포 파일", () => {
   it("배포 문서도 compose처럼 서비스마다 이름을 적는다(env_file·NOONCHI_ENV_FILE 없음)", () => {
     for (const f of ["docs/deploy.md", "docs/reference.md", "README.md", ".env.example"]) expect(read(f), f).not.toMatch(/NOONCHI_ENV_FILE|env_file/);
     const d = read("docs/deploy.md");
-    expect(d).toContain("`compose.yaml`의 서비스마다 적은 이름만 받는다");
+    expect(d).toContain("`deploy/compose.yaml`의 서비스마다 적은 이름만 받는다");
     expect(d).toContain("`scripts/compose-keys.ts`");
     for (const k of Object.keys(KEY_OWNERS)) expect(d, `${k}을 받는 서비스를 docs/deploy.md 3절에 적으세요`).toContain(`\`${k}\``);
     // 키 없는 확인은 셸 값을 넘기지 않고, 키가 그 키를 쓰는 서비스에만 가는지 본다(scripts/container-smoke.ts !SERVICE_ENV.has(k)·KEY_OWNERS)
@@ -125,11 +126,11 @@ describe("배포 파일", () => {
     const svc = services();
     const noonchi = new Set(envNames(svc.noonchi!));
     const missing = [...serverEnvNames()].filter((k) => !NOT_FOR_CONTAINER.has(k) && !noonchi.has(k));
-    expect(missing, "compose.yaml noonchi environment에 더하세요").toEqual([]);
+    expect(missing, "deploy/compose.yaml noonchi environment에 더하세요").toEqual([]);
   });
 
   it("compose: redis는 판을 고정한 공식 이미지, 디스크 저장 끔, 볼륨·호스트 포트 없음, noonchi가 REDIS_URL로 붙는다", () => {
-    const c = parse(read("compose.yaml"), { merge: true }) as { services: Record<string, any> };
+    const c = parse(read("deploy/compose.yaml"), { merge: true }) as { services: Record<string, any> };
     const r = c.services.redis;
     expect(r.image).toBe("redis:8.10.2-alpine@sha256:9f8d2d789b9a1d1e3f283f979aa9cbf393373806472e1ccd460e2f9c869b833b");
     expect(r.command).toEqual(["redis-server", "--appendonly", "no", "--save", "", "--maxmemory", "512mb", "--maxmemory-policy", "noeviction"]);
@@ -140,10 +141,12 @@ describe("배포 파일", () => {
   });
 
   it("개발용 compose: noonchi-redis가 같은 이미지·같은 디스크 저장 끔으로 127.0.0.1:6379만 연다", () => {
-    const d = parse(read("compose.dev.yaml")) as { services: Record<string, any> };
-    const c = parse(read("compose.yaml"), { merge: true }) as { services: Record<string, any> };
+    const d = parse(read("deploy/compose.dev.yaml")) as { name?: string; services: Record<string, any> };
+    const c = parse(read("deploy/compose.yaml"), { merge: true }) as { services: Record<string, any> };
     expect(d.services.redis.image).toBe(c.services.redis.image);
     expect(d.services.redis.container_name).toBe("noonchi-redis");
+    // 프로젝트 이름이 파일 자리 폴더(deploy)를 따라가지 않게 정해 둔다
+    expect(d.name).toBe("noonchi-dev");
     expect(d.services.redis.ports).toEqual(["127.0.0.1:6379:6379"]);
     expect(d.services.redis.command.slice(0, 5)).toEqual(["redis-server", "--appendonly", "no", "--save", ""]);
   });
@@ -153,8 +156,27 @@ describe("배포 파일", () => {
     expect(read(".github/workflows/ci.yml")).not.toMatch(/pytest|services\/pam|noonchi-pam|setup-python/);
   });
 
-  it(".dockerignore가 비밀·런타임·의존성을 뺀다", () => {
-    const i = read(".dockerignore").split(/\r?\n/);
+  it("배포 파일은 deploy/에만 있고, compose는 저장소 뿌리를 문맥으로 deploy/Dockerfile을 빌드한다", () => {
+    for (const f of ["Dockerfile", "compose.yaml", "compose.dev.yaml", ".dockerignore"]) expect(existsSync(join(ROOT, f)), `${f}는 deploy/에 둔다`).toBe(false);
+    const c = parse(read("deploy/compose.yaml"), { merge: true }) as { services: Record<string, any> };
+    expect(c.services.noonchi.build).toEqual({ context: "..", dockerfile: "deploy/Dockerfile" });
+    // BuildKit은 <Dockerfile>.dockerignore를 그 Dockerfile 옆에서 찾는다. 안의 경로는 문맥(저장소 뿌리) 기준이다
+    expect(existsSync(join(ROOT, `${c.services.noonchi.build.dockerfile}.dockerignore`))).toBe(true);
+  });
+
+  it("문서의 docker compose 명령은 deploy/의 compose 파일을 -f로 주고, deploy/compose.yaml에는 뿌리 .env를 --env-file로 준다", () => {
+    // compose는 -f로 준 파일 자리(deploy/)의 .env만 스스로 읽는다. --env-file이 없으면 뿌리 .env의 키·설정이 빠진다
+    for (const f of ["README.md", "docs/deploy.md", "docs/reference.md", ".env.example"]) {
+      for (const cmd of read(f).match(/docker compose[^`\n#|]*/g) ?? []) {
+        expect(cmd, f).toMatch(/ -f deploy\/compose(\.dev)?\.yaml\b/);
+        if (cmd.includes("deploy/compose.yaml")) expect(cmd, f).toMatch(/--env-file \S+/);
+      }
+    }
+    expect(read("docs/deploy.md")).toContain("docker compose --env-file .env -f deploy/compose.yaml up -d --build");
+  });
+
+  it("deploy/Dockerfile.dockerignore가 비밀·런타임·의존성을 뺀다", () => {
+    const i = read("deploy/Dockerfile.dockerignore").split(/\r?\n/);
     for (const x of [".env", "node_modules", "ui/node_modules", "runtime", "runtime-3d", "graft", ".git"]) expect(i).toContain(x);
   });
 
@@ -168,7 +190,7 @@ describe("배포 파일", () => {
   it("CI: 화면 글·타입·시험·화면 빌드·이미지 빌드·키 없는 확인을 하고 이미지를 올리지 않는다", () => {
     const ci = read(".github/workflows/ci.yml");
     for (const s of ["npm run lint", "npx tsc --noEmit", "npm --prefix ui run typecheck", "npx vitest run", "npm --prefix ui test", "npm --prefix ui run build",
-      "docker build", "npx tsx scripts/container-smoke.ts", "node-version-file: .node-version"]) expect(ci).toContain(s);
+      "docker build -f deploy/Dockerfile", "npx tsx scripts/container-smoke.ts", "node-version-file: .node-version"]) expect(ci).toContain(s);
     expect(ci).not.toMatch(/docker push|push: true/);
     const jobs = (parse(ci) as { jobs: Record<string, { env?: Record<string, string> }> }).jobs;
     for (const [name, j] of Object.entries(jobs)) expect(j.env?.ONNXRUNTIME_NODE_INSTALL, name).toBe("skip");
@@ -192,6 +214,9 @@ describe("배포 파일", () => {
   it("키 없는 컨테이너 확인: 저장소 .env와 셸의 키를 넘기지 않고 확인용 호스트 포트(기본 8500·8510)에 띄운다", () => {
     const s = read("scripts/container-smoke.ts");
     expect(s).toContain('"--env-file", envFile');
+    // 띄우기와 키 확인 모두 deploy/compose.yaml을 -f로 준다
+    expect(s).toContain('const COMPOSE_FILE = join(ROOT, "deploy", "compose.yaml")');
+    expect(s.match(/"--env-file", \w+, "-f", COMPOSE_FILE/g)).toHaveLength(2);
     expect(s).toContain("(KEY|TOKEN|SECRET)$");
     // compose가 서비스에 넘기는 이름은 셸 값을 쓰지 않고, 실제 compose 설정에서 키가 그 키를 쓰는 서비스에만 가는지 본다
     expect(s).toContain("!SERVICE_ENV.has(k)");

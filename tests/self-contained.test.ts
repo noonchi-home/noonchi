@@ -1,6 +1,6 @@
 // 빌드·실행·시험·배포 파일이 옆 저장소 경로를 쓰면 실패한다. 오류는 대신 쓸 저장소 안 폴더를 말한다.
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
-import { join, relative } from "node:path";
+import { dirname, isAbsolute, join, posix, relative, resolve, sep, win32 } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { resolveTwinStudioDir } from "../src/layout/twin-files.js";
@@ -12,13 +12,13 @@ const SELF = fileURLToPath(import.meta.url);
 const withoutMigration = (text: string): string => text.replace(/\r/g, "")
   .replace(/^# ── main 합친 뒤 바꿀 것[^\n]*\n(?:(?!# ──)[^\n]*\n)*/m, "")
   .replace(/^### main 합친 뒤 바꿀 것[^\n]*\n(?:(?!### )[^\n]*\n)*/m, "");
-const DIRS = ["src", "scripts", "tests", "ui/src", "ui/tests", "web", ".github"];
+const DIRS = ["src", "scripts", "tests", "ui/src", "ui/tests", "web", ".github", "deploy"];
 const FILES = [
-  "package.json", "ui/package.json", "vitest.config.ts", "ui/vite.config.ts", "tsconfig.json", "Dockerfile", "compose.yaml",
-  ".env.example", ".dockerignore", "README.md", "docs/reference.md", "docs/deploy.md", "docs/pam-interface.md", "docs/plan.md", "docs/plan-contract.md",
+  "package.json", "ui/package.json", "vitest.config.ts", "ui/vite.config.ts", "tsconfig.json",
+  ".env.example", "README.md", "docs/reference.md", "docs/deploy.md", "docs/pam-interface.md", "docs/plan.md", "docs/plan-contract.md",
 ];
 const SKIP = new Set(["node_modules", ".venv", "dist", "__pycache__", ".pytest_cache"]);
-const TEXT = /\.(ts|tsx|mts|mjs|js|cjs|json|py|toml|ya?ml|md|txt|html|css|sh|ps1|cmd)$|(^|[\\/])(Dockerfile|\.env\.example|\.dockerignore)$/;
+const TEXT = /\.(ts|tsx|mts|mjs|js|cjs|json|py|toml|ya?ml|md|txt|html|css|sh|ps1|cmd)$|(^|[\\/])(Dockerfile|\.env\.example)$|\.dockerignore$/;
 
 export const RULES = [
   { re: /(?:\.\.[\\/])+ai(?=[\\/"'`\s)]|$)/, use: "src/brain/pam/" },
@@ -27,9 +27,18 @@ export const RULES = [
   { re: /소웨공[\\/]/, use: "이 저장소 안의 폴더" },
   // join(ROOT, "..", "ai")처럼 경로 조각으로 쓴 옆 저장소
   { re: /["'`]\.\.["'`]\s*,\s*(?:["'`]\.\.["'`]\s*,\s*)*["'`](?:ai|twin-studio[\w-]*)["'`]/, use: "src/brain/pam/·twin/" },
-  // compose build·context가 저장소 밖(절대 경로·위 폴더)을 가리킴
-  { re: /^\s*(?:build|context)\s*:\s*["']?(?:\/|[A-Za-z]:[\\/]|\.\.)/, use: "저장소 안 폴더(.)" },
 ];
+
+/** 줄 맨 앞 compose build·context 값. */
+const BUILD = /^\s*(?:build|context)\s*:\s*["']?([^"'\s#]+)/;
+/** compose build·context가 저장소 밖(절대 경로, 그 compose 파일 자리에서 푼 위 폴더)을 가리키면 참. deploy/compose.yaml의 `..`는 저장소 뿌리다. */
+export function buildOutside(line: string, file: string): boolean {
+  const v = BUILD.exec(line)?.[1];
+  if (!v) return false;
+  if (posix.isAbsolute(v) || win32.isAbsolute(v)) return true;
+  const to = relative(ROOT, resolve(dirname(file), v));
+  return to === ".." || to.startsWith(`..${sep}`) || isAbsolute(to);
+}
 
 function walk(dir: string, out: string[]): void {
   if (!existsSync(dir)) return;
@@ -53,6 +62,7 @@ export function scan(paths: string[]): string[] {
   for (const p of paths) {
     readFileSync(p, "utf8").split(/\r?\n/).forEach((line, i) => {
       for (const r of RULES) if (r.re.test(line)) hits.push(`${relative(ROOT, p)}:${i + 1}: 옆 저장소 경로 → ${r.use}를 쓴다`);
+      if (buildOutside(line, p)) hits.push(`${relative(ROOT, p)}:${i + 1}: 저장소 밖 compose build → 저장소 안 폴더(deploy/ compose는 ..)를 쓴다`);
     });
   }
   return hits;
@@ -99,12 +109,24 @@ describe("한 저장소", () => {
 
   it("규칙이 옆 저장소 경로만 잡는다", () => {
     for (const s of ["../ai/pam", "..\\twin-studio\\homes.json", "../twin-studio-3d", "noonchi-server", "C:/Users/x/Desktop/소웨공/ai",
-      'const AI = join(ROOT, "..", "ai", "pam");', 'TWIN_STUDIO_DIR: resolve(ROOT, "..", "twin-studio")', "join(here, '..', '..', 'twin-studio-3d')", "    context: /srv/ai", "  build: ../ai",
-      "    build: C:/srv/ai"]) {
+      'const AI = join(ROOT, "..", "ai", "pam");', 'TWIN_STUDIO_DIR: resolve(ROOT, "..", "twin-studio")', "join(here, '..', '..', 'twin-studio-3d')"]) {
       expect(RULES.some((r) => r.re.test(s)), s).toBe(true);
     }
     for (const s of ["src/brain/pam/", "twin/homes.json", "my-ai", "twin-studio 저장소에서 빌드", 'join(ROOT, "..", "src")', 'join(ROOT, "ui")', "    build: ."]) {
       expect(RULES.some((r) => r.re.test(s)), s).toBe(false);
+    }
+  });
+
+  it("compose build·context는 그 compose 파일 자리에서 풀어 저장소 밖이면 잡는다", () => {
+    const top = join(ROOT, "compose.yaml");
+    const deploy = join(ROOT, "deploy", "compose.yaml");
+    for (const [s, f] of [["    context: /srv/ai", deploy], ["    build: C:/srv/ai", deploy], ["  build: ../ai", top], ["    context: ..", top],
+      ["    context: ../..", deploy], ["  build: ../../ai", deploy], ['    context: "../../twin-studio"', deploy]] as const) {
+      expect(buildOutside(s, f), `${relative(ROOT, f)}: ${s}`).toBe(true);
+    }
+    for (const [s, f] of [["    build: .", top], ["    context: ..", deploy], ["    build: ..", deploy], ["    context: ../", deploy], ["    build:", deploy],
+      ["      dockerfile: deploy/Dockerfile", deploy]] as const) {
+      expect(buildOutside(s, f), `${relative(ROOT, f)}: ${s}`).toBe(false);
     }
   });
 });

@@ -1,5 +1,6 @@
 # noonchi 서버 이미지: 화면 빌드 → 운영 의존성 → 실행(저장소 models/의 YOLO26n-seg·YOLO26n-pose, sha256 검사).
-# 키·.env는 이미지에 넣지 않는다(.dockerignore). 설정은 compose가 이 서비스에 적은 이름만 실행 때 준다.
+# 빌드 문맥은 저장소 뿌리다: docker build -f deploy/Dockerfile -t noonchi:check .
+# 키·.env는 이미지에 넣지 않는다(deploy/Dockerfile.dockerignore). 설정은 compose가 이 서비스에 적은 이름만 실행 때 준다.
 ARG NODE_IMAGE=node:22.15.0-bookworm-slim
 
 FROM ${NODE_IMAGE} AS ui

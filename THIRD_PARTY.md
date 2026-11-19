@@ -16,7 +16,7 @@
 
 ## 모델
 
-관찰 흐름의 감지·관절 모델이다. 서버 이미지에 그대로 들어간다(`Dockerfile`이 sha256을 확인한다).
+관찰 흐름의 감지·관절 모델이다. 서버 이미지에 그대로 들어간다(`deploy/Dockerfile`이 sha256을 확인한다).
 
 | 파일 | 원본 가중치 | 라이선스 | sha256 |
 |---|---|---|---|
@@ -34,4 +34,4 @@
   npx tsx scripts/brain-yolo-fetch.ts --from <그 폴더>   # 저장소에서: sha256이 표와 같을 때만 models/에 넣는다
   ```
 
-  ONNX에는 내보낸 시각이 들어가서 다시 내보내면 sha256이 달라진다. 새 파일을 쓰려면 `src/observe/detector.ts` 표와 `Dockerfile` 확인 줄의 sha256을 새 값으로 바꾼 뒤 `--from`을 돌린다. `npx tsx scripts/brain-yolo-fetch.ts`는 지금 `models/` 파일이 표와 같은지 본다.
+  ONNX에는 내보낸 시각이 들어가서 다시 내보내면 sha256이 달라진다. 새 파일을 쓰려면 `src/observe/detector.ts` 표와 `deploy/Dockerfile` 확인 줄의 sha256을 새 값으로 바꾼 뒤 `--from`을 돌린다. `npx tsx scripts/brain-yolo-fetch.ts`는 지금 `models/` 파일이 표와 같은지 본다.

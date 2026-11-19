@@ -119,6 +119,7 @@ noonchi-home | 26-2 소프트웨어공학
 | `models/` | 감지·관절 모델(YOLO26s-seg·YOLO26n-pose ONNX) |
 | `scripts/` | 검사(`lint-*.ts`), 영상 시험(`video-check.ts`·`video-record.ts`·`minimap-cut.ts`), 시연·합성 기록(`demo.ts`·`demo-setup.ts`·`seed-history.ts`·`learned-memory.ts`), 가짜 모델 서버(`fake-openai.ts`), 집 자산 가져오기(`twin-assets.ts`), 트윈 사진·무거운 일 잠금(`twin3d/`) |
 | `tests/` | 서버 시험(Vitest). 시험 대역(가짜 PAM·가짜 모델·작은 집)은 `tests/helpers/` |
+| `deploy/` | 서버 이미지(`Dockerfile`·`Dockerfile.dockerignore`)와 compose(`compose.yaml`, 개발 Redis `compose.dev.yaml`). 명령은 저장소 뿌리에서 `-f deploy/…`로 준다 |
 | `docs/` | 계약·참고·배포 문서 |
 | `web/` | 클로이드의 눈 영상(H.264)을 그리는 워커 |
 
@@ -216,8 +217,8 @@ npm start                 # 화면을 빌드하고 http://127.0.0.1:8200
 ```
 
 - 관찰·판단까지 돌리기: `BRAIN=1 PHONE_PORT=8210 npm start`. 폰은 설정 창의 QR로 연다.
-- 추론 모드(`INFERENCE_MODE`): `openai`(개발, VLM·PAM LLM 모두 OpenAI API, `OPENAI_API_KEY`) · `vllm`(GPU 서버의 vLLM 두 개, `VLLM_API_KEY`, `docker compose --profile gpu up -d --build`). 두 모드는 같은 코드 길이고 모델 주소·모델 이름·제공자 칸만 다르다.
-- 통로(`REDIS_URL`, 선택): 비우면 메모리 통로, 주면 Redis 통로다. 이 PC에서는 `docker compose -f compose.dev.yaml up -d redis` 뒤 `REDIS_URL=redis://127.0.0.1:6379`, compose 서버 안에서는 `redis://redis:6379`. Redis 디스크 저장이 켜져 있으면 통로를 열지 않는다.
+- 추론 모드(`INFERENCE_MODE`): `openai`(개발, VLM·PAM LLM 모두 OpenAI API, `OPENAI_API_KEY`) · `vllm`(GPU 서버의 vLLM 두 개, `VLLM_API_KEY`, `docker compose --env-file .env -f deploy/compose.yaml --profile gpu up -d --build`). 두 모드는 같은 코드 길이고 모델 주소·모델 이름·제공자 칸만 다르다.
+- 통로(`REDIS_URL`, 선택): 비우면 메모리 통로, 주면 Redis 통로다. 이 PC에서는 `docker compose -f deploy/compose.dev.yaml up -d redis` 뒤 `REDIS_URL=redis://127.0.0.1:6379`, compose 서버 안에서는 `redis://redis:6379`. Redis 디스크 저장이 켜져 있으면 통로를 열지 않는다.
 - 무거운 일은 하나씩: 3D 크롬·시험·빌드는 `npm run heavy -- <명령>`으로 돌린다. 시험은 파일 하나도 `npm run heavy -- npx vitest run tests/act-track.test.ts`처럼 한다. 다른 무거운 일이 돌고 있으면 바로 끝난다. 대시보드 사진은 `npm run capture -- …`로만 찍는다.
 - 비용을 줄인 모델: `.env`에 `VLM_MODEL=gpt-5.4-nano`, `PAM_LLM_MODEL=gpt-5.4-nano`, `OPENAI_MODEL=gpt-5.4-mini`. 가까이 보기만 다른 모델이면 `VLM_CLOSER_MODEL`.
 - 키 없이 돌려 보기: `npx tsx scripts/fake-openai.ts --port 8500`을 띄우고 `VLM_BASE_URL`·`PAM_LLM_BASE_URL`·`OPENAI_BASE_URL`을 `http://127.0.0.1:8500/v1`로, `OPENAI_API_KEY`를 `fake-key`로 둔다.
@@ -226,7 +227,7 @@ npm start                 # 화면을 빌드하고 http://127.0.0.1:8200
 - 영상 시험: 시작 자리를 저장하고(설정 4단계) 영상을 `runtime/videos/`에 둔 뒤 `npm run heavy -- npx tsx scripts/video-check.ts --clip <파일> --done-after 3`. 단계 영상은 `--step go:table:go-table.mp4 …`, 녹화는 `--record <폴더>`(`--record-view minimap`), 모델 없이는 `--fake`.
 - 실제 집 사진 모으기: `.env`에 `DATASET_COLLECT=1`이면 분석한 사진이 폰 위치·방향과 함께 `runtime/dataset/<날짜>/`에 쌓인다(7일 보관).
 - 감지·관절 모델은 저장소 `models/`에 있어 따로 받지 않는다(AGPL-3.0). 출처·다시 내보내기는 [THIRD_PARTY](THIRD_PARTY.md#모델).
-- 서버 한 대: `docker compose up -d --build`(noonchi와 redis). GPU 서버는 `docker compose --profile gpu up -d --build`([deploy](docs/deploy.md)).
+- 서버 한 대: `docker compose --env-file .env -f deploy/compose.yaml up -d --build`(noonchi와 redis, 저장소 뿌리에서). GPU 서버는 `docker compose --env-file .env -f deploy/compose.yaml --profile gpu up -d --build`([deploy](docs/deploy.md)).
 - 대시보드 순간 보기: `?debug=steps&step=N`은 서버 자료 대신 `ui/src/dashboard/fake-run.json`의 순간(지켜보기, 1~4단계)을 보인다([twin3d](docs/twin3d.md)).
 
 | 명령 | 하는 일 |
