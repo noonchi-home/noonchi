@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   CUP_FSM_MEMORY, CUP_MEMORY, CUP_TASKS, PERSON_ACTIVITIES, checkInput, isoWithOffset,
-  validateMemory, validatePrediction, validateTasks, type DecisionInput, type FsmMemory,
+  validateCandidateFsm, validateMemory, validatePrediction, validateTasks, type DecisionInput, type FsmMemory,
 } from "../src/brain/decision.js";
+import { candidateFsmOf } from "../src/brain/pam/adopt.js";
+import { MEMORY_CHECK_PROMPT } from "../src/brain/pam/memoryCheck.js";
 import { FSM_STATE_TEXT } from "../src/world/labels.js";
 import { LEARNED_ACTIONS } from "../src/act/tasks.js";
 import { LEARNED_FSM_MEMORY, learnedFsm } from "../scripts/learned-memory.js";
@@ -140,5 +142,19 @@ describe("사람 활동 FSM 코드 검사", () => {
     expect(() => validateMemory(none, "fsm")).toThrow(/needs at least one activity/);
     const old = { initial_state: "away", states: [{ id: "away", description: "d", rules: [], next: [] }] };
     expect(() => validateMemory(old, "fsm")).toThrow(/incorrect fields/);
+  });
+});
+
+// 2026-11-19 사용자 「그래 그렇게 해」(glass pfsm4-2: 마시는 중 물 채우기 화살표를 잘못 일으켜 목표가 버려짐): 물 채우기는 식탁에 앉아 있을 때만. 사람 자세는 사람 쪽 사실이다
+describe("seed 물 채우기 화살표 조건", () => {
+  const water = (m: FsmMemory) => m.states.find((st) => st.id === "drinking")!.next.find((e) => e.action === "컵에 물 채워 주기");
+  it("drinking 자기 화살표(물 채우기)는 조건 「식탁에 앉아 있다.」를 갖고, 배운 뒤 기억도 같다", () => {
+    expect(water(CUP_FSM_MEMORY)).toEqual({ to: "drinking", on: "사용자가 마시던 것을 다 마시고 계속 먹는다.", when: "식탁에 앉아 있다.", action: "컵에 물 채워 주기" });
+    expect(water(LEARNED_FSM_MEMORY)).toEqual(water(CUP_FSM_MEMORY));
+  });
+  it("코드 검사(기억·후보 FSM)가 받고, 뜻 검사 지시문은 사람 자세를 사람 쪽 조건으로 받는다", () => {
+    expect(validateMemory(structuredClone(CUP_FSM_MEMORY), "fsm")).toEqual(CUP_FSM_MEMORY);
+    expect(() => validateCandidateFsm(structuredClone(candidateFsmOf(CUP_FSM_MEMORY)) as never, CUP_FSM_MEMORY)).not.toThrow();
+    expect(MEMORY_CHECK_PROMPT).toMatch(/posture/);
   });
 });

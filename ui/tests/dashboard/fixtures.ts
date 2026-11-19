@@ -135,7 +135,7 @@ export const TIMELINE_CLEAR: TimelineData = {
 export interface Branch { action: string; state: string; from: string; index: number; to: string; on: string; when?: string; learned?: boolean; reasoning: string }
 export const BRANCHES = {
   clear: { action: CLEAR_CUP, state: "away", from: "drinking", index: 0, to: "*", on: "사용자가 먹거나 마시기를 끝내고 다른 일로 넘어간다.", learned: true, reasoning: REASON },
-  water: { action: "컵에 물 채워 주기", state: "drinking", from: "drinking", index: 1, to: "drinking", on: "사용자가 마시던 것을 다 마시고 계속 먹는다.", reasoning: "식사 중인데 컵이 비어 있어요." },
+  water: { action: "컵에 물 채워 주기", state: "drinking", from: "drinking", index: 1, to: "drinking", on: "사용자가 마시던 것을 다 마시고 계속 먹는다.", when: "식탁에 앉아 있다.", reasoning: "식사 중인데 컵이 비어 있어요." },
   cola: { action: "컵에 콜라 따라 주기", state: "watching_tv", from: "watching_tv", index: 0, to: "watching_tv", on: "사용자가 TV를 보며 마시던 것을 다 마신다.", when: "같이 마시는 중이었다.", reasoning: "TV를 보는 중인데 컵이 비어 있어요." },
 } as const satisfies Record<string, Branch>;
 /** 코치 판단 고정 자료(라면 끓이기 알려 주기, FSM 상태 cooking)와 13단계 계획(사람 단계·알림·기다리기). */

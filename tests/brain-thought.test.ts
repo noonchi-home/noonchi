@@ -76,7 +76,7 @@ describe("메시지 상자 문장(사실로만)", () => {
 
   it("화살표 없음·화살표 행동과 고른 행동이 다름·묻기·대기·실패 판단은 허락 문장이 없다", () => {
     expect(decisionLines(decision("pam-1", "컵 치우기", step()))).toEqual([]);
-    expect(decisionLines(decision("pam-1", "컵 치우기", step({ from: "drinking", next_index: 1, to: "drinking", on: "사용자가 마시던 것을 다 마시고 계속 먹는다.", action: "컵에 물 채워 주기" })))).toEqual([]);
+    expect(decisionLines(decision("pam-1", "컵 치우기", step({ from: "drinking", next_index: 1, to: "drinking", on: "사용자가 마시던 것을 다 마시고 계속 먹는다.", when: "식탁에 앉아 있다.", action: "컵에 물 채워 주기" })))).toEqual([]);
     expect(decisionLines(decision("pam-1", "컵 치우기", null))).toEqual([]);
     expect(decisionLines(decision("pam-1", null, step({ state: "drinking" })))).toEqual([]);
     expect(decisionLines(decision("pam-1", "컵 치우기", clearStep(), "failed"))).toEqual([]);
