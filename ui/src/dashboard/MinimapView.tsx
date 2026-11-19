@@ -1,7 +1,6 @@
 import { useCallback, useMemo, useRef, useState } from "react";
 import type { ServerMessage } from "../../../src/contract/events.ts";
-import { Item, ItemContent, ItemTitle } from "../components/ui/item";
-import { LiquidGlass } from "../components/ui/liquid-glass";
+import { MeerkatFace, PhoneTopLine } from "../components/phone-top-line";
 import { hubOf } from "../lib/hub";
 import { useEvents } from "../lib/use-events";
 import { useHealth } from "../lib/use-health";
@@ -25,7 +24,7 @@ export function minimapBox(view: BoxSize): Rect {
 /**
  * 비전 미니맵만(대시보드 주소 ?view=minimap, 미니맵 녹화): 대시보드 폰 칸(PhonePane, 화면 이름 「폰 카메라」)을 창 가운데 가장 큰 16:9 칸 하나로 채운다.
  * 자료는 대시보드와 같다: health 전에는 빈 칸, 폰 서버가 켜졌으면 실시간 영상(첫 장 전에는 연결 QR), 꺼졌으면 연결 QR이고, 마스크·이름표는 /events의 seen이다.
- * 지금 실제 폰에 낸 명령 한 줄(/events phone_command)은 칸 아래쪽 가운데 자막(실제 폰 명령 줄과 같은 불투명 판 LiquidGlass 위 Item sm)이고, 지우면(null) 사라진다.
+ * 칸 위쪽에 실제 폰 위 줄(PhoneTopLine: 미어캣 얼굴 + 지금 실제 폰에 낸 명령 한 줄 /events phone_command, 실제 폰과 같은 부품·배치·글)을 둔다. 명령을 지우면(null) 명령 줄만 사라진다.
  * 3D 트윈(엔진·장면·트윈 파일)·메시지 상자·시간 줄 카드·마스코트는 그리지 않는다. 글꼴이 다 뜨면 main에 data-ready를 단다(녹화가 기다린다).
  */
 export function MinimapView() {
@@ -51,13 +50,9 @@ export function MinimapView() {
   return (
     <main ref={main} data-view="minimap" data-ready={ready || undefined} className="relative h-full w-full overflow-hidden">
       <PhonePane slot={phone} seen={seen} box={box} connected={connected} />
-      {command && (
-        <div data-phone-command className="pointer-events-none absolute z-50 flex items-end justify-center p-6" style={{ left: box.left, top: box.top, width: box.width, height: box.height }}>
-          <LiquidGlass mode="opaque" radius={16} className="min-w-0">
-            <Item size="sm"><ItemContent className="min-w-0"><ItemTitle>{command}</ItemTitle></ItemContent></Item>
-          </LiquidGlass>
-        </div>
-      )}
+      <div data-phone-line className="pointer-events-none absolute z-50" style={{ left: box.left, top: box.top, width: box.width }}>
+        <PhoneTopLine lead={<div className="flex size-12 shrink-0 items-center justify-center"><MeerkatFace /></div>} text={command} />
+      </div>
     </main>
   );
 }

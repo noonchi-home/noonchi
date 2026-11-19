@@ -6,6 +6,8 @@ import type { HealthView, ServerMessage } from "../../../src/contract/events.ts"
 import run from "../../src/dashboard/fake-run.json";
 import { MinimapView, minimapBox, minimapOnly } from "../../src/dashboard/MinimapView";
 import { TwinEngine } from "../../src/twin/3d/engine";
+import { SHOTS } from "../../src/phone/fixtures";
+import { PhoneScreen } from "../../src/phone/PhoneScreen";
 
 class FakeSocket {
   static last: FakeSocket | null = null;
@@ -118,20 +120,41 @@ describe("비전 미니맵만(?view=minimap)", () => {
     expect(pane().querySelector("[data-eye-video]")).toBeNull();
   });
 
-  // 2026-11-19 사용자: 미니맵 녹화에 지금 실제 폰에 낸 명령 한 줄을 아래쪽 자막으로
-  it("지금 실제 폰 명령(phone_command)을 아래쪽 한 줄로 글 그대로 보이고, 지우면(null) 사라진다. 부품 원래 글 크기(Item sm 14px)다", async () => {
+  // 2026-11-19 사용자 「우리 실제 폰에서 내리는 명령 UI랑 좀 다른 것 같아」: 자막은 실제 폰 위 줄(미어캣 + 지금 명령)과 같은 부품·배치·글이고 자리도 위쪽이다
+  it("지금 실제 폰 명령(phone_command)은 칸 위쪽 실제 폰 위 줄(data-phone-zone=top: 미어캣 얼굴 + 명령 한 줄)로 보이고, 지우면(null) 명령 줄만 사라진다", async () => {
     await mount(true);
-    expect(document.querySelector("[data-phone-command]")).toBeNull();
+    const top = () => document.querySelector<HTMLElement>("main > [data-phone-line] > [data-phone-zone=top]")!;
+    expect(top()).not.toBeNull();
+    expect(top().querySelector("[data-phone-text]")).toBeNull();
+    const slot = top().parentElement!;
+    expect([slot.style.left, slot.style.top, slot.style.width]).toEqual(["0px", "0px", "1280px"]);
+    expect(top().closest(".pointer-events-none")).not.toBeNull();
+    expect(top().querySelector("[data-shape=logo]")).not.toBeNull();
+    expect(top().querySelector("button")).toBeNull();
     send([{ type: "phone_command", text: "식탁으로 가 주세요" }]);
-    const line = document.querySelector<HTMLElement>("[data-phone-command]")!;
-    expect(line).toHaveTextContent(/^식탁으로 가 주세요$/);
-    expect(line.querySelector('[data-slot="item"]')).toHaveAttribute("data-size", "sm");
-    expect(line.closest(".pointer-events-none")).not.toBeNull();
-    expect(line.parentElement).toBe(document.querySelector("main"));
+    expect(top().querySelector("[data-phone-text=명령]")).toHaveTextContent(/^식탁으로 가 주세요$/);
     send([{ type: "phone_command", text: "컵을 들어 주세요" }]);
-    expect(document.querySelector("[data-phone-command]")).toHaveTextContent(/^컵을 들어 주세요$/);
+    expect(top().querySelector("[data-phone-text=명령]")).toHaveTextContent(/^컵을 들어 주세요$/);
     send([{ type: "phone_command", text: null }]);
+    expect(top().querySelector("[data-phone-text]")).toBeNull();
     expect(document.querySelector("[data-phone-command]")).toBeNull();
+  });
+
+  it("명령 줄은 실제 폰 화면 위 줄과 같은 부품·글이다(같은 명령이면 그 칸 마크업이 같다)", async () => {
+    const phone = render(<PhoneScreen view={SHOTS["pick-cup"].view} act={{
+      startAr: vi.fn(), startPlace: vi.fn(), startFromSpot: vi.fn(), confirmStart: vi.fn(), endSetup: vi.fn(), setSettings: vi.fn(), micOn: vi.fn(), say: vi.fn(), confirm: vi.fn(), answer: vi.fn(),
+    }} />);
+    const phoneTop = phone.container.querySelector<HTMLElement>("[data-phone-zone=top]")!;
+    const phoneLine = phoneTop.lastElementChild!.outerHTML;
+    const phoneZone = phoneTop.getAttribute("class")!.split(/\s+/);
+    phone.unmount();
+    await mount(true);
+    send([{ type: "phone_command", text: "컵을 들어 주세요" }]);
+    const top = document.querySelector<HTMLElement>("main > [data-phone-line] > [data-phone-zone=top]")!;
+    expect(top.lastElementChild!.outerHTML).toBe(phoneLine);
+    // 위 줄 배치(flex·gap·여백)도 폰과 같다. 다른 것은 자리(폰 fixed, 미니맵 칸 위 absolute)뿐
+    const layout = (c: string[]) => c.filter((x) => !/^(fixed|absolute|inset-x-0|top-0|z-50|pointer-events-none)$/.test(x));
+    expect(layout(top.getAttribute("class")!.split(/\s+/))).toEqual(layout(phoneZone));
   });
 
   it("창이 16:9가 아니면(1280×800) 칸은 가운데 1280×720이다", async () => {

@@ -10,12 +10,12 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { Avatar, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Item, ItemActions, ItemContent, ItemGroup, ItemTitle } from "@/components/ui/item";
 import { LiquidGlass } from "@/components/ui/liquid-glass";
+import { MeerkatFace, PhoneTopLine } from "@/components/phone-top-line";
 import { Status, StatusIndicator } from "@/components/ui/status";
 import type { ApprovalAnswer } from "../../../src/contract/phone.ts";
 import {
@@ -161,7 +161,7 @@ function Settings({ view, act, root, open }: { view: PhoneView; act: PhoneAction
     <AlertDialog open={open} onOpenChange={act.setSettings}>
       <AlertDialogTrigger asChild>
         <Button variant="ghost" size="icon" aria-label="설정" className="size-12 shrink-0 p-0">
-          <Avatar shape="logo" className="size-10"><AvatarImage src="/brand/face-128.png" alt="" /></Avatar>
+          <MeerkatFace />
         </Button>
       </AlertDialogTrigger>
       <AlertDialogContent container={root} aria-describedby={undefined} className="motion-reduce:animate-none">
@@ -211,15 +211,8 @@ function Overlay({ view, act, root, attach, canvasRef }: { view: PhoneView; act:
   return (
     <div ref={attach} hidden={!view.ar} data-phone-overlay="" className="fixed inset-0">
       <canvas ref={canvasRef} aria-hidden="true" className="pointer-events-none fixed inset-0 size-full" />
-      {/* 위 줄: 왼쪽 위 미어캣(늘), 그 옆 지금 할 명령 한 줄(있을 때만). 상태 표시줄 아래에서 시작한다(안전 영역, 없으면 28px + 8px) */}
-      <div data-phone-zone="top" className="fixed inset-x-0 top-0 flex items-start gap-2 px-4 pt-[calc(max(env(safe-area-inset-top),28px)+8px)]">
-        <Settings view={view} act={act} root={root} open={view.ar && view.settingsOpen && problem === null} />
-        {hand.top !== null && (
-          <LiquidGlass mode="opaque" radius={16} role="status" aria-live="polite" className="min-w-0 flex-1" contentClassName="px-3.5 py-3">
-            <p data-phone-text="명령" className="break-keep">{hand.top}</p>
-          </LiquidGlass>
-        )}
-      </div>
+      {/* 위 줄: 왼쪽 위 미어캣(늘, 설정 단추), 그 옆 지금 할 명령 한 줄(있을 때만). 대시보드 비전 미니맵 자막도 같은 부품이다 */}
+      <PhoneTopLine className="fixed inset-x-0 top-0" lead={<Settings view={view} act={act} root={root} open={view.ar && view.settingsOpen && problem === null} />} text={hand.top} />
       {/* 엄지 자리: 비전 상태 한 줄, 그 바로 아래 답 단추. 세로는 맨 아래 폭 전체, 가로는 오른쪽 아래 */}
       {hand.thumb && (
         <div data-phone-zone="thumb" className="fixed right-4 bottom-[calc(env(safe-area-inset-bottom)+16px)] left-4 landscape:left-auto landscape:w-[min(360px,calc(50vw-40px))]">
