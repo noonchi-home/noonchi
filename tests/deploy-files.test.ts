@@ -110,11 +110,15 @@ describe("배포 파일", () => {
     expect(envNames(svc["fake-openai"]!)).toEqual([]);
   });
 
-  it("아키텍처 계획도 compose처럼 서비스마다 이름을 적는다(env_file·NOONCHI_ENV_FILE 없음)", () => {
-    const plan = read("docs/superpowers/plans/2026-11-07-noonchi-architecture.md");
-    expect(plan).not.toMatch(/NOONCHI_ENV_FILE|env_file:\s*\[|env_file\)\.toEqual|env_file\(|env_file에서/);
-    expect(plan).toContain("KEY_OWNERS");
-    expect(plan).toContain("!SERVICE_ENV.has(k)");
+  it("배포 문서도 compose처럼 서비스마다 이름을 적는다(env_file·NOONCHI_ENV_FILE 없음)", () => {
+    for (const f of ["docs/deploy.md", "docs/reference.md", "README.md", ".env.example"]) expect(read(f), f).not.toMatch(/NOONCHI_ENV_FILE|env_file/);
+    const d = read("docs/deploy.md");
+    expect(d).toContain("`compose.yaml`의 서비스마다 적은 이름만 받는다");
+    expect(d).toContain("`scripts/compose-keys.ts`");
+    for (const k of Object.keys(KEY_OWNERS)) expect(d, `${k}을 받는 서비스를 docs/deploy.md 3절에 적으세요`).toContain(`\`${k}\``);
+    // 키 없는 확인은 셸 값을 넘기지 않고, 키가 그 키를 쓰는 서비스에만 가는지 본다(scripts/container-smoke.ts !SERVICE_ENV.has(k)·KEY_OWNERS)
+    expect(d).toContain("저장소 `.env`와 셸의 키를 넘기지 않고");
+    expect(d).toContain("키가 그 키를 쓰는 서비스에만 가는지 본다");
   });
 
   it("compose: noonchi는 서버 코드가 읽는 설정을 받는다", () => {

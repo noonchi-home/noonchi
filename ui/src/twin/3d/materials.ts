@@ -1,4 +1,4 @@
-// 구운 재질(스파이크 docs/twin3d-spike/main.mjs 143~185줄): 정적 메시 = MeshBasicMaterial(색·그림 × 빛 지도, uv 채널 1),
+// 구운 재질: 정적 메시 = MeshBasicMaterial(색·그림 × 빛 지도, uv 채널 1),
 // 벽 윗면 = 어두운 단색, 창·난간 유리 = 밝은 반투명 단색, 발광 재질은 그대로, 나머지는 실시간 재질 그대로.
 // 색은 토큰(scene3d)만 쓴다.
 import * as THREE from "three";

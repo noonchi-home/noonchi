@@ -1,18 +1,18 @@
 // npm run heavy -- npx tsx scripts/twin3d/e2e-dashboard.ts --out <폴더> [--port 8202] [--size 1920x1080] [--gpu] [--timeout 60]
 // 한양목련 컵 치우기를 실제 대시보드로 처음부터 끝까지 돌린다(시험 모드, 실제 모델·ThinQ 없음). 같은 프로세스에서 가짜 서버(가짜 OpenAI 호환 VLM,
 // 시험용 PAM, 대본 YOLO)와 본 서버(HUB=memory, 화면 ui/dist, 폰 서버 켬, 새 RUNTIME_DIR)를 띄우고, 크롬 하나로 대시보드를 연 채
-// 폰 메시지(기준점·눈·엔진 프레임·표시 프레임·답)로 흐름을 몬다. 엔진·표시 프레임은 docs/superpowers/specs/2026-11-06-twin3d-baseline/room_kitchen.jpg다.
+// 폰 메시지(기준점·눈·엔진 프레임·표시 프레임·답)로 흐름을 몬다. 엔진·표시 프레임은 시험용 JPEG(tests/helpers/jpeg.ts fixtureJpeg, 트윈 캡처 고정 자료로 만든 1280×800)다.
 // 순간마다(0 지켜보기, 1~4 단계, 끝) main[data-step]과 그 순간 말풍선 글을 기다려 <out>/step-<n>.png를 찍고 본다:
 // 진행도 「n/4 · 단계 이름」(끝·지켜보기는 없음), 마스코트 보는 쪽(계획 중 twin, 아니면 video), YOLO 상자 하나 이상, 문서 글에 「승인」·승인 질문 없음, 페이지 오류 없음.
 // 하나라도 틀리면 끝 코드 1. 결과는 <out>/result.json, 서버 기록은 <out>/server.log.
 // 판단 시각은 이 스크립트가 정한다: PAM은 1초마다 부르고(PAM_TRIGGER=periodic), 가짜 PAM은 지켜보기 사진을 찍은 뒤부터 끝 단계 전까지만 컵 치우기를 고른다.
-import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { appendFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 import type WebSocket from "ws";
 import { alignOnServer } from "../../tests/helpers/align.js";
 import { ScriptedDetector, det } from "../../tests/helpers/detectors.js";
+import { fixtureJpeg } from "../../tests/helpers/jpeg.js";
 import { startFakePamLlm, type FakePamLlm, pamLlmEnv } from "../../tests/helpers/pam.js";
 import { openWebSocket } from "../../tests/helpers/ws.js";
 import { encodeFramePacket } from "../../src/phone/packet.js";
@@ -22,7 +22,6 @@ import { startServer, type RunningServer } from "../../src/server/start.js";
 import { startFakeOpenAI, type FakeServer } from "../fake-openai.js";
 import { chromePath, closeChrome, devtoolsPort, launchChrome, openPage, type Chrome, type Page } from "./cdp.js";
 
-const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const arg = (k: string, d?: string) => { const i = process.argv.indexOf(`--${k}`); return i > 0 ? process.argv[i + 1]! : d; };
 const out = arg("out");
 if (!out) { console.error("쓰는 법: npm run heavy -- npx tsx scripts/twin3d/e2e-dashboard.ts --out <폴더> [--port 8202] [--size 1920x1080] [--gpu] [--timeout 60]"); process.exit(2); }
@@ -34,7 +33,7 @@ const HOME = "mokryeon_180b";
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 // 엔진·표시 프레임(가로 1280×800). YOLO 상자 아래 가운데가 그림 한가운데
-const JPEG = readFileSync(join(ROOT, "docs/superpowers/specs/2026-11-06-twin3d-baseline/room_kitchen.jpg"));
+const JPEG = fixtureJpeg(1280, 800);
 const FRAME = { width: 1280, height: 800 };
 const CUP_BOX: [number, number, number, number] = [FRAME.width / 2 - 20, FRAME.height / 2 - 20, 40, 20];
 // 눈 자리에 시작 위치를 저장하고 「여기서 시작」 + 그 자리의 벽·바닥 점으로 맞춘다(AR 점 = 평면 점). 눈은 tests/mokryeon-e2e.test.ts와 같다:

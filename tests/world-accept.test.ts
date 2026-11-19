@@ -1,4 +1,4 @@
-// 상태 없는 감지 거르기(src/world/accept.ts): 인식 노드가 World State 없이 같은 감지를 거른다(stage-queue 묶음 2 Task 2).
+// 상태 없는 감지 거르기(src/world/accept.ts): 인식 노드가 World State 없이 같은 감지를 거른다.
 // 낱말 표의 모든 종류 × 최소 신뢰도 경계 × 잘린 가장자리에서 WorldState 메서드와 같은 답을 낸다.
 import { describe, expect, it } from "vitest";
 import { WorldState, accepts, closerObject } from "../src/world/index.js";

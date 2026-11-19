@@ -1,4 +1,4 @@
-// mirror.ts — 거울(stage-queue 묶음 2): 집 상태 노드가 낸 /world/state(STATE)·/world/changes(RELIABLE)를 받아 읽는 쪽에 준다.
+// mirror.ts — 거울: 집 상태 노드가 낸 /world/state(STATE)·/world/changes(RELIABLE)를 받아 읽는 쪽에 준다.
 // view()는 가장 새 보기다(250ms 다시 냄 포함, 지금보다 최대 250ms + 지나는 시간 늦다). 변화는 그 판본 이상의 상태를 가진 뒤에 onChanges로 온다(withState).
 // onView는 판본(rev)이 바뀔 때만 부른다: 대시보드 방송이 지금보다 늘지 않는다(250ms 다시 냄은 부르지 않음).
 import { BusNode, type Bus, type Clock, type NodeName } from "../bus/index.js";

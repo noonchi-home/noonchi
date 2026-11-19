@@ -1,4 +1,4 @@
-// World State 입력 모양: 감지·관절·물체 모양·엔진 프레임·카메라. 관찰 흐름·실제 폰이 만들고 World State·기록이 받는다(도메인 나누기 F1·F7).
+// World State 입력 모양: 감지·관절·물체 모양·엔진 프레임·카메라. 관찰 흐름·실제 폰이 만들고 World State·기록이 받는다.
 
 import type { DetLabel, SCENE_STATES } from "../world/vocab.js";
 import type { EyePose, Vec3 } from "./events.js";
@@ -90,7 +90,7 @@ export interface LookDetInput { id: string; box: [number, number, number, number
 /** 가까이 본 그 장의 카메라·크기·자른 자리(엔진 프레임 픽셀 [x, y, w, h], src/world/state/closer.ts CloserLookAt). */
 export interface CloserAtInput { view: CameraView; width: number; height: number; crop: [number, number, number, number] }
 
-/** 사진 없는 엔진 프레임: 관찰 흐름이 집 상태 노드에 넘기는 프레임(stage-queue 묶음 2). JPEG·해시는 인식 노드 밖으로 나가지 않는다. */
+/** 사진 없는 엔진 프레임: 관찰 흐름이 집 상태 노드에 넘기는 프레임. JPEG·해시는 인식 노드 밖으로 나가지 않는다. */
 export type FrameMeta = Omit<EngineFrame, "jpeg" | "sha256">;
 /** 가까이 본 한 장(사진 없음): 원본 엔진 프레임 id·촬영 시각·카메라·크기와 잘라 본 사진의 감지(엔진 프레임 픽셀, edge는 잘라 본 경계에 닿음). World State의 CloserPass와 같은 모양이다. */
 export interface CloserPassInput { frameId: string; capturedAtMs: number; view: CameraView; width: number; height: number; dets: (Detection & { edge: boolean })[] }

@@ -1,6 +1,6 @@
 {
   "from": "0a392c5",
-  "note": "0a392c5의 실제 import 줄(도메인 나누기 설계 3.3). 가짜 트리의 같은 자리에 이 줄을 넣으면 expect의 검사가 실패해야 한다.",
+  "note": "0a392c5의 실제 import 줄. 가짜 트리의 같은 자리에 이 줄을 넣으면 expect의 검사가 실패해야 한다.",
   "cases": [
     {
       "file": "src/contract/events.ts",

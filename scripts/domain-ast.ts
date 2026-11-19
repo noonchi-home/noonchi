@@ -1,5 +1,5 @@
 // 도메인 검사(scripts/lint-domains.ts)와 옮김 검사(scripts/check-moves.ts)가 같이 쓰는 파서·import 읽기·모듈 경로 풀기.
-// 파서는 rolldown/parseAst(oxc)다. TypeScript 7에는 JS 컴파일러 API가 없다(도메인 나누기 설계 4.1).
+// 파서는 rolldown/parseAst(oxc)다. TypeScript 7에는 JS 컴파일러 API가 없다.
 // 경로는 모두 저장소 뿌리 기준 posix 경로("src/act/track.ts")다.
 import { isBuiltin } from "node:module";
 import { posix } from "node:path";
@@ -8,8 +8,8 @@ import { parseAst } from "rolldown/parseAst";
 /** oxc ESTree 노드(TS 노드 포함). 칸은 노드 종류마다 달라 넓게 둔다. */
 export type AstNode = { type: string; start: number; end: number; [key: string]: any };
 
-/** 단계마다 둔 옮김 대응표 폴더(scripts/check-moves.ts, 도메인 나누기 설계 4.1). */
-export const MOVES_DIR = "docs/superpowers/specs/2026-11-16-domain-split/moves/";
+/** 단계마다 둔 옮김 대응표 폴더(scripts/check-moves.ts). 대응표는 그 옮김 커밋에 함께 둔다. */
+export const MOVES_DIR = "scripts/moves/";
 
 /** 파싱하는 코드 파일 확장자. */
 export const CODE_EXT = [".ts", ".tsx", ".mts", ".js", ".jsx", ".mjs"] as const;

@@ -1,5 +1,5 @@
 // 에이전트(LLM)(구현명세서 6.6)
-// 다른 도메인은 이 입구로만 가져온다(도메인 나누기 설계 2.4).
+// 다른 도메인은 이 입구로만 가져온다.
 export { describeError, Agent, newSessionId } from "./agent.js";
 export { approvalNeed, taskKey, type ApprovalAnswer, type ApprovalBook, ApprovalStore, approvalsPath } from "./approval.js";
 export { type ObserveChoice, type ObserveSituation, Observer, type ObserverStatus } from "./observer.js";

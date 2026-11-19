@@ -1,5 +1,5 @@
 // 저장소 뿌리 기준 경로와 직접 실행 검사. 파일 자리(import.meta.url)로 자원 경로를 찾는 곳은 이 파일 하나다.
-// 코드 파일을 다른 폴더로 옮겨도 자원 경로(models/·twin/·ui/dist/·runtime/)가 바뀌지 않는다(도메인 나누기 설계 2.2·3.1).
+// 코드 파일을 다른 폴더로 옮겨도 자원 경로(models/·twin/·ui/dist/·runtime/)가 바뀌지 않는다.
 
 import { realpathSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";

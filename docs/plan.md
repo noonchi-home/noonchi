@@ -157,8 +157,6 @@ interface DeviceHub {
 
 ## 집 고르기·배치 보정·음성·초점 (4단계)
 
-상세 계획: [2026-10-24-home-packages-live-edit.md](superpowers/plans/2026-10-24-home-packages-live-edit.md).
-
 **A. 집 고르기** (twin-studio `homes.json`)
 - `{ version, default, viewer, library, homes: [{ id, name, data, out }] }`. 경로는 twin-studio 루트 기준. 없으면 아파트 한 집(`data/apartment`, `apartment`).
 - twin-home은 `HOME_ID`로 집 하나를 불러온다. 정적 경로: `/twin/viewer/*` → `viewer`(모든 집 공용 뷰어), `/twin/lib/*` → `library`(모든 종류 GLB), `/twin/*` → 그 집 `out`. 대시보드 뷰어 주소는 그대로 `/twin/viewer/?live=auto&embed=1`.
@@ -188,7 +186,7 @@ interface DeviceHub {
 
 ## 설정 흐름 (5단계: 집 → 가전 → 위치 동기화 → 대시보드)
 
-상세 계획: [2026-11-05-setup-flow.md](superpowers/plans/2026-11-05-setup-flow.md). 대시보드는 관찰만 하고, 설정은 `/setup/`에서 한다.
+대시보드는 관찰만 하고, 설정은 `/setup/`에서 한다.
 
 **A. 집 실행 묶음** (`src/server/home/`): 집 하나에 딸린 허브·정책·에이전트·배치 편집기·시작 자리·폰 서버·두뇌·앱. 집을 바꾸면 통째로 닫고 새로 만든다. 본 서버 포트는 껍데기 서버(`src/server/shell.ts`)가 계속 잡고 `/api/setup*`만 직접 처리하며, 나머지 요청과 `/events`는 지금 묶음의 앱으로 넘긴다. 폰 서버는 처음 잡은 포트를 다시 쓴다. 바꾸는 동안 다른 API는 503, 설정 화면 파일은 그대로 나온다. 실패하면 이전 집으로 되돌린다.
 

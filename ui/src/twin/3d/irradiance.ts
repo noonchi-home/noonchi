@@ -1,4 +1,4 @@
-// 하늘 사진(등장방형 HDR, RGBA 4칸)의 방향별 조도와 반구광 색. 스파이크 docs/twin3d-spike/main.mjs 198~222줄 셈 그대로.
+// 하늘 사진(등장방형 HDR, RGBA 4칸)의 방향별 조도와 반구광 색.
 export type V3 = [number, number, number];
 
 type Dir = "up" | "down" | "px" | "nx" | "pz" | "nz";

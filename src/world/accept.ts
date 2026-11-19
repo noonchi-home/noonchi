@@ -1,5 +1,5 @@
 // accept.ts — 상태 없는 감지 거르기: 낱말 표의 종류와 그 종류의 최소 신뢰도만 본다.
-// World State와 인식 노드(World State를 갖지 않음)가 같은 함수로 같은 감지를 거른다(stage-queue 묶음 2).
+// World State와 인식 노드(World State를 갖지 않음)가 같은 함수로 같은 감지를 거른다.
 import type { Detection } from "../contract/observe.js";
 import { CLASSES, sameDrinkware, type ClassKey } from "./vocab.js";
 

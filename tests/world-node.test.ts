@@ -1,4 +1,4 @@
-// 집 상태 노드(src/world/node.ts, stage-queue 묶음 2 Task 3): World State를 바꾸는 곳은 이 노드 하나다.
+// 집 상태 노드(src/world/node.ts): World State를 바꾸는 곳은 이 노드 하나다.
 // 입력(VLM 답 /perception/scene·/world/input·/phone/heard·/device/changes와 YOLO 다리)을 노드 줄에 들어온 차례로 넣고,
 // 변화가 있으면 rev를 올려 /world/state와 /world/changes를 낸다. 가까이 보기는 VLM 합치기 뒤 /world/closer로 최종 id 표를 답한다.
 import { describe, expect, it } from "vitest";

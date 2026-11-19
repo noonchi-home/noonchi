@@ -1,4 +1,4 @@
-// 노드 통로 한 번 지나기의 지연을 잰다(stage-queue 묶음 2 지연 예산). 무거운 일이라 npm run heavy로 돌린다.
+// 노드 통로 한 번 지나기의 지연을 잰다. 무거운 일이라 npm run heavy로 돌린다.
 // 쓰는 법: npx tsx scripts/bus-latency.ts [--n 500] [--bytes 6000]   (REDIS_URL이 있으면 RedisBus도 잰다)
 // 잰 것: 발행 부르기 → 받는 노드 콜백까지(p50·p95·최대, ms). /world/changes(RELIABLE, 작은 몸)·/world/state(STATE, 집 상태 크기 몸).
 //   Redis가 있으면 PING 왕복과 맨 전달(통로 없이 같은 크기 값을 XADD → 막고 읽던 다른 연결의 XREAD가 깨어남, 통로가 넘을 수 없는 바닥)도.

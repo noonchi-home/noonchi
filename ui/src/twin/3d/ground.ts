@@ -1,4 +1,4 @@
-// 구운 땅 그림자(스파이크 docs/twin3d-spike/main.mjs 391~401줄, studio.bake.ground): 그림자 세기 그림을 검은 판의 alphaMap으로.
+// 구운 땅 그림자(studio.bake.ground): 그림자 세기 그림을 검은 판의 alphaMap으로.
 // 화면 = 바탕 × (1 − 세기 × strength). 판은 집 바닥보다 조금 아래에 깔고 맨 먼저 그린다.
 import * as THREE from "three";
 import { scene3d } from "../../../../src/design/tokens.ts";

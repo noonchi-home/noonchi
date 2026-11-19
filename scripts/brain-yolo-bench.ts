@@ -8,7 +8,7 @@
 //   npm run heavy -- npx tsx scripts/brain-yolo-bench.ts --jpeg <사진 파일·폴더>           # 그 사진으로(여러 장이면 돌아가며)
 //
 // --jpeg가 없으면 tests/fixtures/twin-pixels/hub-1920.png을 360×640으로 이어 붙여 만든 JPEG 한 장을 쓴다(tests/helpers/jpeg.ts).
-// 기준(계획 2026-11-12-seg-realtime Task 3): 한 장 전체가 dml 80ms 이하, cpu 8스레드 100ms 이하.
+// 기준: 한 장 전체가 dml 80ms 이하, cpu 8스레드 100ms 이하.
 
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";

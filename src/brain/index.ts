@@ -1,5 +1,5 @@
 // PAM(판단·반성, src/brain/pam/)·기록·반성(구현명세서 6.12·6.13)
-// 다른 도메인은 이 입구로만 가져온다(도메인 나누기 설계 2.4).
+// 다른 도메인은 이 입구로만 가져온다.
 export { Decider, decisionWorld } from "./decide.js";
 export { type FsmMemory, type PamMemory, edgeLearned, isoWithOffset, seedTrigger } from "./decision.js";
 export { PersonLane, stateOfWorld } from "./person.js";

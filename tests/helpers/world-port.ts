@@ -1,4 +1,4 @@
-// 관찰 흐름 시험 대역(stage-queue 묶음 2): World State를 바로 부르는 WorldPort.
+// 관찰 흐름 시험 대역: World State를 바로 부르는 WorldPort.
 // 넣는 일은 집 상태 노드와 같은 WorldInputs가 하고(같은 차례, 같은 감지 번호 표·가까이 보기 표), 변화는 통로 전 관찰 흐름처럼
 // world_change 기록(emit, 프레임마다 분석 없음 빼고)·onChanges·broadcastWorld로 바로 넘긴다. 가까이 보기 답은 VLM 합치기 뒤의 최종 표다.
 import type { BrainLog } from "../../src/contract/events.js";
