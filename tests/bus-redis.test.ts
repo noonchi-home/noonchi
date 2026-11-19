@@ -1,4 +1,4 @@
-// 실제 Redis 통로: REDIS_URL이 있을 때만 돈다(이 PC는 deploy/compose.dev.yaml의 noonchi-redis, CI·다른 PC는 건너뜀).
+// 실제 Redis 통로: REDIS_URL이 있을 때만 돈다(이 PC는 deploy/compose.dev.yaml의 noonchi-redis, 다른 PC는 건너뜀).
 // 시험마다 다른 기동 값을 쓰고(다른 시험의 열쇠는 지우지 않는다) 다른 시험·개발 서버와 섞이지 않게 한다.
 import { performance } from "node:perf_hooks";
 import { createClient } from "redis";

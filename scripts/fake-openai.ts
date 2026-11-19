@@ -1,4 +1,4 @@
-// 가짜 OpenAI 호환 서버: 정해진 답만 내고 밖으로 나가지 않는다. 자동 시험·CI·키 없는 컨테이너 확인에서 모델 주소 자리에 붙인다.
+// 가짜 OpenAI 호환 서버: 정해진 답만 내고 밖으로 나가지 않는다. 자동 시험·키 없는 컨테이너 확인에서 모델 주소 자리에 붙인다.
 //   npx tsx scripts/fake-openai.ts --port 8500 [--host 0.0.0.0]    (0이면 빈 포트, 첫 줄 "listening <포트>")
 // 답: 장면 스키마(scene_observation) → 감지 번호마다 contents_unknown과 VLM이 상자로 찾는 물건 감지(vocab VLM_FIND)마다 그 감지와 이은(det) 물건
 //     (World State 물건은 장면 VLM 물건으로만 생긴다. 시험이 정한 장면 답에 objects가 없어도 같은 물건을 더한다), 생각 말풍선 메시지(thought_messages) → 정한 메시지 하나, PAM 판단(task inference module) → 대기(-1),

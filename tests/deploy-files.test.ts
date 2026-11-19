@@ -151,9 +151,8 @@ describe("배포 파일", () => {
     expect(d.services.redis.command.slice(0, 5)).toEqual(["redis-server", "--appendonly", "no", "--save", ""]);
   });
 
-  it("저장소·CI에 Python PAM이 없다(services/pam, pytest, PAM 이미지)", () => {
+  it("저장소에 Python PAM이 없다(services/pam)", () => {
     expect(existsSync("services/pam")).toBe(false);
-    expect(read(".github/workflows/ci.yml")).not.toMatch(/pytest|services\/pam|noonchi-pam|setup-python/);
   });
 
   it("배포 파일은 deploy/에만 있고, compose는 저장소 뿌리를 문맥으로 deploy/Dockerfile을 빌드한다", () => {
@@ -185,15 +184,6 @@ describe("배포 파일", () => {
       const m = /^([A-Z0-9_]+)=(.*)$/.exec(line);
       if (m && /(KEY|TOKEN|SECRET)$/.test(m[1]!)) expect(m[2], m[1]).toBe("");
     }
-  });
-
-  it("CI: 화면 글·타입·시험·화면 빌드·이미지 빌드·키 없는 확인을 하고 이미지를 올리지 않는다", () => {
-    const ci = read(".github/workflows/ci.yml");
-    for (const s of ["npm run lint", "npx tsc --noEmit", "npm --prefix ui run typecheck", "npx vitest run", "npm --prefix ui test", "npm --prefix ui run build",
-      "docker build -f deploy/Dockerfile", "npx tsx scripts/container-smoke.ts", "node-version-file: .node-version"]) expect(ci).toContain(s);
-    expect(ci).not.toMatch(/docker push|push: true/);
-    const jobs = (parse(ci) as { jobs: Record<string, { env?: Record<string, string> }> }).jobs;
-    for (const [name, j] of Object.entries(jobs)) expect(j.env?.ONNXRUNTIME_NODE_INSTALL, name).toBe("skip");
   });
 
   it("배포 문서: GPU 서버 크기·Tailscale 인증서·두 모드의 에이전트 키·두 모델 확인·호출량", () => {
