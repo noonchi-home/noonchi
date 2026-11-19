@@ -103,8 +103,10 @@ describe("로봇 FSM 만들기(석준 님 predictor_fsm을 화살표로)", () =>
   it("사용자가 정한 습관과 같은 트리거인 후보, 배우는 행동이 아닌 후보는 통과로 와도 넣지 않는다", () => {
     const c = withClear();
     const water = CUP_FSM_MEMORY.states[0]!.next[1]!;
-    c.states[0]!.rules.push({ to: "drinking", action: "컵 치우기", candidates: [{ on: water.on }] }, { to: "away", action: "컵에 콜라 따라 주기", candidates: [{ on: "사용자가 외출하러 나간다." }] });
-    const out = adoptedFsm(c, new Set([adoptKey("drinking", "컵 치우기", { on: water.on }), adoptKey("drinking", "컵에 콜라 따라 주기", { on: "사용자가 외출하러 나간다." })]), CUP_FSM_MEMORY);
+    // 같은 트리거 = 같은 사건(on)과 조건(when): seed 물 채우기는 조건 「식탁에 앉아 있다.」가 있다
+    const same = { on: water.on, when: water.when! };
+    c.states[0]!.rules.push({ to: "drinking", action: "컵 치우기", candidates: [same] }, { to: "away", action: "컵에 콜라 따라 주기", candidates: [{ on: "사용자가 외출하러 나간다." }] });
+    const out = adoptedFsm(c, new Set([adoptKey("drinking", "컵 치우기", same), adoptKey("drinking", "컵에 콜라 따라 주기", { on: "사용자가 외출하러 나간다." })]), CUP_FSM_MEMORY);
     expect(out).toEqual(CUP_FSM_MEMORY);
   });
   it("말없이 TV 보기 시작 → 에어컨 켜기 후보는 통과하면 자리에 없음의 진입 화살표에 그 자리에서 붙고, 덥다·부채질 → 에어컨(정한 습관)은 같은 트리거 후보가 와도 그대로다", () => {
