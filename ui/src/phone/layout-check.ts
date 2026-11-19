@@ -67,15 +67,16 @@ export function clipIssues(texts: TextBox[]): string[] {
     .map((t) => `「${t.name}」 글이 잘려요(${t.scroll.width}×${t.scroll.height} / ${t.client.width}×${t.client.height})`);
 }
 
-/** 위 줄 명령 말풍선(box)과 그 안 글이 차지한 자리(text, 글 범위), 말풍선 안 좌우 여백 합(pad): 말풍선이 글 너비 + 여백보다 2px 넘게 넓으면
- *  (남은 너비로 늘어남) 문제, 화면 밖으로 나가면 문제다(2026-11-20 사용자 「말풍선 글자 크기만큼만 나오게 해 줘」). */
-export function bubbleIssues(view: { width: number; height: number }, bubbles: { name: string; box: Box; text: Box; pad: number }[]): string[] {
+/** 위 줄 명령 말풍선(box)과 그 안 글이 차지한 자리(text, 글 범위), 말풍선 안 좌우 여백 합(pad), 글 줄 수(lines): 한 줄 글인데 말풍선이 글 너비 + 여백보다
+ *  2px 넘게 넓으면(남은 너비로 늘어남) 문제, 화면 밖으로 나가면 문제다. 여러 줄로 바뀐 긴 명령은 남은 너비를 다 써도 된다
+ *  (2026-11-20 사용자 「말풍선 글자 크기만큼만 나오게 해 줘」). */
+export function bubbleIssues(view: { width: number; height: number }, bubbles: { name: string; box: Box; text: Box; pad: number; lines: number }[]): string[] {
   const size = `${view.width}×${view.height}`;
   return bubbles.flatMap((b) => {
     const width = Math.round(b.box.right - b.box.left);
     const text = Math.round(b.text.right - b.text.left);
     const issues: string[] = [];
-    if (width > text + b.pad + 2) issues.push(`「${b.name}」 말풍선이 글보다 넓어요(${width} / ${Math.round(text + b.pad)})`);
+    if (b.lines <= 1 && width > text + b.pad + 2) issues.push(`「${b.name}」 말풍선이 글보다 넓어요(${width} / ${Math.round(text + b.pad)})`);
     if (!inside(b.box, view.width, view.height)) issues.push(`「${b.name}」 말풍선이 화면 밖이에요(${where(b.box)} / ${size})`);
     return issues;
   });

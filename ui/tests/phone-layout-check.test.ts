@@ -91,13 +91,15 @@ describe("처음 화면 배치 검사", () => {
 // 2026-11-20 사용자 「말풍선 글자 크기만큼만 나오게 해 줘」: 위 줄 명령 말풍선은 글 너비(좌우 여백 더하기)만큼만 차지하고 화면 안에 있다
 describe("명령 말풍선 너비 검사", () => {
   it("말풍선이 글 너비 + 좌우 여백보다 넓으면(화면 너비로 늘어남) 문제, 글에 맞으면 괜찮다", () => {
-    const wide = { name: "명령", box: box(72, 36, 1264, 84), text: box(86, 48, 210, 72), pad: 28 };
+    const wide = { name: "명령", box: box(72, 36, 1264, 84), text: box(86, 48, 210, 72), pad: 28, lines: 1 };
     expect(bubbleIssues({ width: 1280, height: 720 }, [wide])).toEqual(["「명령」 말풍선이 글보다 넓어요(1192 / 152)"]);
     expect(bubbleIssues({ width: 1280, height: 720 }, [{ ...wide, box: box(72, 36, 224, 84) }])).toEqual([]);
   });
   it("긴 명령은 화면 안에서 줄을 바꾼다: 말풍선이 화면 밖으로 나가면 문제", () => {
-    const long = { name: "명령", box: box(72, 36, 374, 132), text: box(86, 48, 360, 120), pad: 28 };
+    const long = { name: "명령", box: box(72, 36, 374, 132), text: box(86, 48, 360, 120), pad: 28, lines: 3 };
     expect(bubbleIssues(PORTRAIT, [long])).toEqual([]);
+    // 줄을 바꾼 글은 줄 끝이 들쭉날쭉해 가장 긴 줄이 남은 너비보다 짧아도 괜찮다(2026-11-20 폰 화면 사진 place·start)
+    expect(bubbleIssues(PORTRAIT, [{ ...long, text: box(86, 48, 318, 96), lines: 2 }])).toEqual([]);
     expect(bubbleIssues(PORTRAIT, [{ ...long, box: box(72, 36, 420, 132), text: box(86, 48, 406, 120) }])).toEqual(["「명령」 말풍선이 화면 밖이에요(72,36–420,132 / 390×844)"]);
   });
 });

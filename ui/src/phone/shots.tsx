@@ -57,7 +57,8 @@ function measureOverlay(drawn: Drawn): string[] {
     const range = document.createRange();
     range.selectNodeContents(el);
     const pad = parseFloat(getComputedStyle(el.parentElement).paddingLeft) + parseFloat(getComputedStyle(el.parentElement).paddingRight);
-    return [{ name: el.dataset.phoneText!, box: rect(glass), text: rect(range), pad }];
+    const text = rect(range);
+    return [{ name: el.dataset.phoneText!, box: rect(glass), text, pad, lines: Math.max(1, Math.round((text.bottom - text.top) / lineHeight(el))) }];
   });
   return [...layoutIssues({ width: innerWidth, height: innerHeight }, targets, panels, drawn.arrows), ...clipIssues(texts), ...modalIssues(modals), ...bubbleIssues({ width: innerWidth, height: innerHeight }, bubbles)];
 }
