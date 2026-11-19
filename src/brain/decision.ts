@@ -240,8 +240,10 @@ export function validateFsmPrediction(value: Json, memory: FsmMemory, tasks: str
   const p = object(value, ["observation", "reasoning", "state", "from", "next_index"], "prediction");
   text(p.observation, "prediction.observation");
   text(p.reasoning, "prediction.reasoning");
-  const state = text(p.state, "prediction.state");
+  const said = text(p.state, "prediction.state");
   const byId = (id: string) => memory.states.find((s) => s.id === id);
+  // 기억에 있는 상태 id에 ~를 붙여 오면(~drinking) 그 상태로 읽는다(2026-11-19 tall pfsm5). 기억에 없는 활동의 임시 상태(~using_laptop)는 그대로
+  const state = said.startsWith(TEMP_STATE) && byId(said.slice(TEMP_STATE.length)) ? said.slice(TEMP_STATE.length) : said;
   if (!byId(state) && !isTempState(memory, state)) throw new ContractError(`prediction.state: unknown state identifier ${pyRepr(state)}`);
   const index = p.next_index;
   if (typeof index !== "number" || !Number.isInteger(index) || index < -1) throw new ContractError("prediction.next_index: expected an integer from -1");

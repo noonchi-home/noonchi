@@ -111,8 +111,13 @@ describe("사람 상태 FSM 판단 답", () => {
     for (const bad of [
       { state: "~using_laptop", from: "away", next_index: 1 },   // 이름 있는 도착(watching_tv) 화살표
       { state: "~flying", from: null, next_index: -1 },           // 모르는 하는 일 값
-      { state: "~drinking", from: null, next_index: -1 },         // 기억 상태가 가진 하는 일 값
+      { state: "~eating", from: null, next_index: -1 },           // 기억 상태(drinking)가 가진 하는 일 값(상태 id는 아님)
     ]) expect(parsePrediction(ok(bad), tasks, fsm(CUP_FSM_MEMORY, "away")).status).toBe("invalid");
+  });
+  // 2026-11-19 tall pfsm5: 모델이 아는 상태 앞에 ~를 붙여 「~drinking」으로 답해 판단이 실패했다
+  it("기억에 있는 상태 id에 ~를 붙여 오면(~drinking) 그 상태로 읽는다. 화살표 검사도 그 상태로 한다", () => {
+    expect(parsePrediction(ok({ state: "~drinking", from: null, next_index: -1 }), tasks, fsm(CUP_FSM_MEMORY, "away"))).toMatchObject({ status: "valid", prediction: { state: "drinking", from: null, next_index: -1 } });
+    expect(parsePrediction(ok({ state: "~away", from: "drinking", next_index: 0 }), tasks, fsm(LEARNED_FSM_MEMORY, "drinking"))).toMatchObject({ status: "valid", selected_action: "컵 치우기", prediction: { state: "away", from: "drinking", next_index: 0 } });
   });
   it("없는 상태, 넘는 번호, 도착 상태가 화살표와 다름, \"*\" 화살표인데 같은 상태, task_index 칸이 있으면 invalid다", () => {
     for (const bad of [
