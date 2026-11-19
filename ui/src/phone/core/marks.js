@@ -1,5 +1,6 @@
-// 초점 고리 그리기. 화면(capture.js)과 JPEG 인코딩 워커(encoder-worker.js)가 함께 쓴다(DOM 없음).
-// 색·굵기는 src/design/tokens.ts(원본 src/design/tokens.json): 영상 위 표시는 세 겹(바깥 숯색, 흰 테, brand 심)이라 어떤 바탕에서도 보인다.
+// 명령 대상 표시 그리기. 화면(capture.js)과 JPEG 인코딩 워커(encoder-worker.js)가 함께 쓴다(DOM 없음).
+// 화면 안 대상에는 고리를 그리지 않고 이름표만, 화면 밖 대상은 그쪽 세모와 이름표다(2026-11-19 사용자 「동그란 원 너무 거슬리는데」, 실제 폰 화면 draw.ts처럼 고리 없음).
+// 색·굵기는 src/design/tokens.ts(원본 src/design/tokens.json): 세모는 바깥 숯색·흰 테로 둘러 어떤 바탕에서도 보인다.
 
 import { font, twin } from "../../../../src/design/tokens.ts";
 
@@ -11,7 +12,7 @@ export function markFont(width) {
   return `bold ${Math.max(12, Math.round(width / 40))}px ${canvasFont}`;
 }
 
-/** 초점 고리(화면 안)·가장자리 화살표(화면 밖)와 이름표. ctx는 CanvasRenderingContext2D 또는 OffscreenCanvas 것. */
+/** 가장자리 화살표(화면 밖)와 이름표. 화면 안 대상은 이름표만. ctx는 CanvasRenderingContext2D 또는 OffscreenCanvas 것. */
 export function drawMarks(ctx, marks, width, height) {
   const r = Math.max(12, width * 0.05);
   // 심 굵기는 화면 폭에 맞추고, 흰 테·숯색은 그 비율대로 바깥에 두른다
@@ -43,14 +44,6 @@ export function drawMarks(ctx, marks, width, height) {
       ctx.stroke();
       ctx.fillStyle = focus.offscreenArrow;
       ctx.fill();
-    } else {
-      for (const [w, c] of [[edge, focus.edge.color], [casing, focus.casing.color], [core, focus.ring.color]]) {
-        ctx.beginPath();
-        ctx.arc(x, y, r, 0, Math.PI * 2);
-        ctx.lineWidth = w;
-        ctx.strokeStyle = c;
-        ctx.stroke();
-      }
     }
     const label = m.label;
     const tw = ctx.measureText(label).width + 10;

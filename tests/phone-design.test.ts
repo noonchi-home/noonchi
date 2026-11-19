@@ -1,4 +1,4 @@
-// 폰 초점 그림(ui/src/phone/core/marks.js): 색은 src/design/tokens.ts, 워커 글꼴은 ui 빌드가 묶은 Noto Sans KR Variable.
+// 폰 화면 프레임 명령 대상 그림(ui/src/phone/core/marks.js): 색은 src/design/tokens.ts, 워커 글꼴은 ui 빌드가 묶은 Noto Sans KR Variable.
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
@@ -23,14 +23,11 @@ function recorder() {
 }
 
 describe("폰 초점 표시(marks.js)", () => {
-  it("초점 고리는 세 겹: 숯색 → 흰 테 → brand 순서로 굵기를 줄이며 그린다. 이름표는 scrim-phone 위 on-scrim", () => {
+  // 2026-11-19 사용자 「동그란 원 너무 거슬리는데」 「완전히 제거해 줘」: 화면 안 대상에는 고리가 없다
+  it("화면 안 대상은 고리 없이 이름표만: scrim-phone 위 on-scrim", () => {
     const { ctx, ops } = recorder();
     drawMarks(ctx, [{ id: "a", label: "컵", u: 0.5, v: 0.5, off: false, angle: 0 }], 640, 480);
-    const strokes = ops.filter((o) => o.startsWith("stroke"));
-    expect(strokes.map((o) => o.split(" ")[1])).toEqual([color.charcoal, color["twin-casing"], color.brand]);
-    const widths = strokes.map((o) => Number(o.split(" ")[2]));
-    expect(widths[0]).toBeGreaterThan(widths[1]!);
-    expect(widths[1]).toBeGreaterThan(widths[2]!);
+    expect(ops.filter((o) => o.startsWith("stroke"))).toEqual([]);
     expect(ops).toContain(`rect ${rgba["scrim-phone"]}`);
     expect(ops).toContain(`text ${color["on-scrim"]}`);
     expect(ctx.font).toContain("Noto Sans KR Variable");
