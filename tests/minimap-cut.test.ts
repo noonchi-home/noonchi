@@ -37,9 +37,9 @@ describe("미니맵 이은 영상(minimap-cut)", () => {
     expect(cutTime(17_000, segs)).toBeNull();
   });
 
-  it("장면: 재생 전·붙잡기 장면을 빼고 이은 시각을 붙이며, 이은 시각이 앞으로 가는 장면만 받은 차례대로 둔다. 길이는 조각 길이 합(13초)", () => {
+  it("장면: 재생 전·붙잡기 장면을 빼고 이은 시각을 붙이며, 이은 시각이 앞으로 가는 장면만 받은 차례대로 둔다. 길이는 마지막 장면 + 한 장(12.95초, 조각 합 13초 안)", () => {
     const { frames, endMs } = cutFrames(RUN);
-    expect(endMs).toBe(13_000);
+    expect(endMs).toBe(12_950);
     // 녹화 500 + i×100 → 서버 시각, 영상 시각 = 서버 시각 − 1000
     expect(frames[0]).toEqual({ file: "dash/000006.jpg", ms: 0 });
     expect(frames.every((f, i) => i === 0 || f.ms > frames[i - 1]!.ms)).toBe(true);
@@ -58,6 +58,17 @@ describe("미니맵 이은 영상(minimap-cut)", () => {
     expect(cutFrames(back, 200).frames).toEqual([{ file: "a.jpg", ms: 300 }, { file: "d.jpg", ms: 400 }]);
   });
 
+  // Codex(b5da6c36) P3: 계획이 끝나 마지막 영상 중간에 녹화를 끝냈는데 원본 영상 길이까지 내 녹화 안 된 나머지가 마지막 장면으로 늘어났다
+  it("녹화가 마지막 조각 중간에 끝나면 녹화된 마지막 장면의 이은 시각(+ 한 장)까지만 낸다(조각 끝까지 늘이지 않는다)", () => {
+    const cut = { ...RUN, frames: RUN.frames.filter((f) => f.ms <= 14_500) };
+    const { frames, endMs } = cutFrames(cut);
+    expect(frames.at(-1)!.ms).toBe(10_000);
+    expect(endMs).toBe(10_050);
+    expect(cutFrames(cut, 0, 100).endMs).toBe(10_100);
+    // 녹화가 조각 끝을 지나면 조각 길이 합을 넘지 않는다
+    expect(cutFrames(RUN, 0, 1000).endMs).toBe(13_000);
+  });
+
   const ffmpegHere = spawnSync("ffmpeg", ["-version"]).status === 0 && spawnSync("ffprobe", ["-version"]).status === 0;
   it.skipIf(!ffmpegHere)("makeCut: 녹화 장면 폴더(run.json)에서 이은 영상을 초당 20장·녹화 크기로 만들고, 두 번 만들어도 같은 파일이다. 장면 폴더는 그대로 둔다", async () => {
     const dir = mkdtempSync(join(tmpdir(), "minimap-cut-"));
@@ -68,12 +79,12 @@ describe("미니맵 이은 영상(minimap-cut)", () => {
       const a = join(dir, "..", `${dir.split(/[\\/]/).at(-1)}-a.minimap.mp4`);
       const b = join(dir, "..", `${dir.split(/[\\/]/).at(-1)}-b.minimap.mp4`);
       try {
-        expect(await makeCut(dir, a, { fps: 20 })).toMatchObject({ ok: true, seconds: 13 });
+        expect(await makeCut(dir, a, { fps: 20 })).toMatchObject({ ok: true, seconds: 12.95 });
         expect(await makeCut(dir, b, { fps: 20 })).toMatchObject({ ok: true });
         const probe = spawnSync("ffprobe", ["-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height,r_frame_rate,duration", "-of", "json", a], { encoding: "utf8" });
         const s = (JSON.parse(probe.stdout) as { streams: Record<string, unknown>[] }).streams[0]!;
         expect(s).toMatchObject({ width: 64, height: 36, r_frame_rate: "20/1" });
-        expect(Number(s.duration)).toBeCloseTo(13, 1);
+        expect(Number(s.duration)).toBeCloseTo(12.95, 1);
         expect(readFileSync(a).equals(readFileSync(b))).toBe(true);
         expect(existsSync(join(dir, "run.json")) && existsSync(join(dir, RUN.frames[0]!.file))).toBe(true);
       } finally {

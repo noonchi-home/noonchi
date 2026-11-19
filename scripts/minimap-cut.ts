@@ -39,8 +39,10 @@ export function cutTime(v: number, segs: readonly Segment[]): number | null {
   return s ? s.at + (v - s.from) : null;
 }
 
-/** 녹화 장면 → 이은 장면: 받은 차례대로 이은 시각이 앞 장면보다 앞으로 가는 장면만(ms = 이은 시각). endMs는 조각 길이 합(끝없는 조각이면 마지막 장면 뒤 한 장). */
-export function cutFrames(run: CutRun, lagMs = 0): { frames: Frame[]; endMs: number } {
+/** 녹화 장면 → 이은 장면: 받은 차례대로 이은 시각이 앞 장면보다 앞으로 가는 장면만(ms = 이은 시각).
+ *  endMs는 녹화된 마지막 장면의 이은 시각 + tailMs(한 장, 기본 초당 20장의 50ms)이고 조각 길이 합을 넘지 않는다:
+ *  계획이 끝나 마지막 영상 중간에 녹화를 끝내도 녹화 안 된 나머지를 마지막 장면으로 늘이지 않는다(Codex b5da6c36 P3). */
+export function cutFrames(run: CutRun, lagMs = 0, tailMs = 50): { frames: Frame[]; endMs: number } {
   const toVideo = videoClock(run.t0, run.sync);
   const segs = playSegments(run.firstDurationMs, run.clips);
   const frames: Frame[] = [];
@@ -50,7 +52,8 @@ export function cutFrames(run: CutRun, lagMs = 0): { frames: Frame[]; endMs: num
     frames.push({ file: f.file, ms: Math.round(c) });
   }
   const last = segs.at(-1);
-  const endMs = !last ? 0 : Number.isFinite(last.to) ? last.at + (last.to - last.from) : (frames.at(-1)?.ms ?? 0) + 100;
+  const total = last ? last.at + (last.to - last.from) : 0;
+  const endMs = frames.length ? Math.min(total, frames.at(-1)!.ms + tailMs) : 0;
   return { frames, endMs };
 }
 
@@ -59,9 +62,10 @@ export async function makeCut(dir: string, out: string, o: { fps?: number; lagMs
   const file = join(dir, CUT_RUN_FILE);
   if (!existsSync(file)) return { ok: false, why: `판 기록이 없어요: ${file}` };
   const run = JSON.parse(readFileSync(file, "utf8")) as CutRun;
-  const { frames, endMs } = cutFrames(run, o.lagMs ?? 0);
+  const fps = o.fps ?? 20;
+  const { frames, endMs } = cutFrames(run, o.lagMs ?? 0, 1000 / fps);
   if (!frames.length) return { ok: false, why: "재생 중 장면이 없어요" };
-  const made = await encodeDemo(dir, { endMs, frames: { dash: frames }, lost: 0 }, out, { dashSize: run.size, fps: o.fps ?? 20, height: run.size[1], keepFrames: true, ...(o.ffmpeg ? { ffmpeg: o.ffmpeg } : {}) });
+  const made = await encodeDemo(dir, { endMs, frames: { dash: frames }, lost: 0 }, out, { dashSize: run.size, fps, height: run.size[1], keepFrames: true, ...(o.ffmpeg ? { ffmpeg: o.ffmpeg } : {}) });
   return made.ok ? { ok: true, seconds: endMs / 1000, frames: frames.length } : made;
 }
 
