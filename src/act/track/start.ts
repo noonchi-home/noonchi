@@ -65,6 +65,8 @@ export class Starter extends Part {
     if (!d.action) return this.note(d, EXEC_TEXT.wait);
     // 미리 세운 목표와 같은 행동인데 사람이 떠난 뒤의 판단이 아니면 목표가 맡는다(사람이 떠나면 판단을 다시 부른다, goal.ts)
     if (core.goal.holds(d)) return this.note(d, EXEC_TEXT.goalWait);
+    // 사람이 떠나 목표가 판단을 부른 뒤에는 떠나기 전 관찰로 고른 다른 행동을 받지 않는다(말로 한 부탁·비상은 받는다)
+    if (this.beforeLeave(d)) return this.note(d, EXEC_TEXT.beforeLeave);
     // 계획이 끝난 뒤 사용자 위치 확인·충전 자리로 가는 동안은 새 일을 미룬다(충전 자리에서 시작한다, dock.ts).
     // 비상이면 busy가 거두고, 사람이 말로 한 부탁(들은 말이 든 판단)은 복귀를 멈추고 바로 받는다(그 들은 말은 다시 판단에 가지 않는다)
     if (core.dock.busy()) {
@@ -133,6 +135,12 @@ export class Starter extends Part {
     }));
   }
 
+  /** 사람이 떠나 목표가 판단을 부른 뒤 온, 떠나기 전 관찰의 다른 행동 판단인가(goal.ts beforeLeave). 사람이 말로 한 부탁과 비상은 아니다. */
+  private beforeLeave(d: DecisionRecord): boolean {
+    return this.core.goal.beforeLeave(d) && !saidIn(d.textSent).length
+      && !emergencyOf({ world: this.o.world(), offNotices: this.core.safety.offTrack().notices });
+  }
+
   /** 진행 중 계획이 손대는 단계(집기·내려놓기·들고 가기)라 이 판단으로 바꾸지 않는가: 다른 행동이고, 사람이 말로 한 부탁(들은 말이 든 판단)도 비상도 아니다. */
   private handsOn(d: DecisionRecord): boolean {
     const core = this.core;
@@ -191,6 +199,11 @@ export class Starter extends Part {
     if (this.handsOn(d)) {
       this.ungap(d, job.at);
       return core.emit(planIdOf(d.id), "failed", EXEC_TEXT.handling);
+    }
+    // 만드는 사이 사람이 떠나 목표가 판단을 불렀으면 떠나기 전 판단의 계획은 시작하지 않는다(판단 받을 때와 같은 지킴)
+    if (this.beforeLeave(d)) {
+      this.ungap(d, job.at);
+      return core.emit(planIdOf(d.id), "failed", EXEC_TEXT.beforeLeave);
     }
     const open = core.open();
     // 새 계획이 있으면 PlanHub.onDecision이 지금 계획을 취소로 닫고 supersedes를 단다

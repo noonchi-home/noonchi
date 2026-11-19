@@ -656,6 +656,37 @@ describe("미리 세운 목표: 실제 영상 g1에서 드러난 것(2026-11-18)
     }
   });
 
+  // 2026-11-20 wide-mug pfsm10: 마시는 중 고른 물 채우기 계획이 사람이 떠난 1.8초 뒤에야 만들어져 「컵 가까이 가 주세요」를 냈다가 곧바로 컵 치우기로 바뀌었다
+  it("사람이 떠나 목표가 판단을 부른(fired) 뒤에는 떠나기 전 관찰로 고른 다른 행동을 시작하지 않는다: 그 계획이 떠난 뒤에 만들어져도, 판단이 떠난 뒤에 와도 폰 명령 없이 막고 목표 계획으로 시작한다", async () => {
+    const WATER = "컵에 물 채워 주기";
+    llm.scripts[WATER] = () => [planCalls(fillSteps({ fridge: "fridge_1", table: "table_1", cup: "cup_1", drink: "물" }))];
+    try {
+      const s = goalSetup({ floor: fridgeFloor() });
+      s.person({ act: "drinking" });
+      s.tick();
+      await s.t.idle();
+      expect(s.t.goal()?.prep).toBe("ready");
+      // 떠나기 전 판단: 계획을 만드는 사이 사람이 떠난다
+      s.t.onDecision(pam("pam-4", 4, s.clock.t, WATER, true));
+      s.tick();
+      s.gone();
+      await s.t.idle();
+      expect(s.t.goal()).toMatchObject({ status: "fired" });
+      expect(s.commands()).toEqual([]);
+      expect(s.logs.filter((l) => l.type === "execution" && l.plan_id === "plan:pam-4").at(-1)).toMatchObject({ state: "failed", text: EXEC_TEXT.beforeLeave });
+      // 떠나기 전에 보낸 판단이 떠난 뒤에 와도 받지 않는다
+      await s.decide(pam("pam-5", 5, s.clock.t - 500, WATER, true));
+      expect(s.logs.at(-1)).toMatchObject({ type: "execution", plan_id: "plan:pam-5", state: "decided", text: EXEC_TEXT.beforeLeave });
+      expect(s.commands()).toEqual([]);
+      s.tick();
+      await s.decide(pam("pam-6", 6, s.clock.t));
+      expect(s.commands()[0]).toMatchObject({ id: "plan:pam-6", text: "식탁으로 가 주세요" });
+      expect(s.goals.at(-1)).toMatchObject({ status: "used", reason: null });
+    } finally {
+      delete llm.scripts[WATER];
+    }
+  });
+
   it("다른 행동의 계획이 실제로 시작(running)하면 그때 목표를 「다른 일이 맡음」으로 버린다", async () => {
     const s = await ready();
     await s.decide(pam("pam-5", 5, s.clock.t, "사용자에게 물어보기", true));

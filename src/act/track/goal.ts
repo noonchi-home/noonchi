@@ -287,6 +287,14 @@ export class GoalWatch extends Part {
     return !!v && d.action === v.action && !this.afterLeave(d, v);
   }
 
+  /** 사람이 떠나 목표가 판단을 부른(fired) 뒤, 떠나기 전 관찰로 고른 다른 행동인가(떠난 것이 반영된 뒤 보낸 판단이 아니다).
+   *  그 계획은 시작하지 않는다: 떠남을 본 판단이 목표 행동을 고르거나, fireWaitMs 안에 고르지 않으면 목표를 버리고 지금 길로 간다
+   *  (2026-11-20 wide-mug pfsm10: 마시는 중 고른 물 채우기 계획이 떠난 1.8초 뒤 만들어져 「컵 가까이 가 주세요」를 냈다가 곧 컵 치우기로 바뀌었다). */
+  beforeLeave(d: DecisionRecord): boolean {
+    const v = this.goal?.view;
+    return !!v && v.status === "fired" && d.action !== v.action && !this.afterLeave(d, v);
+  }
+
   /** 떠난 것이 집 상태에 반영된 뒤 보낸 판단인가: 목표가 떠남을 냈고(fired), 그 판단의 관찰에 사람이 없고, 사람이 사라진 때(gone_ms) 뒤에 불렀다.
    *  목표가 컵을 기다리다 떠남을 늦게 내도(fired_ms) 그 앞에 보낸 판단을 받는다(2026-11-18 glass d1: 컵 확정 0.01초 앞에 보낸 판단을 기록만 해 1.6초 늦었다).
    *  사람이 떠난 사진을 찍은 뒤라도 집 상태에 들어오기 전에 부른 판단은 관찰에 사람이 보여 받지 않는다. */

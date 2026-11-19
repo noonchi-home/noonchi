@@ -264,6 +264,7 @@ export const EXEC_TEXT = {
   docking: "충전 자리로 가는 중이라 새 일을 미룸",
   /** 미리 세운 목표(src/act/track/goal.ts)와 같은 행동을 사람이 떠나기 전에 고른 판단: 목표가 맡는다(사람이 떠나면 판단을 다시 부른다). */
   goalWait: "다 쓰고 떠나면 할 일로 두었어요",
+  beforeLeave: "사람이 떠나기 전 판단이라 쓰지 않음",
   goalSafety: "안전 알림이 있어 시작하지 않아요",
 } as const;
 
