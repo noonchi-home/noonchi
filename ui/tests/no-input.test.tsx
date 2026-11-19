@@ -1,4 +1,4 @@
-// 대시보드(허브 화면)에는 입력창이 없다(CLAUDE.md 규칙 표). 요청·질문·답·승인은 폰 음성으로 오간다.
+// 대시보드(허브 화면)에는 입력창이 없다. 요청·질문·답·승인은 폰 음성으로 오간다.
 import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";

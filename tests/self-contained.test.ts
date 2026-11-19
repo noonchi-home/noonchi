@@ -81,7 +81,7 @@ describe("한 저장소", () => {
   });
 
   it("문서에 옛 PAM 서비스 자리·예전 추론 모드·OpenRouter 길이 없고, src/brain/pam에 안내가 있다", () => {
-    for (const f of ["docs/reference.md", "docs/deploy.md", "docs/pam-interface.md", "README.md", "CLAUDE.md", "src/brain/pam/README.md"]) {
+    for (const f of ["docs/reference.md", "docs/deploy.md", "docs/pam-interface.md", "README.md", "src/brain/pam/README.md"]) {
       const text = withoutMigration(readFileSync(join(ROOT, f), "utf8"));
       expect(text, f).not.toMatch(/services\/pam|\bPAM_URL\b|\bPAM_HOST_PORT\b|:8300|PAM_LLM_PROVIDER|OPENROUTER_API_KEY|qwen\/qwen3\.5-27b|INFERENCE_MODE=(mock|live)\b|`(mock|live)`\(/);
     }
