@@ -2,7 +2,7 @@
 // 흩어진 곳(src/devices/mapping.ts KIND_PROFILES·KIND_LABELS·TYPE_RULES, src/agent/search.ts KIND_SYNONYMS, src/agent/policy.ts CONFIRM_RULES·RISKY_ON_NAMES,
 // src/act/labels.ts CAUTION_LINE, src/agent/planTools.ts DEVICE_ACTS, src/devices/thinq/appliance.ts PAIRABLE_KINDS, src/world/sight.ts·state/·relations.ts)은 여기서 파생해 읽는다.
 // 새 종류는 여기 한 줄 + 집 파일(twin/data/homes/<집>/added_devices.json) 한 줄(docs/reference.md 「새 종류 추가하는 법」). 등록부 밖 종류별 표는 tests/kinds-registry.test.ts가 막는다.
-// 런타임 import 없음(type import만). ui 타입 검사가 src/contract/devices.ts를 거쳐 읽으므로 Dockerfile ui 단계가 이 파일과 src/world/vocab.ts를 COPY한다.
+// 런타임 import 없음(type import만). ui 타입 검사가 src/contract/devices.ts를 거쳐 읽으므로 deploy/Dockerfile ui 단계가 이 파일과 src/world/vocab.ts를 COPY한다.
 import type { Capability, ClimateMode, CommandType, FanSpeed } from "../contract/devices.js";
 import type { ThinqAdapter } from "./types.js";
 import type { DeviceLongKey, DeviceStateKey, FixtureClass, SightRule } from "../world/vocab.js";

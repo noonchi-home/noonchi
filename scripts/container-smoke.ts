@@ -24,6 +24,8 @@ import { encodeFramePacket } from "../src/phone/packet.js";
 import { fetchRetry } from "../src/shared/net.js";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
+/** compose 파일. 그 안의 상대 경로(빌드 문맥 ..)는 deploy/ 기준이다. */
+const COMPOSE_FILE = join(ROOT, "deploy", "compose.yaml");
 let PORTS: CheckPorts;
 try { PORTS = checkPorts(process.env); } catch (e) { console.error((e as Error).message); process.exit(2); }
 const HUB_URL = `http://127.0.0.1:${PORTS.hub}`;
@@ -45,13 +47,13 @@ const tmp = mkdtempSync(join(tmpdir(), "noonchi-check-"));
 const envFile = join(tmp, "check.env");
 writeFileSync(envFile, Object.entries(CHECK_ENV).map(([k, v]) => `${k}=${v}\n`).join(""));
 /** compose 서비스가 받는 설정 이름. 셸에 같은 이름이 있으면 compose가 env 파일보다 셸 값을 넘기므로 지운다. */
-const SERVICE_ENV = new Set(Object.values((parse(readFileSync(join(ROOT, "compose.yaml"), "utf8"), { merge: true }) as { services: Record<string, { environment?: Record<string, unknown> }> }).services)
+const SERVICE_ENV = new Set(Object.values((parse(readFileSync(COMPOSE_FILE, "utf8"), { merge: true }) as { services: Record<string, { environment?: Record<string, unknown> }> }).services)
   .flatMap((svc) => Object.keys(svc.environment ?? {})));
 // 셸의 키·토큰 값과 서비스가 받는 이름은 넘기지 않는다
 const shell = Object.fromEntries(Object.entries(process.env).filter(([k]) => !/(KEY|TOKEN|SECRET)$/i.test(k) && !SERVICE_ENV.has(k)));
 const env = { ...shell, NOONCHI_PORT: String(PORTS.hub), NOONCHI_PHONE_PORT: String(PORTS.phone) };
 const compose = (args: string[], capture = false) =>
-  spawnSync("docker", ["compose", "--env-file", envFile, "-p", "noonchi-check", "--profile", "check", ...args],
+  spawnSync("docker", ["compose", "--env-file", envFile, "-f", COMPOSE_FILE, "-p", "noonchi-check", "--profile", "check", ...args],
     { cwd: ROOT, env, encoding: "utf8", stdio: capture ? "pipe" : "inherit" });
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -59,7 +61,7 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 function keyLeaks(): string[] {
   const keysFile = join(tmp, "keys.env");
   writeFileSync(keysFile, Object.keys(KEY_OWNERS).map((k) => `${k}=check-${k.toLowerCase()}\n`).join(""));
-  const r = spawnSync("docker", ["compose", "--env-file", keysFile, "-p", "noonchi-check", "--profile", "gpu", "--profile", "check", "config", "--format", "json"],
+  const r = spawnSync("docker", ["compose", "--env-file", keysFile, "-f", COMPOSE_FILE, "-p", "noonchi-check", "--profile", "gpu", "--profile", "check", "config", "--format", "json"],
     { cwd: ROOT, env, encoding: "utf8" });
   if (r.status !== 0) return ["docker compose config 실패"];
   const services = (JSON.parse(r.stdout) as { services: Record<string, { environment?: Record<string, string | null> }> }).services;

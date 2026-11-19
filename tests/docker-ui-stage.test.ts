@@ -1,4 +1,4 @@
-// Dockerfile 화면 빌드 단계(FROM … AS ui)가 ui 빌드(tsc --noEmit + vite build)가 ui/ 밖에서 읽는 경로를 모두 복사하는지 본다.
+// deploy/Dockerfile 화면 빌드 단계(FROM … AS ui)가 ui 빌드(tsc --noEmit + vite build)가 ui/ 밖에서 읽는 경로를 모두 복사하는지 본다.
 // 이 PC에는 저장소 전체가 있어 화면 빌드가 늘 통과하므로, 빠진 COPY는 올린 뒤 CI image에서야 드러난다(2026-11-09 twin/ 두 번).
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, join, relative, resolve, sep } from "node:path";
@@ -33,7 +33,7 @@ function uiOutsideReads(): string[] {
   return [...out].sort();
 }
 
-/** Dockerfile ui 단계의 COPY 원본(--from 없는 것). */
+/** deploy/Dockerfile ui 단계의 COPY 원본(--from 없는 것). */
 function uiStageCopies(dockerfile: string): string[] {
   const lines = dockerfile.split(/\r?\n/).map((l) => l.trim());
   const start = lines.findIndex((l) => /^FROM\s+\S+\s+AS\s+ui$/i.test(l));
@@ -51,7 +51,7 @@ const missing = (dockerfile: string, reads: string[]) => {
   return reads.filter((r) => !copies.some((c) => r === c || r.startsWith(`${c}/`)));
 };
 
-describe("Dockerfile 화면 빌드 단계", () => {
+describe("deploy/Dockerfile 화면 빌드 단계", () => {
   const reads = uiOutsideReads();
 
   it("ui 밖에서 읽는 경로를 찾는다(트윈 뷰어 별칭, 서버 계약, 3D 트윈 시험의 장면 JSON)", () => {
@@ -61,8 +61,8 @@ describe("Dockerfile 화면 빌드 단계", () => {
   });
 
   it("ui 밖에서 읽는 경로를 모두 COPY한다", () => {
-    const gone = missing(read("Dockerfile"), reads);
-    expect(gone, `Dockerfile 화면 빌드 단계(FROM … AS ui)에 COPY가 없는 ui 밖 경로: ${gone.join(", ")}. 그 단계에 \`COPY <폴더> <폴더>\`를 더하세요.`).toEqual([]);
+    const gone = missing(read("deploy/Dockerfile"), reads);
+    expect(gone, `deploy/Dockerfile 화면 빌드 단계(FROM … AS ui)에 COPY가 없는 ui 밖 경로: ${gone.join(", ")}. 그 단계에 \`COPY <폴더> <폴더>\`를 더하세요.`).toEqual([]);
   });
 
   it("2026-11-09 CI를 깬 옛 단계(twin/ 없음)를 잡는다", () => {

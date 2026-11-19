@@ -36,5 +36,5 @@ jobs:
         with:
           node-version-file: .node-version
       - run: npm ci
-      - run: docker build -t noonchi:ci .
+      - run: docker build -f deploy/Dockerfile -t noonchi:ci .
       - run: npx tsx scripts/container-smoke.ts

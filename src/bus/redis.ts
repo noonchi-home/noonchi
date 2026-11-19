@@ -44,7 +44,7 @@ export async function assertNoPersistence(get: (name: string) => Promise<string>
   const appendonly = await get("appendonly");
   const save = await get("save");
   if (appendonly !== "no" || save !== "") {
-    throw new Error(`Redis 디스크 저장이 켜져 있어요(appendonly=${appendonly}, save=${JSON.stringify(save)}). redis-server를 --appendonly no --save ""로 띄우세요(compose.yaml·compose.dev.yaml redis command)`);
+    throw new Error(`Redis 디스크 저장이 켜져 있어요(appendonly=${appendonly}, save=${JSON.stringify(save)}). redis-server를 --appendonly no --save ""로 띄우세요(deploy/compose.yaml·deploy/compose.dev.yaml redis command)`);
   }
 }
 

@@ -1,3 +1,4 @@
+# 빌드 문맥(저장소 뿌리) 기준 경로다. BuildKit은 deploy/Dockerfile 옆의 이 파일을 쓴다.
 .env
 .env.*
 !.env.example

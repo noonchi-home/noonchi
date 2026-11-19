@@ -39,7 +39,7 @@ function install(dir: string): void {
   const diff = found.filter((f) => f.got !== f.sha256);
   if (diff.length) {
     for (const f of diff) console.error(`sha256이 표와 다릅니다: ${f.src}\n  받은 ${f.got}\n  표   ${f.sha256}`);
-    console.error("넣지 않았어요. 이 파일을 쓰려면 src/observe/detector.ts 표와 Dockerfile의 sha256을 새 값으로 바꾸고 다시 돌리세요.");
+    console.error("넣지 않았어요. 이 파일을 쓰려면 src/observe/detector.ts 표와 deploy/Dockerfile의 sha256을 새 값으로 바꾸고 다시 돌리세요.");
     process.exit(1);
   }
   mkdirSync(MODELS_DIR, { recursive: true });
