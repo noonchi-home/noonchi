@@ -213,6 +213,12 @@ Once a day, the day's records are grouped into activity chunks, and PAM reflecti
 
 ---
 
+## License
+
+The code is licensed under AGPL-3.0 ([LICENSE](LICENSE)). The YOLO26 models in `models/` are AGPL-3.0 (Ultralytics). The seven PAM prompts in `src/brain/pam/prompts/paper/` are quoted from Lee et al., arXiv:2610.21211, under CC BY 4.0. Other notices are in [THIRD_PARTY.md](THIRD_PARTY.md).
+
+---
+
 ## Getting Started
 
 ```bash
