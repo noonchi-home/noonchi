@@ -6,7 +6,8 @@ import type { WorldChange, WorldView } from "../contract/world.js";
 import { modeOf, planIdOf } from "../act/tasks.js";
 import { checkInput, fsmStep, isoWithOffset, type PamMemory } from "./decision.js";
 import { PamLinkError, type PamClient } from "./pam/index.js";
-import { LINK_TEXT, TRIGGER_TEXT, redactHeard, redactSaid, saidIn } from "../world/labels.js";
+import { HEARD_MAX, LINK_TEXT, TRIGGER_TEXT, redactHeard, redactSaid, saidIn } from "../world/labels.js";
+import { headWithin } from "../shared/cut.js";
 import { textFromWorld } from "../world/index.js";
 import type { Trigger, TriggerPause } from "../world/index.js";
 
@@ -14,6 +15,8 @@ import type { Trigger, TriggerPause } from "../world/index.js";
 const RECENT_KEEP_MS = 600_000;
 /** 행동이 시작되지 않은 화살표를 다시 켤 수 있게 두는 시간(ms, 미리 세운 목표 fireWaitMs와 같다). */
 export const PENDING_EDGE_MS = 15_000;
+/** 들은 말 비교 열쇠: World State 들은 말 줄(src/world/state/world.ts heard)과 같이 「」·여러 칸 빈칸을 빼고 HEARD_MAX자에서 자른다. */
+const saidKey = (s: string) => headWithin(s.replace(/[「」]/g, "").replace(/\s+/g, " ").trim(), HEARD_MAX);
 
 
 /** 판단 기록에 붙이는 World State 요약: 사라지지 않은 물건의 상태·면(id·이름)·위치 오차·사실, 사람이 보이는가, 분석 없음 수. */
@@ -51,6 +54,8 @@ export interface DeciderOptions {
 
 export class Decider {
   private recent: WorldChange[] = [];
+  /** 말 부탁으로 처리한 말(열쇠)과 부탁 시각: 그보다 앞서 들은 같은 말이 늦게 도착해도(/phone/heard 전달 지연) 관찰 텍스트에 넣지 않는다(Codex 81d209ef P2). */
+  private handled: { said: string; atMs: number }[] = [];
   private readonly running = new Set<Promise<void>>();
   /** 멈추면 나가 있는 PAM 요청도 끊는다. */
   private readonly cancel = new AbortController();
@@ -85,8 +90,15 @@ export class Decider {
   onChanges(changes: WorldChange[]): void {
     if (this.stopped) return;
     const now = this.clock.now();
-    this.recent = [...this.recent, ...changes].filter((c) => c.at_ms >= now - RECENT_KEEP_MS);
-    this.o.trigger.onChanges(changes);
+    this.handled = this.handled.filter((h) => h.atMs >= now - RECENT_KEEP_MS);
+    // 말 부탁으로 이미 처리한 말: 그 부탁보다 앞서 들은 같은 말은 늦게 와도 버린다(부탁 뒤에 다시 한 같은 말은 새 말이다)
+    const done = (c: WorldChange) => {
+      const said = saidIn(c.text);
+      return said.length > 0 && said.every((s) => this.handled.some((h) => h.said === saidKey(s) && c.at_ms <= h.atMs));
+    };
+    const fresh = changes.filter((c) => c.kind !== "heard" || !done(c));
+    this.recent = [...this.recent, ...fresh].filter((c) => c.at_ms >= now - RECENT_KEEP_MS);
+    this.o.trigger.onChanges(fresh);
   }
 
   /** 마지막 유효 판단의 사람 상태(PAM 답 state, 미리 세울 목표가 읽는다). 판단 전이면 null. */
@@ -128,6 +140,7 @@ export class Decider {
    *  그 부탁까지 들은 말은 다음 관찰 텍스트에 다시 넣지 않는다(행동을 고른 PAM 판단과 같다. Codex 1b07d3e2 P2: 「그만」 뒤 PAM이 남은 부탁으로 같은 계획을 다시 시작했다). */
   logSpeech(r: DecisionRecord): void {
     this.recent = this.recent.filter((c) => c.kind !== "heard" || c.at_ms > r.atMs);
+    this.handled.push(...saidIn(r.textSent).map((s) => ({ said: saidKey(s), atMs: r.atMs })));
     this.emitDecision(r);
   }
 

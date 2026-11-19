@@ -177,6 +177,29 @@ describe("판단 호출", () => {
       expect(s.sent()).toContain("사람이 말함: 「그만」");
     });
 
+    // Codex(81d209ef P2): /phone/heard 전달이 늦어 말 부탁 처리 뒤에 같은 말이 도착하면 다시 들어가 「그만」 뒤 같은 계획을 다시 시작할 수 있었다
+    it("말 부탁으로 처리한 말이 늦게 도착해도(부탁 시각보다 앞서 들은 같은 말) 관찰 텍스트에 넣지 않는다. 부탁 뒤에 다시 한 같은 말은 넣는다", async () => {
+      const s = await setup();
+      const spoke = s.clock.t;
+      s.clock.t += 1_000;
+      s.d.logSpeech({ id: "say-1", seq: 0, atMs: s.clock.t, textSent: `사람이 말함: 「${SAID}」`, finalTime: "2026-11-13T12:00:01.000+09:00", status: "valid",
+        prediction: { observation: "o", reasoning: "r", task_index: 0 }, action: "라면 끓이기 알려 주기", memoryVersion: 0, tasks: [...TASK_NAMES], world: { objects: [], person_visible: true, vlm_missing: 0, yolo_missing: 0 }, source: "speech", afterSeq: 0 });
+      // 부탁 처리 뒤에 늦게 온 같은 말(들은 때는 부탁 전)
+      s.d.onChanges(s.world.heard(` ${SAID} `, spoke));
+      s.clock.t += 20_000;
+      s.d.onChanges(s.world.heard("그만", s.clock.t));
+      s.d.tick();
+      await s.d.idle();
+      expect(s.sent()).not.toContain(SAID);
+      expect(s.sent()).toContain("사람이 말함: 「그만」");
+      // 부탁 뒤에 다시 한 같은 말은 새 말이다
+      s.clock.t += 1_000;
+      s.d.onChanges(s.world.heard(SAID, s.clock.t));
+      s.d.tick();
+      await s.d.idle();
+      expect(s.sent()).toContain(`사람이 말함: 「${SAID}」`);
+    });
+
     it("들은 말 남기기 설정을 켜면(기본 꺼짐) 기록에 남는 판단 줄에도 그 말이 그대로 있다", async () => {
       const s = await setup({ keepHeard: true });
       s.d.onChanges(s.world.heard(SAID, s.clock.t));
