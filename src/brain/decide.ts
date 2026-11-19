@@ -155,7 +155,8 @@ export class Decider {
     this.emitDecision(r);
   }
 
-  /** 다음 판단 타이머에 기다림 없이 PAM을 부르게 한다(미리 세운 목표의 사람이 떠남, src/act/track/goal.ts). 동시 상한·쉼(hold)은 그대로다. */
+  /** 다음 판단 타이머에 기다림 없이 PAM을 부르게 한다(미리 세운 목표의 사람이 떠남, src/act/track/goal.ts). 나가 있는 판단도 기다리지 않는다(동시 상한 위로 하나, src/world/trigger.ts).
+   *  쉼(hold)은 그대로다. 앞서 나간 판단의 답이 늦게 오면 번호로 늦은 답이라 상태를 바꾸지 않는다. */
   nudge(): void {
     if (!this.stopped) this.o.trigger.nudge();
   }

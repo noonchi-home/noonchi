@@ -3,6 +3,8 @@
 // 계기와 행동은 PAM의 FSM이 정하므로 의미 있는 변화를 기다리지 않는다. 사람이 떠난 뒤(컵이 남은 때)에도 계속 부른다.
 // 프레임이 오지 않으면(폰 없음) 부르지 않는다. 사람 없음 + 등장·사라짐 없음이 idleStopMs(30분) 이어지면 멈추고, 등장·사라짐이 생기면 다시(출처: docs/provenance.md).
 // event: World State에 의미 있는 변화가 있을 때(최소 간격 minGapMs). 두 모드 모두 나가 있는 판단이 maxInflight(기본 1)면 부르지 않는다.
+// nudge(미리 세운 목표의 사람이 떠남)는 나가 있는 판단을 기다리지 않고 상한 위로 하나 더 나간다: 그 판단들은 떠나기 전 관찰이라 기다리면 반응이 답 시간만큼 늦다
+// (2026-11-20 pfsm12: 1초 주기 판단이 늘 하나 나가 있어 첫 명령이 3초). 늦게 온 앞 판단의 답은 판단(src/brain/decide.ts)이 번호로 늦은 답으로 본다.
 import type { WorldChange } from "../contract/world.js";
 
 export type TriggerMode = "event" | "periodic";
@@ -49,12 +51,13 @@ export class Trigger {
   /** 엔진 프레임이 온 시각. */
   onFrame(atMs: number): void { this.lastFrame = Math.max(this.lastFrame, atMs); }
 
-  /** 다음 판단을 주기·최소 간격을 기다리지 않고 부르게 한다(미리 세운 목표의 사람이 떠남, src/act/track/goal.ts). 동시 상한·멈춤(프레임 없음)은 지킨다. 부르면 풀린다. */
+  /** 다음 판단을 주기·최소 간격·나가 있는 판단을 기다리지 않고 부르게 한다(미리 세운 목표의 사람이 떠남, src/act/track/goal.ts).
+   *  동시 상한 위로는 하나만 더 나가고, 멈춤(프레임 없음)은 지킨다. 부르면 풀린다. */
   nudge(): void { this.nudged = true; }
 
   due(nowMs: number, personVisible: boolean, inflight: number): boolean {
+    if (this.nudged) return inflight <= this.cfg.maxInflight && this.pause(nowMs, personVisible) === null;
     if (inflight >= this.cfg.maxInflight) return false;
-    if (this.nudged) return this.pause(nowMs, personVisible) === null;
     if (this.cfg.mode === "event") return this.pending && nowMs - this.lastCall >= this.cfg.minGapMs;
     if (nowMs - this.lastCall < this.cfg.periodMs) return false;
     return this.pause(nowMs, personVisible) === null;

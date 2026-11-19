@@ -314,6 +314,42 @@ describe("판단 호출", () => {
     d.stop();
   });
 
+  // 2026-11-20 pfsm12: 1초 주기 판단이 늘 하나 나가 있어 사람이 떠난 뒤 목표가 부른 판단이 그 답을 기다렸다(첫 명령 3.0초, 5초 주기 때 1.7초)
+  it("목표가 부른 판단(nudge)은 나가 있는 주기 판단을 기다리지 않고 다음 타이머에 바로 나간다(동시 상한 위로 하나만). 늦게 온 앞 판단의 답은 직전 상태를 바꾸지 않는다", async () => {
+    const mem: FsmMemory = { initial_state: "away", states: [
+      { id: "away", description: "안 보임", activity: [], next: [{ to: "drinking", on: "돌아와 마신다." }] },
+      { id: "drinking", description: "마시는 중", activity: ["drinking"], next: [{ to: "*", on: "떠난다.", action: "컵 치우기" }] },
+    ] };
+    const out: { done: (p: Prediction) => void }[] = [];
+    const stub = { predict: () => new Promise<Prediction>((done) => out.push({ done })) } as unknown as PamClient;
+    const trig = new Trigger({ mode: "periodic", minGapMs: 3000, periodMs: 1000, idleStopMs: 1e9, liveMs: 10_000, maxInflight: 1 }, 0);
+    let now = 10_000;
+    const d = new Decider({ pam: stub, world: emptyWorld(), trigger: trig, tasks: () => [...CUP_TASKS], memory: () => ({ memory: mem, kind: "fsm", version: 0 }), emit: () => {}, offsetMinutes: 540, clock: { now: () => now } });
+    const flush = () => new Promise((r) => setTimeout(r, 0));
+    const tick = async () => { now += 250; d.onFrame(); d.tick(); await flush(); };
+    const p = (state: string, from: string | null, next_index: number, task_index = -1): Prediction => ({ observation: "o", reasoning: "r", task_index, state, from, next_index });
+    await tick();
+    expect(out).toHaveLength(1);
+    // 주기 판단 pam-1의 답이 늦다: 주기가 지나도 더 나가지 않는다
+    for (let i = 0; i < 6; i++) await tick();
+    expect(out).toHaveLength(1);
+    // 사람이 떠남(목표): 기다리지 않고 다음 타이머에 pam-2
+    d.nudge();
+    await tick();
+    expect(out).toHaveLength(2);
+    for (let i = 0; i < 6; i++) await tick();
+    expect(out).toHaveLength(2);
+    out[1]!.done(p("away", "drinking", 0, 0));
+    await flush();
+    // 떠나기 전 관찰로 보낸 pam-1 답이 늦게 와도 상태는 pam-2의 away 그대로
+    out[0]!.done(p("drinking", "away", 0));
+    await d.idle();
+    expect(d.fsmState()).toBe("away");
+    await tick();
+    expect(out).toHaveLength(3);
+    d.stop();
+  });
+
   // 2026-11-19 조정자 결정: 계획 전 검사가 분명한 까닭(컵이 싱크대 안 등)으로 막으면 그 화살표를 기다리지 않는다(15초 동안 같은 막음을 되풀이하지 않게)
   it("계획 전 검사가 분명한 까닭으로 막은 판단(onRefused)이면 그 화살표를 풀어 다음 요청의 직전 상태는 넘어간 상태다. 그 전에 보낸 같은 화살표 답은 늦은 답이다. 막지 않으면 그대로 기다린다", async () => {
     const leave = { observation: "o", reasoning: "r", state: "away", from: "drinking", next_index: 0 };

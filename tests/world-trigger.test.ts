@@ -20,13 +20,15 @@ describe("PAM 호출 시점", () => {
     expect(t.due(4000, false, 0)).toBe(true);
   });
 
-  it("nudge: 다음 한 번은 주기·최소 간격을 기다리지 않는다. 동시 상한·프레임 없음은 지키고, 부르면 풀린다(미리 세운 목표의 사람이 떠남)", () => {
+  // 2026-11-20 pfsm12: 1초 주기 판단이 늘 하나 나가 있어 목표가 부른 판단이 그 답을 기다렸다(사람이 떠난 뒤 첫 명령 3초)
+  it("nudge: 다음 한 번은 주기·최소 간격을 기다리지 않고, 나가 있는 판단이 동시 상한만큼 있어도 하나 더 나간다(그 위로는 아니다). 프레임 없음은 지키고, 부르면 풀린다(미리 세운 목표의 사람이 떠남)", () => {
     const t = periodic();
     t.onFrame(1000);
     t.called(1000);
     expect(t.due(1250, false, 0)).toBe(false);
     t.nudge();
-    expect(t.due(1250, false, 1)).toBe(false);
+    expect(t.due(1250, false, 2)).toBe(false);
+    expect(t.due(1250, false, 1)).toBe(true);
     expect(t.due(1250, false, 0)).toBe(true);
     t.called(1250);
     expect(t.due(1500, false, 0)).toBe(false);
