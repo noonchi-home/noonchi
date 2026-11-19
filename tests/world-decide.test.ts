@@ -200,6 +200,23 @@ describe("판단 호출", () => {
       expect(s.sent()).toContain(`사람이 말함: 「${SAID}」`);
     });
 
+    // Codex(be8a98c0 P3): 부탁 말 안에 「…」 인용이 있으면 정규화 전 saidIn이 안쪽 」에서 끊어 늦게 온 같은 말을 거르지 못했다
+    it("말 부탁의 말 안에 「…」 인용이 있어도 늦게 온 같은 말(World State가 「」를 뺀 줄)을 거른다", async () => {
+      const QUOTED = "라면 「신라면」 끓이는 법 알려 줘";
+      const s = await setup();
+      const spoke = s.clock.t;
+      s.clock.t += 1_000;
+      s.d.logSpeech({ id: "say-1", seq: 0, atMs: s.clock.t, textSent: `사람이 말함: 「${QUOTED}」`, finalTime: "2026-11-13T12:00:01.000+09:00", status: "valid",
+        prediction: { observation: "o", reasoning: "r", task_index: 0 }, action: "라면 끓이기 알려 주기", memoryVersion: 0, tasks: [...TASK_NAMES], world: { objects: [], person_visible: true, vlm_missing: 0, yolo_missing: 0 }, source: "speech", afterSeq: 0 });
+      s.d.onChanges(s.world.heard(QUOTED, spoke));
+      s.clock.t += 20_000;
+      s.d.onChanges(s.world.heard("그만", s.clock.t));
+      s.d.tick();
+      await s.d.idle();
+      expect(s.sent()).not.toContain("신라면");
+      expect(s.sent()).toContain("사람이 말함: 「그만」");
+    });
+
     it("들은 말 남기기 설정을 켜면(기본 꺼짐) 기록에 남는 판단 줄에도 그 말이 그대로 있다", async () => {
       const s = await setup({ keepHeard: true });
       s.d.onChanges(s.world.heard(SAID, s.clock.t));
