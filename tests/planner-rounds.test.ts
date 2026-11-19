@@ -136,6 +136,20 @@ describe("plan1 차례 기록에서 찾은 첫 차례 실수", () => {
     expect(moved.ok ? "" : moved.error).toMatch(/^1번 go target\(table_1\)은 2번에서 집을 물건 cup_1이 놓인 자리가 아닙니다\. 그 자리 coffee_table_1로 가세요\./);
   });
 
+  // 2026-11-20 wide-mug pfsm12: 미리 만들기 답이 「pick 내리기 cup_0」으로 시작해(가기 없음) 명령이 「컵을 컵에서 내려 주세요」였고 go-table 조각이 빠졌다
+  it("보이는 물건을 집기 전에 그 물건이 놓인 자리로 가는 go가 없으면 버리고 그 자리 id를 말한다", () => {
+    const steps = cupSteps(IDS);
+    const r = new PlanDraft(ttCtx()).submit({ steps: steps.slice(1) });
+    expect(r.ok ? "" : r.error).toMatch(/^1번에서 집을 물건 cup_1이 놓인 자리 table_1로 가는 go가 앞에 없습니다\. 그 앞에 go\(target table_1\)를 두세요\./);
+    expect(new PlanDraft(ttCtx()).submit({ steps }).ok).toBe(true);
+  });
+
+  it("pick 내리기는 내릴 자리(평면도 id)를 target으로 쓴다: 보이는 물건 자신을 target으로 쓰면(「컵을 컵에서 내려 주세요」) 버리고 들기를 쓰라고 말한다", () => {
+    const steps = cupSteps(IDS);
+    const r = new PlanDraft(ttCtx()).submit({ steps: [steps[0]!, { ...steps[1]!, act: "내리기" }, ...steps.slice(2)] });
+    expect(r.ok ? "" : r.error).toMatch(/2번 단계: pick 내리기 target은 물건을 내릴 자리\(평면도 id\)입니다\. cup_1은 보이는 물건이니 그 자리에서 집으면 들기를 쓰세요/);
+  });
+
   // Codex 검토(2fa3bbb..59d8570 P2): 처음 World State 면으로만 견줘, 앞 단계에서 옮긴 물건을 다시 집는 정상 계획을 「처음 면으로 가세요」로 버렸다
   describe("계획 안에서 물건 자리를 이어 간다: 처음 집기는 World State 면, 다시 집기는 앞 놓기 자리", () => {
     const steps = cupSteps(IDS);

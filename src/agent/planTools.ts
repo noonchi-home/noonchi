@@ -338,6 +338,11 @@ export class PlanDraft {
       const put = s.kind === "pick" && s.object ? steps.slice(0, i).map((x, k) => ({ x, k })).reverse().find(({ x }) => x.kind === "place" && x.object === s.object) : undefined;
       const laid = s.kind === "pick" && s.object ? put?.x.target ?? worldObject(this.ctx.world, s.object)?.surface ?? null : null;
       const go = laid && floor.objects.has(laid) ? steps.slice(0, i).map((x) => x.kind).lastIndexOf("go") : -1;
+      // 그 자리로 가는 go가 앞에 없어도 버린다(2026-11-20 wide-mug pfsm12: 미리 만들기 답이 가기 없이 「pick 내리기 cup_0」으로 시작해 식탁으로 가는 명령이 빠졌다).
+      // 폰이 이미 그 자리 곁이면 그 go는 바로 끝난다
+      if (laid && floor.objects.has(laid) && go < 0) {
+        return { ok: false, error: `${i + 1}번에서 집을 물건 ${s.object}이 놓인 자리 ${laid}로 가는 go가 앞에 없습니다. 그 앞에 go(target ${laid})를 두세요.` };
+      }
       if (go >= 0 && steps[go]!.target !== laid) {
         return { ok: false, error: `${go + 1}번 go target(${steps[go]!.target})은 ${i + 1}번에서 집을 물건 ${s.object}이 놓인 자리가 아닙니다${put ? `(${put.k + 1}번에서 놓은 자리)` : ""}. 그 자리 ${laid}로 가세요.` };
       }
@@ -511,6 +516,8 @@ export class PlanDraft {
         break;
       case "pick":
         need("target", !!target);
+        // 내리기는 물건을 내릴 자리(선반·인덕션)가 target이다: 보이는 물건 자신이면 「컵을 컵에서 내려 주세요」가 된다(2026-11-20 wide-mug pfsm12)
+        if (a.act === "내리기" && target && live(target)) errors.push(`pick 내리기 target은 물건을 내릴 자리(평면도 id)입니다. ${target}은 보이는 물건이니 그 자리에서 집으면 들기를 쓰세요`);
         if (target && live(target)) object ??= target;
         else if (target && !floor.objects.has(target)) errors.push(`pick target은 보이는 World State 물건 id나 평면도 id여야 합니다: ${target}`);
         if (object && !live(object)) errors.push(`보이는 World State 물건이 아닙니다: ${object}`);
