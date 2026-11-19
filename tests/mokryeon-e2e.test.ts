@@ -150,7 +150,10 @@ describe("한양목련 처음부터 끝까지", () => {
     cupPlace = "in_sink";
     await pump(() => phone.some((m) => m.type === "command_clear" && m.id === planId));
     await pump(() => dash.some((m) => m.type === "plan" && m.plan?.id === planId && m.plan.status === "done") && dash.some((m) => m.type === "say" && m.text === "컵을 다 치웠어요."));
-    expect(spoken().filter((m) => !String(m.id).startsWith("dock:")).map((m) => m.text)).toEqual(["컵 치우기를 할까요?", "식탁으로 가 주세요", "컵을 들어 주세요", "싱크대로 가 주세요", "컵을 싱크대에 넣어 주세요"]);
+    // 계획을 마치면 실제 폰 명령 줄에도 완료 문장(다음 타이머)
+    await pump(() => !!said("컵을 다 치웠어요."));
+    expect(said("컵을 다 치웠어요.")).toMatchObject({ id: `done:${planId}`, choices: [] });
+    expect(spoken().filter((m) => !String(m.id).startsWith("dock:")).map((m) => m.text)).toEqual(["컵 치우기를 할까요?", "식탁으로 가 주세요", "컵을 들어 주세요", "싱크대로 가 주세요", "컵을 싱크대에 넣어 주세요", "컵을 다 치웠어요."]);
     // 계획이 끝나면 사용자 위치를 확인한 뒤 충전 자리(dock.json)로 돌아간다. 맞추기 전이라 폰 눈을 몰라 「완료」로 닿음을 알린다
     await pump(() => spoken().some((m) => m.text === "충전 자리로 가 주세요"));
     const dock = spoken().find((m) => m.text === "충전 자리로 가 주세요")!;
@@ -187,7 +190,8 @@ describe("한양목련 처음부터 끝까지", () => {
     cupPlace = "on_table";
     await visitThenLeave();
     await pump(() => spoken().some((m) => m.id !== planId && m.text === "식탁으로 가 주세요"));
-    const next = spoken().filter((m) => m.id !== planId && !String(m.id).startsWith("dock:"));
+    // 앞 계획의 완료 문장(done:)과 충전 자리 명령(dock:)은 다음 계획 명령이 아니다
+    const next = spoken().filter((m) => m.id !== planId && !String(m.id).startsWith("dock:") && !String(m.id).startsWith("done:"));
     expect(next.map((m) => m.text)).toEqual(["식탁으로 가 주세요"]);
     expect(phone.filter((m) => m.type === "command" && m.text === ask)).toHaveLength(1);
   }, 90_000);

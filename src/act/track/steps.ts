@@ -6,13 +6,14 @@
 import type { PhoneStepKind, PlannedCommand } from "../../contract/phone.js";
 import type { Facet, WorldEye, WorldObject, WorldView } from "../../contract/world.js";
 import type { LookSpot } from "../../observe/index.js";
-import { AGAIN_TEXT, APPROVAL_TEXT, CAUTION_TEXT, EXEC_TEXT, VISION_TEXT } from "../labels.js";
+import { AGAIN_TEXT, APPROVAL_TEXT, CAUTION_TEXT, EXEC_TEXT, SAY_TEXT, VISION_TEXT } from "../labels.js";
 import { roomAt } from "../../layout/index.js";
 import { OBJECT_NAME, PLACE_UNKNOWN, STATE_TEXT, onSurface } from "../../world/labels.js";
 import { ConditionWatch, type Condition, type ConditionContext } from "../../world/index.js";
 import { NEAR_M } from "../../world/vocab.js";
 import { HUMAN_KINDS, selfStopWait, type AgentStep, type ToolResult } from "../../agent/index.js";
 import { clearsAway, taskOf, type Placed } from "../tasks.js";
+import { doneId } from "../done-step.js";
 import { Part, choicesOf, clsOf, type Run } from "./core.js";
 
 /** 놓기를 끝낸 물건이 사라진 뒤 새 id로 다시 잡히기를 기다리는 시간(ms). 등장 확인(물건 4초)·사라짐(6초)보다 넉넉히. */
@@ -479,6 +480,8 @@ export class Steps extends Part {
       this.core.answers.send({ type: "command_clear", id: r.plan.view.id });
     }
     if (close) this.o.plans.close(r.plan.view.id, close, this.clock.now());
+    // 폰으로 시킨 계획을 끝까지 마쳤으면 다음 타이머에 실제 폰 명령 줄에 완료 문장을 띄운다(phone-line.ts noticeTick)
+    this.core.notice = state === "done" && close === "done" && r.phone ? { id: doneId(r.plan.view.id), text: SAY_TEXT.done(r.plan.view.goal), since: this.clock.now(), sent: false } : this.core.notice;
     // 손으로 켠 위험 가전이 작동 끝남 확인 전에 닫혔다: 가전마다 끄기 안내 줄로 옮기고 차례로 띄운다(확인된 꺼짐으로만 하나씩 지운다)
     this.core.safety.handOver(r);
     r.ends.clear();

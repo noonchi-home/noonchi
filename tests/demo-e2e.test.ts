@@ -18,6 +18,7 @@ import { riskyNames } from "../src/agent/policy.js";
 import type { Detection } from "../src/contract/observe.js";
 import { CUP_FSM_MEMORY, type FsmMemory } from "../src/brain/decision.js";
 import type { HistoryRow } from "../src/contract/history.js";
+import { SAY_TEXT } from "../src/act/labels.js";
 import { encodeFramePacket } from "../src/phone/packet.js";
 import { fetchRetry, listenRetry } from "../src/shared/net.js";
 import { startServer, type RunningServer } from "../src/server/start.js";
@@ -330,6 +331,8 @@ describe("시연 네 장면(자동 모드, 한양목련, 가짜 서버)", () => 
     // 폰으로 나간 글은 서버 글 틀이거나 위험 가전 이름이 없다
     const server = new Set(["전자레인지로 가 주세요", "전자레인지 문을 열어 주세요", "그릇을 전자레인지에 넣어 주세요", "전자레인지 문을 닫아 주세요",
       "그릇이 뜨거워져요. 전자레인지를 켤까요?", "전자레인지를 켜 주세요", "다 될 때까지 기다려요.", "그릇을 꺼내 주세요"]);
+    // 계획을 마친 완료 문장도 서버 글 틀이다(src/act/labels.ts SAY_TEXT.done)
+    server.add(SAY_TEXT.done("전자레인지로 데우기 알려 주기"));
     for (const t of [...s.commands().map((m) => m.text as string), ...s.phone.filter((m) => m.type === "reply").map((m) => m.text as string)]) {
       if (!server.has(t)) expect(riskyNames(t), t).toEqual([]);
     }

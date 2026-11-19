@@ -141,7 +141,8 @@ describe("NOONCHI 처음부터 끝까지", () => {
     const seen = Math.max(...(await history("execution")).rows.map((r) => r.id));
     await pump(async () => (await history("execution")).rows.some((r) => r.id > seen && r.subject !== planId && r.text === CHECK_TEXT.in_sink));
 
-    expect(phone.filter((m) => m.type === "command" && m.speak).map((m) => m.text)).toEqual(["식탁으로 가 주세요", "컵을 들어 주세요", "싱크대로 가 주세요", "컵을 싱크대에 넣어 주세요"]);
+    // 계획을 마치면 실제 폰 명령 줄에 완료 문장
+    expect(phone.filter((m) => m.type === "command" && m.speak).map((m) => m.text)).toEqual(["식탁으로 가 주세요", "컵을 들어 주세요", "싱크대로 가 주세요", "컵을 싱크대에 넣어 주세요", "컵을 다 치웠어요."]);
     expect(phone.some((m) => m.type === "command" && /:approve$/.test(String(m.step)))).toBe(false);
     expect(existsSync(join(runtimeDir, "homes", "apartment", "approvals.json"))).toBe(false);
     const all = await history("vlm,detection,pam_text,decision,plan,execution,feedback");
@@ -269,8 +270,10 @@ describe("NOONCHI 처음부터 끝까지", () => {
     await pump(async () => (await history("execution")).rows.some((r) => r.subject === planId && r.text === "완료"));
     // 다음 계획(사람이 다시 마시다 떠남, 같은 행동 다시 계획 간격 15초 뒤): 이미 치운 cup_1이 아니라 cup_2로 첫 명령까지 간다
     await drinkThenLeave(people, dash, pump);
-    await pump(() => phone.some((m) => m.type === "command" && m.speak && m.id !== planId), 40_000);
-    const next = phone.find((m) => m.type === "command" && m.speak && m.id !== planId)!;
+    // 앞 계획의 완료 문장(done:)은 다음 계획 명령이 아니다
+    const nextPlan = (m: Msg) => m.type === "command" && m.speak && m.id !== planId && !String(m.id).startsWith("done:");
+    await pump(() => phone.some(nextPlan), 40_000);
+    const next = phone.find(nextPlan)!;
     expect(next).toMatchObject({ step: `${next.id}:1`, text: "식탁으로 가 주세요" });
     expect(actTarget(next.id)).toMatchObject({ objectId: "cup_2" });
     const inputs = fake.requests.filter((r) => r.method === "POST" && r.path.endsWith("/responses")).map((r) => String(r.body?.input?.[0]?.content ?? ""));

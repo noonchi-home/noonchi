@@ -5,6 +5,33 @@
 import type { PlannedCommand } from "../../contract/phone.js";
 import type { Run, TrackCore } from "./core.js";
 
+/** 계획을 마친 완료 문장을 실제 폰 명령 줄에 두는 시간(ms). 그 사이 다른 명령(충전 자리로 가기 등)이 오면 그 명령이 덮는다. */
+export const DONE_NOTICE_MS = 4000;
+
+/** 계획을 마친 완료 문장(「컵을 다 치웠어요.」, 답 단추 없음, 소리로 읽음): 마친 뒤 다음 타이머에 지금 명령 줄로 띄우고 DONE_NOTICE_MS 뒤 지운다.
+ *  다른 명령이 이미 떠 있거나 판본이 맞는 폰이 없으면 띄우지 않고 버리고, 띄운 뒤 다른 명령이 덮으면 지우기 없이 버린다
+ *  (새 화면 자리를 만들지 않는다, 2026-11-20 사용자 「완료메시지도 없다」). */
+export function noticeTick(core: TrackCore, now: number): void {
+  const n = core.notice;
+  if (!n) return;
+  if (!n.sent) {
+    if (core.shown() || core.docking?.sent || !core.start.phoneOk()) {
+      core.notice = null;
+      return;
+    }
+    n.sent = true;
+    core.answers.send({ type: "command", id: n.id, step: `${n.id}:1`, text: n.text, vision: null, choices: [], target: null, speak: true });
+  }
+  // 다른 명령(충전 자리로 가기 등)이 그 줄을 덮었으면 지우기를 보내지 않는다
+  if (core.shown() || core.docking?.sent) {
+    core.notice = null;
+    return;
+  }
+  if (now - n.since < DONE_NOTICE_MS) return;
+  core.notice = null;
+  core.answers.send({ type: "command_clear", id: n.id });
+}
+
 /** 맞춘 눈이 이만큼(ms) 안 오면 지금 위치를 모른다(폰 자세는 초당 10번). */
 export const EYE_MS = 2000;
 

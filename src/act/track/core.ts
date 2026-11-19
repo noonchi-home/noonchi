@@ -106,6 +106,8 @@ export class TrackCore {
   foundFor: string | null = null;
   /** 계획이 끝난 뒤 충전 자리 돌아가기(src/act/track/dock.ts): 명령 id dock:<번호>와 그 상태. 없으면 null. */
   docking: DockSlot | null = null;
+  /** 계획을 마친 완료 문장(실제 폰 명령 줄, phone-line.ts noticeTick): 명령 id done:<계획 id>, 글, 마친 때, 띄웠는가. */
+  notice: { id: string; text: string; since: number; sent: boolean } | null = null;
   /** 마지막으로 받은 판단 id(쓰는 중 지킴의 상태 줄이 붙는 판단). 없으면 null. */
   lastDecision: string | null = null;
   /** 마지막으로 기다리기·기기 단계가 시작된 시각. 그 전에 보낸 다른 행동 판단은 쓰지 않는다. */

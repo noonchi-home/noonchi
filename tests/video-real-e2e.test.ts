@@ -98,12 +98,14 @@ async function cupRun(query: string, videoDir: string) {
   cupPlace = "in_sink";
   await pump(() => phone.some((m) => m.type === "command_clear" && m.id === planId));
   await pump(async () => (await history("execution")).some((r) => r.subject === planId && r.text === "완료"));
+  // 계획을 마치면 두 연결 모두 실제 폰 명령 줄에 완료 문장이 온다(다음 타이머)
+  await pump(() => !!said("컵을 다 치웠어요."));
   const cup = ((await (await fetchRetry(`${srv.url}/api/world`)).json()) as { world: WorldView }).world.objects.find((o) => o.cls === "cup");
 
   const norm = (v: unknown) => JSON.parse(JSON.stringify(v).split(planId).join("PLAN"));
   const rows = await history("execution,feedback");
   const result = norm({
-    commands: phone.filter((m) => (m.type === "command" && m.speak) || (m.type === "command_clear" && m.id === planId)),
+    commands: phone.filter((m) => (m.type === "command" && m.speak && !String(m.id).startsWith("dock:")) || (m.type === "command_clear" && m.id === planId)),
     steps: rows.filter((r) => r.kind === "execution" && r.subject === planId).sort((a, b) => a.id - b.id).map((r) => r.text),
     feedback: rows.filter((r) => r.kind === "feedback").sort((a, b) => a.id - b.id).map((r) => r.text),
     progress: dash.filter((m) => m.type === "plan" && m.plan?.id === planId).map((m) => `${m.plan.status}:${m.plan.steps.map((s: Msg) => s.status).join(",")}`)
@@ -124,7 +126,7 @@ describe("영상 연결과 실제 연결은 서버에서 같다", () => {
     const video = await cupRun("?video=cup-demo.mp4", videoDir);
     expect(video).toEqual(real);
     // 대본이 실제로 네 명령·완료·컵 싱크대 안까지 갔는지(빈 결과끼리 같아 통과하지 않게)
-    expect(real.commands.filter((m: Msg) => m.type === "command").map((m: Msg) => m.text)).toEqual(["식탁으로 가 주세요", "컵을 들어 주세요", "싱크대로 가 주세요", "컵을 싱크대에 넣어 주세요"]);
+    expect(real.commands.filter((m: Msg) => m.type === "command").map((m: Msg) => m.text)).toEqual(["식탁으로 가 주세요", "컵을 들어 주세요", "싱크대로 가 주세요", "컵을 싱크대에 넣어 주세요", "컵을 다 치웠어요."]);
     expect(real.steps).toEqual(["판단", "계획", "실행 중", "완료"]);
     expect(real.cup.place).toBe("in_sink");
   }, 90_000);

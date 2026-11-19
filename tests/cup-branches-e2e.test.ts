@@ -12,6 +12,7 @@ import { startFakeOpenAI, type FakeServer } from "../scripts/fake-openai.js";
 import { tasksFor } from "../src/act/tasks.js";
 import type { Detection } from "../src/contract/observe.js";
 import type { HistoryRow } from "../src/contract/history.js";
+import { SAY_TEXT } from "../src/act/labels.js";
 import { encodeFramePacket } from "../src/phone/packet.js";
 import { fetchRetry } from "../src/shared/net.js";
 import { startServer, type RunningServer } from "../src/server/start.js";
@@ -171,7 +172,9 @@ describe("컵 장면 갈래", () => {
     scene.facts = { person: ["sitting", "eating"], cup: ["on_table", "has_contents"], bottle: ["on_table"] };
     await s.pump(() => s.phone.some((m) => m.type === "command_clear" && m.id === planId));
     await s.pump(async () => (await s.history("execution")).some((r) => r.subject === planId && r.text === "완료"));
-    expect(s.spoken().map((m) => [m.text, m.kind])).toEqual([["냉장고로 가 주세요", "go"], ["물병을 꺼내 주세요", "pick"], ["식탁으로 가 주세요", "go"], ["컵에 물을 따라 주세요", "do"]]);
+    // 계획을 마치면 실제 폰 명령 줄에 완료 문장(단계 종류 없음)
+    await s.pump(() => !!s.said(SAY_TEXT.done("컵에 물 채워 주기")));
+    expect(s.spoken().map((m) => [m.text, m.kind])).toEqual([["냉장고로 가 주세요", "go"], ["물병을 꺼내 주세요", "pick"], ["식탁으로 가 주세요", "go"], ["컵에 물을 따라 주세요", "do"], [SAY_TEXT.done("컵에 물 채워 주기"), undefined]]);
     const rows = await s.history("decision,execution,feedback");
     expect(rows.filter((r) => r.kind === "execution" && r.subject === planId).sort((a, b) => a.id - b.id).map((r) => r.text)).toEqual(["판단", "계획", "실행 중", "완료"]);
     expect(rows.find((r) => r.kind === "decision" && `plan:${r.subject}` === planId)!.text).toBe("컵에 물 채워 주기");

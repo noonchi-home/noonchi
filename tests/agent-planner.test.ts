@@ -25,7 +25,7 @@ import { loadCatalog } from "../src/layout/catalog.js";
 import { describeDevice } from "../src/devices/mapping.js";
 import { loadScene } from "../src/layout/scene.js";
 import { PlanHub } from "../src/act/hub.js";
-import { AGAIN_TEXT, APPROVAL_TEXT, EXEC_TEXT, STEP_COMMAND } from "../src/act/labels.js";
+import { AGAIN_TEXT, APPROVAL_TEXT, EXEC_TEXT, SAY_TEXT, STEP_COMMAND } from "../src/act/labels.js";
 import { floorPlanFrom } from "../src/layout/route.js";
 import { Decider } from "../src/brain/decide.js";
 import { WorldState } from "../src/world/state/world.js";
@@ -513,7 +513,11 @@ describe("계획 모드: 기기 단계와 승인", () => {
     t.tick();
     expect(plans.current()).toMatchObject({ status: "done" });
     expect(exec().map((l) => l.state)).toEqual(["decided", "planned", "running", "done"]);
-    expect(phone.slice(1)).toEqual([{ type: "command_clear", id: "plan:pam-1" }]);
+    // 기기 단계는 폰 명령이 없고, 계획을 마치면 실제 폰 명령 줄에 완료 문장이 온다(phone-line.ts noticeTick)
+    expect(phone.slice(1)).toEqual([
+      { type: "command_clear", id: "plan:pam-1" },
+      { type: "command", id: "done:plan:pam-1", step: "done:plan:pam-1:1", text: SAY_TEXT.done("에어컨 켜기"), vision: null, choices: [], target: null, speak: true },
+    ]);
     expect(approvals.memory()).toEqual({ always: { "task:에어컨 켜기": "t" } });
   });
 

@@ -87,6 +87,8 @@ import { Starter } from "./start.js";
 import { UseWatch } from "./use.js";
 import { GoalWatch } from "./goal.js";
 import { Dock } from "./dock.js";
+import { noticeTick } from "./phone-line.js";
+export { DONE_NOTICE_MS } from "./phone-line.js";
 
 export type { HeardResult } from "./answers.js";
 export type { Stray } from "./coach.js";
@@ -362,6 +364,8 @@ export class ExecutionTracker {
     if (!core.stopped) core.goal.update();
     // 계획이 끝난 뒤 사용자 위치 확인·충전 자리 돌아가기(그동안 계획 밖 가까이 가서 보기는 하지 않는다)
     if (!core.stopped) core.dock.tick();
+    // 계획을 마친 완료 문장(실제 폰 명령 줄, 띄운 뒤 DONE_NOTICE_MS 뒤 지움)
+    if (!core.stopped) noticeTick(core, core.clock.now());
     if (!core.stopped) core.finder.idle();
     if (!core.stopped) core.contents.idle();
     if (core.stopped || !r || !OPEN.has(r.state)) return;

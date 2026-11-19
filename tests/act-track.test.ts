@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { ActionChoice } from "../src/act/prompts.js";
-import { ExecutionTracker, TRACK_DEFAULTS, type ContentsLook, type Stall, type Stray, type TrackerOptions } from "../src/act/track/tracker.js";
+import { DONE_NOTICE_MS, ExecutionTracker, TRACK_DEFAULTS, type ContentsLook, type Stall, type Stray, type TrackerOptions } from "../src/act/track/tracker.js";
 import type { TrackCore } from "../src/act/track/core.js";
 import { ApprovalStore, type ApprovalAnswer } from "../src/agent/approval.js";
 import type { AgentStep } from "../src/agent/planTools.js";
@@ -242,6 +242,33 @@ describe("실행 추적: 단계마다 실제 폰 명령", () => {
     for (const text of Object.values(STEP_COMMAND)) expect(text).toMatch(/주세요$/);
     expect(commands().every((m) => JSON.stringify(m.choices) === JSON.stringify(DONE))).toBe(true);
     expect(t.current()).toMatchObject({ planId: "plan:pam-1", state: "done" });
+  });
+
+  // 2026-11-20 사용자 「컵치우기를 완료했다는 완료메시지도 없다」: 계획을 마치면 실제 폰 명령 줄(새 자리 없이)에 완료 문장을 띄운다
+  it("계획을 끝까지 마치면 다음 타이머에 실제 폰 명령 줄에 완료 문장(「컵을 다 치웠어요.」, 답 단추 없음)을 소리와 함께 띄우고, DONE_NOTICE_MS 뒤 지운다. 그만·실패면 띄우지 않는다", async () => {
+    let w = world([cup("present")]);
+    const { t, decide, clock, last, phone } = setup({ w: () => w });
+    await decide(decision);
+    for (const n of [1, 2, 3]) t.onAnswer("plan:pam-1", `plan:pam-1:${n}`, "done");
+    clock.t += 600;
+    w = world([cup("present", "in_sink", clock.t)]);
+    t.onWorld();
+    expect(last()).toEqual({ type: "command_clear", id: "plan:pam-1" });
+    t.tick();
+    expect(last()).toEqual({ type: "command", id: "done:plan:pam-1", step: "done:plan:pam-1:1", text: "컵을 다 치웠어요.", vision: null, choices: [], target: null, speak: true });
+    const sent = phone.length;
+    clock.t += DONE_NOTICE_MS - 1;
+    t.tick();
+    expect(phone).toHaveLength(sent);
+    clock.t += 1;
+    t.tick();
+    expect(last()).toEqual({ type: "command_clear", id: "done:plan:pam-1" });
+    // 그만으로 닫은 계획은 완료 문장이 없다
+    const stop = setup();
+    await stop.decide(decision);
+    stop.t.onHeard("그만", heardAtOf(stop.phone));
+    stop.t.tick();
+    expect(stop.phone.some((m) => m.type === "command" && m.id.startsWith("done:"))).toBe(false);
   });
 
   it("집기는 사람이 물건을 들고 있어도(holding_object) 된 것으로 본다", async () => {
