@@ -1,6 +1,6 @@
 # A Proactive Agentic Home for CLOiD Combining Active Observation and Behavior Prediction
 
-**Group: Blitz** · Software Engineering 26-2
+LG electronics · Software Engineering 26-2
 
 ![Node.js](https://img.shields.io/badge/Node.js-22-5FA04E?logo=nodedotjs&logoColor=white)
 ![TypeScript](https://img.shields.io/badge/TypeScript-7.0-3178C6?logo=typescript&logoColor=white)
@@ -11,7 +11,7 @@
 ![MCP](https://img.shields.io/badge/MCP_SDK-1.32-D97757)
 ![OpenAI](https://img.shields.io/badge/OpenAI_SDK-7-412991?logo=openai&logoColor=white)
 
-## Abstract
+## Overview
 
 NOONCHI is a prototype of the decision-making part (the brain) of CLOiD, LG's home robot. Without being told, it notices moments in daily life when the resident could use help, checks what it doesn't know yet, and then plans and carries out the action that fits the resident.
 
@@ -19,15 +19,15 @@ NOONCHI is a prototype of the decision-making part (the brain) of CLOiD, LG's ho
 
 ---
 
-## I. Introduction
+## I. Background
 
-### A. Motivation
+### A. Why It Matters
 
 A camera spotting a cup is no reason to clear it right away. There may be a drink left, or the resident may use it again. An induction cooktop being on while the resident is out of the kitchen is no reason to switch it off right away either. They may have stepped into the living room for a moment while cooking.
 
 Even with the same objects and appliances, the right action depends on the resident's intent, activity, and schedule. Repeating the same action whenever fixed conditions hold, or waiting for commands, can't handle that difference. On the other hand, a system that asks about everything becomes a burden instead of a help.
 
-### B. Problem Statement
+### B. The Question
 
 > **Without a command, can the system notice a moment in daily life when help is needed, check the information it lacks, and plan and carry out an action that fits the resident?**
 
@@ -36,7 +36,7 @@ Even with the same objects and appliances, the right action depends on the resid
 - **Does it check what it doesn't know?** It confirms what the decision needs and cuts unnecessary questions and interventions.
 - **Does it act as the resident wants?** It follows the resident's current intent and allowed range, and reuses information it already confirmed while it still holds.
 
-### C. What We Want to See at the End
+### C. Goals
 
 1. **Observation:** YOLO26 and a VLM analyze photos from the real phone camera.
 2. **State:** World State merges objects, people, appliances, and the phone's position into one picture.
@@ -46,7 +46,7 @@ Even with the same objects and appliances, the right action depends on the resid
 
 ---
 
-## II. Datasets
+## II. Data
 
 - **Real videos:** three landscape videos filmed in the living room and kitchen of Hanyang Mokryeon 180B (a glass mug, a white mug, a tall glass). Each is cut into five clips (leave → go to the table → pick up the cup → go to the sink → put it in the sink) for the video tests.
 - **Synthetic records:** one person's week of daily-life records. Every line is marked as synthetic. They are used to test nightly reflection and the adoption test.
@@ -54,9 +54,9 @@ Even with the same objects and appliances, the right action depends on the resid
 
 ---
 
-## III. Methodology
+## III. How It Works
 
-### A. System Architecture
+### A. Architecture
 
 ```text
 Real phone (camera photos · position · voice)
@@ -127,7 +127,7 @@ Once a day, the day's records are grouped into activity chunks, and PAM reflecti
 
 ---
 
-## IV. Evaluation & Analysis
+## IV. Results
 
 **Video tests.** Each real video is played to the end in video mode and sent to the server the same way as the real phone; the command order and the plan's end are judged.
 
@@ -149,7 +149,7 @@ Once a day, the day's records are grouped into activity chunks, and PAM reflecti
 
 ---
 
-## V. Related Work
+## V. Comparison with Prior Work
 
 **PAM.** Lee et al.'s Procedural Assistance Memory keeps a person's routine as FSM memory and revises it with end-of-day reflection. We port the paper's prompts as they are, but feed World State observation text instead of photos, define states as what the person is doing, and use only habits that pass the adoption test.
 
@@ -159,7 +159,7 @@ Once a day, the day's records are grouped into activity chunks, and PAM reflecti
 
 ---
 
-## VI. Conclusion: Discussion
+## VI. Limitations and Next Steps
 
 **Limitations.**
 
@@ -175,7 +175,7 @@ Once a day, the day's records are grouped into activity chunks, and PAM reflecti
 
 ---
 
-## Team Roles
+## Team
 
 | Name | Responsibilities |
 |---|---|
@@ -186,7 +186,7 @@ Once a day, the day's records are grouped into activity chunks, and PAM reflecti
 
 ---
 
-## Repository Structure
+## Repository Layout
 
 ```text
 .
@@ -203,7 +203,7 @@ Once a day, the day's records are grouped into activity chunks, and PAM reflecti
 
 ---
 
-## References
+## Sources
 
 - D. Lee, M. Park et al., *An Agentic Framework for Proactive Robots with Procedural Assistance Memory*, arXiv:2610.21211.
 - Ultralytics, *YOLO26*.
