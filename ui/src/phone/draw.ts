@@ -135,15 +135,22 @@ function underPanel(y: number, height: number, edges: Edges): number | null {
   return null;
 }
 
-/** 한 장 그리기: 지우고, 화면 밖이거나 칸에 가린 명령 대상 쪽 세모(화면 안이면 그리지 않음), 맨 위에 조준점(aim일 때만). size·edges는 CSS px.
+/** 명령 대상 표시: 화면 밖이거나 칸에 가린 대상 쪽 세모만, 화면 안이면 그리지 않는다(고리·이름표 없음). 그린 세모의 자리.
+ *  실제 폰 화면(drawOverlay)과 폰이 보내는 화면 프레임(core/marks.js drawMarks, 칸 없음)이 같이 쓴다: 두 그림은 같은 규칙·같은 모양이다. */
+export function drawTargets(ctx: CanvasRenderingContext2D, size: { width: number; height: number }, marks: readonly FocusMark[], edges: Edges = NO_EDGES): ArrowBox[] {
+  const arrows: ArrowBox[] = [];
+  for (const m of marks) {
+    const toward = m.off ? m.angle : underPanel(m.v * size.height, size.height, edges);
+    if (toward !== null) arrows.push({ name: m.label, box: drawArrow(ctx, { ...m, angle: toward }, size, edges) });
+  }
+  return arrows;
+}
+
+/** 한 장 그리기: 지우고, 명령 대상 표시(drawTargets), 맨 위에 조준점(aim일 때만). size·edges는 CSS px.
  * 그린 세모의 자리를 돌려준다. */
 export function drawOverlay(ctx: CanvasRenderingContext2D, size: { width: number; height: number }, scene: OverlayScene, edges: Edges = NO_EDGES): Drawn {
   ctx.clearRect(0, 0, size.width, size.height);
-  const drawn: Drawn = { arrows: [] };
-  for (const m of scene.marks) {
-    const toward = m.off ? m.angle : underPanel(m.v * size.height, size.height, edges);
-    if (toward !== null) drawn.arrows.push({ name: m.label, box: drawArrow(ctx, { ...m, angle: toward }, size, edges) });
-  }
+  const drawn: Drawn = { arrows: drawTargets(ctx, size, scene.marks, edges) };
   if (scene.aim) drawReticle(ctx, size.width / 2, size.height / 2, scene.hit, scene.hitEstimated);
   return drawn;
 }
