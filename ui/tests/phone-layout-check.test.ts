@@ -92,7 +92,7 @@ describe("처음 화면 배치 검사", () => {
 describe("명령 말풍선 너비 검사", () => {
   it("말풍선이 글 너비 + 좌우 여백보다 넓으면(화면 너비로 늘어남) 문제, 글에 맞으면 괜찮다", () => {
     const wide = { name: "명령", box: box(72, 36, 1264, 84), text: box(86, 48, 210, 72), pad: 28 };
-    expect(bubbleIssues({ width: 1280, height: 720 }, [wide])).toEqual(["「명령」 말풍선이 글보다 넓어요(1192 / 글 124 + 여백 28)"]);
+    expect(bubbleIssues({ width: 1280, height: 720 }, [wide])).toEqual(["「명령」 말풍선이 글보다 넓어요(1192 / 152)"]);
     expect(bubbleIssues({ width: 1280, height: 720 }, [{ ...wide, box: box(72, 36, 224, 84) }])).toEqual([]);
   });
   it("긴 명령은 화면 안에서 줄을 바꾼다: 말풍선이 화면 밖으로 나가면 문제", () => {

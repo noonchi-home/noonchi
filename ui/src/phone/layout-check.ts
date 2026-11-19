@@ -75,7 +75,7 @@ export function bubbleIssues(view: { width: number; height: number }, bubbles: {
     const width = Math.round(b.box.right - b.box.left);
     const text = Math.round(b.text.right - b.text.left);
     const issues: string[] = [];
-    if (width > text + b.pad + 2) issues.push(`「${b.name}」 말풍선이 글보다 넓어요(${width} / 글 ${text} + 여백 ${Math.round(b.pad)})`);
+    if (width > text + b.pad + 2) issues.push(`「${b.name}」 말풍선이 글보다 넓어요(${width} / ${Math.round(text + b.pad)})`);
     if (!inside(b.box, view.width, view.height)) issues.push(`「${b.name}」 말풍선이 화면 밖이에요(${where(b.box)} / ${size})`);
     return issues;
   });
