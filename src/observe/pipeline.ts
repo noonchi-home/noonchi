@@ -282,9 +282,13 @@ export class ObservationPipeline {
     this.timeErr = t.source === "phone" ? header.time_err_ms ?? null : null;
     this.lastInputAt = Math.max(this.lastInputAt ?? Number.NEGATIVE_INFINITY, t.atMs);
     const frame: EngineFrame = { id: `e${++this.seq}`, capturedAtMs: t.atMs, latestAtMs: t.latestMs, jpeg, sha256: sha256(jpeg), width: header.width, height: header.height, eye, view, vlm: false };
-    // 붙잡은 장면(held)은 같은 사진이어도 VLM 간격마다 새 관찰로 넣는다: 붙잡는 동안 VLM은 영상이 돌 때와 같은 간격으로 부른다
+    // 붙잡은 장면(held)은 같은 사진이어도 VLM 차례(앞 VLM 프레임 + 간격)가 되면 바로 새 관찰로 넣는다: 붙잡는 동안 VLM은 영상이 돌 때와 같은 간격·박자로 부른다
+    // (마지막 재생 프레임에서 간격을 세면 조각이 끝난 뒤 첫 VLM이 간격 하나만큼 늦는다, 2026-11-20 pfsm9 머그 3.8초 빈틈). 간격이 없으면 기본 간격마다
     // 영상 모드: held
-    const pushed = this.ring.push(frame, header.held ? { resendAfterMs: this.vlmGap() ?? vlmStepMs(this.o.config) } : {});
+    const gap = this.vlmGap();
+    const heldDue = gap !== undefined && this.lastVlmAt !== null && t.atMs - this.lastVlmAt >= gap;
+    // 영상 모드: held
+    const pushed = this.ring.push(frame, header.held ? { resendAfterMs: heldDue ? 0 : gap ?? vlmStepMs(this.o.config) } : {});
     if (pushed === "duplicate") return;
     this.frames++;
     if (pushed === "stale") {

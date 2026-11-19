@@ -152,6 +152,23 @@ describe("관찰 흐름", () => {
     expect(await run(false)).toEqual({ frames: 1, duplicates: 60, sent: 1 });
   });
 
+  // 2026-11-20 pfsm9 머그: 놓기 조각이 끝난 뒤 첫 붙잡은 장면이 마지막 재생 프레임에서 VLM 간격만큼 뒤에야 들어가 VLM 사진 사이가 3.8초로 벌어졌다
+  it("조각이 끝나 붙잡기로 바뀌어도 VLM은 영상이 돌 때와 같은 박자로 부른다: 붙잡은 장면은 VLM 차례가 되면 바로 새 관찰로 받는다", async () => {
+    const vlm = { model: "w", json: async () => ({ value: { scene: "k", observations: [], summary: "s" }, costUsd: 0, model: "w", attempts: 1 }) } as unknown as VlmClient;
+    const world = new WorldState({ evidenceStepMs: 2000, surfaces: () => [], floorAt: () => 0, roomAt: () => null, devices: () => [] });
+    const seen: number[] = [];
+    const apply = world.applyScene.bind(world);
+    world.applyScene = (id, at, scene, ids, look, from) => { seen.push(at); return apply(id, at, scene, ids, look, from); };
+    // 프레임을 기다리지 않고 넣으므로 VLM 다섯 번이 한꺼번에 돈다(동시 상한 8)
+    const p = pipelineOn({ config: { engineMs: 100, vlmMs: 2000, vlmMaxInflight: 8, vlmTimeoutMs: 5000, detectQueueMax: 8, keepMs: 20_000 }, detector: null, vlm, world, emit: () => {}, broadcastWorld: () => {} });
+    // 1~3.9초 조각이 돈다(사진마다 다름), 4초부터 마지막 장면(3.9초 사진)을 붙잡는다
+    for (let t = 1000; t < 4000; t += 100) p.onEngine(jpeg(t / 100), head(t), null, null, t + 5);
+    for (let t = 4000; t <= 9000; t += 100) p.onEngine(jpeg(39), { ...head(t), held: true }, null, null, t + 5);
+    await p.idle();
+    await p.close();
+    expect(seen).toEqual([1000, 3000, 5000, 7000, 9000]);
+  });
+
   it("엔진 프레임이 올 때마다(같은 사진·늦은 프레임 포함) onFrame을 부른다: 판단 시점이 관찰이 살아 있는지 본다", async () => {
     let frames = 0;
     const vlm = { model: "w", json: async () => ({ value: { scene: "k", observations: [], summary: "s" }, costUsd: 0, model: "w", attempts: 1 }) } as unknown as VlmClient;
