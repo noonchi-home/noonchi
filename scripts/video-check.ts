@@ -4,7 +4,7 @@
 //   [--fov <도>] [--pitch <도>] [--h <m>] [--rate 1]
 // --rate: 영상 빠르기(0.25~2, 기본 1). 1이 아니면 폰 주소에 rate=로 붙고 폰 페이지가 첫 영상·단계 영상을 그 빠르기로 튼다(영상 시각은 원본 시각 그대로).
 //   서버 시각 ↔ 영상 시각 옮기기(videoClock·serverClock)는 짝 밖을 그 빠르기로 세고, 지금 영상이 너무 오래 도는지는 영상 길이 ÷ 빠르기로 본다.
-//   판정 줄 아래 반응 줄(reactionLine): --expect-after 영상 시각(사람이 떠남) → 그 뒤 첫 명령을 서버 시각으로 세어 빠르기와 상관없이 같은 초다.
+//   판정 줄 아래 반응 줄(reactionLine): 사람이 떠난 때(기록의 사람 사라짐) → 그 뒤 첫 명령을 서버 시각으로 세어 빠르기와 상관없이 같은 초다.
 // --fov·--pitch·--h: 영상 모드 카메라(세로 시야각 20~120, 숙인 각 -89~89, 높이 0.2~3). 준 것만 폰 주소에 fov=·pitch=·h=로 붙고, 없으면 폰 페이지 기본값(60°, -25°, 1.4m).
 // --say: 영상 시각(서버 시계를 폰 페이지 짝으로 옮긴 값)이 그 초가 되면 폰 페이지 안의 폰 소켓(/phone/events)으로 {type: "say", text, at}를 보낸다
 // (CDP로 그 소켓을 찾아 보냄). 시각표에 「말」 줄: 보낸 서버 시각을 두었다가 끝에서 같은 짝으로 옮긴다.
@@ -166,12 +166,16 @@ export function serverClock(t0: number, sync: readonly (readonly [number, number
   };
 }
 
-/** 반응 줄: 사람이 떠난 영상 시각(expectMs) 뒤 첫 명령까지를 서버 시각으로 센 초(빠르기를 바꿔 튼 판도 같은 초다). 그 뒤 명령이 없으면 null. */
-export function reactionLine(expectMs: number, commands: readonly VideoCommand[], t0: number, sync: readonly (readonly [number, number])[], rate = 1): string | null {
-  const first = commands.find((c) => c.video_ms >= expectMs);
-  if (!first) return null;
+/** 반응 줄: 사람이 떠난 때(기록의 「사람 사라짐」 detection person_gone, 서버 시각) 뒤 첫 명령까지를 서버 시각으로 센 초(빠르기를 바꿔 튼 판도 같은 초다).
+ *  첫 사람 사라짐 뒤 처음 나간 명령을 보고, 그 명령 바로 앞에 떠난 때부터 잰다. 사람 사라짐이 없거나 그 뒤 명령이 없으면 null. */
+export function reactionLine(history: readonly HistoryRow[], commands: readonly VideoCommand[], t0: number, sync: readonly (readonly [number, number])[], rate = 1): string | null {
+  const gones = history.filter((h) => h.kind === "detection" && (h.data as { kind?: string } | null)?.kind === "person_gone").map((h) => h.at_ms).sort((a, b) => a - b);
+  if (!gones.length) return null;
   const toServer = serverClock(t0, sync, rate);
-  return `반응: ${clock(expectMs)}에 떠난 뒤 첫 명령까지 서버 시각 ${((toServer(first.video_ms) - toServer(expectMs)) / 1000).toFixed(1)}초`;
+  const first = commands.map((c) => toServer(c.video_ms)).find((at) => at >= gones[0]!);
+  if (first === undefined) return null;
+  const left = gones.filter((g) => g <= first).at(-1)!;
+  return `반응: ${clock(videoClock(t0, sync, rate)(left))}에 사람이 떠난 뒤 첫 명령까지 서버 시각 ${((first - left) / 1000).toFixed(1)}초`;
 }
 
 /** 판 끝 시각표: 서버 시각으로 둔 것(기록·트윈 줄 ms·말 at·누름 at)을 폰 페이지 짝(sync)으로 영상 시각에 옮겨 폰 명령·바꾼 영상(영상 시각)과 합친다. */
@@ -1155,7 +1159,7 @@ async function main(): Promise<number> {
       const expect = fakeMode && !args.expectSet && personUntil !== null ? toVideo(personUntil) : expectMs;
       const v = verdict(rows, commands, history, expect);
       const stepLine = steps.length ? stepVerdict(history, commands, clicks, twin.last) : null;
-      const reaction = reactionLine(expect, commands, t0, sync, args.rate);
+      const reaction = reactionLine(history, commands, t0, sync, args.rate);
       // 단계 자리 판정: --step 자리와 실제 명령 대상, 끝에 치운 컵이 싱크대 안인지. 틀리면 시각표 위에 적고 실패다
       const judged = mainPlan(commands, history);
       const cupClear = !!judged && history.some((h) => h.kind === "plan" && h.subject === judged && h.text.startsWith("컵 치우기"));

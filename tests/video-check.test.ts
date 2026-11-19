@@ -257,15 +257,19 @@ describe("video-check", () => {
       expect(back(7_500)).toBe(21_000);
       expect(serverClock(1000, [], 0.75)(3000)).toBe(5000);
     });
-    it("반응 줄: 사람이 떠난 영상 시각(--expect-after)에서 첫 명령까지를 서버 시각으로 센다. 빠르기 0.75로 튼 판도 1로 튼 판과 같은 초다", () => {
-      const cmds = (ms: number): VideoCommand[] => [{ video_ms: ms, id: "plan:pam-1", step: "plan:pam-1:1", text: "식탁으로 가 주세요" }];
-      // 빠르기 1: 영상 6초에 떠남(서버 7 000), 9초에 첫 명령(서버 10 000)
-      expect(reactionLine(6000, cmds(9000), 1000, [[1000, 0], [13_000, 12_000]], 1)).toBe("반응: 00:06.0에 떠난 뒤 첫 명령까지 서버 시각 3.0초");
+    // 2026-11-20 pfsm10: --expect-after(36.3초)에서 재 첫 명령이 그보다 앞인 판에 12.3초 같은 엉뚱한 값이 나왔다
+    it("반응 줄: 사람이 떠난 때(기록의 「사람 사라짐」, 서버 시각)에서 그 뒤 첫 명령까지를 서버 시각으로 센다. 빠르기 0.75로 튼 판도 1로 튼 판과 같은 초다", () => {
+      const cmd = (ms: number, step = "plan:pam-1:1"): VideoCommand => ({ video_ms: ms, id: "plan:pam-1", step, text: "식탁으로 가 주세요" });
+      const gone = (at: number, id = 1): HistoryRow => ({ id, at_ms: at, day: "2026-11-20", kind: "detection", subject: null, text: "사람 안 보임", data: { kind: "person_gone" } } as HistoryRow);
+      const seen = (at: number): HistoryRow => ({ id: 9, at_ms: at, day: "2026-11-20", kind: "detection", subject: null, text: "사람 보임", data: { kind: "person_appeared" } } as HistoryRow);
+      // 빠르기 1: 서버 7 000(영상 6초)에 떠남, 영상 9초(서버 10 000)에 첫 명령
+      expect(reactionLine([seen(2000), gone(7000)], [cmd(9000)], 1000, [[1000, 0], [13_000, 12_000]], 1)).toBe("반응: 00:06.0에 사람이 떠난 뒤 첫 명령까지 서버 시각 3.0초");
       // 빠르기 0.75: 같은 서버 반응 3초는 영상 시각으로 2.25초다
-      expect(reactionLine(6000, cmds(8250), 1000, [[1000, 0], [13_000, 9_000]], 0.75)).toBe("반응: 00:06.0에 떠난 뒤 첫 명령까지 서버 시각 3.0초");
-      expect(reactionLine(6000, [], 1000, [], 1)).toBeNull();
-      // 떠나기 전에 낸 명령은 떠난 뒤 첫 명령이 아니다
-      expect(reactionLine(6000, [...cmds(2000), ...cmds(9000).map((c) => ({ ...c, step: "plan:pam-1:2" }))], 1000, [[1000, 0], [13_000, 12_000]], 1)).toBe("반응: 00:06.0에 떠난 뒤 첫 명령까지 서버 시각 3.0초");
+      expect(reactionLine([gone(9000)], [cmd(8250)], 1000, [[1000, 0], [13_000, 9_000]], 0.75)).toBe("반응: 00:06.0에 사람이 떠난 뒤 첫 명령까지 서버 시각 3.0초");
+      // 떠나기 전 명령은 세지 않고, 첫 명령 앞에 여러 번 떠났으면 그 명령 바로 앞에 떠난 때부터, 첫 명령 뒤에 다시 떠난 것은 보지 않는다
+      expect(reactionLine([gone(5000, 1), gone(7000, 2), gone(11_500, 3)], [cmd(2000), cmd(9000, "plan:pam-1:2")], 1000, [[1000, 0], [13_000, 12_000]], 1)).toBe("반응: 00:06.0에 사람이 떠난 뒤 첫 명령까지 서버 시각 3.0초");
+      expect(reactionLine([], [cmd(9000)], 1000, [[1000, 0], [13_000, 12_000]], 1)).toBeNull();
+      expect(reactionLine([gone(12_000)], [cmd(9000)], 1000, [[1000, 0], [13_000, 12_000]], 1)).toBeNull();
     });
     it("시각표의 서버 기록·트윈 줄은 그 짝으로 옮겨 폰 명령(영상 시각)과 한 시계에 선다", () => {
       // 영상 시각 7 600ms만큼 멈칫한 뒤: 폰 명령 28 000(영상 시각)은 서버 시각 1 035 600 무렵에 받았고 그때 계획이 생겼다
