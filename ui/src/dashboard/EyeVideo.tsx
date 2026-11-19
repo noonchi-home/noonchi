@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { attachEyeVideo, type EyeMode } from "./panels/eye-video";
+import { attachEyeVideo, type EyeMode, type EyeVideo as EyeVideoHandle } from "./panels/eye-video";
+import type { SceneSync } from "./scene-sync";
 
 const streamUrl = () => `/api/eye/stream?t=${Date.now()}`;
 
@@ -8,14 +9,20 @@ const streamUrl = () => `/api/eye/stream?t=${Date.now()}`;
  * 감싸는 상자는 칸을 덮고(absolute inset-0) 크기를 정하지 않는다. 첫 장이 오기 전에는 숨기고, 첫 장이 오면(<img> load·그림 크기 생김·H.264 영상 모드) onShown(true).
  * 보이는 영상 크기(H.264 표시 영상 크기, MJPEG면 그림 크기)가 생기거나 바뀌면 onSize로 알린다(미니맵이 그 비율을 따른다).
  * 서버가 다시 떴으면(연결이 끊겼다 붙음) 끊긴 MJPEG 스트림도 다시 붙이고, 스트림이 끊기면 2초 뒤 다시 붙인다.
+ * sync(장면·마스크 짝, scene-sync.ts)가 있으면 canvas 장면이 올 때·그릴 때마다 그 촬영 시각을 알리고, sync가 정한 지연만큼 장면을 늦게 그린다.
+ * 그린 장면의 촬영 시각은 data-scene-at에 둔다(미니맵 녹화가 읽는다). MJPEG로 돌아가면 sync를 처음으로 돌린다.
  */
-export function EyeVideo({ connected, onShown, onSize }: {
-  connected: boolean | null; onShown: (shown: boolean) => void; onSize?: (size: { width: number; height: number } | null) => void;
+export function EyeVideo({ connected, onShown, onSize, sync }: {
+  connected: boolean | null; onShown: (shown: boolean) => void; onSize?: (size: { width: number; height: number } | null) => void; sync?: SceneSync;
 }) {
   const [src, setSrc] = useState(streamUrl);
   const [shown, setShown] = useState(false);
   const [mode, setMode] = useState<EyeMode>("jpeg");
   const videoBox = useRef<HTMLDivElement>(null);
+  const wrap = useRef<HTMLDivElement>(null);
+  const handle = useRef<EyeVideoHandle | null>(null);
+  const syncRef = useRef(sync);
+  syncRef.current = sync;
   const img = useRef<HTMLImageElement>(null);
   const retry = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const wasConnected = useRef(connected);
@@ -58,12 +65,30 @@ export function EyeVideo({ connected, onShown, onSize }: {
         modeRef.current = m;
         setMode(m);
         if (m === "video") setShown(true);
+        else syncRef.current?.reset();
         tell();
       },
       onSize: (size) => { sizes.current.video = size; tell(); },
+      onFrame: (at) => { if (at !== null) syncRef.current?.frame(at); },
+      onShown: (at) => {
+        syncRef.current?.shown(at);
+        const el = wrap.current;
+        if (!el) return;
+        if (at === null) delete el.dataset.sceneAt;
+        else el.dataset.sceneAt = String(at);
+      },
     });
-    return () => { video.close(); canvas.remove(); };
+    handle.current = video;
+    video.setDelay(syncRef.current?.delayMs() ?? 0);
+    return () => { handle.current = null; video.close(); canvas.remove(); };
   }, []);
+
+  // 마스크 지연이 바뀌면 영상 일꾼에 알린다
+  useEffect(() => {
+    if (!sync) return;
+    handle.current?.setDelay(sync.delayMs());
+    return sync.onDelay((ms) => handle.current?.setDelay(ms));
+  }, [sync]);
 
   // 스트림은 첫 장이 와야 크기가 생긴다(브라우저마다 load가 늦을 수 있어 크기로도 본다)
   useEffect(() => {
@@ -72,7 +97,7 @@ export function EyeVideo({ connected, onShown, onSize }: {
   }, []);
 
   return (
-    <div data-eye-video hidden={!shown} className="absolute inset-0">
+    <div ref={wrap} data-eye-video hidden={!shown} className="absolute inset-0">
       <div ref={videoBox} hidden={mode !== "video"} className="absolute inset-0" />
       <img
         ref={img}

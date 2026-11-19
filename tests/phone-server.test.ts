@@ -170,6 +170,27 @@ describe("phone camera", () => {
     v.close();
   });
 
+  it("표시 장면의 촬영 시각: 영상 청크·화면 프레임의 captured_at은 엔진 프레임과 같은 규칙(captureTime, 이른 쪽)으로 at이 된다", async () => {
+    const { url, phoneBase } = await setup();
+    const v = await readVideo(`${url}/api/eye/video`);
+    const phone = await openWebSocket(`${phoneBase.replace(/^http/, "ws")}/phone/events`, { options: { origin: phoneBase } });
+    const t = Date.now() - 1000;
+    // 영상 모드: H.264 없이 화면 프레임(JPEG)만 온다
+    phone.send(encodeFramePacket({ kind: "frame", width: 360, height: 780, captured_at: t, time_err_ms: 4 }, JPEG));
+    const [still] = await v.waitFor((m) => m.header.type === "jpeg");
+    expect(still!.header).toEqual({ type: "jpeg", at: t - 4, width: 360, height: 780 });
+    expect([...still!.body]).toEqual([...JPEG]);
+    phone.send(encodeFramePacket({ kind: "video_config", codec: "avc1.42E01F", width: 592, height: 1280 }, Buffer.from([1, 0x42])));
+    phone.send(encodeFramePacket({ kind: "video", key: true, ts: 0, width: 592, height: 1280, captured_at: t + 33, time_err_ms: 4 }, Buffer.alloc(800, 0x65)));
+    // 시계를 아직 못 맞춘 폰은 받은 시각
+    phone.send(encodeFramePacket({ kind: "video", key: false, ts: 33_333, width: 592, height: 1280 }, Buffer.alloc(90, 0x41)));
+    const chunks = await v.waitFor((m) => m.header.type === "chunk", 2);
+    expect(chunks[0]!.header).toMatchObject({ at: t + 29 });
+    expect(Number(chunks[1]!.header.at)).toBeGreaterThanOrEqual(t + 1000);
+    phone.close();
+    v.close();
+  });
+
   it("깨진 영상 패킷은 이유를 돌려준다", async () => {
     const { phoneBase } = await setup();
     const phone = await openWebSocket(`${phoneBase.replace(/^http/, "ws")}/phone/events`, { options: { origin: phoneBase } });

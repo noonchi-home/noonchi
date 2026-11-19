@@ -46,6 +46,7 @@
 // --record-view minimap: 녹화 대시보드를 <api>/?view=minimap(비전 미니맵만, 3D 트윈 없음)으로 1280×720 창에 열고 mp4도 1280×720이다. 기본 top(대시보드 전체). 끝 사진도 그 창이다.
 // --record-fps: 녹화 초당 장 수(1~30, 기본 10). ack 간격(1000/fps)과 mp4 fps가 그 값이다.
 // minimap 보기는 mp4를 만든 뒤에도 <줄기>.frames 장면 폴더를 두고 판 기록 run.json(녹화 시작 시각·장면·폰 페이지 짝·단계 영상·첫 영상 길이)을 남긴다.
+// 미니맵은 장면을 마스크 지연만큼 늦게 보이므로(ui/src/dashboard/scene-sync.ts) 보인 장면의 촬영 시각 기록(scenes)도 남기고, 완료 문장 2초는 미니맵에 보인 때부터 센다.
 // scripts/minimap-cut.ts가 그것으로 붙잡기를 뺀 이은 영상(<줄기>.minimap.mp4)을 만든다.
 // 영상은 소리 없이 「AR 시작」 누름에서 튼다. launchChrome은 자동 재생 플래그를 받지 않지만 소리 없는 재생은 크롬 기본값으로 된다.
 // 오늘 기억: 영상을 틀기 전에 GET /api/memory/day/<오늘>의 uses.memory를 본다(memoryGate). 마시는 중에서 떠나는 배운 컵 치우기 화살표가 없으면(seed·옛 모양)
@@ -853,6 +854,26 @@ export async function openDashboard(tab: Pick<Page, "send">, api: string, o: { w
 /** 대시보드 그림 간격 모으기 시작(window.__frameGaps)과 읽기. */
 const FRAME_GAPS_START = "(() => { const g = (window.__frameGaps = []); let last = performance.now(); const f = (n) => { g.push(n - last); last = n; if (g.length < 100000) requestAnimationFrame(f); }; requestAnimationFrame(f); return true; })()";
 const FRAME_GAPS_READ = "window.__frameGaps ?? null";
+/** 미니맵 장면 기록 모으기 시작과 읽기: 폰 칸 영상 상자(data-eye-video)의 data-scene-at(그린 장면 촬영 시각, 서버 시계)이 바뀔 때마다 [이 PC 시각, 장면 시각].
+ *  이 PC 시계 = 같은 PC 서버 시계라 run.json startMs·frames ms와 같은 시계다. scripts/minimap-cut.ts가 장면마다 그 장면 시각으로 잇는다. */
+const SCENES_START = "(() => { const s = (window.__minimapScenes = []); new MutationObserver((list) => { for (const m of list) { const v = Number(m.target.getAttribute('data-scene-at')); if (Number.isFinite(v) && v > 0 && s.length < 200000 && (!s.length || s[s.length - 1][1] !== v)) s.push([Date.now(), v]); } }).observe(document.body, { subtree: true, attributes: true, attributeFilter: ['data-scene-at'] }); return true; })()";
+const SCENES_READ = "window.__minimapScenes ?? null";
+/** 장면 기록 → 숫자 짝 [보인 시각, 장면 촬영 시각]만, 보인 시각이 앞으로 가는 차례로. */
+export function sceneLog(raw: unknown): [number, number][] {
+  if (!Array.isArray(raw)) return [];
+  const out: [number, number][] = [];
+  for (const p of raw) {
+    if (!Array.isArray(p) || p.length !== 2 || !p.every((x) => typeof x === "number" && Number.isFinite(x))) continue;
+    if (out.length && p[0] < out.at(-1)![0]) continue;
+    out.push([p[0], p[1]]);
+  }
+  return out;
+}
+/** 지금 미니맵이 장면을 늦게 보이는 시간(ms): 마지막 짝의 보인 시각 − 장면 시각. 기록이 없으면 0. */
+export function sceneLag(scenes: readonly (readonly [number, number])[]): number {
+  const last = scenes.at(-1);
+  return last ? Math.max(0, last[0] - last[1]) : 0;
+}
 /** 그림 간격(ms) 목록 → 한 줄(중앙값·p90·최대·초당 장 수). 없으면 null. */
 export function frameGapLine(raw: unknown): string | null {
   if (!Array.isArray(raw) || raw.length < 2) return null;
@@ -987,6 +1008,8 @@ async function main(): Promise<number> {
         console.log(`[video-check] 대시보드${args.recordView === "minimap" ? " 미니맵" : " 트윈"} 준비 ${((Date.now() - twinFrom) / 1000).toFixed(1)}초`);
         // 녹화하는 동안 대시보드 그림 간격(requestAnimationFrame)을 쌓는다(끝에 중앙값·p90·최대를 적는다)
         await dash.evaluate(FRAME_GAPS_START, 10_000).catch(() => {});
+        // 미니맵: 보인 장면의 촬영 시각 기록(이은 영상이 장면 시각으로 잇는다)
+        if (args.recordView === "minimap") await dash.evaluate(SCENES_START, 10_000).catch(() => {});
         rmSync(framesDir, { recursive: true, force: true });
         recStartMs = Date.now();
         rec = await startRecording(framesDir, [...(args.recordPhone ? [{ name: "phone", page: cdp, size: SIZE }] : []), { name: "dash", page: dash, size: shape.size }], { intervalMs: shape.intervalMs });
@@ -1072,7 +1095,11 @@ async function main(): Promise<number> {
         for (const c of commands.slice(known)) {
           console.log(`[video-check] ${clock(c.video_ms)} 명령 ${c.text}`);
           due.push(...plannedClicks(c, rule, Date.now()));
-          if (isDoneStep(c.step)) noticeAt ??= Date.now();
+          // 미니맵은 명령 줄을 장면 지연만큼 늦게 보인다: 완료 문장이 미니맵에 보인 때부터 센다
+          if (isDoneStep(c.step) && noticeAt === null) {
+            const lag = dash && args.recordView === "minimap" ? sceneLag(sceneLog(await dash.evaluate(SCENES_READ, 10_000).catch(() => null))) : 0;
+            noticeAt = Date.now() + lag;
+          }
         }
         known = commands.length;
         const now = Date.now();
@@ -1144,6 +1171,7 @@ async function main(): Promise<number> {
         return 1;
       }
       const gaps = dash ? frameGapLine(await dash.evaluate(FRAME_GAPS_READ, 10_000).catch(() => null)) : null;
+      const scenes = dash && args.recordView === "minimap" ? sceneLog(await dash.evaluate(SCENES_READ, 10_000).catch(() => null)) : [];
       if (gaps) { recordNotes.push(gaps); console.log(`[video-check] ${gaps}`); }
       recorded = await rec?.stop();
       const endMs = clipEnd(seen, clipStart(), seen.duration ?? duration);
@@ -1203,7 +1231,8 @@ async function main(): Promise<number> {
         // 미니맵 보기: 장면 폴더를 두고 판 기록(run.json)을 남긴다. scripts/minimap-cut.ts가 붙잡기를 뺀 이은 영상을 만든다
         if (args.recordView === "minimap") {
           const doneMs = commands.find((c) => isDoneStep(c.step))?.video_ms ?? null;
-          const run: CutRun = { startMs: recStartMs, endMs: recorded.endMs, size: shape.size, frames: recorded.frames.dash ?? [], t0, sync: seen.record?.sync ?? [], firstDurationMs, clips, rate: args.rate, doneMs };
+          const run: CutRun = { startMs: recStartMs, endMs: recorded.endMs, size: shape.size, frames: recorded.frames.dash ?? [], t0, sync: seen.record?.sync ?? [], firstDurationMs, clips, rate: args.rate, doneMs, ...(scenes.length ? { scenes } : {}) };
+          console.log(`[video-check] 미니맵 장면 기록 ${scenes.length}개${scenes.length ? ` · 끝 지연 ${sceneLag(scenes)}ms` : " · 받은 시각으로 이어요"}`);
           writeFileSync(join(framesDir, CUT_RUN_FILE), JSON.stringify(run));
         }
         const made = await encodeDemo(framesDir, recorded, demo, { ...(args.recordPhone ? { phoneSize: SIZE } : {}), dashSize: shape.size, fps: shape.fps, height: shape.height, keepFrames: args.recordView === "minimap" });

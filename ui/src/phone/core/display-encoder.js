@@ -4,6 +4,7 @@
 // 프레임은 기본으로 readPixels(RGBA 버퍼)로 만든다. WebGL canvas에서 바로 만든 프레임은 이 PC 크롬(하드웨어 인코더)에서 10fps에 그쳤고
 // 같은 GPU를 쓰는 대시보드 디코더까지 느려졌다(readPixels 26fps, 소프트웨어 인코더 30fps). 폰에서 시험하려면 ?vsrc=canvas.
 // 인코더가 2초 넘게 밀리면 한 단계씩 바꾼다: canvas였으면 readPixels로 → 소프트웨어 인코더로.
+// 청크마다 엔진 프레임과 같은 서버 시계 촬영 시각(captured_at·time_err_ms, stamp)을 싣는다: 대시보드가 그 시각의 마스크를 이 장면에 얹는다.
 // URL: ?video=0 끄기, ?vfps=(5~30, 기본 30) ?vlong=(긴 변, 기본 1280) ?vkbps=(기본 2000) ?vsrc=canvas.
 
 import { createSendStats } from "./pipeline.js";
@@ -18,8 +19,9 @@ const MAX_ERRORS = 3;
 export const displaySupported = () => typeof VideoEncoder === "function" && typeof VideoFrame === "function";
 
 /** 영상 인코딩·보내기(그리기와 무관). frame(make, w, h, ms): make(size)가 그 크기의 VideoFrame을 만든다.
- *  onSlow: 인코더가 밀릴 때 먼저 부른다. 프레임 만드는 방법을 바꿨으면 true(그다음은 소프트웨어 인코더로). */
-export function createVideoSender({ socket, params = new URLSearchParams(), onError = () => {}, onSlow = () => false }) {
+ *  onSlow: 인코더가 밀릴 때 먼저 부른다. 프레임 만드는 방법을 바꿨으면 true(그다음은 소프트웨어 인코더로).
+ *  stamp(frameMs): 그 프레임 시각(XR 프레임 시각 ms) → 서버 시계 촬영 시각과 오차(link.js stamp). 시계를 못 맞췄으면 빈 객체. */
+export function createVideoSender({ socket, params = new URLSearchParams(), onError = () => {}, onSlow = () => false, stamp = () => ({}) }) {
   if (!displaySupported() || params.get("video") === "0") return null;
   const fps = clamp(params.get("vfps"), 5, 30, 30);
   const long = clamp(params.get("vlong"), 320, 1920, 1280);
@@ -69,7 +71,7 @@ export function createVideoSender({ socket, params = new URLSearchParams(), onEr
     }
     const data = new Uint8Array(chunk.byteLength);
     chunk.copyTo(data);
-    ws.send(videoPacket({ kind: "video", key, ts: Math.max(0, Math.round(chunk.timestamp)), width: size.width, height: size.height }, data));
+    ws.send(videoPacket({ kind: "video", key, ts: Math.max(0, Math.round(chunk.timestamp)), width: size.width, height: size.height, ...stamp(chunk.timestamp / 1000) }, data));
     stats.sent({ bytes: data.length, readMs: drawMs, encodeMs: 0 });
   }
 
@@ -196,8 +198,8 @@ function program(gl) {
   return p;
 }
 
-/** XR 카메라 텍스처용. gl은 XR 세션 컨텍스트(카메라 텍스처가 그 안에서만 유효), flipY는 capture.js와 같은 뜻(?flip=). */
-export function createDisplayEncoder({ gl, flipY = true, socket, params, onError = () => {} }) {
+/** XR 카메라 텍스처용. gl은 XR 세션 컨텍스트(카메라 텍스처가 그 안에서만 유효), flipY는 capture.js와 같은 뜻(?flip=). stamp는 createVideoSender와 같다. */
+export function createDisplayEncoder({ gl, flipY = true, socket, params, onError = () => {}, stamp }) {
   // ?vsrc=canvas일 때만 canvas에서 바로 만든다. 못 만들거나(브라우저마다 다름) 인코더가 밀리면 readPixels로
   let fromCanvas = params?.get("vsrc") === "canvas";
   const onSlow = () => {
@@ -205,7 +207,7 @@ export function createDisplayEncoder({ gl, flipY = true, socket, params, onError
     fromCanvas = false;
     return true;
   };
-  const sender = createVideoSender({ socket, params, onError, onSlow });
+  const sender = createVideoSender({ socket, params, onError, onSlow, stamp });
   if (!sender) return null;
   let prog;
   try {

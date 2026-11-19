@@ -4,7 +4,7 @@
 //
 //   GET /api/eye/frame.jpg            최신 프레임(없으면 404)
 //   GET /api/eye/stream               multipart/x-mixed-replace(MJPEG). <img src>로 바로 보인다
-//   GET /api/eye/video                표시 영상(H.264) 메시지 스트림. 대시보드가 VideoDecoder로 그린다(ui/src/dashboard/panels/eye-video.ts)
+//   GET /api/eye/video                표시 영상(H.264) 메시지 스트림. H.264가 없으면 화면 프레임(JPEG)도 촬영 시각과 함께 싣는다. 대시보드가 그린다(ui/src/dashboard/panels/eye-video.ts)
 //   GET /api/eye/photos/<id>.jpg      저장한 사진
 //   GET /api/eye/stats                받은 프레임 통계(최근 2초 fps·장당 크기·마지막 크기)와 표시 영상 통계(display)
 
@@ -62,9 +62,11 @@ export class EyeFeed {
     this.video = new VideoRelay({ now: () => this.now().getTime() });
   }
 
-  pushFrame(jpeg: Buffer, width: number, height: number): void {
+  /** 화면 프레임 한 장. capturedAtMs: 촬영 시각(서버 시계 ms, 없으면 받은 시각). */
+  pushFrame(jpeg: Buffer, width: number, height: number, capturedAtMs?: number): void {
     this.latest = jpeg;
     const at = this.now().getTime();
+    this.video.still({ at: capturedAtMs ?? at, width, height, data: jpeg });
     this.recent.push({ at, bytes: jpeg.length });
     this.recent = this.recent.filter((f) => f.at > at - STATS_WINDOW_MS);
     this.lastSize = { width, height, at };

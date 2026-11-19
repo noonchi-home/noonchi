@@ -154,7 +154,8 @@ describe("설정 흐름 서버", () => {
     await sendVideo();
     const v2 = await readVideo(`${srv.url}/api/eye/video`);
     const [first, second] = await v2.waitFor(() => true, 2);
-    expect([first!.header.type, second!.header]).toEqual(["config", { type: "chunk", key: true, ts: 0 }]);
+    // 청크마다 촬영 시각(at)이 붙는다(시계를 못 맞춘 폰은 받은 시각)
+    expect([first!.header.type, second!.header]).toEqual(["config", { type: "chunk", key: true, ts: 0, at: expect.any(Number) }]);
     expect((await get("/api/eye/stats")).json.display).toMatchObject({ codec: "avc1.42E01F", viewers: 1 });
     v2.close();
   });

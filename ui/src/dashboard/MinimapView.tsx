@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ServerMessage } from "../../../src/contract/events.ts";
 import { MeerkatFace, PhoneTopLine } from "../components/phone-top-line";
 import { hubOf } from "../lib/hub";
@@ -25,6 +25,7 @@ export function minimapBox(view: BoxSize): Rect {
  * 비전 미니맵만(대시보드 주소 ?view=minimap, 미니맵 녹화): 대시보드 폰 칸(PhonePane, 화면 이름 「폰 카메라」)을 창 가운데 가장 큰 16:9 칸 하나로 채운다.
  * 자료는 대시보드와 같다: health 전에는 빈 칸, 폰 서버가 켜졌으면 실시간 영상(첫 장 전에는 연결 QR), 꺼졌으면 연결 QR이고, 마스크·이름표는 /events의 seen이다.
  * 칸 위쪽에 실제 폰 위 줄(PhoneTopLine: 미어캣 얼굴 + 지금 실제 폰에 낸 명령 한 줄 /events phone_command, 실제 폰과 같은 부품·배치·글)을 둔다. 명령을 지우면(null) 명령 줄만 사라진다.
+ * 폰 칸은 장면을 마스크 지연만큼 늦게 그리므로(scene-sync.ts) 명령 줄도 같은 만큼 늦게 바꿔 그 장면과 맞춘다(실제 폰은 늦추지 않는다).
  * 3D 트윈(엔진·장면·트윈 파일)·메시지 상자·시간 줄 카드·마스코트는 그리지 않는다. 글꼴이 다 뜨면 main에 data-ready를 단다(녹화가 기다린다).
  */
 export function MinimapView() {
@@ -37,11 +38,27 @@ export function MinimapView() {
   const [connected, setConnected] = useState<boolean | null>(null);
   // 지금 실제 폰 명령 한 줄. 다시 붙으면(hello) 비우고 서버가 접속 때 지금 명령을 다시 보낸다
   const [command, setCommand] = useState<string | null>(null);
+  // 폰 칸 장면 지연(ms). 명령 줄은 받은 차례대로 그만큼 뒤에 바꾼다
+  const delay = useRef(0);
+  const later = useRef({ timers: new Set<ReturnType<typeof setTimeout>>(), due: 0 });
+  const clearLater = useCallback(() => {
+    for (const t of later.current.timers) clearTimeout(t);
+    later.current.timers.clear();
+  }, []);
+  useEffect(() => clearLater, [clearLater]);
+  const showCommand = useCallback((text: string | null) => {
+    const l = later.current;
+    if (delay.current <= 0 && !l.timers.size) { setCommand(text); return; }
+    l.due = Math.max(l.due, Date.now() + delay.current);
+    const t = setTimeout(() => { l.timers.delete(t); setCommand(text); }, l.due - Date.now());
+    l.timers.add(t);
+  }, []);
   const onMessage = useCallback((m: ServerMessage) => {
-    if (m.type === "hello") { setHellos((n) => n + 1); setCommand(null); }
-    if (m.type === "phone_command") setCommand(m.text);
+    if (m.type === "hello") { setHellos((n) => n + 1); clearLater(); setCommand(null); }
+    if (m.type === "phone_command") showCommand(m.text);
     toDash(m);
-  }, [toDash]);
+  }, [toDash, clearLater, showCommand]);
+  const onDelay = useCallback((ms: number) => { delay.current = ms; }, []);
   useEvents(onMessage, setConnected);
   const hub = useMemo(() => hubOf(health, connected), [health, connected]);
   const phone: PhoneSlot = !health ? { kind: "none" } : health.eye ? { kind: "live", url: hub.phoneUrl } : { kind: "qr", url: hub.phoneUrl };
@@ -49,7 +66,7 @@ export function MinimapView() {
   const box = minimapBox(view);
   return (
     <main ref={main} data-view="minimap" data-ready={ready || undefined} className="relative h-full w-full overflow-hidden">
-      <PhonePane slot={phone} seen={seen} box={box} connected={connected} />
+      <PhonePane slot={phone} seen={seen} box={box} connected={connected} onDelay={onDelay} />
       <div data-phone-line className="pointer-events-none absolute z-50" style={{ left: box.left, top: box.top, width: box.width }}>
         <PhoneTopLine lead={<div className="flex size-12 shrink-0 items-center justify-center"><MeerkatFace /></div>} text={command} />
       </div>

@@ -86,7 +86,8 @@ export function createAr({ link, params, hooks, deps = {} }) {
     const binding = d.binding(xrSession, gl);
     const grabber = binding ? d.createGrabber(gl, { flipY: FLIP }) : null;
     state.encoder = grabber?.encoderMode ?? "카메라 없음";
-    display = grabber ? d.createDisplayEncoder({ gl, flipY: FLIP, socket: ws, params, onError: hooks.note }) : null;
+    // 표시 영상 청크도 엔진 프레임과 같은 서버 시계 촬영 시각을 싣는다(XR 프레임 시각 → link.stamp)
+    display = grabber ? d.createDisplayEncoder({ gl, flipY: FLIP, socket: ws, params, onError: hooks.note, stamp: (ms) => link.stamp(performance.timeOrigin + ms) }) : null;
     let cameraSeen = false;
     const cameraTimer = setTimeout(() => {
       if (!cameraSeen) hooks.note("카메라 화면을 보낼 수 없어요. 위치만 보내요");

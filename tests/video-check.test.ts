@@ -14,7 +14,7 @@ import { doneId, isDoneStep } from "../src/act/done-step.js";
 import { CUP_FSM_MEMORY } from "../src/brain/decision.js";
 import { LEARNED_FSM_MEMORY } from "../scripts/learned-memory.js";
 import { HISTORY_KINDS as DB_KINDS } from "../src/brain/history/db.js";
-import { FETCH_KINDS, SEND_SAY, hasLearnedClear, memoryGate, clickChoice, clock, costLine, judgeInput, judgeState, markdown, parseArgs, phoneUrl, plannedClicks, sendStartPose, mainPlan, planState, stepPlaces, stepVerdict, timeline, verdict, twinRows, usedServer, roomLabels, ownAssetFailures, videoClock, serverClock, reactionLine, DONE_TAIL_MS, runTimeline, clipEnd, syncWarning, mustStop, openDashboard, recordSetup, waitLoaded, waitTwinReady, frameGapLine, type ClickRule, type Row, type VideoCommand } from "../scripts/video-check.js";
+import { FETCH_KINDS, SEND_SAY, hasLearnedClear, memoryGate, clickChoice, clock, costLine, judgeInput, judgeState, markdown, parseArgs, phoneUrl, plannedClicks, sendStartPose, mainPlan, planState, stepPlaces, stepVerdict, timeline, verdict, twinRows, usedServer, roomLabels, ownAssetFailures, videoClock, serverClock, reactionLine, DONE_TAIL_MS, runTimeline, clipEnd, syncWarning, mustStop, openDashboard, recordSetup, waitLoaded, waitTwinReady, frameGapLine, sceneLog, sceneLag, type ClickRule, type Row, type VideoCommand } from "../scripts/video-check.js";
 import { createServer, type Server } from "node:http";
 import { listenRetry } from "../src/shared/net.js";
 import type { SceneJson } from "../src/contract/layout.js";
@@ -1088,6 +1088,15 @@ describe("녹화는 대시보드 한 화면만, 트윈이 다 뜬 뒤 시작", (
     expect(i).toBe(4);
     const never = { evaluate: async () => false };
     await expect(waitTwinReady(never as never, { waitMs: 50, everyMs: 5 })).rejects.toThrow(/트윈/);
+  });
+
+  // 2026-11-20 장면·마스크 짝 맞추기: 미니맵은 장면을 마스크 지연만큼 늦게 보이고, 녹화는 보인 장면의 촬영 시각 기록을 run.json scenes로 남긴다
+  it("미니맵 장면 기록: [보인 시각, 장면 촬영 시각] 숫자 짝만 보인 차례로 두고, 지금 지연은 마지막 짝의 차다. 자료가 없으면 빈 기록·0", () => {
+    expect(sceneLog([[1000, 600], [1050, 650], ["x", 1], [1100], [1100, 700]])).toEqual([[1000, 600], [1050, 650], [1100, 700]]);
+    expect(sceneLog([[1100, 700], [1000, 600]])).toEqual([[1100, 700]]);
+    expect(sceneLog(null)).toEqual([]);
+    expect(sceneLag([[1000, 600], [1100, 750]])).toBe(350);
+    expect(sceneLag([])).toBe(0);
   });
 
   it("녹화하는 동안 잰 대시보드 그림 간격을 한 줄로 적는다(중앙값·p90·최대·초당 장 수). 자료가 없으면 null", () => {

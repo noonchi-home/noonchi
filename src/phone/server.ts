@@ -23,6 +23,7 @@ import { REFRESH_TEXT } from "../act/labels.js";
 import { listenRetry } from "../shared/net.js";
 import { headWithin } from "../shared/cut.js";
 import { serveFile, serveRange } from "../shared/static.js";
+import { captureTime } from "../shared/capture-time.js";
 import { repoPath } from "../shared/paths.js";
 import type { EyeFeed } from "./feed.js";
 import { MAX_PACKET_BYTES, parsePacket, type FrameHeader } from "./packet.js";
@@ -236,7 +237,11 @@ export function createPhoneServer(opts: PhoneServerOptions): PhoneServer {
     if ("video" in packet) {
       const { video, data: body } = packet;
       if (video.kind === "video_config") opts.feed?.video.config(source, { codec: video.codec, width: video.width, height: video.height, description: body });
-      else opts.feed?.video.chunk(source, { key: video.key, ts: video.ts, width: video.width, height: video.height, data: body });
+      else {
+        // 촬영 시각: 엔진 프레임과 같은 규칙(같은 폰 프레임이면 같은 값). 대시보드가 그 시각의 마스크를 이 장면에 얹는다
+        const at = captureTime({ receivedAtMs, capturedAt: video.captured_at, timeErrMs: video.time_err_ms }).atMs;
+        opts.feed?.video.chunk(source, { key: video.key, ts: video.ts, width: video.width, height: video.height, data: body, at });
+      }
       return;
     }
     const { header, jpeg } = packet;
@@ -251,7 +256,7 @@ export function createPhoneServer(opts: PhoneServerOptions): PhoneServer {
     }
     // 화면 프레임은 표시만, 사진은 저장만 한다(관찰 흐름에는 엔진 프레임만 들어간다)
     if (header.kind === "frame") {
-      opts.feed?.pushFrame(jpeg, header.width, header.height);
+      opts.feed?.pushFrame(jpeg, header.width, header.height, captureTime({ receivedAtMs, capturedAt: header.captured_at, timeErrMs: header.time_err_ms }).atMs);
       return;
     }
     if (!opts.feed) return;

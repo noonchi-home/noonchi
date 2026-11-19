@@ -105,6 +105,23 @@ describe("미니맵 이은 영상(minimap-cut)", () => {
     expect(tail.endMs).toBeGreaterThan(Math.round(14_800 / 0.75));
   });
 
+  // 2026-11-20 장면·마스크 짝 맞추기: 미니맵은 장면을 마스크 지연만큼 늦게 보이고(그 장면의 마스크를 얹으려고), 보인 장면의 촬영 시각을 남긴다.
+  // 이은 영상은 녹화 장면마다 그때 보인 장면의 촬영 시각으로 영상 시각을 정한다: 늦게 보인 만큼 앞으로 옮겨 원본 영상 시각에 맞는다
+  it("장면 기록(scenes: [보인 시각, 그 장면 촬영 시각])이 있으면 녹화 장면은 받은 시각이 아니라 그때 보인 장면의 촬영 시각으로 영상 시각을 정한다", () => {
+    // 대시보드가 서버 1000부터 50ms마다 400ms 늦은 장면을 보였다
+    const scenes: [number, number][] = Array.from({ length: 400 }, (_, k) => [1000 + k * 50, 600 + k * 50]);
+    const { frames } = cutFrames({ ...RUN, scenes });
+    // 녹화 ms 900(서버 1400)에 보인 장면은 서버 1000에 찍혔다 = 영상 시각 0
+    expect(frames[0]).toEqual({ file: "dash/000010.jpg", ms: 0 });
+    expect(frames.find((f) => f.file === "dash/000011.jpg")).toEqual({ file: "dash/000011.jpg", ms: 100 });
+    // 붙잡기(영상 시각 8~12초 = 장면 촬영 서버 9000~13 000 = 녹화 ms 8 900~12 800)의 장면은 없다
+    const held = new Set(RUN.frames.filter((f) => f.ms >= 8900 && f.ms < 12_900).map((f) => f.file));
+    expect(frames.some((f) => held.has(f.file))).toBe(false);
+    expect(frames.find((f) => f.ms === 8000)).toEqual({ file: "dash/000130.jpg", ms: 8000 });
+    // 보인 장면이 아직 없던 녹화 장면은 뺀다
+    expect(cutFrames({ ...RUN, scenes: [[5000, 4600]] }).frames[0]).toEqual({ file: "dash/000046.jpg", ms: 3600 });
+  });
+
   const ffmpegHere = spawnSync("ffmpeg", ["-version"]).status === 0 && spawnSync("ffprobe", ["-version"]).status === 0;
   it.skipIf(!ffmpegHere)("makeCut: 녹화 장면 폴더(run.json)에서 이은 영상을 초당 20장·녹화 크기로 만들고, 두 번 만들어도 같은 파일이다. 장면 폴더는 그대로 둔다", async () => {
     const dir = mkdtempSync(join(tmpdir(), "minimap-cut-"));

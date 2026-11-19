@@ -1,6 +1,6 @@
 // 눈 영상(H.264) 순수 부분: web/eye-video.js를 TS로 옮긴 ui/src/dashboard/panels/eye-video.ts. 루트 tests/eye-video.test.ts와 같은 규칙.
-import { afterEach, describe, expect, it } from "vitest";
-import { createDecodeGate, createDisplayMode, createStreamParser, runDecoder } from "../src/dashboard/panels/eye-video";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { createDecodeGate, createDelayLine, createDisplayMode, createStreamParser, runDecoder } from "../src/dashboard/panels/eye-video";
 
 /** 서버 src/phone/video.ts encodeStreamMessage와 같은 틀: [헤더 길이 u32][본문 길이 u32][JSON 헤더][본문]. */
 function encode(header: object, body: Uint8Array): Uint8Array {
@@ -148,5 +148,115 @@ describe("영상 스트림 읽기(runDecoder)", () => {
     expect(signals[0]!.aborted).toBe(true);
     d.close();
     expect(signals[1]!.aborted).toBe(true);
+  });
+});
+
+// 장면·마스크 짝 맞추기(2026-11-20): 대시보드는 장면을 마스크 지연만큼 들고 있다가 그리고, 장면마다 서버 시계 촬영 시각(at)을 알린다
+describe("장면 늦추기(createDelayLine)", () => {
+  afterEach(() => { vi.useRealTimers(); });
+  it("장면마다 받은 때 + 지연에 그린다. 한꺼번에 때가 되면 가장 새 장면만 그리고 앞 장면은 버린다. 그린 장면도 그린 뒤 놓는다", () => {
+    vi.useFakeTimers();
+    const drawn: string[] = [];
+    const dropped: string[] = [];
+    const line = createDelayLine<string>({ draw: (img, at) => drawn.push(`${img}@${at}`), drop: (img) => dropped.push(img), now: () => Date.now() });
+    line.setDelay(300);
+    line.push(1000, "a");
+    vi.advanceTimersByTime(33);
+    line.push(1033, "b");
+    vi.advanceTimersByTime(266);
+    expect(drawn).toEqual([]);
+    vi.advanceTimersByTime(1);
+    expect(drawn).toEqual(["a@1000"]);
+    vi.advanceTimersByTime(33);
+    expect(drawn).toEqual(["a@1000", "b@1033"]);
+    line.push(1066, "c");
+    line.push(1099, "d");
+    line.setDelay(0);
+    expect(drawn).toEqual(["a@1000", "b@1033", "d@1099"]);
+    expect(dropped).toEqual(["a", "b", "c", "d"]);
+  });
+
+  it("들고 있는 장면이 max를 넘으면 가장 오래된 장면부터 버린다", () => {
+    vi.useFakeTimers();
+    const dropped: string[] = [];
+    const line = createDelayLine<string>({ draw: () => {}, drop: (img) => dropped.push(img), now: () => Date.now(), max: 2 });
+    line.setDelay(500);
+    for (const img of ["a", "b", "c"]) line.push(null, img);
+    expect(dropped).toEqual(["a"]);
+    line.close();
+    expect(dropped).toEqual(["a", "b", "c"]);
+  });
+});
+
+describe("장면 시각(runDecoder)", () => {
+  type G = Record<string, unknown>;
+  const g = globalThis as unknown as G;
+  const saved = { fetch: globalThis.fetch, VideoDecoder: g.VideoDecoder, EncodedVideoChunk: g.EncodedVideoChunk, createImageBitmap: g.createImageBitmap };
+  const stops: (() => void)[] = [];
+  afterEach(() => {
+    for (const s of stops.splice(0)) s();
+    globalThis.fetch = saved.fetch;
+    Object.assign(g, { VideoDecoder: saved.VideoDecoder, EncodedVideoChunk: saved.EncodedVideoChunk, createImageBitmap: saved.createImageBitmap });
+  });
+  const until = async (ok: () => boolean, ms = 2000) => {
+    for (let t = 0; t < ms && !ok(); t += 10) await new Promise((r) => setTimeout(r, 10));
+    expect(ok()).toBe(true);
+  };
+  const serve = (bytes: Uint8Array) => {
+    globalThis.fetch = (async () => new Response(new ReadableStream({ start(c) { c.enqueue(bytes); } }))) as unknown as typeof fetch;
+  };
+  const drawnSizes: [number, number][] = [];
+  const canvas = { width: 0, height: 0, getContext: () => ({ drawImage(_i: unknown, _x: number, _y: number, w: number, h: number) { drawnSizes.push([w, h]); } }) } as unknown as HTMLCanvasElement;
+  const bitmaps = () => {
+    const closed: number[] = [];
+    g.createImageBitmap = async (src: { width?: number; height?: number; displayWidth?: number; displayHeight?: number }) => {
+      const width = src.displayWidth ?? 4, height = src.displayHeight ?? 2;
+      return { width, height, close: () => closed.push(width) };
+    };
+    return closed;
+  };
+
+  it("영상 모드 화면 프레임(jpeg 메시지)은 그 촬영 시각으로 알리고, 지연만큼 들고 있다가 그린 뒤 그 시각을 알린다", async () => {
+    bitmaps();
+    serve(concat([encode({ type: "jpeg", at: 5000, width: 4, height: 2 }, new Uint8Array([0xff, 0xd8, 0xff, 0xd9]))]));
+    const frames: (number | null)[] = [];
+    const shown: (number | null)[] = [];
+    const d = runDecoder({ canvas, url: "http://x/api/eye/video", onFrame: (at) => frames.push(at), onShown: (at) => shown.push(at) });
+    stops.push(() => d.close());
+    d.setDelay(200);
+    await until(() => frames.length === 1);
+    expect([frames, shown]).toEqual([[5000], []]);
+    await until(() => shown.length === 1, 1000);
+    expect(shown).toEqual([5000]);
+    expect([canvas.width, canvas.height]).toEqual([4, 2]);
+  });
+
+  it("H.264 청크의 at(서버 시계 촬영 시각)을 디코더 timestamp(µs)로 넣고, 풀린 장면을 그 시각으로 알린다. at이 없으면 null", async () => {
+    bitmaps();
+    serve(concat([
+      encode({ type: "config", codec: "avc1.42E01F", width: 8, height: 6 }, new Uint8Array([1])),
+      encode({ type: "chunk", key: true, ts: 0, at: 7000 }, new Uint8Array([1])),
+      encode({ type: "chunk", key: false, ts: 33_333 }, new Uint8Array([1])),
+    ]));
+    const decoded: number[] = [];
+    g.EncodedVideoChunk = class { constructor(init: object) { Object.assign(this, init); } };
+    g.VideoDecoder = class {
+      static async isConfigSupported() { return { supported: true }; }
+      state = "unconfigured";
+      decodeQueueSize = 0;
+      constructor(private readonly init: { output: (f: object) => void }) {}
+      configure() { this.state = "configured"; }
+      decode(c: { timestamp: number }) {
+        decoded.push(c.timestamp);
+        this.init.output({ timestamp: c.timestamp, displayWidth: 8, displayHeight: 6, close() {} });
+      }
+      close() { this.state = "closed"; }
+    };
+    const shown: (number | null)[] = [];
+    const d = runDecoder({ canvas, url: "http://x/api/eye/video", onShown: (at) => shown.push(at) });
+    stops.push(() => d.close());
+    await until(() => shown.length === 2);
+    expect(decoded).toEqual([7_000_000, 33_333]);
+    expect(shown).toEqual([7000, null]);
   });
 });

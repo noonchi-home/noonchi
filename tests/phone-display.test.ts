@@ -119,3 +119,41 @@ describe("보내기 관문", () => {
     expect(g.onChunk(true, 0)).toEqual({ send: true, config: true });
   });
 });
+
+// 장면·마스크 짝 맞추기(2026-11-20): 표시 영상 청크도 엔진 프레임처럼 서버 시계 촬영 시각을 싣는다(같은 XR 프레임이면 같은 값)
+describe("표시 영상 청크의 촬영 시각", () => {
+  it("청크마다 그 프레임 시각(ts ÷ 1000, 폰 ms)을 stamp로 옮긴 captured_at·time_err_ms를 싣는다", async () => {
+    const sent: Uint8Array[] = [];
+    const ws = { readyState: 1, bufferedAmount: 0, send: (b: Uint8Array) => { sent.push(b); } };
+    const g = globalThis as Record<string, unknown>;
+    const saved = { VideoEncoder: g.VideoEncoder, VideoFrame: g.VideoFrame, WebSocket: g.WebSocket };
+    g.WebSocket = { OPEN: 1 };
+    g.VideoFrame = class { close() {} };
+    g.VideoEncoder = class {
+      static async isConfigSupported() { return { supported: true }; }
+      state = "configured";
+      encodeQueueSize = 0;
+      constructor(private readonly init: { output: (chunk: object, meta?: object) => void }) {}
+      configure() {}
+      encode(frame: { timestamp: number }, opts: { keyFrame: boolean }) {
+        this.init.output(
+          { type: opts.keyFrame ? "key" : "delta", timestamp: frame.timestamp, byteLength: 2, copyTo: (d: Uint8Array) => d.set([0x65, 0x88]) },
+          opts.keyFrame ? { decoderConfig: { codec: "avc1.42E01F", codedWidth: 1280, codedHeight: 720, description: new Uint8Array([1]) } } : undefined,
+        );
+      }
+      close() {}
+    };
+    try {
+      const { createVideoSender } = await import("../ui/src/phone/core/display-encoder.js");
+      const sender = createVideoSender({ socket: () => ws, stamp: (phoneMs: number) => ({ captured_at: phoneMs + 5000, time_err_ms: 3 }) })!;
+      const make = (size: { width: number; height: number }, timestamp: number) => ({ ...size, timestamp, close() {} });
+      sender.frame(make, 1280, 720, 900);
+      for (let i = 0; i < 20 && sender.state !== "ready"; i++) await new Promise((r) => setTimeout(r, 5));
+      sender.frame(make, 1280, 720, 1000);
+      const video = sent.map((b) => parsePacket(Buffer.from(b))).find((p) => "video" in p && p.video.kind === "video");
+      expect(video).toMatchObject({ video: { kind: "video", key: true, ts: 1_000_000, captured_at: 6000, time_err_ms: 3 } });
+    } finally {
+      Object.assign(g, saved);
+    }
+  });
+});
