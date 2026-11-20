@@ -186,7 +186,7 @@ Once a day, the day's records are grouped into activity chunks, and PAM reflecti
 | Name | Responsibilities |
 |---|---|
 | Jeong-O Heo | **Scrum Master & Systems Integration** — Built the NOONCHI server and connected the phone’s AR camera, the 3D home model, and the live dashboard. |
-| Seokjun Park | **Decision Models & Habit Learning** — Developed PAM’s decision and reflection logic, designed the statistical test for adopting habits, and ran experiments on daily routines. |
+| Seokjun Park | **Decision Models & Habit Learning** — Developed PAM’s decision and reflection logic, designed the statistical test for adopting habits, ran experiments on daily routines, and documented the system architecture. |
 | Junhyeong Kim | **Model Research & Evaluation** — Contributed to the PAM implementation and turned household video scenarios into timestamped model inputs for testing. |
 | Jihun Shin | **Security Architecture & Privacy** — Designed controls for handling camera frames and built monitoring tools to detect images saved during inference. |
 
