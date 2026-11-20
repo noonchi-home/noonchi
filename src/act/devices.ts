@@ -9,9 +9,9 @@ const SKIPPED = "계획이 바뀌어 보내지 않았어요.";
 
 export function deviceRunner(hub: DeviceHub, policy: Policy, rooms?: RoomSpec[]): DeviceRunner {
   return {
-    run: (tool, deviceId, args, live) => {
+    run: (tool, deviceId, args, live, commandId) => {
       const base = localBackend(hub, policy, rooms);
-      const backend: ToolBackend = { ...base, command: (id, cmd, token) => (live() ? base.command(id, cmd, token) : Promise.resolve({ ok: false, error: SKIPPED })) };
+      const backend: ToolBackend = { ...base, command: (id, cmd, token) => (live() ? policy.guard(hub,id,cmd,token,commandId) : Promise.resolve({ ok: false, error: SKIPPED })) };
       return runTool(tool, { ...args, device_id: deviceId }, backend, AGENT_TOOLS);
     },
     confirm: async (token, live) => {

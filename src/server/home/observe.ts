@@ -6,7 +6,7 @@ import { applyPhoneProgress, showPhoneCommand, syncPhoneClaims } from "./phone.j
 // 주기 타이머(관찰·판단·실행 추적·보기 담당·말풍선 카드). 관찰 흐름은 BRAIN=1이고 PHONE_PORT가 있을 때만 켠다(폰 카메라가 입력).
 import { join } from "node:path";
 import { datasetWriter } from "../../brain/index.js";
-import { GoalTriggers, goalRoutes, RoomWatch } from "../../goal/index.js";
+import { GoalTriggers, goalRoutes, RoomWatch, TvWatch, viewerAt } from "../../goal/index.js";
 import { managerRoutes } from "../../manage/index.js";
 import { BrainPlans, planningRoutes } from "../../brain/index.js";
 import { BusNode, Outbox } from "../../bus/index.js";
@@ -137,7 +137,8 @@ export async function startNodes(core: HomeCore, emit: (event: BrainLog) => void
     bus, epoch, name: "goal", clock, log,
     routes: (node, afterRev) => {
       const rooms=new RoomWatch(intent=>core.out.goal?.push("/goal/intent",intent),core.floorPlan.portals);
-      core.out.goal = goalRoutes(node, clock, triggers, rooms);
+      const tv = core.tvWatch = new TvWatch(intent=>core.out.goal?.push("/goal/intent",intent));
+      core.out.goal = goalRoutes(node, clock, triggers, rooms,tv);
       core.goalPlans = new BrainPlans(core.out.goal, clock, "goal:");
       core.goalPlans.routes(node);
       node.on("/goal/update", (b, ctx) => afterRev(b.rev, ctx, () => { if (!core.closed) core.tracker?.updateGoal(); }));
@@ -146,6 +147,7 @@ export async function startNodes(core: HomeCore, emit: (event: BrainLog) => void
         if (core.closed || !view || rev == null) return;
         const map=core.scene?.stations ?? null, now=clock.now();
         core.goalFacts = triggers.evaluateTriggers(view,rev,map,now);
+        for (const device of core.twin.devices) if (device.kind==="tv") tv.tick(device.id,viewerAt(core.goalFacts,device.id),rev,now);
         const checking=core.checkingVisit;
         const cup=checking && view.objects.find(o=>o.id===checking.cup);
         rooms.tick({now,rev,map,facts:core.goalFacts,checking,
@@ -228,11 +230,14 @@ export async function startNodes(core: HomeCore, emit: (event: BrainLog) => void
   for (const n of [core.worldNode.node, core.perception.node, core.mirror.node, core.brainMirror.node, core.goalMirror.node, manager, phone, devices, recorder]) n.start();
   const send = (s: Parameters<Parameters<typeof signals.subscribe>[0]>[0], initial: boolean) => {
     const spec = specOf.get(s.id);
-    const note = { ...(initial ? { initial: true } : {}), ...(spec ? { label: spec.label, kind: spec.kind } : {}) };
+    const power=signals.powerStamp(s.id);
+    const note = { ...(power ? {power} : {}), ...(initial ? { initial: true } : {}), ...(spec ? { label: spec.label, kind: spec.kind } : {}) };
     deviceOut.push("/device/changes", { id: s.id, state: s, note });
   };
   for (const s of signals.states()) send(s, true); // 시작 상태는 변화로 내지 않는다
-  core.unsubWorld = signals.subscribe((s) => send(s, false));
+  signals.onPowerStamp = s=>send(s,false);
+  const unsubscribe=signals.subscribe(s=>send(s,false));
+  core.unsubWorld=()=>{signals.onPowerStamp=undefined;unsubscribe();};
   let timer: ReturnType<typeof setTimeout> | undefined;
   const late = new Promise<"late">((r) => { timer = setTimeout(() => r("late"), FIRST_STATE_MS); });
   const got = await Promise.race([Promise.all([ready, brainStarted, core.actStatus ? Promise.resolve() : statusStarted]).then(() => "ok" as const), late]);

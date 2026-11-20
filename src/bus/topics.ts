@@ -138,7 +138,8 @@ const DEVICE_KEY_SET: ReadonlySet<string> = new Set(DEVICE_KEYS);
 /** /device/changes: 기기 상태(허브가 만든 값이라 최상위 칸만 본다: 꼭 있는 칸과 그 칸뿐인지)와 기록용 메모(첫 상태·이름·종류). */
 const deviceChange = z.strictObject({
   id, state: z.custom<DeviceState>((v) => isObj(v) && onlyKeys(v, DEVICE_KEY_SET) && typeof v.id === "string" && typeof v.online === "boolean" && isObj(v.twin) && isObj(v.matter) && typeof v.updatedAt === "string"),
-  note: z.strictObject({ initial: z.boolean().optional(), label: z.string().optional(), kind: z.string().optional() }),
+  note: z.strictObject({ initial: z.boolean().optional(), label: z.string().optional(), kind: z.string().optional(),
+    power: z.strictObject({power:z.enum(["on","off"]).nullable(),generation:rev,command_id:id.nullable()}).optional() }),
 });
 /** /brain/goal·/brain/goal_changes: 미리 세운 목표 하나. 계획 보기는 실행 추적이 타입으로 만든 객체라 깊이 보지 않는다(최상위 id·steps만). */
 const xyz = z.tuple([at, at, at]);

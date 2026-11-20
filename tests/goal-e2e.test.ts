@@ -166,5 +166,12 @@ describe("미리 세운 목표(가짜 서버 처음부터 끝까지)", () => {
     // 전환 직후 1초를 빼면 다음 사진까지 최대 한 주기를 더 기다려야 한다.
     await pump(() => gaps(started + 1000).length >= 2, "계획 뒤 VLM 사진 세 장", 8000);
     expect(Math.min(...gaps(started + 1000)), JSON.stringify(gaps(started + 1000))).toBeGreaterThanOrEqual(1800);
+    // A running phone plan leaves the independent TV slot available.
+    const viewer=scene.dets;
+    scene.dets=[]; scene.facts={};
+    await pump(()=>srv!.signals.get(tv.id)?.twin.power==="off","시청자 부재로 허브 TV 끄기",15_000);
+    scene.dets=viewer; scene.facts={person:["sitting","watching_tv"]};
+    await pump(()=>srv!.signals.get(tv.id)?.twin.power==="on","다시 보는 사람이 있어 허브 TV 켜기",10_000);
+
   }, 120_000);
 });

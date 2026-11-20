@@ -34,6 +34,14 @@ export function stationDirectives(core:TrackCore) {
       const eye=eyeNow(core,core.clock.now()), target=port?.target(job.target_id);
       return !!(eye && target && Math.hypot(eye.position[0]-target.position[0],eye.position[1]-target.position[2])<=ARRIVAL_M);
     },
+    tv:async(job,stillActive)=>{
+      const live=()=>stillActive() && port?.tvAllowed?.(job)===true;
+      const runner=core.o.appliances.run;
+      if (!runner || !live()) return false;
+      const power=job.kind==="tv_on" ? "on" : "off";
+      const result=await runner.run(power==="on" ? "turn_on" : "turn_off",job.target_id,{},live,job.id);
+      return result.ok && !result.unverified && typeof result.state==="object" && result.state?.power===power;
+    },
     choose:(job,signal)=>port?.choose?.(job,signal) ?? Promise.resolve(null),
     result:r=>port?.result(r),
   });
@@ -48,6 +56,7 @@ interface DirectivePort {
   shown?(id:string):import("../../contract/phone.js").PlannedCommand|null;
   clear(id:string):void;
   choose?(job:Extract<HouseholdOffer,{kind:"choose_station"}>,signal:AbortSignal):Promise<string|null>;
+  tv?(job:HouseholdOffer,live:()=>boolean):Promise<boolean>;
   result(result:DirectiveResult):void;
 }
 
@@ -88,6 +97,15 @@ export class DirectiveRunner {
         else if (id && message.candidates.includes(id)) this.finish(message,"selected",id);
         else this.finish(message,"unknown");
       },()=>this.finish(message,"unknown"));
+    } else if ((message.kind==="tv_on" || message.kind==="tv_off") && this.port.tv) {
+      const live=()=>this.active.has(message.id) && !this.interruption(message);
+      void this.port.tv(message,live).then(ok=>{
+        if (!ok || !live()) return this.finish(message,"failed");
+        if (!this.active.delete(message.id)) return;
+        this.finished.add(message.id);
+        this.port.result({id:message.id,target_id:message.target_id,at_ms:this.port.now(),evidence_rev:this.port.rev(),
+          outcome:"applied",command_id:message.id,expected_power:message.kind==="tv_on" ? "on" : "off"});
+      },()=>this.finish(message,"failed"));
     } else this.finish(message,"unknown");
   }
 

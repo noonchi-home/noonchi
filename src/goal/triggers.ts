@@ -18,6 +18,7 @@ export interface MealEvidence {
 }
 export interface TriggerFacts {
   meal?: MealEvidence;
+  tvRooms?:ReadonlyMap<string,string>;
   read(trigger: Trigger): TriggerFact;
   mealSeated: TriggerFact;
   observes(stationId:string,after:number):boolean;
@@ -130,6 +131,7 @@ export class GoalTriggers {
       [...watches.values()].some(w => w.zones.some(z => z.id === zone) && this.covered(current!,w.zones) &&
         deviceFact(view.devices,{kind:"device",deviceKind:"tv",id:w.tv,attr:"power",value:"on",mode:"level"},rev,changedDevices).value === true);
     return {
+      tvRooms:new Map([...watches].filter(([,w])=>w.tv).map(([room,w])=>[w.tv,room])),
       ...(station ? {meal:{rev, zone: zone || null, outsideZones: zone === false, watching, count: recent ? proof?.person_count ?? null : null,
         dining:station.observes_zone_ids, surfaces:station.surfaces}} : {}),
       trail:view.person_trail ?? [],

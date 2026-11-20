@@ -9,6 +9,8 @@
 // 실제 출처: ThinQ 기기는 읽은 값이 있을 때, 가상 기기는 명령·센서 값을 한 번이라도 받은 뒤(안쪽 허브가 바뀜을 알리거나 명령이 받아짐).
 // 신호 없음 기기·읽기 전 ThinQ 기기·명령 받은 적 없는 가상 기기는 실제 출처가 없다. 실제 상태와 다르면 처음 한 번만 mismatch로 알린다.
 
+import { AsyncLocalStorage } from "node:async_hooks";
+import type { PowerStamp } from "../../contract/devices.js";
 import { matterFromTwin } from "../mapping.js";
 import type { ThinqLink } from "../thinq/link.js";
 import type { Command, CommandResult, DeviceHub, DeviceSpec, DeviceState, SightEvidence, VisionResult } from "../../contract/devices.js";
@@ -44,6 +46,21 @@ export class SignalHub implements DeviceHub {
   private readonly listeners = new Set<(s: DeviceState) => void>();
   private unsub: (() => void) | null = null;
   private stopped = false;
+  private readonly power = new Map<string,PowerStamp>();
+  private readonly sending = new AsyncLocalStorage<{id:string; generation:number; power:"on"|"off"}>();
+  onPowerStamp?: (state:DeviceState) => void;
+
+  powerStamp(id:string):PowerStamp | undefined {
+    if (!this.power.has(id)) {
+      if (!this.world.list().some(d=>d.id===id && d.kind==="tv")) return undefined;
+      this.power.set(id,{power:this.powerOf(this.get(id)),generation:0,command_id:null});
+    }
+    return {...this.power.get(id)!};
+  }
+  private powerOf(state:DeviceState|undefined) {
+    const p=state?.twin.power;
+    return state?.online && !state.signal && !state.vision?.applied && (p==="on" || p==="off") ? p : null;
+  }
   private link: ThinqLinkLike | null = null;
   /** 카메라로 본 트윈 속성 값과 마지막으로 본 촬영 시각. */
   private readonly vision = new Map<string, { twin: Record<string, unknown>; atMs: number; evidence: Record<string, SightEvidence> }>();
@@ -180,7 +197,28 @@ export class SignalHub implements DeviceHub {
     return this.world.states().map((s) => this.view(s)!);
   }
 
-  async command(id: string, cmd: Command): Promise<CommandResult> {
+  async command(id: string, cmd: Command, commandId?:string): Promise<CommandResult> {
+    const stamp = this.powerStamp(id);
+    if (!stamp || (cmd.type!=="on" && cmd.type!=="off") || this.stopped) return this.sendCommand(id,cmd);
+    if (!commandId) {
+      stamp.generation++;
+      stamp.command_id=null;
+      this.power.set(id,stamp);
+      const state=this.get(id);
+      if (state) this.onPowerStamp?.(state); // An unchanged manual request still revokes ownership.
+    }
+    const power=cmd.type;
+    const result=await this.sending.run({id,generation:stamp.generation,power},()=>this.sendCommand(id,cmd));
+    const current=this.power.get(id)!;
+    if (commandId && current.generation===stamp.generation && result.ok && result.outcome!=="unverified" &&
+        this.powerOf(result.state)===power && this.powerOf(this.get(id))===power && !this.stopped) {
+      this.power.set(id,{generation:stamp.generation,command_id:commandId,power});
+      this.onPowerStamp?.(result.state!);
+    }
+    return result;
+  }
+
+  private async sendCommand(id: string, cmd: Command): Promise<CommandResult> {
     if (this.stopped) return STOPPED;
     if (this.source(id).kind === "thinq") {
       if (!this.link) return { ok: false, outcome: "not_sent", error: NO_LINK, state: this.get(id) };
@@ -220,6 +258,13 @@ export class SignalHub implements DeviceHub {
   }
 
   private emit(s: DeviceState): void {
+    const stamp=this.power.get(s.id);
+    const power=this.powerOf(s);
+    if (stamp && stamp.power!==power) {
+      const sending=this.sending.getStore();
+      const correlated=sending?.id===s.id && sending.generation===stamp.generation && sending.power===power;
+      this.power.set(s.id,{power,generation:stamp.generation+(correlated ? 0 : 1),command_id:null});
+    }
     for (const cb of this.listeners) cb(s);
   }
 

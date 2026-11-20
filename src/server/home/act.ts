@@ -1,5 +1,6 @@
 // 집 실행 묶음의 판단·검사·실행 잇기(src/act·src/brain 판단 호출): 클로이드 계획(PlanHub), 실행 설정·수업 기록, 생각 메시지·판단 호출(PAM)·실행 추적, 보기 담당(관찰 모드).
 // 판단 → 계획(에이전트 계획 모드) → 실행 전 검사 → 실행 추적이 실제 폰에 명령을 낸다. 생각 메시지는 판단 기록 뒤에 따로 만들어 대시보드로 보내고 기록 DB(thought)에 남긴다.
+import { viewerAt } from "../../goal/index.js";
 import { ExecutionTracker, LessonStore, Looker, PlanHub, emitRobotCommand, checkDecision, checkPlan, deviceRunner, lessonsPath, loadActConfig, pamTasks } from "../../act/index.js";
 import { lookTargets, taskOf, type TaskSpec } from "../../act/tasks.js";
 import { deviceViews, placesOf, resubmit, type PlaceInfo, type PlanAhead, type PlanContext } from "../../agent/index.js";
@@ -232,6 +233,12 @@ export function startAct(core: HomeCore): (event: BrainLog) => void {
         if (places.length!==job.candidates.length) return Promise.resolve(null);
         const visited=map.stations.filter(s=>job.visited.includes(s.id)).map(s=>s.name);
         return core.looker?.chooseStation(places,job.direction,visited,signal) ?? Promise.resolve(null);
+      },
+      tvAllowed:job=>{
+        const fact=viewerAt(core.goalFacts,job.target_id);
+        const latest=view().household_photo;
+        return !!(latest?.proof && latest.at_ms===fact.photo &&
+          core.tvWatch?.permits(job,fact,signals.powerStamp(job.target_id),now()));
       },
       result:r=>core.out.act?.push("/act/directive_result",r),
     },

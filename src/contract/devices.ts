@@ -85,13 +85,16 @@ export interface CommandResult {
   execution?: { id: string; route: "thinq"; target: string };
 }
 
+/** Correlated hub readback for one TV in the current home boot. */
+export interface PowerStamp { power:"on"|"off"|null; generation:number; command_id:string|null }
+
 export interface DeviceHub {
   start(): Promise<void>;
   stop(): Promise<void>;
   list(): DeviceSpec[];
   get(id: string): DeviceState | undefined;
   states(): DeviceState[];
-  command(id: string, cmd: Command): Promise<CommandResult>; // 정책 검사는 상위(policy)에서
+  command(id: string, cmd: Command, commandId?:string): Promise<CommandResult>; // 정책 검사는 상위(policy)에서
   setSensor(id: string, attr: string, value: unknown): Promise<CommandResult>;
   subscribe(cb: (s: DeviceState) => void): () => void;
 }

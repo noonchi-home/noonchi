@@ -100,7 +100,7 @@ export type { Stall } from "../robot/steps.js";
  *  결과의 unverified(ThinQ가 받았지만 다시 읽은 값이 다름)·state 「모름」(신호 없음)은 적용을 확인하지 못한 것이다. */
 export interface DeviceRunner {
   /** live가 거짓이면(계획이 바뀌었거나 닫힘) 가전에 보내지 않는다. 보내기 바로 앞에서 본다. */
-  run(tool: string, deviceId: string, args: Record<string, unknown>, live: () => boolean): Promise<ToolResult>;
+  run(tool: string, deviceId: string, args: Record<string, unknown>, live: () => boolean, commandId?:string): Promise<ToolResult>;
   confirm(token: string, live: () => boolean): Promise<Pick<ToolResult, "ok" | "error" | "unverified" | "state">>;
   cancel(token: string): void;
 }
@@ -116,6 +116,7 @@ export interface TrackerOptions {
     rev():number;
     target(id:string): {id:string;label:string;position:[number,number,number]} | null;
     choose?(job:Extract<import("../../contract/machines.js").HouseholdOffer,{kind:"choose_station"}>, signal:AbortSignal):Promise<string|null>;
+    tvAllowed?(job:import("../../contract/machines.js").HouseholdOffer):boolean;
     result(value:DirectiveResult):void;
   };
   plans: PlanHub;
