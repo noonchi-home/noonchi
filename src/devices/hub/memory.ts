@@ -20,13 +20,17 @@ export interface MemoryHubOptions {
 
 type Listener = (s: DeviceState) => void;
 
-/** 안쪽까지 얼린다. 허브는 상태가 바뀔 때만 새 값을 만들어 얼리고, 읽는 쪽에는 그 값을 그대로 준다(읽을 때마다 복사하면 프레임마다 지연이 쌓인다). */
+/** 깊은 사본을 만들어 안쪽까지 얼린다. 허브는 상태가 바뀔 때만 이것으로 새 값을 만들고, 읽는 쪽에는 그 값을 그대로 준다
+ *  (읽을 때마다 복사하면 프레임마다 지연이 쌓인다). 사본이라 넘겨받은 값(겉만 얼린 초기값 등)과 안쪽을 나누지 않는다. */
 function frozen<T>(v: T): T {
-  if (v && typeof v === "object" && !Object.isFrozen(v)) {
-    for (const x of Object.values(v)) frozen(x);
-    Object.freeze(v);
-  }
-  return v;
+  const deep = (x: unknown): void => {
+    if (!x || typeof x !== "object") return;
+    for (const y of Object.values(x)) deep(y);
+    Object.freeze(x);
+  };
+  const copy = structuredClone(v);
+  deep(copy);
+  return copy;
 }
 
 export class MemoryHub implements DeviceHub {
@@ -38,7 +42,7 @@ export class MemoryHub implements DeviceHub {
   constructor(devices: DeviceSpec[], initial: Record<string, Record<string, unknown>> = {}, opts: MemoryHubOptions = {}) {
     this.now = opts.now ?? (() => new Date());
     for (const spec of devices) {
-      this.specs.set(spec.id, frozen(structuredClone(spec)));
+      this.specs.set(spec.id, frozen(spec));
       const twin: Record<string, unknown> = {};
       for (const [attr, values] of Object.entries(spec.twinAttrs)) {
         twin[attr] = initial[spec.id]?.[attr] ?? defaultTwinValue(attr, values);
@@ -102,7 +106,7 @@ export class MemoryHub implements DeviceHub {
   }
 
   private make(id: string, twin: Record<string, unknown>, matter: MatterSummary): DeviceState {
-    return frozen({ id, online: true, twin: { ...twin }, matter: { ...matter }, updatedAt: this.now().toISOString() });
+    return frozen({ id, online: true, twin, matter, updatedAt: this.now().toISOString() });
   }
 
   private commit(id: string, twin: Record<string, unknown>, matter: MatterSummary): CommandResult {

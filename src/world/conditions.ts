@@ -76,7 +76,7 @@ export function parseCondition(raw: unknown): Condition {
 
 /** 이 집에서 쓸 수 있는 이름: 가전(종류·속성), 방, 가구·가전·도면 설비 자리. */
 export interface ConditionHome {
-  devices: readonly { id: string; kind: string; twinAttrs: Record<string, unknown[]> }[];
+  devices: readonly { id: string; kind: string; twinAttrs: Readonly<Record<string, readonly unknown[]>> }[];
   rooms: readonly string[];
   /** 가구·가전·도면 설비 id가 트윈에 있는가. */
   hasPlace: (id: string) => boolean;

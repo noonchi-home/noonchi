@@ -47,11 +47,25 @@ describe("MemoryHub 초기 상태", () => {
   it("돌려준 값은 얼린 것이라 고칠 수 없고 허브 상태는 그대로다", () => {
     const hub = makeHub();
     const s = hub.get("tv")!;
+    // 타입 검사도 막는다(src/contract/devices.ts readonly): 아래 쓰기는 컴파일 오류이고, 실행해도 TypeError다.
+    // @ts-expect-error 허브 상태는 읽기 전용
     expect(() => { s.twin.power = "on"; }).toThrow(TypeError);
+    // @ts-expect-error 기기 명세는 읽기 전용
     expect(() => { hub.list()[0]!.label = "바뀜"; }).toThrow(TypeError);
+    // @ts-expect-error 허브 상태는 읽기 전용
     expect(() => { hub.states()[0]!.matter.onOff = true; }).toThrow(TypeError);
     expect(hub.get("tv")!.twin.power).toBe("off");
     expect(hub.list()[0]!.label).toBe("거실 TV");
+  });
+
+  it("겉만 얼린 초기값을 받아도 안쪽 값을 나누지 않고 모두 얼린다", () => {
+    const inner = { level: 3 };
+    const hub = makeHub({ dock: { charging: Object.freeze({ inner }) } });
+    const charging = () => hub.get("dock")!.twin.charging as { inner: { level: number } };
+    expect(charging().inner.level).toBe(3);
+    expect(() => { charging().inner.level = 9; }).toThrow(TypeError);
+    inner.level = 7;
+    expect(charging().inner.level).toBe(3);
   });
 
   it("상태가 바뀌기 전까지는 읽을 때마다 복사하지 않고 같은 값을 준다", async () => {

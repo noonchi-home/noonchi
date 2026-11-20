@@ -6,31 +6,33 @@ import type { DeviceKind } from "../devices/kinds.js";
 /** 기기가 받는 명령 묶음(트윈 수준). Matter에서 어떻게 실현하는지는 src/devices/mapping.ts가 정한다. */
 export type Capability = "onoff" | "level" | "climate" | "fan" | "covering" | "lock" | "operation" | "valve";
 
+/** 허브가 준 명세는 얼린 사본이다(src/devices/hub/memory.ts). */
 export interface DeviceSpec {
-  id: string;
-  label: string;          // 한국어 이름(예: "거실 TV")
-  room: string;           // floorplan 방 id
-  roomLabel: string;      // 한국어 방 이름
-  twinType: string;       // twin-studio 카탈로그 type
-  kind: DeviceKind;
-  matterDeviceType: string; // matter.js 기기 export 이름(예: "DimmableLightDevice"), Matter 기기가 아니면 "none"
-  capabilities: Capability[];
-  sensors: string[];      // twin attr 이름(에이전트가 못 바꾸는 값)
-  twinAttrs: Record<string, unknown[]>; // 카탈로그 attrs 그대로: 상태 이름 → 가능한 값
+  readonly id: string;
+  readonly label: string;          // 한국어 이름(예: "거실 TV")
+  readonly room: string;           // floorplan 방 id
+  readonly roomLabel: string;      // 한국어 방 이름
+  readonly twinType: string;       // twin-studio 카탈로그 type
+  readonly kind: DeviceKind;
+  readonly matterDeviceType: string; // matter.js 기기 export 이름(예: "DimmableLightDevice"), Matter 기기가 아니면 "none"
+  readonly capabilities: readonly Capability[];
+  readonly sensors: readonly string[];      // twin attr 이름(에이전트가 못 바꾸는 값)
+  readonly twinAttrs: Readonly<Record<string, readonly unknown[]>>; // 카탈로그 attrs 그대로: 상태 이름 → 가능한 값
 }
 
+/** 허브가 준 상태는 얼린 사본이다(src/devices/hub/memory.ts): 고치려면 새 값을 만든다. */
 export interface DeviceState {
-  id: string;
-  online: boolean;
-  twin: Record<string, unknown>;   // twin-studio state 값 (scene.json states와 같은 키/값)
-  matter: Record<string, unknown>; // 보기 좋은 Matter 속성 요약 (onOff, level, lockState, fanMode, operationalState, setpointC...)
-  updatedAt: string;
+  readonly id: string;
+  readonly online: boolean;
+  readonly twin: Readonly<Record<string, unknown>>;   // twin-studio state 값 (scene.json states와 같은 키/값)
+  readonly matter: Readonly<Record<string, unknown>>; // 보기 좋은 Matter 속성 요약 (onOff, level, lockState, fanMode, operationalState, setpointC...)
+  readonly updatedAt: string;
   /** "none"이면 신호 없는 기기라 상태를 모른다(twin·matter가 비어 있음, src/devices/hub/signals.ts). */
-  signal?: "none";
+  readonly signal?: "none";
   /** 실제 가전(ThinQ)에서 읽은 값이면 그 출처·ThinQ 기기 id·읽은 시각(src/devices/thinq/link.ts). */
-  readback?: Readback;
+  readonly readback?: Readback;
   /** 카메라(World State)가 본 상태(src/devices/hub/signals.ts observe). */
-  vision?: VisionSeen;
+  readonly vision?: VisionSeen;
 }
 
 export interface Readback {

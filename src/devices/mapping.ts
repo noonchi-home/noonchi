@@ -133,7 +133,7 @@ export interface DeviceDescription {
 }
 
 /** twin type + attrs → 기기 설명. 상태 없는 것·twin 전용·모르는 종류는 null. */
-export function describeDevice(twinType: string, twinAttrs: Record<string, unknown[]>): DeviceDescription | null {
+export function describeDevice(twinType: string, twinAttrs: Readonly<Record<string, readonly unknown[]>>): DeviceDescription | null {
   const rule = findTypeRule(twinType);
   if (!rule || rule.twinOnly || !rule.kind) return null;
   const attrNames = Object.keys(twinAttrs);
@@ -147,7 +147,7 @@ export function describeDevice(twinType: string, twinAttrs: Record<string, unkno
   };
 }
 
-export function defaultTwinValue(attr: string, values: unknown[]): unknown {
+export function defaultTwinValue(attr: string, values: readonly unknown[]): unknown {
   const preferred = ATTR_DEFAULTS[attr];
   if (preferred !== undefined && (values.length === 0 || values.includes(preferred))) return preferred;
   return values[0];
@@ -157,7 +157,7 @@ export function defaultTwinValue(attr: string, values: unknown[]): unknown {
 
 /** 종류 이름 또는 기기 spec(능력·attrs까지 반영). */
 export type DeviceTarget = DeviceKind | (Pick<DeviceSpec, "kind"> & Partial<Pick<DeviceSpec, "capabilities" | "twinAttrs">>);
-export type AttrNames = string[] | Record<string, unknown[]>;
+export type AttrNames = readonly string[] | Readonly<Record<string, readonly unknown[]>>;
 
 interface Resolved {
   kind: DeviceKind;
