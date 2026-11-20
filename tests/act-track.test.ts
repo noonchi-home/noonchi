@@ -7,6 +7,7 @@ import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { HistoryDb } from "../src/brain/history/db.js";
 import type { ActionChoice } from "../src/act/prompts.js";
 import { DONE_NOTICE_MS, type ExecutionTracker, TRACK_DEFAULTS, type ContentsLook, type Stall, type Stray } from "../src/act/track/tracker.js";
 import type { TrackCore } from "../src/act/track/core.js";
@@ -178,7 +179,7 @@ describe("컵 치우기: 집기 전에 늘 컵 안을 위에서 본다", () => {
     expect(s.last().text).toContain("위에서");
   });
 
-  function topSetup() {
+  function topSetup(preference?: {read():boolean; remember(allow:boolean):void}) {
     let w = world([cup("present")]);
     let latestPairStart = -Infinity;
     const looks: ContentsLook[] = [];
@@ -186,7 +187,8 @@ describe("컵 치우기: 집기 전에 늘 컵 안을 위에서 본다", () => {
     const planner = testPlanner(llm);
     const s = setup({
       w: () => w,
-      planner: (d, signal) => planner.plan({ ...planContext({ decision: d, world: w, floor: smallFloor() }), topLook: true }, signal),
+      rememberLeftover: preference?.remember,
+      planner: (d, signal) => planner.plan({ ...planContext({ decision: d, world: w, floor: smallFloor() }), topLook: true, discardLeftover:preference?.read() }, signal),
       topReady: (_id, since) => latestPairStart >= since, lookContents: (h) => { looks.push(h); return true; }, guardObject: (id, on) => { guards.push([id, on]); },
     });
     /** 컵 안 값(확인됨)을 지금 시계로 둔다. null이면 모름. */
@@ -279,6 +281,22 @@ describe("컵 치우기: 집기 전에 늘 컵 안을 위에서 본다", () => {
     expect(s.plans.current()).toMatchObject({ status: "running" });
     expect(s.heard("치워 주세요")).toMatchObject({ id: "clear" });
     expect(s.last()).toMatchObject({ step: "plan:pam-1:3", text: "컵을 들어 주세요" });
+  });
+
+  it.each([["치워 주세요",true],["그대로 둬요",false]] as const)("남은 음료에 대한 말 답 %s를 다음 계획에 쓴다", async (speech,allow) => {
+    const db=HistoryDb.open(":memory:");
+    try {
+      const read=()=>db.cupAnswers.allowDiscard("home","resident");
+      const s=topSetup({read,remember:value=>db.cupAnswers.remember("home","resident",value)});
+      await s.toTop();
+      s.seeTop("has_contents");
+      db.cupAnswers.remember("home","resident",!allow);
+      expect(s.heard(speech)?.id).toBe(allow ? "clear" : "keep");
+      expect(read()).toBe(allow);
+      const next=topSetup({read,remember:()=>{}});
+      await next.toTop();
+      expect(next.last().text).toBe(allow ? "컵을 들어 주세요" : PEEK_TEXT.above("컵"));
+    } finally {db.close();}
   });
 
   it("컵 안을 비추는 동안 새로 잰 컵 가운데를 폰에 조용히 보내고 사진을 자주 받는다", async () => {

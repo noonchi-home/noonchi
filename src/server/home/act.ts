@@ -194,11 +194,12 @@ export function startAct(core: HomeCore): (event: BrainLog) => void {
   // 명령 대상 자리는 배치(면이면 윗면 가운데, 싱크볼이 있으면 싱크볼)에서
   const placeAt = placeLocator(layout?.editor, core.surfaces);
   // 계획 입력: 계획 모드·미리 만든 계획 다시 내기가 같은 맥락을 쓴다(이미 치운 물건 placed는 그때 것)
-  const discardLeftover = (world: WorldView) => {
+  const answers = history.db.cupAnswers;
+  const resident = (world: WorldView) => {
     const people = Math.max(world.person.count, world.household_photo?.proof?.person_count ?? 0);
-    const answers = history.db.cupAnswers;
-    return answers.allowDiscard(home.id, answers.demoResident(home.id, people));
+    return people > 1 ? null : home.singleResident ?? answers.demoResident(home.id, people);
   };
+  const discardLeftover = (world: WorldView) => answers.allowDiscard(home.id, resident(world));
   const planCtx = (d: DecisionRecord, task: TaskSpec, world: WorldView, ahead?: PlanAhead): PlanContext => ({
     decision: d, task, world, floor: plans.floor(), places: core.places(), names: placeNames, rooms: twin.rooms, devices: deviceViews(signals), nowIso: new Date(now()).toISOString(),
     placed: new Map(core.tracker?.placed() ?? []), ...(task.coach ? { lesson: lessons.get(task.name) } : {}), ...(ahead ? { ahead } : {}),
@@ -214,6 +215,10 @@ export function startAct(core: HomeCore): (event: BrainLog) => void {
   const stationFloor = floorLookup(core.plan.rooms);
   core.tracker = new ExecutionTracker({
     discardLeftover: () => discardLeftover(view()),
+    rememberLeftover: allow => {
+      const who = resident(view());
+      if (who) answers.remember(home.id, who, allow);
+    },
     stations:{
       rev:()=>core.mirror?.rev() ?? 0,
       target:id=>{

@@ -39,6 +39,12 @@ function scene(objects: unknown[]) {
 }
 
 describe("homes.json 읽기", () => {
+  it("명시한 집만 단일 주민을 식별한다", () => {
+    const dir=tempDir();
+    writeJson(join(dir,"homes.json"),{...REGISTRY,homes:REGISTRY.homes.map((h,i)=>i ? h : {...h,single_resident:"resident-1"})});
+    expect(resolveHome(dir,"apartment").singleResident).toBe("resident-1");
+    expect(resolveHome(dir,"oneroom").singleResident).toBeUndefined();
+  });
   it("집 목록·기본 집·경로", () => {
     const dir = tempDir();
     writeJson(join(dir, "homes.json"), REGISTRY);

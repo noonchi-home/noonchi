@@ -111,6 +111,7 @@ export interface SpeechRequest { task: string; heard: string; atMs: number; afte
 export interface TrackerOptions {
   /** Recheck the current resident after any approval or phone wait. */
   discardLeftover?: () => boolean;
+  rememberLeftover?: (allow:boolean) => void;
   stations?: {
     rev():number;
     target(id:string): {id:string;label:string;position:[number,number,number]} | null;
