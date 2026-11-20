@@ -587,7 +587,7 @@ describe("미리 세운 목표: 맞지 않게 되면 버리고 지금 길로", (
   it("충전 자리 복귀 중에는 세우지 않고, 복귀가 끝나면 세운다. 있던 목표는 복귀가 시작되면 dock으로 버린다(Codex 26bff0f Task 4:862)", async () => {
     const s = goalSetup();
     const core = coreOf(s);
-    const docking = () => ({ id: "dock:1", sent: null, spokeAt: s.clock.t, visionAt: s.clock.t, phase: "look" as const, at: [11, 0, 11] as [number, number, number], since: s.clock.t, startedAt: s.clock.t, decision: "pam-0" });
+    const docking = () => ({ id: "dock:1", sent: null, spokeAt: s.clock.t, visionAt: s.clock.t, phase: "look" as const, target: null, charging: true, startedAt: s.clock.t, decision: "pam-0" });
     core.docking = docking();
     s.person({ act: "drinking" });
     s.tick();
