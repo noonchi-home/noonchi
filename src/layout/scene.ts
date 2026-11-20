@@ -7,6 +7,9 @@ import type { SceneJson, SceneObject } from "./editor.js";
 import { profileAttrs } from "../devices/browser.js";
 import { withDrawn, type DrawnFixture } from "./drawn.js";
 import type { Home } from "./homes.js";
+import type { Vec2 } from "../contract/layout.js";
+import type { StationMap } from "../contract/stations.js";
+import { validateStations } from "./stations.js";
 
 const read = (p: string) => JSON.parse(readFileSync(p, "utf8").replace(/^﻿/, "")) as unknown;
 
@@ -68,13 +71,25 @@ function dockOf(home: SceneHome): [number, number, number] | null {
 /** scene.json이 없으면(빌드 전) null. 도면 설비·더하는 가전 파일이 없으면 그만큼 scene.json 그대로.
  *  더하는 가전은 같은 id가 이미 있으면 더하지 않고, 더한 id 목록을 added로 준다(더한 것이 없으면 칸이 없다).
  *  집의 충전 자리(data/dock.json)가 있으면 dock(트윈 자리 [x, 0, y])으로 함께 준다(없으면 칸이 없다). */
-export function loadScene(home: SceneHome): (SceneJson & { added?: string[]; dock?: [number, number, number] }) | null {
+export function loadScene(home: SceneHome): (SceneJson & { added?: string[]; dock?: [number, number, number]; stations: StationMap }) | null {
   if (!existsSync(home.scenePath)) return null;
   let scene = read(home.scenePath) as SceneJson;
   const drawn = join(home.dataDir, "drawn_fixtures.json");
   if (existsSync(drawn)) scene = withDrawn(scene, ((read(drawn) as { items?: DrawnFixture[] }).items ?? []));
   const dock = dockOf(home);
-  const docked = <T extends SceneJson>(s: T) => (dock ? { ...s, dock } : s);
+  const docked = <T extends SceneJson>(s: T) => {
+    const file = join(home.dataDir, "stations.json");
+    const sizes = new Map<string, Vec2 | undefined>();
+    const footprint = (type: string) => {
+      if (!sizes.has(type)) {
+        const size = catalogEntry(home.dataDir, type)?.footprint;
+        sizes.set(type, Array.isArray(size) && size.length === 2 ? size as Vec2 : undefined);
+      }
+      return sizes.get(type);
+    };
+    const stations = validateStations(existsSync(file) ? read(file) : { version: 1, stations: [] }, s, footprint);
+    return { ...s, ...(dock ? { dock } : {}), stations };
+  };
   const addedFile = join(home.dataDir, "added_devices.json");
   if (!existsSync(addedFile)) return docked(scene);
   const have = new Set(scene.objects.map((o) => (o as { id?: string }).id));
