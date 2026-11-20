@@ -86,6 +86,8 @@ import { Starter } from "../robot/start.js";
 import { UseWatch } from "../../manage/index.js";
 import { GoalWatch, type GoalPorts } from "../../goal/index.js";
 import { noticeTick } from "../robot/phone-line.js";
+import { stationDirectives, visitPhoneBusy } from "../robot/directive.js";
+import type { DirectiveResult, ManagerDirective } from "../../contract/machines.js";
 export { DONE_NOTICE_MS } from "../robot/phone-line.js";
 
 export type { HeardResult } from "./answers.js";
@@ -107,6 +109,11 @@ export interface DeviceRunner {
 export interface SpeechRequest { task: string; heard: string; atMs: number; afterSeq: number; via?: "answer" }
 
 export interface TrackerOptions {
+  stations?: {
+    rev():number;
+    target(id:string): {id:string;label:string;position:[number,number,number]} | null;
+    result(value:DirectiveResult):void;
+  };
   plans: PlanHub;
   /** 계획 전 검사(src/act/check.ts checkDecision). 에이전트를 부르기 전에 본다. 없으면 통과. */
   precheck?: (d: DecisionRecord) => CheckResult;
@@ -281,6 +288,7 @@ export class ExecutionTracker {
       thought: o.events.thought, log: o.events.log, goalArmMs: o.goalArmMs,
     });
     core.robot = new RobotMachine(core);
+    core.directives = stationDirectives(core);
     this.core = core;
   }
 
@@ -300,6 +308,8 @@ export class ExecutionTracker {
     else this.updateGoal();
   }
   workContext() { return this.core.start.context(); }
+  visitPhoneBusy() { return visitPhoneBusy(this.core); }
+  onDirective(d:ManagerDirective) { this.core.directives.receive(d); }
   onOrder(d: DecisionRecord, gate: Parameters<typeof this.core.start.order>[1], resumed: boolean, check?: CheckResult) {
     this.core.start.order(d, gate, resumed, check);
   }
@@ -328,6 +338,7 @@ export class ExecutionTracker {
 
   /** 말 부탁: 들은 말 부탁을 판단 기록 꼴(source speech)로 만들어 판단 받기 길에 넣는다(계획 전 검사·계획 모드·승인·실행이 PAM 판단과 같다). */
   onRequest(r: SpeechRequest): void {
+    this.core.directives.cancel();
     this.core.start.request(r);
   }
 
@@ -399,6 +410,7 @@ export class ExecutionTracker {
     const core = this.core;
     const { steps, safety } = core;
     if (!core.stopped) safety.reminderTick();
+    if (!core.stopped) core.directives.tick();
     if (!core.stopped && core.start.resumeRequest()) return;
     const r = core.run;
     // 계획 전 찾기(대상이 안 보여 막은 판단)가 먼저, 계획 밖 가까이 가서 보기(판단 전 보기 B 뒤에도 모를 때)는 계획·찾기가 없을 때만 하고 막는 것이 생기면 거둔다
@@ -464,6 +476,7 @@ export class ExecutionTracker {
   /** 멈추면 더 기록하지 않고 폰에도 보내지 않는다. 만들던 계획과 멈춘 단계 알림은 끊는다. */
   stop(): void {
     const core = this.core;
+    core.directives.close();
     core.manager.cancel();
     core.goal.stop();
     if (core.run) core.steps.endTop(core.run);

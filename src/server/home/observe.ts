@@ -154,6 +154,10 @@ export async function startNodes(core: HomeCore, emit: (event: BrainLog) => void
       core.out.act = new Outbox(node, { clock, log });
       core.brainPlans = new BrainPlans(core.out.act, clock);
       core.brainPlans.routes(node);
+      node.on("/manager/directive", (d, ctx) => {
+        if (d.op==="revoke") { core.tracker?.onDirective(d); return; }
+        return afterRev(d.rev,ctx,()=>{ if (!core.closed) core.tracker?.onDirective(d); });
+      });
       node.on("/manager/order", ({ input: b, gate, resumed }, ctx) => afterRev(b.rev, ctx, (rev) => {
         if (!core.closed) core.tracker?.onOrder(b.decision, gate, resumed, rev === b.rev ? b.check : undefined);
         const feedback = core.followupFeedback.get(b.decision.id);

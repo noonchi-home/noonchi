@@ -69,7 +69,7 @@ export class Starter extends Part {
     return {
       activeAction: r?.decision.action ?? c.planning?.decision.action ?? c.finding?.decision.action ?? null,
       handling: r && c.touching(r) ? c.stepOf(r)?.id ?? null : null,
-      requested: r?.decision.source === "speech" || c.planning?.decision.source === "speech" || c.finding?.decision.source === "speech",
+      requested: this.speechWaiting !== null || r?.decision.source === "speech" || c.planning?.decision.source === "speech" || c.finding?.decision.source === "speech",
       docking: !!c.docking,
       emergency: emergencyOf({ world: this.o.state.view(), offNotices: c.safety.offTrack().notices }),
     };

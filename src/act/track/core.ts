@@ -122,6 +122,7 @@ export class TrackCore {
   /** 마지막으로 추정 눈(맞추기 전·다시 맞추는 중)을 받은 시각. 이보다 앞선 맞춘 눈은 지금 맞춘 것이 아니다. */
   eyeLostAt = Number.NEGATIVE_INFINITY;
   readonly manager = new TaskManager<DecisionRecord>();
+  directives!: import("../robot/directive.js").DirectiveRunner;
   robot!: RobotMachine;
   start!: Starter;
   steps!: Steps;

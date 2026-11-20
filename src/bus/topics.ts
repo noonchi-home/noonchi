@@ -255,7 +255,25 @@ type Flat<T> = { [K in keyof T]: T[K] };
 /** 서로 넣을 수 있는가(양쪽으로). 교차 타입(감지 & edge)·Omit 타입처럼 같은 모양을 다르게 적은 계약에 쓴다. */
 type Same<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false;
 /** 실제 모양으로 바꾼 토픽 몸이 계약 타입과 같다. 미니맵 몸은 SeenEvent에서 사건 칸을 빼고 근거 시각(촬영 시각)을 단 것이다. */
+const offerFields = {id,rev,until_ms:at,target_id:id,goal_id:id.nullable()};
+function offerBody<O extends "grant"|"offer">(op:O) {
+  const fields = {...offerFields,op:z.literal(op)};
+  return z.discriminatedUnion("kind",[
+    z.strictObject({...fields,kind:z.enum(["visit","tv_off","tv_on"])}),
+    z.strictObject({...fields,kind:z.literal("choose_station"),candidates:z.array(id).min(2),direction:z.string(),visited:z.array(id)}),
+  ]);
+}
+const goalIntent = z.union([offerBody("offer"),z.strictObject({op:z.literal("withdraw"),id,rev})]);
+const managerDirective = z.union([offerBody("grant"),z.strictObject({op:z.literal("revoke"),id,rev})]);
+const resultFields = {id,at_ms:at,target_id:id,evidence_rev:rev};
+const directiveResult = z.discriminatedUnion("outcome",[
+  z.strictObject({...resultFields,outcome:z.enum(["arrived","selected","cancelled","failed","unknown"])}),
+  z.strictObject({...resultFields,outcome:z.literal("applied"),command_id:id,expected_power:z.enum(["on","off"])}),
+]);
 export type TopicBodiesSame = [
+  Assert<Same<z.infer<typeof goalIntent>, import("../contract/machines.js").GoalIntent>>,
+  Assert<Same<z.infer<typeof managerDirective>, import("../contract/machines.js").ManagerDirective>>,
+  Assert<Same<z.infer<typeof directiveResult>, import("../contract/machines.js").DirectiveResult>>,
   Assert<Same<z.infer<typeof closerResult>, import("../contract/events.js").CloserResult>>,
   Assert<Same<z.infer<typeof wirePlan>, PlanView>>,
   Assert<Same<z.infer<typeof decisionRecord>, DecisionRecord>>,
@@ -280,6 +298,9 @@ export type TopicBodiesSame = [
 ];
 
 export const TOPICS = {
+  "/goal/intent": { qos:{kind:"reliable"}, body:goalIntent, key:one, order:null, from:["goal"] },
+  "/manager/directive": { qos:{kind:"reliable"}, body:managerDirective, key:one, order:null, from:["manager"] },
+  "/act/directive_result": { qos:{kind:"reliable"}, body:directiveResult, key:one, order:null, from:["act"] },
   "/brain/person": { qos: { kind: "state" }, body: personState, key: one, order: "stamp", from: ["brain"] },
   "/brain/person_changes": { qos: { kind: "reliable" }, body: personState, key: one, order: null, from: ["brain"] },
   "/brain/nudge": { qos: { kind: "reliable" }, body: z.strictObject({ rev }), key: one, order: null, from: ["goal"] },
@@ -287,7 +308,7 @@ export const TOPICS = {
   "/act/work": { qos: { kind: "reliable" }, body: z.strictObject({
     at_ms: at, goal: pendingGoal.pick({ id: true, action: true, status: true, prep: true, gone_ms: true, reason: true }).nullable(), plan: z.strictObject({ goal: id.nullable(), status: wirePlan.shape.status }).nullable(),
     active: z.boolean(), requested: z.boolean(), emergency: z.boolean(), handling: id.nullable(), activeAction: maybeText, docking: z.boolean(),
-    mode: z.enum(["noonchi","coach"]), tasks: z.array(id),
+    phoneBusy: z.boolean().optional(), mode: z.enum(["noonchi","coach"]), tasks: z.array(id),
   }), key: one, order: null, from: ["act"] },
   "/manager/request": { qos: { kind: "reliable" }, body: z.discriminatedUnion("kind", [
     z.strictObject({ kind: z.literal("speech"), input: checkedDecision }), z.strictObject({ kind: z.literal("cancel") }),

@@ -12,7 +12,7 @@ import { AGAIN, APPROVE } from "../../act/prompts.js";
 import type { WorldInput, WorldView } from "../../contract/world.js";
 import type { SignalHub } from "../../devices/index.js";
 import type { PlanView } from "../../contract/plan.js";
-import { floorPlanFrom, loadScene, type LayoutEditor, type PlaceNames } from "../../layout/index.js";
+import { floorLookup, floorPlanFrom, loadScene, type LayoutEditor, type PlaceNames } from "../../layout/index.js";
 import { Trigger, canRelink, deviceStateKeys, deviceStatus, loadTriggerConfig, type PlaneSurface, type TriggerConfig } from "../../world/index.js";
 import { loadEndpoints } from "../../infer/endpoints.js";
 import { DEVICE_STATES } from "../../world/vocab.js";
@@ -205,7 +205,16 @@ export function startAct(core: HomeCore): (event: BrainLog) => void {
     if (!task) return { ok: false, error: "행동 목록에 없는 행동" };
     return planner.plan({ ...planCtx(decision, task, ahead), world: brainView() }, signal);
   };
+  const stationFloor = floorLookup(core.plan.rooms);
   core.tracker = new ExecutionTracker({
+    stations:{
+      rev:()=>core.mirror?.rev() ?? 0,
+      target:id=>{
+        const station=core.scene?.stations.stations.find(s=>s.id===id);
+        return station ? {id,label:station.name,position:[station.position[0],stationFloor(station.position),station.position[1]]} : null;
+      },
+      result:r=>core.out.act?.push("/act/directive_result",r),
+    },
     plans,
     clock: ctx.brain?.clock,
     approvals,

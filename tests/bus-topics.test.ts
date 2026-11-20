@@ -10,6 +10,13 @@ const e = <N extends "/perception/analysis" | "/world/state">(topic: N, body: Re
   ({ topic, key, header: { stamp: 1000, node: topic === "/world/state" ? "world" : "perception", inst: "i1", seq: 1, ...EPOCH, ...over }, body } as never);
 
 describe("토픽 표", () => {
+  it("goal 의도·manager 허용·act 결과는 담당 노드의 확인 전달이다",()=>{
+    for(const [topic,node] of [["/goal/intent","goal"],["/manager/directive","manager"],["/act/directive_result","act"]] as const){
+      expect(TOPICS[topic].from).toEqual([node]);
+      expect(TOPICS[topic].qos.kind).toBe("reliable");
+    }
+    expect(TOPICS["/act/directive_result"].body.safeParse({id:"i",outcome:"applied",at_ms:5,target_id:"tv",evidence_rev:2}).success).toBe(false);
+  });
   it("사진 없이 같은 장면의 시청·식탁 근거를 운반하고 옛 답도 읽는다", () => {
     const schema = TOPICS["/perception/scene"].body;
     const body = {kind:"scene", frame_id:"f", observed_ms:2000, scene:{scene:"living",summary:"",observations:[]}};

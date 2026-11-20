@@ -67,6 +67,19 @@ async function toOn(s: ReturnType<typeof setup>, d: DecisionRecord = ramenDecisi
   for (let n = 1; n <= 6; n++) expect(s.t.onAnswer(`plan:${d.id}`, `plan:${d.id}:${n}`, "done"), String(n)).toBe(true);
 }
 
+it("관찰 자리는 맞춘 눈으로만 도착하고 승인 질문이 오면 방문 줄을 거둔다",()=>{
+  const results:string[]=[];
+  let pending=false;
+  const s=setup({approvalsWaiting:()=>pending,stations:{rev:()=>7,target:id=>({id,label:"주방 입구",position:[4,0,4]}),result:r=>results.push(r.outcome)}});
+  const d={op:"grant",id:"visit:1",kind:"visit",target_id:"entry",rev:3,goal_id:null,until_ms:20000} as const;
+  s.t.onEye([0,0]); s.t.onDirective(d);
+  expect(s.phone.at(-1)).toMatchObject({type:"command",text:"주방 입구로 이동해 주세요.",choices:[],target:{position:[4,0,4]}});
+  pending=true; s.t.tick();
+  expect(s.phone.at(-1)).toMatchObject({type:"command_clear",id:d.id});
+  pending=false; s.t.onEye([4,4]); s.t.onDirective(d);
+  expect(results).toEqual(["cancelled"]);
+  s.t.onDirective({...d,id:"visit:2"});expect(results.at(-1)).toBe("arrived");
+});
 let llm: FakePlanner;
 beforeAll(async () => { llm = await startFakePlanner(); });
 afterAll(async () => { await llm.close(); });
