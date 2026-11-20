@@ -112,6 +112,7 @@ export interface TrackerOptions {
   stations?: {
     rev():number;
     target(id:string): {id:string;label:string;position:[number,number,number]} | null;
+    choose?(job:Extract<import("../../contract/machines.js").HouseholdOffer,{kind:"choose_station"}>, signal:AbortSignal):Promise<string|null>;
     result(value:DirectiveResult):void;
   };
   plans: PlanHub;

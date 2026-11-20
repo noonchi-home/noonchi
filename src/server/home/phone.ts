@@ -85,7 +85,7 @@ export function syncPhoneClaims(core: HomeCore): void {
   if (core.talk.inflight || now - core.talk.at < TALK_QUIET_MS) next.set("dialog", "dialog");
   const cmd = core.command;
   if (cmd) {
-    const kind = cmd.grade === "safety" ? "safety" : /^(peek|find):/.test(cmd.id) ? "peek" : "plan";
+    const kind = cmd.grade === "safety" ? "safety" : /^(peek|find|visit):/.test(cmd.id) ? "peek" : "plan";
     next.set("command:" + cmd.id + ":" + cmd.step, kind);
   }
   core.policy.visibleApprovals(tokens.map((p) => p.token), cmd?.grade === "safety" ? null : tokens[0]?.token ?? null, cmd?.grade === "safety");

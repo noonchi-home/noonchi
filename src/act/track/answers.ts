@@ -23,7 +23,8 @@ export class Answers extends Part {
       // 계획 전 찾기(src/act/robot/find.ts)·계획 밖 가까이 가서 보기(src/act/robot/contents.ts idle): 단추 없는 사람 단계 명령
       const q = core.finding?.sent ? core.finding : core.docking?.sent ? core.docking : core.idlePeek;
       // 충전 자리 명령만 「완료」가 있다(폰 눈을 모를 때 닿음을 받는다, dock.ts)
-      return q?.sent && !core.stopped ? { planId: q.id, stepId: q.sent.step, kind: "command", text: q.sent.text, choices: q === core.docking ? [STEP_DONE] : [] } : null;
+      const sent=q?.sent ?? core.directives.shown();
+      return sent && !core.stopped ? { planId:sent.id, stepId:sent.step, kind:"command",text:sent.text,choices:q?.sent && q===core.docking?[STEP_DONE]:[] } : null;
     }
     const ask = r.asking !== null || core.stepOf(r)?.kind === "ask";
     return { planId: r.plan.view.id, stepId: r.sent.step, kind: ask ? "ask" : "command", text: r.sent.text, choices: choicesOf(r, core.stepOf(r)) };
@@ -93,6 +94,7 @@ export class Answers extends Part {
     const stopping = matchChoice(text, [STOP]) !== null;
     const endedVisit = stopping && core.directives.cancel();
     const awaiting = stopping && core.start.cancelSpeech();
+    if (stopping && !awaiting) core.o.manager.cancelSpeech?.();
     const deferred = (stopping && core.manager.cancel()) || awaiting;
     const goal = !!core.goal.current() && matchChoice(text, [STOP]) !== null;
     if (goal) core.goal.drop("stop");

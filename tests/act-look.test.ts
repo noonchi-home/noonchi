@@ -14,6 +14,14 @@ import { CLOSER_FOUND, testCloser, type TestCloser } from "./helpers/look.js";
 import { startFakeObserver, type FakeObserver, type ObserveScript } from "./helpers/observer.js";
 
 // 실행 추적이 주는 싱크대 자리는 윗면 가운데다(src/server/home/act.ts placeLocator)
+it("자리 선택에는 이동·질문 도구가 없고 목록 밖 답은 쓰지 않는다",async()=>{
+  const step=vi.fn().mockResolvedValueOnce({text:"hall",calls:[]}).mockResolvedValueOnce({text:"다른 곳",calls:[]});
+  const observer=new Observer({provider:{name:"test",createState:()=>({}),addUserMessage:()=>{},step,addToolResults:()=>{},addExchange:()=>{}}});
+  const options=[{id:"hall",name:"거실"},{id:"desk",name:"책상 앞"}];
+  expect(await observer.chooseStation(options,"동쪽",[],new AbortController().signal)).toBe("hall");
+  expect(await observer.chooseStation(options,"동쪽",[],new AbortController().signal)).toBeNull();
+  expect(step.mock.calls[0]![1]).toMatchObject({tools:[],allowTools:false});
+});
 const SINK_TOP: [number, number, number] = [0.6, 0.9, 0];
 const SINK: LookSpot = { id: "sink_1", label: "싱크대", position: SINK_TOP };
 const CUP: LookSpot = { id: "cup_1", label: "컵", position: [1.5, 0, 0] };

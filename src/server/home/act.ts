@@ -213,6 +213,14 @@ export function startAct(core: HomeCore): (event: BrainLog) => void {
         const station=core.scene?.stations.stations.find(s=>s.id===id);
         return station ? {id,label:station.name,position:[station.position[0],stationFloor(station.position),station.position[1]]} : null;
       },
+      choose:(job,signal)=>{
+        const map=core.scene?.stations;
+        if (!map) return Promise.resolve(null);
+        const places=map.stations.filter(s=>job.candidates.includes(s.id)).map(({id,name})=>({id,name}));
+        if (places.length!==job.candidates.length) return Promise.resolve(null);
+        const visited=map.stations.filter(s=>job.visited.includes(s.id)).map(s=>s.name);
+        return core.looker?.chooseStation(places,job.direction,visited,signal) ?? Promise.resolve(null);
+      },
       result:r=>core.out.act?.push("/act/directive_result",r),
     },
     plans,

@@ -15,6 +15,7 @@ type Decision = Pick<DecisionRecord,"seq"|"request_rev"|"atMs"|"status"|"fsm"|"l
 export interface TriggerFacts {
   read(trigger: Trigger): TriggerFact;
   mealSeated: TriggerFact;
+  observes(stationId:string,after:number):boolean;
   trail: NonNullable<WorldView["person_trail"]>;
 }
 
@@ -119,6 +120,14 @@ export class GoalTriggers {
     const windows = new Map(this.vacantSince);
     return {
       trail:view.person_trail ?? [],
+      observes:(id,after)=>{
+        const s=map?.stations.find(station=>station.id===id);
+        if (!s || !map || !recent || !current || current.at_ms<=after || !proof || proof.person_count!==0) return false;
+        const zones=map.zones.filter(z=>s.observes_zone_ids.includes(z.id));
+        if (zones.length) return this.covered(current,zones);
+        const [x,z]=s.look_at, y=this.floor(s.look_at);
+        return proof.seats==="clear" && [y,y+1.2].every(h=>inView(proof.camera,[x,h,z]));
+      },
       mealSeated: stamp !== null && now >= stamp && now-stamp <= MEAL_PHOTO_GAP_MS ? this.mealSeated : see("unknown"),
       read: t => {
         if (t.kind==="device") return deviceFact(view.devices,t,rev,changedDevices);

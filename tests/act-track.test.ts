@@ -74,6 +74,7 @@ it("관찰 자리는 맞춘 눈으로만 도착하고 승인 질문이 오면 �
   const d={op:"grant",id:"visit:1",kind:"visit",target_id:"entry",rev:3,goal_id:null,until_ms:20000} as const;
   s.t.onEye([0,0]); s.t.onDirective(d);
   expect(s.phone.at(-1)).toMatchObject({type:"command",text:"주방 입구로 이동해 주세요.",choices:[],target:{position:[4,0,4]}});
+  expect(s.t.openCommand()).toMatchObject({planId:d.id,kind:"command",choices:[]});
   pending=true; s.t.tick();
   expect(s.phone.at(-1)).toMatchObject({type:"command_clear",id:d.id});
   pending=false; s.t.onEye([4,4]); s.t.onDirective(d);

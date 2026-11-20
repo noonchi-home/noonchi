@@ -95,6 +95,7 @@ export class HomeCore {
   goalPlans: BrainPlans | null = null;
   goalPulse: number | null = null;
   goalFacts: import("../../goal/index.js").TriggerFacts | null = null;
+  checkingVisit: (import("../../goal/index.js").CheckingVisit & {cup:string;surface:string}) | null = null;
   managerNode: BusNode | null = null;
   brainMirror: WorldMirror | null = null;
   brainPlans: BrainPlans | null = null;

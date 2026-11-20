@@ -15,7 +15,8 @@ export function stationDirectives(core:TrackCore) {
     now:()=>core.clock.now(), rev:()=>port?.rev() ?? 0,
     blocked:job=>{
       const ctx=core.start.context();
-      return core.stopped || ctx.emergency || !!ctx.requested ||
+      return core.stopped || ctx.emergency || !!ctx.requested || (!!job.goal_id && core.o.state.view().person.visible) ||
+        (job.kind==="choose_station" && (!!ctx.activeAction || ctx.docking || !!core.o.phone.talking?.())) ||
         (job.kind==="visit" && (!!ctx.activeAction || visitPhoneBusy(core)));
     },
     visit:job=>{
@@ -26,11 +27,13 @@ export function stationDirectives(core:TrackCore) {
         text:josa(station.label,"으로/로")+" 이동해 주세요.",choices:[],speak:true,vision:null,target:station},core.clock.now());
       return true;
     },
+    shown:id=>slot?.id===id && core.robot.commands.shows(id) ? slot.sent : null,
     clear:id=>{ if (slot?.id===id) { idleLine(core,slot).clear();slot=null; } },
     arrived:job=>{
       const eye=eyeNow(core,core.clock.now()), target=port?.target(job.target_id);
       return !!(eye && target && Math.hypot(eye.position[0]-target.position[0],eye.position[1]-target.position[2])<=ARRIVAL_M);
     },
+    choose:(job,signal)=>port?.choose?.(job,signal) ?? Promise.resolve(null),
     result:r=>port?.result(r),
   });
 }
@@ -40,7 +43,9 @@ interface DirectivePort {
   blocked(job:HouseholdOffer):boolean;
   visit(job:HouseholdOffer):boolean;
   arrived(job:HouseholdOffer):boolean;
+  shown?(id:string):import("../../contract/phone.js").PlannedCommand|null;
   clear(id:string):void;
+  choose?(job:Extract<HouseholdOffer,{kind:"choose_station"}>,signal:AbortSignal):Promise<string|null>;
   result(result:DirectiveResult):void;
 }
 
@@ -48,9 +53,12 @@ interface DirectivePort {
 export class DirectiveRunner {
   private readonly active=new Map<string,HouseholdOffer>();
   private readonly finished=new Set<string>();
+  private selections=new Map<string,AbortController>();
   private displayed:string|null=null;
   private closed=false;
   constructor(private readonly port:DirectivePort) {}
+
+  shown() { return this.displayed ? this.port.shown?.(this.displayed) ?? null : null; }
 
   receive(message:ManagerDirective) {
     if (this.closed) return;
@@ -66,6 +74,14 @@ export class DirectiveRunner {
       if (this.port.arrived(message)) this.finish(message,"arrived");
       else if (!this.port.visit(message)) this.finish(message,"unknown");
       else this.displayed=message.id;
+    } else if (message.kind==="choose_station" && this.port.choose) {
+      const abort=new AbortController();
+      this.selections.set(message.id,abort);
+      void this.port.choose(message,abort.signal).then(id=>{
+        if (abort.signal.aborted || this.blocked(message)) this.cancel(message.id);
+        else if (id && message.candidates.includes(id)) this.finish(message,"selected",id);
+        else this.finish(message,"unknown");
+      },()=>this.finish(message,"unknown"));
     } else this.finish(message,"unknown");
   }
 
@@ -87,10 +103,11 @@ export class DirectiveRunner {
     return cancelled;
   }
   close() { this.cancel(); this.closed=true; this.finished.clear(); }
-  private finish(job:HouseholdOffer,outcome:Exclude<DirectiveResult["outcome"],"applied">) {
+  private finish(job:HouseholdOffer,outcome:Exclude<DirectiveResult["outcome"],"applied">,target=job.target_id) {
     if (!this.active.delete(job.id)) return;
     this.finished.add(job.id);
+    this.selections.get(job.id)?.abort();this.selections.delete(job.id);
     if (this.displayed===job.id) { this.displayed=null; this.port.clear(job.id); }
-    this.port.result({id:job.id,target_id:job.target_id,at_ms:this.port.now(),evidence_rev:this.port.rev(),outcome});
+    this.port.result({id:job.id,target_id:target,at_ms:this.port.now(),evidence_rev:job.kind==="choose_station"?job.rev:this.port.rev(),outcome});
   }
 }

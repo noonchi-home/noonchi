@@ -6,7 +6,7 @@ import { applyPhoneProgress, showPhoneCommand, syncPhoneClaims } from "./phone.j
 // 주기 타이머(관찰·판단·실행 추적·보기 담당·말풍선 카드). 관찰 흐름은 BRAIN=1이고 PHONE_PORT가 있을 때만 켠다(폰 카메라가 입력).
 import { join } from "node:path";
 import { datasetWriter } from "../../brain/index.js";
-import { GoalTriggers, goalRoutes } from "../../goal/index.js";
+import { GoalTriggers, goalRoutes, RoomWatch } from "../../goal/index.js";
 import { managerRoutes } from "../../manage/index.js";
 import { BrainPlans, planningRoutes } from "../../brain/index.js";
 import { BusNode, Outbox } from "../../bus/index.js";
@@ -136,14 +136,23 @@ export async function startNodes(core: HomeCore, emit: (event: BrainLog) => void
   core.goalMirror = await startWorldMirror({
     bus, epoch, name: "goal", clock, log,
     routes: (node, afterRev) => {
-      core.out.goal = goalRoutes(node, clock, triggers);
+      const rooms=new RoomWatch(intent=>core.out.goal?.push("/goal/intent",intent),core.floorPlan.portals);
+      core.out.goal = goalRoutes(node, clock, triggers, rooms);
       core.goalPlans = new BrainPlans(core.out.goal, clock, "goal:");
       core.goalPlans.routes(node);
       node.on("/goal/update", (b, ctx) => afterRev(b.rev, ctx, () => { if (!core.closed) core.tracker?.updateGoal(); }));
       node.every(250, () => {
         const view = core.goalMirror?.view(), rev = core.goalMirror?.rev();
         if (core.closed || !view || rev == null) return;
-        core.goalFacts = triggers.evaluateTriggers(view, rev, core.scene?.stations ?? null, clock.now());
+        const map=core.scene?.stations ?? null, now=clock.now();
+        core.goalFacts = triggers.evaluateTriggers(view,rev,map,now);
+        const checking=core.checkingVisit;
+        const cup=checking && view.objects.find(o=>o.id===checking.cup);
+        rooms.tick({now,rev,map,facts:core.goalFacts,checking,
+          personSeen:view.person.visible || !!(checking && view.household_photo?.proof &&
+            view.household_photo.at_ms>=checking.since && view.household_photo.proof.person_count>0),
+          cupSeen:!!(checking && cup?.status==="present" && cup.surface===checking.surface &&
+            cup.last_seen_ms>=checking.since && !cup.carried && cup.facts.place?.certainty==="confirmed" && cup.facts.place.value!=="in_hand")});
         if (core.mirror?.view()) core.tracker?.updateGoal();
       });
     },
