@@ -206,6 +206,22 @@ describe("식탁에서 떠난 뒤 새 활동 확인", () => {
     expect(s.submittedCups).toEqual(["cup_1", "cup_1"]);
     expect(s.commands()[0]?.text).toBe("식탁으로 가 주세요");
   });
+  it.each([false,true])("다른 구역에서 요리를 시작하면 PAM이 확인해 발동한다 (away 화살표 %s)", async (edge) => {
+    const {s,evidence} = await setup();
+    const before = s.nudged();
+    s.person({act:"cooking"});
+    Object.assign(evidence,{zone:"kitchen",watching:false,rev:12});
+    s.tick();
+    expect(s.nudged()).toBe(before+1);
+    const d = {...pam("next",3,s.clock.t,null,true),request_rev:12};
+    const noEdge = {state:"cooking",from:null,to:null,next_index:-1,on:null,when:null,action:null,learned:false};
+    for (const state of ["away","unknown","drinking"]) expect(s.t.goalTrigger({...d,fsm:{...noEdge,state}})).toBeNull();
+    const fsm = edge ? {...noEdge,from:"away",to:"cooking",next_index:0} : noEdge;
+    expect(s.t.goalTrigger({...d,fsm})).toBe("컵 치우기");
+    await s.decide({...d,fsm,action:"컵 치우기",goal:true});
+    expect(s.commands()[0]?.text).toBe("식탁으로 가 주세요");
+  });
+
   it("같은 식탁의 다른 컵으로 바꾸지 않는다", async () => {
     const { s } = await setup();
     s.setObjects(() => [cupOn({ id:"cup_2", surface:"table_1", seen:s.clock.t })]);

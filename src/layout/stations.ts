@@ -31,12 +31,16 @@ function crossing(a: Vec2,b: Vec2,c: Vec2,d: Vec2) {
   return (side(a,b,c)*side(a,b,d)<0 && side(c,d,a)*side(c,d,b)<0)
     || Math.min(edgeDistance(a,c,d),edgeDistance(b,c,d),edgeDistance(c,a,b),edgeDistance(d,a,b)) < 1e-8;
 }
-export function zoneAt(map: StationMap, room: string | null, p: Vec2 | null, marginM: number): string | null {
+/** A fresh point outside all named zones is distinct from an uncertain boundary. */
+export function locateZone(map: StationMap, room: string | null, p: Vec2 | null, marginM: number): string | false | null {
   if (!p || !room || !Number.isFinite(marginM) || marginM < 0) return null;
   const candidates = map.zones.filter(z => z.room === room);
   if (candidates.some(z=>edges(z.polygon).some(([a,b])=>edgeDistance(p,a,b)<=marginM))) return null;
   const inside = candidates.filter(z=>insidePolygon(p,z.polygon));
-  return inside.length === 1 ? inside[0]!.id : null;
+  return inside.length === 1 ? inside[0]!.id : inside.length === 0 ? false : null;
+}
+export function zoneAt(map: StationMap, room: string | null, p: Vec2 | null, marginM: number): string | null {
+  return locateZone(map,room,p,marginM) || null;
 }
 export function standbyFor(map: StationMap, room: string) {
   return map.stations.find(s => s.room===room && s.roles.includes("standby")) ?? null;

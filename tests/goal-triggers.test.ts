@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { GoalTriggers } from "../src/goal/triggers.js";
 import { WorldState } from "../src/world/index.js";
-import { zoneAt } from "../src/layout/index.js";
+import { locateZone } from "../src/layout/index.js";
 import { parseScene } from "../src/observe/scene.js";
 import type { CameraView, SceneLookInput, SceneObservation } from "../src/contract/observe.js";
 import type { StationMap } from "../src/contract/stations.js";
@@ -17,7 +17,7 @@ const empty = {seats:"clear", people:[], dining_food:"unknown"} as const;
 const tv = {id:"screen",kind:"tv",status:"켜짐",state:["on"],changed_ms:50,history:[]} as unknown as WorldDevice;
 function rig(cadence = 2000) {
   const w = new WorldState({ surfaces:()=>[], floorAt:()=>0, roomAt:()=>({id:"living",label:"거실"}), devices:()=>[] });
-  const triggers = new GoalTriggers(zoneAt, () => 0, cadence);
+  const triggers = new GoalTriggers(locateZone, () => 0, cadence);
   let rev = 0;
   function tick(now: number) { return triggers.evaluateTriggers({...w.view(now), devices:[tv]}, rev, map, now); }
   function photo(at: number, override:Partial<SceneLookInput> = {}, household:SceneObservation["household"] = {...empty,people:[]}, observations:SceneObservation["observations"] = [], id=String(at)) {

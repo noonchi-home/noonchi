@@ -332,7 +332,9 @@ export class GoalWatch {
     if (this.o.habit?.()?.version !== g.version) return this.drop("replaced");
     if (cup.cls !== v.cls || putAway(cup,this.o.placed())) return this.drop("moved");
     const held = cup.carried || cup.facts.place?.value === "in_hand";
-    const left = !person.visible || !!(evidence?.zone && evidence.zone !== meal.zone);
+    const outside = !!(evidence?.outsideZones || (evidence?.zone && evidence.zone !== meal.zone));
+    const found = person.visible && person.count === 1 && evidence?.count === 1 && (outside || evidence.watching);
+    const left = !person.visible || outside;
     if (held && (left || v.checking_ms !== undefined)) return this.drop("took");
     if (!held && cup.surface !== meal.surface) return this.drop("moved");
     if (v.object !== cup.id) this.set(g,{object:cup.id});
@@ -342,12 +344,12 @@ export class GoalWatch {
       this.set(g,{status:"checking", gone_ms:now, checking_ms:now, check_until_ms:now+300_000, departure_rev:evidence.rev});
       this.o.thought?.(GOAL_LOG.checking,g.view.id);
     }
-    if (g.view.status === "fired" && (!evidence.watching || g.ambiguousResident)) return this.drop("replaced");
+    if (g.view.status === "fired" && (!found || g.ambiguousResident)) return this.drop("replaced");
     if (g.view.status !== "checking" || g.ambiguousResident) { g.watchRev = null; return; }
     const act = person.facts.activity;
     if (person.visible && evidence.count === 1 && evidence.zone === meal.zone && act?.value === meal.activity &&
       act.at_ms >= g.view.checking_ms!) return this.drop("back");
-    if (!person.visible || !evidence.watching || evidence.count !== 1) g.watchRev = null;
+    if (!found) g.watchRev = null;
     else if (g.watchRev === null) {
       g.watchRev = evidence.rev;
       this.o.nudge?.();
@@ -365,15 +367,14 @@ export class GoalWatch {
     if (!g || !v || d.status !== "valid" || !d.fsm || g.pick.when !== null) return null;
     const unselected = !d.action && d.fsm.next_index === -1 && d.fsm.from === null;
     const selected = d.action === v.action && d.fsm.from === g.pick.state && d.fsm.next_index === g.pick.index;
-    const viaAway = !d.action && d.fsm.from === "away" && d.fsm.to === "watching_tv" && d.fsm.action === null &&
+    const viaAway = !d.action && d.fsm.from === "away" && d.fsm.to === d.fsm.state && d.fsm.action === null &&
       d.fsm.when === null && d.fsm.next_index >= 0;
     if (!unselected && !(v.meal && (selected || viaAway))) return null;
     if (v.meal) {
       this.watch(g);
       if (this.goal !== g || g.view.status !== "checking" || g.ambiguousResident || g.watchRev === null || d.request_rev == null ||
         d.request_rev < Math.max(g.watchRev,g.view.departure_rev!) || d.atMs < g.view.checking_ms! || d.late || d.source === "speech" ||
-        !d.world.person_visible || d.memoryVersion !== g.version || d.fsm.state !== "watching_tv" ||
-        (g.pick.to !== "*" && g.pick.to !== "watching_tv")) return null;
+        !d.world.person_visible || d.memoryVersion !== g.version || !d.fsm.state || ["away","unknown",g.pick.state].includes(d.fsm.state)) return null;
       g.decisionId = d.id;
       this.set(g,{status:"fired", confirmed_ms:this.o.now(), fired_ms:this.o.now()});
       return v.action;

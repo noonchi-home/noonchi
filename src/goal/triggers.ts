@@ -9,11 +9,11 @@ import { DEVICE_STATES } from "../world/vocab.js";
 const MEAL_PHOTO_GAP_MS = 2500;
 const EDGE_MARGIN_M = 0.1;
 const fact = (value: TriggerFact["value"], observed_ms: number | null = null, rev: number | null = null): TriggerFact => ({value, observed_ms, rev});
-type ZoneOf = (map: StationMap, room: string | null, p: Vec2 | null, margin: number) => string | null;
+type ZoneOf = (map: StationMap, room: string | null, p: Vec2 | null, margin: number) => string | false | null;
 type Decision = Pick<DecisionRecord,"seq"|"request_rev"|"atMs"|"status"|"fsm"|"late"|"source"|"memoryVersion">;
 
 export interface MealEvidence {
-  rev: number; count: number | null; zone: string | null; watching: boolean;
+  rev: number; count: number | null; zone: string | null; outsideZones?: boolean; watching: boolean;
   dining: readonly string[]; surfaces: readonly string[];
 }
 export interface TriggerFacts {
@@ -130,7 +130,7 @@ export class GoalTriggers {
       [...watches.values()].some(w => w.zones.some(z => z.id === zone) && this.covered(current!,w.zones) &&
         deviceFact(view.devices,{kind:"device",deviceKind:"tv",id:w.tv,attr:"power",value:"on",mode:"level"},rev,changedDevices).value === true);
     return {
-      ...(station ? {meal:{rev, zone, watching, count: recent ? proof?.person_count ?? null : null,
+      ...(station ? {meal:{rev, zone: zone || null, outsideZones: zone === false, watching, count: recent ? proof?.person_count ?? null : null,
         dining:station.observes_zone_ids, surfaces:station.surfaces}} : {}),
       trail:view.person_trail ?? [],
       observes:(id,after)=>{
