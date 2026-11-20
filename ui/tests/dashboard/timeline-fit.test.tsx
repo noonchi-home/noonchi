@@ -36,6 +36,7 @@ describe("시간 줄 카드 세로 크기(메시지 상자와 같음)", () => {
     const rows = [...card.querySelectorAll<HTMLElement>("[data-slot=timeline-row]")];
     expect(rows.map((r) => r.dataset.row)).toEqual(["person", "robot"]);
     const headerH = unit(header, "h")!;
+    const column = parseFloat(card.querySelector<HTMLElement>("[style*='--timeline-column-width']")!.style.getPropertyValue("--timeline-column-width"));
     const rowH = rows.map((r) => unit(r, "h")!);
     expect(headerH + 1 + rowH.reduce((a, b) => a + b + 1, 0) + 2).toBeLessThanOrEqual(TALK_H);
     // 눈금 글·지금 이름표는 머리 줄 안
@@ -49,8 +50,8 @@ describe("시간 줄 카드 세로 크기(메시지 상자와 같음)", () => {
       for (const label of r.querySelectorAll("[data-slot=timeline-slot-label]")) {
         expect(lineOf(label)! + 2 * (unit(label.parentElement!, "py") ?? 0), r.dataset.row).toBeLessThanOrEqual(unit(r, "h")! - 2 * 4);
       }
-      // 줄 이름은 이름 열(64, px-4) 안
-      expect(widthOf(name.textContent!, 14)).toBeLessThanOrEqual(64 - 2 * 16);
+      // 줄 이름은 실제 이름 열에서 양쪽 여백을 뺀 너비 안
+      expect(widthOf(name.textContent!, 14)).toBeLessThanOrEqual(column - 2 * (unit(name.parentElement!, "px") ?? 0));
     }
     // 「N.N초」는 따로 줄 없이 두 줄을 가로지르는 구간 위에 얹고, 두 줄 높이 안에 든다
     const gap = card.querySelector("[data-slot=timeline-region-label]")!;
@@ -58,7 +59,7 @@ describe("시간 줄 카드 세로 크기(메시지 상자와 같음)", () => {
     expect(lineOf(gap)! + 2 * (unit(gap, "py") ?? 0)).toBeLessThanOrEqual(rowH.reduce((a, b) => a + b, 0));
     expect(gap.className).not.toMatch(/(^|\s)bottom-/);
     // 눈금 글 「20초 전」은 눈금 사이(TICK초 너비) 안
-    const ppx = (L.timeline.width - 64 - 2 - 6) / TIMELINE_SPAN_S;
+    const ppx = (L.timeline.width - column - 2 - 6) / TIMELINE_SPAN_S;
     expect(widthOf(WORDS.timeline.ago(TIMELINE_SPAN_S - TIMELINE_TICK_S), 12) + 8).toBeLessThanOrEqual(ppx * TIMELINE_TICK_S);
     unmount();
   });
