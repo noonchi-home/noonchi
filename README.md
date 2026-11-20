@@ -58,6 +58,10 @@ Even with the same objects and appliances, the right action depends on the resid
 
 ### A. Architecture
 
+![NOONCHI System Architecture](docs/architecture/architecture.svg)
+
+Detailed view of the noonchi server and design notes (Korean): [docs/architecture](docs/architecture/architecture-notes.md)
+
 ```text
 Real phone (camera photos · position · voice) — WebXR and Web Speech API
   │  Tailscale (HTTPS · WSS)
