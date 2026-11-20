@@ -4,6 +4,19 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { SetupError, SetupStore, effectiveSources, parsePairs, parseSources } from "../src/server/setup/store.js";
+import type { StationMap } from "../src/contract/stations.js";
+
+it.each([true, false])("자리 지도는 집별이고 디스크 저장을 켠 경우에만 재시작 뒤 남는다 (%s)", (persist) => {
+  const opts = { runtimeDir: tmp(), persist };
+  const store = new SetupStore(opts);
+  const base: StationMap = { version: 1, stations: [], zones: [], surface_fronts: [], kitchen_entry: null, meal_watch: null };
+  const next: StationMap = { ...base, zones: [{id:"meal",name:"식탁",room:"living",polygon:[[1,1],[2,1],[1,2]]}] };
+  store.writeStations("a",next);
+  expect(store.stations("a",base)).toEqual(next);
+  expect(store.stations("b",base)).toEqual(base);
+  expect(new SetupStore(opts).stations("a",base)).toEqual(persist ? next : base);
+  expect(existsSync(join(opts.runtimeDir,"homes","a","stations.json"))).toBe(persist);
+});
 
 const dirs: string[] = [];
 function tmp(): string {

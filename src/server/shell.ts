@@ -10,6 +10,8 @@ import { serveFile } from "../shared/static.js";
 
 /** 설정 API(start.ts가 구현). 던지는 HttpError는 그 상태 코드로 나간다. */
 export interface SetupApi {
+  stations(): object;
+  setStations(body: Record<string, unknown>): object;
   view(): object;
   /** 설정을 끝냈는지. 안 끝냈으면 /는 /setup/으로 보낸다. */
   done(): boolean;
@@ -60,6 +62,8 @@ export function createShell(opts: ShellOptions): Shell {
     try {
       let body: object;
       if (req.method === "GET" && path === "/api/setup") body = opts.setup.view();
+      else if (req.method === "GET" && path === "/api/setup/stations") body = opts.setup.stations();
+      else if (req.method === "PUT" && path === "/api/setup/stations") body = opts.setup.setStations(await readJson(req));
       else if (req.method === "POST" && path === "/api/setup/home") body = await opts.setup.chooseHome(await readJson(req));
       else if (req.method === "POST" && path === "/api/setup/devices") body = opts.setup.setSources(await readJson(req));
       else if (req.method === "POST" && path === "/api/setup/done") body = opts.setup.finish(await readJson(req));

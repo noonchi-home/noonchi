@@ -81,6 +81,24 @@ async function events() {
 }
 
 describe("설정 흐름 서버", () => {
+  it("자리 지도는 현재 집에서 검증한 뒤 저장하고 실패하면 앞 지도를 보존한다", async () => {
+    const home = "mokryeon_180b";
+    srv = await startServer({env:env(runtime(),{HOME_ID:home}),log:()=>{}});
+    const path = "/api/setup/stations";
+    const first = await get(path);
+    expect(first.status).toBe(200);
+    const map = first.json.map;
+    map.stations[0].name = "거실 창가";
+    const put = (id:string, value:unknown) => fetchRetry(srv!.url+path,{
+      method:"PUT",headers:{"content-type":"application/json"},body:JSON.stringify({home:id,map:value}),
+    });
+    expect((await put(home,map)).status).toBe(200);
+    expect((await put("oneroom",map)).status).toBe(409);
+    const bad = structuredClone(map);
+    bad.stations[0].surfaces = ["사라진 가구"];
+    expect((await put(home,bad)).status).toBe(400);
+    expect((await get(path)).json).toMatchObject({home,map});
+  });
   it("저장 없이 뜨면 HOME_ID 집, 설정은 끝냄(테스트·데모 방식)", async () => {
     srv = await startServer({ env: env(runtime()), log: () => {} });
     const r = await get("/api/setup");

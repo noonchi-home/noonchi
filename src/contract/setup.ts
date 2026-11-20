@@ -1,5 +1,12 @@
 // 설정 화면 ↔ 서버 계약(GET /api/setup, /api/setup/*). 순수 타입만 둔다: ui/가 이 파일을 그대로 가져다 쓴다.
 import type { RoomSpec } from "./devices.js";
+import type { StationMap } from "./stations.js";
+
+export interface SetupStationsView {
+  ok: true;
+  home: string;
+  map: StationMap;
+}
 import type { DeviceKind } from "../devices/kinds.js";
 
 /** test: 시험 모드(트윈에서만, ThinQ를 부르지 않음, 기본). live: 실제 모드(짝지은 기기는 ThinQ로 실제 가전). */

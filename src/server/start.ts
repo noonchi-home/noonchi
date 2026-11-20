@@ -212,6 +212,7 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
   };
   const ctx: HomeContext = {
     env, log, runtimeDir, importer: opts.importer, matter: opts.matter, brain: opts.brain, askFirst: opts.askFirst, servedPhoneUrls: opts.servedPhoneUrls, webDir: opts.webDir,
+    savedStations: (homeId, defaults) => store.stations(homeId, defaults),
     sources: (homeId, ids) => store.sources(homeId, ids), mode: () => mode, allowOrigin, planToken: env.PLAN_TOKEN?.trim() || undefined, ready: makeReady({ endpoints, agent: agentEndpoint(env), db }),
     history: { db, device: feed.device.emit, brain: feed.brain.emit, plan: feed.plan.emit, reflect },
     bus, epochOf: (homeId) => ({ boot, home: `${homeId}#${++opened}` }),
@@ -361,6 +362,25 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
     setup: {
       view,
       done: () => store.state().done,
+      stations() {
+        if (!current || switching) throw new HttpError(409, "집을 바꾸는 중이에요.");
+        const map = current.stationMap();
+        if (!map) throw new HttpError(409, "집 평면도를 먼저 준비해 주세요.");
+        return { ok: true, home: current.twin.home.id, map };
+      },
+      setStations(body) {
+        if (switching) throw new HttpError(409, "집을 바꾸는 중이에요.");
+        const h = requireHome(body);
+        let map;
+        try {
+          map = h.checkedStations(body.map);
+        } catch (error) {
+          throw new HttpError(400, (error as Error).message);
+        }
+        store.writeStations(h.twin.home.id, map);
+        h.setStations(map);
+        return { ok: true, home: h.twin.home.id, map };
+      },
       async chooseHome(body) {
         const id = typeof body.home === "string" ? body.home.trim() : "";
         if (!id) throw new HttpError(400, "home(집 id)이 필요합니다.");
