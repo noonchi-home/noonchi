@@ -81,7 +81,7 @@ describe("외부 연락 통로(src/infer/call-service.ts)", () => {
 
   it("docs/reference.md 「외부 연락」 예시: 등록부와, 서버가 보내는 본문과 칸·값 모양이 같은 요청 둘(전화 서비스가 그대로 받아 구현한다)", () => {
     const md = readFileSync(new URL("../docs/reference.md", import.meta.url), "utf8");
-    const section = md.slice(md.indexOf("### 외부 연락"));
+    const section = md.slice(md.indexOf("### External contact service"));
     const blocks = [...section.matchAll(/```json\r?\n([\s\S]*?)```/g)].slice(0, 3).map((m) => JSON.parse(m[1]!) as Record<string, unknown>);
     expect(blocks).toHaveLength(3);
     const shape = (v: Record<string, unknown>) => Object.fromEntries(Object.entries(v).map(([k, x]) => [k, x === null ? "null" : typeof x === "object" ? Object.keys(x as object).sort() : typeof x]));

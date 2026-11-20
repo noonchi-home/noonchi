@@ -1,189 +1,137 @@
-# World State 낱말 표
+# World State vocabulary
 
-FSM을 쓰는 사람(박석준·김준형)이 보는 목록이다. World State가 볼 수 있는 것은 이 표에 있는 것뿐이다.
+Use the keys in this guide when writing plan conditions or consuming World State. The Korean labels are the strings produced by the phone, the dashboard and the observation text sent to PAM. The example triggers illustrate what a rule could observe. An example by itself does not authorize an action.
 
-- FSM 계기는 표의 「한국어」 글로 쓴다. 그 글이 PAM 관찰 텍스트에 그대로 나온다.
-- 계획 단계 조건과 코드는 「키」를 쓴다.
-- 표는 `src/world/vocab.ts`(키·글·신뢰도), 가전 종류 등록부 `src/devices/kinds.ts`(카메라로 맞추는 규칙·오래 이어지면 나는 사건의 종류·종류별 상태 글)와 `src/world/vocab-doc.ts`(보는 방법·계기 예)에서 만든다: `npx tsx scripts/world-vocab-doc.ts`. 표를 손으로 고치지 않는다. 다르면 `tests/world-vocab.test.ts`가 실패한다.
+## Perception and object classes
 
-## 보는 곳
-
-| 보는 곳 | 무엇을 |
-|---|---|
-| YOLO26s | 엔진 프레임(2초)마다 종류·상자. COCO 80종 가운데 아래 표의 종류만 |
-| YOLO26n-pose | 사람 자세(서 있음·앉아 있음·누워 있음), 손에 듦 |
-| VLM | 최근 5장(10초)을 보고 감지 번호마다 가장 새 사진의 사실, 사람은 5장 사이에 하는 일 하나 |
-| 트윈 | 물건이 닿은 면 이름(거실·복도 식탁), 방 이름, 가구·가전 자리 |
-| 가전 | Matter·ThinQ 상태 값 → 상태 키와 사건. 실제 신호가 없으면 카메라로 본 가전 설비 상태 |
-| 폰 위치 | 클로이드 눈이 있는 방, 눈(손)이 자리에 닿음 |
-| 시계 | `[때]` 줄: 요일과 하루 때 |
-
-## 근거로 쓴 분류
-
-- **COCO 80종**(Lin et al., ECCV 2014): YOLO26s가 아는 종류. 집 안에서 보이는 사람·식기·음식·생활용품·가전·가구만 골랐다.
-- **Charades**(Sigurdsson et al., 「Hollywood in Homes」, ECCV 2016, 집 안 행동 157종): 하는 일 목록의 뼈대. 예: c156 Someone is eating something, c106 Drinking from a cup/glass/bottle, c147 Someone is cooking something, c121 Wash a dish/dishes, c102 Tidying up with a broom, c005 Washing some clothes, c132 Watching television, c016 Playing with a phone/camera, c052 Working/Playing on a laptop, c032 Watching/Reading/Looking at a book, c129 Taking/consuming some medicine, c148 Someone is dressing, c139 Washing their hands, c134 Lying on a bed, c124 Lying on the floor, c097 Walking through a doorway, c143 Opening a refrigerator, c119 Putting a dish/es somewhere, c110 Taking a cup/glass/bottle from somewhere.
-- **EPIC-KITCHENS-100**(Damen et al., IJCV 2022, 동사 97종·13무리): 부엌 동작. take·put·throw → 집어 듦·내려놓음·버리는 중, wash → 설거지하는 중, open·close → 열림·닫힘, turn-on·turn-off → 켜짐·꺼짐, eat → 먹는 중.
-- **HD-EPIC**(Perrett et al., CVPR 2025, 부엌 9곳·설비 413개 디지털 트윈·물건 움직임 약 2만 개): 물건 움직임을 「집은 설비 → 놓은 설비」로 단다. 물건 자리를 트윈 설비 이름(식탁·조리대·싱크대·냉장고)으로 두는 근거.
-- **ETRI-Activity3D**(Jang et al., 2020, 어르신 하루를 보고 정한 행동 55종): 1·2인 가구의 하루(식사·약·씻기·옷·쉬기·운동)를 빠뜨리지 않았는지 견줬다.
-
-## 감지 종류
+Scene VLM responses supply objects and their attributes. Two matching scene observations can confirm a new object. Three qualifying observations without the object at its expected visible location can mark it gone. An out-of-view location supplies no evidence of disappearance. The twin supplies room and surface geometry, while device signals supply appliance state. The detector also supplies display and pose information. COCO IDs and scores below refer to the detector's class mapping.
 
 <!-- vocab:classes -->
-| 키 | 한국어 | 역할 | YOLO26s COCO | 최소 신뢰도 | 면 | 계기 예 |
+| Key | Korean label | Role | YOLO26s COCO | Min. score | Facet | Example trigger |
 | --- | --- | --- | --- | --- | --- | --- |
-| `person` | 사람 | 사람 | 0 person | 0.5 | 자세, 자리, 들고 있음, 하는 일, 순간 동작 | 사람이 30분째 안 보이고 식탁 위 컵이 남아 있다. |
-| `cup` | 컵 | 물건 | 40 wine glass, 41 cup | 0.4 | 자리, 안 내용, 몸통, 쓰는 중, 순간 동작 | 식탁 위 컵이 비어 있고 사람이 자리를 비웠다. |
-| `bottle` | 병 | 물건 | 39 bottle | 0.4 | 자리, 안 내용, 몸통, 쓰는 중, 순간 동작 | 병이 바닥에 10분째 있다. |
-| `bowl` | 그릇 | 물건 | 45 bowl | 0.4 | 자리, 안 내용, 몸통, 쓰는 중, 순간 동작 | 그릇이 내용물 있음으로 식탁 위에 1시간째 있다. |
-| `fork` | 포크 | 물건 | 42 fork | 0.45 | 자리, 쓰는 중 | 식사가 끝났는데 포크가 식탁 위에 남아 있다. |
-| `knife` | 칼 | 물건 | 43 knife | 0.45 | 자리, 쓰는 중 | 칼이 조리대 위에 있고 사람이 주방을 떠났다. |
-| `spoon` | 숟가락 | 물건 | 44 spoon | 0.45 | 자리, 쓰는 중 | 숟가락이 싱크대 안에 들어갔다. |
-| `book` | 책 | 물건 | 73 book | 0.4 | 자리, 열림, 쓰는 중 | 책이 열린 채 소파 위에 있고 사람이 안 보인다. |
-| `cell_phone` | 휴대폰 | 물건 | 67 cell phone | 0.4 | 자리, 화면, 쓰는 중 | 사람이 집을 나서는데 휴대폰이 식탁 위에 있다. |
-| `remote` | 리모컨 | 물건 | 65 remote | 0.45 | 자리, 쓰는 중 | 리모컨이 바닥에 있다. |
-| `laptop` | 노트북 | 물건 | 63 laptop | 0.4 | 자리, 열림, 화면, 쓰는 중 | 노트북이 열려 있고 화면이 켜진 채 사람이 30분째 안 보인다. |
-| `scissors` | 가위 | 물건 | 76 scissors | 0.5 | 자리, 쓰는 중 | 가위가 바닥에 있다. |
-| `toothbrush` | 칫솔 | 물건 | 79 toothbrush | 0.5 | 자리, 쓰는 중 | 칫솔이 바닥에 있다. |
-| `hair_drier` | 드라이어 | 물건 | 78 hair drier | 0.5 | 자리, 쓰는 중 | 드라이어를 쓰는 중이 10분 넘게 이어진다. |
-| `teddy_bear` | 인형 | 물건 | 77 teddy bear | 0.5 | 자리 | 인형이 바닥에 있다. |
-| `backpack` | 배낭 | 물건 | 24 backpack | 0.4 | 자리, 열림 | 배낭이 열린 채 바닥에 있다. |
-| `handbag` | 가방 | 물건 | 26 handbag | 0.4 | 자리, 열림 | 사람이 집을 나서는데 가방이 소파 위에 있다. |
-| `suitcase` | 여행 가방 | 물건 | 28 suitcase | 0.45 | 자리, 열림 | 여행 가방이 보이고 사람이 집을 나선다. |
-| `umbrella` | 우산 | 물건 | 25 umbrella | 0.4 | 자리, 열림 | 사람이 집을 나섰는데 우산이 바닥에 남아 있다. |
-| `banana` | 바나나 | 물건 | 46 banana | 0.5 | 자리 | 바나나가 식탁 위에 사흘째 있다. |
-| `apple` | 사과 | 물건 | 47 apple | 0.5 | 자리 | 사과가 식탁 위에 있고 사람이 식사를 마쳤다. |
-| `orange` | 오렌지 | 물건 | 49 orange | 0.5 | 자리 | 오렌지가 조리대 위에 있다. |
-| `broccoli` | 브로콜리 | 물건 | 50 broccoli | 0.5 | 자리 | 브로콜리가 조리대 위에 있고 사람이 요리하는 중이다. |
-| `carrot` | 당근 | 물건 | 51 carrot | 0.5 | 자리 | 당근이 조리대 위에 있고 사람이 요리하는 중이다. |
-| `sandwich` | 샌드위치 | 물건 | 48 sandwich | 0.5 | 자리 | 샌드위치가 식탁 위에 1시간째 있고 사람이 안 보인다. |
-| `hot_dog` | 핫도그 | 물건 | 52 hot dog | 0.5 | 자리 | 핫도그가 식탁 위에 1시간째 있다. |
-| `pizza` | 피자 | 물건 | 53 pizza | 0.5 | 자리 | 피자가 식탁 위에 밤까지 남아 있다. |
-| `donut` | 도넛 | 물건 | 54 donut | 0.5 | 자리 | 도넛이 식탁 위에 있다. |
-| `cake` | 케이크 | 물건 | 55 cake | 0.5 | 자리 | 케이크가 식탁 위에 1시간째 있다. |
-| `pot` | 냄비 | 물건 | — (VLM만) | 0.5 | 자리, 열림, 쓰는 중 | 냄비가 인덕션 위에 있고 사람이 주방을 떠났다. |
-| `ramen` | 라면 | 물건 | — (VLM만) | 0.5 | 자리, 열림 | 라면 봉지가 열린 채 조리대 위에 있다. |
-| `cat` | 고양이 | 물건 | 15 cat | 0.5 | 자리 | 고양이가 조리대 위에 있다. |
-| `dog` | 개 | 물건 | 16 dog | 0.5 | 자리 | 개가 소파 위에 있고 사람이 집을 나섰다. |
-| `tv` | TV | 가전 설비 | 62 tv | 0.5 | 화면 | TV 화면이 켜져 있고 사람이 30분째 안 보인다. |
-| `refrigerator` | 냉장고 | 가전 설비 | 72 refrigerator | 0.5 | 열림 | 냉장고가 열림으로 보이고 사람이 주방을 떠났다. |
-| `microwave` | 전자레인지 | 가전 설비 | 68 microwave | 0.5 | 열림, 쓰는 중 | 전자레인지 쓰는 중이 끝나고 문이 닫혀 있다. |
-| `oven` | 오븐 | 가전 설비 | 69 oven | 0.5 | 열림, 쓰는 중 | 오븐 쓰는 중이고 사람이 주방에 없다. |
-| `toaster` | 토스터 | 가전 설비 | 70 toaster | 0.5 | 쓰는 중 | 토스터 쓰는 중이고 사람이 안 보인다. |
-| `sink` | 싱크대 | 가전 설비 | 71 sink | 0.5 | 쓰는 중 | 싱크대 물이 흐름이 5분 넘게 이어지고 사람이 안 보인다. |
-| `chair` | 의자 | 가구, 거름 | 56 chair | — | — | — |
-| `couch` | 소파 | 가구, 거름 | 57 couch | — | — | — |
-| `potted_plant` | 화분 | 가구, 거름 | 58 potted plant | — | — | — |
-| `bed` | 침대 | 가구, 거름 | 59 bed | — | — | — |
-| `dining_table` | 식탁 | 가구, 거름 | 60 dining table | — | — | — |
-| `toilet` | 변기 | 가구, 거름 | 61 toilet | — | — | — |
-| `mouse` | 마우스 | 가구, 거름 | 64 mouse | — | — | — |
-| `keyboard` | 키보드 | 가구, 거름 | 66 keyboard | — | — | — |
-| `clock` | 시계 | 가구, 거름 | 74 clock | — | — | — |
-| `vase` | 꽃병 | 가구, 거름 | 75 vase | — | — | — |
+| `person` | 사람 | Person | 0 person | 0.5 | Posture, Location, Holding, Activity, Momentary action | A person has been out of view for 30 minutes and a cup remains on the dining table. |
+| `cup` | 컵 | Object | 40 wine glass, 41 cup | 0.4 | Location, Contents, Body, Use, Momentary action | An empty cup remains on the dining table after the person leaves. |
+| `bottle` | 병 | Object | 39 bottle | 0.4 | Location, Contents, Body, Use, Momentary action | A bottle has been on the floor for ten minutes. |
+| `bowl` | 그릇 | Object | 45 bowl | 0.4 | Location, Contents, Body, Use, Momentary action | A bowl containing food has been on the table for an hour. |
+| `fork` | 포크 | Object | 42 fork | 0.45 | Location, Use | A fork remains on the dining table after a meal. |
+| `knife` | 칼 | Object | 43 knife | 0.45 | Location, Use | A knife is on the counter when the person leaves the kitchen. |
+| `spoon` | 숟가락 | Object | 44 spoon | 0.45 | Location, Use | A spoon was placed in the sink. |
+| `book` | 책 | Object | 73 book | 0.4 | Location, Open state, Use | An open book is on the sofa and nobody is visible. |
+| `cell_phone` | 휴대폰 | Object | 67 cell phone | 0.4 | Location, Screen, Use | Someone leaves home while their phone is on the table. |
+| `remote` | 리모컨 | Object | 65 remote | 0.45 | Location, Use | The remote is on the floor. |
+| `laptop` | 노트북 | Object | 63 laptop | 0.4 | Location, Open state, Screen, Use | A laptop is open with its screen on and nobody has been visible for 30 minutes. |
+| `scissors` | 가위 | Object | 76 scissors | 0.5 | Location, Use | Scissors are on the floor. |
+| `toothbrush` | 칫솔 | Object | 79 toothbrush | 0.5 | Location, Use | A toothbrush is on the floor. |
+| `hair_drier` | 드라이어 | Object | 78 hair drier | 0.5 | Location, Use | A hair dryer has been in use for over ten minutes. |
+| `teddy_bear` | 인형 | Object | 77 teddy bear | 0.5 | Location | A toy is on the floor. |
+| `backpack` | 배낭 | Object | 24 backpack | 0.4 | Location, Open state | An open backpack is on the floor. |
+| `handbag` | 가방 | Object | 26 handbag | 0.4 | Location, Open state | Someone is leaving home while their bag is on the sofa. |
+| `suitcase` | 여행 가방 | Object | 28 suitcase | 0.45 | Location, Open state | A suitcase is visible as someone leaves home. |
+| `umbrella` | 우산 | Object | 25 umbrella | 0.4 | Location, Open state | An umbrella remains on the floor after the person leaves. |
+| `banana` | 바나나 | Object | 46 banana | 0.5 | Location | A banana has been on the dining table for three days. |
+| `apple` | 사과 | Object | 47 apple | 0.5 | Location | An apple is on the dining table after a meal. |
+| `orange` | 오렌지 | Object | 49 orange | 0.5 | Location | An orange is on the counter. |
+| `broccoli` | 브로콜리 | Object | 50 broccoli | 0.5 | Location | Broccoli is on the counter while someone is cooking. |
+| `carrot` | 당근 | Object | 51 carrot | 0.5 | Location | A carrot is on the counter while someone is cooking. |
+| `sandwich` | 샌드위치 | Object | 48 sandwich | 0.5 | Location | A sandwich has been on the dining table for an hour and nobody is visible. |
+| `hot_dog` | 핫도그 | Object | 52 hot dog | 0.5 | Location | A hot dog has been on the dining table for an hour. |
+| `pizza` | 피자 | Object | 53 pizza | 0.5 | Location | Pizza remains on the dining table into the night. |
+| `donut` | 도넛 | Object | 54 donut | 0.5 | Location | A doughnut is on the dining table. |
+| `cake` | 케이크 | Object | 55 cake | 0.5 | Location | A cake has been on the dining table for an hour. |
+| `pot` | 냄비 | Object | — (VLM only) | 0.5 | Location, Open state, Use | A pot is on the cooktop when the person leaves the kitchen. |
+| `ramen` | 라면 | Object | — (VLM only) | 0.5 | Location, Open state | An open packet of noodles is on the counter. |
+| `cat` | 고양이 | Object | 15 cat | 0.5 | Location | A cat is on the counter. |
+| `dog` | 개 | Object | 16 dog | 0.5 | Location | A dog is on the sofa after the person leaves home. |
+| `tv` | TV | Fixture | 62 tv | 0.5 | Screen | The TV is on and nobody has been visible for 30 minutes. |
+| `refrigerator` | 냉장고 | Fixture | 72 refrigerator | 0.5 | Open state | The refrigerator door is visibly open after the person leaves the kitchen. |
+| `microwave` | 전자레인지 | Fixture | 68 microwave | 0.5 | Open state, Use | The microwave has stopped running and its door is closed. |
+| `oven` | 오븐 | Fixture | 69 oven | 0.5 | Open state, Use | The oven is running and nobody is in the kitchen. |
+| `toaster` | 토스터 | Fixture | 70 toaster | 0.5 | Use | The toaster is in use and nobody is visible. |
+| `sink` | 싱크대 | Fixture | 71 sink | 0.5 | Use | The tap has been running for over five minutes and nobody is visible. |
+| `chair` | 의자 | Scene furniture (filtered) | 56 chair | — | — | — |
+| `couch` | 소파 | Scene furniture (filtered) | 57 couch | — | — | — |
+| `potted_plant` | 화분 | Scene furniture (filtered) | 58 potted plant | — | — | — |
+| `bed` | 침대 | Scene furniture (filtered) | 59 bed | — | — | — |
+| `dining_table` | 식탁 | Scene furniture (filtered) | 60 dining table | — | — | — |
+| `toilet` | 변기 | Scene furniture (filtered) | 61 toilet | — | — | — |
+| `mouse` | 마우스 | Scene furniture (filtered) | 64 mouse | — | — | — |
+| `keyboard` | 키보드 | Scene furniture (filtered) | 66 keyboard | — | — | — |
+| `clock` | 시계 | Scene furniture (filtered) | 74 clock | — | — | — |
+| `vase` | 꽃병 | Scene furniture (filtered) | 75 vase | — | — | — |
 <!-- /vocab:classes -->
 
-- **물건:** id(`cup_1`)·트윈 자리·사실을 쌓는다. 처음 본 뒤 4초 이어 보이면 「보임」, 그 자리가 시야 안인데 마지막으로 본 뒤 6초 안 보이면 「사라짐」(2초 간격이면 3장). 사라진 물건은 10분 동안 마지막 사실과 함께 남는다.
-- **가전 설비:** 자리가 정해진 가전. 「보임·사라짐」을 내지 않고, 보일 때 VLM이 본 상태만 그 사진을 찍은 클로이드 눈의 방마다 하나 둔다(`tv_living`). 같은 방에 같은 종류 트윈 가전이 있으면 그 id를 붙인다. VLM이 가려 안 보인다고 하면 그 답은 없는 것으로 본다. 본 상태를 트윈 가전 상태로 잇는 것은 아래 「카메라로 맞추는 가전 상태」.
-- **가구, 거름:** 트윈 배치에 이미 있다. 감지기가 거르고 VLM에도 보내지 않는다.
-- 유리컵(wine glass)은 컵으로 본다. 집 컵이 wine glass로 잡히고, 컵 치우기가 같은 대상을 봐야 한다.
-- 탈것·바깥 물건·운동 용품·다른 동물 등 나머지 COCO 종류는 거른다.
-- 개·고양이는 움직이므로 1.5m 안이면 같은 동물로 본다(다른 물건은 0.25m).
+## Observable facts
 
-최소 신뢰도:
-
-- 사람 0.5, 컵·병·그릇 0.4: 실제 폰 프레임으로 맞춘 값이다.
-- 0.45(포크·칼·숟가락·리모컨·여행 가방): 작거나 가늘거나 비슷한 것과 헷갈린다.
-- 0.5(음식·가위·칫솔·드라이어·인형·개·고양이·가전 설비): 작은 모델이 COCO에서 잘 못 맞히는 종류이고, 잘못 보면 「보임」이 그대로 계기가 된다. 가전 설비는 크게 잡혀 점수가 높으니 0.5로 TV·노트북 화면, 오븐·식기세척기 헷갈림을 줄인다.
-- 감지기 최소 점수는 0.25 그대로다. 0.4·0.5 말고는 실제 프레임으로 아직 맞추지 않았다. `DATASET_COLLECT=1`로 모은 프레임으로 맞춘다.
-
-## 사실 값
+A fact belongs to a facet such as location, contents, posture or activity. Use the key and value together. An opaque cup whose interior is hidden supplies no evidence that it is empty. A closer inspection can establish its contents when the camera sees inside. Drinking or pouring can invalidate a previous contents reading.
 
 <!-- vocab:states -->
-| 키 | 한국어 | 면 | 대상 | 보는 방법 | 계기 예 |
+| Key | Korean label | Facet | Target | Evidence | Example trigger |
 | --- | --- | --- | --- | --- | --- |
-| `on_table` | 식탁 위 | 자리 | 물건 | VLM, 트윈 식탁 면에 닿으면 그 이름 | 컵이 식탁 위에 있고 비어 있다. |
-| `on_counter` | 조리대 위 | 자리 | 물건 | VLM, 트윈 조리대 면에 닿으면 그 이름 | 그릇이 조리대 위에 30분째 있다. |
-| `on_desk` | 책상 위 | 자리 | 물건 | VLM, 트윈 책상 면에 닿으면 그 이름 | 컵이 책상 위에 밤새 있다. |
-| `on_shelf` | 선반 위 | 자리 | 물건 | VLM | 병이 선반 위에서 손에 있음으로 바뀌었다. |
-| `on_sofa` | 소파 위 | 자리 | 물건, 사람 | VLM | 사람이 소파 위에 누워 있다. 리모컨이 소파 위에 있다. |
-| `on_bed` | 침대 위 | 자리 | 물건, 사람 | VLM | 사람이 침대 위에 누워 있고 밤이다. |
-| `on_chair` | 의자 위 | 자리 | 물건, 사람 | VLM | 사람이 의자 위에 앉아 노트북을 쓰는 중이다. |
-| `on_floor` | 바닥 | 자리 | 물건, 사람 | VLM | 사람이 바닥에 누워 있다. 컵이 바닥에 있다. |
-| `in_sink` | 싱크대 안 | 자리 | 물건 | VLM, 트윈 싱크대 면에 닿으면 그 이름 | 그릇이 싱크대 안에 1시간째 있다. |
-| `in_dish_rack` | 식기 건조대 안 | 자리 | 물건 | VLM, 건조대가 보일 때만 | 그릇이 식기 건조대 안에 있다. |
-| `in_fridge` | 냉장고 안 | 자리 | 물건 | VLM, 냉장고 문이 열려 안이 보일 때만 | 그릇이 냉장고 안에 들어갔다. |
-| `in_hand` | 손에 있음 | 자리 | 물건 | 관절·VLM, 관절: 손목이 물건 상자 안·가까이라 잡았다는 증거는 아니다 | 컵이 손에 있음에서 식탁 위로 바뀌었다. |
-| `empty` | 비어 있음 | 안 내용 | 물건 | VLM, 안이 보일 때만 | 식탁 위 컵이 비어 있다. |
-| `has_contents` | 내용물 있음 | 안 내용 | 물건 | VLM, 안이 보일 때만 | 그릇에 내용물 있음이 2시간째다. |
-| `contents_unknown` | 안이 안 보임 | 안 내용 | 물건 | VLM | 컵 안이 안 보인다. |
-| `see_through` | 속이 비침 | 몸통 | 물건 | VLM, 옆면으로 안이 비쳐 보일 때 | 유리컵이라 남은 물 높이가 보인다. |
-| `opaque` | 불투명 | 몸통 | 물건 | VLM, 옆면으로 안이 안 보일 때 | 흰 머그라 옆에서는 안을 알 수 없다. |
-| `open` | 열림 | 열림 | 물건, 가전 설비 | VLM | 노트북이 열려 있다. 냉장고가 열림으로 보인다. |
-| `closed` | 닫힘 | 열림 | 물건, 가전 설비 | VLM | 전자레인지 문이 닫혀 있다. |
-| `in_use` | 쓰는 중 | 쓰는 중 | 물건, 가전 설비 | VLM, 물건은 지금 쓰는 중, 가전은 돌아가는 중 | 전자레인지 쓰는 중이 끝났다. |
-| `not_in_use` | 꺼져 있음 | 쓰는 중 | 가전 설비 | VLM, 가전이 꺼진 것이 분명히 보임(불빛·화면·불꽃·열 없음) | 전자레인지가 꺼져 있다. |
-| `water_running` | 물이 흐름 | 쓰는 중 | 가전 설비 | VLM | 싱크대 물이 흐름이 5분 넘게 이어진다. |
-| `screen_on` | 화면 켜짐 | 화면 | 물건, 가전 설비 | VLM | TV 화면이 켜져 있고 사람이 안 보인다. |
-| `screen_off` | 화면 꺼짐 | 화면 | 물건, 가전 설비 | VLM | TV 화면이 꺼졌다. |
-| `standing` | 서 있음 | 자세 | 사람 | 관절·VLM, 관절: 몸통이 서고 허벅지가 수직에 가까움 | 사람이 앉아 있다가 일어섰다. |
-| `sitting` | 앉아 있음 | 자세 | 사람 | 관절·VLM, 관절: 허벅지가 수직에서 45° 넘음 | 사람이 식탁에 앉아 있다. |
-| `lying` | 누워 있음 | 자세 | 사람 | 관절·VLM, 관절: 몸통이 수직에서 60° 넘음 | 사람이 바닥에 누워 있다. |
-| `fall_suspected` | 쓰러짐 의심 | 자세 | 사람 | 관절, 서 있음에서 2초 안에 중력 기준으로 몸통·허벅지가 다 누운 자세가 되어 3초 이어짐, VLM이 침대·소파 위라고 답한 그 가구 자리는 뺌, VLM에는 묻지 않음 | 사람이 쓰러진 뒤 일어나지 않는다. |
-| `holding_object` | 물건을 들고 있음 | 들고 있음 | 사람 | 관절·VLM, 관절: 어느 손목이든 물건 상자 안·가까이 | 사람이 물건을 들고 있지 않다. |
-| `eating` | 먹는 중 | 하는 일 | 사람 | VLM | 사람이 식탁에서 먹는 중이다. |
-| `drinking` | 마시는 중 | 하는 일 | 사람 | VLM | 사람이 마시는 중이었다가 컵을 내려놓았다. |
-| `cooking` | 요리하는 중 | 하는 일 | 사람 | VLM | 사람이 요리하는 중이고 인덕션이 켜져 있다. |
-| `washing_dishes` | 설거지하는 중 | 하는 일 | 사람 | VLM | 사람이 설거지하는 중이다. |
-| `cleaning` | 청소하는 중 | 하는 일 | 사람 | VLM | 사람이 청소하는 중이다. |
-| `doing_laundry` | 빨래하는 중 | 하는 일 | 사람 | VLM | 세탁 멈춤 뒤에 사람이 빨래하는 중이다. |
-| `putting_away` | 정리하는 중 | 하는 일 | 사람 | VLM | 사람이 정리하는 중이다. |
-| `picking_up` | 물건을 집어 듦 | 순간 동작 | 사람 | VLM, 5장 사이에 일어난 순간 동작 | 사람이 물건을 집어 들었다. |
-| `putting_down` | 물건을 내려놓음 | 순간 동작 | 사람 | VLM, 5장 사이에 일어난 순간 동작 | 사람이 물건을 내려놓았다. |
-| `throwing_away` | 버리는 중 | 순간 동작 | 사람 | VLM, 5장 사이에 일어난 순간 동작 | 사람이 버리는 중이고 컵이 사라졌다. |
-| `drank` | 마심 | 순간 동작 | 물건 | VLM, 5장 사이에 그 그릇에서 마심(그릇 번호에 단다). 확인된 내용물을 다시 연다 | 컵 내용물이 확인된 뒤 사람이 그 컵으로 마셨다. |
-| `poured` | 따름 | 순간 동작 | 물건 | VLM, 5장 사이에 그 그릇에 따름(그릇 번호에 단다). 확인된 내용물을 다시 연다 | 빈 컵에 사람이 물을 따랐다. |
-| `watching_tv` | TV 보는 중 | 하는 일 | 사람 | VLM | 사람이 소파 위에서 TV 보는 중이다. |
-| `using_phone` | 휴대폰 쓰는 중 | 하는 일 | 사람 | VLM | 사람이 침대 위에서 휴대폰 쓰는 중이고 밤이다. |
-| `using_laptop` | 노트북 쓰는 중 | 하는 일 | 사람 | VLM | 사람이 노트북 쓰는 중이 2시간째다. |
-| `reading` | 읽는 중 | 하는 일 | 사람 | VLM | 사람이 읽는 중이다. |
-| `talking` | 이야기하는 중 | 하는 일 | 사람 | VLM | 사람 2명이 보이고 이야기하는 중이다. |
-| `taking_medicine` | 약 먹는 중 | 하는 일 | 사람 | VLM, 약을 입에 넣는 모습, 삼켰는지는 모른다 | 아침에 사람이 약 먹는 중이 보이지 않았다. |
-| `exercising` | 운동하는 중 | 하는 일 | 사람 | VLM | 사람이 운동하는 중이고 에어컨이 꺼져 있다. |
-| `grooming` | 씻거나 단장하는 중 | 하는 일 | 사람 | VLM | 사람이 씻거나 단장하는 중이다. |
-| `dressing` | 옷을 입거나 벗는 중 | 하는 일 | 사람 | VLM | 평일 아침에 사람이 옷을 입는 중이다. |
-| `resting` | 쉬거나 자는 중 | 하는 일 | 사람 | VLM, 누웠거나 가만히 쉬는 모습, 잠든 것인지는 모른다 | 사람이 소파 위에서 쉬거나 자는 중이고 TV 화면이 켜져 있다. |
-| `walking` | 걷는 중 | 하는 일 | 사람 | VLM | 사람이 걷는 중이다. |
-| `entering_home` | 집에 들어옴 | 순간 동작 | 사람 | VLM, 5장 사이에 현관으로 들어오는 모습 | 사람이 집에 들어왔다. |
-| `leaving_home` | 집을 나섬 | 순간 동작 | 사람 | VLM, 5장 사이에 현관으로 나가는 모습 | 사람이 집을 나섰고 에어컨이 켜져 있다. |
-| `lying_on_floor` | 바닥에 누워 있음 | 하는 일 | 사람 | VLM, 침대·소파가 아닌 바닥에 누운 모습, 쓰러짐인지는 FSM이 정한다 | 사람이 바닥에 누워 있고 30초째 움직임이 없다. |
-| `other` | 다른 일을 하는 중 | 하는 일 | 사람 | VLM | 목록에 없는 일을 하는 중이다. |
-| `unknown` | 하는 일 모름 | 하는 일 | 사람 | VLM | 하는 일을 알 수 없다. |
+| `on_table` | 식탁 위 | Location | Object | VLM, Use the twin surface name when the projection intersects a dining table. | An empty cup is on the dining table. |
+| `on_counter` | 조리대 위 | Location | Object | VLM, Use the twin surface name when the projection intersects a counter. | A bowl has been on the counter for 30 minutes. |
+| `on_desk` | 책상 위 | Location | Object | VLM, Use the twin surface name when the projection intersects a desk. | A cup is on the desk overnight. |
+| `on_shelf` | 선반 위 | Location | Object | VLM | A bottle moved from a shelf into someone's hand. |
+| `on_sofa` | 소파 위 | Location | Object, Person | VLM | A person is lying on the sofa, with a remote on the cushion. |
+| `on_bed` | 침대 위 | Location | Object, Person | VLM | A person is lying on the bed at night. |
+| `on_chair` | 의자 위 | Location | Object, Person | VLM | A person is sitting on a chair using a laptop. |
+| `on_floor` | 바닥 | Location | Object, Person | VLM | A person is lying on the floor, or a cup is resting on it. |
+| `in_sink` | 싱크대 안 | Location | Object | VLM, Use the mapped sink basin when available. | A bowl has been in the sink for an hour. |
+| `in_dish_rack` | 식기 건조대 안 | Location | Object | VLM, The dish rack must be visible. | A bowl is in the dish rack. |
+| `in_fridge` | 냉장고 안 | Location | Object | VLM, The open door must expose the interior. | A bowl was placed inside the refrigerator. |
+| `in_hand` | 손에 있음 | Location | Object | VLM, A wrist near an object alone does not establish a grip. | The cup moved from a hand to the table. |
+| `empty` | 비어 있음 | Contents | Object | VLM, The interior must be visible. | The cup on the dining table is empty. |
+| `has_contents` | 내용물 있음 | Contents | Object | VLM, The interior must be visible. | A bowl has held food for two hours. |
+| `contents_unknown` | 안이 안 보임 | Contents | Object | VLM | The inside of a cup is out of view. |
+| `see_through` | 속이 비침 | Body | Object | VLM, Contents can be seen through the side. | The water level is visible through a glass. |
+| `opaque` | 불투명 | Body | Object | VLM, Contents cannot be seen through the side. | The contents of a white mug cannot be seen from the side. |
+| `open` | 열림 | Open state | Object, Fixture | VLM | A laptop or refrigerator door is open. |
+| `closed` | 닫힘 | Open state | Object, Fixture | VLM | The microwave door is closed. |
+| `in_use` | 쓰는 중 | Use | Object, Fixture | VLM, The object is being used or the appliance is running. | The microwave finished running. |
+| `not_in_use` | 꺼져 있음 | Use | Fixture | VLM, Look for explicit off evidence, such as an unlit display or an extinguished flame. | The microwave is visibly off. |
+| `water_running` | 물이 흐름 | Use | Fixture | VLM | The sink tap has been running for over five minutes. |
+| `screen_on` | 화면 켜짐 | Screen | Object, Fixture | VLM | The TV screen is on and nobody is visible. |
+| `screen_off` | 화면 꺼짐 | Screen | Object, Fixture | VLM | The TV screen turned off. |
+| `standing` | 서 있음 | Posture | Person | Pose and VLM, Pose cue: upright torso and nearly vertical thighs. | A seated person stood up. |
+| `sitting` | 앉아 있음 | Posture | Person | Pose and VLM, Pose cue: thighs angled more than 45° from vertical. | A person is sitting at the dining table. |
+| `lying` | 누워 있음 | Posture | Person | Pose and VLM, Pose cue: torso angled more than 60° from vertical. | A person is lying on the floor. |
+| `fall_suspected` | 쓰러짐 의심 | Posture | Person | Pose, A rapid change from standing to a horizontal torso and thighs within two seconds persists for three seconds. Furniture and scene evidence can identify a bed or sofa. | Someone fell and has not stood up. |
+| `holding_object` | 물건을 들고 있음 | Holding | Person | VLM, The scene observation describes a held object. | A person's hands are empty. |
+| `eating` | 먹는 중 | Activity | Person | VLM | A person is eating at the dining table. |
+| `drinking` | 마시는 중 | Activity | Person | VLM | A person drank and then put down the cup. |
+| `cooking` | 요리하는 중 | Activity | Person | VLM | A person is cooking and the cooktop is on. |
+| `washing_dishes` | 설거지하는 중 | Activity | Person | VLM | A person is washing dishes. |
+| `cleaning` | 청소하는 중 | Activity | Person | VLM | A person is cleaning. |
+| `doing_laundry` | 빨래하는 중 | Activity | Person | VLM | A person is handling laundry after the washer stopped. |
+| `putting_away` | 정리하는 중 | Activity | Person | VLM | A person is putting things away. |
+| `picking_up` | 물건을 집어 듦 | Momentary action | Person | VLM, An action observed within the sequence of frames. | A person picked up an object. |
+| `putting_down` | 물건을 내려놓음 | Momentary action | Person | VLM, An action observed within the sequence of frames. | A person put an object down. |
+| `throwing_away` | 버리는 중 | Momentary action | Person | VLM, An action observed within the sequence of frames. | A person discarded something and the cup disappeared. |
+| `drank` | 마심 | Momentary action | Object | VLM, Attach the event to that vessel. Its contents need to be checked again. | Someone drank from the cup after its contents were confirmed. |
+| `poured` | 따름 | Momentary action | Object | VLM, Attach the event to the receiving vessel. Its contents need to be checked again. | Someone poured water into an empty cup. |
+| `watching_tv` | TV 보는 중 | Activity | Person | VLM | A person is watching TV on the sofa. |
+| `using_phone` | 휴대폰 쓰는 중 | Activity | Person | VLM | A person is using a phone in bed at night. |
+| `using_laptop` | 노트북 쓰는 중 | Activity | Person | VLM | A person has been using a laptop for two hours. |
+| `reading` | 읽는 중 | Activity | Person | VLM | A person is reading. |
+| `talking` | 이야기하는 중 | Activity | Person | VLM | Two people are visible and talking. |
+| `taking_medicine` | 약 먹는 중 | Activity | Person | VLM, The camera can observe something being put in the mouth, but cannot verify swallowing. | Taking medication was not observed this morning. |
+| `exercising` | 운동하는 중 | Activity | Person | VLM | A person is exercising and the air conditioner is off. |
+| `grooming` | 씻거나 단장하는 중 | Activity | Person | VLM | A person is washing or grooming. |
+| `dressing` | 옷을 입거나 벗는 중 | Activity | Person | VLM | A person is getting dressed on a weekday morning. |
+| `resting` | 쉬거나 자는 중 | Activity | Person | VLM, Stillness or lying down alone cannot establish sleep. | A person is resting on the sofa with the TV on. |
+| `walking` | 걷는 중 | Activity | Person | VLM | A person is walking. |
+| `entering_home` | 집에 들어옴 | Momentary action | Person | VLM, Someone comes in through the entrance during the observed sequence. | A person entered the home. |
+| `leaving_home` | 집을 나섬 | Momentary action | Person | VLM, Someone leaves through the entrance during the observed sequence. | A person left home while the air conditioner was on. |
+| `lying_on_floor` | 바닥에 누워 있음 | Activity | Person | VLM, Lying on a floor away from a bed or sofa is distinct from the fall alert. | A person has been lying motionless on the floor for 30 seconds. |
+| `other` | 다른 일을 하는 중 | Activity | Person | VLM | A person is doing an activity outside the vocabulary. |
+| `unknown` | 하는 일 모름 | Activity | Person | VLM | The activity cannot be determined. |
 <!-- /vocab:states -->
 
-- 면마다 값 하나다. 같은 값이 두 번 이어지면 확인됨, 아니면 추정.
-- 그 종류의 면이 아닌 값은 버린다(책에 「내용물 있음」, 컵에 「화면 켜짐」).
-- 지금만 맞는 면: 물건·가전 설비의 쓰는 중, 사람의 들고 있음·하는 일·순간 동작·자리. 그 대상을 본 프레임 답에 없으면 지운다. 사람이 안 보이면 사람 사실을 다 지운다.
-- 하는 일은 이어지는 일 하나, 순간 동작은 5장 사이에 일어난 일 하나다. 대화하다 집어 들어도 하는 일은 그대로다. 하는 일이 목록에 없으면 「다른 일을 하는 중」, 알 수 없으면 「하는 일 모름」.
-- 같은 프레임에서는 관절 사실(손에 있음·들고 있음·자세)이 VLM 답보다 앞선다. 관절의 「손에 있음」은 손목이 물건에 닿아 있다는 뜻이고 잡았다는 증거는 아니다.
-- 「약 먹는 중」은 약을 입에 넣는 모습, 「쉬거나 자는 중」은 쉬는 모습, 「바닥에 누워 있음」은 누운 자리다. 삼킴·잠은 FSM이 다른 사실과 묶어 정한다.
-- 쓰러짐 의심(`fall_suspected`)은 관절 자세만으로 World State가 정한다(`src/world/fall.ts`): 서 있음에서 `FALL_DROP_MS`(2초) 안에 몸통·허벅지가 다 누운 자세가 되고 이어서 본 그 자세가 `FALL_HOLD_MS`(3초) 이어지면 사람 자세를 쓰러짐 의심으로 두고 변화 줄 「사람 쓰러짐 의심」을 한 번 낸다. 기울기는 카메라 자세로 구한 중력 방향에서 재고, 맞추기 전이나 거의 바로 아래를 볼 때는 보류한다. 허리 숙이기(허벅지가 선 채 몸통만 누움)·무릎이 사진 밖으로 잘린 숙임·천천히 눕기(앉은 자세를 2초 넘게 거침)·앉기·침대·소파 위에 눕기(몸이 트윈 침대·소파 자리에 비치고 지금 누운 구간 안의 VLM 답이 그 사람을 「침대 위」·「소파 위」라고 할 때만, 사람이 둘 넘게 보였으면 빼지 않는다, 기하는 후보만 고른다)는 아니다. 서 있음·앉아 있음이 보이면 푼다. 그동안 VLM 자세 답은 넣지 않는다. 대시보드 말풍선 카드가 먼저 알리고, 신고·연락은 하지 않는다.
-- 트윈 면에 닿은 물건은 `[지속]` 줄에 면 이름을 쓴다(「거실·복도 식탁 위」).
-- 물건 `[지속]` 첫 줄은 트윈 면(없으면 「자리 모름」, 싱크볼 안이면 「<싱크대> 안 · 치움」이고 그 물건의 VLM 자리 답은 손에 있음만 쓴다)과 처음 본 때·마지막 확인이다. 사실은 줄마다 그 값이 처음 보인 시각부터 세고, 추정(한 번만 본 값)은 「(짐작)」을 붙인다(「컵 cup_1 비어 있음(짐작): 21:00:04부터 4초째」).
+## Rooms and people
 
-## 사람
-
-| 키 | 한국어(관찰 텍스트) | 보는 방법 | 계기 예 |
-|---|---|---|---|
-| `person.visible` | 사람 보임 · 사람 안 보임 | YOLO로 2초 이어 보임 · 4초 안 보임 | 사람이 30분째 안 보인다. |
-| `person.count` | 사람 2명 | 마지막 감지 프레임의 사람 수 | 사람 2명이 보이고 이야기하는 중이다. |
-| `person.room` | 사람 주방·식당에 있음 | 맞춘 뒤 발이 보이면 그 바닥 자리의 방. 클로이드 눈의 방으로 대신하지 않는다 | 밤에 사람이 주방·식당에 있다. |
-| `person.near` | 주방·식당 냉장고 가까이 | 5초 안에 본 발 자리가 가전에서 1.5m 안 | 사람이 냉장고 가까이 있다. |
-| `person.holding` | 컵 cup_1 손에 있음 | 관절로 든 물건 | 사람이 컵을 들고 있다. |
-
-이 집 방 id:
+Room and surface IDs come from the active home's scene. The table below uses the Mokryeon sample home. People outside the camera's field of view cannot be identified as having left the home. A count of visible people alone does not establish which person performed an action.
 
 <!-- vocab:rooms -->
-| 방 id | 이름 |
+| Room ID | Label (Korean) |
 | --- | --- |
 | `vestibule` | 전실 |
 | `entrance` | 현관 |
@@ -202,44 +150,40 @@ FSM을 쓰는 사람(박석준·김준형)이 보는 목록이다. World State�
 | `balcony_front` | 전면 발코니 |
 <!-- /vocab:rooms -->
 
-## 가전 상태와 사건
+## Appliance states and events
+
+Hub signals map to the keys below. A state reports what is true now. An event records a transition, so receiving the first state is insufficient to establish that a transition just occurred. The device registry also defines elapsed-time events, such as a refrigerator door remaining open.
 
 <!-- vocab:devices -->
-| 키 | 트윈 속성 | 상태 글 | 사건 글 | 늘 보임 | 계기 예 |
+| Key | Twin attribute | State text (Korean) | Event text (Korean) | Always shown | Example trigger |
 | --- | --- | --- | --- | --- | --- |
-| `running` | running = true | 작동 중 | 작동 시작 | 예 | 세탁기가 작동 중이다. |
-| `stopped` | running = false | 멈춤 | 작동 멈춤 | 아니오 | 세탁 멈춤이 30분 넘게 지났고 문이 닫혀 있다. |
-| `on` | power = on | 켜짐 | 켜짐 | 예 | 에어컨이 켜져 있고 사람이 집을 나섰다. |
-| `off` | power = off | 꺼짐 | 꺼짐 | 아니오 | 인덕션이 꺼졌다. |
-| `door_open` | door = open | 문 열림 | 문 열림 | 예 | 냉장고 문 열림이 이어진다. |
-| `door_closed` | door = closed | 문 닫힘 | 문 닫힘 | 아니오 | 냉장고 문이 닫혔다. |
-| `unlocked` | lock = unlocked | 잠금 풀림 | 잠금 풀림 | 예 | 현관문 잠금 풀림이 밤에 났다. |
-| `locked` | lock = locked | 잠김 | 잠김 | 아니오 | 현관문이 잠겼다. |
-| `faucet_on` | faucet = on | 물 나옴 | 물 틀어짐 | 예 | 싱크대 물이 나오고 사람이 안 보인다. |
-| `faucet_off` | faucet = off | 물 잠김 | 물 잠김 | 아니오 | 싱크대 물이 잠겼다. |
-| `water_on` | water = on | 물 나옴 | 물 틀어짐 | 예 | 샤워부스 물이 30분째 나온다. |
-| `water_off` | water = off | 물 잠김 | 물 잠김 | 아니오 | 샤워부스 물이 잠겼다. |
-| `heating_on` | heating = on | 난방 중 | 난방 켜짐 | 예 | 보일러 난방 중이고 사람이 집을 나섰다. |
-| `heating_off` | heating = off | 난방 꺼짐 | 난방 꺼짐 | 아니오 | 보일러 난방이 꺼졌다. |
-| `charging` | charging = on | 충전 중 | 충전 시작 | 아니오 | 로봇청소기 충전 중이다. |
-| `not_charging` | charging = off | 충전 안 함 | 충전 끝남 | 아니오 | 충전 끝남이 났다. |
-| `curtain_open` | curtain = open | 열림 | 열림 | 아니오 | 밤인데 커튼이 열려 있다. |
-| `curtain_closed` | curtain = closed | 닫힘 | 닫힘 | 아니오 | 아침인데 커튼이 닫혀 있다. |
-| `blind_open` | blind = open | 열림 | 열림 | 아니오 | 밤인데 블라인드가 열려 있다. |
-| `blind_closed` | blind = closed | 닫힘 | 닫힘 | 아니오 | 아침인데 블라인드가 닫혀 있다. |
-| `door_open_long` | door_open 60초 넘게 | — | 문이 1분 넘게 열림 | — | 냉장고 문이 1분 넘게 열림. 종류: fridge, lock |
+| `running` | running = true | 작동 중 | 작동 시작 | Yes | The washer is running. |
+| `stopped` | running = false | 멈춤 | 작동 멈춤 | No | The washer has been stopped for over 30 minutes and its door is closed. |
+| `on` | power = on | 켜짐 | 켜짐 | Yes | Someone left home while the air conditioner was on. |
+| `off` | power = off | 꺼짐 | 꺼짐 | No | The cooktop turned off. |
+| `door_open` | door = open | 문 열림 | 문 열림 | Yes | The refrigerator door remains open. |
+| `door_closed` | door = closed | 문 닫힘 | 문 닫힘 | No | The refrigerator door closed. |
+| `unlocked` | lock = unlocked | 잠금 풀림 | 잠금 풀림 | Yes | The front door was unlocked at night. |
+| `locked` | lock = locked | 잠김 | 잠김 | No | The front door was locked. |
+| `faucet_on` | faucet = on | 물 나옴 | 물 틀어짐 | Yes | The sink tap is running and nobody is visible. |
+| `faucet_off` | faucet = off | 물 잠김 | 물 잠김 | No | The sink tap was turned off. |
+| `water_on` | water = on | 물 나옴 | 물 틀어짐 | Yes | The shower has been running for 30 minutes. |
+| `water_off` | water = off | 물 잠김 | 물 잠김 | No | The shower was turned off. |
+| `heating_on` | heating = on | 난방 중 | 난방 켜짐 | Yes | The heating is on as someone leaves home. |
+| `heating_off` | heating = off | 난방 꺼짐 | 난방 꺼짐 | No | The heating was turned off. |
+| `charging` | charging = on | 충전 중 | 충전 시작 | No | The robot vacuum is charging. |
+| `not_charging` | charging = off | 충전 안 함 | 충전 끝남 | No | The robot vacuum finished charging. |
+| `curtain_open` | curtain = open | 열림 | 열림 | No | The curtains are open at night. |
+| `curtain_closed` | curtain = closed | 닫힘 | 닫힘 | No | The curtains are closed in the morning. |
+| `blind_open` | blind = open | 열림 | 열림 | No | The blinds are open at night. |
+| `blind_closed` | blind = closed | 닫힘 | 닫힘 | No | The blinds are closed in the morning. |
+| `door_open_long` | door_open for over 60 s | — | 문이 1분 넘게 열림 | — | The refrigerator door has been open for over one minute. Kinds: fridge, lock |
 <!-- /vocab:devices -->
 
-- 상태 키는 트윈 속성 값에서 나온다. 사건은 「그 상태가 됨」이고 변화 줄은 「가전 이름 + 사건 글」이다(「후면 발코니 세탁기 세탁 멈춤」).
-- 트윈 신호는 작동 중 참·거짓뿐이라 끝까지 돈 것과 중간에 끈 것을 가르지 못한다. 그래서 「끝남」이 아니라 「멈춤」이다.
-- 종류마다 바꾼 글: 세탁기 세탁 시작·멈춤, 건조기 건조 시작·멈춤, 식기세척기 세척 시작·멈춤과 멈춤 상태 대신 이용 가능, 로봇청소기 청소 시작·멈춤.
-- 처음 받은 상태는 상태 줄 하나만 낸다(「식기세척기 작동 중」).
-- `[지속]` 줄: 늘 보임 상태가 있는 가전, 관련 가전(식기는 식기세척기, 음식은 냉장고), 10분 안에 상태가 바뀐 가전. 코스 시간이 있으면 남은 시간.
-
-이 집(한양목련 180B) 가전:
+The available devices, labels and event text depend on the selected home. These are the devices loaded for the sample home:
 
 <!-- vocab:home -->
-| 가전 id | 이름 | 종류 | 상태 키 | 사건 줄 | 카메라로 맞춤 |
+| Device ID | Label (Korean) | Kind | State keys | Event text (Korean) | Camera evidence (Korean) |
 | --- | --- | --- | --- | --- | --- |
 | `stand_ac_dc22b8f3` | 거실·복도 에어컨 | aircon | `off`, `on` | 거실·복도 에어컨 꺼짐, 거실·복도 에어컨 켜짐 | — |
 | `wall_ac_703d00ba` | 침실 1 에어컨 | aircon | `off`, `on` | 침실 1 에어컨 꺼짐, 침실 1 에어컨 켜짐 | — |
@@ -255,44 +199,23 @@ FSM을 쓰는 사람(박석준·김준형)이 보는 목록이다. World State�
 | `light_entrance` | 현관 조명 | light | `off`, `on` | 현관 조명 꺼짐, 현관 조명 켜짐 | — |
 <!-- /vocab:home -->
 
-- 거실·복도 TV(`tv_62442cb3`)는 거실 TV수납장 위에 놓인 가전이다. 카메라로는 TV 화면 켜짐·꺼짐을 맞춘다.
-- 이 집에는 식기세척기·현관문 가전이 없다. 현관 드나듦은 하는 일(집에 들어옴·집을 나섬)로 본다.
-- 주방 전자레인지(`microwave_kitchen`)는 시연용으로 더한 가전이다(`twin/data/homes/mokryeon_180b/added_devices.json`). 실제 자리를 확인하기 전이라 AR 위치 맞추기 기준점으로 쓰지 않는다(항목에 `landmark: true`를 적어야 쓴다).
-- 거실 커튼(`curtain_living`)·침실 1 커튼(`curtain_bed_sw`)·거실 조명(`light_living`)·현관 조명(`light_entrance`)은 습관 시연(아침에 일어나면 커튼 열기, 출근 가방을 메면 조명 끄기)용으로 더한 가상 가전이다(같은 파일). 커튼은 발코니 미닫이 앞, 조명은 천장에 있고 Matter 가상 가전으로만 움직인다.
-- 문·창은 트윈에만 있고 신호가 없다.
-- 이 집에서 카메라로 맞추는 가전은 냉장고 문, TV 화면, 전자레인지 셋이다(싱크대는 도면 설비라 가전이 아니다).
+### Camera evidence
 
-## 카메라로 맞추는 가전 상태
-
-폰 카메라가 본 가전 설비 상태가 트윈 가전 상태로 이어진다(`src/world/sight.ts`, `src/devices/hub/signals.ts` `observe`).
+The final column gives the configured fallback when a reported fixture lacks a facet. An inferred value and an explicitly observed value carry different evidence. A safety check can require explicit evidence even when the displayed state is the same.
 
 <!-- vocab:sight -->
-| 가전 설비 | 트윈 가전 종류 | 면 | 본 값 | 답에 그 면 값이 없으면 |
+| Fixture | Twin device kind | Facet | Observed value | If the facet is absent |
 | --- | --- | --- | --- | --- |
-| `tv` TV | tv | 화면 | `screen_on` power = on, `screen_off` power = off | — |
-| `refrigerator` 냉장고 | fridge | 열림 | `open` door = open, `closed` door = closed | — |
-| `microwave` 전자레인지 | microwave | 쓰는 중 | `in_use` power = on, `not_in_use` power = off | power = off |
-| `microwave` 전자레인지 | microwave | 열림 | `open` door = open, `closed` door = closed | — |
-| `sink` 싱크대 | valve | 쓰는 중 | `water_running` faucet = on | faucet = off |
+| `tv` TV | tv | Screen | `screen_on` power = on, `screen_off` power = off | — |
+| `refrigerator` 냉장고 | fridge | Open state | `open` door = open, `closed` door = closed | — |
+| `microwave` 전자레인지 | microwave | Use | `in_use` power = on, `not_in_use` power = off | power = off |
+| `microwave` 전자레인지 | microwave | Open state | `open` door = open, `closed` door = closed | — |
+| `sink` 싱크대 | valve | Use | `water_running` faucet = on | faucet = off |
 <!-- /vocab:sight -->
 
-- **고르기:** YOLO가 본 가전 설비 상자마다, 그 사진을 찍은 눈의 방에서 같은 종류이고 위 속성이 있는 트윈 가전 가운데 가운데 자리가 시야 안(화면 밖 0.25까지)인 것만 본다. 상자 가운데 광선과 가전 가운데 방향의 각이 가장 작은 것을 고른다. 25° 넘게 떨어지면 고르지 않고, 둘 이상인데 두 각이 8° 안이면 애매해서 고르지 않는다. 맞추기 전(카메라 없음)·방 모름·그 방에 그 종류 없음·시야 밖도 고르지 않는다. 결과는 가전 설비의 `link`(`device`, 못 고르면 `miss`: `no_view`·`no_room`·`no_device`·`out_of_view`·`off_box`·`ambiguous`)에 남는다.
-- **값:** 그 프레임 VLM 답의 그 감지 사실이다. 가렸다(`not_visible`)·답 없음은 값이 아니다. 쓰는 중처럼 답에 없으면 안 쓰는 중인 면은 그 면 값을 하나도 말하지 않은 답이 꺼짐 값이다(싱크대 「쓰는 중」만 말하면 값이 아니다). VLM이 「꺼져 있음」(`not_in_use`)을 직접 답한 꺼짐은 명시, 답이 없어 넣은 꺼짐은 추정이다. 트윈 상태는 둘 다 꺼짐이고, 가전 이력 줄에 근거 종류(`explicit`)가 남는다.
-- **안정:** 같은 가전·속성에서 같은 값이 연속 2번(앞 값과 4초 안, 엔진 프레임 2초면 2장)이어야 넘긴다. 시야 밖이면 값이 없을 뿐 마지막 상태를 그대로 둔다. 마지막으로 본 시각은 `WorldDevice.vision.at_ms`. 카메라로 바뀐 가전 이력 줄에는 근거 사진들 가운데 가장 이른 촬영 시각(`seen_ms`)이 남고, 켠 위험 가전 추적 풀기(`src/act/track.ts` `cycleEnded`, 명시 근거만)·단계 끝 조건 `became`은 이 시각이 켜기 회차 시작 뒤·단계 시작 뒤인지 본다(허브 신호는 도착 시각). 같은 값을 다른 근거 종류로 보면(추정 꺼짐 → 명시 꺼짐) 값이 같아도 이력 줄이 생기고, 같은 값·같은 종류의 새 촬영은 `WorldDevice.sight_last`의 촬영 시각만 바뀐다. `sight_last`의 `close`는 맞춘 감지 마스크가 사진 넓이의 10% 이상인 가까이 본 관측이다.
-- **우선:** 실제 출처가 이긴다. 실제 출처는 ThinQ 짝 기기의 읽은 값, 명령·센서 값을 받은 가상 기기다. 신호 없음·읽기 전 ThinQ·명령 받은 적 없는 가상 기기는 카메라로 본 값이 상태가 된다(기기 상태 `vision.applied: true`). 실제 출처가 있으면 실제 상태를 두고 본 값은 보임 기록(`vision.applied: false`)만 남는다. 실제 상태와 다르면 처음 한 번만 다름 줄을 낸다.
-- **글:** 변화 줄 「주방·식당 냉장고 문 열림 · 카메라로 봄」(판단 계기), `[지속]` 가전 줄 끝 「카메라로 봄, 마지막 확인 21:04:08」, 다름 줄 「거실 TV 카메라로는 켜짐 · 기기 값은 꺼짐」(판단 계기 아님). 오래 이어진 상태도 「주방·식당 냉장고 문이 1분 넘게 열림 · 카메라로 봄」.
-- 오븐·토스터는 트윈 가전 종류가 없어 맞추지 않는다.
-- 시야 여유·각 기준·연속 수는 실제 프레임으로 아직 맞추지 않았다.
+## Reading an observation
 
-## 때
-
-- 관찰 텍스트 끝에 `[때] 11월 7일 토요일 밤` 줄을 둔다. 마지막 관찰 시각의 날짜·요일·하루 때다.
-- 하루 때: 새벽 0~5시, 아침 5~9시, 오전 9~12시, 오후 12~17시, 저녁 17~21시, 밤 21~24시.
-- PAM은 `final_time`(시간대 있는 ISO)도 받는다. 요일은 LLM이 셈하지 않게 글로 준다. 공휴일은 없다.
-
-## 관찰 텍스트에서 보이는 모양
-
-`tests/world-text.test.ts`가 World State로 만들어 보는 글이다.
+The first lines are timestamped changes. The 지속 lines report continuing facts and when each started. The date line gives the local weekday and part of day. The eye line gives the phone's room if known. This example is actual Korean output verified by the observation-text tests.
 
 ```
 21:04:04 사람 보임
@@ -311,71 +234,56 @@ FSM을 쓰는 사람(박석준·김준형)이 보는 목록이다. World State�
 [눈] 클로이드 눈: 주방·식당
 ```
 
-그 밖의 줄: 「거실·복도 TV tv_living 화면 켜짐」(가전 설비), 「사람 주방·식당에 있음」(방), 「주방·식당 냉장고 문이 1분 넘게 열림」(오래 이어진 가전 상태), `[지속] 사람 보임 · 2명 · 거실·복도 · 주방·식당 냉장고 가까이: …`(사람 사실은 줄마다 그 값이 처음 보인 시각부터 센다. 하는 일·쓰는 중처럼 지금만 맞는 사실은 10초 넘은 답이면 쓰지 않는다).
+## Plan conditions
 
-## 계획 단계의 끝난 조건·기다리기 조건으로 쓸 값
+The [condition schema](../src/world/conditions.ts) describes the accepted JSON. A condition can evaluate to true, false or unknown. A step advances only on true. Negating unknown still gives unknown. Use observations fresh enough for the condition and use IDs from the active home.
 
-PAM이 고른 행동(기다리기 포함)을 계획으로 바꿀 때 단계마다 끝난 조건, 기다리기 단계는 기다릴 조건을 이 JSON으로 쓴다. 키는 위 표의 키만 쓴다.
-
-- 모양: `src/world/conditions.ts` `CONDITION_JSON_SCHEMA`. 이 집에 맞는지: `checkCondition`(없는 가전·방·자리, 그 가전에 없는 상태, 그 종류에 없는 면). 판정: `ConditionWatch`를 단계마다 하나 두고 볼 때마다 `check`.
-- 판정은 참·거짓·모름이다. 안 보여 모르는 것은 모름이고 `not`(모름)도 모름이다. 단계는 참일 때만 넘어간다.
-- 단계가 시작된 뒤 본 사실만 쓴다. 그 전 사실은 모름이다. 「안이 안 보임」·「하는 일 모름」은 다른 값과 견주면 모름이다.
-- 하는 일·순간 동작·쓰는 중처럼 지금만 맞는 면은 10초 안의 VLM 답만 쓴다. 그 값이 없으면 10초 안에 그 대상 답이 있었을 때만 거짓이고, 답이 끊기면 모름이라 `for_s`가 다시 센다.
-- 사람 방·가까이는 5초 안에 본 발 자리로만 본다. 폰 근처는 5초 안의 폰 자리와 그 자리가 같은 방이고 평면 거리 안일 때다. 방을 모르면 모름이다. 손이 닿았다는 뜻은 아니다.
-
-| 조건 | 참일 때 |
+| Example | Meaning |
 |---|---|
-| `{"person": "visible"}`, `{"person": "not_visible"}` | 사람 보임·안 보임. 10초 안에 분석한 프레임이 없으면 모름 |
-| `{"person_in_room": 방 id}` | 사람이 보이고 발 자리가 그 방 |
-| `{"person_near": 가구·가전·설비 id, "within_m": 1.5}` | 사람이 보이고 발 자리가 그 거리 안(기본 1.5m) |
-| `{"person_fact": 면, "value": 키}` | 사람이 보이고 그 사실(자세·자리·들고 있음·하는 일·순간 동작) |
-| `{"person_holding": 종류 또는 id}` | 사람이 보이고 물건을 들고 있으며, 든 것을 모르거나 그 종류·id다(관절로 든 확인 전 물건도 본다). 책만 들었으면 컵은 거짓. 10초 안에 분석한 프레임에 사람이 안 보이면 거짓(프레임이 없으면 모름)이라 `not`은 들고 있다는 근거가 있을 때만 거짓 |
-| `{"people_at_least": 2}` | 보인 사람 수가 그 이상. 10초 안에 분석한 프레임이 없으면 모름 |
-| `{"object": id 또는 종류, "facts": {면: 키, …}, "surface": 면 id, "part": "basin", "status": 상태, "follow": true}` | 한 물건이 적은 칸을 모두 맞춤(종류면 그중 아무 물건). facts·surface·status 중 하나 이상, facts는 비우지 않는다. part basin은 surface와 함께 쓰고 그 면의 싱크볼 안(World State `surface_part`)일 때만 맞다(싱크볼이 있는 자리만). status는 present·out_of_view·gone. status gone만 적으면 그 종류(id)가 모두 사라짐, facts와 함께면 그 사실로 사라진 물건이 하나 있음. follow는 id에만: 원래 물건이 사라졌을 때(그 자리가 보이는데 없음, 시야 밖은 아님) 단계 시작 뒤 새로 생긴 같은 종류 물건이 하나면 그것도 본다. 여럿이면 모름. 실행 추적은 계획 단위로 따라간다: 지금 그 물건으로 보는 id가 사라졌거나(그 자리가 시야 안인데 없음) 사람이 집은 뒤 시야 밖이 됐을 때만, 그 뒤에 처음 보인 같은 종류 물건(계획 전부터 있던 것·앞서 이은 것은 뺀다)이 하나면 그것으로 이어 간다 |
-| `{"fixture": 종류, "room": 방 id, "facts": {면: 키}}` | 그 방(없으면 아무 방) 가전 설비가 그 사실 |
-| `{"device": id 또는 종류, "state": 상태 키}` | 가전이 지금 그 상태. 신호가 없으면 모름 |
-| `{"device": id 또는 종류, "became": 상태 키}` | 단계 시작 뒤 가전이 그 상태가 됨(이번 회차, 가전 이력). 처음 받은 상태는 사건이 아니다 |
-| `{"phone_near": 가구·가전·설비 id, "within_m": 1.2}` | 폰(손)이 같은 방이고 그 평면 거리 안(기본 1.2m) |
-| `{"elapsed_s": 초}` | 단계 시작 뒤 그만큼 지남. 타이머는 World State 값이 아니라 단계 시계다 |
-| `{"day_part": "night"}` | 지금 하루 때(dawn·morning·forenoon·afternoon·evening·night) |
-| `{"for_s": 초, "cond": 조건}` | 안 조건이 그 시간 넘게 이어서 참. 거짓·모름이거나 검사 사이가 10초 넘게 비면 다시 센다 |
-| `{"seq": [조건, 조건, …]}` | 앞 칸이 참이 된 뒤에 다음 칸이 참. 칸마다 기준 시각(사실의 새로움·became·elapsed_s)이 앞 칸이 참이 된 때로 바뀐다. 떠남·돌아옴처럼 앞 상태가 있어야 하는 것 |
-| `{"all": [조건…]}`, `{"any": [조건…]}`, `{"not": 조건}` | 묶기. all은 거짓 하나면 거짓, any는 참 하나면 참 |
+| `{"person":"visible"}` | A person is visible in a recent observation. |
+| `{"person_in_room":"kitchen"}` | A visible person's location is inside the named room. |
+| `{"person_near":"sink_counter_kitchen","within_m":1.5}` | The person is within the specified horizontal distance. |
+| `{"person_fact":"activity","value":"drinking"}` | A recent person observation reports the given fact. |
+| `{"person_holding":"cup_1"}` | Check holding evidence for a particular object. |
+| `{"people_at_least":2}` | At least two people are visible. |
+| `{"object":"cup_1","surface":"sink_counter_kitchen","part":"basin","follow":true}` | Check the tracked cup against the basin, separately from the surrounding counter. |
+| `{"fixture":"microwave","facts":{"use":"in_use"}}` | A fixture reports the specified fact. |
+| `{"device":"cooktop","state":"off"}` | The appliance is off. Use `became` to require a transition after the step began. |
+| `{"phone_near":"sink_counter_kitchen","within_m":1.2}` | The phone is close to the target in the same room. |
+| `{"elapsed_s":300}` | Five minutes have passed since the step started. |
+| `{"day_part":"night"}` | The local time is in the specified part of day. |
+| `{"for_s":10,"cond":{"person":"not_visible"}}` | The inner condition stays true for the given duration. |
+| `{"seq":[{"person":"not_visible"},{"person":"visible"}]}` | The conditions become true in order. |
+| `{"all":[{"person":"visible"},{"device":"tv","state":"on"}]}` | All conditions hold. |
+| `{"any":[{"person":"visible"},{"device":"tv","state":"on"}]}` | At least one condition holds. |
+| `{"not":{"person":"visible"}}` | The inner condition is false. |
 
-자주 쓸 조건:
+### Common combinations
 
-| 하려는 것 | 조건 |
+| Example | Condition |
 |---|---|
-| 사람이 식탁을 떠남 | `{"seq": [{"person_near": "dining_table_978b20c7"}, {"for_s": 10, "cond": {"not": {"person_near": "dining_table_978b20c7"}}}]}` |
-| 사람이 주방을 떠남 | `{"seq": [{"person_in_room": "kitchen"}, {"for_s": 10, "cond": {"not": {"person_in_room": "kitchen"}}}]}` |
-| 사람이 돌아옴 | `{"seq": [{"for_s": 10, "cond": {"person": "not_visible"}}, {"person": "visible"}]}` |
-| 다 마심 | `{"seq": [{"person_fact": "activity", "value": "drinking"}, {"any": [{"object": "cup", "facts": {"contents": "empty"}}, {"for_s": 30, "cond": {"all": [{"not": {"person_fact": "activity", "value": "drinking"}}, {"person_fact": "posture", "value": "standing"}]}}]}]}` |
-| 다 먹음 | `{"seq": [{"person_fact": "activity", "value": "eating"}, {"any": [{"object": "bowl", "facts": {"contents": "empty"}}, {"for_s": 60, "cond": {"not": {"person_fact": "activity", "value": "eating"}}}]}]}` |
-| 일어섬 | `{"person_fact": "posture", "value": "standing"}` |
-| 컵을 듦 | `{"any": [{"object": "cup_1", "follow": true, "facts": {"place": "in_hand"}}, {"person_holding": "cup"}]}` |
-| 세탁 멈춤 | `{"device": "washer", "became": "stopped"}` |
-| 세탁 시작 | `{"device": "washer", "became": "running"}` |
-| 건조 멈춤 | `{"device": "dryer", "became": "stopped"}` |
-| 인덕션 꺼짐 | `{"device": "cooktop", "state": "off"}` |
-| 전자레인지·오븐 끝남(이 집은 비전) | `{"seq": [{"fixture": "microwave", "facts": {"use": "in_use"}}, {"for_s": 6, "cond": {"not": {"fixture": "microwave", "facts": {"use": "in_use"}}}}]}` |
-| 식기세척기 멈춤(가전이 있는 집) | `{"device": "dishwasher", "became": "stopped"}` |
-| 그 컵이 비고 싱크대 안 | `{"object": "cup_1", "follow": true, "facts": {"contents": "empty", "place": "in_sink"}}` |
-| 그릇이 냉장고 안 | `{"object": "bowl", "facts": {"place": "in_fridge"}}` |
-| 컵이 그 식탁 위 | `{"object": "cup", "surface": "dining_table_978b20c7"}` |
-| 그 컵을 싱크대에 넣음(놓기 단계) | `{"all": [{"any": [{"object": "cup_1", "follow": true, "facts": {"place": "in_sink"}}, {"all": [{"object": "cup_1", "follow": true, "surface": "sink_counter_kitchen", "part": "basin"}, {"not": {"object": "cup_1", "follow": true, "facts": {"place": "in_hand"}}}]}]}, {"not": {"person_holding": "cup_1"}}]}` |
-| 폰(손)이 싱크대 근처 | `{"phone_near": "sink_counter_kitchen"}` |
-| 5분 기다림 | `{"elapsed_s": 300}` |
+| Leave the dining table | `{"seq": [{"person_near": "dining_table_978b20c7"}, {"for_s": 10, "cond": {"not": {"person_near": "dining_table_978b20c7"}}}]}` |
+| Leave the kitchen | `{"seq": [{"person_in_room": "kitchen"}, {"for_s": 10, "cond": {"not": {"person_in_room": "kitchen"}}}]}` |
+| Return into view | `{"seq": [{"for_s": 10, "cond": {"person": "not_visible"}}, {"person": "visible"}]}` |
+| Finish drinking | `{"seq": [{"person_fact": "activity", "value": "drinking"}, {"any": [{"object": "cup", "facts": {"contents": "empty"}}, {"for_s": 30, "cond": {"all": [{"not": {"person_fact": "activity", "value": "drinking"}}, {"person_fact": "posture", "value": "standing"}]}}]}]}` |
+| Finish a meal | `{"seq": [{"person_fact": "activity", "value": "eating"}, {"any": [{"object": "bowl", "facts": {"contents": "empty"}}, {"for_s": 60, "cond": {"not": {"person_fact": "activity", "value": "eating"}}}]}]}` |
+| Stand up | `{"person_fact": "posture", "value": "standing"}` |
+| Pick up a cup | `{"any": [{"object": "cup_1", "follow": true, "facts": {"place": "in_hand"}}, {"person_holding": "cup"}]}` |
+| Washer stops | `{"device": "washer", "became": "stopped"}` |
+| Washer starts | `{"device": "washer", "became": "running"}` |
+| Dryer stops | `{"device": "dryer", "became": "stopped"}` |
+| Cooktop is off | `{"device": "cooktop", "state": "off"}` |
+| Microwave finishes (visual evidence) | `{"seq": [{"fixture": "microwave", "facts": {"use": "in_use"}}, {"for_s": 6, "cond": {"not": {"fixture": "microwave", "facts": {"use": "in_use"}}}}]}` |
+| Dishwasher stops | `{"device": "dishwasher", "became": "stopped"}` |
+| Cup is empty and in the sink | `{"object": "cup_1", "follow": true, "facts": {"contents": "empty", "place": "in_sink"}}` |
+| Bowl is inside the refrigerator | `{"object": "bowl", "facts": {"place": "in_fridge"}}` |
+| Cup is on the selected table | `{"object": "cup", "surface": "dining_table_978b20c7"}` |
+| Place the tracked cup in the sink | `{"all": [{"any": [{"object": "cup_1", "follow": true, "facts": {"place": "in_sink"}}, {"all": [{"object": "cup_1", "follow": true, "surface": "sink_counter_kitchen", "part": "basin"}, {"not": {"object": "cup_1", "follow": true, "facts": {"place": "in_hand"}}}]}]}, {"not": {"person_holding": "cup_1"}}]}` |
+| Phone is near the sink | `{"phone_near": "sink_counter_kitchen"}` |
+| Wait five minutes | `{"elapsed_s": 300}` |
 
-- 안 보임은 떠남이 아니다. 떠남은 발 자리로 본 「가까이 → 떨어짐」뿐이고, 사람을 놓친 채 오래 모름이면 계획은 단계 시간이 지나 끝나거나 「사용자에게 물어보기」로 묻는다.
-- 다 먹음·다 마심은 짐작이다. 조건이 오래 모름이거나 애매하면 계획은 「사용자에게 물어보기」로 묻는다.
-- 물건이 움직이면 World State가 새 id를 붙인다(`cup_1` → `cup_2`). 그 물건을 따라가려면 `follow`를 쓴다. 종류로 바꾸면 전부터 있던 다른 물건이 조건을 채울 수 있다.
-- 이 집 가구·가전 id는 트윈 배치(`GET /api/scene`)의 id다. 싱크대·조리대는 도면 설비 id(`sink_counter_kitchen`, `counter_kitchen_w`, `counter_kitchen_e`)다.
+## Maintaining the vocabulary
 
-## 못 보는 것
+The [world vocabulary](../src/world/vocab.ts) and [device registry](../src/devices/kinds.ts) define the keys. The [documentation examples](../src/world/vocab-doc.ts) explain their use. From the repository root, run `npx tsx scripts/world-vocab-doc.ts` after changing a definition and `npx tsx scripts/world-vocab-doc.ts --check` to verify the tables.
 
-- 누가 누구인지 모른다. 사람 기록은 하나(가장 확실한 사람)와 보인 수뿐이라, 두 사람 중 누가 먹고 누가 떠났는지 가르지 못한다.
-- COCO에 없는 것(접시·냄비·반찬통·옷·빨래 바구니·쓰레기통)은 감지하지 못한다. 그 일은 VLM 하는 일(빨래하는 중·버리는 중·정리하는 중)로만 본다. 접시는 그릇으로 잡힐 때가 많다.
-- 닫힌 냉장고·가방·쓰레기통 안은 안 보인다. 냉장고 안은 문이 열려 안이 보일 때만 본다.
-- 화장실·샤워는 카메라로 보지 않는다. 가전 물 켜짐만 있다.
-- 폰 카메라가 비추는 곳만 본다. 안 보임은 떠남이 아니다.
-- 날씨·바깥 소리는 없다.
+The object categories follow COCO (Lin et al., 2014). The activity vocabulary draws on Charades (Sigurdsson et al., 2016), EPIC-KITCHENS-100 (Damen et al., 2022) and ETRI-Activity3D (Jang et al., 2020). HD-EPIC (Perrett et al., 2025) informs the association between movements and mapped kitchen surfaces.

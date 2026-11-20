@@ -114,12 +114,12 @@ describe("배포 파일", () => {
   it("배포 문서도 compose처럼 서비스마다 이름을 적는다(env_file·NOONCHI_ENV_FILE 없음)", () => {
     for (const f of ["docs/deploy.md", "docs/reference.md", "README.md", ".env.example"]) expect(read(f), f).not.toMatch(/NOONCHI_ENV_FILE|env_file/);
     const d = read("docs/deploy.md");
-    expect(d).toContain("`deploy/compose.yaml`의 서비스마다 적은 이름만 받는다");
+    expect(d).toContain("Each container receives only the variables listed for its service in `deploy/compose.yaml`");
     expect(d).toContain("`scripts/compose-keys.ts`");
     for (const k of Object.keys(KEY_OWNERS)) expect(d, `${k}을 받는 서비스를 docs/deploy.md 3절에 적으세요`).toContain(`\`${k}\``);
     // 키 없는 확인은 셸 값을 넘기지 않고, 키가 그 키를 쓰는 서비스에만 가는지 본다(scripts/container-smoke.ts !SERVICE_ENV.has(k)·KEY_OWNERS)
-    expect(d).toContain("저장소 `.env`와 셸의 키를 넘기지 않고");
-    expect(d).toContain("키가 그 키를 쓰는 서비스에만 가는지 본다");
+    expect(d).toContain("without forwarding the repository's `.env` or shell credentials");
+    expect(d).toContain("each key reaches only the services that use it");
   });
 
   it("compose: noonchi는 서버 코드가 읽는 설정을 받는다", () => {
@@ -189,7 +189,7 @@ describe("배포 파일", () => {
   it("배포 문서: GPU 서버 크기·Tailscale 인증서·두 모드의 에이전트 키·두 모델 확인·호출량", () => {
     const d = read("docs/deploy.md");
     for (const s of ["g6e.2xlarge", "MagicDNS", "HTTPS Certificates", "tailscale serve --bg --https=443 http://127.0.0.1:8200", "tailscale serve --bg --https=8443 http://127.0.0.1:8210",
-      "`ANTHROPIC_API_KEY` 또는 `OPENAI_API_KEY`", "curl -s http://127.0.0.1:8410/v1/models", "curl -s http://127.0.0.1:8420/v1/models", "`ENGINE_FRAME_MS`(기본 100)", "`VLM_FRAME_MS`(기본 2000)", "1,800", "vllm/vllm-openai:v0.17.0",
+      "`ANTHROPIC_API_KEY` or `OPENAI_API_KEY`", "curl -s http://127.0.0.1:8410/v1/models", "curl -s http://127.0.0.1:8420/v1/models", "`ENGINE_FRAME_MS` (default 100)", "`VLM_FRAME_MS` (default 2000)", "1,800", "vllm/vllm-openai:v0.17.0",
       "`PAM_LLM_BASE_URL`", "fake-openai"]) expect(d).toContain(s);
     expect(d).not.toMatch(/PAM_URL|PAM_HOST_PORT|:8300|services\/pam|OPENROUTER/);
     // VLM 프레임 기본 간격 2초(src/observe/pipeline.ts loadObserveConfig)와 같은 값·호출량
@@ -197,7 +197,7 @@ describe("배포 파일", () => {
     expect(read("docs/reference.md")).toContain("| `ENGINE_FRAME_MS` | `100` |");
     expect(read("docs/reference.md")).toContain("| `VLM_FRAME_MS` | `2000` |");
     // 에이전트는 키가 없어도 다른 공급자(규칙 기반)로 바꾸지 않고 준비 안 됨으로 보인다
-    expect(d).toContain("`agent.key`·`agent.reachable`");
+    expect(d).toContain("`agent.key`, `agent.reachable`");
     for (const f of ["docs/deploy.md", ".env.example", "README.md", "docs/reference.md", "docs/plan.md"]) expect(read(f), f).not.toMatch(/규칙 기반|rule-based|rules-ko|mock 에이전트|mock 공급자|anthropic` \/ `mock|openai \| anthropic \| mock/);
   });
 

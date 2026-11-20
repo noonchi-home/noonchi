@@ -1,7 +1,7 @@
 // 영상 입력 모드(?clip=, core/video-ar.js): 실제 카메라 대신 영상을 틀고, 고정 자세·투영으로 실제 폰과 같은 길로 보낸다.
 // jsdom은 영상을 틀지 못하므로 영상·JPEG 인코딩·2D 그림판은 대역(arDeps)으로 넣는다.
 // 지원은 바로 됨(http·WebXR 없어도), 명령은 실제 폰처럼 소리로 읽고 늘 듣기만 끔, reset → start fixed → pose, 화면·엔진 프레임 헤더, 명령 시각 기록,
-// 맞춤 상태면 「여기서 시작」·시작 위치 모달 없음, 영상이 끝나면 프레임을 멈춘다. 단계 영상(step=)·go 단계 걷기·집기·놓기 대상 바라보기. video-math 표도 본다.
+// 맞춤 상태면 「여기서 시작」·시작 위치 모달 없음, Frame delivery stops when the video ends. 단계 영상(step=)·go 단계 걷기·집기·놓기 대상 바라보기. video-math 표도 본다.
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -588,11 +588,11 @@ describe("영상 입력 모드: 명령 시각 기록·화면", () => {
     const doc = readFileSync(join(process.cwd(), "..", "docs", "reference.md"), "utf8");
     const kinds = ["go", "pick", "place", "do"].filter((k) => videoParams(new URLSearchParams(`clip=a.mp4&step=${k}:cup:a.mp4`))?.steps.length === 1);
     expect(kinds).toEqual(["go", "pick", "place", "do"]);
-    expect(doc).toContain(`(여러 개, 종류 ${kinds.join("·")})`);
-    expect(doc).toContain("같은 종류·낱말 칸이 여럿이면 적은 차례대로 쓴다");
-    expect(doc).toContain("단계 영상이 끝나면 마지막 장면을 붙잡는다");
-    expect(doc).toContain("첫 영상도 끝나면 마지막 장면을 붙잡는다");
-    expect(doc).not.toContain("영상이 끝나면 프레임을 멈춘다");
+    expect(doc).toContain(`(kinds: ${kinds.join(", ")})`);
+    expect(doc).toContain("Matching clips are consumed in the order listed.");
+    expect(doc).toContain("When a step clip ends, its last frame is held.");
+    expect(doc).toContain("When the initial clip ends, its last frame is also held.");
+    expect(doc).not.toContain("Frame delivery stops when the video ends");
     expect(doc).toMatch(/window\.__noonchiVideo = \{ t0, ended, hold, commands: .*clips: .*, at \}/);
   });
 

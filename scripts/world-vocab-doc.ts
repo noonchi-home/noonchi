@@ -15,26 +15,26 @@ export const DOC_PATH = fileURLToPath(new URL("../docs/world-vocabulary.md", imp
 /** 문서 가전 표의 집. */
 export const DOC_HOME = "mokryeon_180b";
 
-const ROLE = { person: "사람", object: "물건", fixture: "가전 설비", scene: "가구, 거름" } as const;
-const FACET = { place: "자리", contents: "안 내용", body: "몸통", open: "열림", use: "쓰는 중", screen: "화면", posture: "자세", holding: "들고 있음", activity: "하는 일", moment: "순간 동작" } as const;
-const TARGET = { person: "사람", object: "물건", fixture: "가전 설비" } as const;
+const ROLE = { person: "Person", object: "Object", fixture: "Fixture", scene: "Scene furniture (filtered)" } as const;
+const FACET = { place: "Location", contents: "Contents", body: "Body", open: "Open state", use: "Use", screen: "Screen", posture: "Posture", holding: "Holding", activity: "Activity", moment: "Momentary action" } as const;
+const TARGET = { person: "Person", object: "Object", fixture: "Fixture" } as const;
 const row = (cells: (string | number)[]) => `| ${cells.join(" | ")} |`;
 const table = (head: string[], rows: (string | number)[][]) => [row(head), row(head.map(() => "---")), ...rows.map(row)].join("\n");
 const code = (s: string) => `\`${s}\``;
 
 function classes(): string {
-  return table(["키", "한국어", "역할", "YOLO26s COCO", "최소 신뢰도", "면", "계기 예"], (Object.keys(CLASSES) as ClassKey[]).map((k) => {
+  return table(["Key", "Korean label", "Role", "YOLO26s COCO", "Min. score", "Facet", "Example trigger"], (Object.keys(CLASSES) as ClassKey[]).map((k) => {
     const c = CLASSES[k];
-    const coco = Object.entries(c.coco).map(([n, name]) => `${n} ${name}`).join(", ") || "— (VLM만)";
+    const coco = Object.entries(c.coco).map(([n, name]) => `${n} ${name}`).join(", ") || "— (VLM only)";
     return [code(k), c.label, ROLE[c.role], coco, c.role === "scene" ? "—" : c.minScore, c.facets.map((f) => FACET[f]).join(", ") || "—", CLASS_DOC[k] ?? "—"];
   }));
 }
 
 function states(): string {
-  return table(["키", "한국어", "면", "대상", "보는 방법", "계기 예"], (Object.keys(STATES) as StateKey[]).map((k) => {
+  return table(["Key", "Korean label", "Facet", "Target", "Evidence", "Example trigger"], (Object.keys(STATES) as StateKey[]).map((k) => {
     const s = STATES[k];
     const d = STATE_DOC[k];
-    const src = "pose" in s ? "관절" : s.facet === "posture" || s.facet === "holding" || k === "in_hand" ? "관절·VLM" : "VLM";
+    const src = "pose" in s ? "Pose" : s.facet === "posture" ? "Pose and VLM" : "VLM";
     return [code(k), s.label, FACET[s.facet], s.for.map((t) => TARGET[t]).join(", "), d.how ? `${src}, ${d.how}` : src, d.example];
   }));
 }
@@ -42,12 +42,12 @@ function states(): string {
 function devices(): string {
   const rows = (Object.keys(DEVICE_STATES) as DeviceStateKey[]).map((k) => {
     const s = DEVICE_STATES[k];
-    return [code(k), `${s.attr} = ${String(s.value)}`, s.label, s.became, s.active ? "예" : "아니오", DEVICE_STATE_DOC[k]];
+    return [code(k), `${s.attr} = ${String(s.value)}`, s.label, s.became, s.active ? "Yes" : "No", DEVICE_STATE_DOC[k]];
   });
   const long = (Object.entries(DEVICE_LONG) as [DeviceLongKey, (typeof DEVICE_LONG)[DeviceLongKey]][]).map(([k, l]) => [
-    code(k), `${l.state} ${l.afterMs / 1000}초 넘게`, "—", l.label, "—", `${DEVICE_LONG_DOC[k]} 종류: ${longKinds(k).join(", ")}`,
+    code(k), `${l.state} for over ${l.afterMs / 1000} s`, "—", l.label, "—", `${DEVICE_LONG_DOC[k]} Kinds: ${longKinds(k).join(", ")}`,
   ]);
-  return table(["키", "트윈 속성", "상태 글", "사건 글", "늘 보임", "계기 예"], [...rows, ...long]);
+  return table(["Key", "Twin attribute", "State text (Korean)", "Event text (Korean)", "Always shown", "Example trigger"], [...rows, ...long]);
 }
 
 /** 그 사건이 나는 가전 종류(등록부 longEvents, 등록부 순서). */
@@ -61,7 +61,7 @@ const SIGHT_RULES = (Object.keys(CLASSES) as ClassKey[]).flatMap((c): [FixtureCl
 const sightValue = (r: SightRule) => Object.entries(r.values).map(([k, v]) => `${code(k)} ${r.attr} = ${String(v)}`).join(", ");
 
 function sight(): string {
-  return table(["가전 설비", "트윈 가전 종류", "면", "본 값", "답에 그 면 값이 없으면"], SIGHT_RULES.flatMap(([cls, rules]) => rules.map((r) => [
+  return table(["Fixture", "Twin device kind", "Facet", "Observed value", "If the facet is absent"], SIGHT_RULES.flatMap(([cls, rules]) => rules.map((r) => [
     `${code(cls)} ${CLASSES[cls].label}`, cameraKindOf(cls) ?? "—", FACET[r.facet], sightValue(r), r.absent !== undefined ? `${r.attr} = ${String(r.absent)}` : "—",
   ])));
 }
@@ -75,7 +75,7 @@ function sightOf(d: { kind: string; twinAttrs: Record<string, unknown[]> }): str
 
 function home(): string {
   const twin = loadTwin(undefined, { home: DOC_HOME });
-  return table(["가전 id", "이름", "종류", "상태 키", "사건 줄", "카메라로 맞춤"], twin.devices.map((d) => {
+  return table(["Device ID", "Label (Korean)", "Kind", "State keys", "Event text (Korean)", "Camera evidence (Korean)"], twin.devices.map((d) => {
     const keys = Object.entries(d.twinAttrs).flatMap(([attr, values]) => values.flatMap((v) => deviceStateKeys(d.kind, { [attr]: v })));
     const events = keys.map((k) => `${d.label} ${deviceText(d.kind, k).became}`);
     const long = (Object.entries(DEVICE_LONG) as [DeviceLongKey, (typeof DEVICE_LONG)[DeviceLongKey]][]).filter(([k]) => longKinds(k).includes(d.kind)).map(([, l]) => `${d.label} ${l.label}`);
@@ -85,7 +85,7 @@ function home(): string {
 
 function rooms(): string {
   const twin = loadTwin(undefined, { home: DOC_HOME });
-  return table(["방 id", "이름"], twin.rooms.map((r) => [code(r.id), r.label]));
+  return table(["Room ID", "Label (Korean)"], twin.rooms.map((r) => [code(r.id), r.label]));
 }
 
 export function renderTables(): Record<string, string> {

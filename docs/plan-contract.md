@@ -1,53 +1,48 @@
-# 클로이드 계획 계약
+# CLOiD plan contract
 
-task planner가 클로이드 계획(판단·단계·이동 경로)을 트윈 화면에 띄울 때 보내는 모양이다. 타입 원본은 `src/contract/plan.ts`.
+A task planner publishes a plan to show the intended action, route, and progress on the digital twin. The TypeScript definition is in [src/contract/plan.ts](../src/contract/plan.ts).
 
-## 보내기
+## Publishing and reading a plan
 
-- `POST http://127.0.0.1:8200/api/plan`, 본문 `{ "plan": PlanView }`. `npm start`로 띄운 서버에는 같은 PC에서 그대로 보낸다.
-- compose로 띄운 서버나 다른 PC에서는 `Authorization: Bearer <PLAN_TOKEN>`을 붙인다. `PLAN_TOKEN`은 서버 `.env`에 둔다. 둘 다 아니면 403.
-- `id`가 같으면 그 계획을 바꾼다. 바꿀 때마다 `revision`을 1 올린다. 서버는 같은 `id`의 번호를 지금 번호보다 크게 맞춘다. 화면은 지금 것과 같거나 작은 번호를 버린다.
-- 모양이 틀리면 400과 틀린 필드를 돌려준다. 답은 `{ "ok": true, "plan": 서버가 보관한 계획 }`.
-- 단계 상태만 바꿀 때: `POST http://127.0.0.1:8200/api/plan/:id/steps/:stepId`, 본문 `{ "status": "done" }`. 이때 `revision`은 서버가 올린다. 보내는 규칙은 계획과 같다.
-- 지금 계획 보기: `GET http://127.0.0.1:8200/api/plan` → `{ "ok": true, "plan": PlanView | null, "off": { "hot": string[], "notices": string[] } | null }`. `off`는 켠 위험 가전 끄기 추적 요약이다: 지금 계획이 켠 채 추적하는 가전(`hot`)과 끄기 안내가 떠 있거나 줄에서 기다리는 가전(`notices`). 실행 추적이 없으면 null.
+| Request | Behavior |
+|---|---|
+| `POST /api/plan` | Send `{ "plan": PlanView }`. A successful response contains `ok: true` and the stored plan. Invalid input returns HTTP 400 with the offending field. |
+| `POST /api/plan/:id/steps/:stepId` | Send a new step status, for example `{ "status": "done" }`. The server advances the revision. |
+| `GET /api/plan` | Returns `{ ok, plan, off }`. The plan may be `null`. When the tracker is available, `off.hot` lists risky appliances being tracked and `off.notices` lists appliances with a visible or queued switch-off reminder. Otherwise `off` is `null`. |
 
-## 좌표
+Use `http://127.0.0.1:8200` for the local server. Local loopback requests to a server started with `npm start` can publish directly. For a remote client or a Compose deployment, send `Authorization: Bearer <PLAN_TOKEN>`. An unauthorized write returns HTTP 403.
 
-- 그 집 scene.json `plan`과 같은 평면 `[x, z]`, 미터.
-- 방은 `plan.rooms[].id`, 물건은 `objects[].id`를 그대로 쓴다.
+## Coordinates
+
+Use the floor plane `[x, z]` in meters, as in the active home's `scene.json`. Use `plan.rooms[].id` for room IDs and `objects[].id` for object IDs.
 
 ## PlanView
 
-| 필드 | 뜻 |
+| Field | Meaning |
 |---|---|
-| `id` | 계획 id. 다시 계획하면 새 id |
-| `revision` | 새 계획은 1, 같은 `id`를 고칠 때마다 +1 |
-| `supersedes` | 다시 계획했으면 바뀌기 전 계획 id. 첫 계획에는 없다 |
-| `origin` | 시험으로 보낸 계획이면 `"mock"`. 없으면 실제(`"live"`) |
-| `source` | task planner는 `"planner"`. 서버가 만든 계획은 `"brain"`(PAM이 고른 행동을 에이전트가 계획 모드로 만든 것, `src/agent/planner.ts`)·`"agent"`(말로 시킨 기기 행동) |
-| `goal` | 할 일 이름. 예: 컵 치우기 |
-| `judgment` | 지금 상황 판단 한 줄 |
-| `dryRun` | `true`면 모의 계획. 화면에 「모의」가 붙는다 |
-| `robot` | `{ position, room }`. 로봇 위치를 모르면 `position: null`이고 그때 `path: []` |
-| `path` | 로봇 자리에서 시작하는 바닥 경로 점 목록. 이동이 없으면 `[]` |
-| `legs` | `move` 단계마다 `{ stepId, end }`. `end`는 그 단계가 끝나는 `path` 점 번호(0부터) |
-| `steps` | `{ id, kind, label, target?, status }` 목록. 화면에 번호 순서로 보인다 |
-| `status` | `planned` · `running` · `done` · `cancelled` · `failed` |
-| `updatedAt` | ISO 시각 |
+| `id` | Stable ID for updates to one plan. A replacement plan gets a new ID. |
+| `revision` | Starts at 1. Updates to the same ID advance the revision. The server ensures it increases and the dashboard ignores duplicate or older revisions. |
+| `supersedes` | ID of the plan being replaced, if any. |
+| `origin` | `"mock"` for test plans. Defaults to `"live"`. |
+| `source` | `"planner"` for an external planner, `"brain"` for a plan based on a PAM decision, or `"agent"` for an appliance action requested by voice. |
+| `goal`, `judgment` | The task name and a one-line assessment for the dashboard. |
+| `dryRun` | Marks a simulated plan on the dashboard. |
+| `robot` | `{ position, room }`. If the position is unknown, set it to `null` and use an empty path. |
+| `path` | Floor coordinates starting at the robot's position. Empty when no travel is needed. |
+| `legs` | One `{ stepId, end }` per move step. `end` is its zero-based end index in `path`. |
+| `steps` | Ordered list of `{ id, kind, label, target?, status }`. |
+| `status` | `planned`, `running`, `done`, `cancelled`, or `failed`. |
+| `updatedAt` | ISO timestamp. |
 
-- `kind`: `move` 이동, `act` 손으로 하는 일, `ask` 사람에게 묻기·알리기, `device` 기기 행동, `wait` 기다리기(행동 중, 예: 세탁 멈춤. 대시보드 진행도에 「기다리는 중 · 이름」, 실제 폰에는 보내지 않는다).
-- 단계 `status`: `pending` 아직, `active` 지금, `done` 끝남, `failed` 실패, `skipped` 건너뜀.
-- 단계 `started_ms`·`ended_ms`(없어도 됨): 진행 중이 된 시각(그 단계 명령을 낸 때)과 진행 중에서 끝난 시각(ms). 서버 실행 추적이 단다. 대시보드 시간 줄 로봇 줄이 쓴다.
-- `target`: `objectId` · `deviceId` · `room` · `position` 중 아는 것만 넣는다.
+Step kinds are `move`, `act` (manual action), `ask` (question or notice), `device`, and `wait`. A waiting step remains visible on the dashboard while an action is in progress, such as waiting for a washer to stop. It does not issue a phone command. Step status is `pending`, `active`, `done`, `failed`, or `skipped`. Optional `started_ms` and `ended_ms` timestamps delimit the step on the robot timeline. A target includes whichever of `objectId`, `deviceId`, `room`, and `position` are known.
 
-## 화면에 나오는 글
+## Display text
 
-- `goal` · `judgment` · `steps[].label`은 화면에 그대로 나온다. 60자 아래로, 화살표(→)·괄호 없이 지금 상태나 할 일만 쓴다. 어기면 400.
-- 단계는 번호로 보인다. `label`에 순서나 다음 단계를 적지 않는다.
+The dashboard displays `goal`, `judgment`, and each step's `label` verbatim. Keep them at most 60 characters and describe the current state or action without arrows, parentheses, or step numbers. Invalid text returns HTTP 400.
 
-## 예시: 컵 치우기
+## Example: clear a cup
 
-마곡 보타닉 아파트(twin-studio `apartment/scene.json`) 좌표다. 복도 로봇이 식탁 앞으로 가서 컵을 집고, 싱크대 앞에서 내려놓는다. 이동 끝 점은 목적지 물건에서 0.55m 앞이다.
+This example uses the Magok Botanic apartment layout. The robot starts in the hallway, picks up the cup at the table, then goes to the sink to put it down. The move endpoints are 0.55 m in front of their targets. Korean strings are the actual display text.
 
 ```json
 {
