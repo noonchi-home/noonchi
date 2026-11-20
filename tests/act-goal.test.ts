@@ -84,11 +84,15 @@ function goalSetup(o: { over?: Partial<TrackerFixture>; state?: string | null; m
   let nudged = 0;
   const plans = new PlanHub(o.floor ?? smallFloor(), () => {}, () => "t");
   const planner = testPlanner(llm);
+  const submittedCups: (string | undefined)[] = [];
   const approvals = new ApprovalStore(join(mkdtempSync(join(tmpdir(), "goal-")), "homes", "h", "approvals.json"), () => "t");
   const ctx = (d: DecisionRecord, ahead?: PlanAhead) => ({ ...planContext({ decision: d, world: w(), floor: plans.floor() }), ...(ahead ? { ahead } : {}) });
   const t = testTracker({
     plans, world: w, floor: () => plans.floor(), planGapMs: 0, approvals, clock, tasks: () => NOONCHI, locate: (id) => PLACES[id],
-    planner: (d, signal, ahead) => planner.plan(ctx(d, ahead), signal),
+    planner: (d, signal, ahead) => {
+      submittedCups.push(ahead?.object);
+      return planner.plan(ctx(d, ahead), signal);
+    },
     check: (d, p, seenSince) => checkPlan({ decision: d, tasks: NOONCHI, plan: p, world: w(), nowMs: clock.t, staleMs: 3000, mode: "test", ...(seenSince !== undefined ? { seenSince } : {}) }),
     reuse: (d, plan, rename) => resubmit(plan, ctx(d), rename),
     // 목표는 배운 화살표에서만 선다: 기본은 배운 뒤 기억(배우기 전 seed는 「배우기 전(seed) 기억이면…」 시험이 본다)
@@ -125,22 +129,23 @@ function goalSetup(o: { over?: Partial<TrackerFixture>; state?: string | null; m
   const commands = () => phone.flatMap((m) => (m.type === "command" ? [m] : []));
   const planCalls = () => llm.bodies().length;
   const states = () => goals.map((g) => `${g.status}/${g.prep}`);
-  return { t, clock, tick, person, gone, setObjects, setSightings, setEye, freeze, goals, states, thoughts, logs, phone, commands, decide, planCalls, nudged: () => nudged, world: w, plans };
+  return { t, clock, tick, person, gone, setObjects, setSightings, setEye, freeze, goals, states, thoughts, logs, phone, commands, decide, planCalls, submittedCups, nudged: () => nudged, world: w, plans };
 }
 
 describe("식탁에서 떠난 뒤 새 활동 확인", () => {
-  const setup = (over: Partial<TrackerFixture> = {}) => {
+  const setup = async (over: Partial<TrackerFixture> = {}) => {
     const evidence = { zone: "dining" as string | null, dining: ["dining"], surfaces: ["table_1"], rev: 7, watching: false, count: 1 };
     const s = goalSetup({ objects: [cupOn({ seen: 10_000, surface: "table_1" })], over: { meal: () => evidence, ...over } });
     s.person({ act: "drinking" });
     s.tick();
+    await s.t.idle();
     s.gone();
     evidence.zone = null;
     s.tick();
     return { s, evidence };
   };
-  it("떠난 지 16초 뒤에도 기다리고 같은 식사 구역·같은 활동에서만 거둔다", () => {
-    const { s, evidence } = setup();
+  it("떠난 지 16초 뒤에도 기다리고 같은 식사 구역·같은 활동에서만 거둔다", async () => {
+    const { s, evidence } = await setup();
     s.tick(16_000);
     expect(s.goals.at(-1)?.status).toBe("checking");
     s.person({ act: "drinking" });
@@ -154,8 +159,8 @@ describe("식탁에서 떠난 뒤 새 활동 확인", () => {
     s.tick();
     expect(s.goals.at(-1)?.reason).toBe("back");
   });
-  it("처음 떠난 뒤 정확히 5분에 만료된다", () => {
-    const { s } = setup();
+  it("처음 떠난 뒤 정확히 5분에 만료된다", async () => {
+    const { s } = await setup();
     const end = s.goals.find(g => g.status === "checking")?.check_until_ms;
     expect(end).toBeTypeOf("number");
     s.tick(end! - s.clock.t - 1);
@@ -164,8 +169,7 @@ describe("식탁에서 떠난 뒤 새 활동 확인", () => {
     expect(s.goals.at(-1)?.reason).toBe("expired");
   });
   it("시청 근거를 본 PAM 답 한 번만 목표를 발동시킨다", async () => {
-    const { s, evidence } = setup();
-    await s.t.idle();
+    const { s, evidence } = await setup();
     s.person({ act: "watching_tv" });
     Object.assign(evidence, { zone: "sofa", watching: true, rev: 12 });
     s.tick();
@@ -178,8 +182,8 @@ describe("식탁에서 떠난 뒤 새 활동 확인", () => {
     await s.decide({...d, goal:true, action:"컵 치우기"});
     expect(s.commands()[0]?.text).toBe("식탁으로 가 주세요");
   });
-  it("같은 사람인지 알 수 없으면 복귀나 TV 시청으로 보지 않고 처음 기한까지 기다린다", () => {
-    const {s,evidence} = setup();
+  it("같은 사람인지 알 수 없으면 복귀나 TV 시청으로 보지 않고 처음 기한까지 기다린다", async () => {
+    const {s,evidence} = await setup();
     const until = s.goals.at(-1)?.check_until_ms;
     s.person({act:"drinking"});
     Object.assign(evidence,{count:2,zone:"dining"});
@@ -190,9 +194,8 @@ describe("식탁에서 떠난 뒤 새 활동 확인", () => {
   });
   it("준비안 재검사 실패 후에는 확인한 그 컵으로만 새 계획을 만든다", async () => {
     let count = 0;
-    const {s,evidence} = setup({reuse:(_d,plan) => ++count === 1 ? {ok:false,error:"면 정보 변경"} : {ok:true,plan}});
-    await s.t.idle();
-    const calls = s.planCalls();
+    const {s,evidence} = await setup({reuse:(_d,plan) => ++count === 1 ? {ok:false,error:"면 정보 변경"} : {ok:true,plan}});
+    expect(s.submittedCups).toEqual(["cup_1"]);
     Object.assign(evidence,{zone:"sofa",watching:true,rev:12});
     s.person({act:"watching_tv"});
     s.tick();
@@ -200,11 +203,11 @@ describe("식탁에서 떠난 뒤 새 활동 확인", () => {
       fsm:{state:"watching_tv",from:null,next_index:-1,to:null,when:null,on:null,action:null,learned:false}};
     expect(s.t.goalTrigger(d)).toBe("컵 치우기");
     await s.decide({...d,goal:true,action:"컵 치우기"});
-    expect(s.planCalls()).toBe(calls+1);
+    expect(s.submittedCups).toEqual(["cup_1", "cup_1"]);
     expect(s.commands()[0]?.text).toBe("식탁으로 가 주세요");
   });
-  it("같은 식탁의 다른 컵으로 바꾸지 않는다", () => {
-    const { s } = setup();
+  it("같은 식탁의 다른 컵으로 바꾸지 않는다", async () => {
+    const { s } = await setup();
     s.setObjects(() => [cupOn({ id:"cup_2", surface:"table_1", seen:s.clock.t })]);
     s.tick();
     expect(s.goals.at(-1)).toMatchObject({status:"dropped", reason:"took"});
