@@ -40,25 +40,26 @@ describe("기록 DB", () => {
     const proto = DatabaseSync.prototype;
     const prepare = proto.prepare;
     const seen: number[] = [];
-    proto.prepare = function (this: DatabaseSync, sql: string) {
-      const st = prepare.call(this, sql);
-      if (!sql.startsWith("INSERT INTO events")) return st;
-      return new Proxy(st, {
-        get: (t, k) => k === "run"
-          ? (...a: Parameters<typeof t.run>) => { seen.push((prepare.call(this, "PRAGMA synchronous").get() as { synchronous: number }).synchronous); return t.run(...a); }
-          : typeof Reflect.get(t, k) === "function" ? (Reflect.get(t, k) as (...x: unknown[]) => unknown).bind(t) : Reflect.get(t, k),
-      });
-    } as typeof prepare;
-    const h = HistoryDb.open(join(mkdtempSync(join(tmpdir(), "db-")), "sync.db"));
+    let h: HistoryDb | undefined;
     try {
+      proto.prepare = function (this: DatabaseSync, sql: string) {
+        const st = prepare.call(this, sql);
+        if (!sql.startsWith("INSERT INTO events")) return st;
+        return new Proxy(st, {
+          get: (t, k) => k === "run"
+            ? (...a: Parameters<typeof t.run>) => { seen.push((prepare.call(this, "PRAGMA synchronous").get() as { synchronous: number }).synchronous); return t.run(...a); }
+            : typeof Reflect.get(t, k) === "function" ? (Reflect.get(t, k) as (...x: unknown[]) => unknown).bind(t) : Reflect.get(t, k),
+        });
+      } as typeof prepare;
+      h = HistoryDb.open(join(mkdtempSync(join(tmpdir(), "db-")), "sync.db"));
       h.add("vlm", 1, "첫 줄");
       h.add("vlm", 2, "둘째 줄");
       h.add("vlm", 3, "셋째 줄");
       expect(seen).toEqual([1, 1, 1]);
       expect(h.db.prepare("PRAGMA synchronous").get()).toEqual({ synchronous: 2 });
     } finally {
-      proto.prepare = prepare;
-      h.close();
+      proto.prepare = prepare;   // 열기가 실패해도 다음 시험에 감싼 prepare가 남지 않게 먼저 되돌린다
+      h?.close();
     }
   });
 
