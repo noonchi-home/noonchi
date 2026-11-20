@@ -134,7 +134,7 @@ export const GOAL_TEXT = {
 /** 미리 세운 목표 기록 줄(기록 DB goal, 영상 판정 시각표 「목표」 줄): 세움·미리 만들기·사람 떠남·씀·버림과 그 까닭. */
 export const GOAL_LOG = {
   armed: (action: string) => `세움 · ${action}`,
-  checking: "사용자 상태 확인 중", confirmed:"TV 시청 확인",
+  checking: "사용자 상태 확인 중", confirmed:"다른 활동 확인",
   planning: "계획 미리 만드는 중", ready: "계획 준비됨", failed: "계획 못 만듦", fired: "사람 떠남 · 판단 부름", used: "준비한 계획으로 시작",
   dropped: (why: string) => `버림 · ${why}`,
   /** 까닭 글이 있는 미리 만들기 실패와, 준비한 계획을 버리고 계획 모드로 넘어감. */
@@ -274,7 +274,7 @@ export const EXEC_TEXT = {
   safetyWait: "안전 안내가 끝나면 부탁을 이어 갈게요.",
   requestWait: "먼저 부탁하신 일을 하고 있어요.",
   /** 충전 자리 돌아가기(src/act/robot/dock.ts): 계획이 끝난 뒤 사용자 위치 확인·충전 자리로 가는 동안 받은 행동 판단. */
-  docking: "충전 자리로 가는 중이라 새 일을 미룸",
+  docking: "복귀 중이라 새 일을 미룸",
   /** 미리 세운 목표(src/goal/watch.ts)와 같은 행동을 사람이 떠나기 전에 고른 판단: 목표가 맡는다(사람이 떠나면 판단을 다시 부른다). */
   goalWait: "다 쓰고 떠나면 할 일로 두었어요",
   beforeLeave: "사람이 떠나기 전 판단이라 쓰지 않음",
@@ -290,6 +290,9 @@ export const DOCK_TEXT = {
   userUnknown: "사용자가 어디 계신지 몰라요",
   going: "충전 자리로 갈게요",
   docked: "충전 자리에서 지켜볼게요",
+  stationCommand: (toward: string) => `${toward} 가 주세요`,
+  stationGoing: (toward: string) => `${toward} 갈게요`,
+  standing: (place: string) => `${place}에서 기다릴게요`,
   gaveUp: "충전 자리로 가지 못했어요",
 } as const;
 

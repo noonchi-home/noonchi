@@ -24,7 +24,7 @@ export class Answers extends Part {
       const q = core.finding?.sent ? core.finding : core.docking?.sent ? core.docking : core.idlePeek;
       // 충전 자리 명령만 「완료」가 있다(폰 눈을 모를 때 닿음을 받는다, dock.ts)
       const sent=q?.sent ?? core.directives.shown();
-      return sent && !core.stopped ? { planId:sent.id, stepId:sent.step, kind:"command",text:sent.text,choices:q?.sent && q===core.docking?[STEP_DONE]:[] } : null;
+      return sent && !core.stopped ? { planId:sent.id, stepId:sent.step, kind:"command",text:sent.text,choices:q?.sent && q===core.docking && core.docking?.charging?[STEP_DONE]:[] } : null;
     }
     const ask = r.asking !== null || core.stepOf(r)?.kind === "ask";
     return { planId: r.plan.view.id, stepId: r.sent.step, kind: ask ? "ask" : "command", text: r.sent.text, choices: choicesOf(r, core.stepOf(r)) };
@@ -44,7 +44,7 @@ export class Answers extends Part {
     // 충전 자리 명령의 「완료」: 닿은 것으로 받는다
     const dock = core.docking;
     if (!core.stopped && dock?.sent && dock.id === planId && dock.sent.step === stepId) {
-      if (choice !== STEP_DONE.id) return false;
+      if (!dock.charging || choice !== STEP_DONE.id) return false;
       core.dock.arrived();
       return true;
     }
@@ -119,7 +119,7 @@ export class Answers extends Part {
       return { kind: "answer", choice: STOP };
     }
     if (goal || deferred || endedVisit) return { kind: "answer", choice: STOP };
-    if (dock?.sent && matchChoice(text, [STEP_DONE])) {
+    if (dock?.charging && dock.sent && matchChoice(text, [STEP_DONE])) {
       if (at?.kind !== "command" || at.id !== dock.id || at.step !== dock.sent.step) return { kind: "stale" };
       core.dock.arrived();
       return { kind: "answer", choice: STEP_DONE };

@@ -221,6 +221,7 @@ export function startAct(core: HomeCore): (event: BrainLog) => void {
       if (who) answers.remember(home.id, who, allow);
     },
     stations:{
+      map:()=>core.scene?.stations ?? null,
       rev:()=>core.mirror?.rev() ?? 0,
       target:id=>{
         const station=core.scene?.stations.stations.find(s=>s.id===id);

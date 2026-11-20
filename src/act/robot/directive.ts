@@ -5,7 +5,7 @@ import { eyeNow, idleLine, phoneBlocked, sendLine, type IdleSlot } from "./phone
 import { josa } from "../../shared/korean.js";
 
 export function visitPhoneBusy(core:TrackCore) {
-  return phoneBlocked(core,core.clock.now(),!!core.open()?.asking) || !!(core.finding || core.idlePeek || core.docking || core.notice);
+  return phoneBlocked(core,core.clock.now(),!!core.open()?.asking) || !!(core.finding || core.idlePeek || core.dock.busy() || core.notice);
 }
 const ARRIVAL_M=0.5;
 export function stationDirectives(core:TrackCore) {
@@ -23,6 +23,7 @@ export function stationDirectives(core:TrackCore) {
     visit:job=>{
       const station=port?.target(job.target_id);
       if (!station) return false;
+      core.dock.drop();
       slot={id:job.id,sent:null,spokeAt:0,visionAt:0};
       sendLine(idleLine(core,slot),{type:"command",id:job.id,step:job.id+":go",kind:"go",near_m:ARRIVAL_M,
         text:josa(station.label,"으로/로")+" 이동해 주세요.",choices:[],speak:true,vision:null,target:station},core.clock.now());

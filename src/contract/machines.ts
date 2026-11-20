@@ -23,7 +23,7 @@ export type DirectiveResult = {id:string;at_ms:number;target_id:string;evidence_
 
 export interface RobotStep { plan_id: string; number: number; label: string }
 export interface RobotState {
-  state: "idle" | "observe" | "move" | "run" | "return" | "recover";
+  state: "idle" | "observe" | "move" | "run" | "return" | "return_room" | "standby" | "recover";
   step: RobotStep | null;
 }
 export interface GoalState {

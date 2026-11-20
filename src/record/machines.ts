@@ -26,7 +26,7 @@ export function goalRecorder(db: Pick<HistoryDb, "add">): (g: PendingGoal, atMs:
   };
 }
 
-const ROBOT = { idle: "지켜봄", observe: "살펴보는 중", move: "이동 중", run: "실행 중", return: "충전 자리로 가는 중", recover: "다시 확인하는 중" } satisfies Record<RobotState["state"], string>;
+const ROBOT = { idle: "지켜봄", observe: "살펴보는 중", move: "이동 중", run: "실행 중", return: "충전 자리로 가는 중", return_room: "대기 자리로 가는 중", standby: "대기 중", recover: "다시 확인하는 중" } satisfies Record<RobotState["state"], string>;
 const SAFETY = { normal: "평소", suspect: "확인 중", emergency: "안전 알림" } satisfies Record<SafetyState["state"], string>;
 const OWNER = { safety: "안전 확인", request: "말로 부탁한 일", goal: "목표 실행", idle: "지켜봄" } satisfies Record<ManagerState["owner"], string>;
 

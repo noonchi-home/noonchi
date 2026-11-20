@@ -42,6 +42,20 @@ const GOAL: PendingGoal = {
   reason: null, text: "컵을 두고 자리를 뜨면 컵을 치울게요", armed_ms: s(4.1), ready_ms: s(13.5), gone_ms: null, fired_ms: null, plan: null,
 };
 /** 컵 치우기 계획: 첫 두 단계를 시작한 것(식탁으로 가기 19.1~19.2초, 컵 집기 19.2초~). */
+it("확인 중에는 옛 TV 상태를 닫고 확인 뒤 실제 사람·복귀·도착 시각을 표시한다",()=>{
+  const person = {type:"person",name:"TV 보는 중",state:"watching_tv",source:"world",decision_id:null,since_ms:100} as const;
+  const goal = {...GOAL, status:"checking" as const, checking_ms:200, gone_ms:200};
+  const state = feed([person,{type:"goal",goal}]);
+  const current=(s:typeof state,row:"person"|"robot")=>timelineOf(s)?.spans.filter(x=>x.row===row && x.to===null).map(x=>x.text);
+  expect(current(state,"person")).toEqual(["사용자 상태 확인 중"]);
+  const confirmed=feed([person,{type:"goal",goal},{type:"person",state:"away",name:"자리에 없음",source:"world",decision_id:null,since_ms:205},
+    {...person,since_ms:300},{type:"goal",goal:{...goal,status:"used",confirmed_ms:300}},
+    {type:"robot",state:"return_room",since_ms:400,step:null}]);
+  expect(current(confirmed,"person")).toEqual(["TV 보는 중"]);
+  expect(current(confirmed,"robot")).toEqual(["대기 자리로 가는 중"]);
+  expect(current(reduceDash(confirmed,{type:"robot",state:"standby",since_ms:450,step:null},0),"robot")).toEqual(["대기 중"]);
+});
+
 function running(): PlanView {
   const p = planAt(2);
   return {

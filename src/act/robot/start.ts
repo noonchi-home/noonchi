@@ -70,7 +70,7 @@ export class Starter extends Part {
       activeAction: r?.decision.action ?? c.planning?.decision.action ?? c.finding?.decision.action ?? null,
       handling: r && c.touching(r) ? c.stepOf(r)?.id ?? null : null,
       requested: this.speechWaiting !== null || r?.decision.source === "speech" || c.planning?.decision.source === "speech" || c.finding?.decision.source === "speech",
-      docking: !!c.docking,
+      docking: c.dock.busy(),
       emergency: emergencyOf({ world: this.o.state.view(), offNotices: c.safety.offTrack().notices }),
     };
   }
@@ -118,7 +118,7 @@ export class Starter extends Part {
     if (gate === "request") return this.note(d, EXEC_TEXT.requestWait);
     if (gate === "dock") return this.note(d, EXEC_TEXT.docking);
     if (gate === "hands") return this.note(d, EXEC_TEXT.handling);
-    if (core.dock.busy()) core.dock.drop();
+    if (core.docking) core.dock.drop();
     const open = core.open();
     if (open?.decision.action === d.action || core.planning?.decision.action === d.action) return this.note(d, EXEC_TEXT.same);
     // 손대는 단계(집기·내려놓기·들고 가기) 중에는 다른 행동 판단으로 계획을 바꾸지 않는다(계획이 끝난 뒤 다시 판단). 비상과 사람이 말로 한 부탁만 바꾼다

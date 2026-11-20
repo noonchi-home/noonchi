@@ -285,7 +285,7 @@ describe("대시보드 메시지 상자(트윈 아래쪽 하나, 생각 말풍�
       expect(cls(card(), "pointer-events-none")).toBe(true);
       expect(card().querySelector("[data-slot=timeline-grid]")).not.toBeNull();
       expect([...card().querySelectorAll<HTMLElement>("[data-slot=timeline-row]")].map((r) => [r.dataset.row, r.querySelector("[data-slot=timeline-row-name]")!.textContent])).toEqual([
-        ["person", "사람"], ["robot", "로봇"],
+        ["person", "사용자"], ["robot", "클로이드"],
       ]);
       expect(card()).not.toHaveTextContent(/예상|준비됨|먼저/);
       expect(card().querySelector("[data-timeline-caption], [data-slot=timeline-caption]")).toBeNull();

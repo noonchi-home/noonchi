@@ -38,7 +38,7 @@ describe("미리 세운 목표 잇기", () => {
     expect(core.goal).toMatchObject({ status: "fired" });
     const goals = db.list({ kinds: ["goal"] });
     expect(goals.map((r) => r.at_ms)).toEqual(rows.filter(({ e }) => e.topic === "/brain/goal_changes").map(({ e }) => e.header.stamp));
-    expect(goals.map((r) => r.text)).toEqual(["세움 · 컵 치우기", "계획 미리 만드는 중", "계획 준비됨", "사용자 상태 확인 중", "TV 시청 확인"]);
+    expect(goals.map((r) => r.text)).toEqual(["세움 · 컵 치우기", "계획 미리 만드는 중", "계획 준비됨", "사용자 상태 확인 중", "다른 활동 확인"]);
     await goal.stop();
     await rec.stop();
     await bus.close();

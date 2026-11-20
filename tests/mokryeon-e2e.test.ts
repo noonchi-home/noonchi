@@ -77,9 +77,13 @@ describe("한양목련 처음부터 끝까지", () => {
       ? { observation: "빈 컵이 식탁에 남음", reasoning: "자리를 비워 컵을 치운다", task_index: 0 } : { observation: "컵 없음", reasoning: "할 일 없음", task_index: -1 }) });
     const runtimeDir = mkdtempSync(join(tmpdir(), "rt-"));
     // 치우기를 보는 시험은 배운 뒤 기억(합성 3일째부터의 로봇 FSM)으로 돈다. seed 기억이면 떠날 때 묻는다
-    useLearnedMemory(runtimeDir);
+    // 이 장면은 밤 복귀를 확인한다. 같은 집 시간대로 기억을 고정하고 서버를 시작한다.
+    const utc = new Date();
+    const delta = 22 * 60 + 30 - (utc.getUTCHours() * 60 + utc.getUTCMinutes());
+    const offset = ((delta + 2160) % 1440) - 720;
+    useLearnedMemory(runtimeDir, undefined, offset);
     srv = await startServer({
-      env: { HUB: "memory", PORT: "0", HOME_ID: "mokryeon_180b", RUNTIME_DIR: runtimeDir, PHONE_PORT: "0", PHONE_HOST: "127.0.0.1",
+      env: { HUB: "memory", HISTORY_TZ_MINUTES:String(offset), PORT: "0", HOME_ID: "mokryeon_180b", RUNTIME_DIR: runtimeDir, PHONE_PORT: "0", PHONE_HOST: "127.0.0.1",
         BRAIN: "1", VLM_BASE_URL: `${fake.url}/v1`, ...pamLlmEnv(pam), OPENAI_API_KEY: "fake-key", OPENAI_BASE_URL: `${fake.url}/v1` },
       brain: { detector: new ScriptedDetector(top.detect(() => [...people, det("cup", 0.9, CUP_BOX, 41)])) }, log: () => {},
       // 처음 하는 일 승인 길을 끝까지 본다: 처음 하는 일 묻기를 켜 본다(기본 끔, 기본 흐름은 tests/noonchi-e2e.test.ts)

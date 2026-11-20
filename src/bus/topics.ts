@@ -242,7 +242,7 @@ const pamLink = z.strictObject({ type: z.literal("link"), target: z.literal("pam
 const thoughtMessage = z.strictObject({ id, decision: id, at_ms: at, text: z.string() });
 const brainGoal = z.strictObject({ goal: pendingGoal });
 const personState = z.strictObject({ type: z.literal("person"), state: id, name: id, source: z.enum(["decision", "world"]), decision_id: id.nullable(), since_ms: at });
-const robotState = z.strictObject({ state: z.enum(["idle", "observe", "move", "run", "return", "recover"]), since_ms: at,
+const robotState = z.strictObject({ state: z.enum(["idle", "observe", "move", "run", "return", "return_room", "standby", "recover"]), since_ms: at,
   step: z.strictObject({ plan_id: id, number: z.number().int().positive(), label: id }).nullable() });
 const goalState = z.strictObject({ state: z.enum(["idle", "armed", "checking", "planning", "ready", "started", "done", "dropped"]), since_ms: at,
   id: id.nullable(), action: id.nullable(), left_ms: at.nullable(), reason: pendingGoal.shape.reason, result: z.enum(["done", "failed", "cancelled"]).nullable() });

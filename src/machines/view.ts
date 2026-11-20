@@ -5,7 +5,7 @@ import type { OffTrack, PlanStatus } from "../contract/plan.js";
 /** 지금 보이는 단계와 보류·관찰·충전 자리 복귀 상태. */
 export interface RobotFacts {
   step: RobotStep | null;
-  dock: "look" | "go" | null;
+  dock: "look" | "go" | "room" | "standby" | null;
   inspection: "go" | "look" | null;
   blocked: boolean;
   off: boolean;
@@ -18,6 +18,8 @@ export function robotState(f: RobotFacts): RobotState {
   if (f.blocked) return { state: "recover", step: f.step };
   if (f.inspection) return { state: f.inspection === "go" ? "move" : "observe", step: f.step };
   if (f.step || f.asking) return { state: "run", step: f.step };
+  if (f.dock === "standby") return { state:"standby", step:null };
+  if (f.dock === "room") return { state:"return_room", step:null };
   if (f.dock === "go") return { state: "return", step: null };
   return { state: f.dock || f.observing ? "observe" : "idle", step: null };
 }
