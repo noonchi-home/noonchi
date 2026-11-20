@@ -26,6 +26,7 @@ type GoalFacts = Pick<PendingGoal, "id" | "action" | "status" | "prep" | "gone_m
 export function goalState(g: GoalFacts | null, plan: { goal: string | null; status: PlanStatus } | null): GoalState {
   const fields = { id: g?.id ?? null, action: g?.action ?? null, left_ms: g?.gone_ms ?? null, reason: g?.reason ?? null, result: null };
   if (!g) return { ...fields, state: "idle" };
+  if (g.status === "checking") return { ...fields, state: "checking" };
   if (g.status === "dropped") return { ...fields, state: "dropped" };
   if (g.status === "used") {
     if (plan?.goal === g.id && (plan.status === "done" || plan.status === "failed" || plan.status === "cancelled")) {

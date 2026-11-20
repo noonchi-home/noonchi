@@ -134,6 +134,7 @@ export const GOAL_TEXT = {
 /** 미리 세운 목표 기록 줄(기록 DB goal, 영상 판정 시각표 「목표」 줄): 세움·미리 만들기·사람 떠남·씀·버림과 그 까닭. */
 export const GOAL_LOG = {
   armed: (action: string) => `세움 · ${action}`,
+  checking: "사용자 상태 확인 중", confirmed:"TV 시청 확인",
   planning: "계획 미리 만드는 중", ready: "계획 준비됨", failed: "계획 못 만듦", fired: "사람 떠남 · 판단 부름", used: "준비한 계획으로 시작",
   dropped: (why: string) => `버림 · ${why}`,
   /** 까닭 글이 있는 미리 만들기 실패와, 준비한 계획을 버리고 계획 모드로 넘어감. */

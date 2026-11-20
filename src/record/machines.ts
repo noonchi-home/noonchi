@@ -9,7 +9,8 @@ function goalLine(prev: PendingGoal | null, g: PendingGoal): string {
   if (g.status === "dropped") return g.error ? GOAL_LOG.dropPlan(g.error) : GOAL_LOG.dropped(GOAL_LOG.why[g.reason ?? "stale"]);
   if (g.status === "used") return GOAL_LOG.used;
   if (!prev) return GOAL_LOG.armed(g.action);
-  if (g.status === "fired" && prev.status !== "fired") return GOAL_LOG.fired;
+  if (g.status === "checking" && prev.status !== "checking") return GOAL_LOG.checking;
+  if (g.status === "fired" && prev.status !== "fired") return g.confirmed_ms != null ? GOAL_LOG.confirmed : GOAL_LOG.fired;
   if (g.prep !== prev.prep && g.prep !== "waiting") return g.prep === "failed" && g.error ? GOAL_LOG.failedWhy(g.error) : GOAL_LOG[g.prep];
   return GOAL_LOG.armed(g.action);
 }

@@ -230,7 +230,9 @@ const actStatus = z.strictObject({ mode: z.enum(["noonchi", "coach"]), hold: z.b
   tasks: z.array(id), placed: z.array(z.tuple([id, z.strictObject({ target: id, part: z.literal("basin").optional(), atMs: at })])) });
 const pendingGoal = z.strictObject({
   id, action: z.string().min(1), state: z.string().min(1), trigger: z.string(), object: id.nullable(), cls: z.string().min(1),
-  status: z.enum(["armed", "fired", "used", "dropped"]), prep: z.enum(["waiting", "planning", "ready", "failed"]),
+  status: z.enum(["armed", "checking", "fired", "used", "dropped"]), prep: z.enum(["waiting", "planning", "ready", "failed"]),
+  meal: z.strictObject({zone:z.string(), surface:z.string(), activity:z.string()}).optional(),
+  checking_ms: at.optional(), check_until_ms: at.optional(), departure_rev: at.optional(), confirmed_ms: at.optional(),
   reason: z.enum(["took", "back", "moved", "replaced", "safety", "mode", "dock", "expired", "pam", "stale", "stop"]).nullable(),
   text: z.string().nullable(), armed_ms: at, ready_ms: at.nullable(), gone_ms: at.nullable(), fired_ms: at.nullable(), plan: planView.nullable(),
   error: z.string().min(1).optional(),
@@ -241,7 +243,7 @@ const brainGoal = z.strictObject({ goal: pendingGoal });
 const personState = z.strictObject({ type: z.literal("person"), state: id, name: id, source: z.enum(["decision", "world"]), decision_id: id.nullable(), since_ms: at });
 const robotState = z.strictObject({ state: z.enum(["idle", "observe", "move", "run", "return", "recover"]), since_ms: at,
   step: z.strictObject({ plan_id: id, number: z.number().int().positive(), label: id }).nullable() });
-const goalState = z.strictObject({ state: z.enum(["idle", "armed", "planning", "ready", "started", "done", "dropped"]), since_ms: at,
+const goalState = z.strictObject({ state: z.enum(["idle", "armed", "checking", "planning", "ready", "started", "done", "dropped"]), since_ms: at,
   id: id.nullable(), action: id.nullable(), left_ms: at.nullable(), reason: pendingGoal.shape.reason, result: z.enum(["done", "failed", "cancelled"]).nullable() });
 const safetyState = z.strictObject({ state: z.enum(["normal", "suspect", "emergency"]), since_ms: at, fall: z.boolean(), hot: z.array(id), notices: z.array(id) });
 const managerState = z.strictObject({ owner: z.enum(["safety", "request", "goal", "idle"]), mode: z.enum(["noonchi", "coach"]), since_ms: at, tasks: z.array(id) });

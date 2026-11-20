@@ -288,6 +288,7 @@ export function startAct(core: HomeCore): (event: BrainLog) => void {
       tasks: () => pamTasks(core.mode(), false),
     },
     goals: {
+      meal: () => core.scene?.stations?.meal_watch ? core.goalFacts?.meal : null,
       reuse: (d, plan, rename) => {
         const task = taskOf(d.action);
         return task ? resubmit(plan, planCtx(d, task), rename) : { ok: false, error: "행동 목록에 없는 행동" };
@@ -302,6 +303,8 @@ export function startAct(core: HomeCore): (event: BrainLog) => void {
         }
       },
       publish: (g) => {
+        core.checkingVisit = g.status === "checking" && g.meal && g.object && g.checking_ms != null && g.check_until_ms != null
+          ? {id:g.id, since:g.checking_ms, until:g.check_until_ms, cup:g.object, surface:g.meal.surface} : null;
         publishGoal(core, g);
         core.machines.sample(core);
       },

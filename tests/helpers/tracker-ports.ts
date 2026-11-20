@@ -23,6 +23,7 @@ export type TrackerFixture = Omit<TrackerOptions, "state" | "layout" | "phone" |
   habit?: TrackerOptions["brain"]["habit"];
   nudge?: TrackerOptions["brain"]["nudge"];
   tasks?: TrackerOptions["brain"]["tasks"];
+  meal?: TrackerOptions["goals"]["meal"];
   onGoal?: TrackerOptions["goals"]["publish"];
   goalWorld?: TrackerOptions["goals"]["view"];
   prepareGoal?: TrackerOptions["goals"]["prepare"];
@@ -48,7 +49,7 @@ export function testTracker(options: TrackerFixture): ExecutionTracker {
     floor, locate, dock, surfaces, names,
     toPhone, phoneReady, sayAloud, approvalsWaiting, talking,
     sentSeq, onSpeech, onRefused, habit, nudge, tasks,
-    onGoal, goalWorld, prepareGoal, reuse, goalUpdate,
+    meal, onGoal, goalWorld, prepareGoal, reuse, goalUpdate,
     offerSpeech, cancelSpeech,
     strayed, stalled, lookContents, topReady, spotReady,
     log, emit, thought,
@@ -61,7 +62,7 @@ export function testTracker(options: TrackerFixture): ExecutionTracker {
     layout: { floor, locate, dock, surfaces, names },
     phone: { toPhone, ready: phoneReady, sayAloud, approvalsWaiting, talking },
     brain: { sentSeq, onSpeech, onRefused, habit, nudge, tasks },
-    goals: { publish: onGoal, view: goalWorld, prepare: prepareGoal, reuse, update: goalUpdate },
+    goals: { meal, publish: onGoal, view: goalWorld, prepare: prepareGoal, reuse, update: goalUpdate },
     manager: { offerSpeech, cancelSpeech },
     observe: { strayed, stalled, lookContents, topReady, spotReady },
     events: { log, emit, thought },

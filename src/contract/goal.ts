@@ -3,7 +3,7 @@
 import type { PlanView } from "./plan.js";
 
 /** 관찰 단계: armed 세움(사람이 아직 씀) · fired 사람이 떠나 판단을 바로 부름 · used 떠난 뒤 판단이 같은 행동을 골라 미리 만든 계획을 씀 · dropped 버림. */
-export type GoalStatus = "armed" | "fired" | "used" | "dropped";
+export type GoalStatus = "armed" | "checking" | "fired" | "used" | "dropped";
 /** 미리 만들기: waiting 아직(대상이 면 위에 놓이길 기다림) · planning 계획 모드가 만드는 중 · ready 준비됨 · failed 못 만듦(다시 부르지 않는다). */
 export type GoalPrep = "waiting" | "planning" | "ready" | "failed";
 /** 버린 까닭: took 들고 나감, back 다시 나타남, moved 물건이 사라지거나 다른 면으로 옮겨지거나 치워짐, replaced 다른 판단·계획이 맡음, safety 안전 알림,
@@ -26,6 +26,11 @@ export interface PendingGoal {
   reason: GoalDrop | null;
   /** 메시지 상자 줄(클로이드 말, 사실로만). 행동 말 표에 없으면 null. */
   text: string | null;
+  meal?: { zone: string; surface: string; activity: string };
+  checking_ms?: number;
+  check_until_ms?: number;
+  departure_rev?: number;
+  confirmed_ms?: number;
   armed_ms: number;
   ready_ms: number | null;
   /** 사람이 떠난 때(World State 사람 since_ms)와 그것을 본 때. */

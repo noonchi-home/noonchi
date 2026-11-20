@@ -12,7 +12,12 @@ const fact = (value: TriggerFact["value"], observed_ms: number | null = null, re
 type ZoneOf = (map: StationMap, room: string | null, p: Vec2 | null, margin: number) => string | null;
 type Decision = Pick<DecisionRecord,"seq"|"request_rev"|"atMs"|"status"|"fsm"|"late"|"source"|"memoryVersion">;
 
+export interface MealEvidence {
+  rev: number; count: number | null; zone: string | null; watching: boolean;
+  dining: readonly string[]; surfaces: readonly string[];
+}
 export interface TriggerFacts {
+  meal?: MealEvidence;
   read(trigger: Trigger): TriggerFact;
   mealSeated: TriggerFact;
   observes(stationId:string,after:number):boolean;
@@ -118,7 +123,15 @@ export class GoalTriggers {
     const see = (v:TriggerFact["value"])=>fact(v,stamp,currentRev);
     const transition = {...this.transition}, entered = this.entered;
     const windows = new Map(this.vacantSince);
+    const station = map?.stations.find(s => s.id === map.meal_watch);
+    const person = recent && proof?.person_count === 1 ? proof.person : null;
+    const zone = person && map ? this.zoneOf(map,person.room,person.position,EDGE_MARGIN_M) : null;
+    const watching = !!person && person.seated === true && person.attention === "toward_tv" &&
+      [...watches.values()].some(w => w.zones.some(z => z.id === zone) && this.covered(current!,w.zones) &&
+        deviceFact(view.devices,{kind:"device",deviceKind:"tv",id:w.tv,attr:"power",value:"on",mode:"level"},rev,changedDevices).value === true);
     return {
+      ...(station ? {meal:{rev, zone, watching, count: recent ? proof?.person_count ?? null : null,
+        dining:station.observes_zone_ids, surfaces:station.surfaces}} : {}),
       trail:view.person_trail ?? [],
       observes:(id,after)=>{
         const s=map?.stations.find(station=>station.id===id);

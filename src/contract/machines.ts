@@ -27,7 +27,7 @@ export interface RobotState {
   step: RobotStep | null;
 }
 export interface GoalState {
-  state: "idle" | "armed" | "planning" | "ready" | "started" | "done" | "dropped";
+  state: "idle" | "armed" | "checking" | "planning" | "ready" | "started" | "done" | "dropped";
   id: string | null;
   action: string | null;
   left_ms: number | null;

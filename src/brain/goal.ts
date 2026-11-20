@@ -16,7 +16,7 @@ export function goalAhead(i: { memory: PamMemory; kind: "list" | "fsm"; state: s
   const fits = (action: string | undefined): action is string => !!action && i.tasks.includes(action) && taskOf(action)?.afterUse === true && touchTarget(action) === i.cls;
   // 그 상태를 떠나는 화살표만(자기 자신으로 가는 화살표는 쓰는 중의 도움이라 목표가 아니다)
   const hits = here.next.map((e, index) => ({ e, index })).filter(({ e }) => e.to !== here.id && fits(e.action));
-  if (new Set(hits.map(({ e }) => e.action)).size !== 1) return null;
+  if (hits.length !== 1) return null;
   const { e, index } = hits[0]!;
   return { state: here.id, index, to: e.to, on: e.on, when: e.when ?? null, action: e.action! };
 }

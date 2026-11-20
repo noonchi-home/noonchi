@@ -213,6 +213,7 @@ export interface TrackerOptions {
     tasks?: () => readonly string[];
   };
   goals: {
+    meal?: GoalPorts["meal"];
     update?: () => void;
     view?: () => WorldView;
     prepare?: TrackerOptions["planner"];
@@ -279,13 +280,14 @@ export class ExecutionTracker {
     core.answers = new Answers(core);
     core.use = new UseWatch({
       world: o.state.view, tasks: o.brain.tasks, touching: () => core.touching(),
+      checking: t => t.cls === "cup" && core.goal.protects(t.id ?? null),
       thought: (text) => { if (!core.stopped) o.events.thought?.(text, core.lastDecision ?? "use"); },
     });
     core.goal = new GoalWatch({
       world: o.goals.view ?? o.state.view, now: () => clock.now(), stopped: () => core.stopped, openState: () => core.open()?.state ?? null,
       planning: () => !!core.planning, docking: () => core.dock.busy(), notices: () => core.safety.offTrack().notices,
       placed: () => core.steps.placed(), holding: () => core.use.holding(), planner: o.goals.prepare ?? o.planner, habit: o.brain.habit,
-      reuse: o.goals.reuse, surfaces: o.layout.surfaces, tasks: o.brain.tasks, nudge: o.brain.nudge, onGoal: o.goals.publish,
+      meal: o.goals.meal, reuse: o.goals.reuse, surfaces: o.layout.surfaces, tasks: o.brain.tasks, nudge: o.brain.nudge, onGoal: o.goals.publish,
       thought: o.events.thought, log: o.events.log, goalArmMs: o.goalArmMs,
     });
     core.robot = new RobotMachine(core);
@@ -340,6 +342,7 @@ export class ExecutionTracker {
   /** 말 부탁: 들은 말 부탁을 판단 기록 꼴(source speech)로 만들어 판단 받기 길에 넣는다(계획 전 검사·계획 모드·승인·실행이 PAM 판단과 같다). */
   onRequest(r: SpeechRequest): void {
     this.core.directives.cancel();
+    if (this.core.goal.current()?.meal) this.core.goal.drop("replaced");
     this.core.start.request(r);
   }
 

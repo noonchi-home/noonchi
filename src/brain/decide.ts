@@ -220,7 +220,7 @@ export class Decider {
             if (stale) return this.finish({ ...base, status: "valid", prediction, action: null, fsm: step, late: true, ...(usage ? { usage } : {}) });
           }
           // 더 뒤에 보낸 요청의 답을 이미 받았다: 앞선 관찰의 답이라 상태·기다리는 화살표·들은 말은 그대로 두고 기록만 넘긴다(실행 추적은 번호로 늦은 답이라 본다)
-          if (!newest) return this.finish({ ...base, status: "valid", prediction, action, fsm: step, ...(usage ? { usage } : {}) });
+          if (!newest) return this.finish({ ...base, status: "valid", prediction, action, fsm: step, late:true, ...(usage ? { usage } : {}) });
           if (step) {
             this.lastState = step.state;
             const same = this.pending !== null && step.from === this.pending.from && step.next_index === this.pending.next;
@@ -253,7 +253,7 @@ export class Decider {
 
   private finish(r: DecisionRecord): void {
     if (this.stopped) return;
-    const action = r.status === "valid" && r.action === null && !r.late ? this.o.goalTrigger?.(r) ?? null : null;
+    const action = r.status === "valid" && !r.late && !r.source ? this.o.goalTrigger?.(r) ?? null : null;
     if (action) r = { ...r, action, goal: true };
     this.emitDecision(r);
     this.o.onDecision?.(r);
