@@ -428,6 +428,15 @@ export class Starter extends Part {
   }
 
   private begin(r: Run): void {
+    if (taskOf(r.plan.task)?.topLook && this.o.discardLeftover) {
+      const needsLook = !this.o.discardLeftover();
+      if (needsLook !== r.plan.steps.some(step => step.look === "top")) {
+        const revised = this.o.goals.reuse?.(r.decision, r.plan);
+        if (!revised?.ok) return this.core.steps.finish(r, "failed", EXEC_TEXT.badPlan);
+        r.plan = revised.plan;
+        this.o.plans.onDecision(r.plan.view, this.clock.now());
+      }
+    }
     this.takeover(r.decision);
     this.core.step(r, "running");
     if (r.plan.steps.length === 0) return this.core.steps.finish(r, "done");

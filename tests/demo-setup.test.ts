@@ -122,6 +122,7 @@ describe("시연 폴더(day1·week)", () => {
     expect(start.start.position).toEqual(pose.position);
     const db = HistoryDb.open(join(dir, "noonchi.db"), 540);
     expect(db.list({ limit: 10 })).toEqual([]);
+    expect(db.cupAnswers.allowDiscard("mokryeon_180b", db.cupAnswers.demoResident("mokryeon_180b", 1))).toBe(true);
     db.close();
   });
 

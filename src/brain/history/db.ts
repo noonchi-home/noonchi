@@ -4,6 +4,7 @@
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import { CupAnswers } from "./cup-answer.js";
 import type { DecisionRow, HistoryKind, HistoryRow } from "../../contract/history.js";
 
 export type { DecisionRow, HistoryKind, HistoryRow } from "../../contract/history.js";
@@ -22,6 +23,11 @@ CREATE TABLE IF NOT EXISTS memories (version INTEGER PRIMARY KEY, created_ms INT
 CREATE TABLE IF NOT EXISTS photos (id TEXT PRIMARY KEY, at_ms INTEGER NOT NULL, path TEXT NOT NULL, origin TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS bus_seen (topic TEXT NOT NULL, grp TEXT NOT NULL, msg_key TEXT NOT NULL, msg TEXT NOT NULL, boot TEXT NOT NULL, PRIMARY KEY (topic, grp, msg_key, msg));
 CREATE TABLE IF NOT EXISTS device_last (id TEXT PRIMARY KEY, twin TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS cup_answers (
+  home TEXT NOT NULL, resident TEXT NOT NULL, discard_leftover_cup INTEGER NOT NULL CHECK(discard_leftover_cup IN (0,1)),
+  single_demo INTEGER NOT NULL DEFAULT 0 CHECK(single_demo IN (0,1)), PRIMARY KEY(home, resident)
+);
+CREATE UNIQUE INDEX IF NOT EXISTS single_demo_resident ON cup_answers(home) WHERE single_demo = 1;
 `;
 
 /** 기록 날짜의 시간대(분). HISTORY_TZ_MINUTES(기본 540 = 서울). -720~840 사이 정수가 아니면 시작을 막는다. */
@@ -59,7 +65,10 @@ type RawRow = Omit<HistoryRow, "data"> & { data: string | null };
 const parseRow = (r: RawRow): HistoryRow => ({ ...r, data: r.data === null ? null : JSON.parse(r.data) as unknown });
 
 export class HistoryDb {
-  private constructor(readonly db: DatabaseSync, readonly offsetMinutes: number) {}
+  readonly cupAnswers: CupAnswers;
+  private constructor(readonly db: DatabaseSync, readonly offsetMinutes: number) {
+    this.cupAnswers = new CupAnswers(db);
+  }
 
   static open(path: string, offsetMinutes = 540): HistoryDb {
     if (path !== ":memory:") mkdirSync(dirname(path), { recursive: true });

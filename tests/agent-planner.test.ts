@@ -11,7 +11,7 @@ import { TASKS } from "../src/act/tasks.js";
 
 import { ApprovalStore, type ApprovalAnswer } from "../src/agent/approval.js";
 import { PLANNER_PROMPT, planInput } from "../src/agent/planInput.js";
-import { PLAN_LIMITS, PlanDraft, SUBMIT_ARGS, type AgentStep, type PlanContext, type TaskInfo } from "../src/agent/planTools.js";
+import { PLAN_LIMITS, PlanDraft, resubmit, SUBMIT_ARGS, type AgentStep, type PlanContext, type TaskInfo } from "../src/agent/planTools.js";
 import { riskyHand, selfStopWait } from "../src/agent/plan-rules.js";
 import { isSelfStop } from "../src/devices/kinds.js";
 import { Policy } from "../src/agent/policy.js";
@@ -143,6 +143,19 @@ function rig(o: { objects?: () => WorldObject[]; history?: () => Record<string, 
 }
 
 describe("계획 모드: 컵 치우기", () => {
+  it("배운 답이 바뀌면 원래 제출 단계에서 컵 안 보기만 다시 정한다", () => {
+    const base = {...planContext({decision:decision("컵 치우기"),world:view([cup()]),floor:smallFloor()}),topLook:true as const};
+    const submitted = {steps:cupSteps({table:"table_1",sink:"sink_1",cup:"cup_1"})};
+    for (const allowed of [false,true]) {
+      const first = new PlanDraft({...base, discardLeftover:allowed}).submit(submitted);
+      if (!first.ok) throw Error(first.error);
+      const kinds = (permit:boolean) => permit ? ["go","pick","go","place"] : ["go","do","pick","go","place"];
+      expect(first.plan.steps.map(s=>s.kind)).toEqual(kinds(allowed));
+      const again = resubmit(first.plan,{...base,discardLeftover:!allowed});
+      if (!again.ok) throw Error(again.error);
+      expect(again.plan.steps.map(s=>s.kind)).toEqual(kinds(!allowed));
+    }
+  });
   it("가짜 모델의 도구 호출로 만든 컵 계획은 지금 서버와 같은 네 명령·조건이고, 화면 계획은 컵 계획 모양(cupPlan)과 같다", async () => {
     const before = llm.bodies().length;
     const d = decision("컵 치우기");

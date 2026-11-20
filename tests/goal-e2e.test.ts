@@ -18,6 +18,7 @@ import { CUP_SCRIPTS, planTurn, plannerRespond } from "./helpers/planner.js";
 import { openPhone, openWebSocket } from "./helpers/ws.js";
 import { alignOnServer } from "./helpers/align.js";
 import { useLearnedMemory } from "./helpers/memory.js";
+import { HistoryDb } from "../src/brain/history/db.js";
 
 type Msg = Record<string, any>;
 let srv: RunningServer | undefined;
@@ -82,6 +83,8 @@ describe("미리 세운 목표(가짜 서버 처음부터 끝까지)", () => {
     const runtimeDir = mkdtempSync(join(tmpdir(), "rt-"));
     // 치우기를 보는 시험은 배운 뒤 기억(합성 3일째부터의 로봇 FSM)으로 돈다. seed 기억이면 떠날 때 묻는다
     useLearnedMemory(runtimeDir);
+    const history = HistoryDb.open(join(runtimeDir,"noonchi.db"));
+    try { history.cupAnswers.seedDemo("mokryeon_180b"); } finally { history.close(); }
     srv = await startServer({
       env: { HUB: "memory", PORT: "0", HOME_ID: "mokryeon_180b", RUNTIME_DIR: runtimeDir, PHONE_PORT: "0", PHONE_HOST: "127.0.0.1",
         BRAIN: "1", VLM_BASE_URL: `${fake.url}/v1`, ...pamLlmEnv(pam), OPENAI_API_KEY: "fake-key", OPENAI_BASE_URL: `${fake.url}/v1` },
@@ -122,6 +125,7 @@ describe("미리 세운 목표(가짜 서버 처음부터 끝까지)", () => {
     const cup = dash.filter((m) => m.type === "world").at(-1)!.world.objects.find((o: Msg) => o.cls === "cup");
     expect(cup).toMatchObject({ surface: TABLE_ID });
     expect(planned()).toBe(1);
+    expect(dash.filter(m=>m.type==="goal").at(-1)!.goal.plan.steps.map((step: Msg)=>step.label)).not.toContain("컵 안 보기");
     expect(spoken()).toEqual([]);
     expect(dash.some((m) => m.type === "thought" && m.messages.some((t: { text: string }) => t.text === "컵을 두고 자리를 뜨면 컵을 치울게요"))).toBe(true);
     expect(dash.filter((m) => m.type === "goal").at(-1)!.goal).toMatchObject({ action: "컵 치우기", object: cup.id, plan: { goal: "컵 치우기" } });

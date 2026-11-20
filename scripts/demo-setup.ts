@@ -219,6 +219,7 @@ export async function demoSetup(argv: string[], deps: DemoDeps): Promise<void> {
       writeStart(dir, twinDir, cmd === "day1" ? "cup" : "tv");
       const db = HistoryDb.open(dbPath, tz);
       try {
+        db.cupAnswers.seedDemo(DEMO_HOME);
         if (cmd === "week") {
           const end = day("--end", addDays(today, -1));
           const r = seedHistory(db, { home: DEMO_HOME, end, memories: "none", twinDir });
@@ -301,6 +302,7 @@ export async function demoSetup(argv: string[], deps: DemoDeps): Promise<void> {
       try {
         const before = (db.memoryFor(today)?.memory as FsmMemory | undefined) ?? CUP_FSM_MEMORY;
         const version = saveLearned(db, today);
+        db.cupAnswers.seedDemo(DEMO_HOME);
         const memory = db.memoryVersion(version)!.memory as FsmMemory;
         const keep = (rs: EdgeLine[]) => rs.filter((x) => !TASKS[x.action]?.coach);
         db.add("reflection", now(), REFLECT_TEXT.done(version, today), {

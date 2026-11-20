@@ -15,7 +15,7 @@ import type { AgentStep } from "../src/agent/planTools.js";
 import type { PlanResult } from "../src/agent/index.js";
 import { checkDecision, checkPlan, type CheckResult } from "../src/act/check.js";
 import { TASKS, clearsAway, putAway, targetOf } from "../src/act/tasks.js";
-import { PlanDraft } from "../src/agent/planTools.js";
+import { PlanDraft, resubmit } from "../src/agent/planTools.js";
 import type { BrainLog, CloserResult, DecisionRecord } from "../src/contract/events.js";
 import type { HeardAt, PlannedCommand, PlannedCommandMessage } from "../src/contract/phone.js";
 import type { WorldChange, WorldObject, WorldView } from "../src/contract/world.js";
@@ -165,6 +165,19 @@ function setup(over: Partial<TrackerFixture> & { w?: () => WorldView; check?: ()
 // 2026-11-20 사용자 「아직도 컵안을 확인해달라는 내용이 없네」, 고른 답: 컵 안 확인은 「늘 확인」, 음료가 남았으면 「버려도 될지 묻기」
 describe("컵 치우기: 집기 전에 늘 컵 안을 위에서 본다", () => {
   /** 위에서 보기를 하는 집(계획 맥락 topLook): 계획 검사가 컵 안 보기 단계를 넣는다. 위에서 본 사진 쌍(topReady)과 위에서 보기(lookContents)는 시험이 정한다. */
+  it("계획을 만드는 동안 배운 답이 적용되지 않게 되면 첫 명령 전에 위에서 보기를 복원한다", async () => {
+    const w = world([cup("present")]);
+    const ctx = {...planContext({decision,world:w,floor:smallFloor()}),topLook:true as const};
+    const s = setup({
+      planner: (d,signal) => testPlanner(llm).plan({...ctx,decision:d,discardLeftover:true},signal),
+      discardLeftover: () => false,
+      reuse: (d,plan) => resubmit(plan,{...ctx,decision:d}),
+    });
+    await s.decide(decision);
+    expect(s.t.onAnswer(s.last().id,s.last().step,"done")).toBe(true);
+    expect(s.last().text).toContain("위에서");
+  });
+
   function topSetup() {
     let w = world([cup("present")]);
     let latestPairStart = -Infinity;

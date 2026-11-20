@@ -104,6 +104,8 @@ export interface PlanContext {
   ahead?: PlanAhead;
   /** 위에서 보기를 하는 집(관찰 흐름이 위에서 본 사진으로 컵 안을 본다, 서버가 넘긴다): 집기 전에 늘 안을 보는 행동(TaskSpec.topLook)의 계획에 컵 안 보기 단계를 넣는다. */
   topLook?: true;
+  /** Confirmed preference for the identified resident in this planning snapshot. */
+  discardLeftover?: boolean;
 }
 
 
@@ -350,7 +352,8 @@ export class PlanDraft {
     }
     // 집기 전에 늘 대상 안을 위에서 본다(TaskSpec.topLook, 위에서 보기를 하는 집 ctx.topLook): 그 종류 물건 첫 집기 바로 앞에 서버가 컵 안 보기 단계를 넣는다.
     // 모델이 쓰지 않는 단계라 빼먹을 수 없고, 미리 만든 계획·다시 내기도 같은 검사를 지나 같은 단계가 든다
-    if (task.topLook && this.ctx.topLook && task.target) {
+    const discard = task.name === "컵 치우기" && this.ctx.discardLeftover === true;
+    if (task.topLook && this.ctx.topLook && task.target && !discard) {
       const at = steps.findIndex((s) => s.kind === "pick" && !!s.object && this.clsOf(s.object) === task.target);
       if (at >= 0) {
         const o = steps[at]!.object!;

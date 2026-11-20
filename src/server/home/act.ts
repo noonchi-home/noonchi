@@ -194,19 +194,26 @@ export function startAct(core: HomeCore): (event: BrainLog) => void {
   // 명령 대상 자리는 배치(면이면 윗면 가운데, 싱크볼이 있으면 싱크볼)에서
   const placeAt = placeLocator(layout?.editor, core.surfaces);
   // 계획 입력: 계획 모드·미리 만든 계획 다시 내기가 같은 맥락을 쓴다(이미 치운 물건 placed는 그때 것)
-  const planCtx = (d: DecisionRecord, task: TaskSpec, ahead?: PlanAhead): PlanContext => ({
-    decision: d, task, world: view(), floor: plans.floor(), places: core.places(), names: placeNames, rooms: twin.rooms, devices: deviceViews(signals), nowIso: new Date(now()).toISOString(),
+  const discardLeftover = (world: WorldView) => {
+    const people = Math.max(world.person.count, world.household_photo?.proof?.person_count ?? 0);
+    const answers = history.db.cupAnswers;
+    return answers.allowDiscard(home.id, answers.demoResident(home.id, people));
+  };
+  const planCtx = (d: DecisionRecord, task: TaskSpec, world: WorldView, ahead?: PlanAhead): PlanContext => ({
+    decision: d, task, world, floor: plans.floor(), places: core.places(), names: placeNames, rooms: twin.rooms, devices: deviceViews(signals), nowIso: new Date(now()).toISOString(),
     placed: new Map(core.tracker?.placed() ?? []), ...(task.coach ? { lesson: lessons.get(task.name) } : {}), ...(ahead ? { ahead } : {}),
     // 관찰 흐름이 위에서 본 사진으로 컵 안을 본다(topReady·lookContents top): 컵 치우기 계획에 컵 안 보기 단계가 든다
     topLook: true,
+    discardLeftover: task.topLook && discardLeftover(world),
   });
   core.makePlan = async ({ decision, ahead }, signal) => {
     const task = taskOf(decision.action);
     if (!task) return { ok: false, error: "행동 목록에 없는 행동" };
-    return planner.plan({ ...planCtx(decision, task, ahead), world: brainView() }, signal);
+    return planner.plan(planCtx(decision, task, brainView(), ahead), signal);
   };
   const stationFloor = floorLookup(core.plan.rooms);
   core.tracker = new ExecutionTracker({
+    discardLeftover: () => discardLeftover(view()),
     stations:{
       rev:()=>core.mirror?.rev() ?? 0,
       target:id=>{
@@ -291,7 +298,7 @@ export function startAct(core: HomeCore): (event: BrainLog) => void {
       meal: () => core.scene?.stations?.meal_watch ? core.goalFacts?.meal : null,
       reuse: (d, plan, rename) => {
         const task = taskOf(d.action);
-        return task ? resubmit(plan, planCtx(d, task), rename) : { ok: false, error: "행동 목록에 없는 행동" };
+        return task ? resubmit(plan, planCtx(d, task, view()), rename) : { ok: false, error: "행동 목록에 없는 행동" };
       },
       view: () => core.goalMirror?.view() ?? view(),
       prepare: (d, signal, ahead) => core.goalPlans!.plan(d, signal, ahead),

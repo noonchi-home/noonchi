@@ -109,6 +109,8 @@ export interface DeviceRunner {
 export interface SpeechRequest { task: string; heard: string; atMs: number; afterSeq: number; via?: "answer" }
 
 export interface TrackerOptions {
+  /** Recheck the current resident after any approval or phone wait. */
+  discardLeftover?: () => boolean;
   stations?: {
     rev():number;
     target(id:string): {id:string;label:string;position:[number,number,number]} | null;
