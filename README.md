@@ -59,29 +59,21 @@ Even with the same objects and appliances, the right action depends on the resid
 ### A. Architecture
 
 ```text
-Real phone (WebXR camera frames and pose · Web Speech API for voice)
+Real phone (camera photos · position · voice) — WebXR and Web Speech API
   │  Tailscale (HTTPS · WSS)
   ▼
-NOONCHI server (Node.js 22 · TypeScript)
-  │  Node messaging: Redis when REDIS_URL is set, otherwise an in-memory bus
+Observation: YOLO26 (ONNX Runtime) · VLM (OpenAI API or Qwen3-VL on vLLM)
   ▼
-Observation
-  │  ONNX Runtime runs YOLO26s-seg for minimap masks and YOLO26n-pose for posture
-  │  A VLM reads objects and activities (OpenAI API or Qwen3-VL on vLLM)
+World State: objects · people · appliances · phone position → observation text (Node.js / TypeScript)
   ▼
-World State merges observations, appliance signals and phone pose with the 3D layout
-  │  Timestamped observation text → PAM
+Behavior prediction: PAM + person-state FSM (OpenAI API or Qwen3.5-27B on vLLM)
   ▼
-Behavior prediction: PAM reads the text and person-state FSM
-  │  OpenAI API or Qwen3.5-27B on vLLM identifies the current state and transition
+Goal · manager: plan prepared ahead, task order (Redis or in-memory messaging)
   ▼
-Goal · manager: prepare a plan ahead of time and prioritize tasks
-  ▼
-Execution · checks: send one phone instruction at a time, verify each step
-  │  Appliance control: Matter via matter.js · LG ThinQ API
+Execution · checks: step commands to the real phone, appliances (Matter via matter.js · LG ThinQ API)
   │
-  ├─▶ SQLite (node:sqlite) → nightly PAM reflection → adoption test → next day's FSM
-  └─▶ React dashboard with a three.js view of the 3D home
+  ├─▶ Record DB (SQLite) ─▶ nightly reflection · adoption test ─▶ next day's FSM
+  └─▶ Dashboard (3D twin rendered with React and three.js)
 ```
 
 | Component | What it does |
