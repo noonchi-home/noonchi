@@ -66,8 +66,13 @@ const parseRow = (r: RawRow): HistoryRow => ({ ...r, data: r.data === null ? nul
 
 export class HistoryDb {
   readonly cupAnswers: CupAnswers;
+  readonly #relax: ReturnType<DatabaseSync["prepare"]>;
+  readonly #strict: ReturnType<DatabaseSync["prepare"]>;
   private constructor(readonly db: DatabaseSync, readonly offsetMinutes: number) {
     this.cupAnswers = new CupAnswers(db);
+    // PRAGMA 문장은 준비하는 순간에도 적용된다: NORMAL을 먼저, FULL을 나중에 준비해 연 뒤 상태를 FULL로 둔다.
+    this.#relax = db.prepare("PRAGMA synchronous = NORMAL");
+    this.#strict = db.prepare("PRAGMA synchronous = FULL");
   }
 
   static open(path: string, offsetMinutes = 540): HistoryDb {
@@ -87,16 +92,15 @@ export class HistoryDb {
   }
 
   /** 시간축 한 줄 넣기는 프레임마다 여러 번 불린다. 문장은 한 번만 준비하고, 그 한 줄만 디스크 동기화 없이(NORMAL) 넣은 뒤 FULL로 돌린다.
-   *  줄마다 동기화하면 엔진 프레임 → 집 상태 지연에 약 3ms가 더해진다. 정전 때 잃을 수 있는 것은 마지막 시간축 줄뿐이고,
-   *  기억·컵 답 같은 다른 쓰기는 FULL 그대로다(다음 FULL 쓰기가 앞선 줄도 함께 동기화한다).
+   *  줄마다 동기화하면 엔진 프레임 → 집 상태 지연에 약 3ms가 더해진다. 정전 때 잃을 수 있는 것은 마지막 디스크 동기화 뒤에 넣은
+   *  시간축 줄들이다. 기억·컵 답 같은 다른 쓰기는 FULL 그대로이고, 그 커밋이 앞선 시간축 줄도 함께 동기화한다.
    *  트랜잭션 안에서는 이 설정을 바꿀 수 없다: 그때는 그대로 넣고, 그 트랜잭션의 커밋(FULL)이 동기화한다. */
   #insert: ReturnType<DatabaseSync["prepare"]> | null = null;
-  #sync: { normal: ReturnType<DatabaseSync["prepare"]>; full: ReturnType<DatabaseSync["prepare"]> } | null = null;
 
   add(kind: HistoryKind, atMs: number, text: string, o: { subject?: string; data?: unknown } = {}): void {
     let relaxed = false;
     try {
-      (this.#sync ??= { normal: this.db.prepare("PRAGMA synchronous = NORMAL"), full: this.db.prepare("PRAGMA synchronous = FULL") }).normal.run();
+      this.#relax.run();
       relaxed = true;
     } catch {
       // 트랜잭션 안: FULL 그대로 넣는다
@@ -105,7 +109,7 @@ export class HistoryDb {
       (this.#insert ??= this.db.prepare("INSERT INTO events(at_ms, day, kind, subject, text, data) VALUES (?, ?, ?, ?, ?, ?)"))
         .run(atMs, this.dayOf(atMs), kind, o.subject ?? null, text, o.data === undefined ? null : JSON.stringify(o.data));
     } finally {
-      if (relaxed) this.#sync!.full.run();
+      if (relaxed) this.#strict.run();
     }
   }
 

@@ -34,6 +34,24 @@ describe("기록 DB", () => {
     }
   });
 
+  it("연 뒤 첫 줄부터 시간축 줄은 NORMAL로 넣는다", () => {
+    const h = HistoryDb.open(join(mkdtempSync(join(tmpdir(), "db-")), "sync.db"));
+    try {
+      const seen: number[] = [];
+      h.db.function("sync_now", () => {
+        seen.push((h.db.prepare("PRAGMA synchronous").get() as { synchronous: number }).synchronous);
+        return null;
+      });
+      h.db.exec("CREATE TEMP TRIGGER sync_seen AFTER INSERT ON events BEGIN SELECT sync_now(); END");
+      h.add("vlm", 1, "첫 줄");
+      h.add("vlm", 2, "둘째 줄");
+      expect(seen).toEqual([1, 1]);
+      expect(h.db.prepare("PRAGMA synchronous").get()).toEqual({ synchronous: 2 });
+    } finally {
+      h.close();
+    }
+  });
+
   it("닫은 뒤에는 ok()가 false다", () => {
     const h = HistoryDb.open(":memory:");
     h.close();
