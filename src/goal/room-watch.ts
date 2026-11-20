@@ -71,19 +71,32 @@ export class RoomWatch {
   private busy=false;
   constructor(private readonly send:(i:GoalIntent)=>void,private readonly portals:Portal[]) {}
 
-  interrupt() {
+  private withdraw() {
     if (this.pending) this.send({op:"withdraw",id:this.pending.id,rev:this.pending.rev});
-    this.pending=null;this.selected=null;this.ended=true;
+    this.pending=null;this.selected=null;
+  }
+  interrupt() { this.withdraw();this.ended=true; }
+
+  private missed(job:Offer) {
+    if (job.kind==="visit" && job.goal_id!==null && job.goal_id===this.goal && !this.visited.includes(job.target_id))
+      this.visited.push(job.target_id);
   }
   setBusy(busy:boolean) { this.busy=busy;if (busy) this.interrupt(); }
-  revoked(id:string) { if (this.pending?.id===id) {this.pending=null;this.selected=null;this.ended=true;} }
+  revoked(id:string,now:number) {
+    const job=this.pending;
+    if(job?.id!==id) return;
+    this.pending=null;this.selected=null;
+    if(now>=job.until_ms) this.missed(job);
+    else this.ended=true;
+  }
   result(result:DirectiveResult) {
     const job=this.pending;
     if (!job || job.id!==result.id || result.evidence_rev<job.rev) return;
     if (job.kind==="choose_station" && result.evidence_rev!==job.rev && result.outcome==="selected") return;
     if (job.kind==="visit" && result.target_id!==job.target_id) return;
     this.pending=null;
-    if (job.goal_id===null || this.ended || this.goal!==job.goal_id || result.at_ms>=job.until_ms) return;
+    if (job.goal_id===null || this.ended || this.goal!==job.goal_id) return;
+    if (result.at_ms>=job.until_ms || result.outcome==="failed" || result.outcome==="unknown") {this.missed(job);return;}
     if (result.outcome==="cancelled") this.ended=true;
     if (job.kind==="choose_station" && result.outcome==="selected" && job.candidates.includes(result.target_id))
       this.selected=result.target_id;
@@ -103,9 +116,11 @@ export class RoomWatch {
     const seated=meal.value===true && meal.observed_ms!==this.mealAt;
     if (opened) this.doorAt=door.observed_ms;
     if (seated) this.mealAt=meal.observed_ms;
-    if (!map || this.busy || (this.pending && now>=this.pending.until_ms)) {this.interrupt();return;}
+    if (this.busy || (checking && (input.personSeen || now>=checking.until))) {this.interrupt();return;}
+    if (!map) {this.withdraw();return;}
+    if (this.pending && now>=this.pending.until_ms) {this.missed(this.pending);this.withdraw();}
     const offer=(target_id:string,action:HouseholdAction)=>{
-      if (this.pending) this.interrupt();
+      if (this.pending) this.withdraw();
       this.pending={...action,op:"offer",id:"visit:"+ ++this.serial,target_id,rev,goal_id:this.goal,until_ms:Math.min(now+VISIT_MS,checking?.until??Infinity)};
       this.send(this.pending);
     };
@@ -114,12 +129,11 @@ export class RoomWatch {
       if (id) offer(id,{kind:"visit"});
       return;
     }
-    if (input.personSeen || now>=checking.until) {this.interrupt();return;}
+
     const trail=facts.trail.filter(p=>p.at_ms>=checking.since-5000 && p.at_ms<=now);
     const key=JSON.stringify([trail,this.visited]);
     if ((this.pending?.kind==="choose_station" || this.selected) && this.attempted!==key) {
-      this.interrupt();
-      this.ended=false;
+      this.withdraw();
     }
     if (this.ended || this.pending || (!this.attempted && !input.cupSeen && now-checking.since<3000)) return;
     if (this.arrived) {

@@ -11,6 +11,18 @@ const station=(id:string,x:number,z:number,room="living"):Station=>({id,name:id,
 const map:StationMap={version:1,kitchen_entry:"entry",meal_watch:"meal",zones:[],surface_fronts:[],
   stations:[station("sofa",4,0),station("entry",1,5,"kitchen"),{...station("meal",0,0),roles:["observe"]}]};
 const portals=[{rooms:["living","kitchen"] as [string,string],point:[1,3] as [number,number]}];
+it.each(["timeout","failed","unknown","cancelled","window"] as const)("첫 방문 %s 뒤 남은 자리와 확인 기한을 지킨다",why=>{
+  const s=setup(), checking={id:"g",since:0,until:300000};
+  const facts:TriggerFacts={trail:[trail(0,0,0),trail(1,0,100)],read:()=>evidence(false,100),mealSeated:evidence(false,100),observes:()=>false};
+  const tick=(at:number)=>s.tick(at,{checking,facts,cupSeen:true});
+  tick(200);const first=s.offers()[0]!;
+  expect(first.target_id).toBe("sofa");
+  if(why==="timeout") tick(first.until_ms);
+  else if(why==="window") { tick(checking.until);expect(s.sent.at(-1)).toMatchObject({op:"withdraw",id:first.id}); }
+  else s.w.result({id:first.id,at_ms:500,evidence_rev:first.rev,target_id:first.target_id,outcome:why});
+  tick(why==="window"?checking.until+1:31000);
+  expect(s.offers().map(x=>x.target_id)).toEqual(why==="cancelled" || why==="window"?["sofa"]:["sofa","entry"]);
+});
 const trail=(x:number,z:number,at:number)=>({room:"living",position:[x,z] as [number,number],at_ms:at});
 const evidence=(value:boolean, time:number)=>({value,observed_ms:time,rev:time});
 function setup(){

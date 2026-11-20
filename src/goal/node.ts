@@ -11,7 +11,7 @@ export function goalRoutes(node: BusNode, clock: Clock, triggers?: GoalTriggers,
   const out = new Outbox(node, { clock, log: (s) => console.warn(s) });
   if (rooms) {
     node.on("/act/directive_result",r=>rooms.result(r));
-    node.on("/manager/directive",d=>{if(d.op==="revoke") rooms.revoked(d.id);});
+    node.on("/manager/directive",d=>{if(d.op==="revoke") rooms.revoked(d.id,clock.now());});
     node.on("/manager/request",()=>rooms.interrupt());
   }
   node.on("/act/work", (w) => {
