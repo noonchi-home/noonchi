@@ -44,13 +44,25 @@ describe("MemoryHub 초기 상태", () => {
     expect(hub.get("nope")).toBeUndefined();
   });
 
-  it("get이 돌려준 값을 고쳐도 허브 상태는 그대로다", () => {
+  it("돌려준 값은 얼린 것이라 고칠 수 없고 허브 상태는 그대로다", () => {
     const hub = makeHub();
     const s = hub.get("tv")!;
-    s.twin.power = "on";
-    hub.list()[0]!.label = "바뀜";
+    expect(() => { s.twin.power = "on"; }).toThrow(TypeError);
+    expect(() => { hub.list()[0]!.label = "바뀜"; }).toThrow(TypeError);
+    expect(() => { hub.states()[0]!.matter.onOff = true; }).toThrow(TypeError);
     expect(hub.get("tv")!.twin.power).toBe("off");
     expect(hub.list()[0]!.label).toBe("거실 TV");
+  });
+
+  it("상태가 바뀌기 전까지는 읽을 때마다 복사하지 않고 같은 값을 준다", async () => {
+    const hub = makeHub();
+    expect(hub.get("tv")).toBe(hub.get("tv"));
+    expect(hub.list()[0]).toBe(hub.list()[0]);
+    const before = hub.get("tv")!;
+    const r = await hub.command("tv", { type: "on" });
+    expect(r.state).toBe(hub.get("tv"));
+    expect(hub.get("tv")).not.toBe(before);
+    expect(before.twin.power).toBe("off");
   });
 });
 
