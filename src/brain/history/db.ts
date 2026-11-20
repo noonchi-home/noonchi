@@ -73,7 +73,7 @@ export class HistoryDb {
   static open(path: string, offsetMinutes = 540): HistoryDb {
     if (path !== ":memory:") mkdirSync(dirname(path), { recursive: true });
     const db = new DatabaseSync(path);
-    db.exec(`PRAGMA busy_timeout = 5000; PRAGMA journal_mode = WAL; ${SCHEMA}`);
+    db.exec(`PRAGMA busy_timeout = 5000; PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL; ${SCHEMA}`);
     return new HistoryDb(db, offsetMinutes);
   }
 
@@ -86,8 +86,11 @@ export class HistoryDb {
     return new Date(ms + this.offsetMinutes * 60_000).toISOString().slice(0, 10);
   }
 
+  /** 기록 한 줄 넣기는 프레임마다 여러 번 불린다: 문장을 한 번만 준비해 다시 쓴다(매번 prepare하면 SQL 해석이 지연에 더해진다). */
+  #insert: ReturnType<DatabaseSync["prepare"]> | null = null;
+
   add(kind: HistoryKind, atMs: number, text: string, o: { subject?: string; data?: unknown } = {}): void {
-    this.db.prepare("INSERT INTO events(at_ms, day, kind, subject, text, data) VALUES (?, ?, ?, ?, ?, ?)")
+    (this.#insert ??= this.db.prepare("INSERT INTO events(at_ms, day, kind, subject, text, data) VALUES (?, ?, ?, ?, ?, ?)"))
       .run(atMs, this.dayOf(atMs), kind, o.subject ?? null, text, o.data === undefined ? null : JSON.stringify(o.data));
   }
 

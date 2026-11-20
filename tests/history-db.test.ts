@@ -14,7 +14,7 @@ import { CUP_FSM_MEMORY } from "../src/brain/decision.js";
 import { candidateFsmOf } from "../src/brain/pam/adopt.js";
 
 describe("기록 DB", () => {
-  it("폴더를 만들고 WAL·잠금 대기 5초로 연다", () => {
+  it("폴더를 만들고 WAL·잠금 대기 5초·쓰기마다 디스크 동기화 없음(NORMAL)으로 연다", () => {
     const path = join(mkdtempSync(join(tmpdir(), "db-")), "a", "noonchi.db");
     const h = HistoryDb.open(path);
     try {
@@ -22,6 +22,8 @@ describe("기록 DB", () => {
       expect(h.ok()).toBe(true);
       expect(h.db.prepare("PRAGMA journal_mode").get()).toEqual({ journal_mode: "wal" });
       expect(h.db.prepare("PRAGMA busy_timeout").get()).toEqual({ timeout: 5000 });
+      // 프레임마다 여러 줄을 쓴다: FULL이면 줄마다 디스크 동기화가 엔진 프레임 → 집 상태 지연에 더해진다(tests/latency-world.test.ts).
+      expect(h.db.prepare("PRAGMA synchronous").get()).toEqual({ synchronous: 1 });
     } finally {
       h.close();
     }
