@@ -16,6 +16,7 @@ import { pickPhoneUrl, urlParts } from "../lib/phone-url";
 import { hideViewerBar } from "../lib/twin-embed";
 import { waitForViewer, type AptViewer } from "../lib/twin-viewer";
 import { call, failText, isOk } from "./setup-api";
+import { StationsEditor } from "./StationsEditor";
 import { arrowPath, clockwiseSign, floorAtBox, useFloorClicks, useOverlay, yawOf, type Pos } from "./start-pick";
 
 // 4 위치 동기화: 3D 트윈에서 폰을 켤 시작 자리와 서서 볼 방향을 한 번 골라 저장한다(GET/POST /api/phone/start-pose).
@@ -102,6 +103,7 @@ export function PositionStep({ view, onBack, onDone, onNotice, layoutTick }: {
   const [viewer, setViewer] = useState<AptViewer | null>(null);
   const [startOn, setStartOn] = useState<boolean | null>(null);
   const [phoneOpen, setPhoneOpen] = useState(false);
+  const [editingStations, setEditingStations] = useState(false);
   const [spot, setSpot] = useState<Pos | null>(null);
   const [yaw, setYaw] = useState(0);
   const [label, setLabel] = useState("");
@@ -154,7 +156,7 @@ export function PositionStep({ view, onBack, onDone, onNotice, layoutTick }: {
     void preview(p, y);
   };
   // 트윈 바닥 누름: 자리가 없거나 다시 고르는 중이면 자리, 아니면 그쪽을 본다(30cm 안이면 무시)
-  useFloorClicks(viewer, (p) => {
+  useFloorClicks(editingStations ? null : viewer, (p) => {
     if (!startOn) return;
     if (!spot || repick) {
       setSpot(p);
@@ -226,7 +228,8 @@ export function PositionStep({ view, onBack, onDone, onNotice, layoutTick }: {
       <CardContent className="flex min-h-0 flex-1">
         <div ref={box} data-twin-box className="relative flex min-h-0 flex-1 flex-col gap-2 lg:block">
           <TwinBox home={home} frame={frame} className="lg:absolute lg:inset-0 lg:min-h-0" onReady={setViewer} />
-          {startOn && spot && overlay.spot?.visible && (
+          {editingStations && <StationsEditor key={home} home={home} viewer={viewer} frame={frame} box={box} />}
+          {!editingStations && startOn && spot && overlay.spot?.visible && (
             <div data-start-overlay aria-hidden="true" className="pointer-events-none absolute inset-0">
               <LineDrawSvg path={arrowPath(overlay)} tone="cloidHeading" width={overlay.width} height={overlay.height} strokeWidth={4} className="absolute inset-0" />
               <div data-start-spot className="absolute -translate-x-1/2 -translate-y-1/2" style={{ left: overlay.spot.x, top: overlay.spot.y }}>
@@ -239,7 +242,7 @@ export function PositionStep({ view, onBack, onDone, onNotice, layoutTick }: {
               )}
             </div>
           )}
-          {startOn && (
+          {!editingStations && startOn && (
             <section aria-label="시작 위치" className="flex flex-col gap-2 lg:pointer-events-none lg:absolute lg:inset-0">
               <div className="flex flex-col items-start gap-2 lg:pointer-events-auto lg:absolute lg:left-3 lg:right-48 lg:top-3">
                 <Item role="status" aria-live="polite" variant="muted" size="sm">
@@ -276,6 +279,9 @@ export function PositionStep({ view, onBack, onDone, onNotice, layoutTick }: {
             </section>
           )}
           <div className="flex flex-col items-end gap-2 lg:absolute lg:right-3 lg:top-3">
+            {view.position.start && <Button variant="outline" size="sm" aria-pressed={editingStations} onClick={() => setEditingStations(!editingStations)}>
+              {editingStations ? "폰 시작 위치" : "자리·구역 설정"}
+            </Button>}
             {urls.length > 0 ? (
               <Button variant="outline" size="sm" aria-expanded={phoneOpen} onClick={() => setPhoneOpen((o) => !o)}>
                 <Smartphone aria-hidden="true" />폰 연결

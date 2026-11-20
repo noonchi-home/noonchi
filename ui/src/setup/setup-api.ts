@@ -4,8 +4,8 @@ export type Fail = { ok?: false; error?: string };
 export type Reply<T> = { status: number; json: T | Fail };
 
 /** body가 있으면 POST(JSON). 서버에 못 닿거나 응답을 못 읽어도 던지지 않고 오류 글을 돌려준다. */
-export async function call<T>(path: string, body?: unknown): Promise<Reply<T>> {
-  const init = body === undefined ? undefined : { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) };
+export async function call<T>(path: string, body?: unknown, method: "POST" | "PUT" = "POST"): Promise<Reply<T>> {
+  const init = body === undefined ? undefined : { method, headers: { "content-type": "application/json" }, body: JSON.stringify(body) };
   try {
     const res = await fetch(path, init);
     const json = (await res.json().catch(() => ({ ok: false, error: "응답을 읽지 못했어요." }))) as T | Fail;
