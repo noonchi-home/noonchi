@@ -40,8 +40,8 @@ Even with the same objects and appliances, the right action depends on the resid
 
 1. **Observation:** YOLO26 and a VLM analyze photos from the real phone camera.
 2. **State:** World State merges objects, people, appliances, and the phone's position into one picture.
-3. **Behavior prediction:** PAM uses the person-state FSM to predict the person's next activity and picks the task.
-4. **Execution:** the real phone gets one command per step, and vision and phone position confirm each step.
+3. **Behavior prediction:** PAM identifies the person's current activity and the transition in the FSM. The server reads the task attached to that transition.
+4. **Execution:** the phone shows one instruction at a time. Each step advances on its own evidence, such as a visual check, the phone's position, an appliance signal, or the resident's answer.
 5. **Learning:** every night, the day's records teach habits that the next day's decisions use.
 
 ---
@@ -59,21 +59,29 @@ Even with the same objects and appliances, the right action depends on the resid
 ### A. Architecture
 
 ```text
-Real phone (camera photos · position · voice)
+Real phone (WebXR camera frames and pose · Web Speech API for voice)
   │  Tailscale (HTTPS · WSS)
   ▼
-Observation: YOLO26 · VLM
+NOONCHI server (Node.js 22 · TypeScript)
+  │  Node messaging: Redis when REDIS_URL is set, otherwise an in-memory bus
   ▼
-World State: objects · people · appliances · phone position → observation text
+Observation
+  │  ONNX Runtime runs YOLO26s-seg for minimap masks and YOLO26n-pose for posture
+  │  A VLM reads objects and activities (OpenAI API or Qwen3-VL on vLLM)
   ▼
-Behavior prediction: PAM + person-state FSM
+World State merges observations, appliance signals and phone pose with the 3D layout
+  │  Timestamped observation text → PAM
   ▼
-Goal · manager: plan prepared ahead, task order
+Behavior prediction: PAM reads the text and person-state FSM
+  │  OpenAI API or Qwen3.5-27B on vLLM identifies the current state and transition
   ▼
-Execution · checks: step commands to the real phone, appliances (Matter · ThinQ)
+Goal · manager: prepare a plan ahead of time and prioritize tasks
+  ▼
+Execution · checks: send one phone instruction at a time, verify each step
+  │  Appliance control: Matter via matter.js · LG ThinQ API
   │
-  ├─▶ Record DB ─▶ nightly reflection · adoption test ─▶ next day's FSM
-  └─▶ Dashboard (3D twin)
+  ├─▶ SQLite (node:sqlite) → nightly PAM reflection → adoption test → next day's FSM
+  └─▶ React dashboard with a three.js view of the 3D home
 ```
 
 | Component | What it does |
@@ -83,7 +91,7 @@ Execution · checks: step commands to the real phone, appliances (Matter · Thin
 | Dashboard | Shows how CLOiD sees and decides, on top of the 3D twin |
 | Person (CLOiD's hands and feet) | Moves as the phone commands |
 
-The noonchi server (`src/`) is split into these domains.
+The server's decision, goal, manager, and execution nodes exchange messages over Redis when `REDIS_URL` is set, or over an in-memory bus otherwise. The table lists the main domains in `src/`.
 
 | Domain | Core function |
 |---|---|
@@ -93,7 +101,7 @@ The noonchi server (`src/`) is split into these domains.
 | `goal` | Prepares tasks ahead of time |
 | `manage` | Picks what to do first |
 | `act` | Guides the person step by step on the phone and checks each step |
-| `safety` | Watches for falls and risky appliances |
+| `machines` | Reports robot, goal, manager, and safety state. Fall detection lives in `world`, and `act` tracks risky appliances until they are confirmed off |
 | `agent` | Turns voice requests into plans |
 | `phone` | Connects to the phone and aligns its position |
 | `devices` | Operates appliances |
@@ -102,28 +110,30 @@ The noonchi server (`src/`) is split into these domains.
 
 ### B. Observation: YOLO26 and the VLM
 
-The phone sends a photo and its WebXR pose at that moment every 0.1 s. YOLO26s-seg finds the shapes of people, objects, and fixtures in every photo, and YOLO26n-pose reads posture when a person is visible. Every 2 s, the VLM looks at the latest five photos together and answers only visible facts, such as where objects are, what is in hand, and what the person is doing. The person's intent is judged by PAM, not the VLM. When a small or transparent object isn't found, the server crops that spot and looks again up close.
+By default, the phone sends a photo and its WebXR pose every 0.1 s. YOLO26s-seg supplies shapes for the minimap, and YOLO26n-pose estimates posture when a person is visible. The VLM normally samples a frame every 2 s and reads up to five together to identify objects, what is in hand, and what the person is doing. When looking for an object or inspecting a cup, the server can shorten the sampling interval to 1 s and crop the target for a closer look.
 
 ### C. World State
 
-World State merges the YOLO and VLM results, the home scene, appliance states, and the phone position. Each object is placed where a ray cast from its bottom point in the photo meets a surface of the twin (table, sink, floor). Every fact is marked confirmed, guessed, or unknown, and it becomes confirmed only after the same value repeats. World State turns this into timestamped observation text for PAM. PAM never receives photos.
+World State combines observations with the home layout, appliance signals, and the phone's position. For movable objects such as cups, the VLM determines what is present. In the full-scene view, two distinct frames can confirm a new object. Three later frames that show its spot without the object can mark it gone. The server estimates its position where a ray from the object's base meets a surface in the twin. It sends PAM timestamped text that distinguishes confirmed, guessed, and unknown facts.
 
 ### D. Behavior Prediction: Person-State FSM and PAM
 
-Memory is a person-state FSM. A state is one thing the person is doing (drinking, watching TV, cooking, away), a transition is that activity changing into another, and actions sit only on transitions. Every 5 s, PAM reads the observation text and the FSM and answers the person's current state and the transition that happened. The server takes that transition's action as the task. Object conditions (whether a cup is there, what is in it) are not in the FSM; the pre-run check handles them.
+Memory is a person-state FSM. A state is one thing the person is doing (drinking, watching TV, cooking, away), and a transition can carry a robot action. In periodic mode, the default decision interval is 1 s for nano models and 5 s for other models. PAM reads the observation text and the FSM and reports the current state and any transition it observed. The server looks up the action on that transition and checks the relevant objects before execution.
 
 ### E. Plans Prepared Ahead and Step Execution
 
-The goal machine reads the action on the transition leaving the current state and prepares the plan ahead of time. For example, it builds the cup-clearing plan while the person is drinking and starts it as soon as the person leaves and the state changes. The manager picks work in the order safety > voice request > goal > idle. The robot execution machine sends the real phone one command per step ("Go to the table" → "Pick up the cup" → "Go to the sink" → "Put the cup in the sink"), and sends the next command only after World State and the phone position show the step is done. On a suspected fall, the safety machine goes to the person and asks; with no spoken answer, it raises an emergency.
+Once CLOiD has learned to clear the cup, the goal node can request a plan while the person is still drinking. When the person leaves, PAM is prompted to decide again. If the decision calls for clearing the cup, the server rechecks the prepared plan against the current cup and its location before sending the first command. The manager gives priority to safety, then voice requests, goals, and idle work.
+
+The phone guides the person to the table to show the inside of the cup. Once two clear overhead views confirm it is empty, the phone asks the person to pick up the cup, go to the sink, and put the cup in the sink, one instruction at a time. If a drink remains, CLOiD asks whether to discard it. If the contents stay unknown, it stops the plan. A suspected fall immediately puts the system in the emergency state. When a plan turns on a risky appliance, tracking continues until there is evidence it is off.
 
 ### F. Habit Learning: Nightly Reflection and the Adoption Test
 
-Once a day, the day's records are grouped into activity chunks, and PAM reflection proposes a candidate FSM. Each candidate passes a code check (shape) and an LLM check (meaning), then the adoption test. If the person did that task within 300 s after the candidate's trigger at least 75% of the time, with a one-sided binomial test p < 0.001, the candidate is adopted into the next day's FSM. Before a habit is learned, CLOiD asks first; after adoption, it acts without asking.
+Once a day, the day's records are grouped into activity chunks, and PAM reflection proposes a candidate FSM. Each candidate passes a code check (shape) and an LLM check (meaning), then the adoption test. If the person did that task within 300 s after the candidate's trigger at least 75% of the time, with a one-sided binomial test p < 0.001, the candidate is adopted into the next day's FSM. Before the cup-clearing habit is learned, CLOiD asks whether to clear the cup. Learning that habit lets it clear a confirmed empty cup without asking. Risky appliance commands still require approval.
 
 ### G. Screens People See
 
 - **Real phone:** the mascot and the current command at the top; the vision status line and a "Done" button at the bottom. Commands are read aloud, and questions can be answered by voice.
-- **Dashboard:** the 3D twin fills the screen, with the vision minimap, the message box, and the person and robot timeline on top. A plan shows as a numbered route on the twin, and a goal as a red ring on the object and a faded route drawn ahead. There is no input box.
+- **Dashboard:** the 3D twin fills the screen, with the vision minimap, the message box, and the person and robot timeline on top. The live camera view matches detection masks to frames by capture time when timestamps are available. A plan shows as a numbered route on the twin, and a goal as a red ring on the object and a faded route drawn ahead. There is no input box.
 
 ---
 
@@ -153,7 +163,7 @@ Once a day, the day's records are grouped into activity chunks, and PAM reflecti
 
 **PAM.** Lee et al.'s Procedural Assistance Memory keeps a person's routine as FSM memory and revises it with end-of-day reflection. We port the paper's prompts as they are, but feed World State observation text instead of photos, define states as what the person is doing, and use only habits that pass the adoption test.
 
-**Smart home routines.** Today's smart home routines run the same action when conditions the user set are met. NOONCHI predicts the person's next activity to plan ahead, checks what it doesn't know, and waits while the person is still using something.
+**Smart home routines.** Today's smart home routines run the same action when conditions the user set are met. NOONCHI uses the person's current activity and learned transitions to prepare a possible next task. It waits while the person is using the object and checks that the task still fits before acting.
 
 **Tools and libraries used.** onnxruntime, vLLM, SQLite, Docker, Tailscale, LG ThinQ.
 
@@ -179,10 +189,10 @@ Once a day, the day's records are grouped into activity chunks, and PAM reflecti
 
 | Name | Responsibilities |
 |---|---|
-| 허정오 | Scrum master; noonchi server, real-phone AR, 3D twin, dashboard |
-| 박석준 | PAM decisions and reflection, adoption test, routine experiment |
-| 김준형 | PAM code, model research |
-| 신지훈 | Security architecture |
+| Jeong-O Heo | **Scrum Master & Systems Integration** — Built the NOONCHI server and connected the phone’s AR camera, the 3D home model, and the live dashboard. |
+| Seokjun Park | **Decision Models & Habit Learning** — Developed PAM’s decision and reflection logic, designed the statistical test for adopting habits, and ran experiments on daily routines. |
+| Junhyeong Kim | **Model Research & Evaluation** — Contributed to the PAM implementation and turned household video scenarios into timestamped model inputs for testing. |
+| Jihun Shin | **Security Architecture & Privacy** — Designed controls for handling camera frames and built monitoring tools to detect images saved during inference. |
 
 ---
 
