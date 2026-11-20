@@ -15,9 +15,9 @@ const map: StationMap = { version: 1, kitchen_entry: null, meal_watch: "table_vi
 const camera: CameraView = {origin:[0,1,0],orientation:[0,0,0,1],theta:0,projection:[1,0,0,0,0,1,0,0,0,0,-1.0002,-1,0,0,-0.020002,0]};
 const empty = {seats:"clear", people:[], dining_food:"unknown"} as const;
 const tv = {id:"screen",kind:"tv",status:"켜짐",state:["on"],changed_ms:50,history:[]} as unknown as WorldDevice;
-function rig() {
+function rig(cadence = 2000) {
   const w = new WorldState({ surfaces:()=>[], floorAt:()=>0, roomAt:()=>({id:"living",label:"거실"}), devices:()=>[] });
-  const triggers = new GoalTriggers(zoneAt, () => 0);
+  const triggers = new GoalTriggers(zoneAt, () => 0, cadence);
   let rev = 0;
   function tick(now: number) { return triggers.evaluateTriggers({...w.view(now), devices:[tv]}, rev, map, now); }
   function photo(at: number, override:Partial<SceneLookInput> = {}, household:SceneObservation["household"] = {...empty,people:[]}, observations:SceneObservation["observations"] = [], id=String(at)) {
@@ -33,20 +33,37 @@ const absence = {kind:"noViewer",room:"living",ms:4000} as const;
 const seated = {kind:"postureAttention",posture:"seated",target:"screen"} as const;
 
 describe("관찰 계기",()=>{
+  it.each([true,false])("상한으로 한 장 빠져도 다음 실제 촬영에서 부재를 확인한다 (중간 tick %s)", intermediate => {
+    const r=rig();
+    r.photo(0); r.w.applyMissing("cap",2000,{vlm:"cap"});
+    if (intermediate) expect(r.tick(2000).read(absence).value).toBe("unknown");
+    expect(r.photo(4000).read(absence).value).toBe(true);
+  });
+  it("설정 간격의 1.5배가 지나면 새 관찰을 기다린다",()=>{
+    const r=rig(1000);r.photo(0);
+    expect(r.tick(1500).read(absence).value).toBe(false);
+    expect(r.tick(1501).read(absence).value).toBe("unknown");
+  });
+  it("두 장 건너뛰거나 붙잡은 장면이면 부재를 확정하지 않는다",()=>{
+    const r=rig();r.photo(0);r.w.applyMissing("a",1500,{vlm:"cap"});r.w.applyMissing("b",3000,{vlm:"cap"});
+    expect(r.photo(4500).read(absence).value).toBe(false);
+    const s=rig();s.photo(0);s.w.applyMissing("a",2000,{vlm:"cap"});
+    expect(s.photo(4000,{fresh:false}).read(absence).value).toBe("unknown");
+  });
   it("서로 다른 세 촬영의 4초만 부재로 확인한다. 같은 사진의 tick은 시간을 채우지 않는다",()=>{
     const r=rig();
     expect(r.photo(0).read(absence).value).toBe(false);
     r.photo(2000);
     expect(r.tick(4000).read(absence).value).toBe(false);
     expect(r.photo(4000).read(absence)).toMatchObject({value:true,observed_ms:4000,rev:3});
-    expect(r.tick(6501).read(absence).value).toBe("unknown");
+    expect(r.tick(7001).read(absence).value).toBe("unknown");
   });
   it.each(["held","opposite","occluded","no answer","gap","duplicate"])("%s 사진은 부재 창을 채우지 않는다",why=>{
     const r=rig();r.photo(0);r.photo(2000);
     if(why==="no answer"){r.w.applyMissing("3",4000,{vlm:"format"});expect(r.tick(4000).read(absence).value).toBe("unknown");return;}
     const f=why==="held"?r.photo(4000,{fresh:false}):why==="opposite"?r.photo(4000,{view:{...camera,orientation:[0,1,0,0]}}):
       why==="occluded"?r.photo(4000,{}, {seats:"obscured",people:[],dining_food:"unknown"}):
-      why==="duplicate"?r.photo(4000,{}, {...empty,people:[]},[],"2000"):r.photo(5000);
+      why==="duplicate"?r.photo(4000,{}, {...empty,people:[]},[],"2000"):r.photo(5001);
     expect(f.read(absence).value).not.toBe(true);
   });
   it("모르는 사람·다른 시선·두 사람 중 한 명이 남은 사진으로 시청 중이나 시청자 없음이 되지 않는다",()=>{

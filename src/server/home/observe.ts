@@ -13,7 +13,7 @@ import { BusNode, Outbox } from "../../bus/index.js";
 import type { BrainLog, SeenEvent } from "../../contract/events.js";
 import type { WorldChange } from "../../contract/world.js";
 import { floorLookup, roomNamedAt, zoneAt, type LayoutEditor } from "../../layout/index.js";
-import { createPipeline, LookClient, lookRoutes, startPerceptionNode } from "../../observe/index.js";
+import { createPipeline, loadObserveConfig, LookClient, lookRoutes, startPerceptionNode, vlmStepMs } from "../../observe/index.js";
 import { WorldState, loadFallConfig, restsFromLayout, startWorldMirror, startWorldNode, surfacesFromLayout, type PlaneSurface, type RestSpot } from "../../world/index.js";
 import { historyRoutes } from "../../record/index.js";
 import { HEARD_MARK } from "../../world/labels.js";
@@ -132,7 +132,7 @@ export async function startNodes(core: HomeCore, emit: (event: BrainLog) => void
   core.managerNode = manager;
   core.out.manager = managerRoutes(manager, clock);
   await manager.prepare();
-  const triggers = new GoalTriggers(zoneAt, floorLookup(core.plan.rooms));
+  const triggers = new GoalTriggers(zoneAt, floorLookup(core.plan.rooms), vlmStepMs(loadObserveConfig(ctx.env)));
   core.goalMirror = await startWorldMirror({
     bus, epoch, name: "goal", clock, log,
     routes: (node, afterRev) => {

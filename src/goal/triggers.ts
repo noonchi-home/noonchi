@@ -6,7 +6,7 @@ import type { HouseholdPhoto, WorldDevice, WorldView } from "../contract/world.j
 import { becameKey, inView } from "../world/index.js";
 import { DEVICE_STATES } from "../world/vocab.js";
 
-const MAX_PHOTO_GAP_MS = 2500;
+const MEAL_PHOTO_GAP_MS = 2500;
 const EDGE_MARGIN_M = 0.1;
 const fact = (value: TriggerFact["value"], observed_ms: number | null = null, rev: number | null = null): TriggerFact => ({value, observed_ms, rev});
 type ZoneOf = (map: StationMap, room: string | null, p: Vec2 | null, margin: number) => string | null;
@@ -36,6 +36,7 @@ function deviceFact(devices: WorldDevice[], t: Extract<Trigger,{kind:"device"}>,
 /** One instance per home. Timers can expire evidence, but only a distinct camera capture can extend it. */
 export class GoalTriggers {
   private photo: HouseholdPhoto | undefined;
+  private vacancyPhoto?: HouseholdPhoto;
   private photoRev = 0;
   private map: StationMap | null = null;
   private vacantSince = new Map<string,number>();
@@ -49,7 +50,7 @@ export class GoalTriggers {
   private entered: string | null = null;
   private transition = fact("unknown");
 
-  constructor(private readonly zoneOf: ZoneOf, private readonly floor: (p:Vec2)=>number) {}
+  constructor(private readonly zoneOf: ZoneOf, private readonly floor: (p:Vec2)=>number, private readonly cadenceMs:number) {}
 
   decision(d: Decision) {
     if (d.source === "speech" || d.seq <= this.seq) return;
@@ -68,6 +69,7 @@ export class GoalTriggers {
       this.map = map;
       this.vacantSince.clear();
       this.photo = undefined;
+      this.vacancyPhoto = undefined;
       this.mealSetup = null;
       this.previousSeated = null;
       this.mealSeated = fact("unknown");
@@ -87,9 +89,14 @@ export class GoalTriggers {
     const newer = !!photo && (!this.photo || photo.serial > this.photo.serial && photo.at_ms >= this.photo.at_ms);
     if (newer) {
       const prev = this.photo;
-      const consecutive = prev && photo.serial === prev.serial+1 && photo.id !== prev.id && photo.at_ms-prev.at_ms <= MAX_PHOTO_GAP_MS;
-      if (!consecutive) {
-        this.vacantSince.clear();
+      const last = this.vacancyPhoto;
+      const dt = last ? photo.at_ms - last.at_ms : Infinity;
+      const consecutive = last && photo.id !== last.id && dt > 0 && photo.serial === last.serial+1 && dt <= 1.5*this.cadenceMs;
+      const oneSkip = last && photo.id !== last.id && photo.cap_from_ms === last.at_ms &&
+        dt > 0 && dt <= 2.5*this.cadenceMs && photo.serial === last.serial + (photo.proof ? 2 : 1);
+      if (!consecutive && !oneSkip) this.vacantSince.clear();
+      if (photo.proof || !oneSkip) this.vacancyPhoto = photo.proof ? photo : undefined;
+      if (!prev || photo.serial !== prev.serial+1 || photo.id === prev.id || photo.at_ms-prev.at_ms > MEAL_PHOTO_GAP_MS) {
         this.mealSetup = null;
         this.previousSeated = null;
       }
@@ -98,7 +105,7 @@ export class GoalTriggers {
       for (const [room,watch] of watches) {
         if (this.covered(photo,watch.zones) && photo.proof!.person_count===0) {
           if (!this.vacantSince.has(room)) this.vacantSince.set(room,photo.at_ms);
-        } else this.vacantSince.delete(room);
+        } else if (photo.proof || !oneSkip) this.vacantSince.delete(room);
       }
       this.updateMeal(view,map,photo);
     }
@@ -106,13 +113,13 @@ export class GoalTriggers {
     const proof = current?.proof;
     const stamp = current?.at_ms ?? null;
     const currentRev = current ? this.photoRev : null;
-    const recent = stamp !== null && now >= stamp && now-stamp <= MAX_PHOTO_GAP_MS;
+    const recent = stamp !== null && now >= stamp && now-stamp <= 1.5*this.cadenceMs;
     const see = (v:TriggerFact["value"])=>fact(v,stamp,currentRev);
     const transition = {...this.transition}, entered = this.entered;
     const windows = new Map(this.vacantSince);
     return {
       trail:view.person_trail ?? [],
-      mealSeated: recent ? this.mealSeated : see("unknown"),
+      mealSeated: stamp !== null && now >= stamp && now-stamp <= MEAL_PHOTO_GAP_MS ? this.mealSeated : see("unknown"),
       read: t => {
         if (t.kind==="device") return deviceFact(view.devices,t,rev,changedDevices);
         if (t.kind==="entered") return transition.rev === null || transition.rev > rev ? fact("unknown") :
@@ -169,9 +176,9 @@ export class GoalTriggers {
     this.mealSeated=fact("unknown",photo.at_ms,this.photoRev);
     if (!map || !station || !proof) { this.mealSetup=null; this.previousSeated=null; return; }
     const cup=view.objects.find(o=>o.cls==="cup" && o.status==="present" && o.surface && station.surfaces.includes(o.surface) &&
-      o.facts.place?.value!=="in_hand" && !o.carried && !o.followed_by && o.last_seen_ms<=photo.at_ms && photo.at_ms-o.last_seen_ms<=MAX_PHOTO_GAP_MS);
+      o.facts.place?.value!=="in_hand" && !o.carried && !o.followed_by && o.last_seen_ms<=photo.at_ms && photo.at_ms-o.last_seen_ms<=MEAL_PHOTO_GAP_MS);
     const old=this.mealSetup;
-    if (!cup || proof.dining_food==="no" || (old && (photo.at_ms-old.at > MAX_PHOTO_GAP_MS || cup.id!==old.cup || cup.surface!==old.surface))) this.mealSetup=null;
+    if (!cup || proof.dining_food==="no" || (old && (photo.at_ms-old.at > MEAL_PHOTO_GAP_MS || cup.id!==old.cup || cup.surface!==old.surface))) this.mealSetup=null;
     const person=proof.person;
     const zone=person && this.zoneOf(map,person.room,person.position,EDGE_MARGIN_M);
     if (person && zone && station.observes_zone_ids.includes(zone) && person.seated !== null) {

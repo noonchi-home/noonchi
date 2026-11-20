@@ -235,22 +235,25 @@ export class WorldState {
     return true;
   }
 
-  private noteHousehold(id: string, at: number, scene?: SceneObservation, look?: SceneLook) {
+  private noteHousehold(id: string, at: number, scene?: SceneObservation, look?: SceneLook, capped = false) {
     const h = scene?.household;
     const old = this.householdPhoto;
     if (at <= this.sceneAt) {
       // A late interruption can disprove continuous vacancy without replacing the latest capture.
-      if (old?.proof && old.id !== id && old.proof.person_count === 0) {
-        this.householdPhoto = {...old, serial:old.serial + 1, proof:null};
+      if (old && old.id !== id && (old.proof?.person_count === 0 || old.cap_from_ms !== undefined)) {
+        this.householdPhoto = {id:old.id, at_ms:old.at_ms, serial:old.serial + 1, proof:null};
       }
       return;
     }
     this.sceneAt = at;
     if (!h && !old) return;
     const photo: NonNullable<WorldView["household_photo"]> = {id, at_ms:at, serial:(old?.serial ?? 0)+1, proof:null};
+    // Carry the previous capture across one capacity skip, even if a STATE subscriber misses that update.
+    if (capped && old?.proof && old.id !== id) photo.cap_from_ms = old.at_ms;
     this.householdPhoto = photo;
     if (!h || !look?.fresh || !look.person_ids || old?.id === id) return;
     const match = h.people.length === 1 && look.person_ids.length === 1 && h.people[0]!.id === look.person_ids[0] ? h.people[0] : null;
+    if (old?.proof === null && old.cap_from_ms !== undefined) photo.cap_from_ms = old.cap_from_ms;
     const det = match && look.dets?.find(d => d.id === match.id);
     const position = det && this.core.people.feet(look.view, det.box, look);
     const states = scene!.observations.filter(o=>o.object_id===match?.id).map(o=>o.state);
@@ -266,7 +269,7 @@ export class WorldState {
     if (m.yolo) this.yoloMissing++;
     if (m.vlm) {
       this.vlmMissing++;
-      this.noteHousehold(frameId, capturedAtMs);
+      this.noteHousehold(frameId, capturedAtMs, undefined, undefined, m.vlm === "cap");
       this.core.sight.dropLinks(frameId);
     }
     if (m.yolo) return [{ kind: "yolo_missing", at_ms: capturedAtMs, subject: frameId, meaningful: false, text: CHANGE_TEXT.yoloMissing[m.yolo] }];

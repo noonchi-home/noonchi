@@ -109,7 +109,7 @@ const VIEW_KEYS = ["at_ms", "objects", "sightings", "person", "fixtures", "devic
 const VIEW_KEY_SET: ReadonlySet<string> = new Set(VIEW_KEYS);
 const floorPosition = z.tuple([at,at]);
 const trailPoint = z.strictObject({position:floorPosition, room:z.string().nullable(), at_ms:at});
-const householdPhoto = z.strictObject({id, at_ms:at, serial:rev, proof:z.strictObject({
+const householdPhoto = z.strictObject({id, at_ms:at, serial:rev, cap_from_ms:at.optional(), proof:z.strictObject({
   camera, seats:z.enum(["clear","obscured","unknown"]), person_count:z.int().nonnegative(), dining_food:z.enum(["yes","no","unknown"]),
   person:z.strictObject({position:floorPosition,room:z.string().nullable(),seated:z.boolean().nullable(),attention:z.enum(["toward_tv","elsewhere","unknown"])}).nullable(),
 }).nullable()});

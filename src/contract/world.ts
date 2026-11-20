@@ -145,6 +145,7 @@ export interface WorldEye { position: [number, number]; height_m: number; yaw_de
 export interface WorldSighting { cls: ObjClass; position: [number, number, number]; surface: string | null; surface_label: string | null; at_ms: number; in_hand: boolean }
 
 export interface HouseholdPhoto {
+  cap_from_ms?: number;
   id: string; at_ms: number; serial: number;
   proof: {
     camera: SceneLookInput["view"]; seats: "clear"|"obscured"|"unknown";
