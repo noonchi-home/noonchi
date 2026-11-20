@@ -135,7 +135,7 @@ export class Navigation {
     const previousGate = this.lastGate ? map.gate(this.lastGate) : undefined;
     const allowed = [gate, previousGate].filter((g) => g !== undefined);
     const inRoom = first.kind === "portal" ? (this.crossed ? first.to_room : first.from_room) : first.room;
-    if (!map.clear(b.position, [first.position[0], first.position[2]], inRoom, allowed)) {
+    if (!map.isBearing(first) && !map.clear(b.position, [first.position[0], first.position[2]], inRoom, allowed)) {
       this.path = null;
       return empty();
     }

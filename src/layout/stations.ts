@@ -1,8 +1,8 @@
 import { z } from "zod";
-import type { SceneJson, SceneObject, Vec2 } from "../contract/layout.js";
+import type { SceneJson, Vec2 } from "../contract/layout.js";
 import type { StationMap } from "../contract/stations.js";
 import { insidePolygon } from "./home-plan.js";
-import { floorPlanFrom } from "./floor.js";
+import { edgeDistance, edges, walkingGeometry, walkingMap } from "./walk-guide.js";
 
 const point = z.tuple([z.number(), z.number()]);
 const name = z.string().trim().min(1);
@@ -17,15 +17,6 @@ const shape = z.strictObject({
   surface_fronts: z.array(z.strictObject({surface_id: name, room: name, position: point, look_at: point, near_m: z.number().positive()})).default([]),
 });
 
-function edgeDistance(p: Vec2, a: Vec2, b: Vec2) {
-  const dx = b[0] - a[0], dz = b[1] - a[1];
-  const len2 = dx * dx + dz * dz;
-  const t = len2 ? Math.min(1, Math.max(0, ((p[0]-a[0])*dx + (p[1]-a[1])*dz) / len2)) : 0;
-  return Math.hypot(p[0]-a[0]-t*dx, p[1]-a[1]-t*dz);
-}
-function edges(poly: Vec2[]) {
-  return poly.map((a,i): [Vec2,Vec2] => [a,poly[(i+1)%poly.length]!]);
-}
 function crossing(a: Vec2,b: Vec2,c: Vec2,d: Vec2) {
   const side = (u: Vec2,v: Vec2,w: Vec2) => (v[0]-u[0])*(w[1]-u[1])-(v[1]-u[1])*(w[0]-u[0]);
   return (side(a,b,c)*side(a,b,d)<0 && side(c,d,a)*side(c,d,b)<0)
@@ -47,49 +38,6 @@ export function standbyFor(map: StationMap, room: string) {
 }
 function unique(values: string[]) {
   if (new Set(values).size !== values.length) throw new Error("같은 자리 이름이나 항목이 둘 있어요.");
-}
-const clearance = 0.18;
-export function walkingGeometry(scene: SceneJson, footprintOf?: (type: string)=>Vec2 | undefined) {
-  const floor = floorPlanFrom(scene);
-  const rooms = new Map(floor.rooms.map(r=>[r.id,r.polygon]));
-  const rawWalls = (scene.plan.walls ?? []) as {id:string; a: Vec2 | null; b: Vec2 | null; polygon?: Vec2[]; thickness?: number}[];
-  const solids = rawWalls.flatMap(w=>w.polygon ? [{id:w.id,polygon:w.polygon}] : []);
-  const walls = rawWalls.flatMap(w=>w.a && w.b ? [{id:w.id,a:w.a,b:w.b,thickness:w.thickness??0}] :
-    edges(w.polygon??[]).map(([a,b])=>({id:w.id,a,b,thickness:0})));
-  const obstacles = (scene.objects as SceneObject[]).filter(o=>o.mount==="floor" && o.room && (o.plan.elevation??0)<1.8);
-  const boxes=obstacles.flatMap(o=>{
-    const dims=o.footprint??footprintOf?.(o.type);
-    if(!dims) return [];
-    const yaw=o.rotation?.[1]??(90-o.plan.facing_deg)*Math.PI/180;
-    return [{p:o.plan.position,cos:Math.cos(yaw),sin:Math.sin(yaw),
-      w:dims[0]*(o.scale?.[0]??1)/2+clearance,d:dims[1]*(o.scale?.[2]??1)/2+clearance}];
-  });
-  const walkable = (room: string,p: Vec2, opening?:{wall?:string}) => {
-    if ((!opening && !insidePolygon(p,rooms.get(room)??[])) || !floor.robot.reachable.includes(room)) return false;
-    if (solids.some(s=>(!opening?.wall || s.id!==opening.wall) && insidePolygon(p,s.polygon))) return false;
-    if (walls.some(w=>(!opening?.wall || w.id!==opening.wall) && edgeDistance(p,w.a,w.b) < clearance+(w.thickness??0)/2)) return false;
-    return !boxes.some(box=>{
-      const dx=p[0]-box.p[0], dz=p[1]-box.p[1];
-      return Math.abs(dx*box.cos-dz*box.sin)<box.w && Math.abs(dx*box.sin+dz*box.cos)<box.d;
-    });
-  };
-  function furnitureClear(a:Vec2,b:Vec2) {
-    return boxes.every(box=>{
-      const local=(p:Vec2):Vec2=>[(p[0]-box.p[0])*box.cos-(p[1]-box.p[1])*box.sin,
-        (p[0]-box.p[0])*box.sin+(p[1]-box.p[1])*box.cos];
-      const start=local(a),end=local(b);
-      let lo=0,hi=1;
-      for(const axis of [0,1] as const){
-        const half=axis===0?box.w:box.d, delta=end[axis]-start[axis];
-        if(Math.abs(delta)<1e-9){if(Math.abs(start[axis])>=half) return true;continue;}
-        const left=(-half-start[axis])/delta,right=(half-start[axis])/delta;
-        lo=Math.max(lo,Math.min(left,right));hi=Math.min(hi,Math.max(left,right));
-        if(hi<lo) return true;
-      }
-      return false;
-    });
-  }
-  return {walkable,furnitureClear,rooms,walls,floor};
 }
 export function validateStations(raw: unknown, scene: SceneJson, footprintOf?: (type: string)=>Vec2 | undefined): StationMap {
   const map = shape.parse(raw);
@@ -121,10 +69,16 @@ export function validateStations(raw: unknown, scene: SceneJson, footprintOf?: (
         s.observes_zone_ids.some(id=>!map.zones.some(z=>z.id===id && (z.room===s.room || s.rooms.includes(z.room)))))
       throw new Error(s.name+"에서 볼 방·가구·구역을 확인해 주세요.");
   }
+  const grid = map.surface_fronts.length ? walkingMap(floor,scene,footprintOf) : null;
   for (const front of map.surface_fronts) {
     const target = floor.objects.get(front.surface_id);
     if (target?.room!==front.room || walls.some(w=>crossing(front.position,target.basin??target.position,w.a,w.b)))
       throw new Error("같은 방에서 가구를 쓸 수 있는 앞자리를 골라 주세요.");
+    const gates=floor.portals.filter(g=>g.rooms.includes(front.room));
+    const stations=map.stations.filter(s=>s.room===front.room);
+    if (!gates.some(g=>grid!.gridReachable(front.position,g.point,front.room,[g])) &&
+        !stations.some(s=>grid!.gridReachable(front.position,s.position,front.room)))
+      throw new Error(front.surface_id+" 앞에 걸어갈 수 있는 통로가 없어요.");
   }
   for (const id of [map.meal_watch,map.kitchen_entry])
     if (id && !map.stations.some(s=>s.id===id && s.roles.includes("observe"))) throw new Error("관찰 자리를 골라 주세요.");

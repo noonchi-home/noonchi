@@ -31,6 +31,11 @@ describe("집 자리", () => {
     expect(sink.look_at).toEqual([5.86,0.693]);
     expect(sink.position[0]).toBeGreaterThan(6.2);
   });
+  it("빈 바닥이어도 같은 방의 통로와 격자로 이어지지 않는 가구 앞은 저장하지 않는다", () => {
+    const divided = {...layout, plan:{...layout.plan,walls:[{id:"divider", a:[4,0], b:[4,8], thickness:0.1}]}};
+    const front = {surface_id:"desk",room:"one",position:[6,3],look_at:[6,4],near_m:0.3};
+    expect(()=>validateStations({...map,surface_fronts:[front]},divided as SceneJson)).toThrow(/통로|걸어/);
+  });
   it("구판에 없던 목록은 비어 있고, 방 경계나 두 구역이 겹치는 발 위치는 확정하지 않는다", () => {
     expect(loadScene(resolveHome(DEFAULT_TWIN_DIR,"oneroom"))!.stations.stations).toEqual([]);
     expect(validateStations({version:1,stations:[]},layout).surface_fronts).toEqual([]);
