@@ -180,6 +180,7 @@ export async function startNodes(core: HomeCore, emit: (event: BrainLog) => void
       core.looks = new LookClient(core.out.act, clock);
       core.looks.routes(node);
       progressRoutes(node, (p) => applyPhoneProgress(core, p), () => core.nowMs());
+      node.on("/phone/pose", p=>{ if(!core.closed) core.tracker?.onNavigationReading(p); });
       node.on("/phone/link", ({ ready }) => { core.phoneReady = ready; });
       node.on("/phone/owner", ({ owner }) => { core.phoneOwner = owner; });
       node.every(250, () => {

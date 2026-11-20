@@ -19,7 +19,21 @@ export type TalkGrade = "safety" | "question";
  * 서버 → 실제 폰: 지금 할 명령. 바뀔 때마다 통째로 보낸다. 같은 id·step이면 같은 명령이고 비전 상태만 바뀐 것이다.
  * 새로 붙은 폰은 상태(status) 다음에 지금 명령을 speak false로 받는다.
  */
+export type WalkPoint<P> = P & (
+  | {kind:"portal"; id:string; from_room:string; to_room:string}
+  | {kind:"via" | "stand"; room:string}
+);
+export interface WalkGuide<P> {
+  pose_gen?:number;
+  revision:number;
+  near_m:number;
+  remaining:[WalkPoint<P>, ...WalkPoint<P>[]];
+}
+export type TwinWalkGuide = WalkGuide<{position:[number,number,number]}>;
+export type NavigationPose = {observed_ms:number; pose_gen:number; quality:"usable"|"unavailable"; position:[number,number]|null; error_m?:number};
+
 export interface PhoneCommand {
+  guide?: WalkGuide<{ar:[number,number,number]}> | null;
   type: "command";
   /** 계획 id(plan:pam-N). */
   id: string;
@@ -45,7 +59,8 @@ export interface PhoneCommand {
 }
 
 /** 서버 안(실행 추적 → 폰 서버)의 명령: 대상 자리가 트윈 좌표 [x, 높이, y]다. 폰 서버가 AR 좌표로 바꿔 PhoneCommand로 보낸다. */
-export interface PlannedCommand extends Omit<PhoneCommand, "target"> {
+export interface PlannedCommand extends Omit<PhoneCommand, "target" | "guide"> {
+  guide?: TwinWalkGuide | null;
   target: { id: string; label: string; position: [number, number, number] } | null;
 }
 

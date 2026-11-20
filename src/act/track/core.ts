@@ -4,6 +4,7 @@
 // 켠 위험 가전 추적 상태(hot·끄기 안내·회차·풀린 가전)는 여기 두지 않는다: SafetyTracker(safety.ts)의 # 비공개 칸이다.
 import type { DecisionRecord, ExecState } from "../../contract/events.js";
 import type { PlannedCommand } from "../../contract/phone.js";
+import { Navigation } from "../robot/navigation.js";
 import type { XZ } from "../../contract/plan.js";
 import type { WorldView } from "../../contract/world.js";
 import { placeName } from "../../layout/index.js";
@@ -100,6 +101,23 @@ export interface TrackConfig {
 
 /** 실행 추적의 안쪽 공유 객체: 상태와 기록·실제 폰 길, 부분(ExecutionTracker가 단다). */
 export class TrackCore {
+  readonly navigation = new Navigation();
+  walk(key:string,target:PlannedCommand["target"],station=false,hint?:XZ[]) {
+    if (!this.o.layout.walking) return undefined;
+    const map=this.o.layout.walking();
+    const front=this.o.stations?.map?.()?.surface_fronts.find(f=>f.surface_id===target?.id);
+    const position: [number,number] = front?.position ?? (target ? [target.position[0],target.position[2]] : [0,0]);
+    const movedFront=front && target && Math.hypot(front.look_at[0]-target.position[0],front.look_at[1]-target.position[2])>0.2;
+    const result=this.navigation.read(key,target && !movedFront?map:null,position,front?.near_m??0.5,station||!!front,this.clock.now(),hint);
+    const portals=result.guide?.remaining.filter(point=>point.kind==="portal");
+    if(portals?.length){
+      const world=this.o.state.view();
+      if(portals.some(p=>world.devices.some(d=>d.id===p.id && d.state.includes("door_closed")) ||
+        world.fixtures.some(f=>(f.id===p.id || f.device===p.id) && f.facts.open?.value==="closed" && f.facts.open.certainty==="confirmed")))
+        return {guide:null,distance:null,arrived:false,within:()=>false,vision:"문이 닫혀 있어요."};
+    }
+    return {...result,vision:result.blocked ? "지나갈 길을 확인해 주세요." : result.distance===null ? "위치를 다시 맞춰 주세요." : (target?.label??"설 자리")+(station?"까지 ":" 앞까지 ")+result.distance.toFixed(1)+"m"};
+  }
   run: Run | null = null;
   planning: Job | null = null;
   /** 계획 밖 가까이 가서 보기(판단 전 보기 B 뒤에도 모를 때, src/act/robot/contents.ts idle): 명령 id peek:<번호>와 그 상태. 없으면 null. */

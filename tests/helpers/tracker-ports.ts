@@ -8,6 +8,7 @@ export type TrackerFixture = Omit<TrackerOptions, "state" | "layout" | "phone" |
   linkObject?: TrackerOptions["state"]["linkObject"];
   contentsAction?: TrackerOptions["state"]["contentsAction"];
   floor: TrackerOptions["layout"]["floor"];
+  walking?: TrackerOptions["layout"]["walking"];
   locate?: TrackerOptions["layout"]["locate"];
   dock?: TrackerOptions["layout"]["dock"];
   surfaces?: TrackerOptions["layout"]["surfaces"];
@@ -46,7 +47,7 @@ export type TrackerFixture = Omit<TrackerOptions, "state" | "layout" | "phone" |
 export function testTracker(options: TrackerFixture): ExecutionTracker {
   const {
     world, guardObject, focusObject, linkObject, contentsAction,
-    floor, locate, dock, surfaces, names,
+    floor, walking, locate, dock, surfaces, names,
     toPhone, phoneReady, sayAloud, approvalsWaiting, talking,
     sentSeq, onSpeech, onRefused, habit, nudge, tasks,
     meal, onGoal, goalWorld, prepareGoal, reuse, goalUpdate,
@@ -59,7 +60,7 @@ export function testTracker(options: TrackerFixture): ExecutionTracker {
   return new ExecutionTracker({
     ...optionsOnly,
     state: { view: world, guardObject, focusObject, linkObject, contentsAction },
-    layout: { floor, locate, dock, surfaces, names },
+    layout: { floor, walking, locate, dock, surfaces, names },
     phone: { toPhone, ready: phoneReady, sayAloud, approvalsWaiting, talking },
     brain: { sentSeq, onSpeech, onRefused, habit, nudge, tasks },
     goals: { meal, publish: onGoal, view: goalWorld, prepare: prepareGoal, reuse, update: goalUpdate },

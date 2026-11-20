@@ -13,7 +13,7 @@ import { AGAIN, APPROVE } from "../../act/prompts.js";
 import type { WorldInput, WorldView } from "../../contract/world.js";
 import type { SignalHub } from "../../devices/index.js";
 import type { PlanView } from "../../contract/plan.js";
-import { floorLookup, floorPlanFrom, loadScene, type LayoutEditor, type PlaceNames } from "../../layout/index.js";
+import { walkingMap, floorLookup, floorPlanFrom, loadScene, type LayoutEditor, type PlaceNames } from "../../layout/index.js";
 import { Trigger, canRelink, deviceStateKeys, deviceStatus, loadTriggerConfig, type PlaneSurface, type TriggerConfig } from "../../world/index.js";
 import { loadEndpoints } from "../../infer/endpoints.js";
 import { DEVICE_STATES } from "../../world/vocab.js";
@@ -213,6 +213,19 @@ export function startAct(core: HomeCore): (event: BrainLog) => void {
     if (!task) return { ok: false, error: "행동 목록에 없는 행동" };
     return planner.plan(planCtx(decision, task, brainView(), ahead), signal);
   };
+  let geometryVersion=-1;
+  let walkScene:typeof core.scene=null;
+  let walkMap:ReturnType<typeof walkingMap>|null=null;
+  const walking=()=>{
+    const scene=core.scene, editor=layout?.editor;
+    if(!scene) return null;
+    if(walkScene!==scene || geometryVersion!==(editor?.geometryRevision??0)){
+      walkScene=scene;geometryVersion=editor?.geometryRevision??0;
+      const current=editor?{...scene,objects:editor.objects()}:scene;
+      walkMap=walkingMap(floorPlanFrom(current),current,type=>layout?.catalog.get(type)?.footprint);
+    }
+    return walkMap;
+  };
   const stationFloor = floorLookup(core.plan.rooms);
   core.tracker = new ExecutionTracker({
     discardLeftover: () => discardLeftover(view()),
@@ -276,7 +289,7 @@ export function startAct(core: HomeCore): (event: BrainLog) => void {
       contentsAction: (id, on) => worldInput(core, { kind: "contents", id, on, at_ms: now() }),
     },
     layout: {
-      floor: () => plans.floor(),
+      floor: () => plans.floor(), walking,
       // 컵이 놓이기 전 미리 만들 때 사람 곁 면을 다 쓰고 둘 자리로 본다(goal.ts useSpot)
       surfaces: core.surfaces,
       locate: placeAt,

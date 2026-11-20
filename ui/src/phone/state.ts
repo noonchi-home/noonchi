@@ -24,7 +24,7 @@ export const pendingLine = (p: Pick<Pending, "deviceLabel" | "reason">): string 
 /** 서버가 보낸 지금 명령·질문(src/contract/phone.ts PhoneCommand에서 speak를 빼고 대상은 id만). target: 화면 밖·칸에 가릴 때 세모로 가리킬 명령 대상 id(없으면 null). */
 export interface Command { id: string; step: string; text: string; vision: string | null; choices: Choice[]; target: string | null; safety?: true }
 /** 화면 위 초점 표시 하나(core/project.js focusMarks와 같은 모양). */
-export interface FocusMark { id: string; label: string; u: number; v: number; off: boolean; angle: number; walking?: boolean }
+export interface FocusMark { id: string; label: string; u: number; v: number; off: boolean; angle: number; walking?: boolean; stand?: boolean }
 /** 엄지 자리를 차지하는 일: 물건 자리 맞추기(「여기」 말하기), 시작 위치 맞추기(「여기서 시작」). */
 export type Setup = "place" | "start";
 /** 서버 위치 맞춤 상태(status.sync). state: none 변환 없음, estimated 어림, aligned 맞춤. source video: 영상 입력 모드의 고정 카메라. */

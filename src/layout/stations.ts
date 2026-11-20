@@ -49,29 +49,51 @@ function unique(values: string[]) {
   if (new Set(values).size !== values.length) throw new Error("같은 자리 이름이나 항목이 둘 있어요.");
 }
 const clearance = 0.18;
-export function validateStations(raw: unknown, scene: SceneJson, footprintOf?: (type: string)=>Vec2 | undefined): StationMap {
-  const map = shape.parse(raw);
+export function walkingGeometry(scene: SceneJson, footprintOf?: (type: string)=>Vec2 | undefined) {
   const floor = floorPlanFrom(scene);
   const rooms = new Map(floor.rooms.map(r=>[r.id,r.polygon]));
-  const rawWalls = (scene.plan.walls ?? []) as {a: Vec2 | null; b: Vec2 | null; polygon?: Vec2[]; thickness?: number}[];
-  const solids = rawWalls.flatMap(w=>w.polygon ? [w.polygon] : []);
-  const walls = rawWalls.flatMap(w=>w.a && w.b ? [{a:w.a,b:w.b,thickness:w.thickness??0}] :
-    edges(w.polygon??[]).map(([a,b])=>({a,b,thickness:0})));
+  const rawWalls = (scene.plan.walls ?? []) as {id:string; a: Vec2 | null; b: Vec2 | null; polygon?: Vec2[]; thickness?: number}[];
+  const solids = rawWalls.flatMap(w=>w.polygon ? [{id:w.id,polygon:w.polygon}] : []);
+  const walls = rawWalls.flatMap(w=>w.a && w.b ? [{id:w.id,a:w.a,b:w.b,thickness:w.thickness??0}] :
+    edges(w.polygon??[]).map(([a,b])=>({id:w.id,a,b,thickness:0})));
   const obstacles = (scene.objects as SceneObject[]).filter(o=>o.mount==="floor" && o.room && (o.plan.elevation??0)<1.8);
-  const walkable = (room: string,p: Vec2) => {
-    if (!insidePolygon(p,rooms.get(room)??[]) || !floor.robot.reachable.includes(room)) return false;
-    if (solids.some(poly=>insidePolygon(p,poly))) return false;
-    if (walls.some(w=>edgeDistance(p,w.a,w.b) < clearance+(w.thickness??0)/2)) return false;
-    return !obstacles.some(o=>{
-      const dims = o.footprint ?? footprintOf?.(o.type);
-      if (!dims) return false;
-      const yaw = o.rotation?.[1] ?? (90-o.plan.facing_deg)*Math.PI/180;
-      const dx=p[0]-o.plan.position[0], dz=p[1]-o.plan.position[1];
-      const lx=Math.abs(dx*Math.cos(yaw)-dz*Math.sin(yaw));
-      const lz=Math.abs(dx*Math.sin(yaw)+dz*Math.cos(yaw));
-      return lx < dims[0]*(o.scale?.[0]??1)/2+clearance && lz < dims[1]*(o.scale?.[2]??1)/2+clearance;
+  const boxes=obstacles.flatMap(o=>{
+    const dims=o.footprint??footprintOf?.(o.type);
+    if(!dims) return [];
+    const yaw=o.rotation?.[1]??(90-o.plan.facing_deg)*Math.PI/180;
+    return [{p:o.plan.position,cos:Math.cos(yaw),sin:Math.sin(yaw),
+      w:dims[0]*(o.scale?.[0]??1)/2+clearance,d:dims[1]*(o.scale?.[2]??1)/2+clearance}];
+  });
+  const walkable = (room: string,p: Vec2, opening?:{wall?:string}) => {
+    if ((!opening && !insidePolygon(p,rooms.get(room)??[])) || !floor.robot.reachable.includes(room)) return false;
+    if (solids.some(s=>(!opening?.wall || s.id!==opening.wall) && insidePolygon(p,s.polygon))) return false;
+    if (walls.some(w=>(!opening?.wall || w.id!==opening.wall) && edgeDistance(p,w.a,w.b) < clearance+(w.thickness??0)/2)) return false;
+    return !boxes.some(box=>{
+      const dx=p[0]-box.p[0], dz=p[1]-box.p[1];
+      return Math.abs(dx*box.cos-dz*box.sin)<box.w && Math.abs(dx*box.sin+dz*box.cos)<box.d;
     });
   };
+  function furnitureClear(a:Vec2,b:Vec2) {
+    return boxes.every(box=>{
+      const local=(p:Vec2):Vec2=>[(p[0]-box.p[0])*box.cos-(p[1]-box.p[1])*box.sin,
+        (p[0]-box.p[0])*box.sin+(p[1]-box.p[1])*box.cos];
+      const start=local(a),end=local(b);
+      let lo=0,hi=1;
+      for(const axis of [0,1] as const){
+        const half=axis===0?box.w:box.d, delta=end[axis]-start[axis];
+        if(Math.abs(delta)<1e-9){if(Math.abs(start[axis])>=half) return true;continue;}
+        const left=(-half-start[axis])/delta,right=(half-start[axis])/delta;
+        lo=Math.max(lo,Math.min(left,right));hi=Math.min(hi,Math.max(left,right));
+        if(hi<lo) return true;
+      }
+      return false;
+    });
+  }
+  return {walkable,furnitureClear,rooms,walls,floor};
+}
+export function validateStations(raw: unknown, scene: SceneJson, footprintOf?: (type: string)=>Vec2 | undefined): StationMap {
+  const map = shape.parse(raw);
+  const {walkable,rooms,walls,floor} = walkingGeometry(scene, footprintOf);
   unique([...map.stations.map(s=>s.id),...map.zones.map(z=>z.id)]);
   unique(map.surface_fronts.map(f=>f.surface_id));
   unique(map.stations.filter(s=>s.roles.includes("standby")).map(s=>s.room));

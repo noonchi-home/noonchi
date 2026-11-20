@@ -6,6 +6,7 @@ import { testTracker, type TrackerFixture } from "./helpers/tracker-ports.js";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { walkingMap } from "../src/layout/walk-guide.js";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { HistoryDb } from "../src/brain/history/db.js";
 import type { ActionChoice } from "../src/act/prompts.js";
@@ -67,6 +68,20 @@ async function toOn(s: ReturnType<typeof setup>, d: DecisionRecord = ramenDecisi
   await s.decide(d);
   for (let n = 1; n <= 6; n++) expect(s.t.onAnswer(`plan:${d.id}`, `plan:${d.id}:${n}`, "done"), String(n)).toBe(true);
 }
+
+it("station arrival uses the walk guide, never the last generic eye or the door threshold",()=>{
+  const map=walkingMap(smallFloor(),SMALL_SCENE as unknown as import("../src/contract/layout.js").SceneJson);
+  const result:string[]=[];
+  const s=setup({walking:()=>map,stations:{rev:()=>1,target:id=>({id,label:"서기",position:[5,0,2]}),result:r=>result.push(r.outcome)}});
+  const sample=(x:number)=>{s.clock.t+=200;s.t.onNavigationPose({quality:"usable",observed_ms:s.clock.t,pose_gen:1,position:[x,2]});s.t.tick();};
+  s.t.onEye([5,2]);sample(3.5);sample(3.7);
+  s.t.onDirective({op:"grant",id:"visit:walk",kind:"visit",target_id:"spot",rev:1,goal_id:null,until_ms:30000});
+  expect(s.last()).toMatchObject({guide:{remaining:[{kind:"portal"},{kind:"stand"}]}});
+  sample(4.1);sample(4.2);
+  expect(s.last()).toMatchObject({step:"visit:walk:go",speak:false,guide:{remaining:[{kind:"stand"}]}});
+  expect(result).toEqual([]);
+  sample(4.7);sample(4.8);expect(result).toEqual(["arrived"]);
+});
 
 it("관찰 자리는 맞춘 눈으로만 도착하고 승인 질문이 오면 방문 줄을 거둔다",()=>{
   const results:string[]=[];
@@ -1071,7 +1086,7 @@ describe("실행 추적: 그 자리에서 하는 일(do, 채워 주기)", () => 
         expect(s.spoken().at(-1)).toBe("냉장고로 가 주세요");
         expect(s.guards).toEqual([["cup_1", true], ["cup_1", false]]);
         expect(s.commands().every((c) => c.text.endsWith("주세요"))).toBe(true);
-        expect(PHONE_PROTOCOL).toBe(4);
+        expect(PHONE_PROTOCOL).toBe(5);
       });
 
       it("처음부터 0.5m 안이면 go 없이 위에서 비춰 달라고 한다", async () => {

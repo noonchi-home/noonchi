@@ -115,6 +115,9 @@ describe("계획 단계 조건", () => {
     expect(evaluate({ fixture: "microwave", room: "living", facts: { use: "in_use" } }, w, ctx(1000))).toBeNull();
     expect(evaluate({ fixture: "microwave", facts: { use: "in_use" } }, view({ fixtures: [microwave({ answered_ms: 1000 })] }), ctx(1000))).toBe(false); // 쓰는 중이 답에 없음
     expect(evaluate({ phone_near: "sink_1" }, w, ctx(1000))).toBe(true);
+    const guided={...ctx(1000),guidedNear:(id:string,within:number)=>id==="sink_1"?within>=0.28:undefined};
+    expect(evaluate({phone_near:"sink_1",within_m:0.20},w,guided)).toBe(false);
+    expect(evaluate({all:[{phone_near:"sink_1",within_m:0.30},{phone_near:"table_1"}]},w,guided)).toBe(false);
     expect(evaluate({ phone_near: "sink_1" }, w, ctx(7000))).toBeNull(); // 폰 자리가 6초 전
     expect(evaluate({ phone_near: "table_1", within_m: 9 }, w, ctx(1000))).toBe(false); // 다른 방
     expect(evaluate({ elapsed_s: 300 }, w, ctx(299_000))).toBe(false);

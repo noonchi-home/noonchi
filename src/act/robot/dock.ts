@@ -102,17 +102,19 @@ export class Dock extends Part {
     const target = q.target;
     const near = q.charging ? DOCK.nearM : STATION_NEAR_M;
     const distance = this.distance(target,now);
-    if (distance !== null && distance <= near) return this.arrived();
+    const nav=q.charging?undefined:core.walk(q.id,target,true);
+    if (nav?nav.arrived:distance !== null && distance <= near) return this.arrived();
     const line = idleLine(core,q);
     if (this.blocked()) return line.clear();
-    const vision = VISION_TEXT.distance(target.label,distance);
+    const vision = nav?.vision??VISION_TEXT.distance(target.label,distance);
     if (!q.sent) {
-      const sent: PlannedCommand = {type:"command", id:q.id, step:`${q.id}:1`, kind:"go", near_m:near, target, speak:true, vision,
+      const sent: PlannedCommand = {type:"command", id:q.id, step:`${q.id}:1`, kind:"go", near_m:near, ...(nav?{guide:nav.guide}:{}), target, speak:true, vision,
         text:q.charging ? DOCK_TEXT.command : DOCK_TEXT.stationCommand(josa(target.label,"으로/로")),
         choices:q.charging ? [{id:STEP_DONE.id,label:STEP_DONE.label}] : []};
       sendLine(line,sent,now);
       this.o.events.thought?.(q.charging ? DOCK_TEXT.going : DOCK_TEXT.stationGoing(josa(target.label,"으로/로")),q.decision);
-    } else refreshLine(core,line,q.sent,vision,now);
+    } else if(nav && nav.guide?.revision!==q.sent.guide?.revision) line.show({...q.sent,vision,guide:nav.guide,speak:false});
+    else refreshLine(core,line,q.sent,vision,now);
   }
 
   arrived(): void {

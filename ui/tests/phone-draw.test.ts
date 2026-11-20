@@ -31,6 +31,17 @@ const LAND = { width: 844, height: 390 };
 const of = (ops: Op[], op: string) => ops.filter((o) => o.op === op);
 const scene = (over: Partial<{ aim: boolean; hit: boolean; hitEstimated: boolean; marks: { id: string; label: string; u: number; v: number; off: boolean; angle: number }[] }> = {}) => ({ aim: false, hit: false, hitEstimated: false, marks: [], ...over });
 
+it("draws one triangle at the projected standing spot",()=>{
+  const {ctx,ops}=recorder();
+  const mark={id:"sink",label:"싱크대",u:0.25,v:0.42,off:false,angle:0,walking:true,stand:true};
+  const result=drawOverlay(ctx,SIZE,{aim:false,hit:false,hitEstimated:false,marks:[mark]});
+  expect(result.arrows).toHaveLength(1);
+  const box=result.arrows[0]!.box;
+  expect(box.left).toBeLessThan(0.25*SIZE.width);
+  expect(box.right).toBeGreaterThan(0.25*SIZE.width);
+  expect(of(ops,"arc")).toHaveLength(0);
+});
+
 describe("조준점(찍기·맞추기 때만)", () => {
   it("평소(aim false)에는 지우기만 하고 아무것도 그리지 않는다", () => {
     const { ctx, ops } = recorder();

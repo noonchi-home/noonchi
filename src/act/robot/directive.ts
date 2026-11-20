@@ -25,14 +25,21 @@ export function stationDirectives(core:TrackCore) {
       if (!station) return false;
       core.dock.drop();
       slot={id:job.id,sent:null,spokeAt:0,visionAt:0};
+      const nav=core.walk(job.id,station,true);
       sendLine(idleLine(core,slot),{type:"command",id:job.id,step:job.id+":go",kind:"go",near_m:ARRIVAL_M,
-        text:josa(station.label,"으로/로")+" 이동해 주세요.",choices:[],speak:true,vision:null,target:station},core.clock.now());
+        text:josa(station.label,"으로/로")+" 이동해 주세요.",choices:[],speak:true,vision:nav?.vision??null,target:station,...(nav?{guide:nav.guide}:{})},core.clock.now());
       return true;
     },
     shown:id=>slot?.id===id && core.robot.commands.shows(id) ? slot.sent : null,
     clear:id=>{ if (slot?.id===id) { idleLine(core,slot).clear();slot=null; } },
     arrived:job=>{
       const eye=eyeNow(core,core.clock.now()), target=port?.target(job.target_id);
+      const nav=core.walk(job.id,target??null,true);
+      if(nav){
+        if(slot?.id===job.id && slot.sent && (slot.sent.guide?.revision!==nav.guide?.revision || slot.sent.vision!==nav.vision))
+          idleLine(core,slot).show({...slot.sent,speak:false,guide:nav.guide,vision:nav.vision});
+        return nav.arrived;
+      }
       return !!(eye && target && Math.hypot(eye.position[0]-target.position[0],eye.position[1]-target.position[2])<=ARRIVAL_M);
     },
     tv:async(job,stillActive)=>{

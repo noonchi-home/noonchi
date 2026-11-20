@@ -158,12 +158,21 @@ const closerResult = z.discriminatedUnion("ok", [
     top: z.array(z.strictObject({ frame_id: id, kept: z.boolean(), why: z.enum(["moved", "vlm_missing", "not_visible", "no_contents", "no_vessel", "crowded"]).optional() })).optional() }),
 ]);
 const lookResult = z.strictObject({ req: id, observed_ms: at, result: z.union([z.boolean(), closerResult]) });
+const walkPosition = z.tuple([at,at,at]);
+const walkPoint = z.discriminatedUnion("kind",[
+  z.strictObject({kind:z.literal("portal"),id,from_room:id,to_room:id,position:walkPosition}),
+  z.strictObject({kind:z.enum(["via","stand"]),room:id,position:walkPosition}),
+]);
+const walkGuide = z.strictObject({pose_gen:rev.optional(),revision:rev,near_m:z.number().positive(),remaining:z.tuple([walkPoint],walkPoint)})
+  .refine(g=>g.remaining.every((p,i)=>(p.kind==="stand")===(i===g.remaining.length-1)));
+const navigationPose = z.union([z.strictObject({observed_ms:at}),z.strictObject({observed_ms:at,pose_gen:rev,quality:z.enum(["usable","unavailable"]),
+  position:z.tuple([at,at]).nullable(),error_m:z.number().nonnegative().optional()})]);
 const phoneCommand = z.strictObject({ revision: rev.optional(), cmd: z.discriminatedUnion("type", [
   z.strictObject({ type: z.literal("command_clear"), id: id.optional() }),
   z.strictObject({ type: z.literal("command"), id, step: id, text: z.string(), vision: z.string().nullable(),
     choices: z.array(z.strictObject({ id, label: z.string() })), speak: z.boolean(),
     target: z.strictObject({ id, label: z.string(), position: z.tuple([at, at, at]) }).nullable(),
-    kind: z.enum(["go", "pick", "place", "do"]).optional(), near_m: z.number().positive().optional(),
+    guide: walkGuide.nullable().optional(), kind: z.enum(["go", "pick", "place", "do"]).optional(), near_m: z.number().positive().optional(),
     view: z.literal("above").optional(), grade: z.enum(["question", "safety"]).optional() }),
 ]) });
 const claimKind = z.enum(["safety", "approval", "dialog", "plan", "peek"]);
@@ -327,7 +336,7 @@ export const TOPICS = {
   "/manager/state": { qos: { kind: "state" }, body: managerState, key: one, order: "stamp", from: ["manager"] },
   "/manager/changes": { qos: { kind: "reliable" }, body: managerState, key: one, order: null, from: ["manager"] },
   "/perception/frame": { qos: { kind: "sensor", depth: 4 }, body: frame, key: one, order: "observed_ms", from: ["phone"], photo: "jpeg_b64" },
-  "/phone/pose": { qos: { kind: "sensor", depth: 600, record: true }, body: observed, key: one, order: "observed_ms", from: ["phone"] },
+  "/phone/pose": { qos: { kind: "sensor", depth: 600, record: true }, body: navigationPose, key: one, order: "observed_ms", from: ["phone"] },
   "/perception/detections": { qos: { kind: "sensor", depth: 600, record: true }, body: seen, key: one, order: "observed_ms", from: ["perception"] },
   "/perception/analysis": { qos: { kind: "reliable" }, body: observed, key: by("frame_id"), order: "observed_ms", from: ["perception"] },
   "/perception/scene": { qos: { kind: "reliable" }, body: sceneInput, key: one, order: null, from: ["perception"] },

@@ -162,6 +162,7 @@ export async function startPhone(core: HomeCore): Promise<void> {
     eyeHeightM: core.eyeHeightM, feed, log, fallback, floorAt: floorLookup(core.plan.rooms), videoDir: phoneVideoDir(env),
     sync: { landmarks: core.landmarksNow(), walls: wallSegments(core.plan), start: startStore?.get() ?? null },
     onReady: (ready) => { core.out.phone?.push("/phone/link", { ready }); },
+    onNavigationPose:p=>{ if(!core.closed) core.out.phone?.push("/phone/pose",p); },
     onEye: (eye) => {
       appNow.broadcast({ type: "eye", eye });
       plans.onEye([eye.position[0], eye.position[1]], eye.estimated === true);

@@ -1616,6 +1616,18 @@ describe("영상 입력 모드: 단계 영상·걷기", () => {
     expect(urls).toEqual(["/phone/videos/cup-empty.mp4", "/phone/videos/go-table.mp4"]);
   });
 
+  it("waits for a usable guide before opening the go clip and consumes it only once",async()=>{
+    fakeTimers();
+    const {ws,urls,startAr}=makeEnded({},STEPS);
+    await startAr();ws.push(ALIGNED);ws.push(goTable({guide:null}));
+    await after(2600);
+    expect(urls).toEqual(["/phone/videos/cup-empty.mp4"]);
+    const guide=(revision:number)=>({revision,near_m:0.32,remaining:[{kind:"stand",room:"kitchen",ar:TABLE.ar}]});
+    ws.push(goTable({guide:guide(1)}));await after(2600);
+    ws.push(goTable({guide:guide(2),speak:false}));await after(2600);
+    expect(urls).toEqual(["/phone/videos/cup-empty.mp4","/phone/videos/go-table.mp4"]);
+  });
+
   it("바꾼 뒤 영상 시각은 앞 영상 시각에서 이어 세고, record.clips에 바꾼 시각·이름을 남기고, 끝난 영상 뒤에도 ended를 풀고 프레임을 다시 보낸다", async () => {
     fakeTimers();
     const info = vi.spyOn(console, "info").mockImplementation(() => {});
@@ -1721,6 +1733,21 @@ describe("영상 입력 모드: 단계 영상·걷기", () => {
   describe("자세 흉내는 단계 영상과 따로: 맞는 칸이 없으면 go만 걷고, 그 밖은 화면이 돌지 않으므로 자세도 그대로 둔다", () => {
     const NO_STEPS = "?clip=cup-empty.mp4&step=pick:cup:pick-cup.mp4";
     const SPOT = { id: "find_cup", label: "식탁", ar: [0.1, 0.8, -1.4] };
+    it("follows guide updates, holding immediately on loss without consuming another clip",async()=>{
+      fakeTimers();
+      const {ws,sent,urls,startAr}=make({},NO_STEPS);
+      await startAr();ws.push(ALIGNED);
+      const guide=(revision:number,ar:number[])=>({revision,near_m:0.32,remaining:[{kind:"stand",room:"k",ar}]});
+      const update=(g:unknown)=>ws.push(command({kind:"go",id:"walk",step:"one",target:SPOT,guide:g,speak:false}));
+      update(guide(1,[1,0,0]));await after(3600);
+      expect(lastPose(sent).position[0]).toBeCloseTo(1);
+      update(guide(2,[2,0,0]));await after(400);update(null);
+      const held=lastPose(sent).position[0];await after(2500);
+      expect(lastPose(sent).position[0]).toBeCloseTo(held,1);
+      update(guide(3,[2,0,0]));await after(2300);
+      expect(lastPose(sent).position[0]).toBeCloseTo(2);
+      expect(urls).toHaveLength(1);
+    });
     const flatTo = (p: number[], t: number[]) => Math.hypot(p[0]! - t[0]!, p[2]! - t[2]!);
     const aimSpot = (over: Record<string, unknown> = {}) =>
       command({ id: "find:1", step: "find:1:aim:2", text: "식탁 위를 비춰 주세요", vision: "식탁까지 0.8m", choices: [], kind: "do", target: SPOT, speak: true, ...over });

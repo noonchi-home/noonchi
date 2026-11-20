@@ -5,4 +5,4 @@ import type { FocusMark } from "../state";
 export type { FocusMark } from "../state";
 export function project(point: [number, number, number], projection: Mat4, view: Mat4): Projected;
 export function toEdge(p: { u: number; v: number }, margin?: number): { u: number; v: number; angle: number };
-export function focusMarks(targets: { id: string; label: string; ar: [number, number, number]; walking?: boolean }[], projection: Mat4, view: Mat4): FocusMark[];
+export function focusMarks(targets: { id: string; label: string; ar: [number, number, number]; walking?: boolean; stand?: boolean }[], projection: Mat4, view: Mat4): FocusMark[];

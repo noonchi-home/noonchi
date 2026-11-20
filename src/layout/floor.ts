@@ -21,6 +21,9 @@ const EPS = 0.06;
 
 /** 두 다각형이 맞닿은 변들 중 가장 길게 겹치는 구간의 가운데. 없으면 null. */
 export function sharedEdgeMidpoint(a: XZ[], b: XZ[]): XZ | null {
+  return sharedOpening(a,b)?.mid??null;
+}
+export function sharedOpening(a:XZ[],b:XZ[]):{mid:XZ;len:number}|null {
   let best: { len: number; mid: XZ } | null = null;
   const segs = (p: XZ[]) => p.map((q, i) => [q, p[(i + 1) % p.length]!] as [XZ, XZ]);
   for (const [p1, p2] of segs(a)) {
@@ -42,7 +45,7 @@ export function sharedEdgeMidpoint(a: XZ[], b: XZ[]): XZ | null {
       }
     }
   }
-  return best?.mid ?? null;
+  return best;
 }
 
 /** reachable_rooms가 없는 집: 바닥 높이가 0이고(단차 있는 발코니·현관 제외) 욕실이 아닌 방. */

@@ -103,6 +103,7 @@ export function createPhoneController(deps: ControllerDeps): PhoneController {
   const Recognition = video ? null : deps.Recognition === undefined ? recognition() : deps.Recognition;
   const store = createStore<PhoneView>(initialView());
   const set = (fn: (v: PhoneView) => PhoneView) => store.set(fn);
+  let guidedId:string|null=null;
   let overlay: HTMLElement | null = null;
   let draw: ControllerDraw = { start: () => {}, aim: () => {}, hit: () => {}, marks: () => {} };
   let noteTimer: ReturnType<typeof setTimeout> | undefined;
@@ -167,7 +168,14 @@ export function createPhoneController(deps: ControllerDeps): PhoneController {
     // 영상 모드: 카메라 입력. 소켓 주소에 트는 영상 이름을 붙여 서버가 영상 연결로 안다(붙잡은 장면 표시를 받는다)
     url: phoneSocketUrl(deps.location, video ? video.clip : null), onMessage, Socket: deps.Socket, now: undefined,
     onOpen: () => set((v) => ({ ...v, connected: true })),
-    onClose: () => set((v) => ({ ...v, connected: false })),
+    onClose: () => {
+      if(guidedId){
+        ar.setFocus([],0);ar.commandClear?.(guidedId);draw.marks([]);
+        set(v=>({...v,command:v.command?{...v.command,vision:"연결을 확인해 주세요."}:null}));
+        guidedId=null;
+      }
+      set((v) => ({ ...v, connected: false }));
+    },
     onStale: () => {
       set((v) => ({ ...v, reply: STALE_TEXT }));
       showNote(STALE_TEXT);
@@ -205,6 +213,7 @@ export function createPhoneController(deps: ControllerDeps): PhoneController {
       draw.hit(hit, estimated);
       syncFrame(hit, estimated);
     },
+    visibleMark:(id)=>{const hand=handOf(store.get()).thumb;return hand?.kind==="command" && hand.command.target===id;},
     onMarks: (marks) => {
       // 위 줄·엄지 자리에 명령이 보일 때만(승인 대기·시작 위치·물건 자리 맞추기가 차지하면 그리지 않는다), 그 명령 대상 하나만
       const t = handOf(store.get()).thumb;
@@ -316,7 +325,11 @@ export function createPhoneController(deps: ControllerDeps): PhoneController {
       lastGrade = { id: m.id, step: m.step, grade: m.grade ?? "command" };
       armTalk();
       set((v) => ({ ...v, command: { id: m.id, step: m.step, text: m.text, vision: m.vision, choices: m.choices, target: m.target?.id ?? null, ...(m.grade === "safety" ? { safety: true as const } : {}) } }));
-      ar.setFocus(m.target ? [m.kind === "go" ? { ...m.target, walking: true } : m.target] : [], COMMAND_FOCUS_MS);
+      guidedId=m.guide===undefined?null:m.id;
+      const point=m.guide?.remaining[0];
+      const focus=m.target && m.guide!==null ? (point ? {...m.target,ar:point.ar,walking:true,guided:true,stand:point.kind==="stand"}
+        : m.kind==="go" ? {...m.target,walking:true} : m.target) : null;
+      ar.setFocus(focus ? [focus] : [], COMMAND_FOCUS_MS);
       if (ar.videoTime) logVideoCommand(ar.videoTime(), m);
       ar.command?.(m);
       if (m.speak) {
@@ -331,6 +344,7 @@ export function createPhoneController(deps: ControllerDeps): PhoneController {
       if (owed?.target?.kind === "command" && (m.id === undefined || owed.target.id === m.id)) owed = null;
       armTalk();
       if (m.id !== undefined && m.id !== store.get().command?.id) return;
+      guidedId=null;
       set((v) => ({ ...v, command: null }));
       ar.setFocus([], 0);
     }

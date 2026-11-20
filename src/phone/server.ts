@@ -70,6 +70,7 @@ export function engineHeader(header: FrameHeader, video: boolean): FrameHeader {
 export interface PhoneServerOptions {
   onReady?: (ready: boolean) => void;
   onEye: (eye: EyeEvent) => void;
+  onNavigationPose?: (p:import("../contract/phone.js").NavigationPose)=>void;
   /** 카메라 프레임·사진을 받을 곳. 없으면 바이너리 메시지를 무시한다. */
   feed?: EyeFeed;
   /** 있으면 맞추기 전에도 창가 고정 위치 + 폰 방향으로 추정 눈을 보낸다(session.ts estimateFor). */
@@ -309,15 +310,26 @@ export function createPhoneServer(opts: PhoneServerOptions): PhoneServer {
     opts.onReady?.(current);
   };
   /** 실제 폰에 보낼 명령: 대상 트윈 자리 → AR 자리(맞추기 전이면 대상 null). */
-  const wire = (c: PlannedCommand, speak = c.speak): PhoneCommand => {
+  const navSources=new Map<WebSocket,string>();
+  let navGen=0, navAt=-Infinity;
+  const invalidate=()=>{
+    navGen++;navAt=-Infinity;
+    opts.onNavigationPose?.({quality:"unavailable",position:null,pose_gen:navGen,observed_ms:Date.now()});
+    if(current?.guide) for(const client of wss.clients) if(ok(client)) reply(client,wire(current,false,client));
+  };
+  const wire = (c: PlannedCommand, speak = c.speak, client?:WebSocket): PhoneCommand => {
     const ar = c.target ? session.toAr(c.target.position) : null;
-    return { ...c, target: c.target && ar ? { id: c.target.id, label: c.target.label, ar } : null, speak };
+    const {guide,...command}=c;
+    const owner=client && navSources.has(client) && navSources.size===1 && Date.now()-navAt<=2000;
+    const wireGuide=guide && ar && owner && guide.pose_gen===navGen ? {...guide,remaining:guide.remaining.map(({position,...point})=>({
+      ...point,ar:session.toAr(position)!})) as NonNullable<PhoneCommand["guide"]>["remaining"]} : null;
+    const vision=guide && !wireGuide ? "위치를 다시 맞춰 주세요." : command.vision;
+    return { ...command, vision, ...(guide===undefined?{}:{guide:wireGuide}), target: c.target && ar ? { id: c.target.id, label: c.target.label, ar } : null, speak };
   };
   /** 맞춤이 바뀌었으면(moved: 맞춘 변환이 움직였어도) 지금 명령을 새 대상 자리로 다시 보낸다. */
   const resendIf = (wasAligned: boolean, moved = false) => {
     if (!current || (session.aligned === wasAligned && !(moved && session.aligned))) return;
-    const msg = wire(current, false);
-    for (const ws of wss.clients) if (ok(ws)) reply(ws, msg);
+    for (const ws of wss.clients) if (ok(ws)) reply(ws,wire(current,false,ws));
   };
   /** 위치 맞춤 상태가 바뀌면 붙은 폰 모두에 상태를 보낸다. */
   const broadcastStatus = () => {
@@ -330,6 +342,7 @@ export function createPhoneServer(opts: PhoneServerOptions): PhoneServer {
     const video = videoSession(req.url, videoDir);
     log(`[phone] 폰 연결(지금 ${wss.clients.size}대)`);
     ws.on("close", () => {
+      if(navSources.delete(ws)) invalidate();
       notifyReady();
       opts.feed?.video.endSource(source);
       log(`[phone] 폰 끊김(지금 ${wss.clients.size}대)`);
@@ -348,6 +361,7 @@ export function createPhoneServer(opts: PhoneServerOptions): PhoneServer {
     const hello = (protocol: unknown) => {
       const was = phase.get(ws);
       if (protocol !== PHONE_PROTOCOL) {
+        if(navSources.delete(ws)) invalidate();
         if (was !== "old") old();
         return;
       }
@@ -355,7 +369,7 @@ export function createPhoneServer(opts: PhoneServerOptions): PhoneServer {
       phase.set(ws, "ok");
       notifyReady();
       if (was === "old") reply(ws, { type: "command_clear", id: REFRESH_COMMAND.id });
-      reply(ws, current ? wire(current, false) : { type: "command_clear" });
+      reply(ws, current ? wire(current, false, ws) : { type: "command_clear" });
       // 지금 승인 대기 목록도 보낸다(새로 연 폰도 이미 대기 중인 질문을 보고 답한다)
       if (opts.pending) reply(ws, { type: "reply", text: "", pending: opts.pending() } satisfies PhoneTalkReply);
     };
@@ -401,8 +415,34 @@ export function createPhoneServer(opts: PhoneServerOptions): PhoneServer {
         }
         return;
       }
+      const sample=raw as {epoch?:unknown;captured_at?:unknown;time_err_ms?:unknown};
+      const origin=typeof sample.epoch==="string" && sample.epoch.length<=64 ? sample.epoch : "";
+      if(origin && session.retiredOrigin(origin)) return;
+      if(type==="tracking_lost"){
+        if(ok(ws) && origin && navSources.get(ws)===origin && Number.isFinite(navAt)) invalidate();
+        return;
+      }
+      if(ok(ws) && origin && (type==="start" || type==="pose") && navSources.get(ws)!==origin){
+        navSources.set(ws,origin);invalidate();
+      }
+      if(type==="reset" && navSources.get(ws)===origin){navSources.delete(ws);invalidate();}
+      // The shared alignment must not ingest a second AR origin during a guided walk.
+      if(navSources.size && navSources.keys().next().value!==ws) return;
       const wasAligned = session.aligned;
       const out = session.handle(raw);
+      const shifted=session.navigationShifted();
+      if((type==="start" && !out.reply?.error) || wasAligned!==session.aligned || shifted) invalidate();
+      if(type==="pose" && ok(ws) && navSources.get(ws)===origin && navSources.size===1){
+        const t=sample.captured_at, eye=out.eye;
+        const now=Date.now();
+        if(typeof t==="number" && t<=navAt) return;
+        if(eye && !eye.estimated && eye.tracking==="ok" && session.aligned && typeof t==="number" && Number.isFinite(t)
+          && t<=now+100 && now-t<=2000 && !(typeof sample.time_err_ms==="number" && sample.time_err_ms>200)){
+          const st=session.syncState();
+          navAt=t;
+          opts.onNavigationPose?.({quality:"usable",pose_gen:navGen,position:eye.position,observed_ms:t,error_m:Math.max(st.anchorRmsM??0,st.wallRmsM??0)});
+        } else if(Number.isFinite(navAt)) invalidate();
+      }
       if (out.changed) broadcastStatus();
       if (out.reply && !(out.changed && !out.reply.error)) reply(ws, withEngine(out.reply));
       if (out.eye) opts.onEye(out.eye);
@@ -424,12 +464,14 @@ export function createPhoneServer(opts: PhoneServerOptions): PhoneServer {
     },
     setStart(start) {
       session.setStart(start);
+      invalidate();
       broadcastStatus();
     },
     setLandmarks: (list) => session.setLandmarks(list),
     landmarks(header, boxes) {
       const wasAligned = session.aligned;
       if (!session.landmarks(header, boxes)) return;
+      if(session.navigationShifted()) invalidate();
       broadcastStatus();
       resendIf(wasAligned, true);
     },
@@ -441,8 +483,7 @@ export function createPhoneServer(opts: PhoneServerOptions): PhoneServer {
     command(msg) {
       if (msg.type === "command") current = msg;
       else if (msg.id === undefined || msg.id === current?.id) current = null;
-      const out = msg.type === "command" ? wire(msg) : msg;
-      for (const ws of wss.clients) if (ok(ws)) reply(ws, out);
+      for (const ws of wss.clients) if (ok(ws)) reply(ws, msg.type==="command"?wire(msg,msg.speak,ws):msg);
     },
     async listen(port, host) {
       const addr = await listenRetry(server, port, host, { log });

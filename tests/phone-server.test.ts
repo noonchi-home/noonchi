@@ -427,10 +427,10 @@ describe("폰 판본(hello)과 옛 탭", () => {
     target: { id: "cup_1", label: "컵", position: [1, 0.9, 3.7] }, speak: true, kind: "pick",
   };
   const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
-  async function protoSetup() {
+  async function protoSetup(onNavigationPose?: (p:import("../src/contract/phone.js").NavigationPose)=>void) {
     const got = { choices: [] as string[][], said: [] as string[], confirmed: [] as string[], cancelled: [] as string[], answered: [] as [string, unknown][], engine: 0 };
     const phone = createPhoneServer({
-      sync: SYNC, onEye: () => {}, log: () => {},
+      sync: SYNC, onEye: () => {}, onNavigationPose, log: () => {},
       onChoice: (id, step, choice) => got.choices.push([id, step, choice]),
       onSay: async (text) => { got.said.push(text); return { reply: "에이전트", pending: [] }; },
       onAnswer: (text, at) => { got.answered.push([text, at]); return { handled: false }; },
@@ -450,6 +450,28 @@ describe("폰 판본(hello)과 옛 탭", () => {
     cleanups.push(() => ws.close());
     return { ws, box };
   }
+  it("sends portal coordinates only to the aligned navigation phone and clears them on loss",async()=>{
+    const poses:import("../src/contract/phone.js").NavigationPose[]=[];
+    const {phone,base}=await protoSetup(p=>poses.push(p));
+    const a=await tab(base);
+    const send=(m:unknown)=>a.ws.send(JSON.stringify(m));
+    const fixed={epoch:"walk",position:[0,1.5,0],orientation:[0,0,0,1]};
+    send({type:"hello",protocol:PHONE_PROTOCOL});
+    send({type:"start",...fixed,fixed:true});
+    send({type:"pose",...fixed,captured_at:Date.now(),tracking:"ok"});
+    await vi.waitFor(()=>expect(poses.at(-1)?.quality).toBe("usable"));
+    phone.command({...CMD,kind:"go",guide:{pose_gen:poses.at(-1)!.pose_gen,revision:1,near_m:0.32,remaining:[
+      {kind:"portal",id:"door",from_room:"a",to_room:"b",position:[1,0,2]},
+      {kind:"stand",room:"b",position:[2,0,3]}]}});
+    await vi.waitFor(()=>expect(a.box.at(-1)).toMatchObject({type:"command",target:{id:"cup_1"},guide:{remaining:[
+      {id:"door",kind:"portal",ar:expect.any(Array)},{kind:"stand",ar:expect.any(Array)}]}}));
+    const b=await tab(base);
+    b.ws.send(JSON.stringify({type:"hello",protocol:PHONE_PROTOCOL}));
+    await vi.waitFor(()=>expect(b.box).toContainEqual(expect.objectContaining({type:"command",guide:null})));
+    send({type:"pose",...fixed,captured_at:Date.now(),tracking:"limited"});
+    await vi.waitFor(()=>expect(poses.at(-1)?.quality).toBe("unavailable"));
+  });
+
   const answers = (ws: WebSocket) => {
     ws.send(JSON.stringify({ type: "answer", id: "plan:pam-1", step: "plan:pam-1:2", choice: "done" }));
     ws.send(JSON.stringify({ type: "say", text: "완료", at: { kind: "command", id: "plan:pam-1", step: "plan:pam-1:2", pending: [] } }));
@@ -490,7 +512,7 @@ describe("폰 판본(hello)과 옛 탭", () => {
     const old = await tab(base);
     old.ws.send(JSON.stringify({ type: "hello", protocol: 3 }));
     await wait(300);
-    expect(PHONE_PROTOCOL).toBe(4);
+    expect(PHONE_PROTOCOL).toBe(5);
     expect(old.box.slice(1)).toEqual([REFRESH]);
     expect(phone.ready()).toBe(false);
   });

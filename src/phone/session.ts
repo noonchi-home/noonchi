@@ -283,6 +283,17 @@ export class PhoneSession {
     return { stale: false, dropped: had };
   }
 
+  private navRigid: SyncState["rigid"]=null;
+  navigationShifted():boolean {
+    const rigid=this.sync.state().rigid;
+    const gap=rigid && this.navRigid ? rigidGap(this.navRigid,rigid,[this.lastPhone]) : null;
+    const shifted=gap ? gap.shiftM>0.10 || gap.rotDeg>5 : rigid!==this.navRigid;
+    if(shifted) this.navRigid=rigid;
+    return shifted;
+  }
+
+  retiredOrigin(epoch:string):boolean { return this.retired.has(epoch); }
+
   get aligned(): boolean {
     return this.alignedNow() !== null;
   }

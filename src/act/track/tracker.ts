@@ -179,6 +179,7 @@ export interface TrackerOptions {
     contentsAction?: (objectId: string, on: boolean) => void;
   };
   layout: {
+    walking?:()=>import("../../layout/index.js").WalkingMap|null;
     /** 트윈 면(식탁·책상·조리대·싱크대). 미리 세운 목표가 컵이 놓이기 전에 사람 곁 면을 다 쓰고 둘 자리로 본다(goal.ts useSpot). 없으면 후보를 본 면만 쓴다. */
     surfaces?: () => PlaneSurface[];
     floor: () => FloorPlan;
@@ -353,6 +354,11 @@ export class ExecutionTracker {
   }
 
   /** 폰 눈(맞춘 자세)의 평면 자리 [x, z]. 맞추기 전 추정 눈은 쓰지 않는다. 이동 단계는 다음 tick에 본다. */
+  onNavigationReading(p:import("../../contract/phone.js").NavigationPose|{observed_ms:number}) {
+    if("quality" in p) this.onNavigationPose(p); else this.core.navigation.missing(p.observed_ms);
+  }
+  onNavigationPose(p: import("../../contract/phone.js").NavigationPose) { this.core.navigation.pose(p); }
+
   onEye(position: XZ, estimated = false): void {
     if (!position.every(Number.isFinite)) return;
     // 추정 눈: 위치 맞춤을 다시 하는 중이다(그 전 맞춘 눈은 지금 것이 아니다)

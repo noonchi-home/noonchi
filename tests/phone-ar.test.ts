@@ -108,7 +108,7 @@ describe("폰 AR(ar.js)", () => {
     for (const time of [100, 150, 200]) t.session.step(time, frame());
     const poses = t.sent.filter((m) => m.type === "pose");
     expect(poses).toHaveLength(2);
-    expect(poses[0]).toEqual({ type: "pose", position: [0, 1.5, 0], orientation: [0, 0, 0, 1], tracking: "ok", hit: [0, 0, -1], hit_estimated: false, hit_normal: [0, 1, 0], floor_y: 0, epoch: t.ar.state.epoch });
+    expect(poses[0]).toEqual({ type: "pose", captured_at:5,time_err_ms:1, position: [0, 1.5, 0], orientation: [0, 0, 0, 1], tracking: "ok", hit: [0, 0, -1], hit_estimated: false, hit_normal: [0, 1, 0], floor_y: 0, epoch: t.ar.state.epoch });
     expect([t.ar.state.position, t.ar.state.orientation]).toEqual([[0, 1.5, 0], [0, 0, 0, 1]]);
     expect(t.log.filter((l) => l === "hit")).toHaveLength(3);
     t.session.step(300, frame({ hit: null }));

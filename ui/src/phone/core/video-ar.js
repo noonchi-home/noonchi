@@ -391,6 +391,11 @@ export function createVideoAr({ link, params, hooks, deps }) {
     // 명령 세대: 새 단계 영상 명령·지우기마다 오른다. 예약 타이머와 재생을 기다리는 바꾸기는 세대가 다르면 버린다
     let cmdGen = 0;
     let lastCmdId = null;
+    let guidedKey=null, guideRevision=null, waypoint=null;
+    function followGuide(key, clipMs, generation=cmdGen){
+      if(generation!==cmdGen || key!==guidedKey || key!==lastKey || !waypoint) return;
+      startWalk(waypoint,0,clipMs);
+    }
     let aboveAim = null;
     let lastKey = null; // 마지막으로 받은 명령 id:단계(같은 명령이 다시 오면 비전 상태만 바뀐 것)
     // 영상 모드: 자세 흉내
@@ -426,7 +431,7 @@ export function createVideoAr({ link, params, hooks, deps }) {
       const e = toEdge({ u, v });
       return { ...m, u: e.u, v: e.v, off: true, angle: e.angle };
     };
-    const frameMarks = () => (focus.targets.length && performance.now() < focus.until ? focusMarks(focus.targets, projection, view) : []);
+    const frameMarks = () => (focus.targets.length && performance.now() < focus.until ? focusMarks(focus.targets, projection, view).filter(m=>hooks.visibleMark?.(m.id)!==false) : []);
     const showMarks = (marks) => hooks.onMarks(marks.map(toScreen));
 
     /** go 단계 걷기 한 칸(자세 타이머마다 0.08m). 멈출 자리에 닿으면 끝. */
@@ -469,7 +474,7 @@ export function createVideoAr({ link, params, hooks, deps }) {
     const sendPose = () => {
       stepWalk();
       link.send({
-        type: "pose", position, orientation, tracking: "ok", hit: state.hitPoint, hit_estimated: state.hitEstimated,
+        type: "pose", ...link.stamp(performance.timeOrigin + performance.now()), position, orientation, tracking: "ok", hit: state.hitPoint, hit_estimated: state.hitEstimated,
         floor_y: 0, epoch: state.epoch,
       });
     };
@@ -687,6 +692,20 @@ export function createVideoAr({ link, params, hooks, deps }) {
       command(cmd) {
         const key = `${cmd.id}:${cmd.step}`;
         const fresh = key !== lastKey;
+        const guided=cmd.kind==="go" && cmd.guide!==undefined;
+        const nextGuide=guided?cmd.guide?.remaining[0]:null;
+        if(guided && (fresh || guideRevision!==(cmd.guide?.revision??null))){
+          walk=null;guidedKey=key;guideRevision=cmd.guide?.revision??null;waypoint=nextGuide?.ar??null;
+          if(nextGuide?.kind==="portal" && waypoint){
+            const beyond=cmd.guide.remaining[1]?.ar;
+            if(beyond){
+              const dx=beyond[0]-waypoint[0],dz=beyond[2]-waypoint[2],len=Math.hypot(dx,dz);
+              if(len>0) waypoint=[waypoint[0]+0.12*dx/len,waypoint[1],waypoint[2]+0.12*dz/len];
+            }
+          }
+          if(!fresh) followGuide(key);
+        } else if(!guided && fresh){if(guidedKey) walk=null;guidedKey=null;waypoint=null;}
+
         // 같은 명령이 이어서 다시 오면(비전 상태만 바뀜) 이미 줄에 넣은 것은 그대로 둔다(대상이 그제야 붙었으면 아래에서 넣는다)
         if (!fresh && switched.has(key)) {
           if (aboveAim?.key === key && cmd.view === "above" && Array.isArray(cmd.target?.ar)) {
@@ -706,6 +725,7 @@ export function createVideoAr({ link, params, hooks, deps }) {
           reactTimers.clear();
           if (walk && !walk.clip) walk = null;
         }
+        if(guided && !waypoint) return;
         const id = cmd.target?.id;
         const first = typeof id === "string" ? steps.find((s) => s.kind === cmd.kind && id.includes(s.word)) : undefined;
         const target = Array.isArray(cmd.target?.ar) ? cmd.target.ar : null;
@@ -717,7 +737,7 @@ export function createVideoAr({ link, params, hooks, deps }) {
         const stopM = typeof cmd.near_m === "number" ? Math.min(WALK_STOP_M, cmd.near_m * NEAR_WALK) : WALK_STOP_M;
         const aim = target && cmd.view === "above" ? { key, at: target, playing: false } : null;
         aboveAim = aim;
-        const pose = target && (cmd.kind === "go" ? (clipMs) => startWalk(target, stopM, clipMs) : aim ? () => {
+        const pose = target && (cmd.kind === "go" ? (clipMs) => guided ? followGuide(key,clipMs,gen) : startWalk(target, stopM, clipMs) : aim ? () => {
           aim.playing = true;
           holdAbove(aim.at);
         } : () => face(target));
@@ -783,6 +803,8 @@ export function createVideoAr({ link, params, hooks, deps }) {
         if (id !== undefined && id !== lastCmdId) return;
         cmdGen++;
         lastKey = null;
+        if(guidedKey) walk=null;
+        guidedKey=null;waypoint=null;guideRevision=null;
         posedKey = null;
         for (const timer of reactTimers) clearTimeout(timer);
         reactTimers.clear();

@@ -10,6 +10,17 @@ const e = <N extends "/perception/analysis" | "/world/state">(topic: N, body: Re
   ({ topic, key, header: { stamp: 1000, node: topic === "/world/state" ? "world" : "perception", inst: "i1", seq: 1, ...EPOCH, ...over }, body } as never);
 
 describe("토픽 표", () => {
+  it("rejects incomplete walking guides and ambiguous old pose records",()=>{
+    const command={type:"command",id:"walk",step:"s",text:"가 주세요.",target:null,vision:null,choices:[],speak:false};
+    const via={kind:"via",room:"k",position:[1,0,1]};
+    const stand={...via,kind:"stand"};
+    for(const topic of ["/act/phone_command","/act/phone_changes"] as const){
+      const parse=(remaining:unknown[])=>TOPICS[topic].body.safeParse({cmd:{...command,guide:{revision:2,near_m:0.3,remaining}}}).success;
+      expect(parse([via,stand])).toBe(true);
+      for(const path of [[],[via],[stand,via],[stand,stand]]) expect(parse(path)).toBe(false);
+    }
+    expect(TOPICS["/phone/pose"].body.safeParse({observed_ms:10,quality:"usable"}).success).toBe(false);
+  });
   it("goal 의도·manager 허용·act 결과는 담당 노드의 확인 전달이다",()=>{
     for(const [topic,node] of [["/goal/intent","goal"],["/manager/directive","manager"],["/act/directive_result","act"]] as const){
       expect(TOPICS[topic].from).toEqual([node]);

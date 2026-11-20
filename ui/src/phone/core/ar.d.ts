@@ -20,11 +20,12 @@ export interface ArHooks {
   onEnd(): void;
   /** hit: 조준점이 바닥에 닿음. estimated: 그 점이 어림 바닥(hit-test 점이 없음). */
   onHit(hit: boolean, estimated: boolean): void;
+  visibleMark?(id:string):boolean;
   onMarks(marks: FocusMark[]): void;
   onPerf(): void;
   note(text: string): void;
 }
-export interface FocusTargetAr { id: string; label: string; ar: [number, number, number]; walking?: boolean }
+export interface FocusTargetAr { id: string; label: string; ar: [number, number, number]; walking?: boolean; stand?: boolean; guided?: boolean }
 export interface PhoneAr {
   readonly state: ArState;
   start(overlay: object): Promise<void>;
