@@ -47,7 +47,7 @@ export interface DeciderOptions {
   node?: () => Pick<BusNode, "spawn" | "post">;
   pam: PamClient;
   /** 집 상태 보기(거울). */
-  world: { view(now: number): WorldView };
+  world: { view(now: number): WorldView; rev?(): number | null };
   trigger: Trigger;
   /** PAM에 보내는 행동 목록. heard: 이번 관찰 텍스트에 사람이 한 말이 있다(지금 모드와 함께 목록을 정한다, src/act/mode.ts pamTasks). */
   tasks: (heard: boolean) => string[];
@@ -190,7 +190,8 @@ export class Decider {
     const tasks = this.o.tasks(saidIn(textSent).length > 0);
     const mem = this.o.memory();
     this.lastMem = mem;
-    const base = { id: `pam-${seq}`, seq, atMs: now, textSent, finalTime, memoryVersion: mem.version, world: decisionWorld(view), tasks };
+    const requestRev = this.o.world.rev?.();
+    const base = { id: `pam-${seq}`, seq, atMs: now, ...(requestRev != null ? {request_rev:requestRev} : {}), textSent, finalTime, memoryVersion: mem.version, world: decisionWorld(view), tasks };
     // 직전 사람 상태: 행동이 아직 시작되지 않은 화살표가 있으면 그 출발 상태(PENDING_EDGE_MS 안), 아니면 마지막 판단의 상태
     if (this.pending && now - this.pending.at > PENDING_EDGE_MS) this.pending = null;
     const last = this.pending?.from ?? this.lastState;

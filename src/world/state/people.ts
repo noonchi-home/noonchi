@@ -2,7 +2,7 @@
 // 쓰러짐 의심인 동안 사람 자세는 관절만 바꾸고(VLM 자세 답은 막음), 침대·소파 위로 빼는 것은 지금 누운 구간 안에서 찍힌 그 사람의 VLM 자리 답(침대 위·소파 위)으로만 한다.
 // 관절이 붙인 사실은 같은 프레임 VLM 답보다 앞선다(poseHolds). 관절은 물건을 보지 않는다: 손에 있음·마시기·따르기 같은 물건 사실은 장면 VLM 답으로만 정한다
 // (사용자 결정 2026-11-18, 판단 입력에 YOLO 물건 사실을 넣지 않는다).
-import type { Facet, WorldChange, WorldFact } from "../../contract/world.js";
+import type { Facet, WorldChange, WorldFact, WorldView } from "../../contract/world.js";
 import type { CameraView, Detection, FrameMeta, Pose } from "../../contract/observe.js";
 import { CHANGE_TEXT, OBJECT_NAME } from "../labels.js";
 import { onRest, pixelOf, placeBox, rayDir } from "../place.js";
@@ -19,17 +19,26 @@ const area = (b: Detection["box"]) => Math.max(0, b[2]) * Math.max(0, b[3]);
 export class People extends Part {
   /** 이번 프레임의 발 자리에서 본 방. undefined는 새 발 자리 없음, null은 집 안 방이 아님(방을 모름으로). 감지 합치기(applyDetections) 끝에서 반영한다. */
   nextRoom: { id: string; label: string } | null | undefined = undefined;
+  trail: NonNullable<WorldView["person_trail"]> = [];
+
+  feet(view: CameraView | null, box: readonly [number,number,number,number], size: {width:number;height:number}): Plan2 | null {
+    if (!view || box[1] + box[3] >= size.height * FEET_EDGE) return null;
+    const hit = placeBox(view, [...box], size, [], this.o.floorAt).position;
+    return hit?.every(Number.isFinite) ? [hit[0], hit[2]] : null;
+  }
 
   /** 사람 자리·방: 맞춘 뒤 가장 큰 사람 상자의 발이 보이면 그 바닥 자리와 방. 방 반영은 applyDetections 끝에서. */
   locatePerson(frame: FrameMeta, people: Detection[]): void {
     const main = people.reduce((a, b) => (b.score * area(b.box) > a.score * area(a.box) ? b : a));
-    const feet = main.box[1] + main.box[3] < frame.height * FEET_EDGE;
-    const placed = frame.view && feet ? placeBox(frame.view, main.box, { width: frame.width, height: frame.height }, [], this.o.floorAt) : null;
-    if (!placed?.position) return;
-    const position: Plan2 = [placed.position[0], placed.position[2]];
+    if (people.length !== 1) this.trail = [];
+    const position = this.feet(frame.view, main.box, frame);
+    if (!position) return;
     this.core.person.position = position;
     this.core.person.positionAt = frame.capturedAtMs;
     this.nextRoom = this.o.roomAt(position);
+    if (frame.fresh_position && people.length === 1 && frame.capturedAtMs > (this.trail.at(-1)?.at_ms ?? -Infinity)) {
+      this.trail = [...this.trail.slice(-1), { position, room: this.nextRoom?.id ?? null, at_ms: frame.capturedAtMs }];
+    }
   }
 
   roomChange(at: number): WorldChange {

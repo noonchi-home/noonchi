@@ -27,6 +27,24 @@ function gatedVlm() {
 const head = (at: number) => ({ kind: "engine" as const, width: 100, height: 100, captured_at: at, time_err_ms: 0 });
 
 describe("관찰 흐름", () => {
+  it("맞춘 새 원본만 부재와 사람 발자국의 근거로 쓴다. held·추정 눈·반복 원본은 제외한다", async () => {
+    const world = new WorldState({ surfaces:()=>[], floorAt:()=>0, roomAt:()=>({id:"living",label:"거실"}), devices:()=>[] });
+    const vlm = { model:"test", json: async () => ({value:{scene:"living", observations:[],summary:"",household:{seats:"clear",people:[],dining_food:"unknown"}},costUsd:0,model:"test"}) } as unknown as VlmClient;
+    const p = pipelineOn({config:{engineMs:1000,vlmMaxInflight:1,vlmTimeoutMs:5000,detectQueueMax:8,keepMs:20000},
+      detector:new ScriptedDetector(()=>[mkDet("person",.99,[40,35,20,32],0)]),world,vlm,emit:()=>{}});
+    const camera={origin:[0,1,0] as [number,number,number],orientation:[0,0,0,1] as [number,number,number,number],theta:0,projection:[1,0,0,0,0,1,0,0,0,0,-1.0002,-1,0,0,-.020002,0]};
+    const eye={position:[0,0] as [number,number],height_m:1,yaw_deg:0,pitch_deg:0,tracking:"ok" as const,at:""};
+    try {
+      for(const [index,photo] of [1,1,2,1,3].entries()){
+        const at=(index+1)*2000;
+        p.onEngine(jpeg(photo),{...head(at),...(index===1?{held:true as const}: {})},index===2?{...eye,estimated:true}:eye,camera,at+5);
+        await p.idle();
+        const v=world.view(at);
+        expect(Boolean(v.household_photo?.proof)).toBe(index===0 || index===4);
+        expect(v.person_trail?.map(p=>p.at_ms)).toEqual(index===4?[2000,10000]:[2000]);
+      }
+    } finally { await p.close(); }
+  });
   // 가로 유리컵 실제 판 r6(2026-11-18): VLM이 det를 비우고 답한 같은 잔이 YOLO 컵과 다른 물건이 됐다
   it("VLM 물건이 det를 비워 답해도, 같은 사진 YOLO 감지와 상자가 겹치면(IoU 0.3 이상, 같은 종류·같은 무리) 그 감지 물건으로 잇고 사실을 넣는다", async () => {
     const box = { x: 220 / 480, y: 160 / 360, w: 40 / 480, h: 20 / 360 };

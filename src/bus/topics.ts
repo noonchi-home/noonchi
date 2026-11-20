@@ -50,6 +50,11 @@ const unitBox = z.strictObject({ x: z.number().finite(), y: z.number().finite(),
 /** VLM 물건 목록 하나(VLM이 답한 번호·종류·사진 비율 상자, 같은 물건 감지 번호). */
 const sceneObject = z.strictObject({ id: z.string(), cls: z.string(), box: unitBox, det: z.string().nullable() });
 const scene = z.strictObject({
+  household: z.strictObject({
+    seats: z.enum(["clear","obscured","unknown"]),
+    people: z.array(z.strictObject({id:z.string().nullable(), attention:z.enum(["toward_tv","elsewhere","unknown"])})),
+    dining_food: z.enum(["yes","no","unknown"]),
+  }).optional(),
   scene: z.string(), observations: z.array(z.strictObject({ object_id: z.string(), state: z.enum(SCENE_STATES) })), objects: z.array(sceneObject).optional(), summary: z.string(),
 });
 const VLM_MISSING = ["cap", "timeout", "format", "error", "stale"] as const satisfies readonly VlmMissing[];
@@ -63,7 +68,7 @@ const camera = z.strictObject({ origin: z.tuple([at, at, at]), orientation: z.tu
 const eyePose = z.strictObject({ position: z.tuple([at, at]), height_m: at, yaw_deg: at, pitch_deg: at });
 const frameMeta = z.strictObject({
   id, capturedAtMs: at, latestAtMs: at, width: z.number().int().positive(), height: z.number().int().positive(), eye: eyePose.nullable(), view: camera.nullable(),
-  crop: box.optional(), vlm: z.boolean().optional(),
+  crop: box.optional(), vlm: z.boolean().optional(), fresh_position:z.boolean().optional(),
 });
 const pose = z.strictObject({ score: z.number(), box, keypoints: z.array(z.tuple([at, at, at])) });
 const closerPass = z.strictObject({
@@ -72,6 +77,7 @@ const closerPass = z.strictObject({
 const size = { width: z.number().int().positive(), height: z.number().int().positive() };
 /** 장면 VLM 답을 받은 사진의 카메라·크기·폰 눈 자리. */
 const sceneLook = z.strictObject({
+  fresh: z.boolean().optional(), person_ids: z.array(id).optional(),
   view: camera, ...size, eye: z.tuple([at, at]).nullable().optional(), dets: z.array(z.strictObject({ id: z.string(), box, foot: z.tuple([at, at]).optional() })).optional(),
 });
 /** 가까이 본 그 장의 카메라·크기·자른 자리. */
@@ -99,11 +105,20 @@ const isObj = (v: unknown): v is Record<string, unknown> => typeof v === "object
 const isNum = (v: unknown) => typeof v === "number" && Number.isFinite(v);
 /** 최상위 칸이 이 표의 칸뿐인가(사진 칸 jpeg·jpeg_b64 같은 모르는 칸이 없다). */
 const onlyKeys = (v: Record<string, unknown>, keys: ReadonlySet<string>) => Object.keys(v).every((k) => keys.has(k));
-const VIEW_KEYS = ["at_ms", "objects", "sightings", "person", "fixtures", "devices", "eye", "frame_ms", "vlm_missing", "yolo_missing"] as const satisfies readonly (keyof WorldView)[];
+const VIEW_KEYS = ["at_ms", "objects", "sightings", "person", "fixtures", "devices", "eye", "frame_ms", "vlm_missing", "yolo_missing", "person_trail", "household_photo"] as const satisfies readonly (keyof WorldView)[];
 const VIEW_KEY_SET: ReadonlySet<string> = new Set(VIEW_KEYS);
+const floorPosition = z.tuple([at,at]);
+const trailPoint = z.strictObject({position:floorPosition, room:z.string().nullable(), at_ms:at});
+const householdPhoto = z.strictObject({id, at_ms:at, serial:rev, proof:z.strictObject({
+  camera, seats:z.enum(["clear","obscured","unknown"]), person_count:z.int().nonnegative(), dining_food:z.enum(["yes","no","unknown"]),
+  person:z.strictObject({position:floorPosition,room:z.string().nullable(),seated:z.boolean().nullable(),attention:z.enum(["toward_tv","elsewhere","unknown"])}).nullable(),
+}).nullable()});
+const personTrail = z.array(trailPoint).max(2);
 /** /world/state의 보기는 집 상태 노드 하나가 타입으로 만든 18KB 객체라 깊이는 보지 않는다(지나기마다 세 번 검사하므로 지연 예산).
  *  최상위 칸은 다 있고(후보 자리 sightings는 있을 때만) 그 칸뿐인지(사진 칸 없음)와 칸의 종류만 본다. */
 const view = z.custom<WorldView>((v) => isObj(v) && onlyKeys(v, VIEW_KEY_SET) && isNum(v.at_ms) && Array.isArray(v.objects) && (v.sightings === undefined || Array.isArray(v.sightings)) && isObj(v.person) && Array.isArray(v.fixtures)
+  && (v.household_photo === undefined || householdPhoto.safeParse(v.household_photo).success)
+  && (v.person_trail === undefined || personTrail.safeParse(v.person_trail).success)
   && Array.isArray(v.devices) && (v.eye === null || isObj(v.eye)) && (v.frame_ms === null || isNum(v.frame_ms)) && isNum(v.vlm_missing) && isNum(v.yolo_missing));
 const worldState = z.strictObject({ rev, view });
 const CHANGE_KINDS = [
@@ -177,6 +192,7 @@ const prediction = z.strictObject({ observation: z.string(), reasoning: z.string
   state: id.optional(), from: maybeText.optional(), next_index: z.int().optional() });
 const fsmStep = z.strictObject({ state: id, from: maybeText, next_index: z.int(), to: maybeText, on: maybeText, when: maybeText, action: maybeText, learned: z.boolean() });
 const decisionRecord = z.strictObject({
+  request_rev: rev.optional(),
   id, seq: rev, atMs: at, finalTime: id, textSent: z.string(), status: z.enum(["valid", "failed"]), prediction: prediction.nullable(), action: maybeText,
   fsm: fsmStep.nullable().optional(), late: z.literal(true).optional(), goal: z.literal(true).optional(), error: z.string().optional(),
   usage: z.strictObject({ model: id, prompt: rev, completion: rev, cached: rev, cost_usd: at.nullable() }).optional(), memoryVersion: rev, tasks: z.array(id).optional(),

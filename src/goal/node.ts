@@ -2,7 +2,10 @@ import { Outbox, type BusNode, type Clock } from "../bus/index.js";
 import type { GoalState } from "../contract/machines.js";
 import { goalState, MachineLane } from "../machines/index.js";
 
-export function goalRoutes(node: BusNode, clock: Clock) {
+import type { GoalTriggers } from "./triggers.js";
+
+export function goalRoutes(node: BusNode, clock: Clock, triggers?: GoalTriggers) {
+  if (triggers) node.on("/brain/decision", ({decision}) => triggers.decision(decision));
   const lane = new MachineLane<GoalState>();
   const out = new Outbox(node, { clock, log: (s) => console.warn(s) });
   node.on("/act/work", (w) => {

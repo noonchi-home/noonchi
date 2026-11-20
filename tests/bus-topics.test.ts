@@ -10,6 +10,22 @@ const e = <N extends "/perception/analysis" | "/world/state">(topic: N, body: Re
   ({ topic, key, header: { stamp: 1000, node: topic === "/world/state" ? "world" : "perception", inst: "i1", seq: 1, ...EPOCH, ...over }, body } as never);
 
 describe("토픽 표", () => {
+  it("사진 없이 같은 장면의 시청·식탁 근거를 운반하고 옛 답도 읽는다", () => {
+    const schema = TOPICS["/perception/scene"].body;
+    const body = {kind:"scene", frame_id:"f", observed_ms:2000, scene:{scene:"living",summary:"",observations:[]}};
+    expect(schema.safeParse(body).success).toBe(true);
+    const household = {seats:"clear",people:[{id:null,attention:"unknown"}],dining_food:"yes"};
+    expect(schema.safeParse({...body,scene:{...body.scene,household}}).success).toBe(true);
+    expect(schema.safeParse({...body,scene:{...body.scene,household:{...household,seats:"maybe"}}}).success).toBe(false);
+  });
+  it("집 상태의 새 근거에는 카메라 바이트나 잘못된 자리 자료가 들어가지 않는다", () => {
+    const state = TOPICS["/world/state"].body;
+    const packet = (fields: object) => ({rev:1,view:{...VIEW,...fields}});
+    expect(state.safeParse(packet({household_photo:{id:"f",at_ms:1,serial:1,proof:null}})).success).toBe(true);
+    expect(state.safeParse(packet({household_photo:{id:"f",at_ms:1,serial:1,proof:{jpeg_b64:"blob"}}})).success).toBe(false);
+    expect(state.safeParse(packet({person_trail:[{position:[1,2],room:null,at_ms:1,jpeg:"x"}]})).success).toBe(false);
+  });
+
   it("토픽마다 QoS가 셋 가운데 하나이고 보내는 노드가 노드 목록 안이다", () => {
     for (const [name, t] of Object.entries(TOPICS)) {
       expect(["sensor", "state", "reliable"], name).toContain(t.qos.kind);

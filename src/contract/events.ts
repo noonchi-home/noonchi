@@ -347,6 +347,8 @@ export type ServerMessage =
   | { type: "phone_command"; text: string | null };
 
 export interface DecisionRecord {
+  /** World snapshot at request dispatch; older recordings omit it. */
+  request_rev?: number;
   id: string;
   seq: number;
   atMs: number;

@@ -6,13 +6,13 @@ import { applyPhoneProgress, showPhoneCommand, syncPhoneClaims } from "./phone.j
 // 주기 타이머(관찰·판단·실행 추적·보기 담당·말풍선 카드). 관찰 흐름은 BRAIN=1이고 PHONE_PORT가 있을 때만 켠다(폰 카메라가 입력).
 import { join } from "node:path";
 import { datasetWriter } from "../../brain/index.js";
-import { goalRoutes } from "../../goal/index.js";
+import { GoalTriggers, goalRoutes } from "../../goal/index.js";
 import { managerRoutes } from "../../manage/index.js";
 import { BrainPlans, planningRoutes } from "../../brain/index.js";
 import { BusNode, Outbox } from "../../bus/index.js";
 import type { BrainLog, SeenEvent } from "../../contract/events.js";
 import type { WorldChange } from "../../contract/world.js";
-import { floorLookup, roomNamedAt, type LayoutEditor } from "../../layout/index.js";
+import { floorLookup, roomNamedAt, zoneAt, type LayoutEditor } from "../../layout/index.js";
 import { createPipeline, LookClient, lookRoutes, startPerceptionNode } from "../../observe/index.js";
 import { WorldState, loadFallConfig, restsFromLayout, startWorldMirror, startWorldNode, surfacesFromLayout, type PlaneSurface, type RestSpot } from "../../world/index.js";
 import { historyRoutes } from "../../record/index.js";
@@ -132,14 +132,20 @@ export async function startNodes(core: HomeCore, emit: (event: BrainLog) => void
   core.managerNode = manager;
   core.out.manager = managerRoutes(manager, clock);
   await manager.prepare();
+  const triggers = new GoalTriggers(zoneAt, floorLookup(core.plan.rooms));
   core.goalMirror = await startWorldMirror({
     bus, epoch, name: "goal", clock, log,
     routes: (node, afterRev) => {
-      core.out.goal = goalRoutes(node, clock);
+      core.out.goal = goalRoutes(node, clock, triggers);
       core.goalPlans = new BrainPlans(core.out.goal, clock, "goal:");
       core.goalPlans.routes(node);
       node.on("/goal/update", (b, ctx) => afterRev(b.rev, ctx, () => { if (!core.closed) core.tracker?.updateGoal(); }));
-      node.every(250, () => { if (!core.closed && core.goalMirror?.view() && core.mirror?.view()) core.tracker?.updateGoal(); });
+      node.every(250, () => {
+        const view = core.goalMirror?.view(), rev = core.goalMirror?.rev();
+        if (core.closed || !view || rev == null) return;
+        core.goalFacts = triggers.evaluateTriggers(view, rev, core.scene?.stations ?? null, clock.now());
+        if (core.mirror?.view()) core.tracker?.updateGoal();
+      });
     },
   });
   core.mirror = await startWorldMirror({

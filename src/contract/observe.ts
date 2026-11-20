@@ -75,7 +75,13 @@ export interface SceneObject { id: string; cls: string; box: { x: number; y: num
 
 /** VLM 장면 분석 한 번의 결과: 가장 새 사진의 장면 설명, 감지 id마다 보이는 사실(낱말 표의 장면 상태), 여러 장 사이 요약.
  *  observe/scene.ts의 SceneSchema(zod)와 같은 모양을 손으로 적은 것이다. 그 파일이 두 타입이 같은지 양쪽으로 확인한다(계약은 zod를 가져오지 않는다). */
+export interface HouseholdObservation {
+  seats: "clear" | "obscured" | "unknown";
+  people: { id: string | null; attention: "toward_tv" | "elsewhere" | "unknown" }[];
+  dining_food: "yes" | "no" | "unknown";
+}
 export interface SceneObservation {
+  household?: HouseholdObservation;
   scene: string;
   observations: { object_id: string; state: (typeof SCENE_STATES)[number] }[];
   /** VLM 물건 목록(감지에 없는 물건도). 옛 답에는 없다(없으면 빈 목록과 같다). */
@@ -84,13 +90,13 @@ export interface SceneObservation {
 }
 
 /** 장면 VLM 답을 받은 사진의 카메라·크기와 그때 폰 눈 자리(트윈 [x, y], 없으면 null): 집 상태가 VLM 물건 상자를 트윈 자리로 옮긴다(src/world/state/sceneobjects.ts SceneLook). */
-export interface SceneLookInput { view: CameraView; width: number; height: number; eye?: [number, number] | null; dets?: LookDetInput[] }
+export interface SceneLookInput { view: CameraView; width: number; height: number; eye?: [number, number] | null; dets?: LookDetInput[]; fresh?: boolean; person_ids?: string[] }
 /** 그 사진의 YOLO 감지 하나(감지 번호 d1…, 엔진 프레임 픽셀 상자, 바닥 점): 이어진 VLM 물건은 자리를 감지 바닥 점으로 낸다(src/world/state/sceneobjects.ts LookDet). */
 export interface LookDetInput { id: string; box: [number, number, number, number]; foot?: [number, number] }
 /** 가까이 본 그 장의 카메라·크기·자른 자리(엔진 프레임 픽셀 [x, y, w, h], src/world/state/closer.ts CloserLookAt). */
 export interface CloserAtInput { view: CameraView; width: number; height: number; crop: [number, number, number, number] }
 
 /** 사진 없는 엔진 프레임: 관찰 흐름이 집 상태 노드에 넘기는 프레임. JPEG·해시는 인식 노드 밖으로 나가지 않는다. */
-export type FrameMeta = Omit<EngineFrame, "jpeg" | "sha256">;
+export type FrameMeta = Omit<EngineFrame, "jpeg" | "sha256"> & { fresh_position?: boolean };
 /** 가까이 본 한 장(사진 없음): 원본 엔진 프레임 id·촬영 시각·카메라·크기와 잘라 본 사진의 감지(엔진 프레임 픽셀, edge는 잘라 본 경계에 닿음). World State의 CloserPass와 같은 모양이다. */
 export interface CloserPassInput { frameId: string; capturedAtMs: number; view: CameraView; width: number; height: number; dets: (Detection & { edge: boolean })[] }

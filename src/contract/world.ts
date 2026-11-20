@@ -144,7 +144,17 @@ export interface WorldEye { position: [number, number]; height_m: number; yaw_de
  *  in_hand: 관절로 손에 든 채 본 자리(그 후보의 손에 없던 자리가 있으면 그 자리를 손에 없음으로 남긴다). */
 export interface WorldSighting { cls: ObjClass; position: [number, number, number]; surface: string | null; surface_label: string | null; at_ms: number; in_hand: boolean }
 
+export interface HouseholdPhoto {
+  id: string; at_ms: number; serial: number;
+  proof: {
+    camera: SceneLookInput["view"]; seats: "clear"|"obscured"|"unknown";
+    person_count: number; dining_food: "yes"|"no"|"unknown";
+    person: { position:[number,number]; room:string|null; seated:boolean|null; attention:"toward_tv"|"elsewhere"|"unknown" } | null;
+  } | null;
+}
 export interface WorldView {
+  household_photo?: HouseholdPhoto;
+  person_trail?: { position: [number,number]; room: string | null; at_ms: number }[];
   at_ms: number;
   objects: WorldObject[];
   /** 후보 자리(없으면 없음). 확인 물건이 아니므로 objects에 들지 않는다. */

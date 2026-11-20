@@ -94,6 +94,7 @@ export class HomeCore {
   goalMirror: WorldMirror | null = null;
   goalPlans: BrainPlans | null = null;
   goalPulse: number | null = null;
+  goalFacts: import("../../goal/index.js").TriggerFacts | null = null;
   managerNode: BusNode | null = null;
   brainMirror: WorldMirror | null = null;
   brainPlans: BrainPlans | null = null;

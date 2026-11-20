@@ -130,9 +130,9 @@ export interface WorldPort {
 const eyeOnly = (e: EyePose | null): EyePose | null => (e ? { position: e.position, height_m: e.height_m, yaw_deg: e.yaw_deg, pitch_deg: e.pitch_deg } : null);
 
 /** 사진 없는 프레임(JPEG·해시는 인식 노드 밖으로 나가지 않는다, 눈은 자리만). */
-function frameMeta(f: EngineFrame): FrameMeta {
+function frameMeta(f: EngineFrame, measured: boolean): FrameMeta {
   const { jpeg: _jpeg, sha256: _sha256, ...meta } = f;
-  return { ...meta, eye: eyeOnly(f.eye) };
+  return { ...meta, eye: eyeOnly(f.eye), fresh_position:measured };
 }
 
 const mean = (xs: number[]) => (xs.length ? Math.round(xs.reduce((a, b) => a + b, 0) / xs.length) : null);
@@ -191,6 +191,7 @@ export interface PipelineStatus {
 
 export class ObservationPipeline {
   private readonly ring: FrameRing;
+  private readonly measuredOriginal = new WeakSet<EngineFrame>();
   private readonly pool: VlmPool;
   private readonly clock: { now(): number };
   /** VLM 프레임의 YOLO 감지(번호·종류·상자, 엔진 프레임 픽셀): VLM이 det를 비워 답한 물건을 상자 겹침으로 잇는다(linkDets). */
@@ -246,7 +247,8 @@ export class ObservationPipeline {
         const f = this.ring.get(r.frameId);
         // 그 사진을 찍은 때의 카메라·폰 눈(답이 온 때가 아니다)
         // 그 사진의 YOLO 감지(바닥 점 포함): 그 감지와 이어진 VLM 물건은 자리를 감지 바닥 점으로 낸다
-        const look = f?.view ? { view: f.view, width: f.width, height: f.height, eye: f.eye ? f.eye.position : null, dets: dets.map(({ id, box, foot }) => ({ id, box, ...(foot ? { foot } : {}) })) } : undefined;
+        const look = f?.view ? { view: f.view, width: f.width, height: f.height, eye: f.eye ? f.eye.position : null, dets: dets.map(({ id, box, foot }) => ({ id, box, ...(foot ? { foot } : {}) })),
+          fresh: this.measuredOriginal.has(f), person_ids: dets.filter(d => d.class === "person").map(d => d.id) } : undefined;
         const scene = r.scene && f ? linkDets(r.scene, dets, f.width, f.height) : r.scene;
         // 그 답이 본 가장 옛 사진의 촬영 시각(마시기·따르기 사건 구간)
         const fromMs = this.spanOf.get(r.frameId) ?? r.capturedAtMs;
@@ -302,6 +304,9 @@ export class ObservationPipeline {
     const vlmMs = this.vlmGap();
     if (this.o.onView) this.o.onView({ view: frame.view, capturedAtMs: frame.capturedAtMs, width: frame.width, height: frame.height });
     frame.vlm = vlmMs === undefined || this.lastVlmAt === null || t.atMs - this.lastVlmAt >= vlmMs;
+    // 영상 모드: held
+    if (!header.held && eye?.tracking === "ok" && !eye.estimated && view &&
+        !this.ring.frames().some(other => other !== frame && other.sha256 === frame.sha256)) this.measuredOriginal.add(frame);
     if (frame.vlm) this.lastVlmAt = t.atMs;
     if (this.o.dataset) {
       try {
@@ -366,7 +371,7 @@ export class ObservationPipeline {
         shapes: dets.map(({ label, score, mask }) => ({ label, score, mask })),
       });
     }
-    const send = (d: Detection[]) => this.o.world.send({ kind: "frame", frame: frameMeta(frame), dets: d, ...(poses ? { poses } : {}) });
+    const send = (d: Detection[]) => this.o.world.send({ kind: "frame", frame: frameMeta(frame, this.measuredOriginal.has(frame)), dets: d, ...(poses ? { poses } : {}) });
     if (!frame.vlm) {
       if (dets) send(dets);
       else if (dets === null) this.yoloMissing.error++;
@@ -386,6 +391,7 @@ export class ObservationPipeline {
     const sceneDets: SceneDetection[] = (dets ?? []).map((d, i) => ({ id: `d${i + 1}`, class: d.label, box: d.box, score: d.score, foot: d.foot }));
     this.frameBoxes.set(frame, (dets ?? []).map(({ label, box }) => ({ label, box })));
     this.detsOf.set(frame.id, sceneDets);
+    if (!dets) this.measuredOriginal.delete(frame);
     this.pool.submit(frame, sceneDets); // 상한을 넘으면 풀이 VLM 분석 없음(cap)을 onResult로 낸다
   }
 
