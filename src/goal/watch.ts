@@ -367,9 +367,12 @@ export class GoalWatch {
     if (!g || !v || d.status !== "valid" || !d.fsm || g.pick.when !== null) return null;
     const unselected = !d.action && d.fsm.next_index === -1 && d.fsm.from === null;
     const selected = d.action === v.action && d.fsm.from === g.pick.state && d.fsm.next_index === g.pick.index;
-    const viaAway = !d.action && d.fsm.from === "away" && d.fsm.to === d.fsm.state && d.fsm.action === null &&
-      d.fsm.when === null && d.fsm.next_index >= 0;
-    if (!unselected && !(v.meal && (selected || viaAway))) return null;
+    // PAM has already checked this transition. It can confirm the new activity
+    // without assigning a competing robot action, including after an away interval.
+    const activityEdge = !d.action && d.fsm.action === null && d.fsm.next_index >= 0 &&
+      (d.fsm.from === "away" || d.fsm.from === g.pick.state) &&
+      (d.fsm.to === d.fsm.state || d.fsm.to === "*");
+    if (!unselected && !(v.meal && (selected || activityEdge))) return null;
     if (v.meal) {
       this.watch(g);
       if (this.goal !== g || g.view.status !== "checking" || g.ambiguousResident || g.watchRev === null || d.request_rev == null ||
