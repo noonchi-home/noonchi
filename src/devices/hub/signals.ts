@@ -10,6 +10,7 @@
 // 신호 없음 기기·읽기 전 ThinQ 기기·명령 받은 적 없는 가상 기기는 실제 출처가 없다. 실제 상태와 다르면 처음 한 번만 mismatch로 알린다.
 
 import { AsyncLocalStorage } from "node:async_hooks";
+import { HOUSEHOLD_KINDS } from "../kinds.js";
 import type { PowerStamp } from "../../contract/devices.js";
 import { matterFromTwin } from "../mapping.js";
 import type { ThinqLink } from "../thinq/link.js";
@@ -48,11 +49,12 @@ export class SignalHub implements DeviceHub {
   private stopped = false;
   private readonly power = new Map<string,PowerStamp>();
   private readonly sending = new AsyncLocalStorage<{id:string; generation:number; power:"on"|"off"}>();
+  onPowerIntent?: (id:string, power:"on"|"off", commandId:string|null) => void;
   onPowerStamp?: (state:DeviceState) => void;
 
   powerStamp(id:string):PowerStamp | undefined {
     if (!this.power.has(id)) {
-      if (!this.world.list().some(d=>d.id===id && d.kind==="tv")) return undefined;
+      if (!this.world.list().some(d=>d.id===id && d.kind===HOUSEHOLD_KINDS.viewerPower)) return undefined;
       this.power.set(id,{power:this.powerOf(this.get(id)),generation:0,command_id:null});
     }
     return {...this.power.get(id)!};
@@ -208,6 +210,7 @@ export class SignalHub implements DeviceHub {
       if (state) this.onPowerStamp?.(state); // An unchanged manual request still revokes ownership.
     }
     const power=cmd.type;
+    this.onPowerIntent?.(id,power,commandId??null);
     const result=await this.sending.run({id,generation:stamp.generation,power},()=>this.sendCommand(id,cmd));
     const current=this.power.get(id)!;
     if (commandId && current.generation===stamp.generation && result.ok && result.outcome!=="unverified" &&

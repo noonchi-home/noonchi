@@ -1,8 +1,7 @@
 import type { SceneJson, SceneObject, Vec2 } from "../contract/layout.js";
 import type { TwinWalkGuide } from "../contract/phone.js";
-import { floorPlanFrom, sharedOpening, type FloorPlan, type Portal } from "./floor.js";
+import { floorPlanFrom, insidePolygon, sharedOpening, type FloorPlan, type Portal } from "./floor.js";
 import { approach, roomAt, route } from "./route.js";
-import { insidePolygon } from "./home-plan.js";
 
 export function edgeDistance(p: Vec2, a: Vec2, b: Vec2) {
   const dx = b[0] - a[0], dz = b[1] - a[1];
@@ -177,8 +176,10 @@ export function walkingMap(floor: FloorPlan, scene: SceneJson, footprint?: (type
       const grid = start && indoor(start,p,current,gates);
       const points = grid ?? [p];
       const firstIndex = remaining.length;
-      for (const via of points.slice(0, -1))
-        remaining.push({ kind: "via", room: current, position: [via[0], height(current), via[1]] });
+      for (let j = 0; j < points.length - 1; j++) {
+        const [x,z] = points[j]!;
+        remaining.push({ kind: "via", room: current, position: [x, height(current), z] });
+      }
       const position: [number, number, number] = [p[0], height(next), p[1]];
       remaining.push(
         gate

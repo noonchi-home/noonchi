@@ -110,8 +110,10 @@ export interface SpeechRequest { task: string; heard: string; atMs: number; afte
 
 export interface TrackerOptions {
   /** Recheck the current resident after any approval or phone wait. */
-  discardLeftover?: () => boolean;
-  rememberLeftover?: (allow:boolean) => void;
+  cupAnswers?: {
+    discardLeftover?: () => boolean;
+    rememberLeftover?: (allow:boolean) => void;
+  };
   stations?: {
     map?():import("../../contract/stations.js").StationMap | null;
     rev():number;

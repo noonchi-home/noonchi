@@ -1,3 +1,4 @@
+import { HOUSEHOLD_KINDS } from "../devices/kinds.js";
 import type { DecisionRecord } from "../contract/events.js";
 import type { Vec2 } from "../contract/layout.js";
 import type { Trigger, TriggerFact } from "../contract/machines.js";
@@ -83,7 +84,7 @@ export class GoalTriggers {
       this.mealSeated = fact("unknown");
     }
     const changedDevices = this.changedDevices(view.devices);
-    const tvs = view.devices.filter(d=>d.kind==="tv");
+    const tvs = view.devices.filter(d=>d.kind===HOUSEHOLD_KINDS.viewerPower);
     const watches = new Map<string,{tv:string; zones:Zone[]}>();
     if (map) for (const tv of tvs) {
       const ids = new Set(map.stations.filter(s=>s.roles.includes("observe") && s.surfaces.includes(tv.id)).flatMap(s=>s.observes_zone_ids));
@@ -131,7 +132,7 @@ export class GoalTriggers {
     const zone = person && map ? this.zoneOf(map,person.room,person.position,EDGE_MARGIN_M) : null;
     const watching = !!person && person.seated === true && person.attention === "toward_tv" &&
       [...watches.values()].some(w => w.zones.some(z => z.id === zone) && this.covered(current!,w.zones) &&
-        deviceFact(view.devices,{kind:"device",deviceKind:"tv",id:w.tv,attr:"power",value:"on",mode:"level"},rev,changedDevices).value === true);
+        deviceFact(view.devices,{kind:"device",deviceKind:HOUSEHOLD_KINDS.viewerPower,id:w.tv,attr:"power",value:"on",mode:"level"},rev,changedDevices).value === true);
     return {
       photoValidUntil:validUntil,
       tvRooms:new Map([...watches].filter(([,w])=>w.tv).map(([room,w])=>[w.tv,room])),

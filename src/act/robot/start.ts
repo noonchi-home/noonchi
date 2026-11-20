@@ -428,8 +428,8 @@ export class Starter extends Part {
   }
 
   private begin(r: Run): void {
-    if (taskOf(r.plan.task)?.topLook && this.o.discardLeftover) {
-      const needsLook = !this.o.discardLeftover();
+    if (taskOf(r.plan.task)?.topLook && this.o.cupAnswers?.discardLeftover) {
+      const needsLook = !this.o.cupAnswers?.discardLeftover();
       if (needsLook !== r.plan.steps.some(step => step.look === "top")) {
         const revised = this.o.goals.reuse?.(r.decision, r.plan);
         if (!revised?.ok) return this.core.steps.finish(r, "failed", EXEC_TEXT.badPlan);

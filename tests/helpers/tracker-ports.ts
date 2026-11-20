@@ -2,6 +2,8 @@ import { ExecutionTracker, type TrackerOptions } from "../../src/act/track/track
 
 /** 시험에서 바꿀 입력만 골라 실제 실행 노드의 포트에 연결한다. */
 export type TrackerFixture = Omit<TrackerOptions, "state" | "layout" | "phone" | "brain" | "goals" | "manager" | "observe" | "events" | "appliances"> & {
+  discardLeftover?: () => boolean;
+  rememberLeftover?: (allow:boolean) => void;
   world: TrackerOptions["state"]["view"];
   guardObject?: TrackerOptions["state"]["guardObject"];
   focusObject?: TrackerOptions["state"]["focusObject"];
@@ -46,6 +48,7 @@ export type TrackerFixture = Omit<TrackerOptions, "state" | "layout" | "phone" |
 
 export function testTracker(options: TrackerFixture): ExecutionTracker {
   const {
+    discardLeftover, rememberLeftover,
     world, guardObject, focusObject, linkObject, contentsAction,
     floor, walking, locate, dock, surfaces, names,
     toPhone, phoneReady, sayAloud, approvalsWaiting, talking,
@@ -59,6 +62,7 @@ export function testTracker(options: TrackerFixture): ExecutionTracker {
   } = options;
   return new ExecutionTracker({
     ...optionsOnly,
+    cupAnswers: {discardLeftover, rememberLeftover},
     state: { view: world, guardObject, focusObject, linkObject, contentsAction },
     layout: { floor, walking, locate, dock, surfaces, names },
     phone: { toPhone, ready: phoneReady, sayAloud, approvalsWaiting, talking },

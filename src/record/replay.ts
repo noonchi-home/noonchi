@@ -21,7 +21,10 @@ export async function settle(bus: MemoryBus, nodes: readonly BusNode[], maxRound
   }
 }
 
-export async function replay(o: { bag: Bag; from: number; to: number; launch: (bus: MemoryBus, clock: VirtualClock) => Promise<BusNode[]>; topics?: readonly TopicName[] }): Promise<{ sent: number }> {
+export async function replay(o: { bag: Bag; from: number; to: number; launch: (bus: MemoryBus, clock: VirtualClock) => Promise<BusNode[]>; topics?: readonly TopicName[];
+  /** At the model boundary, resolve a recorded PAM reply against goals created during this replay. */
+  resolveDecision?: (d:import("../contract/events.js").DecisionRecord)=>import("../contract/events.js").DecisionRecord
+}): Promise<{ sent: number }> {
   const rows = o.bag.range(o.from, o.to, { topics: o.topics ?? REPLAY_INPUTS });
   // 말 원문을 가린 녹화에서도, 폰이 실제로 받아들인 답만 같은 단추 글로 재생한다.
   const labels = new Map([STEP_DONE, STOP, ...Object.values(QUESTION_CHOICES).flat()].map((c) => [c.id, c.label]));
@@ -48,6 +51,9 @@ export async function replay(o: { bag: Bag; from: number; to: number; launch: (b
       if (e.topic === "/phone/progress" && "text" in e.body && e.body.text === HEARD_MARK && "req" in e.body) {
         const body = e.body as Extract<import("../bus/index.js").Body<"/phone/progress">, { kind: "voice" }>;
         await bus.publish({ ...e, body: { ...body, text: answers.get(answerKey(e.header, body.req)) ?? HEARD_MARK } });
+      } else if (e.topic==="/brain/decision" && o.resolveDecision) {
+        const body=e.body as import("../bus/index.js").Body<"/brain/decision">;
+        await bus.publish({...e,body:{...body,decision:o.resolveDecision(body.decision)}});
       } else await bus.publish(e);
       await barrier();
     }

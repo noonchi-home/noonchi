@@ -1,6 +1,16 @@
 // scene.json(twin-studio 집 산출물) → 경로 찾기에 쓰는 평면도. 좌표는 plan과 같은 [x, z] 미터.
 import type { XZ } from "../contract/plan.js";
 
+/** 평면 점이 다각형 안인지(짝홀 규칙). */
+export function insidePolygon([x, y]: XZ, poly: number[][]): boolean {
+  let hit = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const [xi, yi] = poly[i]!, [xj, yj] = poly[j]!;
+    if ((yi! > y) !== (yj! > y) && x < ((xj! - xi!) * (y - yi!)) / (yj! - yi!) + xi!) hit = !hit;
+  }
+  return hit;
+}
+
 export interface Portal { id: string; rooms: [string, string]; point: XZ }
 export interface FloorPlan {
   rooms: { id: string; polygon: XZ[] }[];

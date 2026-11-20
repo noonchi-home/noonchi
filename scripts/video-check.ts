@@ -62,6 +62,8 @@ import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import type { Detection } from "../src/contract/observe.js";
+import { LiveScenario, SCENARIO_KINDS } from "./scenario1-live.js";
+import type { StationMap } from "../src/contract/stations.js";
 import type { HistoryRow } from "../src/contract/history.js";
 import type { WorldObject, WorldView } from "../src/contract/world.js";
 import { EXEC_TEXT } from "../src/act/labels.js";
@@ -725,7 +727,7 @@ async function startFake(clip: string, steps: string[]): Promise<Fake> {
 // 돌리기
 
 const USAGE = "쓰는 법: npx tsx scripts/video-check.ts --clip <이름.mp4> [--step <종류>:<낱말>:<영상.mp4> ...] [--phone http://127.0.0.1:8210] [--api http://127.0.0.1:8200] [--done-after 3] [--out <파일.md>] [--expect-after 36.3] [--record <폴더>] [--record-view <top|minimap>] [--record-fps 10] [--fake]"
-  + " [--say <초>:<글> ...] [--start-at <cup|tv|microwave|kitchen>] [--home mokryeon_180b] [--tail 30] [--max 1800] [--approve <초>] [--done-on <초>:<명령 글> ...]"
+  + " [--scenario scenario1] [--say <초>:<글> ...] [--start-at <cup|tv|microwave|kitchen>] [--home mokryeon_180b] [--tail 30] [--max 1800] [--approve <초>] [--done-on <초>:<명령 글> ...]"
   + " [--fov <도>] [--pitch <도>] [--h <m>] [--rate 1] [--answer <초>:<답 단추 글> ...]";
 
 /** 영상 모드 카메라(폰 주소 fov·pitch·h): 준 값만 있다. 없는 값은 폰 페이지 기본값(세로 시야각 60°, pitch −25°, 높이 1.4m). */
@@ -735,6 +737,7 @@ const CAMERA_RANGE: Record<keyof Camera, [number, number]> = { fov: [20, 120], p
 
 export interface Args {
   /** expectSet: --expect-after를 적었는가(아니면 스스로 시험은 대본 사람 시간을 영상 시각으로 옮겨 쓴다). */
+  scenario?: "scenario1";
   clip: string; fake: boolean; steps: string[]; doneAfterMs: number; expectMs: number; expectSet: boolean; phone: string; api: string; out: string | undefined; record: string | undefined;
   says: { atMs: number; text: string }[]; startAt: DemoScene | null; home: string; tailMs: number; maxMs: number; approveAfterMs: number; doneOn: { afterMs: number; text: string }[];
   /** --answer: 질문에 누를 답 단추 글과 기다릴 시간. */
@@ -756,6 +759,9 @@ export function parseArgs(argv: string[]): Args | string {
   const arg = (k: string) => { const i = argv.indexOf(`--${k}`); return i >= 0 ? argv[i + 1] : undefined; };
   const clip = arg("clip") ?? "";
   if (!CLIP_NAME.test(clip)) return USAGE;
+  const scenario = arg("scenario");
+  if (argv.includes("--scenario") && scenario !== "scenario1") return "--scenario scenario1을 지정해 주세요.";
+  if (scenario && (argv.includes("--fake") || argv.includes("--approve") || argv.includes("--done-on") || argv.includes("--answer") || Number(arg("done-after")??0)!==0)) return "시나리오 1은 실제 입력과 자동 도착으로 판정합니다.";
   const steps = argv.flatMap((a, i) => (a === "--step" ? [argv[i + 1] ?? ""] : []));
   const bad = steps.find((s) => !STEP_ARG.test(s));
   if (bad !== undefined) return `--step은 <go|pick|place|do>:<낱말 a-z·_>:<영상.mp4|webm>예요: 「${bad}」`;
@@ -763,7 +769,7 @@ export function parseArgs(argv: string[]): Args | string {
   if (argv.includes("--record") && (!record || record.startsWith("--"))) return "--record 뒤에 시연 영상을 남길 폴더를 주세요: --record <폴더>";
   const fake = argv.includes("--fake");
   // --step·--approve·--done-on이 있으면 --done-after 기본은 0이다(고른 명령에만 누른다)
-  const doneAfterMs = Number(arg("done-after") ?? (steps.length || argv.includes("--approve") || argv.includes("--done-on") || argv.includes("--answer") ? "0" : "3")) * 1000;
+  const doneAfterMs = Number(arg("done-after") ?? (scenario || steps.length || argv.includes("--approve") || argv.includes("--done-on") || argv.includes("--answer") ? "0" : "3")) * 1000;
   const expectMs = Number(arg("expect-after") ?? (fake ? String(FAKE_PERSON_MS / 1000) : "36.3")) * 1000;
   if (!Number.isFinite(doneAfterMs) || doneAfterMs < 0 || !Number.isFinite(expectMs)) return "--done-after·--expect-after는 0 이상 숫자(초)예요";
   // <초>:<글>: 초는 0 이상 숫자, 글은 비지 않고 60자까지
@@ -807,7 +813,7 @@ export function parseArgs(argv: string[]): Args | string {
   const rate = Number(rawRate);
   if (!rawRate?.trim() || rawRate.startsWith("--") || !Number.isFinite(rate) || rate < 0.25 || rate > 2) return `--rate는 0.25~2 숫자(영상 빠르기)예요. ${USAGE}`;
   return {
-    recordPhone: argv.includes("--record-phone"), chrome, recordView, recordFps, rate,
+    ...(scenario==="scenario1"?{scenario}:{}), recordPhone: argv.includes("--record-phone"), chrome, recordView, recordFps, rate,
     clip, fake, steps, doneAfterMs, expectMs, expectSet: arg("expect-after") !== undefined, phone: arg("phone") ?? "http://127.0.0.1:8210", api: arg("api") ?? "http://127.0.0.1:8200", out: arg("out"), record,
     says: says.map((x) => ({ atMs: x!.ms, text: x!.text })), startAt: startAt as DemoScene | null, home: arg("home") ?? HOME, tailMs, maxMs, approveAfterMs,
     doneOn: doneOn.map((x) => ({ afterMs: x!.ms, text: x!.text })), answers: answers.map((x) => ({ afterMs: x!.ms, label: x!.text })), camera,
@@ -1047,10 +1053,21 @@ async function main(): Promise<number> {
       // 트윈 줄: 1초마다 World State를 읽어 바뀐 것만 쌓는다(ms는 서버 시각, 끝에 t0를 뺀다). 못 받으면 넘어간다
       const twin: { seen: TwinSeen | null; rows: Row[]; last: WorldView | null } = { seen: null, rows: [], last: null };
       // 컵 줄의 방 이름: 장면의 방 목록(못 받으면 「방 모름」)
-      const rooms = roomLabels(await getJson<{ scene?: { plan?: { rooms?: { id: string; label?: string }[] } } }>(`${api}/api/scene`));
+      const sceneAnswer = await getJson<{scene?:SceneJson & {stations:StationMap}}>(`${api}/api/scene`);
+      const rooms = roomLabels(sceneAnswer);
+      if(args.scenario && !sceneAnswer?.scene?.stations) throw Error("시나리오 1 자리 설정을 받지 못했어요.");
+      const scenario=args.scenario && sceneAnswer?.scene ? new LiveScenario(sceneAnswer.scene) : null;
+      const scenarioResult=async(since:number, received:VideoCommand[])=>{
+        const response=await fetch(`${api}/api/history?since=${since}&kinds=${SCENARIO_KINDS.join(",")}&limit=5000`,{signal:AbortSignal.timeout(5000)});
+        if(!response.ok)throw Error("시나리오 1 기록 조회 실패 "+response.status);
+        const {rows}=await response.json() as {rows:HistoryRow[]};
+        if(rows.length>=5000)throw Error("시나리오 1 기록 조회 한도를 넘었어요.");
+        return scenario!.judge(rows,received);
+      };
       const pollWorld = async () => {
         const w = (await getJson<{ world?: WorldView }>(`${api}/api/world`))?.world;
         if (!w) return;
+        scenario?.sample(w);
         try {
           const r = twinRows(twin.seen, w, 0, rooms);
           twin.seen = r.seen;
@@ -1149,6 +1166,16 @@ async function main(): Promise<number> {
           due: due.length, planStatus, tailMs: args.tailMs, totalMs: Date.now() - runStart, maxMs: args.maxMs, offOpen,
           doneNotice: { shownForMs: noticeAt === null ? null : Date.now() - noticeAt, waitedMs: planDoneAt === null ? 0 : Date.now() - planDoneAt },
         });
+        if(scenario) {
+          const result=await scenarioResult(Math.min(firstT0,seen.record?.t0??firstT0),commands);
+          if(result.passed && !offOpen) break;
+          if(stop || Date.now()-runStart>=args.maxMs){
+            unfinished.push((stop?"중단":"전체 시간 초과")+" · "+(result.firstMismatch??"끄기 안내 대기"));
+            break;
+          }
+          await sleep(1000);
+          continue;
+        }
         if (offOpen && state !== "watch" && state !== "done") unfinished.push("끄기 안내가 풀리지 않음");
         if (state === "clip_over") { unfinished.push(`${Math.round((clipRealMs! + 60_000) / 1000)}초 안에 영상이 끝나지 않음`); break; }
         if (state === "max_over") { unfinished.push(`판 전체 ${Math.round(args.maxMs / 1000)}초를 넘음`); break; }
@@ -1195,7 +1222,14 @@ async function main(): Promise<number> {
       const personUntil = fake?.personUntil() ?? null;
       const expect = fakeMode && !args.expectSet && personUntil !== null ? toVideo(personUntil) : expectMs;
       const v = verdict(rows, commands, history, expect);
-      const stepLine = steps.length ? stepVerdict(history, commands, clicks, twin.last) : null;
+      const scenarioVerdict=scenario?await scenarioResult(Math.min(firstT0,t0),commands):null;
+      if(scenarioVerdict) {
+        const n=scenarioVerdict;
+        v.text=[n.passed?"시나리오 1 통과":"시나리오 1 실패 · "+n.firstMismatch,
+          `시청 확인 → 첫 컵 이동 ${n.tvConfirmToCupCommandMs??"미확인"}ms · 첫 시청자 부재 → TV 끄기 ${n.noViewerToOffMs??"미확인"}ms · 허브 확인 ${n.noViewerToAckMs??"미확인"}ms`,
+          ...n.events.map(e=>`${clock(toVideo(e.at))} · ${e.kind} ${e.id??""}`)].join("\n\n");
+      }
+      const stepLine = !scenario && steps.length ? stepVerdict(history, commands, clicks, twin.last) : null;
       const reaction = reactionLine(history, commands, t0, sync, args.rate);
       // 단계 자리 판정: --step 자리와 실제 명령 대상, 끝에 치운 컵이 싱크대 안인지. 틀리면 시각표 위에 적고 실패다
       const judged = mainPlan(commands, history);
@@ -1258,6 +1292,7 @@ async function main(): Promise<number> {
       console.log(`[video-check] ${out}`);
 
       if (pageErrors.length) console.log(`[video-check] 페이지 오류\n${pageErrors.slice(0, 20).join("\n")}`);
+      if (scenarioVerdict) return unfinished.length || !scenarioVerdict.passed ? 1 : 0;
       if (!fakeMode) return unfinished.length || (places && !places.ok) ? 1 : 0;
       // 스스로 시험: 사람 사라짐 → PAM 컵 치우기 → 사람 사라짐 뒤 첫 명령 → 네 단계 끝 → 계획 끝, 트윈 눈·컵 줄
       const gone = rows.find((r) => r.kind === "사람 사라짐");

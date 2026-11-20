@@ -11,7 +11,7 @@
  *  planner 계획 모드 차례(모델 호출 하나)마다 시간·토큰·낸 단계·계획 검사가 버린 까닭(src/agent/planner.ts PlanRound). 반성 입력이 아니다. */
 export type HistoryKind =
   | "device" | "detection" | "vlm" | "yolo" | "world" | "pam_text" | "mode" | "decision" | "plan" | "execution" | "reflection" | "feedback" | "photo"
-  | "link" | "trigger" | "look" | "thought" | "service" | "bus_gap" | "goal" | "planner" | "person" | "robot" | "safety" | "manager";
+  | "link" | "trigger" | "look" | "thought" | "service" | "bus_gap" | "goal" | "planner" | "person" | "robot" | "safety" | "manager" | "household";
 
 export interface HistoryRow {
   id: number;

@@ -10,6 +10,7 @@ import { GoalTriggers, goalRoutes, RoomWatch, TvWatch, viewerAt } from "../../go
 import { managerRoutes } from "../../manage/index.js";
 import { BrainPlans, planningRoutes } from "../../brain/index.js";
 import { BusNode, Outbox } from "../../bus/index.js";
+import { HOUSEHOLD_KINDS } from "../../devices/kinds.js";
 import type { BrainLog, SeenEvent } from "../../contract/events.js";
 import type { WorldChange } from "../../contract/world.js";
 import { floorLookup, roomNamedAt, locateZone, type LayoutEditor } from "../../layout/index.js";
@@ -147,7 +148,7 @@ export async function startNodes(core: HomeCore, emit: (event: BrainLog) => void
         if (core.closed || !view || rev == null) return;
         const map=core.scene?.stations ?? null, now=clock.now();
         core.goalFacts = triggers.evaluateTriggers(view,rev,map,now);
-        for (const device of core.twin.devices) if (device.kind==="tv") tv.tick(device.id,viewerAt(core.goalFacts,device.id,now),rev,now);
+        for (const device of core.twin.devices) if (device.kind===HOUSEHOLD_KINDS.viewerPower) tv.tick(device.id,viewerAt(core.goalFacts,device.id,now),rev,now);
         const checking=core.checkingVisit;
         const cup=checking && view.objects.find(o=>o.id===checking.cup);
         rooms.tick({now,rev,map,facts:core.goalFacts,checking,
@@ -236,9 +237,14 @@ export async function startNodes(core: HomeCore, emit: (event: BrainLog) => void
     deviceOut.push("/device/changes", { id: s.id, state: s, note });
   };
   for (const s of signals.states()) send(s, true); // 시작 상태는 변화로 내지 않는다
+  let powerSeq=0;
+  signals.onPowerIntent=(device_id,value,command_id)=>{
+    deviceOut.push("/device/power_intent",{id:"power:"+ ++powerSeq,device_id,value,command_id,
+      origin:command_id?"automation":"unknown",at_ms:clock.now()});
+  };
   signals.onPowerStamp = s=>send(s,false);
   const unsubscribe=signals.subscribe(s=>send(s,false));
-  core.unsubWorld=()=>{signals.onPowerStamp=undefined;unsubscribe();};
+  core.unsubWorld=()=>{signals.onPowerIntent=undefined;signals.onPowerStamp=undefined;unsubscribe();};
   let timer: ReturnType<typeof setTimeout> | undefined;
   const late = new Promise<"late">((r) => { timer = setTimeout(() => r("late"), FIRST_STATE_MS); });
   const got = await Promise.race([Promise.all([ready, brainStarted, core.actStatus ? Promise.resolve() : statusStarted]).then(() => "ok" as const), late]);

@@ -411,7 +411,7 @@ export class Steps extends Part {
   /** 남은 음료 질문의 답: 「치워 주세요」면 다음 단계(집기)로 이어 가고, 「그대로 둬요」면 치우지 않고 계획을 끝낸다(취소). 그 컵은 사람이 다시 보일 때까지 치우지 않는다(start.ts kept). */
   leftover(r: Run, choice: string): void {
     if (choice !== "keep" && choice !== "clear") return;
-    this.o.rememberLeftover?.(choice === "clear");
+    this.o.cupAnswers?.rememberLeftover?.(choice === "clear");
     r.asking = null;
     if (choice !== "keep") return this.advance(r);
     const step = this.core.stepOf(r);

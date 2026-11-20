@@ -228,10 +228,12 @@ export function startAct(core: HomeCore): (event: BrainLog) => void {
   };
   const stationFloor = floorLookup(core.plan.rooms);
   core.tracker = new ExecutionTracker({
-    discardLeftover: () => discardLeftover(view()),
-    rememberLeftover: allow => {
-      const who = resident(view());
-      if (who) answers.remember(home.id, who, allow);
+    cupAnswers: {
+      discardLeftover: () => discardLeftover(view()),
+      rememberLeftover: allow => {
+        const who = resident(view());
+        if (who) answers.remember(home.id, who, allow);
+      },
     },
     stations:{
       map:()=>core.scene?.stations ?? null,

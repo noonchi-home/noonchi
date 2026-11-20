@@ -21,7 +21,7 @@ export function goalRecorder(db: Pick<HistoryDb, "add">): (g: PendingGoal, atMs:
   let last: PendingGoal | null = null;
   return (g, atMs) => {
     const prev = last?.id === g.id ? last : null;
-    db.add("goal", atMs, goalLine(prev, g), { subject: g.id, data: { status: g.status, prep: g.prep, drop: g.reason, object: g.object, ...(g.error ? { reason: g.error } : {}) } });
+    db.add("goal", atMs, goalLine(prev, g), { subject: g.id, data: { status: g.status, prep: g.prep, drop: g.reason, object: g.object, ...(g.meal ? {surface:g.meal.surface} : {}), ...(g.error ? { reason: g.error } : {}) } });
     last = g;
   };
 }
@@ -33,7 +33,20 @@ const OWNER = { safety: "안전 확인", request: "말로 부탁한 일", goal: 
 /** 기계 전이는 받았을 때마다 한 줄이다. 예전 목표 사건은 준비 실패의 까닭과 실행 기록 문구도 보존한다. */
 export function machineWrites(db: HistoryDb) {
   const oldGoal = goalRecorder(db);
+  let phoneStep = "";
   return {
+    "/device/power_intent": (b) => db.add("household",Number(b.at_ms),"TV 전원 요청",{subject:String(b.device_id),data:{event:"power_request",power:b.value,command_id:b.command_id}}),
+    "/act/directive_result": (b) => {
+      if(b.outcome==="applied" && b.command_id && b.expected_power) db.add("household",Number(b.at_ms),"TV 전원 확인",{subject:String(b.target_id),data:{event:"power_confirm",power:b.expected_power,command_id:b.command_id}});
+    },
+    "/act/phone_changes": (b,stamp) => {
+      const cmd=b.cmd as import("../contract/phone.js").PlannedCommand|undefined;
+      if(!cmd || cmd.type!=="command" || !["go","pick","place"].includes(cmd.kind??"") || !cmd.target) return;
+      const key=JSON.stringify([cmd.id,cmd.step]);
+      if(key===phoneStep) return;
+      phoneStep=key;
+      db.add("household",stamp,"폰 단계 전송",{subject:cmd.id,data:{event:"phone",step:cmd.step,kind:cmd.kind,target:cmd.target.id}});
+    },
     "/brain/goal_changes": (b, stamp) => oldGoal(b.goal as PendingGoal, stamp),
     "/goal/changes": (b) => {
       if (b.state === "idle") db.add("goal", Number(b.since_ms), "대기", { data: b });

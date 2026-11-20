@@ -154,7 +154,7 @@ export function StationsEditor({ home, viewer, frame, box }: { home: string } & 
       </>}
       {p && <><Button variant="outline" aria-pressed={pick==="position"} onClick={()=>setPick("position")}>발 위치 고르기</Button><output>{p.position.join(", ")} m</output>
         <Button variant="outline" aria-pressed={pick==="look_at"} onClick={()=>setPick("look_at")}>바라볼 곳 고르기</Button><output>{p.look_at.join(", ")} m</output></>}
-      {f && <Label>도착 거리(m)<Input type="number" step="0.05" min="0.05" value={f.near_m} onChange={e=>update({},undefined,{near_m:Number(e.target.value)})}/></Label>}
+      {f && <Label>도착 거리 · 미터<Input type="number" step="0.05" min="0.05" value={f.near_m} onChange={e=>update({},undefined,{near_m:Number(e.target.value)})}/></Label>}
       {z && <><Button variant="outline" onClick={()=>setPick("polygon")}>꼭짓점 찍기</Button><output>{z.polygon.map(p=>p.join(", ")).join(" · ")}</output>
         <Button variant="outline" disabled={!z.polygon.length} onClick={()=>update({},{polygon:z.polygon.slice(0,-1)})}>마지막 점 취소</Button></>}
       {pick && <Status>{pick==="look_at"?"트윈에서 바라볼 곳을 눌러 주세요.":pick==="polygon"?"구역의 꼭짓점을 차례로 눌러 주세요.":"트윈에서 바닥 자리를 눌러 주세요."}</Status>}

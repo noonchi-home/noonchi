@@ -1,7 +1,7 @@
 import { z } from "zod";
 import type { SceneJson, Vec2 } from "../contract/layout.js";
 import type { StationMap } from "../contract/stations.js";
-import { insidePolygon } from "./home-plan.js";
+import { insidePolygon } from "./floor.js";
 import { edgeDistance, edges, walkingGeometry, walkingMap } from "./walk-guide.js";
 
 const point = z.tuple([z.number(), z.number()]);
@@ -76,8 +76,12 @@ export function validateStations(raw: unknown, scene: SceneJson, footprintOf?: (
       throw new Error("같은 방에서 가구를 쓸 수 있는 앞자리를 골라 주세요.");
     const gates=floor.portals.filter(g=>g.rooms.includes(front.room));
     const stations=map.stations.filter(s=>s.room===front.room);
-    if (!gates.some(g=>grid!.gridReachable(front.position,g.point,front.room,[g])) &&
-        !stations.some(s=>grid!.gridReachable(front.position,s.position,front.room)))
+    const destinations = [
+      ...stations.map(s => ({ point: s.position, gates: [] })),
+      ...gates.map(g => ({ point: g.point, gates: [g] })),
+    ];
+    const direct = destinations.some(d => grid!.clear(front.position,d.point,front.room,d.gates));
+    if (!direct && !destinations.some(d => grid!.gridReachable(front.position,d.point,front.room,d.gates)))
       throw new Error(front.surface_id+" 앞에 걸어갈 수 있는 통로가 없어요.");
   }
   for (const id of [map.meal_watch,map.kitchen_entry])

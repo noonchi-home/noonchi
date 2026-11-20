@@ -1,3 +1,4 @@
+import { HOUSEHOLD_KINDS } from "../devices/kinds.js";
 import type { DirectiveResult, GoalIntent, HouseholdAction } from "../contract/machines.js";
 import type { StationMap, Station } from "../contract/stations.js";
 import type { Vec2 } from "../contract/layout.js";
@@ -54,7 +55,7 @@ export interface WatchInput {
 }
 type Offer=Extract<GoalIntent,{op:"offer"}>;
 const VISIT_MS=30_000;
-const DOOR={kind:"device",deviceKind:"fridge",attr:"door",value:"open",mode:"edge"} as const;
+const DOOR={kind:"device",deviceKind:HOUSEHOLD_KINDS.mealDoor,attr:"door",value:"open",mode:"edge"} as const;
 
 /** A single trip or observer selection at a time. Trips never issue a phone command from goal. */
 export class RoomWatch {

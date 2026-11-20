@@ -116,7 +116,8 @@ export class TrackCore {
         world.fixtures.some(f=>(f.id===p.id || f.device===p.id) && f.facts.open?.value==="closed" && f.facts.open.certainty==="confirmed")))
         return {guide:null,distance:null,arrived:false,within:()=>false,vision:"문이 닫혀 있어요."};
     }
-    return {...result,vision:result.blocked ? "지나갈 길을 확인해 주세요." : result.distance===null ? "위치를 다시 맞춰 주세요." : (target?.label??"설 자리")+(station?"까지 ":" 앞까지 ")+result.distance.toFixed(1)+"m"};
+    const label = target && !station ? this.nameOf(target.id) ?? target.label : target?.label;
+    return {...result,vision:result.blocked ? "지나갈 길을 확인해 주세요." : result.distance===null ? "위치를 다시 맞춰 주세요." : (label??"설 자리")+(station?"까지 ":" 앞까지 ")+result.distance.toFixed(1)+"m"};
   }
   run: Run | null = null;
   planning: Job | null = null;

@@ -22,7 +22,7 @@ describe("토픽 표", () => {
     expect(TOPICS["/phone/pose"].body.safeParse({observed_ms:10,quality:"usable"}).success).toBe(false);
   });
   it("goal 의도·manager 허용·act 결과는 담당 노드의 확인 전달이다",()=>{
-    for(const [topic,node] of [["/goal/intent","goal"],["/manager/directive","manager"],["/act/directive_result","act"]] as const){
+    for(const [topic,node] of [["/goal/intent","goal"],["/manager/directive","manager"],["/act/directive_result","act"],["/device/power_intent","devices"]] as const){
       expect(TOPICS[topic].from).toEqual([node]);
       expect(TOPICS[topic].qos.kind).toBe("reliable");
     }

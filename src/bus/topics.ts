@@ -373,6 +373,7 @@ export const TOPICS = {
   "/device/command": { qos: { kind: "reliable" }, body: z.looseObject({ command_id: z.string().min(1), deadline_ms: z.number().finite() }), key: by("command_id"), order: null, from: ["act", "phone"] },
   "/device/result": { qos: { kind: "reliable" }, body: z.looseObject({ command_id: z.string().min(1), status: z.enum(["done", "failed", "expired", "unknown"]) }), key: by("command_id"), order: null, from: ["devices"] },
   "/device/state": { qos: { kind: "state" }, body: obj, key: by("id"), order: "stamp", from: ["devices"] },
+  "/device/power_intent": { qos: { kind: "reliable" }, body: z.strictObject({ id, device_id:id, value:z.enum(["on","off"]), origin:z.enum(["automation","user","unknown"]), command_id:id.nullable(), at_ms:at }), key:by("device_id"), order:"stamp", from:["devices"] },
   "/device/changes": { qos: { kind: "reliable" }, body: deviceChange, key: by("id"), order: "stamp", from: ["devices"] },
   "/bus/dead": { qos: { kind: "reliable" }, body: obj, key: by("topic"), order: null, from: NODES },
 } as const satisfies Record<string, TopicSpec<Record<string, unknown>>>;

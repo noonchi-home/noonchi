@@ -47,6 +47,8 @@ describe("TV viewer and power ownership",()=>{
   });
   it("실제 정책·허브에서 확인된 자동 변경과 같은 값 수동 요청을 구분한다",async()=>{
     const hub=new SignalHub(new MemoryHub([spec]));
+    const intents: string[]=[];
+    hub.onPowerIntent=(_id,power,command)=>intents.push(power+" "+(command??"manual"));
     const unsubscribe=hub.subscribe(()=>{});
     try {
       await hub.command("screen",{type:"on"});
@@ -57,6 +59,7 @@ describe("TV viewer and power ownership",()=>{
       expect(hub.powerStamp("screen")).toMatchObject({generation:first.generation,power:"off",command_id:"auto1"});
       await new Policy().guard(hub,"screen",{type:"off"});
       expect(hub.powerStamp("screen")).toMatchObject({generation:first.generation+1,command_id:null});
+      expect(intents).toEqual(["on manual","off auto1","off manual"]);
     } finally {unsubscribe();await hub.stop();}
   });
 });
