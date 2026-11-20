@@ -19,6 +19,10 @@ describe("집 자리", () => {
     const m = scene.stations;
     expect(standbyFor(m,"living")?.id).toBe("living_standby");
     expect(m.stations.find(s=>s.id===m.kitchen_entry)?.surfaces).toContain("fridge_bbc363a3");
+    const entry = m.stations.find(s=>s.id===m.kitchen_entry)!;
+    const front = m.zones.find(z=>entry.observes_zone_ids.includes(z.id))!;
+    expect(front.name).toBe("냉장고 앞");
+    expect(zoneAt(m,entry.room,entry.position,0)).toBeNull();
     expect(m.kitchen_entry).not.toBe(m.meal_watch);
     const floor = floorPlanFrom(scene);
     for (const p of [...m.stations,...m.surface_fronts]) expect(route(floor,[9.5,9],p.position),JSON.stringify(p)).not.toBeNull();
@@ -36,6 +40,8 @@ describe("집 자리", () => {
     expect(zoneAt({...map,zones:[...map.zones,{...map.zones[0]!,id:"other"}]},"one",[2,2],0.15)).toBeNull();
   });
   it.each([
+    {...map, stations:[{...station,position:[2,2]}]},
+    {...map, stations:[{...station,position:[3,2]}]},
     {...map, stations:[station,{...station,id:"extra"}]},
     {...map, stations:[{...station,position:[4,3]}]},
     {...map, stations:[{...station,position:[6,4]}]},

@@ -87,6 +87,10 @@ export function validateStations(raw: unknown, scene: SceneJson, footprintOf?: (
   }
   for (const s of map.stations) {
     for (const list of [s.roles,s.surfaces,s.rooms,s.observes_zone_ids]) unique(list);
+    for (const zone of map.zones.filter(z=>s.observes_zone_ids.includes(z.id))) {
+      if (insidePolygon(s.position,zone.polygon) || edges(zone.polygon).some(([a,b])=>edgeDistance(s.position,a,b)<1e-8))
+        throw new Error(s.name+"의 설 자리는 관찰 구역 밖에 두세요.");
+    }
     if (s.rooms.some(r=>!rooms.has(r)) || s.surfaces.some(id=>!floor.objects.has(id)) ||
         s.observes_zone_ids.some(id=>!map.zones.some(z=>z.id===id && (z.room===s.room || s.rooms.includes(z.room)))))
       throw new Error(s.name+"에서 볼 방·가구·구역을 확인해 주세요.");
