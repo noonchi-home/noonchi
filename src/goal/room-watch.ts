@@ -64,7 +64,7 @@ export class RoomWatch {
   private ended=false;
   private visited:string[]=[];
   private selected:string|null=null;
-  private arrived:{id:string;at:number}|null=null;
+  private arrived:{id:string;at:number;until:number}|null=null;
   private attempted="";
   private mealAt:number|null=null;
   private doorAt:number|null=null;
@@ -96,13 +96,13 @@ export class RoomWatch {
     if (job.kind==="visit" && result.target_id!==job.target_id) return;
     this.pending=null;
     if (job.goal_id===null || this.ended || this.goal!==job.goal_id) return;
+    if (result.outcome==="cancelled") {this.ended=true;return;}
     if (result.at_ms>=job.until_ms || result.outcome==="failed" || result.outcome==="unknown") {this.missed(job);return;}
-    if (result.outcome==="cancelled") this.ended=true;
     if (job.kind==="choose_station" && result.outcome==="selected" && job.candidates.includes(result.target_id))
       this.selected=result.target_id;
     else if (job.kind==="visit" && result.outcome==="arrived") {
       this.visited.push(job.target_id);
-      this.arrived={id:job.target_id,at:result.at_ms};
+      this.arrived={id:job.target_id,at:result.at_ms,until:job.until_ms};
     }
   }
 
@@ -116,7 +116,13 @@ export class RoomWatch {
     const seated=meal.value===true && meal.observed_ms!==this.mealAt;
     if (opened) this.doorAt=door.observed_ms;
     if (seated) this.mealAt=meal.observed_ms;
-    if (this.busy || (checking && (input.personSeen || now>=checking.until))) {this.interrupt();return;}
+    if (this.busy || (checking && now>=checking.until)) {this.interrupt();return;}
+    if (checking && input.personSeen) {
+      this.withdraw();
+      this.attempted="";
+      this.arrived=null;
+      return;
+    }
     if (!map) {this.withdraw();return;}
     if (this.pending && now>=this.pending.until_ms) {this.missed(this.pending);this.withdraw();}
     const offer=(target_id:string,action:HouseholdAction)=>{
@@ -137,7 +143,7 @@ export class RoomWatch {
     }
     if (this.ended || this.pending || (!this.attempted && !input.cupSeen && now-checking.since<3000)) return;
     if (this.arrived) {
-      if (!facts.observes(this.arrived.id,this.arrived.at)) return;
+      if (now<this.arrived.until && !facts.observes(this.arrived.id,this.arrived.at)) return;
       this.arrived=null;
     }
     if (this.selected) {

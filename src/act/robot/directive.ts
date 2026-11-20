@@ -13,9 +13,10 @@ export function stationDirectives(core:TrackCore) {
   const port=core.o.stations;
   return new DirectiveRunner({
     now:()=>core.clock.now(), rev:()=>port?.rev() ?? 0,
+    personSeen:()=>core.o.state.view().person.visible,
     blocked:job=>{
       const ctx=core.start.context();
-      return core.stopped || ctx.emergency || !!ctx.requested || (!!job.goal_id && core.o.state.view().person.visible) ||
+      return core.stopped || ctx.emergency || !!ctx.requested ||
         (job.kind==="choose_station" && (!!ctx.activeAction || ctx.docking || !!core.o.phone.talking?.())) ||
         (job.kind==="visit" && (!!ctx.activeAction || visitPhoneBusy(core)));
     },
@@ -41,6 +42,7 @@ interface DirectivePort {
   now():number;
   rev():number;
   blocked(job:HouseholdOffer):boolean;
+  personSeen?():boolean;
   visit(job:HouseholdOffer):boolean;
   arrived(job:HouseholdOffer):boolean;
   shown?(id:string):import("../../contract/phone.js").PlannedCommand|null;
@@ -63,13 +65,15 @@ export class DirectiveRunner {
   receive(message:ManagerDirective) {
     if (this.closed) return;
     if (message.op==="revoke") {
-      this.cancel(message.id);
+      const job = this.active.get(message.id);
+      if (job) this.finish(job,this.interruption(job) ?? "cancelled");
       this.finished.add(message.id); // A grant may still be waiting for its world revision.
       return;
     }
     if (this.active.has(message.id) || this.finished.has(message.id)) return;
     this.active.set(message.id,message);
-    if (this.blocked(message)) this.finish(message,"cancelled");
+    const stop = this.interruption(message);
+    if (stop) this.finish(message,stop);
     else if (message.kind==="visit") {
       if (this.port.arrived(message)) this.finish(message,"arrived");
       else if (!this.port.visit(message)) this.finish(message,"unknown");
@@ -78,19 +82,24 @@ export class DirectiveRunner {
       const abort=new AbortController();
       this.selections.set(message.id,abort);
       void this.port.choose(message,abort.signal).then(id=>{
-        if (abort.signal.aborted || this.blocked(message)) this.cancel(message.id);
+        if (abort.signal.aborted) return;
+        const stop = this.interruption(message);
+        if (stop) this.finish(message,stop);
         else if (id && message.candidates.includes(id)) this.finish(message,"selected",id);
         else this.finish(message,"unknown");
       },()=>this.finish(message,"unknown"));
     } else this.finish(message,"unknown");
   }
 
-  private blocked(job:HouseholdOffer) {
-    return this.port.now()>=job.until_ms || this.port.blocked(job);
+  private interruption(job:HouseholdOffer) {
+    if (this.port.blocked(job)) return "cancelled";
+    if (this.port.now() >= job.until_ms || (job.goal_id && this.port.personSeen?.())) return "unknown";
+    return null;
   }
   tick() {
     for (const job of this.active.values()) {
-      if (this.blocked(job)) this.finish(job,"cancelled");
+      const stop = this.interruption(job);
+      if (stop) this.finish(job,stop);
       else if (job.kind==="visit" && this.port.arrived(job)) this.finish(job,"arrived");
     }
   }

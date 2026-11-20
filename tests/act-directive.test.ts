@@ -17,6 +17,15 @@ it("방문·회수·말 부탁 뒤 늦은 도착과 중복 허용은 명령을 �
   expect(r.sent).toEqual(["visit","clear:visit","speech"]);
   expect(r.results.map(v=>v.outcome)).toEqual(["cancelled"]);
 });
+it("act가 사용자 재등장을 먼저 보면 방문만 거둔다",()=>{
+  const results:DirectiveResult[]=[];
+  let seen=false;
+  const runner=new DirectiveRunner({now:()=>100,rev:()=>1,blocked:()=>false,personSeen:()=>seen,
+    visit:()=>true,arrived:()=>false,clear:()=>{},result:r=>results.push(r)});
+  runner.receive({...grant,goal_id:"g"});
+  seen=true; runner.tick();
+  expect(results.map(r=>r.outcome)).toEqual(["unknown"]);
+});
 it("자리 선택을 회수한 뒤 도착한 모델 답으로 이동하지 않는다",async()=>{
   const results:DirectiveResult[]=[];
   let respond!:(s:string)=>void;
@@ -36,4 +45,5 @@ it("도착은 현재 위치로 확인하고 막히거나 만료된 방문은 보
   expect(r.sent).toEqual(["visit","clear:visit"]);
   const t=setup();t.runner.receive({...grant,until_ms:1000});
   expect(t.sent).toEqual([]);
+  expect(t.results.map(r=>r.outcome)).toEqual(["unknown"]);
 });
