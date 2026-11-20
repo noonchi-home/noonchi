@@ -35,12 +35,14 @@ describe("TV viewer and power ownership",()=>{
     r.manual();r.note("off",off.id);r.result(off.id,4010,"off");r.result(off.id,4010,"off");
     r.tick(6000,false,true);expect(r.jobs()).toHaveLength(1);
   });
-  it("실패하거나 만료된 요청의 늦은 성공은 다른 TV나 새 시청에 쓰이지 않는다",()=>{
+  it.each(["failed","timeout"])("실패한 요청의 늦은 성공은 다른 TV나 새 시청에 쓰이지 않는다 (%s)",outcome=>{
     const r=rig();r.tick(4000,true);const off=r.jobs()[0]!;
-    r.tv.result({id:off.id,target_id:"screen",evidence_rev:3,at_ms:4200,outcome:"failed"});
-    r.note("off",off.id);r.result(off.id,4300,"off");r.tick(6000,false,true);
+    if (outcome==="failed") r.tv.result({id:off.id,target_id:"screen",evidence_rev:3,at_ms:4200,outcome:"failed"});
+    else r.tick(off.until_ms,true);
+    const late=off.until_ms+1;
+    r.note("off",off.id);r.result(off.id,late,"off");r.tick(late+2000,false,true);
     r.tv.observe("other",{generation:0,power:"off",command_id:off.id});
-    r.tv.tick("other",{empty:false,watch:true,photo:6000},4,6000);
+    r.tv.tick("other",{empty:false,watch:true,photo:late+2000},4,late+2000);
     expect(r.jobs()).toHaveLength(1);
   });
   it("실제 정책·허브에서 확인된 자동 변경과 같은 값 수동 요청을 구분한다",async()=>{

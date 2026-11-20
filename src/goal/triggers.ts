@@ -18,6 +18,7 @@ export interface MealEvidence {
 }
 export interface TriggerFacts {
   meal?: MealEvidence;
+  photoValidUntil?: number;
   tvRooms?:ReadonlyMap<string,string>;
   read(trigger: Trigger): TriggerFact;
   mealSeated: TriggerFact;
@@ -120,7 +121,8 @@ export class GoalTriggers {
     const proof = current?.proof;
     const stamp = current?.at_ms ?? null;
     const currentRev = current ? this.photoRev : null;
-    const recent = stamp !== null && now >= stamp && now-stamp <= 1.5*this.cadenceMs;
+    const validUntil = stamp === null ? undefined : stamp + 1.5 * this.cadenceMs;
+    const recent = stamp !== null && validUntil !== undefined && now >= stamp && now <= validUntil;
     const see = (v:TriggerFact["value"])=>fact(v,stamp,currentRev);
     const transition = {...this.transition}, entered = this.entered;
     const windows = new Map(this.vacantSince);
@@ -131,6 +133,7 @@ export class GoalTriggers {
       [...watches.values()].some(w => w.zones.some(z => z.id === zone) && this.covered(current!,w.zones) &&
         deviceFact(view.devices,{kind:"device",deviceKind:"tv",id:w.tv,attr:"power",value:"on",mode:"level"},rev,changedDevices).value === true);
     return {
+      photoValidUntil:validUntil,
       tvRooms:new Map([...watches].filter(([,w])=>w.tv).map(([room,w])=>[w.tv,room])),
       ...(station ? {meal:{rev, zone: zone || null, outsideZones: zone === false, watching, count: recent ? proof?.person_count ?? null : null,
         dining:station.observes_zone_ids, surfaces:station.surfaces}} : {}),

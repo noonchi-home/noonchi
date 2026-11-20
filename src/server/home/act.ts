@@ -236,7 +236,7 @@ export function startAct(core: HomeCore): (event: BrainLog) => void {
         return core.looker?.chooseStation(places,job.direction,visited,signal) ?? Promise.resolve(null);
       },
       tvAllowed:job=>{
-        const fact=viewerAt(core.goalFacts,job.target_id);
+        const fact=viewerAt(core.goalFacts,job.target_id,now());
         const latest=view().household_photo;
         return !!(latest?.proof && latest.at_ms===fact.photo &&
           core.tvWatch?.permits(job,fact,signals.powerStamp(job.target_id),now()));

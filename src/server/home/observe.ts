@@ -147,7 +147,7 @@ export async function startNodes(core: HomeCore, emit: (event: BrainLog) => void
         if (core.closed || !view || rev == null) return;
         const map=core.scene?.stations ?? null, now=clock.now();
         core.goalFacts = triggers.evaluateTriggers(view,rev,map,now);
-        for (const device of core.twin.devices) if (device.kind==="tv") tv.tick(device.id,viewerAt(core.goalFacts,device.id),rev,now);
+        for (const device of core.twin.devices) if (device.kind==="tv") tv.tick(device.id,viewerAt(core.goalFacts,device.id,now),rev,now);
         const checking=core.checkingVisit;
         const cup=checking && view.objects.find(o=>o.id===checking.cup);
         rooms.tick({now,rev,map,facts:core.goalFacts,checking,

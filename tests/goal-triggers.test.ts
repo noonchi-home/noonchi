@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { viewerAt } from "../src/goal/tv-watch.js";
 import { GoalTriggers } from "../src/goal/triggers.js";
 import { WorldState } from "../src/world/index.js";
 import { locateZone } from "../src/layout/index.js";
@@ -77,6 +78,13 @@ describe("관찰 계기",()=>{
     expect(r.photo(4100,look,scene(null,"toward_tv"),sit).read(seated).value).toBe("unknown");
     expect(r.photo(4200,look,scene("d1","toward_tv"),sit).read(seated).value).toBe(true);
     expect(r.photo(4300,{...look,person_ids:["d1","d2"]},scene("d1","toward_tv"),sit).read(seated).value).toBe("unknown");
+  });
+  it("전원 전송 직전에 사진 기한이 지났으면 다음 tick 전에도 꺼지지 않는다",()=>{
+    const r=rig(2000);
+    r.photo(0); r.photo(2000);
+    const snapshot=r.photo(4000);
+    expect(viewerAt(snapshot,"screen",7000).empty).toBe(true);
+    expect(viewerAt(snapshot,"screen",7001).empty).toBe(false);
   });
   it("늦게 도착한 사진은 새 사진의 사실·시각을 되돌리지 않는다",()=>{
     const r=rig();r.photo(4000,{}, {seats:"obscured",people:[],dining_food:"unknown"});r.photo(3000);

@@ -4,9 +4,9 @@ import type { DirectiveResult, GoalIntent, HouseholdOffer } from "../contract/ma
 import type { TriggerFacts } from "./triggers.js";
 
 export interface ViewerEvidence { empty:boolean; watch:boolean; photo:number|null }
-export function viewerAt(facts:TriggerFacts | null,id:string):ViewerEvidence {
+export function viewerAt(facts:TriggerFacts | null,id:string,now:number):ViewerEvidence {
   const room=facts?.tvRooms?.get(id);
-  if (!room || !facts) return {empty:false,watch:false,photo:null};
+  if (!room || facts?.photoValidUntil == null || now > facts.photoValidUntil) return {empty:false,watch:false,photo:null};
   const empty=facts.read({kind:"noViewer",room,ms:4000});
   const watch=facts.read({kind:"postureAttention",posture:"seated",target:id});
   return {empty:empty.value===true,watch:watch.value===true,photo:empty.observed_ms};
