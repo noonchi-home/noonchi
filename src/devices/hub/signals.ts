@@ -89,7 +89,7 @@ export class SignalHub implements DeviceHub {
     // 근거는 이번에 본 속성마다 새로 쓴다(근거 없이 온 속성은 옛 근거를 지운다)
     const ev: Record<string, SightEvidence> = { ...prev?.evidence };
     for (const attr of Object.keys(seen)) {
-      if (evidence[attr]) ev[attr] = evidence[attr]!;
+      if (evidence[attr]) ev[attr] = Object.freeze({ ...evidence[attr]! }); // 넘긴 값과 나누지 않는다
       else delete ev[attr];
     }
     this.vision.set(id, { twin: { ...prev?.twin, ...seen }, atMs, evidence: ev });
@@ -277,7 +277,8 @@ export class SignalHub implements DeviceHub {
     const v = this.vision.get(s.id);
     if (!v) return base;
     const applied = !this.real(s.id);
-    const vision = { twin: { ...v.twin }, at: new Date(v.atMs).toISOString(), applied, ...(Object.keys(v.evidence).length ? { evidence: { ...v.evidence } } : {}) };
+    // 근거 하나하나는 observe에서 얼린 사본이다: 돌려준 값을 고쳐 다음 조회의 근거를 바꿀 수 없다.
+    const vision = Object.freeze({ twin: Object.freeze({ ...v.twin }), at: new Date(v.atMs).toISOString(), applied, ...(Object.keys(v.evidence).length ? { evidence: Object.freeze({ ...v.evidence }) } : {}) });
     if (!applied) return { ...base, vision };
     // 실제 출처가 없다: 본 값이 상태다. 모름으로 가린 기기는 본 속성만 안다
     const { signal, ...rest } = base;

@@ -27,6 +27,20 @@ function setup(sources: ConstructorParameters<typeof SignalHub>[1] = {}) {
 }
 
 describe("SignalHub", () => {
+  it("본 값의 근거는 넘긴 값·돌려준 값과 나누지 않는다: 고쳐도 다음 조회의 근거 시각은 그대로다", () => {
+    const { hub } = setup();
+    const given = { door: { seenAt: 1000, explicit: true } };
+    hub.observe("washer_1", { door: "open" }, 1000, given);
+    given.door.seenAt = 1;
+    const first = hub.get("washer_1")!;
+    expect(first.vision?.evidence?.door?.seenAt).toBe(1000);
+    expect(() => {
+      // @ts-expect-error 본 값의 근거는 읽기 전용
+      first.vision!.evidence!.door!.seenAt = 2;
+    }).toThrow(TypeError);
+    expect(hub.get("washer_1")!.vision?.evidence?.door?.seenAt).toBe(1000);
+  });
+
   it("기본(가상)은 안쪽 허브를 그대로 보인다", async () => {
     const { world, hub, seen } = setup();
     expect(hub.get("tv_living")).toEqual(world.get("tv_living"));
