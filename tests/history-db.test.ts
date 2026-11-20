@@ -2,6 +2,7 @@
 import { existsSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { describe, expect, it } from "vitest";
 import type { BrainLog } from "../src/contract/events.js";
 import type { PlanView } from "../src/contract/plan.js";
@@ -35,19 +36,28 @@ describe("기록 DB", () => {
   });
 
   it("연 뒤 첫 줄부터 시간축 줄은 NORMAL로 넣는다", () => {
+    // 구조를 바꾸지 않고 본다(트리거를 만들면 준비해 둔 문장이 다시 준비되어 실제와 다르게 돈다): 시간축 INSERT가 실행되기 직전의 설정을 읽는다.
+    const proto = DatabaseSync.prototype;
+    const prepare = proto.prepare;
+    const seen: number[] = [];
+    proto.prepare = function (this: DatabaseSync, sql: string) {
+      const st = prepare.call(this, sql);
+      if (!sql.startsWith("INSERT INTO events")) return st;
+      return new Proxy(st, {
+        get: (t, k) => k === "run"
+          ? (...a: Parameters<typeof t.run>) => { seen.push((prepare.call(this, "PRAGMA synchronous").get() as { synchronous: number }).synchronous); return t.run(...a); }
+          : typeof Reflect.get(t, k) === "function" ? (Reflect.get(t, k) as (...x: unknown[]) => unknown).bind(t) : Reflect.get(t, k),
+      });
+    } as typeof prepare;
     const h = HistoryDb.open(join(mkdtempSync(join(tmpdir(), "db-")), "sync.db"));
     try {
-      const seen: number[] = [];
-      h.db.function("sync_now", () => {
-        seen.push((h.db.prepare("PRAGMA synchronous").get() as { synchronous: number }).synchronous);
-        return null;
-      });
-      h.db.exec("CREATE TEMP TRIGGER sync_seen AFTER INSERT ON events BEGIN SELECT sync_now(); END");
       h.add("vlm", 1, "첫 줄");
       h.add("vlm", 2, "둘째 줄");
-      expect(seen).toEqual([1, 1]);
+      h.add("vlm", 3, "셋째 줄");
+      expect(seen).toEqual([1, 1, 1]);
       expect(h.db.prepare("PRAGMA synchronous").get()).toEqual({ synchronous: 2 });
     } finally {
+      proto.prepare = prepare;
       h.close();
     }
   });
