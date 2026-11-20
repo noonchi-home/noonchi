@@ -73,7 +73,7 @@ export class HistoryDb {
   static open(path: string, offsetMinutes = 540): HistoryDb {
     if (path !== ":memory:") mkdirSync(dirname(path), { recursive: true });
     const db = new DatabaseSync(path);
-    db.exec(`PRAGMA busy_timeout = 5000; PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL; ${SCHEMA}`);
+    db.exec(`PRAGMA busy_timeout = 5000; PRAGMA journal_mode = WAL; PRAGMA synchronous = FULL; ${SCHEMA}`);
     return new HistoryDb(db, offsetMinutes);
   }
 
@@ -86,12 +86,27 @@ export class HistoryDb {
     return new Date(ms + this.offsetMinutes * 60_000).toISOString().slice(0, 10);
   }
 
-  /** 기록 한 줄 넣기는 프레임마다 여러 번 불린다: 문장을 한 번만 준비해 다시 쓴다(매번 prepare하면 SQL 해석이 지연에 더해진다). */
+  /** 시간축 한 줄 넣기는 프레임마다 여러 번 불린다. 문장은 한 번만 준비하고, 그 한 줄만 디스크 동기화 없이(NORMAL) 넣은 뒤 FULL로 돌린다.
+   *  줄마다 동기화하면 엔진 프레임 → 집 상태 지연에 약 3ms가 더해진다. 정전 때 잃을 수 있는 것은 마지막 시간축 줄뿐이고,
+   *  기억·컵 답 같은 다른 쓰기는 FULL 그대로다(다음 FULL 쓰기가 앞선 줄도 함께 동기화한다).
+   *  트랜잭션 안에서는 이 설정을 바꿀 수 없다: 그때는 그대로 넣고, 그 트랜잭션의 커밋(FULL)이 동기화한다. */
   #insert: ReturnType<DatabaseSync["prepare"]> | null = null;
+  #sync: { normal: ReturnType<DatabaseSync["prepare"]>; full: ReturnType<DatabaseSync["prepare"]> } | null = null;
 
   add(kind: HistoryKind, atMs: number, text: string, o: { subject?: string; data?: unknown } = {}): void {
-    (this.#insert ??= this.db.prepare("INSERT INTO events(at_ms, day, kind, subject, text, data) VALUES (?, ?, ?, ?, ?, ?)"))
-      .run(atMs, this.dayOf(atMs), kind, o.subject ?? null, text, o.data === undefined ? null : JSON.stringify(o.data));
+    let relaxed = false;
+    try {
+      (this.#sync ??= { normal: this.db.prepare("PRAGMA synchronous = NORMAL"), full: this.db.prepare("PRAGMA synchronous = FULL") }).normal.run();
+      relaxed = true;
+    } catch {
+      // 트랜잭션 안: FULL 그대로 넣는다
+    }
+    try {
+      (this.#insert ??= this.db.prepare("INSERT INTO events(at_ms, day, kind, subject, text, data) VALUES (?, ?, ?, ?, ?, ?)"))
+        .run(atMs, this.dayOf(atMs), kind, o.subject ?? null, text, o.data === undefined ? null : JSON.stringify(o.data));
+    } finally {
+      if (relaxed) this.#sync!.full.run();
+    }
   }
 
   /** 시각 순(같으면 넣은 순). limit 기본 10,000. */
