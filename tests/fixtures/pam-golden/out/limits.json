@@ -3,7 +3,7 @@
     "env": {},
     "limits": {
       "max_model_len": 32768,
-      "predict_input_bytes": 86043,
+      "predict_input_bytes": 86004,
       "reflect_input_bytes": 39471
     }
   },
@@ -13,7 +13,7 @@
     },
     "limits": {
       "max_model_len": 32768,
-      "predict_input_bytes": 86043,
+      "predict_input_bytes": 86004,
       "reflect_input_bytes": 39471
     }
   },
@@ -24,7 +24,7 @@
     },
     "limits": {
       "max_model_len": 20000,
-      "predict_input_bytes": 47739,
+      "predict_input_bytes": 47700,
       "reflect_input_bytes": 1167
     }
   },
@@ -35,7 +35,7 @@
     },
     "limits": {
       "max_model_len": 24576,
-      "predict_input_bytes": 61467,
+      "predict_input_bytes": 61428,
       "reflect_input_bytes": 14895
     }
   }
