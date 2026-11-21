@@ -1,5 +1,5 @@
 import {describe,it,expect} from "vitest";
-import {NO_VIEWER_MS,TvWatch,viewerAt} from "../src/goal/tv-watch.js";
+import {NO_VIEWER_MS,TvWatch,WATCH_HOLD_MS,viewerAt} from "../src/goal/tv-watch.js";
 import type {GoalIntent,Trigger,TriggerFact} from "../src/contract/machines.js";
 import type {TriggerFacts} from "../src/goal/triggers.js";
 import {MemoryHub,SignalHub,describeDevice} from "../src/devices/index.js";
@@ -86,13 +86,18 @@ describe("TV 규칙: 빈 자리 2초와 지켜보는 동안",()=>{
     expect(r.tv.watching()).toBe(false);
     r.tick(0,false,true);
     expect(r.tv.watching()).toBe(true);
+    // 사진 한 장이 처리 한도로 빠지거나 답이 늦어 유효한 사진이 잠깐 없어도 WATCH_HOLD_MS 동안은 1초 간격을 지킨다
     r.tick(1000,false,false,false);
-    expect(r.tv.watching()).toBe(false);
-    r.tick(2000,true);const off=r.jobs()[0]!;
-    r.result(off.id,2001,"off");r.note("off",off.id);
-    r.tick(3000,true);
     expect(r.tv.watching()).toBe(true);
-    r.manual();r.tick(4000,true);
+    r.tick(WATCH_HOLD_MS,false,false,false);
+    expect(r.tv.watching()).toBe(true);
+    r.tick(WATCH_HOLD_MS+1,false,false,false);
+    expect(r.tv.watching()).toBe(false);
+    r.tick(3000,true);const off=r.jobs()[0]!;
+    r.result(off.id,3001,"off");r.note("off",off.id);
+    r.tick(4000,true);
+    expect(r.tv.watching()).toBe(true);
+    r.manual();r.tick(5000,true);
     expect(r.tv.watching()).toBe(false);
   });
 });

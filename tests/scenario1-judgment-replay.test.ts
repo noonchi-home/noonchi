@@ -2,20 +2,38 @@ import { describe, expect, it } from "vitest";
 import { replayScenario } from "./helpers/scenario1-replay.js";
 import { judgeScenario1 } from "../scripts/scenario1-judge.js";
 
-import { parseArgs } from "../scripts/video-check.js";
+import { leftServerAt, parseArgs, scenarioSettled } from "../scripts/video-check.js";
 
 describe("시나리오 1 합성(composed) 판단 재생", () => {
   it("실영상 모드는 수동 완료와 가짜 서버를 거부한다", () => {
     const flags = ["--clip", "run.mp4", "--scenario", "scenario1", "--left", "62.5"];
-    expect(parseArgs(flags)).toMatchObject({ scenario: "scenario1", doneAfterMs: 0, leftMs: 62500 });
+    expect(parseArgs(flags)).toMatchObject({ scenario: "scenario1", doneAfterMs: 0, left: { clip: "run.mp4", ms: 62500 } });
     for (const extra of [["--fake"], ["--done-after", "3"], ["--done-on", "2:가기"]])
       expect(typeof parseArgs([...flags, ...extra])).toBe("string");
   });
-  it("실영상 모드는 시청자가 떠난 영상 시각(--left 초)을 받아야 TV 끄기 5초를 잴 수 있다", () => {
+  it("실영상 모드는 시청자가 떠난 때(--left [영상:]초)를 받아야 TV 끄기 5초를 잴 수 있다", () => {
     const flags = ["--clip", "run.mp4", "--scenario", "scenario1"];
-    for (const left of [[], ["--left"], ["--left", "-1"], ["--left", "x"]])
+    expect(parseArgs([...flags, "--left", "walk-tv.mp4:3.5"])).toMatchObject({ left: { clip: "walk-tv.mp4", ms: 3500 } });
+    for (const left of [[], ["--left"], ["--left", "-1"], ["--left", "x"], ["--left", "walk tv.mp4:3"], ["--left", "walk-tv.mp4:"]])
       expect(typeof parseArgs([...flags, ...left])).toBe("string");
-    expect(parseArgs(["--clip", "run.mp4"])).not.toHaveProperty("leftMs");
+    expect(parseArgs(["--clip", "run.mp4"])).not.toHaveProperty("left");
+  });
+  it("떠난 때는 그 영상이 이어 붙은 영상 시각에서 시작한 자리에 초를 더해 서버 시각으로 옮긴다", () => {
+    // 서버 5~9초 동안 첫 영상 끝 장면을 붙잡았다가 단계 영상 walk-tv.mp4를 영상 시각 4초에서 틀었다
+    const record = {
+      t0: 1000,
+      sync: [[1000, 0], [5000, 4000], [9000, 4000], [12000, 7000]] as [number, number][],
+      clips: [{ video_ms: 4000, clip: "walk-tv.mp4" }],
+    };
+    expect(leftServerAt({ clip: "run.mp4", ms: 2000 }, "run.mp4", record, 1)).toBe(3000);
+    expect(leftServerAt({ clip: "walk-tv.mp4", ms: 1000 }, "run.mp4", record, 1)).toBe(10000);
+    expect(leftServerAt({ clip: "other.mp4", ms: 0 }, "run.mp4", record, 1)).toBeNull();
+  });
+  it("중간 판정은 되돌릴 수 없는 실패(늦은 끄기·다른 기기·다른 컵·수동 끈 TV 켜기)면 바로 끝내고, 아직 오지 않은 단계는 기다린다", () => {
+    for (const m of ["late:tv_off", "wrong_tv", "wrong_cup:pick", "manual_off_then_on"])
+      expect(scenarioSettled({ passed: false, firstMismatch: m })).toBe(true);
+    for (const m of ["missing:empty", "unexpected:tv_off", "unconfirmed:tv_off_ack"])
+      expect(scenarioSettled({ passed: false, firstMismatch: m })).toBe(false);
   });
   it("빈 판에서 빠진 첫 단계는 주방 입구 관찰이다", () => {
     expect(judgeScenario1([]).firstMismatch).toBe("missing:kitchen");

@@ -287,12 +287,13 @@ function makeBag(bag: Bag, variant: Variant): { left: number | null; photos: Pho
   return { left, photos };
 }
 
-/** VLM 사진 간격(src/observe/pipeline.ts): 앞 VLM 촬영 prev 뒤 처음으로 「그때 간격(빠름 1초·보통 2초)」 이상 지난 촬영.
- *  fast(t)는 그 시각의 src/server/home/observe.ts vlmFast와 같은 값이다. 재생 틱(250ms) 칸으로 본다. */
+/** VLM 사진 간격(src/observe/pipeline.ts frame.vlm): 앞 VLM 촬영 prev 뒤 엔진 프레임마다 보고, 처음으로 「그때 간격(빠름 1초·보통 2초)」 이상 지난 프레임.
+ *  fast(t)는 그 시각의 src/server/home/observe.ts vlmFast와 같은 값이다. */
 function nextVlmCapture(prev: number, fast: (t: number) => boolean): number {
-  for (let t = prev + FAST_VLM_MS; ; t += 250) if (t - prev >= (fast(t) ? FAST_VLM_MS : VLM_STEP_MS)) return t;
+  for (let t = prev + FAST_VLM_MS; ; t += OBSERVE.engineMs) if (t - prev >= (fast(t) ? FAST_VLM_MS : VLM_STEP_MS)) return t;
 }
-const VLM_STEP_MS = vlmStepMs(loadObserveConfig({}));
+const OBSERVE = loadObserveConfig({}),
+  VLM_STEP_MS = vlmStepMs(OBSERVE);
 
 export async function replayScenario(
   variant: Variant,

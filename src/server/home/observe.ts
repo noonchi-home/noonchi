@@ -134,8 +134,11 @@ export async function startNodes(core: HomeCore, emit: (event: BrainLog) => void
   core.out.manager = managerRoutes(manager, clock);
   await manager.prepare();
   const triggers = new GoalTriggers(locateZone, floorLookup(core.plan.rooms), vlmStepMs(loadObserveConfig(ctx.env)));
+  // 목표 판단: 250ms마다, 그리고 새 집 상태(새 VLM 답)가 오는 즉시. 답이 온 뒤 다음 틱까지 기다리지 않는다(TV 끄기 5초)
+  let evaluateGoals: (() => void) | null = null;
   core.goalMirror = await startWorldMirror({
     bus, epoch, name: "goal", clock, log,
+    onView: () => evaluateGoals?.(),
     routes: (node, afterRev) => {
       const rooms=new RoomWatch(intent=>core.out.goal?.push("/goal/intent",intent),core.floorPlan.portals);
       const tv = core.tvWatch = new TvWatch(intent=>core.out.goal?.push("/goal/intent",intent));
@@ -143,7 +146,7 @@ export async function startNodes(core: HomeCore, emit: (event: BrainLog) => void
       core.goalPlans = new BrainPlans(core.out.goal, clock, "goal:");
       core.goalPlans.routes(node);
       node.on("/goal/update", (b, ctx) => afterRev(b.rev, ctx, () => { if (!core.closed) core.tracker?.updateGoal(); }));
-      node.every(250, () => {
+      node.every(250, evaluateGoals = () => {
         const view = core.goalMirror?.view(), rev = core.goalMirror?.rev();
         if (core.closed || !view || rev == null) return;
         const map=core.scene?.stations ?? null, now=clock.now();
