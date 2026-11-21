@@ -1147,6 +1147,21 @@ describe("영상 입력 모드: 단계 영상·걷기", () => {
     expect(videos[0]!.element.isConnected).toBe(false);
   });
 
+  it("이미 도착 반경에 가까워도 반응 시간 뒤 걷기를 마친 자리에서 비춘다", async () => {
+    fakeTimers();
+    const s = makeEnded({}, STEPS);
+    await s.startAr();
+    s.ws.push(ALIGNED);
+    const look = [-2, 0.6, -0.4];
+    const initial = lastPose(s.sent).orientation;
+    s.ws.push(command({id:"visit:near",step:"near:go",kind:"go",target:{id:"living_standby",label:"대기 자리",ar:[0,0,-0.58],look},near_m:0.5,speak:false,choices:[]}));
+    await after(1000);
+    closeTo(lastPose(s.sent).orientation, initial);
+    await after(1500);
+    const pose = lastPose(s.sent), aim = lookAt(pose.position,look)!;
+    closeTo(pose.orientation,yawPitchQuat(aim.yaw,aim.pitchDeg));
+  });
+
   it("관찰 자리 가기(대상에 비출 곳 look)는 명령이 떠 있는 동안 도착 반경에 닿으면 그 자리에서 비출 곳을 바라본다. 「그만」·연결 끊김으로 명령이 지워지면 돌지 않는다", async () => {
     fakeTimers();
     // 맞는 단계 영상이 없는 관찰 자리 가기: 반응 시간 뒤 초당 0.8m로 0.6m 앞까지 걷는다
