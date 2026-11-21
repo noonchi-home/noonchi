@@ -14,6 +14,7 @@ import type { WallSeg } from "./sync/walls.js";
 import { fromTwin, planOf, toTwin, type Alignment, type Plan2, type Vec3 } from "../shared/geometry.js";
 import type { Quat, CameraView } from "../contract/observe.js";
 import { DEFAULT_EYE_HEIGHT_M } from "../layout/index.js";
+import { PHOTO_GAP_DEG, photoConflict } from "../shared/photo-alignment.js";
 import type { FrameHeader } from "./packet.js";
 
 export type { EyeEvent } from "../contract/events.js";
@@ -177,6 +178,22 @@ export class PhoneSession {
   /** 폰에 마지막으로 알린 맞춤 상태(바뀜 알림용)와 그때 변환·폰 자리. */
   private told = "";
   private toldRigid: SyncState["rigid"] = null;
+  private photoFrames=new WeakSet<FrameHeader>();
+  private photoAt=-Infinity;
+  markEngine(header:FrameHeader):void { this.photoFrames.add(header); }
+  localized(header:FrameHeader,r:import("../bus/index.js").Body<"/perception/localized">):boolean {
+    if(!this.photoFrames.delete(header) || header.held || header.tracking==="limited" ||
+      !header.position || !header.orientation || !header.projection || (header.epoch!==undefined && header.epoch!==this.epoch) ||
+      this.photoAt>=r.captured_ms) return false;
+    this.photoAt=r.captured_ms;
+    const ar=toTwin(header.position,header.orientation,{theta:0,tx:0,ty:0,floorY:0});
+    const conflict=photoConflict(r.ar_gap_m,r.ar_gap_deg) || (r.pitch_deg!==null && Math.abs(ar.pitch_deg-r.pitch_deg)>PHOTO_GAP_DEG);
+    if(r.position && r.yaw_deg!==null && (!this.aligned || conflict)) {
+      this.sync.photo(header.position,header.orientation,r.position,r.yaw_deg,conflict);
+      if(conflict) this.photoFrames=new WeakSet();
+    }
+    return true;
+  }
   private lastPhone: Plan2 = [0, 0];
 
   constructor(opts: PhoneSessionOptions) {
@@ -261,6 +278,8 @@ export class PhoneSession {
 
   /** 맞춤과 모은 증거를 모두 지운다(새 원점·다시 맞추기). */
   private forget(): void {
+    this.photoFrames=new WeakSet();
+    this.photoAt=-Infinity;
     this.last = null;
     this.sync.reset();
   }
@@ -377,6 +396,7 @@ export class PhoneSession {
       if (!this.startPose) return { reply: this.status("시작 위치가 없어요. 설정 화면에서 시작 위치를 먼저 정해 주세요") };
       if (this.adoptEpoch(msg.epoch).stale) return { reply: this.status("이전 AR 세션의 기록이라 받지 않았어요. 다시 눌러 주세요") };
       this.last = null;
+      this.photoFrames=new WeakSet();
       this.lastPhone = [msg.position[0], msg.position[2]];
       // 영상 모드: 자세 흉내
       if (msg.fixed) this.sync.fixStart(this.startPose, msg.position, msg.orientation);

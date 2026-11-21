@@ -1,0 +1,6 @@
+{
+  "min_matches": 20,
+  "max_rms_px": 1.25,
+  "ar_gap_m": 0.16,
+  "ar_gap_deg": 15
+}

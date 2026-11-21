@@ -18,6 +18,7 @@
 // 다시 푸는 것은 0.5초에 한 번, 새 벽 점 10개나 새 물건 관찰이 있을 때만.
 // 영상 모드(fixStart): 고정 카메라라 시작 자리가 곧 카메라 자리다. 바로 맞춤(출처 video)으로 두고 물건·벽으로 변환을 움직이지 않는다.
 
+import { PHOTO_GAP_M, photoConflict } from "../../shared/photo-alignment.js";
 import type { Vec3 } from "../../shared/geometry.js";
 import type { Quat } from "../../contract/observe.js";
 import { landmarkClass, type LandmarkClass } from "./classes.js";
@@ -27,7 +28,7 @@ import { startRigid, type StartPose } from "./start.js";
 import { SurfacePoints, classifyHit, normalRotation, wallQuality, wallTerms, type WallPoint, type WallSeg } from "./walls.js";
 
 // 영상 모드: 자세 흉내
-export type SyncSource = "start" | "objects" | "walls" | "video";
+export type SyncSource = "start" | "objects" | "walls" | "video" | "photo";
 
 export const SYNC_LIMITS = {
   startSigmaM: 0.3,
@@ -134,6 +135,7 @@ const dist = (a: P2, b: P2) => Math.hypot(a[0] - b[0], a[1] - b[1]);
 const L = SYNC_LIMITS;
 
 export class SyncAligner {
+  private photoFloor:number|null=null;
   private rigid: Rigid | null = null;
   private aligned = false;
   private source: SyncSource | null = null;
@@ -180,6 +182,7 @@ export class SyncAligner {
 
   /** 새 AR 원점·다시 맞추기: 변환·증거·시작을 모두 지운다. */
   reset(): void {
+    this.photoFloor=null;
     this.fixed = false;
     this.rigid = null;
     this.aligned = false;
@@ -197,6 +200,7 @@ export class SyncAligner {
 
   /** 시작 자리에 서서 그 방향을 본 순간의 자세. 변환을 그 자세로 바로 정하고 어림으로 둔다(모은 증거는 남겨 곧 다시 맞춘다). */
   confirmStart(pose: StartPose, position: Vec3, orientation: Quat): void {
+    this.photoFloor=null;
     this.fixed = false;
     const rigid = startRigid(pose, position, orientation);
     this.start = { pose, position: [...position], rigid, at: this.now() };
@@ -220,8 +224,23 @@ export class SyncAligner {
   }
 
   /** 트윈 높이 0의 AR y: 실제 바닥 hit 중앙값 → 폰 어림 바닥 → 시작 높이 − 눈높이 → 마지막 폰 높이 − 눈높이. */
+  photo(position:Vec3, orientation:Quat, world:Vec3, yaw:number, conflict:boolean):void {
+    if(this.fixed) return;
+    const next=startRigid({position:[world[0],world[2]],yawDeg:yaw,label:"",facingLabel:""},position,orientation);
+    const floor=position[1]-world[1];
+    const gap=this.rigid && rigidGap(this.rigid,next,[[position[0],position[2]]]);
+    const confirmed=!conflict && !!gap && !photoConflict(gap.shiftM,gap.rotDeg) &&
+      (this.aligned || (this.source==="photo" && this.photoFloor!==null && Math.abs(this.photoFloor-floor)<=PHOTO_GAP_M));
+    if(conflict) this.reset();
+    this.rigid=next;
+    this.photoFloor=floor;
+    this.aligned=confirmed;
+    this.source="photo";
+    this.updates++;
+  }
+
   floorY(): number | null {
-    return this.surface.floorY() ?? (this.floorHints.length ? median(this.floorHints) : null)
+    return this.photoFloor ?? this.surface.floorY() ?? (this.floorHints.length ? median(this.floorHints) : null)
       ?? (this.start ? this.start.position[1] - this.eyeHeightM : null) ?? (this.lastPhoneY !== null ? this.lastPhoneY - this.eyeHeightM : null);
   }
 

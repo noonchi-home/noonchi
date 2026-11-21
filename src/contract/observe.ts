@@ -90,7 +90,7 @@ export interface SceneObservation {
 }
 
 /** 장면 VLM 답을 받은 사진의 카메라·크기와 그때 폰 눈 자리(트윈 [x, y], 없으면 null): 집 상태가 VLM 물건 상자를 트윈 자리로 옮긴다(src/world/state/sceneobjects.ts SceneLook). */
-export interface SceneLookInput { view: CameraView; width: number; height: number; eye?: [number, number] | null; dets?: LookDetInput[]; fresh?: boolean; person_ids?: string[] }
+export interface SceneLookInput { localized_position?: [number,number,number]; view: CameraView; width: number; height: number; eye?: [number, number] | null; dets?: LookDetInput[]; fresh?: boolean; person_ids?: string[] }
 /** 그 사진의 YOLO 감지 하나(감지 번호 d1…, 엔진 프레임 픽셀 상자, 바닥 점): 이어진 VLM 물건은 자리를 감지 바닥 점으로 낸다(src/world/state/sceneobjects.ts LookDet). */
 export interface LookDetInput { id: string; box: [number, number, number, number]; foot?: [number, number] }
 /** 가까이 본 그 장의 카메라·크기·자른 자리(엔진 프레임 픽셀 [x, y, w, h], src/world/state/closer.ts CloserLookAt). */
@@ -100,3 +100,7 @@ export interface CloserAtInput { view: CameraView; width: number; height: number
 export type FrameMeta = Omit<EngineFrame, "jpeg" | "sha256"> & { fresh_position?: boolean };
 /** 가까이 본 한 장(사진 없음): 원본 엔진 프레임 id·촬영 시각·카메라·크기와 잘라 본 사진의 감지(엔진 프레임 픽셀, edge는 잘라 본 경계에 닿음). World State의 CloserPass와 같은 모양이다. */
 export interface CloserPassInput { frameId: string; capturedAtMs: number; view: CameraView; width: number; height: number; dets: (Detection & { edge: boolean })[] }
+
+/** 위치 찾기 답(구현명세서 6.15): position은 AR 자세와 맞는 사진 위치(트윈 [x, 높이, y], 모르거나 다르면 null),
+ *  conflict는 사진 위치를 찾았는데 AR 자세와 기준(17절) 넘게 다른 때다. */
+export interface PhotoFix { position: [number, number, number] | null; conflict: boolean }

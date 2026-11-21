@@ -74,6 +74,10 @@ export class RoomWatch {
   private busy=false;
   constructor(private readonly send:(i:GoalIntent)=>void,private readonly portals:Portal[]) {}
 
+  needsPhoto(kitchenEntry:string|null):boolean {
+    return this.pending?.kind==="visit" || !!this.arrived || (!!kitchenEntry && this.watching?.id===kitchenEntry);
+  }
+
   private withdraw() {
     if (this.pending) this.send({op:"withdraw",id:this.pending.id,rev:this.pending.rev});
     this.pending=null;this.selected=null;

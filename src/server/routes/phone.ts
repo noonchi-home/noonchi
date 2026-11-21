@@ -41,5 +41,6 @@ export function phoneRoutes({ route, opts, sameHome }: RouteKit): void {
     requireStart().clear();
     return startView(null);
   });
+  route("GET", /^\/api\/localize$/, async () => ({ok:true, localize:opts.localizeStatus?.() ?? null}));
   route("GET", /^\/api\/phone\/sync$/, async () => ({ ok: true, sync: opts.phoneSync?.() ?? null }));
 }

@@ -7,7 +7,9 @@ import type { TrackCore } from "../track/core.js";
 type StationTarget = { id: string; position: Vec3; look: { position: Vec3 } | null };
 const PHOTO_MAX_AGE_MS = 3000;
 
-/** 그 자리에 선 폰으로 찍은 최근 VLM 사진에서 비출 곳과 등록한 가전을 확인한다. */
+/** 그 자리에 선 폰으로 찍은 최근 VLM 사진에서 비출 곳과 등록한 가전을 확인한다.
+ *  그 사진의 위치 찾기 결과가 있으면 자리 반경 안이어야 한다(구현명세서 6.15 관찰 자리 도착). AR 자세와 다른 사진은 근거(proof)가 없어 도착이 아니고,
+ *  위치를 모르는 사진(지도 없음·특징점 부족)은 사진 근거만 본다. */
 export function stationSeen(core: TrackCore, target: StationTarget, radius: number, now: number): boolean {
   if (!target.look) return true;
   const view = core.o.state.view();
@@ -16,6 +18,9 @@ export function stationSeen(core: TrackCore, target: StationTarget, radius: numb
   const camera = photo.proof.camera;
   const distance = Math.hypot(camera.origin[0] - target.position[0], camera.origin[2] - target.position[2]);
   if (distance > radius || !inView(camera, target.look.position)) return false;
+  // 사진으로 찾은 위치가 있으면 자리와 맞아야 한다
+  const localized = photo.proof.localized_position;
+  if (localized && Math.hypot(localized[0] - target.position[0], localized[2] - target.position[2]) > radius) return false;
 
   const map = core.o.stations?.map?.();
   const station = map?.stations.find(s => s.id === target.id);

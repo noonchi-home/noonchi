@@ -127,15 +127,16 @@ export class IrTv {
       return;
     }
     if (!this.online) return;
-    const [kind, value, extra] = line.split(" ");
+    // 아두이노 시리얼 한 줄: <머리> <값> (머리는 remote·sent·light, 가전 종류가 아니다)
+    const [head, value, extra] = line.split(" ");
     if (!value || extra !== undefined) return;
-    if (kind === "remote" && Object.values(this.config.codes).includes(value)) {
+    if (head === "remote" && Object.values(this.config.codes).includes(value)) {
       this.invalidate("리모컨을 직접 눌러 앞선 명령 확인을 멈췄어요.");
-    } else if (kind === "sent" && this.pending?.code === value && this.pending.sentAt === null) {
+    } else if (head === "sent" && this.pending?.code === value && this.pending.sentAt === null) {
       this.pending.sentAt = Date.now();
       this.photoAfterReset = null;
       this.band = null;
-    } else if (kind === "light") {
+    } else if (head === "light") {
       if (value === "none") {
         this.lastLight = -Infinity;
         this.band = null;

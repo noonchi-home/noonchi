@@ -23,6 +23,7 @@ import { preparePhone, startPhone } from "./phone.js";
 import { drainNodes, startPipeline, startWorld, startNodes, stopNodes } from "./observe.js";
 import { onReflection, sayTimer, startSay } from "./say.js";
 import { setLink, startDevices } from "./devices.js";
+import { shotSigner } from "../routes/home-shots.js";
 import { HomeCore } from "./core.js";
 import { listHomes, validateStations } from "../../layout/index.js";
 import { createApp, type TwinHomeApp } from "../app.js";
@@ -178,6 +179,8 @@ function startApp(core: HomeCore): void {
     brain: observe ? { status: () => ({ ...observe.status(), look: core.looker?.status() ?? null }) } : undefined, world: worldNow ?? undefined,
     home: { id: home.id, name: home.name }, homes: listHomes(twin.dir), layout: layout?.editor, phoneUrls: () => core.phoneUrls, mode: ctx.mode, webDir: ctx.webDir, allowOrigin: ctx.allowOrigin, planToken: ctx.planToken, ready: ctx.ready,
     start: startStore && { get: () => startStore.get(), save: (raw) => startStore.save(raw), preview: (raw) => startStore.preview(raw), clear: () => startStore.clear() },
+    sceneRuntimeDir:ctx.runtimeDir, signShot:shotSigner(ctx.runtimeDir,ctx.env),
+    localizeStatus: () => core.localizer?.status() ?? null,
     phoneSync: () => core.phone?.syncState() ?? null,
     plan: plans, offTrack: () => core.tracker?.offTrack() ?? null, history: history.db, reflect: history.reflect, scene: () => core.scene,
     brainLast: () => [...todayReflection(history.db), ...(core.lastDecision ? [core.lastDecision] : [])], thoughtLast: () => core.thoughts?.last() ?? null, seenLast: () => core.lastSeen, say: () => ({ text: core.said, ...(core.saidSafety ? { safety: true as const } : {}) }),

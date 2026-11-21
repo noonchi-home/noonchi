@@ -107,7 +107,8 @@ describe("startHub", () => {
         const key = "path" in r ? r.path : "external" in r ? `pkg:${r.external}` : "";
         if (!key || seen.has(key)) continue;
         seen.add(key);
-        if ("path" in r) queue.push(r.path);
+        // JSON 자료(공용 기준값 등)는 코드가 아니라 import가 없다
+        if ("path" in r && !r.path.endsWith(".json")) queue.push(r.path);
       }
     }
     expect([...seen].filter((k) => k.startsWith("pkg:@matter/") || (k.startsWith("src/devices/matter/") && k !== "src/devices/matter/load.ts"))).toEqual([]);

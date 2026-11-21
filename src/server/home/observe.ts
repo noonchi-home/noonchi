@@ -1,3 +1,4 @@
+import { openLocalizer } from "../../localize/index.js";
 import { phoneCommandRoutes, phoneOwnerRoutes } from "../../phone/index.js";
 import { showStatus } from "./say.js";
 import { progressRoutes } from "../../act/index.js";
@@ -152,6 +153,7 @@ export async function startNodes(core: HomeCore, emit: (event: BrainLog) => void
   });
   core.goalMirror = goal.mirror;
   core.tvWatch = goal.tv;
+  core.roomWatch = goal.rooms;
   core.mirror = await startWorldMirror({
     bus, epoch, name: "act", clock, log,
     routes: (node, afterRev) => {
@@ -191,7 +193,9 @@ export async function startNodes(core: HomeCore, emit: (event: BrainLog) => void
       core.speak();
     },
   });
+  core.localizer=await openLocalizer(core.perception.node,{name:"localize",bus,epoch,clock,log},core.twin.home.id,ctx.runtimeDir,ctx.env,log);
   const phone = new BusNode({ name: "phone", bus, epoch, clock, log });
+  phone.on("/perception/localized",r=>core.localizer?.receive(r,(header,result)=>core.phone?.localized(header,result) ?? false));
   let statusReady!: () => void;
   const statusStarted = new Promise<void>((resolve) => { statusReady = resolve; });
   phoneCommandRoutes(phone, (m) => { if (!core.closed) showPhoneCommand(core, m); }, {
@@ -272,6 +276,7 @@ export async function drainNodes(core: HomeCore, ms = DRAIN_MS): Promise<boolean
 export async function stopNodes(core: HomeCore): Promise<void> {
   for (const feedback of core.followupFeedback.values()) core.out.act?.push("/act/log", feedback);
   core.followupFeedback.clear();
+  await core.localizer?.close();
   await drainNodes(core, 3 * DRAIN_MS);
   for (const n of [core.perception?.node, core.worldNode?.node, core.brainMirror?.node, core.goalMirror?.node, core.managerNode, core.mirror?.node, core.phoneNode, core.devicesNode, core.machineRecorder]) await n?.stop();
 }
@@ -283,6 +288,13 @@ export async function startPipeline(core: HomeCore, emit: (event: BrainLog) => v
   const perception = core.perception!;
   const { engineHeaders } = core;
   core.pipeline = await createPipeline({
+    needsHouseholdPhoto:()=>{
+      const map=core.scene?.stations;
+      if(core.tvWatch?.armed() || core.checkingVisit || core.roomWatch?.needsPhoto(map?.kitchen_entry ?? null)) return true;
+      const dining=map?.stations.find(s=>s.id===map.meal_watch);
+      return !!dining && !!core.view()?.objects.some(o=>o.cls==="cup" && o.status==="present" && o.surface && dining.surfaces.includes(o.surface));
+    },
+    localize:core.localizer ? (f,h)=>core.localizer!.request(f,h) : undefined,
     env, log, world: perception.port, inject: ctx.brain, emit,
     // 물체 모양은 /perception/detections로(폰 노드가 대시보드로만 보낸다)
     onSeen: (e) => perception.seen(e),
