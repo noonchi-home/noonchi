@@ -37,7 +37,7 @@ Python 폴더와 버스 노드 이름은 `localize`다. `/perception/localize`�
 
 `localize/calibrate.py`는 기본 엔진 너비 480px, JPEG 품질 80으로 평가한다. 기준 카메라 위치가 같은 사진은 한 묶음으로 두고 51장으로 문턱을 고른 뒤 나머지 25장으로 검증했다. PnP 문턱 42개 조합을 비교해 틀린 자세와 좌우 반전 대조 사진의 오채택을 먼저 줄이고, 맞은 장수를 늘렸다. 허용 자세 오차는 10cm·4°다. AR 시험은 렌더의 정답과 원래 카메라 자세, 가장 가까운 다른 자리, 좌우 30°로 틀어진 가상 자세를 썼다. 위치와 시선은 각각 오판이 가장 적은 연속 구간의 가운데 값을 썼다.
 
-검증 25장은 성공 17장·모름 8장·오채택 0장이었다. 반전 대조 25장은 전부 모름이었다. 위치가 나온 17장에서는 가상 AR 위치·방향 오류를 모두 검출했다. 선정용 자료에서는 서로 18cm 떨어진 주방 입구와 걷는 길 사이의 위치 오류를 한 건 놓쳤다. 실제 폰으로 찍은 자료가 생기면 각 평가 줄의 `reference_id`에 대응하는 기준 줄 id를 넣고 같은 명령으로 다시 보정한다. 적용값은 `src/shared/photo-limits.json`에 있다.
+검증 25장은 성공 17장·모름 8장·오채택 0장이었다. 촬영 자리는 집 자료(stations.json)의 관찰 자리·면 앞 자리에서 읽고, 거실 대기 자리를 [6.98, 6.38]로 옮긴 뒤 옛 자리는 「거실 TV 옆」 기준 장면으로 남긴다. 이 81장 지도에 같은 적용값을 쓰면 검증 25장 중 성공 15장·모름 10장·오채택 0장, 전체 81장 중 57장이다. 반전 대조 25장은 전부 모름이었다. 위치가 나온 17장에서는 가상 AR 위치·방향 오류를 모두 검출했다. 선정용 자료에서는 서로 18cm 떨어진 주방 입구와 걷는 길 사이의 위치 오류를 한 건 놓쳤다. 실제 폰으로 찍은 자료가 생기면 각 평가 줄의 `reference_id`에 대응하는 기준 줄 id를 넣고 같은 명령으로 다시 보정한다. 적용값은 `src/shared/photo-limits.json`에 있다.
 
 ```powershell
 npm run heavy -- python -B localize/calibrate.py --home mokryeon_180b --map runtime/homes/mokryeon_180b/localize/map.npz --reference runtime/localize-reference/manifest.json --holdout runtime/localize-holdout/manifest.json --report runtime/localize-holdout/calibration.json

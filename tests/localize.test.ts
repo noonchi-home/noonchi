@@ -89,12 +89,36 @@ describe("목련 위치 찾기", () => {
     // 위치를 모르는 사진(지도 없음·특징점 부족)은 사진 근거만 본다. AR 자세와 다른 사진은 근거(proof)가 없어 여기 오지 않는다
     expect(stationSeen(core(undefined),target,0.5,1400)).toBe(true);
   });
-  it("깊이 기준 76장과 독립 평가 76장이 같은 장면에서 서로 다른 카메라를 쓴다", () => {
+  it("관찰 자리·면 앞 장면의 서는 곳과 바라볼 곳은 집 자료(stations.json) 값 그대로다", () => {
+    const home = resolveHome("twin", "mokryeon_180b");
+    const scene = loadScene(home)!;
+    const map = scene.stations;
+    const spot = (id: string) => {
+      const s = map.stations.find(s => s.id === id);
+      if (s) return { stand: s.position, look: s.look_at };
+      const f = map.surface_fronts.find(f => f.surface_id === FRONTS[id]);
+      return f ? { stand: f.position, look: f.look_at } : null;
+    };
+    const FRONTS: Record<string,string> = { table_front: "dining_table_978b20c7", sink_front: "sink_counter_kitchen",
+      sofa_front: "sofa_a848b595", desk_front: "desk_small_ce7e768b" };
+    const views = homeShotViews(home, scene).filter(v => v.view === "C");
+    const checked = views.filter(v => spot(v.station_id));
+    expect(checked.map(v => v.station_id).sort()).toEqual(
+      ["desk_front","desk_watch","kitchen_entry","living_standby","meal_watch","sink_front","sofa_front","table_front"]);
+    for (const v of checked) {
+      const s = spot(v.station_id)!;
+      expect([v.position[0], v.position[2]], v.station_id).toEqual(s.stand);
+      expect(v.look, v.station_id).toEqual(s.look);
+    }
+    // 옛 거실 대기 자리는 기준 사진 범위를 지키려고 「거실 TV 옆」으로 남는다
+    expect(views.find(v => v.station_id === "living_tv_side")).toMatchObject({ position: [10.5,1.15,9], look: [7.4,9.8] });
+  });
+  it("깊이 기준 81장과 독립 평가 81장이 같은 장면에서 서로 다른 카메라를 쓴다", () => {
     const home = resolveHome("twin", "mokryeon_180b");
     const scene = loadScene(home)!;
     const references = homeShotViews(home, scene);
     const queries = homeShotViews(home, scene, true);
-    expect(queries).toHaveLength(76);
+    expect(queries).toHaveLength(81);
     queries.forEach((q,i) => {
       const ref = references[i]!;
       expect(q.position).not.toEqual(ref.position);
