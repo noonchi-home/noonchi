@@ -308,11 +308,49 @@ describe("시나리오 2 판단 기능", () => {
     expect(sent).toEqual([]);
     tick("2026-11-25", "19:56");
     expect(sent).toEqual([expect.objectContaining({ op: "offer", kind: "visit", target_id: "desk_watch", goal_id: null, note: "평소 물을 찾는 시간이에요. 책상을 확인할게요." })]);
+    const first = sent[0] as Extract<GoalIntent, { op: "offer" }>;
+    w.result({ id: first.id, target_id: "desk_watch", at_ms: kst("2026-11-25", "19:57"), evidence_rev: 1, outcome: "arrived" });
     tick("2026-11-25", "20:05");
     expect(sent).toHaveLength(1);
     tick("2026-11-25", "20:16");
     tick("2026-11-26", "20:00");
     expect(sent).toHaveLength(2);
+  });
+
+  it("습관 방문이 취소·실패·기한 넘김이면 그날 습관 창 안에서 잠시 뒤 다시 가고, 도착한 날에만 그날을 마친다", () => {
+    const r: HelpRoutine = { action: WATER_ACTION, place: DESK, place_label: "책상", room: "bed_sw", center_min: 20 * 60, window_min: 15, days: ["a", "b", "c"] };
+    const sent: GoalIntent[] = [];
+    const w = new HabitWatch((i) => sent.push(i));
+    const tick = (hm: string, s = 0) => w.tick({ now: kst("2026-11-25", hm) + s * 1000, rev: 1, map, routines: [r], offsetMinutes: 540, busy: false });
+    const offer = (i: number) => sent[i] as Extract<GoalIntent, { op: "offer" }>;
+    tick("19:56");
+    expect(sent).toHaveLength(1);
+    // 폰이 다른 일 중이라 취소: 바로 다시 보내지 않고, 잠시 뒤 창 안에서 다시 보낸다
+    w.result({ id: offer(0).id, target_id: "desk_watch", at_ms: kst("2026-11-25", "19:56") + 1000, evidence_rev: 1, outcome: "cancelled" });
+    tick("19:56", 5);
+    expect(sent).toHaveLength(1);
+    tick("19:57", 30);
+    expect(sent).toHaveLength(2);
+    // 응답 없이 기한(60초)이 지나도 다시 간다
+    tick("19:59", 0);
+    expect(sent).toHaveLength(3);
+    // 관리자가 거두어도(revoke) 다시 간다
+    w.revoked(offer(2).id, kst("2026-11-25", "19:59") + 1000);
+    tick("20:00", 0);
+    expect(sent).toHaveLength(4);
+    // 도착하면 그날은 끝이다
+    w.result({ id: offer(3).id, target_id: "desk_watch", at_ms: kst("2026-11-25", "20:00") + 20_000, evidence_rev: 1, outcome: "arrived" });
+    tick("20:05");
+    tick("20:10");
+    expect(sent).toHaveLength(4);
+    // 창이 끝나면 다시 가지 않는다
+    const w2 = new HabitWatch((i) => sent.push(i));
+    w2.tick({ now: kst("2026-11-25", "20:14"), rev: 1, map, routines: [r], offsetMinutes: 540, busy: false });
+    const last = sent.at(-1) as Extract<GoalIntent, { op: "offer" }>;
+    w2.result({ id: last.id, target_id: "desk_watch", at_ms: kst("2026-11-25", "20:14") + 1000, evidence_rev: 1, outcome: "failed" });
+    const n = sent.length;
+    w2.tick({ now: kst("2026-11-25", "20:16"), rev: 1, map, routines: [r], offsetMinutes: 540, busy: false });
+    expect(sent).toHaveLength(n);
   });
 
   it("습관 방문은 그 까닭 글을 실은 채 goal → manager → act로 닿는다(토픽 계약)", async () => {

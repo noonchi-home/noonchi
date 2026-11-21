@@ -6,15 +6,16 @@ import type { GoalTriggers } from "./triggers.js";
 import type { RoomWatch } from "./room-watch.js";
 
 import type { TvWatch } from "./tv-watch.js";
+import type { HabitWatch } from "./habit-watch.js";
 
-export function goalRoutes(node: BusNode, clock: Clock, triggers?: GoalTriggers, rooms?:RoomWatch, tv?:TvWatch) {
+export function goalRoutes(node: BusNode, clock: Clock, triggers?: GoalTriggers, rooms?:RoomWatch, tv?:TvWatch, habits?:HabitWatch) {
   if (triggers) node.on("/brain/decision", ({decision}) => triggers.decision(decision));
   const lane = new MachineLane<GoalState>();
   const out = new Outbox(node, { clock, log: (s) => console.warn(s) });
   if (tv) node.on("/device/changes",d=>{if(d.note.power) tv.observe(d.id,d.note.power);});
-  if (rooms || tv) {
-    node.on("/act/directive_result",r=>{rooms?.result(r);tv?.result(r);});
-    node.on("/manager/directive",d=>{if(d.op==="revoke") {rooms?.revoked(d.id,clock.now());tv?.revoked(d.id);}});
+  if (rooms || tv || habits) {
+    node.on("/act/directive_result",r=>{rooms?.result(r);tv?.result(r);habits?.result(r);});
+    node.on("/manager/directive",d=>{if(d.op==="revoke") {rooms?.revoked(d.id,clock.now());tv?.revoked(d.id);habits?.revoked(d.id,clock.now());}});
     node.on("/manager/request",()=>rooms?.interrupt());
   }
   node.on("/act/work", (w) => {

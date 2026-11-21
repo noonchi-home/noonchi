@@ -50,7 +50,7 @@ export async function startGoalNode(o: {
     onView: () => evaluateGoals?.(),
     onPhoto: () => { if (tv.armed()) evaluateTv?.(); },
     routes: (node, afterRev) => {
-      const goalOut = out = goalRoutes(node, o.clock, o.triggers, rooms, tv);
+      const goalOut = out = goalRoutes(node, o.clock, o.triggers, rooms, tv, habits);
       o.routes?.(node, afterRev, goalOut);
       // 조건 사실을 새로 매기고 TV 규칙을 돌린다. 새 집 사진마다는 이것만 돈다(사용자 찾기·목표 갱신은 250ms 타이머와 새 rev에)
       const facts = () => {
