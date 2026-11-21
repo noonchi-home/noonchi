@@ -11,12 +11,20 @@ export const irSettings = z.strictObject({
   codes:z.strictObject({ on:code.optional(), off:code.optional(), toggle:code.optional() }),
   offBelow:adc.default(IR_DEFAULTS.offBelow), onAbove:adc.default(IR_DEFAULTS.onAbove),
   holdMs:z.number().int().min(100).default(IR_DEFAULTS.holdMs),
-  confirmMs:z.number().int().min(200).max(5000).default(IR_DEFAULTS.confirmMs),
-}).refine(s => s.offBelow < s.onAbove && s.holdMs < s.confirmMs, "Check the sensor thresholds and confirmation window")
+  confirmOnMs:z.number().int().min(200).max(15000).default(IR_DEFAULTS.confirmOnMs),
+  confirmOffMs:z.number().int().min(200).max(15000).default(IR_DEFAULTS.confirmOffMs),
+}).refine(s => s.offBelow < s.onAbove && s.holdMs < s.confirmOnMs && s.holdMs < s.confirmOffMs, "Check the sensor thresholds and confirmation windows")
   .refine(s => {
     const values = Object.values(s.codes);
     return values.length > 0 && new Set(values).size === values.length;
   }, "Each power key needs a distinct learned code");
+
+/** Files saved before on/off had separate windows carry one `confirmMs`. It becomes the off window; on keeps its own default. */
+export function withoutLegacyWindow(raw: unknown): unknown {
+  if (!raw || typeof raw !== "object" || !("confirmMs" in raw)) return raw;
+  const { confirmMs, ...rest } = raw as Record<string, unknown>;
+  return { confirmOffMs: confirmMs, ...rest };
+}
 
 export function loadIrConfig(runtime: string, home: string): IrConfig | null {
   let raw: string;
@@ -26,5 +34,5 @@ export function loadIrConfig(runtime: string, home: string): IrConfig | null {
     if ((e as NodeJS.ErrnoException).code === "ENOENT") return null;
     throw e;
   }
-  return irSettings.parse(JSON.parse(raw));
+  return irSettings.parse(withoutLegacyWindow(JSON.parse(raw)));
 }

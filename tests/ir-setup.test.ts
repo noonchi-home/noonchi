@@ -9,9 +9,12 @@ import type { IrPort } from "../src/devices/hub/ir.js";
 const dirs: string[] = [];
 afterEach(()=>{ for (const dir of dirs.splice(0)) rmSync(dir,{force:true,recursive:true}); });
 it.each([
-  { name: "first registration", saved: null, expected: { offBelow:180, onAbove:420, holdMs:600, confirmMs:4000 } },
+  { name: "first registration", saved: null, expected: { offBelow:180, onAbove:420, holdMs:600, confirmOnMs:8000, confirmOffMs:4000 } },
+  // 창을 나누기 전에 저장한 집: 하나뿐인 confirmMs는 끄기 확인 창이 되고, 켜기는 기본 창을 쓴다
   { name: "calibrated home", saved: { offBelow:0, onAbove:360, holdMs:800, confirmMs:4800 },
-    expected: { offBelow:0, onAbove:360, holdMs:800, confirmMs:4800 } },
+    expected: { offBelow:0, onAbove:360, holdMs:800, confirmOnMs:8000, confirmOffMs:4800 } },
+  { name: "home with separate windows", saved: { offBelow:0, onAbove:360, holdMs:800, confirmOnMs:12000, confirmOffMs:3000 },
+    expected: { offBelow:0, onAbove:360, holdMs:800, confirmOnMs:12000, confirmOffMs:3000 } },
 ])("registers a key without threshold arguments for a $name", async ({ saved, expected }) => {
   const runtime = mkdtempSync(join(tmpdir(), "ir-defaults-"));
   dirs.push(runtime);
@@ -36,7 +39,7 @@ it("loads a code-only home file with the light sensor defaults", () => {
   const folder = join(runtime, "homes", "living");
   mkdirSync(folder, {recursive:true});
   writeFileSync(join(folder, "ir.json"), JSON.stringify({device:"tv-1", port:"COM5", codes:{toggle:"NEC:0004:08"}}));
-  expect(loadIrConfig(runtime, "living")).toMatchObject({offBelow:180, onAbove:420, holdMs:600, confirmMs:4000});
+  expect(loadIrConfig(runtime, "living")).toMatchObject({offBelow:180, onAbove:420, holdMs:600, confirmOnMs:8000, confirmOffMs:4000});
 });
 
 it("learns matching physical presses only, preserves the other key, and rejects ambiguous codes without overwriting", async () => {

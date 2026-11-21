@@ -19,7 +19,7 @@ function setup(keys: IrConfig["codes"] = codes) {
     rx=line; lost=closed;
     return {send: l=>writes.push(l), close:()=>{}};
   };
-  hub.setInfrared({device:id,port:"COM3",codes:keys,offBelow:200,onAbove:350,holdMs:600,confirmMs:4000},open);
+  hub.setInfrared({device:id,port:"COM3",codes:keys,offBelow:200,onAbove:350,holdMs:600,confirmOnMs:4000,confirmOffMs:4000},open);
   const states: string[]=[];
   hub.subscribe(s=>states.push(String(s.twin.power)));
   rx("ready");
@@ -151,4 +151,27 @@ it.each(["manual","disconnect","stop"] as const)("interrupts an outstanding send
   light(50);
   expect(hub.powerStamp(id)?.command_id).not.toBe("old");
   expect(writes).toHaveLength(1);
+});
+it("waits longer for a TV to come on than to go off: on confirms after 6 s of warm-up, off still fails after its own window", async () => {
+  vi.useFakeTimers({now:10000});
+  const hub = new SignalHub(new MemoryHub([spec], {[id]:{power:"off"}}));
+  active.push(hub);
+  let rx!: (line:string)=>void;
+  const open: IrPort = (_port,line) => { rx=line; return {send:()=>{}, close:()=>{}}; };
+  hub.setInfrared({device:id,port:"COM3",codes,offBelow:200,onAbove:350,holdMs:600,confirmOnMs:8000,confirmOffMs:4000},open);
+  rx("ready");
+  const light = (v:number, n=7) => { for(let i=0;i<n;i++){vi.advanceTimersByTime(100);rx("light "+v);} };
+  light(80);
+  expect(hub.powerStamp(id)?.power).toBe("off");
+  const on = hub.command(id,{type:"on"},"automatic-on");
+  rx("sent "+codes.on);
+  // 화면이 켜지는 데 6초쯤 걸리는 TV: 그동안 어두움
+  for (let i=0;i<55;i++){vi.advanceTimersByTime(100);rx("light 80");}
+  light(800);
+  expect(await on).toMatchObject({ok:true,outcome:"done"});
+  expect(hub.powerStamp(id)).toMatchObject({power:"on",command_id:"automatic-on"});
+  const off = hub.command(id,{type:"off"},"automatic-off");
+  rx("sent "+codes.off);
+  for (let i=0;i<41;i++){vi.advanceTimersByTime(100);rx("light 800");}
+  expect((await off).ok).toBe(false);
 });

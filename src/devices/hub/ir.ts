@@ -8,15 +8,19 @@ export interface IrConfig {
   offBelow: number;
   onAbove: number;
   holdMs: number;
-  confirmMs: number;
+  /** Time to confirm "on" from the request. A TV screen can take several seconds to light up. */
+  confirmOnMs: number;
+  /** Time to confirm "off" from the request. */
+  confirmOffMs: number;
 }
 /** Starting values for a 10-bit light sensor. Each home can supply its measured thresholds. */
 export const IR_DEFAULTS = {
   offBelow: 180,
   onAbove: 420,
   holdMs: 600,
-  confirmMs: 4000,
-} as const satisfies Pick<IrConfig, "offBelow" | "onAbove" | "holdMs" | "confirmMs">;
+  confirmOnMs: 8000,
+  confirmOffMs: 4000,
+} as const satisfies Pick<IrConfig, "offBelow" | "onAbove" | "holdMs" | "confirmOnMs" | "confirmOffMs">;
 
 interface Connection { send(line: string): void; close(): void }
 export type IrPort = (port: string, received: (line: string) => void, lost: () => void) => Connection;
@@ -100,7 +104,8 @@ export class IrTv {
     return new Promise(resolve => {
       // An unknown starting state cannot establish ownership of a transition.
       this.pending = { target, code, id: known === null ? null : id, sentAt: null, finish: resolve,
-        timer: setTimeout(() => this.invalidate("보낸 뒤 TV 전원을 확인하지 못했어요."), this.config.confirmMs) };
+        timer: setTimeout(() => this.invalidate("보낸 뒤 TV 전원을 확인하지 못했어요."),
+          target === "on" ? this.config.confirmOnMs : this.config.confirmOffMs) };
       this.band = null;
       if (!id) this.change(null);
       this.intent(target, id);
