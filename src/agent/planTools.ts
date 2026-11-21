@@ -336,10 +336,13 @@ export class PlanDraft {
         if (!thing && task.target && names.some((n) => this.clsOf(n) !== task.target)) return { ok: false, error: `${i + 1}번 do until은 이 할 일의 대상 종류(${task.target})만 봅니다` };
       }
       if (s.kind !== "place") continue;
-      const picked = steps.slice(0, i).reverse().find((p) => p.kind === "pick")?.object ?? null;
+      const pickStep = steps.slice(0, i).reverse().find((p) => p.kind === "pick");
+      const picked = pickStep?.object ?? null;
       if (s.object && picked && s.object !== picked) return { ok: false, error: `${i + 1}번 내려놓기 물건(${s.object})이 앞에서 집은 물건(${picked})과 다릅니다` };
       s.object ??= picked;
-      if (s.until && objectNames(s.until).some((n) => n !== s.object)) return { ok: false, error: `${i + 1}번 내려놓기 until은 든 물건(${s.object ?? "없음"}) id만 봅니다` };
+      // 계획 때 안 보인 물건을 자리로 집었으면(물 한 잔 가져다주기: 사용자 곁에서 계획하면 주방 컵이 안 보인다) 그 집기 조건이 본 종류만 본다
+      const unseenKinds = !s.object && pickStep?.until ? new Set([...objectNames(pickStep.until), ...heldNames(pickStep.until)].filter((n) => !worldObject(this.ctx.world, n))) : null;
+      if (s.until && objectNames(s.until).some((n) => n !== s.object && !unseenKinds?.has(n))) return { ok: false, error: `${i + 1}번 내려놓기 until은 든 물건(${s.object ?? "없음"}) id만 봅니다` };
     }
     // 미리 세운 목표의 계획은 목표 물건만 쓴다: 같은 종류의 다른 World State 물건을 쓰는 단계(물건·대상·끝 조건)는 버린다(컵이 둘이면 다른 컵 계획을 받지 않는다)
     const goal = this.ctx.ahead?.object;

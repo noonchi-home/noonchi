@@ -105,13 +105,19 @@ describe("시나리오 2 판단 기능", () => {
 
   it("도움 기록 한 줄: 부탁이면 「20:02 · 책상에서 공부 중 · 물 한 잔 요청 · 전달 완료」, 습관이면 「습관 기반 도움 · 물 전달 완료」", () => {
     const w = view([], "using_laptop");
+    w.person.facts.activity!.at_ms = kst("2026-11-22", "20:00");
     const call = helpRecord({ atMs: kst("2026-11-22", "20:02"), askedMs: kst("2026-11-22", "19:58"), offsetMinutes: 540, action: WATER_ACTION, via: "call", place: DESK, placeLabel: "책상", world: w });
     expect(call.text).toBe("20:02 · 책상에서 공부 중 · 물 한 잔 요청 · 전달 완료");
     expect(call).toMatchObject({ asked_ms: kst("2026-11-22", "19:58"), activity: "using_laptop", room: "bed_sw", place: DESK });
+    w.person.facts.activity!.at_ms = kst("2026-11-25", "20:01");
     const habit = helpRecord({ atMs: kst("2026-11-25", "20:04"), askedMs: kst("2026-11-25", "20:00"), offsetMinutes: 540, action: WATER_ACTION, via: "habit", place: DESK, placeLabel: "책상", world: w });
     expect(habit.text).toBe("20:04 · 책상에서 공부 중 · 습관 기반 도움 · 물 전달 완료");
-    // 사용자가 안 보이면 하던 일 없이
+    // 하던 일을 모르면(본 적 없음·5분 넘음) 하던 일 없이
     expect(helpRecord({ atMs: kst("2026-11-22", "20:02"), askedMs: 0, offsetMinutes: 540, action: WATER_ACTION, via: "call", place: DESK, placeLabel: "책상", world: view([], null) }).text)
+      .toBe("20:02 · 책상에서 · 물 한 잔 요청 · 전달 완료");
+    const old = view([], "using_laptop");
+    old.person.facts.activity!.at_ms = kst("2026-11-22", "19:50");
+    expect(helpRecord({ atMs: kst("2026-11-22", "20:02"), askedMs: 0, offsetMinutes: 540, action: WATER_ACTION, via: "call", place: DESK, placeLabel: "책상", world: old }).text)
       .toBe("20:02 · 책상에서 · 물 한 잔 요청 · 전달 완료");
   });
 
@@ -146,7 +152,7 @@ describe("시나리오 2 판단 기능", () => {
     const plans = new PlanHub(floor, () => {}, () => new Date(clock.t).toISOString());
     const objs: WorldObject[] = [{ ...sinkCup }];
     // 책상 앞 사용자는 보이고 VLM이 늘 답한다(손에 든 것 없음 = 들고 있다는 사실이 없음)
-    const w = (): WorldView => { const v = view(objs, "using_laptop"); return { ...v, at_ms: clock.t, frame_ms: clock.t, person: { ...v.person, answered_ms: clock.t } }; };
+    const w = (): WorldView => { const v = view(objs, "using_laptop"); return { ...v, at_ms: clock.t, frame_ms: clock.t, person: { ...v.person, answered_ms: clock.t, facts: { activity: { value: "using_laptop", at_ms: clock.t, since_ms: clock.t, certainty: "confirmed" } } } }; };
     const planner = testPlanner(llm);
     const phone: PlannedCommandMessage[] = [];
     const decided: DecisionRecord[] = [];

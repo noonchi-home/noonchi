@@ -7,6 +7,9 @@ import { STUDY_ACTIVITIES, WATER_ACTION } from "./tasks.js";
 export type { HelpRecord, HelpVia } from "../contract/history.js";
 export { STUDY_ACTIVITIES } from "./tasks.js";
 
+/** 도움 기록에 쓰는 사용자 하던 일의 신선도(ms): 가져다주는 동안 본 것. */
+export const ACTIVITY_MS = 5 * 60_000;
+
 /** 기록하는 행동: 사람에게 무엇을 가져다주는 일. */
 export const HELP_ACTIONS: readonly string[] = [WATER_ACTION];
 
@@ -33,12 +36,14 @@ export function helpRecord(i: {
   atMs: number; askedMs: number; offsetMinutes: number; action: string; via: HelpVia; place: string | null; placeLabel: string | null; world: WorldView | null;
 }): HelpRecord {
   const person = i.world?.person ?? null;
-  const activity = person?.visible ? person.facts.activity?.value ?? null : null;
+  // 놓을 때 폰이 책상을 비춰 사용자가 화면 밖일 수 있다: 최근(ACTIVITY_MS 안) 본 하던 일을 쓴다
+  const seen = person?.facts.activity;
+  const activity = seen && i.atMs - seen.at_ms <= ACTIVITY_MS ? seen.value : null;
   const doing = activityText(activity);
   const where = i.placeLabel ? `${i.placeLabel}에서${doing ? ` ${doing}` : ""}` : doing;
   const parts = [clockText(i.atMs, i.offsetMinutes), where, REQUEST_TEXT[i.action]?.[i.via] ?? i.action, RESULT_TEXT[i.action]?.[i.via] ?? "완료"].filter((p): p is string => !!p);
   return {
-    at_ms: i.atMs, asked_ms: i.askedMs, action: i.action, via: i.via, place: i.place, place_label: i.placeLabel, activity, room: person?.visible ? person.room ?? null : null,
+    at_ms: i.atMs, asked_ms: i.askedMs, action: i.action, via: i.via, place: i.place, place_label: i.placeLabel, activity, room: activity ? person?.room ?? null : null,
     result: "done", text: parts.join(" · "),
   };
 }
