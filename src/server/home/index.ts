@@ -11,7 +11,7 @@ import type { PlanView } from "../../contract/plan.js";
 import type { ControlMode } from "../../contract/setup.js";
 import type { StationMap } from "../../contract/stations.js";
 import type { DeviceHub, DeviceState } from "../../contract/devices.js";
-import type { SignalHub, SignalSource, ThinqLink } from "../../devices/index.js";
+import type { IrConfig, IrPort, SignalHub, SignalSource, ThinqLink } from "../../devices/index.js";
 import type { LayoutEditor, TwinData } from "../../layout/index.js";
 import type { PipelineInject } from "../../observe/index.js";
 import type { StartStore } from "../../phone/index.js";
@@ -43,6 +43,8 @@ export interface HomeHistory {
 }
 
 export interface HomeContext {
+  homeInfrared?: (home: string) => IrConfig | null;
+  irPort?: IrPort;
   savedStations?: (home: string, defaults: StationMap) => StationMap;
   env: Env;
   log: (line: string) => void;

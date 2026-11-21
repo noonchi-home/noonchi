@@ -54,6 +54,8 @@ export interface SetupView {
   mode: ControlMode;
   /** ready: ThinQ 토큰이 있어 실제 모드로 바꿀 수 있다. */
   thinq: { ready: boolean };
+  /** This home has a configured IR TV. Connection and power are reported by the hub. */
+  ir?: { ready: boolean };
   /** 트윈 기기 id → ThinQ 기기 id(실제 모드에서만 쓴다). */
   pairs: Record<string, string>;
 }

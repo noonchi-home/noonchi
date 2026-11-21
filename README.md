@@ -70,7 +70,7 @@ Behavior prediction: PAM + person-state FSM (OpenAI API or Qwen3.5-27B on vLLM)
   ▼
 Goal · manager: plan prepared ahead, task order (Redis or in-memory messaging)
   ▼
-Execution · checks: step commands to the real phone, appliances (Matter via matter.js · LG ThinQ API)
+Execution · checks: step commands to the real phone, appliances (Matter via matter.js · LG ThinQ API · USB infrared TV hub)
   │
   ├─▶ Record DB (SQLite) ─▶ nightly reflection · adoption test ─▶ next day's FSM
   └─▶ Dashboard (3D twin rendered with React and three.js)
@@ -156,6 +156,8 @@ Once a day, the day's records are grouped into activity chunks, and PAM reflecti
 **PAM.** Lee et al.'s Procedural Assistance Memory keeps a person's routine as FSM memory and revises it with end-of-day reflection. We port the paper's prompts as they are, but feed World State observation text instead of photos, define states as what the person is doing, and use only habits that pass the adoption test.
 
 **Smart home routines.** Today's smart home routines run the same action when conditions the user set are met. NOONCHI uses the person's current activity and learned transitions to prepare a possible next task. It waits while the person is using the object and checks that the task still fits before acting.
+
+For wiring, remote learning, and light sensor calibration, see the [infrared TV setup guide](hardware/ir-tv/README.md).
 
 **Tools and libraries used.** onnxruntime, vLLM, SQLite, Docker, Tailscale, LG ThinQ.
 

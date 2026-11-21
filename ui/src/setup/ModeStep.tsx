@@ -22,7 +22,7 @@ type List = { status: "loading" } | { status: "error"; error: string } | { statu
 
 const MODES: { id: ControlMode; name: string; line: string }[] = [
   { id: "test", name: "시험 모드", line: "트윈에서만 다뤄요" },
-  { id: "live", name: "실제 모드", line: "ThinQ로 실제 가전을 다뤄요" },
+  { id: "live", name: "실제 모드", line: "연결한 가전을 다뤄요" },
 ];
 
 
@@ -118,6 +118,7 @@ export function ModeStep({ view, onView, onNotice, onBack, onNext }: {
     onNotice(null);
     onView(r.json);
   };
+  const liveReady = view.thinq.ready || view.ir?.ready;
   const pick = (mode: ControlMode) => {
     if (mode === view.mode || busy) return;
     if (mode === "live") setAsking(true);
@@ -130,14 +131,14 @@ export function ModeStep({ view, onView, onNotice, onBack, onNext }: {
         <RadioGroup aria-labelledby="h-mode" value={view.mode} onValueChange={(v) => pick(v as ControlMode)} className="max-w-xl gap-2">
           {MODES.map((m) => (
             <RadioCard
-              key={m.id} value={m.id} label={m.name} size="lg" disabled={m.id === "live" && !view.thinq.ready}
+              key={m.id} value={m.id} label={m.name} size="lg" disabled={m.id === "live" && !liveReady}
               icon={m.id === "live" ? <PlugZap /> : <FlaskConical />}
               description={m.id === "live" ? <Status variant="warning" size="setup">{m.line}</Status> : m.line}
             />
           ))}
         </RadioGroup>
-        {!view.thinq.ready && <Alert size="setup" className="max-w-xl"><Info aria-hidden="true" /><AlertTitle>ThinQ 토큰이 없어요.</AlertTitle></Alert>}
-        {view.mode === "live" && view.home && <Pairs view={view} onView={onView} onNotice={onNotice} />}
+        {!liveReady && <Alert size="setup" className="max-w-xl"><Info aria-hidden="true" /><AlertTitle>ThinQ 토큰이 없어요.</AlertTitle></Alert>}
+        {view.mode === "live" && view.thinq.ready && view.home && <Pairs view={view} onView={onView} onNotice={onNotice} />}
       </CardContent>
       <CardFooter className="mt-auto justify-end gap-2">
         <Button variant="outline" size="setup" onClick={onBack}>이전</Button>

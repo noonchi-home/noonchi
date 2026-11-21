@@ -81,6 +81,29 @@ async function events() {
 }
 
 describe("설정 흐름 서버", () => {
+  it("opens the home TV port only after live confirmation, without ThinQ, and closes it on mode or home change", async () => {
+    const dir = runtime(), home = "mokryeon_180b";
+    const folder = join(dir, "homes", home);
+    mkdirSync(folder, { recursive: true });
+    writeFileSync(join(folder, "ir.json"), JSON.stringify({ device:"tv_62442cb3", port:"COM7", codes:{toggle:"NEC:0004:08"}, onAbove:420, offBelow:150 }));
+    let opens = 0, closes = 0;
+    srv = await startServer({ env:env(dir, { HOME_ID:home }), log:()=>{}, irPort: (port) => {
+      expect(port).toBe("COM7");
+      opens++;
+      return { send:()=>{}, close:()=>{closes++;} };
+    } });
+    expect((await get("/api/setup")).json).toMatchObject({ mode:"test", ir:{ready:true}, thinq:{ready:false} });
+    expect((await post("/api/setup/mode",{mode:"live"})).status).toBe(400);
+    expect(opens).toBe(0);
+    expect((await post("/api/setup/mode",{mode:"live",confirm:true})).status).toBe(200);
+    expect(opens).toBe(1);
+    await post("/api/setup/mode",{mode:"test"});
+    expect(closes).toBe(1);
+    await post("/api/setup/mode",{mode:"live",confirm:true});
+    const next = await post("/api/setup/home",{home:"oneroom"});
+    expect(next.json).toMatchObject({ mode:"test", ir:{ready:false} });
+    expect(closes).toBe(2);
+  });
   it("자리 지도는 현재 집에서 검증한 뒤 저장하고 실패하면 앞 지도를 보존한다", async () => {
     const home = "mokryeon_180b";
     srv = await startServer({env:env(runtime(),{HOME_ID:home}),log:()=>{}});
