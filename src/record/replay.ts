@@ -25,7 +25,7 @@ export async function replay(o: { bag: Bag; from: number; to: number; launch: (b
   /** At the model boundary, resolve a recorded PAM reply against goals created during this replay. */
   resolveDecision?: (d:import("../contract/events.js").DecisionRecord)=>import("../contract/events.js").DecisionRecord;
   /** 녹화한 World State에 재생 중 바뀐 것(허브가 바꾼 가전 상태 등)을 넣는다: 실제 집 상태 노드는 /device/changes를 받아 기기 상태를 바꾼다. */
-  resolveWorld?: (view:import("../contract/world.js").WorldView)=>import("../contract/world.js").WorldView
+  resolveWorld?: (view:import("../contract/world.js").WorldView, rev:number)=>import("../contract/world.js").WorldView | import("../contract/world.js").WorldStateMsg
 }): Promise<{ sent: number }> {
   const rows = o.bag.range(o.from, o.to, { topics: o.topics ?? REPLAY_INPUTS });
   // 말 원문을 가린 녹화에서도, 폰이 실제로 받아들인 답만 같은 단추 글로 재생한다.
@@ -55,7 +55,8 @@ export async function replay(o: { bag: Bag; from: number; to: number; launch: (b
         await bus.publish({ ...e, body: { ...body, text: answers.get(answerKey(e.header, body.req)) ?? HEARD_MARK } });
       } else if (e.topic==="/world/state" && o.resolveWorld) {
         const body=e.body as import("../bus/index.js").Body<"/world/state">;
-        await bus.publish({...e,body:{...body,view:o.resolveWorld(body.view)}});
+        const resolved = o.resolveWorld(body.view,body.rev);
+        await bus.publish({...e, body:"view" in resolved ? resolved : {...body,view:resolved}});
       } else if (e.topic==="/brain/decision" && o.resolveDecision) {
         const body=e.body as import("../bus/index.js").Body<"/brain/decision">;
         await bus.publish({...e,body:{...body,decision:o.resolveDecision(body.decision)}});

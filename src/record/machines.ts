@@ -2,7 +2,7 @@ import { GOAL_LOG } from "../act/labels.js";
 import type { HistoryDb } from "../brain/index.js";
 import type { ManagerState, RobotState, SafetyState } from "../contract/machines.js";
 import type { PendingGoal } from "../contract/goal.js";
-import type { TopicName } from "../bus/index.js";
+import type { Envelope, TopicName } from "../bus/index.js";
 
 /** 목표 전환 한 줄: 바로 앞 상태(같은 목표)와 견줘 무엇이 바뀌었는지(세움·미리 만들기·사람 떠남·씀·버림). */
 function goalLine(prev: PendingGoal | null, g: PendingGoal): string {
@@ -36,9 +36,9 @@ export function machineWrites(db: HistoryDb) {
   let phoneStep = "";
   return {
     // 집 사진 하나에 한 줄(시각 = 그 VLM 답이 집 상태에 들어간 때): 실영상 시나리오 판정이 사진을 하나도 건너뛰지 않고 매긴다(scripts/scenario1-live.ts)
-    "/world/household_photo": (b, stamp) => {
+    "/world/household_photo": (b, stamp, header) => {
       const photo = b.photo as import("../contract/world.js").HouseholdPhoto;
-      db.add("household", Number(photo.answered_ms ?? stamp), "집 사진", { subject: photo.id, data: { event: "photo", photo } });
+      db.add("household", Number(photo.answered_ms ?? stamp), "집 사진", { subject: photo.id, data: { event: "photo", epoch: JSON.stringify([header.boot, header.home, header.inst]), photo } });
     },
     "/device/power_intent": (b) => db.add("household",Number(b.at_ms),"TV 전원 요청",{subject:String(b.device_id),data:{event:"power_request",power:b.value,command_id:b.command_id}}),
     "/act/directive_result": (b) => {
@@ -64,5 +64,5 @@ export function machineWrites(db: HistoryDb) {
     },
     "/safety/changes": (b) => db.add("safety", Number(b.since_ms), SAFETY[b.state as SafetyState["state"]], { data: b }),
     "/manager/changes": (b) => db.add("manager", Number(b.since_ms), OWNER[b.owner as ManagerState["owner"]], { data: b }),
-  } satisfies Partial<Record<TopicName, (b: Record<string, unknown>, stamp: number) => void>>;
+  } satisfies Partial<Record<TopicName, (b: Record<string, unknown>, stamp: number, header: Envelope<TopicName>["header"]) => void>>;
 }

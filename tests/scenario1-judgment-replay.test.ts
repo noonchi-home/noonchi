@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { composedPhotos, composedStates, guideBetween, heldCupAt, map, personSight, phoneCamera, replayScenario, scene, walkProblem } from "./helpers/scenario1-replay.js";
+import { edgeDistance, walkingGeometry } from "../src/layout/walk-guide.js";
+import { stationSeen } from "../src/act/robot/station-arrival.js";
+import type { TrackCore } from "../src/act/track/core.js";
+import { floorPlanFrom } from "../src/layout/floor.js";
 import { inView, ndc } from "../src/world/place.js";
 import { yawPitchQuat } from "../ui/src/phone/core/video-math.js";
 import { judgeScenario1, scenarioRank, type ScenarioEvent } from "../scripts/scenario1-judge.js";
@@ -98,7 +102,31 @@ describe("시나리오 1 합성(composed) 판단 재생", { timeout: 20_000 }, (
       const ps = zone(id).polygon;
       return [ps.reduce((a, p) => a + p[0], 0) / ps.length, 0.9, ps.reduce((a, p) => a + p[1], 0) / ps.length];
     };
-    expect(whole(phoneCamera("living_standby"), "sofa_watch")).toBe(true);
+    const roomView=phoneCamera("living_standby");
+    const tv = floorPlanFrom(scene).objects.get("tv_62442cb3")!;
+    expect(inView(roomView,[tv.position[0],1,tv.position[1]])).toBe(true);
+    const standby = map.stations.find(s=>s.id==="living_standby")!;
+    const geometry = walkingGeometry(scene);
+    const wall = geometry.walls.find(w=>w.id==="bath_center_bottom")!;
+    expect(edgeDistance(standby.position,wall.a,wall.b)).toBeLessThanOrEqual(0.6);
+    expect(geometry.walkable("living",standby.position)).toBe(true);
+    const sink = map.surface_fronts.find(s=>s.surface_id.startsWith("sink_counter"))!;
+    expect(guideBetween(sink.position,standby.position)?.remaining.at(-1)?.kind).toBe("stand");
+    expect(whole(roomView, "sofa_watch")).toBe(true);
+    const target={id:standby.id,position:[standby.position[0],0,standby.position[1]] as [number,number,number],
+      look:{position:[standby.look_at[0],0.6,standby.look_at[1]] as [number,number,number]}};
+    const proof={camera:roomView,person_count:0,person:null,dining_food:"unknown",seats:"clear"};
+    const view={household_photo:{serial:1,id:"seen",at_ms:1000,proof},devices:[{id:tv.id,kind:"tv"}],
+      fixtures:[{device:tv.id,last_seen_ms:1000,answered_ms:1000,facts:{screen:{at_ms:1000,value:"screen_on"}}}]};
+    const core={o:{state:{view:()=>view},layout:{floor:()=>floorPlanFrom(scene)},stations:{map:()=>map}}} as unknown as TrackCore;
+    expect(stationSeen(core,target,0.5,2500)).toBe(true);
+    const towardTV=Math.atan2(-(tv.position[0]-standby.position[0]),-(tv.position[1]-standby.position[1]));
+    proof.camera={...roomView,orientation:yawPitchQuat(towardTV,-10)};
+    expect(inView(proof.camera,target.look.position)).toBe(true);
+    expect(stationSeen(core,target,0.5,2500)).toBe(false);
+    const offlineView = {...view, devices:[], fixtures:[], household_photo:{...view.household_photo,proof:{...proof,camera:roomView}}};
+    const offline = {o:{...core.o,state:{view:()=>offlineView}}} as unknown as TrackCore;
+    expect(stationSeen(offline,target,0.5,2500)).toBe(false);
     expect(inView(phoneCamera("meal_watch"), middle("dining_seat"))).toBe(true);
     expect(ndc(phoneCamera("kitchen_entry"), middle("dining_seat"))).toBeNull();
   });
@@ -124,6 +152,12 @@ describe("시나리오 1 합성(composed) 판단 재생", { timeout: 20_000 }, (
       [2000, 3500, 2000, false],
       [3000, 4500, 2000, false],
     ]);
+    const epochRow = (epoch: string, r: HistoryRow) => ({ ...r, data: { ...r.data as object, epoch } });
+    expect.soft(live.judge([epochRow("boot1/home1",rows[0]!),epochRow("boot1/home2",rows[0]!)],[],null).firstMismatch).toBe("photo_gap");
+    const delayed = row(4, 4000, false);
+    (delayed.data as {photo: {answered_ms: number}}).photo.answered_ms = delayed.at_ms = 8000;
+    live.judge([delayed], [], null);
+    expect(live.photoSamples()[0]?.watching).toBe(false);
     const gap = live.judge([rows[0]!, rows[2]!], [], null);
     expect(gap.firstMismatch).toBe("photo_gap");
     expect(gap.events.filter((e) => e.kind === "photo_gap")).toHaveLength(1);
@@ -143,14 +177,14 @@ describe("시나리오 1 합성(composed) 판단 재생", { timeout: 20_000 }, (
     });
     // 2초 사진은 처리 상한으로 VLM에 보내지 않았다(proof 없음, 앞 촬영 1초를 이어 받음). 3초 사진도 그 1초를 이어 받는다(src/world/state/world.ts noteHousehold)
     live.judge([row(1, 1000, empty), row(2, 2000, null, { cap_from_ms: 1000 }), row(3, 3000, empty, { cap_from_ms: 1000 })], [], null);
-    expect(live.photoSamples().map((p) => p.since)).toEqual([1000, 1000, 1000]);
+    expect(live.photoSamples().map((p) => p.since)).toEqual([1000, null, 1000]);
     // 2초 빈 사진의 앞 촬영(1초)에 대한 늦은 답이 사람을 보여 그 빈 사진을 무효로 했다(같은 촬영 시각, 새 번호, proof 없음): 부재는 3초부터 다시 센다
     live.judge([row(1, 1000, empty), row(2, 2000, empty), row(3, 2000, null, {}, "photo-2"), row(4, 3000, empty)], [], null);
     expect(live.photoSamples().map((p) => p.since)).toEqual([1000, 1000, null, 3000]);
   });
   it("대기 뒤 다시 켜기의 시청자 근거는 그 사진의 답이 집 상태에 들어온 때다: 켠 뒤에 답이 온 사진은 근거가 아니다(촬영만 켜기 전이어도)", () => {
     const tv = "tv_1";
-    const photo = (t: number, arrived: number, since: number | null, watching = false) => ({ at: t, arrived, tv, since, watching });
+    const photo = (t: number, arrived: number, since: number | null, watching = false) => ({ at: t, arrived, until:t+3000, tv, since, watching });
     const photos = [photo(1000, 2500, null), photo(2000, 3500, 2000), photo(4000, 5500, 2000), photo(7000, 9800, null, true)];
     // 대기 0초, 끄기 6초, 끈 확인 6.1초: 끄기 전 마지막 사진(4초)에서 센 부재는 2초부터
     const evidence = standbyTvEvidence(photos, tv, 0, 6000, 6100);
@@ -159,6 +193,7 @@ describe("시나리오 1 합성(composed) 판단 재생", { timeout: 20_000 }, (
       { kind: "vacant", at: 4000, id: tv },
       { kind: "viewer_returned", at: 9800, id: tv },
     ]);
+    expect(standbyTvEvidence(photos,tv,0,7500,7600).some(e=>e.kind==="vacant")).toBe(false);
     // 9초에 켰다면 앉아 보는 사진(7초 촬영)의 답은 9.8초에야 들어와 켜기의 근거가 아니다: 시청자 돌아옴(9.8초)이 켜기(9초)보다 늦어 판정이 실패한다
   });
   it("합성 재생의 World State는 집 상태 노드처럼 낸다: 사진·폰 눈만 바뀐 상태는 같은 rev이고, 바뀐 것이 없어도 250ms마다 다시 낸다", () => {
@@ -174,7 +209,11 @@ describe("시나리오 1 합성(composed) 판단 재생", { timeout: 20_000 }, (
       to = map.stations.find((s) => s.id === "living_standby")!.position;
     const guide = guideBetween(from, to)!;
     expect(walkProblem(from, to, guide)).toBeNull();
+    expect(walkProblem(from, to, null, [{at:25,remaining:guide}], 50,100,0.05)).toBeNull();
     expect(walkProblem(from, to, null)).toMatch("보류");
+    expect(walkProblem(from, to, guide, [{at:50, remaining:null}], 0, 100)).toMatch("보류");
+    const displaced = { ...guide, remaining: guide.remaining.map(p=>({...p,position:[0,0,0]})) as typeof guide.remaining };
+    expect(walkProblem(from, to, guide, [{at:50, remaining:displaced}], 0, 100)).toMatch("다름");
     // 다른 길(경유점이 0.5m 옆)
     const moved = guide.remaining.map((p) => ({ ...p, position: [p.position[0] + 0.5, p.position[1], p.position[2]] as [number, number, number] }));
     expect(walkProblem(from, to, { ...guide, remaining: moved as typeof guide.remaining })).toMatch("다름");
@@ -183,22 +222,29 @@ describe("시나리오 1 합성(composed) 판단 재생", { timeout: 20_000 }, (
     expect(judgeScenario1([]).firstMismatch).toBe("missing:kitchen");
   });
   it("주방 관찰부터 TV를 다시 켤 때까지 11단계를 실제 명령과 기기 확인으로 채운다", async () => {
+    const powerViews: {at:number;rev:number;power:string}[]=[];
     let livePassed = false;
     const trace = await replayScenario("normal", (v) => {
       expect(v.firstMismatch, JSON.stringify(v.events)).toBeNull();
       livePassed = v.passed;
-    });
+    }, (at, rev, power) => powerViews.push({at,rev,power}));
+    const changes = powerViews.filter((s,i) => i && s.power !== powerViews[i-1]!.power);
+    expect(changes.map(x=>x.power)).toEqual(["off","on"]);
+    for (const change of changes) {
+      const index = powerViews.indexOf(change);
+      expect(change.rev).toBeGreaterThan(powerViews[index - 1]!.rev);
+      expect(change.at).toBe(trace.find(e=>e.kind === (change.power === "on" ? "tv_on_ack" : "tv_off_ack"))!.at);
+    }
     expect(livePassed).toBe(true);
     const v = judgeScenario1(trace);
     expect(v.firstMismatch, JSON.stringify(trace)).toBeNull();
     expect(v.passed).toBe(true);
     expect(v.tvConfirmToCupCommandMs).toBeGreaterThanOrEqual(0);
-    // 떠남(82.05초) → 다음 촬영 82.6초(빈 구역) → 2초 이어진 빈 사진(84.6초 촬영) → 그 답이 1.7초 뒤 도착해 끔
-    expect(v.leftToOffMs).toBe(4250);
-    // 빈 구간 첫 촬영(82.6초)부터 끄기까지
-    expect(v.noViewerToOffMs).toBe(3700);
+    // 벽 쪽 복귀 후 떠남 82.05초, 빈 구역 82.5~84.5초 촬영, 마지막 답 86.4초에 도착.
+    expect(v.leftToOffMs).toBe(4350);
+    expect(v.noViewerToOffMs).toBe(3900);
     expect(v.noViewerToAckMs).toBeGreaterThanOrEqual(v.noViewerToOffMs!);
-    expect(judgeScenario1(trace.map((e) => (e.kind === "left" ? { ...e, at: e.at - 751 } : e))).firstMismatch).toBe(
+    expect(judgeScenario1(trace.map((e) => (e.kind === "left" ? { ...e, at: e.at - 651 } : e))).firstMismatch).toBe(
       "late:tv_off",
     );
     expect(judgeScenario1(trace.filter((e) => e.kind !== "left")).firstMismatch).toBe("unexpected:empty");
@@ -276,7 +322,7 @@ describe("시나리오 1 합성(composed) 판단 재생", { timeout: 20_000 }, (
       at = (kind: ScenarioEvent["kind"], t: number, command?: string): ScenarioEvent => ({ kind, at: t, id: tv, command });
     const events = [at("tv_off", 5000, "c1"), at("tv_off_ack", 5100, "c1"), at("tv_on", 9000, "c2"), at("tv_on_ack", 9100, "c2"), { kind: "standby", at: 20000 } as ScenarioEvent];
     // since: 그 사진까지 TV 규칙이 센 부재의 시작(촬영 시각). 사진 번호 차례로 놓는다
-    const photo = (t: number, arrived: number, since: number | null, watching = false) => ({ at: t, arrived, tv, since, watching });
+    const photo = (t: number, arrived: number, since: number | null, watching = false) => ({ at: t, arrived, until:t+3000, tv, since, watching });
     const photos = [
       photo(1000, 2800, null),
       photo(2000, 3600, 2000),
