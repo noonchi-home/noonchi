@@ -34,15 +34,21 @@ describe("시나리오 1 합성(composed) 판단 재생", () => {
       sync: [[1000, 0], [5000, 4000], [9000, 4000], [12000, 7000]] as [number, number][],
       clips: [{ video_ms: 4000, clip: "walk-tv.mp4" }],
     };
-    expect(leftServerAt({ clip: "run.mp4", ms: 2000 }, "run.mp4", record, 1)).toBe(3000);
-    expect(leftServerAt({ clip: "walk-tv.mp4", ms: 1000 }, "run.mp4", record, 1)).toBe(10000);
+    expect(leftServerAt({ clip: "run.mp4", ms: 2000 }, "run.mp4", record, 1, 4000)).toBe(3000);
+    expect(leftServerAt({ clip: "walk-tv.mp4", ms: 1000 }, "run.mp4", { ...record, clips: [{ ...record.clips[0]!, duration_ms: 3000 }] }, 1)).toBe(10000);
     expect(leftServerAt({ clip: "other.mp4", ms: 0 }, "run.mp4", record, 1)).toBeNull();
+    // 영상 길이를 모르면 범위를 확인할 수 없어 옮기지 않는다
+    expect(leftServerAt({ clip: "walk-tv.mp4", ms: 1000 }, "run.mp4", record, 1)).toBeNull();
+    expect(leftServerAt({ clip: "run.mp4", ms: 2000 }, "run.mp4", record, 1)).toBeNull();
   });
   it("중간 판정은 되돌릴 수 없는 실패(늦은 끄기·다른 기기·다른 컵·수동 끈 TV 켜기)면 바로 끝내고, 아직 오지 않은 단계는 기다린다", () => {
     for (const m of ["late:tv_off", "wrong_tv", "wrong_cup:pick", "manual_off_then_on"])
       expect(scenarioSettled({ passed: false, firstMismatch: m })).toBe(true);
     for (const m of ["missing:empty", "unexpected:tv_off", "unconfirmed:tv_off_ack"])
       expect(scenarioSettled({ passed: false, firstMismatch: m })).toBe(false);
+    // 대기 전 끔→켬 묶음은 대기 자리에 도착한 뒤에는 더 채워지지 않는다
+    expect(scenarioSettled({ passed: false, firstMismatch: "early_tv:not_back_on", events: [{ kind: "standby" }] })).toBe(true);
+    expect(scenarioSettled({ passed: false, firstMismatch: "early_tv:not_back_on", events: [] })).toBe(false);
   });
   it("빈 판에서 빠진 첫 단계는 주방 입구 관찰이다", () => {
     expect(judgeScenario1([]).firstMismatch).toBe("missing:kitchen");
@@ -76,6 +82,16 @@ describe("시나리오 1 합성(composed) 판단 재생", () => {
       expect(judgeScenario1(trace.filter((e) => !(e.at < standby.at && e.kind === drop))).firstMismatch).toMatch(
         /^early_tv:/,
       );
+    // 끄기 전 시청 구역이 2초 비었다는 사진, 다시 켜기 전 앉아 보는 사진이 있어야 한다(계속 보는데 껐다 켜거나, 오기 전에 켜면 실패)
+    const vacancy = trace.find((e) => e.kind === "early_empty")!,
+      off = early[0]!;
+    expect(off.at - vacancy.at).toBeGreaterThanOrEqual(2000);
+    expect(trace.find((e) => e.kind === "early_viewer")!.at).toBeGreaterThan(early[1]!.at);
+    expect(judgeScenario1(trace.filter((e) => e.kind !== "early_empty")).firstMismatch).toBe("early_tv:no_vacancy");
+    expect(judgeScenario1(trace.map((e) => (e.kind === "early_empty" ? { ...e, at: off.at - 1999 } : e))).firstMismatch).toBe(
+      "early_tv:no_vacancy",
+    );
+    expect(judgeScenario1(trace.filter((e) => e.kind !== "early_viewer")).firstMismatch).toBe("early_tv:no_viewer");
     expect(
       judgeScenario1(trace.map((e) => (e.kind === "pick" ? { ...e, id: "another_cup" } : e))).firstMismatch,
     ).toBe("wrong_cup:pick");
@@ -96,6 +112,8 @@ describe("시나리오 1 합성(composed) 판단 재생", () => {
   it("합성 기록의 사진 줄은 모두 VLM 답 지연(lag)을 실어야 한다", async () => {
     // 지연 없는 사진은 촬영 순간 도착한 증거가 되고 간격 검사도 건너뛴다
     await expect(replayScenario("lag_missing")).rejects.toThrow("lag");
+    // 촬영 순간 도착하는 답(lag 0)도 지연 조건을 건너뛴다
+    await expect(replayScenario("lag_zero")).rejects.toThrow("lag");
   });
   it("같은 식탁에서 식사를 이어가면 목표를 거두고 컵 명령을 내지 않는다", async () => {
     const trace = await replayScenario("back");

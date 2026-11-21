@@ -11,7 +11,8 @@ import { judgeScenario1, scenarioRank, type ScenarioEvent } from "./scenario1-ju
 
 type Scene = SceneJson & { stations: StationMap };
 type Received = { id: string; step: string; kind?: string; target?: { id: string } | null };
-type Sample = { at: number; tv: string; empty: boolean; watching: boolean };
+/** at: 촬영 시각, arrived: 그 사진이 집 상태에 들어온 시각(World State at_ms). */
+type Sample = { at: number; arrived: number; tv: string; empty: boolean; watching: boolean };
 export const SCENARIO_KINDS = ["household", "decision", "goal", "plan", "robot"];
 
 export class LiveScenario {
@@ -36,6 +37,7 @@ export class LiveScenario {
       for (const [tv, room] of f.tvRooms ?? [])
         this.photos.push({
           at,
+          arrived: w.at_ms,
           tv,
           empty: f.read({ kind: "noViewer", room, ms: 0 }).value === true,
           watching: f.read({ kind: "postureAttention", target: tv, posture: "seated" }).value === true,
@@ -168,7 +170,31 @@ export class LiveScenario {
     // Questions may have no target. Check the phone's own record as well as dispatch receipts.
     if (received.some((c) => !["go", "pick", "place"].includes(c.kind ?? "") && !c.step.startsWith("done:")))
       add("unexpected", rows.at(-1)?.at_ms ?? 0);
+    events.push(...earlyTvEvidence(events, this.photos));
     const sorted = events.sort((a, b) => a.at - b.at || scenarioRank(a.kind) - scenarioRank(b.kind));
     return { ...judgeScenario1(sorted), events: sorted };
   }
+
+  /** 받은 집 사진마다 매긴 시청 구역(촬영 시각, 비었나, 앉아 보나). */
+  photoSamples(): readonly Sample[] {
+    return this.photos;
+  }
+}
+
+/** 대기 자리 도착 전 TV 끔→켬마다 근거 사진을 찾는다(촬영 시각, 판정 scripts/scenario1-judge.ts earlyTv).
+ *  early_empty: 그 끄기 전 마지막으로 사람이 보인 사진 다음의 빈 사진(빈 구간의 시작). early_viewer: 끈 확인 뒤 찍혀 다시 켜기 전에 온 앉아 보는 사진. */
+export function earlyTvEvidence(events: readonly ScenarioEvent[], photos: readonly Sample[]): ScenarioEvent[] {
+  const standby = events.find((e) => e.kind === "standby")?.at ?? Infinity;
+  const out: ScenarioEvent[] = [];
+  for (const off of events.filter((e) => e.kind === "tv_off" && e.at < standby)) {
+    // 끌 때 시스템이 가진 사진(그때까지 들어온 것)만 본다: 촬영은 앞서도 늦게 온 답은 그 판단의 근거가 아니다
+    const seen = photos.filter((p) => p.tv === off.id && p.arrived <= off.at).sort((a, b) => a.at - b.at);
+    const first = seen[seen.findLastIndex((p) => !p.empty) + 1];
+    if (first?.empty) out.push({ kind: "early_empty", at: first.at, id: off.id });
+    const ack = events.find((e) => e.kind === "tv_off_ack" && e.id === off.id && e.at >= off.at);
+    const on = events.find((e) => e.kind === "tv_on" && e.id === off.id && ack && e.at >= ack.at && e.at < standby);
+    const back = ack && on && photos.find((p) => p.tv === off.id && p.watching && p.at > ack.at && p.arrived <= on.at);
+    if (back) out.push({ kind: "early_viewer", at: back.at, id: off.id });
+  }
+  return out;
 }

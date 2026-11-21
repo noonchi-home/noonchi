@@ -159,18 +159,20 @@ export function videoClock(t0: number, sync: readonly (readonly [number, number]
 export interface LeftAt { clip: string; ms: number }
 
 /** 떠난 때 → 서버 시각. 첫 영상(--clip)은 영상 시각 0에서, 단계 영상은 폰 페이지가 그 영상을 튼 영상 시각(clips의 첫 기록)에서 시작한다.
- *  아직 틀지 않은 영상이거나, 영상 길이(단계 영상은 clips의 duration_ms, 첫 영상은 firstDurationMs)를 넘으면 null:
+ *  아직 틀지 않은 영상이거나, 영상 길이(단계 영상은 clips의 duration_ms, 첫 영상은 firstDurationMs)를 모르거나 넘으면 null:
  *  넘은 시각은 붙잡은 끝 장면이나 다음 영상 시각이 된다. 영상 시각과 sync는 같은 폰 페이지 시계라 끝 장면을 붙잡은 시간이 섞여도 어긋나지 않는다. */
 export function leftServerAt(left: LeftAt, firstClip: string, record: { t0: number; sync: readonly (readonly [number, number])[]; clips: readonly VideoClip[] }, rate = 1, firstDurationMs?: number | null): number | null {
   const clip = left.clip === firstClip ? { video_ms: 0, duration_ms: firstDurationMs ?? undefined } : record.clips.find((c) => c.clip === left.clip);
-  if (!clip || (clip.duration_ms != null && left.ms > clip.duration_ms)) return null;
+  if (!clip || clip.duration_ms == null || left.ms > clip.duration_ms) return null;
   return serverClock(record.t0, record.sync, rate)(clip.video_ms + left.ms);
 }
 
-/** 중간 판정에서 더 볼 것 없이 실패로 끝난 결과인가: 늦은 끄기·다른 기기·다른 컵·직접 끈 TV 켜기. 아직 오지 않은 단계(missing)와
- *  기록이 늦게 닿아 잠깐 생길 수 있는 순서 어긋남(unexpected·unconfirmed)은 계속 본다. */
-export function scenarioSettled(r: { passed: boolean; firstMismatch: string | null }): boolean {
-  return !r.passed && /^(late:|wrong_|manual_off_then_on$)/.test(r.firstMismatch ?? "");
+/** 중간 판정에서 더 볼 것 없이 실패로 끝난 결과인가: 늦은 끄기·다른 기기·다른 컵·직접 끈 TV 켜기, 그리고 대기 자리에 도착한 뒤의
+ *  대기 전 끔→켬 실패(early_tv, 그 묶음은 더 채워지지 않는다). 아직 오지 않은 단계(missing)와 기록이 늦게 닿아 잠깐 생길 수 있는
+ *  순서 어긋남(unexpected·unconfirmed)은 계속 본다. */
+export function scenarioSettled(r: { passed: boolean; firstMismatch: string | null; events?: readonly { kind: string }[] }): boolean {
+  const m = r.firstMismatch ?? "";
+  return !r.passed && (/^(late:|wrong_|manual_off_then_on$)/.test(m) || (m.startsWith("early_tv:") && !!r.events?.some((e) => e.kind === "standby")));
 }
 
 /** 영상 시각 → 서버 시각(videoClock을 거꾸로): 짝 사이는 잇고, 멈춘 구간(영상 시각이 그대로)이면 그 영상 시각에 처음 닿은 서버 시각, 짝 밖은 빠르기(rate)로 센다. */

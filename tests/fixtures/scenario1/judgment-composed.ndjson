@@ -5,6 +5,7 @@
 {"kind":"variant","name":"manual","replace_from":26499,"rows":[{"at":26499,"kind":"manual_off"},{"at":27500,"kind":"tv","value":"empty","lag":1500},{"at":29500,"kind":"tv","value":"empty","lag":1700},{"at":31500,"kind":"tv","value":"watching","lag":1800},{"at":33500,"kind":"tv","value":"watching","lag":1500}],"source":"composed external power operation; the TV rule stops watching, so photos return to 2 s"}
 {"kind":"variant","name":"cadence_wrong","replace_from":26499,"rows":[{"at":26499,"kind":"manual_off"},{"at":26500,"kind":"tv","value":"empty","lag":1800},{"at":27500,"kind":"tv","value":"empty","lag":1500},{"at":28500,"kind":"tv","value":"empty","lag":1900},{"at":29500,"kind":"tv","value":"empty","lag":1700}],"source":"deliberately wrong: keeps 1 s photos after a manual off, when the TV rule no longer watches"}
 {"kind":"variant","name":"lag_missing","replace_from":26500,"rows":[{"at":26500,"kind":"tv","value":"empty"}],"source":"deliberately wrong: a photo row without lag would arrive at its capture time"}
+{"kind":"variant","name":"lag_zero","replace_from":26500,"rows":[{"at":26500,"kind":"tv","value":"empty","lag":0}],"source":"deliberately wrong: an answer cannot arrive at its capture time"}
 {"at":0,"kind":"initial","source":"composed"}
 {"at":150,"kind":"eye","value":"meal_watch","source":"composed phone arrival"}
 {"at":500,"kind":"fridge_open","source":"composed"}

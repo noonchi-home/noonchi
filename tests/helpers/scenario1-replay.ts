@@ -34,13 +34,13 @@ import type { Vec2 } from "../../src/contract/layout.js";
 import type { SceneObservation } from "../../src/contract/observe.js";
 import { testTracker } from "./tracker-ports.js";
 import { planContext } from "./planner.js";
-import { LiveScenario } from "../../scripts/scenario1-live.js";
+import { earlyTvEvidence, LiveScenario } from "../../scripts/scenario1-live.js";
 import { HistoryDb } from "../../src/brain/history/db.js";
 import { historyRoutes } from "../../src/record/history.js";
 import type { PlannedCommand } from "../../src/contract/phone.js";
 import type { ScenarioEvent } from "../../scripts/scenario1-judge.js";
 
-type Variant = "normal" | "back" | "brief" | "manual" | "cadence_wrong" | "lag_missing";
+type Variant = "normal" | "back" | "brief" | "manual" | "cadence_wrong" | "lag_missing" | "lag_zero";
 /** at: 촬영(또는 사건) 시각. 사진 줄(table·away·tv)은 lag가 반드시 있고, VLM 답이 at + lag에 도착한다(집 상태가 그때 바뀐다). */
 type Line = { at: number; kind: string; value?: string; frame?: string; response?: object; source: string; lag?: number };
 /** 재생에 넣은 사진의 촬영 시각(절대 ms). */
@@ -124,7 +124,7 @@ function makeBag(bag: Bag, variant: Variant): { left: number | null; photos: Pho
   // 실제 폰은 마지막으로 선 자리에서 자세를 100ms마다 보낸다(ui/src/phone/core/ar.js SEND_MS). 도착 줄(eye) 사이를 그렇게 채운다
   const eyes = source.filter((r) => r.kind === "eye").sort((a, b) => a.at - b.at);
   eyes.forEach((e, i) => {
-    for (let t = e.at + 200; t < (eyes[i + 1]?.at ?? REPLAY_MS); t += POSE_MS)
+    for (let t = e.at + POSE_MS; t < (eyes[i + 1]?.at ?? REPLAY_MS); t += POSE_MS)
       source.push({ at: t, kind: "pose", value: e.value, source: "composed phone pose stream" });
   });
   let left: number | null = null;
@@ -171,13 +171,8 @@ function makeBag(bag: Bag, variant: Variant): { left: number | null; photos: Pho
       };
       world.at_ms = at;
       put("/world/state", "world", { rev: ++rev, view: world }, at);
-      for (const delay of [0, 80, 160])
-        put(
-          "/phone/pose",
-          "phone",
-          { quality: "usable", position: pos, pose_gen: 1, observed_ms: at + delay },
-          at + delay,
-        );
+      // 도착한 자세 하나, 그 뒤는 100ms마다(아래 자세 줄): 실제 폰보다 빨리 도착을 확인하지 않게
+      put("/phone/pose", "phone", { quality: "usable", position: pos, pose_gen: 1, observed_ms: at }, at);
       continue;
     }
     if (r.kind === "pam") {
@@ -212,7 +207,9 @@ function makeBag(bag: Bag, variant: Variant): { left: number | null; photos: Pho
       fridge.status = "열림";
     }
     if (["table", "away", "tv"].includes(r.kind)) {
-      if (r.lag === undefined) throw Error(`합성 기록 사진 ${r.at}ms에 VLM 답 지연(lag)이 없습니다.`);
+      // 답 지연은 실제 VLM 범위 안이어야 한다: 1초 미만(촬영 순간 도착 포함)이나 시간 초과(VLM_TIMEOUT_MS) 넘음은 실제로 오지 않는 답이다
+      if (!(typeof r.lag === "number" && r.lag >= VLM_LAG_MIN_MS && r.lag <= OBSERVE.vlmTimeoutMs))
+        throw Error(`합성 기록 사진 ${r.at}ms의 VLM 답 지연(lag ${r.lag})이 ${VLM_LAG_MIN_MS}~${OBSERVE.vlmTimeoutMs}ms 밖입니다.`);
       photos.push({ at });
       const record = r.frame ? frames.find((f) => f.frame === r.frame) : null;
       if (r.frame && !record) throw Error("없는 녹화 장 " + r.frame);
@@ -304,7 +301,9 @@ function nextVlmCapture(prev: number, fast: (t: number) => boolean): number {
   for (let t = prev + FAST_VLM_MS; ; t += OBSERVE.engineMs) if (t - prev >= (fast(t) ? FAST_VLM_MS : VLM_STEP_MS)) return t;
 }
 const OBSERVE = loadObserveConfig({}),
-  VLM_STEP_MS = vlmStepMs(OBSERVE);
+  VLM_STEP_MS = vlmStepMs(OBSERVE),
+  /** 합성 기록 VLM 답 지연의 아래 끝(ms): 잰 평균은 nano 1.6초, mini 1.8초다. */
+  VLM_LAG_MIN_MS = 1000;
 
 export async function replayScenario(
   variant: Variant,
@@ -633,10 +632,14 @@ export async function replayScenario(
       if (p.at !== want)
         throw Error(`합성 기록 사진 ${p.at - base}ms가 VLM 간격과 다릅니다: 앞 사진 ${photos[i - 1]!.at - base}ms 뒤 ${want - base}ms여야 합니다.`);
     });
-    if (left !== null) {
-      const i = trace.findIndex((e) => e.at > left - base);
-      trace.splice(i < 0 ? trace.length : i, 0, { kind: "left", at: left - base });
-    }
+    // 기록·촬영한 사람이 아는 떠난 때와, 시스템이 받은 사진에서 찾은 대기 전 끔→켬 근거를 차례 자리에 넣는다
+    const insert = (e: ScenarioEvent) => {
+      const i = trace.findIndex((x) => x.at > e.at);
+      trace.splice(i < 0 ? trace.length : i, 0, e);
+    };
+    if (left !== null) insert({ kind: "left", at: left - base });
+    const absolute = trace.map((e) => ({ ...e, at: e.at + base }));
+    for (const e of earlyTvEvidence(absolute, live.photoSamples())) insert({ ...e, at: e.at - base });
     recording?.(live.judge(db.list({ limit: 5000 }), received, left));
     return trace;
   } finally {

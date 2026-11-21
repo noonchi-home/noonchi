@@ -1,3 +1,5 @@
+import { NO_VIEWER_MS } from "../src/goal/tv-watch.js";
+
 export interface ScenarioEvent {
   kind:
     | "kitchen"
@@ -24,7 +26,10 @@ export interface ScenarioEvent {
     | "unexpected"
     | "find_cup"
     | "in_sink"
-    | "viewer_returned";
+    | "viewer_returned"
+    // 대기 전 끔→켬의 근거 사진(촬영 시각): 끄기 전 시청 구역이 비기 시작한 사진, 다시 켜기 전 앉아 보는 사진(scripts/scenario1-live.ts earlyTvEvidence)
+    | "early_empty"
+    | "early_viewer";
   at: number;
   id?: string;
   command?: string;
@@ -60,8 +65,9 @@ const TV_POWER = new Set<ScenarioEvent["kind"]>(["tv_off", "tv_off_ack", "tv_on"
 const TV_CYCLE = ["tv_off", "tv_off_ack", "tv_on", "tv_on_ack"] as const;
 
 /** 대기 자리 도착 전 TV 끔→켬: 식탁에서 소파로 걷는 동안 시청 구역이 2초 비면 끄고, 앉아 보면 다시 켠다(2026-11-21 사용자 결정).
- *  같은 TV를 끄고 허브가 확인한 뒤, 다시 켜고 허브가 확인한 묶음이어야 한다. 틀리면 early_tv:<까닭>. */
-function earlyTv(early: readonly ScenarioEvent[]): string | null {
+ *  같은 TV를 끄고 허브가 확인한 뒤, 다시 켜고 허브가 확인한 묶음이어야 한다. 끄기 전에는 시청 구역이 NO_VIEWER_MS 넘게 빈 사진이(early_empty),
+ *  다시 켜기 전에는 끈 뒤 찍힌 앉아 보는 사진이(early_viewer) 있어야 한다. 틀리면 early_tv:<까닭>. */
+function earlyTv(early: readonly ScenarioEvent[], proof: readonly ScenarioEvent[]): string | null {
   for (let i = 0; i < early.length; i++) {
     const e = early[i]!,
       off = early[i - (i % 4)]!;
@@ -69,6 +75,11 @@ function earlyTv(early: readonly ScenarioEvent[]): string | null {
     if (e.kind.endsWith("_ack") && (e.id !== early[i - 1]!.id || !e.command || e.command !== early[i - 1]!.command))
       return "early_tv:unconfirmed";
     if (e.kind === "tv_on" && e.id !== off.id) return "early_tv:wrong_tv";
+    const since = early[i - (i % 4) - 1]?.at ?? -Infinity;
+    if (e.kind === "tv_off" && !proof.some((p) => p.kind === "early_empty" && p.id === e.id && p.at > since && e.at - p.at >= NO_VIEWER_MS))
+      return "early_tv:no_vacancy";
+    if (e.kind === "tv_on" && !proof.some((p) => p.kind === "early_viewer" && p.id === e.id && p.at > early[i - 1]!.at && p.at <= e.at))
+      return "early_tv:no_viewer";
   }
   return early.length % 4 === 0 ? null : early.length % 4 === 2 ? "early_tv:not_back_on" : "early_tv:unconfirmed";
 }
@@ -78,7 +89,8 @@ export function judgeScenario1(trace: readonly ScenarioEvent[]) {
   const standbyAt = trace.find((e) => e.kind === "standby")?.at ?? Infinity;
   const isEarly = (e: ScenarioEvent) => e.at < standbyAt && TV_POWER.has(e.kind);
   const early = trace.filter(isEarly);
-  let firstMismatch: string | null = earlyTv(early);
+  const proof = trace.filter((e) => e.kind === "early_empty" || e.kind === "early_viewer");
+  let firstMismatch: string | null = earlyTv(early, proof);
   let previous = -Infinity;
   let next = 0;
   const manuallyOff = new Set<string | undefined>();
@@ -88,7 +100,7 @@ export function judgeScenario1(trace: readonly ScenarioEvent[]) {
       firstMismatch = "manual_off_then_on";
       break;
     }
-    if (e.kind === "manual_off" || isEarly(e)) continue;
+    if (e.kind === "manual_off" || isEarly(e) || e.kind === "early_empty" || e.kind === "early_viewer") continue;
     if (firstMismatch) continue;
     if (!Number.isFinite(e.at) || e.at < previous) {
       firstMismatch = "out_of_order:" + e.kind;
