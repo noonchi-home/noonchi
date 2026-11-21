@@ -13,7 +13,6 @@ import { tasksFor } from "../../src/act/tasks.js";
 import { deviceRunner } from "../../src/act/devices.js";
 import { PlanDraft, resubmit } from "../../src/agent/planTools.js";
 import { memoryApprovals } from "../../src/agent/approval.js";
-import { walkingMap } from "../../src/layout/walk-guide.js";
 import { Policy } from "../../src/agent/policy.js";
 import { MemoryHub, SignalHub } from "../../src/devices/index.js";
 import { roomAt } from "../../src/layout/route.js";
@@ -30,7 +29,7 @@ import type { CameraView, SceneObservation } from "../../src/contract/observe.js
 import { inView } from "../../src/world/place.js";
 import { testTracker } from "./tracker-ports.js";
 import {
-  OBSERVE, PHONE, VLM_LAG_MIN_MS, VLM_STEP_MS, POSE_MS, WALK_MPS, cameraAt, center, fact, floor, heldCupAt, map, nextVlmCapture, pathBetween, pathLength, personSight, scene, walkProblem,
+  OBSERVE, PHONE, VLM_LAG_MIN_MS, VLM_STEP_MS, POSE_MS, WALK_MPS, cameraAt, center, fact, floor, heldCupAt, map, nextVlmCapture, pathBetween, pathLength, personSight, scene, walkMap, walkProblem,
 } from "./home-realism.js";
 export { guideBetween, heldCupAt, map, personSight, scene, walkProblem } from "./home-realism.js";
 import { planContext } from "./planner.js";
@@ -528,7 +527,7 @@ export async function replayScenario(
           topLook: true as const,
           discardLeftover: discardLeftover(),
         });
-        const walk = walkingMap(floor, scene);
+        const walk = walkMap;
         const station = (id: string) => {
           const s = map.stations.find((s) => s.id === id);
           return s

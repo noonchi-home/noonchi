@@ -17,7 +17,6 @@ import { CALL_ACTION, WATER_ACTION, tasksFor } from "../../src/act/tasks.js";
 import { PlanDraft } from "../../src/agent/planTools.js";
 import { memoryApprovals } from "../../src/agent/approval.js";
 import { roomAt } from "../../src/layout/route.js";
-import { walkingMap } from "../../src/layout/walk-guide.js";
 import { LOOK_HEIGHT_M, locateZone } from "../../src/layout/stations.js";
 import { WORLD_TICK_MS } from "../../src/world/index.js";
 import { inView } from "../../src/world/place.js";
@@ -185,23 +184,14 @@ export async function replayDay(o: {
     return s ? { id, label: s.name, position: [s.position[0], 0, s.position[1]] as [number, number, number],
       look: { label: map.zones.filter((z) => s.observes_zone_ids.includes(z.id)).map((z) => z.name).join("·") || null, position: [s.look_at[0], LOOK_HEIGHT_M, s.look_at[1]] as [number, number, number] } } : null;
   };
-  const walk = walkingMap(floor, scene);
+  const walk = walkMap;
   let tracker!: ReturnType<typeof testTracker>;
   let walking: { step: string; revision: number | null } | null = null;
-  /** 그 가기 명령의 안내 길을 지금 자리에서 걷는다. 문(portal)은 문 앞(나가는 방 쪽 0.6m)에서 곧게 지나 문 뒤(들어가는 방 쪽 0.6m)까지 간다
-   *  (문 점으로 비스듬히 가거나 문 바로 뒤에서 꺾으면 벽을 지나거나 나온 방으로 되돌아간다). */
+  /** 그 가기 명령의 안내 길(guide.remaining)을 지금 자리에서 점 차례대로 곧게 걷는다. 안내에 없는 점은 걷지 않는다. */
   const follow = (c: PlannedCommand) => {
     if (!c.guide) return;
     walking = { step: c.step, revision: c.guide.revision ?? null };
-    const here = phoneAt(clock.now()).position;
-    const path: Vec2[] = [here];
-    for (const p of c.guide.remaining) {
-      const at: Vec2 = [p.position[0], p.position[2]];
-      const d = p.kind === "portal" ? ([[0, -0.6], [0, 0.6], [-0.6, 0], [0.6, 0]] as Vec2[]).find((v) =>
-        walkMap.room([at[0] + v[0], at[1] + v[1]]) === p.from_room && walkMap.room([at[0] - v[0], at[1] - v[1]]) === p.to_room) : undefined;
-      if (d) path.push([at[0] + d[0], at[1] + d[1]], at, [at[0] - d[0], at[1] - d[1]]);
-      else path.push(at);
-    }
+    const path: Vec2[] = [phoneAt(clock.now()).position, ...c.guide.remaining.map((p): Vec2 => [p.position[0], p.position[2]])];
     const aim = c.target!.look ?? c.target!.position;
     phone.walk = { path, start: clock.now(), look: [aim[0], aim[2]] };
     const mine = phone.walk;

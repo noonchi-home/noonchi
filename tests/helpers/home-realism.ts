@@ -8,6 +8,7 @@ import { floorPlanFrom } from "../../src/layout/floor.js";
 import { loadScene } from "../../src/layout/scene.js";
 import { resolveHome } from "../../src/layout/homes.js";
 import { DEFAULT_TWIN_DIR } from "../../src/layout/twin-files.js";
+import { loadCatalog } from "../../src/layout/catalog.js";
 import type { Vec2 } from "../../src/contract/layout.js";
 import type { CameraView } from "../../src/contract/observe.js";
 import type { PlannedCommand } from "../../src/contract/phone.js";
@@ -15,7 +16,9 @@ import { inView, ndc } from "../../src/world/place.js";
 import { projectionFromFov, yawPitchQuat } from "../../ui/src/phone/core/video-math.js";
 
 /** 목련 집 장면(평면도·관찰 자리). */
-export const scene = loadScene(resolveHome(DEFAULT_TWIN_DIR, "mokryeon_180b"))!;
+const home = resolveHome(DEFAULT_TWIN_DIR, "mokryeon_180b");
+export const scene = loadScene(home)!;
+const catalog = loadCatalog(home.catalogDir);
 /** 목련 집 관찰 자리·구역(twin/data/homes/mokryeon_180b/stations.json). */
 export const map = scene.stations,
   floor = floorPlanFrom(scene);
@@ -60,14 +63,21 @@ export function heldCupAt(phone: { position: Vec2; look: Vec2 }): [number, numbe
   return [phone.position[0] + (dx / d) * HAND.aheadM, HAND.heightM, phone.position[1] + (dz / d) * HAND.aheadM];
 }
 
-/** 앞 자리에서 다음 자리까지 걷는 길: 시스템이 폰에 보내는 안내 길(src/layout/walk-guide.ts plan, 문·경유점)과 같다. 길이 없으면 null. */
-export const walkMap = walkingMap(floor, scene);
+/** 서버가 쓰는 걷는 지도와 같다(가구 바닥 크기는 카탈로그, src/server/home/act.ts). 시스템이 폰에 보내는 안내 길(plan, 문·경유점)을 낸다. */
+export const walkMap = walkingMap(floor, scene, (type) => catalog.get(type)?.footprint);
+/** 같은 두 자리의 안내 길은 한 번만 계산한다(재생은 자세마다 폰 자리를 다시 묻는다. 가구가 막은 칸 찾기는 한 번에 0.1초 넘게 걸린다). */
+const guides = new Map<string, ReturnType<typeof walkMap.plan>>();
+/** 시스템이 그 두 자리 사이에 보내는 안내 길(가기 명령 guide와 같은 계산). */
+export function guideBetween(a: Vec2, b: Vec2) {
+  const key = `${a[0]},${a[1]}>${b[0]},${b[1]}`;
+  if (!guides.has(key)) guides.set(key, walkMap.plan(a, b, 0.5, true));
+  const guide = guides.get(key)!;
+  return guide && structuredClone(guide);
+}
 export function pathBetween(a: Vec2, b: Vec2): Vec2[] | null {
-  const guide = walkMap.plan(a, b, 0.5, true);
+  const guide = guideBetween(a, b);
   return guide ? [a, ...guide.remaining.map((p) => [p.position[0], p.position[2]] as Vec2)] : null;
 }
-/** 시스템이 그 두 자리 사이에 보내는 안내 길(가기 명령 guide와 같은 계산). */
-export const guideBetween = (a: Vec2, b: Vec2) => walkMap.plan(a, b, 0.5, true);
 /** 폰이 걸은 길(안내 길)이 가기 명령이 보낸 안내 길과 같은가. 다르거나 안내가 없으면(보류) 까닭 글, 같으면 null. */
 export function walkProblem(from: Vec2, to: Vec2, guide: PlannedCommand["guide"] | null | undefined): string | null {
   const path = pathBetween(from, to);
