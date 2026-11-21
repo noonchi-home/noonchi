@@ -155,12 +155,13 @@ export class LiveScenario {
     if (sink) events.push(sink);
     const standby = events.find((e) => e.kind === "standby");
     if (standby) {
-      const off = events.find((e) => e.kind === "tv_off");
+      // 대기 자리 도착 전 끔→켬(식탁에서 소파로 걷는 동안)은 판정 함수가 따로 본다. 여기서는 대기 뒤 끄기만 쓴다
+      const off = events.find((e) => e.kind === "tv_off" && e.at >= standby.at);
       const tv = off?.id ?? this.photos.at(-1)?.tv;
       const before = this.photos.filter((p) => p.tv === tv && p.at >= standby.at && (!off || p.at <= off.at));
       const first = before[before.findLastIndex((p) => !p.empty) + 1];
       if (first) add("empty", first.at, tv);
-      const ack = events.find((e) => e.kind === "tv_off_ack");
+      const ack = events.find((e) => e.kind === "tv_off_ack" && e.at >= standby.at);
       const again = this.photos.find((p) => p.tv === tv && ack && p.at > ack.at && p.watching);
       if (again) add("viewer_returned", again.at, tv);
     }

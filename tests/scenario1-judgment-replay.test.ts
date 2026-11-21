@@ -57,6 +57,16 @@ describe("시나리오 1 합성(composed) 판단 재생", () => {
       "late:tv_off",
     );
     expect(judgeScenario1(trace.filter((e) => e.kind !== "left")).firstMismatch).toBe("unexpected:empty");
+    // 식탁에서 소파로 걷는 동안 시청 구역이 2초 비어 TV가 꺼졌다가, 앉아 보자 다시 켜진다(2026-11-21 사용자: 「왔을때 다시 켜주면 되는거 아녀?」)
+    expect(v.earlyTvCycles).toBe(1);
+    const standby = trace.find((e) => e.kind === "standby")!;
+    const early = trace.filter((e) => e.at < standby.at && e.kind.startsWith("tv_"));
+    expect(early.map((e) => e.kind)).toEqual(["tv_off", "tv_off_ack", "tv_on", "tv_on_ack"]);
+    // 다시 켜지 않거나 허브가 켜짐을 확인하지 않으면 실패
+    for (const drop of ["tv_on", "tv_on_ack"])
+      expect(judgeScenario1(trace.filter((e) => !(e.at < standby.at && e.kind === drop))).firstMismatch).toMatch(
+        /^early_tv:/,
+      );
     expect(
       judgeScenario1(trace.map((e) => (e.kind === "pick" ? { ...e, id: "another_cup" } : e))).firstMismatch,
     ).toBe("wrong_cup:pick");
@@ -74,6 +84,10 @@ describe("시나리오 1 합성(composed) 판단 재생", () => {
     // 직접 끈 TV는 TV 규칙이 지켜보지 않는데도 1초 간격 사진을 그대로 둔 기록
     await expect(replayScenario("cadence_wrong")).rejects.toThrow("VLM 간격");
   });
+  it("합성 기록의 사진 줄은 모두 VLM 답 지연(lag)을 실어야 한다", async () => {
+    // 지연 없는 사진은 촬영 순간 도착한 증거가 되고 간격 검사도 건너뛴다
+    await expect(replayScenario("lag_missing")).rejects.toThrow("lag");
+  });
   it("같은 식탁에서 식사를 이어가면 목표를 거두고 컵 명령을 내지 않는다", async () => {
     const trace = await replayScenario("back");
     expect(trace.map((e) => e.kind)).toEqual(expect.arrayContaining(["ready", "checking", "back"]));
@@ -81,13 +95,15 @@ describe("시나리오 1 합성(composed) 판단 재생", () => {
   });
   it("시청자가 잠깐 일어섰다가 돌아오면 TV 끄기를 보내지 않는다", async () => {
     const trace = await replayScenario("brief");
-    expect(trace.map((e) => e.kind)).toContain("standby");
-    expect(trace.filter((e) => e.kind === "tv_off")).toEqual([]);
+    const standby = trace.find((e) => e.kind === "standby")!;
+    expect(standby).toBeDefined();
+    expect(trace.filter((e) => e.kind === "tv_off" && e.at > standby.at)).toEqual([]);
   });
   it("직접 끈 TV 앞에 앉아도 자동 켜기를 보내지 않는다", async () => {
     const trace = await replayScenario("manual");
     expect(trace.map((e) => e.kind)).toEqual(expect.arrayContaining(["standby", "manual_off", "viewer_returned"]));
-    expect(trace.filter((e) => e.kind === "tv_on")).toEqual([]);
+    const manual = trace.find((e) => e.kind === "manual_off")!;
+    expect(trace.filter((e) => e.kind === "tv_on" && e.at > manual.at)).toEqual([]);
     expect(
       judgeScenario1([
         ...trace,

@@ -1,39 +1,49 @@
-{"kind":"metadata","name":"시나리오 1 합성(composed)","home":"mokryeon_180b","learned_discard":true,"recording":"tests/fixtures/replay/wide-mug-v1.json","source":"frame references copy only the recorded VLM observation values. Positions, chronology, food, gaze, seat, device inputs and model responses are composed. No photos or transcripts. Rows with lag follow the VLM timing: photos every 1 s while the TV rule watches (2 s otherwise) and answers arrive 1.5-2.0 s after capture (measured average: nano 1.6 s, mini 1.8 s). The left row is when the viewer actually leaves."}
+{"kind":"metadata","name":"시나리오 1 합성(composed)","home":"mokryeon_180b","learned_discard":true,"recording":"tests/fixtures/replay/wide-mug-v1.json","source":"frame references copy only the recorded VLM observation values. Positions, chronology, food, gaze, seat, device inputs and model responses are composed. No photos or transcripts. Every photo row follows the VLM timing: at is the capture time and the answer arrives lag ms later (1.5-2.0 s; measured average nano 1.6 s, mini 1.8 s). After the first answer the TV rule watches, so photos are 1 s apart (2 s after a manual off). Eye and PAM rows come after the commands they answer. The left row is when the viewer actually leaves."}
 {"kind":"plan_response","source":"composed submit_plan response for this fixture; original cup id bound by the planner","steps":[{"kind":"go","act":"가기","target":"dining_table_978b20c7","until":{"phone_near":"dining_table_978b20c7"},"timeout_s":120},{"kind":"pick","act":"들기","target":"cup_1","until":{"object":"cup_1","follow":true,"facts":{"place":"in_hand"}},"timeout_s":120},{"kind":"go","act":"가기","target":"sink_counter_kitchen","until":{"phone_near":"sink_counter_kitchen"},"timeout_s":120},{"kind":"place","act":"넣기","target":"sink_counter_kitchen","object":"cup_1","until":{"all":[{"object":"cup_1","follow":true,"facts":{"place":"in_sink"}},{"not":{"person_holding":"cup_1"}}]},"timeout_s":120}]}
-{"kind":"variant","name":"back","replace_from":7200,"rows":[{"at":7200,"kind":"table","value":"drinking","frame":"e36"},{"at":7550,"kind":"table","value":"drinking","frame":"e93"}],"source":"composed return to the same meal, using wide-mug-v1#e36,e93"}
-{"kind":"variant","name":"brief","replace_from":16550,"rows":[{"at":17500,"kind":"tv","value":"standing","lag":1800,"source":"composed VLM answer: at is the capture time, the answer arrives lag ms later"},{"at":18500,"kind":"tv","value":"empty","lag":1500,"source":"composed VLM answer: at is the capture time, the answer arrives lag ms later"},{"at":19500,"kind":"tv","value":"watching","lag":1900,"source":"composed VLM answer: at is the capture time, the answer arrives lag ms later"},{"at":20500,"kind":"tv","value":"watching","lag":1700,"source":"composed VLM answer: at is the capture time, the answer arrives lag ms later"},{"at":21500,"kind":"tv","value":"watching","lag":1600,"source":"composed VLM answer: at is the capture time, the answer arrives lag ms later"},{"at":22500,"kind":"tv","value":"watching","lag":1800,"source":"composed VLM answer: at is the capture time, the answer arrives lag ms later"}],"source":"composed standing, briefly obscured, then seated; the viewer does not leave"}
-{"kind":"variant","name":"manual","replace_from":17499,"rows":[{"at":17499,"kind":"manual_off"},{"at":18500,"kind":"tv","value":"empty","lag":1500,"source":"composed VLM answer: at is the capture time, the answer arrives lag ms later"},{"at":20500,"kind":"tv","value":"empty","lag":1700,"source":"composed VLM answer: at is the capture time, the answer arrives lag ms later"},{"at":22500,"kind":"tv","value":"watching","lag":1800,"source":"composed VLM answer: at is the capture time, the answer arrives lag ms later"},{"at":24500,"kind":"tv","value":"watching","lag":1500,"source":"composed VLM answer: at is the capture time, the answer arrives lag ms later"}],"source":"composed external power operation; the TV rule stops watching, so photos return to 2 s"}
-{"kind":"variant","name":"cadence_wrong","replace_from":17499,"rows":[{"at":17499,"kind":"manual_off"},{"at":17500,"kind":"tv","value":"empty","lag":1800,"source":"composed VLM answer: at is the capture time, the answer arrives lag ms later"},{"at":18500,"kind":"tv","value":"empty","lag":1500,"source":"composed VLM answer: at is the capture time, the answer arrives lag ms later"},{"at":19500,"kind":"tv","value":"empty","lag":1900,"source":"composed VLM answer: at is the capture time, the answer arrives lag ms later"},{"at":20500,"kind":"tv","value":"empty","lag":1700,"source":"composed VLM answer: at is the capture time, the answer arrives lag ms later"}],"source":"deliberately wrong: keeps 1 s photos after a manual off, when the TV rule no longer watches"}
+{"kind":"variant","name":"back","replace_from":9500,"rows":[{"at":9500,"kind":"table","value":"drinking","lag":1800,"frame":"e36"},{"at":10500,"kind":"table","value":"drinking","lag":1500,"frame":"e93"}],"source":"composed return to the same meal, using wide-mug-v1#e36,e93"}
+{"kind":"variant","name":"brief","replace_from":25550,"rows":[{"at":26500,"kind":"tv","value":"standing","lag":1800},{"at":27500,"kind":"tv","value":"empty","lag":1500},{"at":28500,"kind":"tv","value":"watching","lag":1900},{"at":29500,"kind":"tv","value":"watching","lag":1700},{"at":30500,"kind":"tv","value":"watching","lag":1600},{"at":31500,"kind":"tv","value":"watching","lag":1800}],"source":"composed standing, briefly obscured, then seated; the viewer does not leave"}
+{"kind":"variant","name":"manual","replace_from":26499,"rows":[{"at":26499,"kind":"manual_off"},{"at":27500,"kind":"tv","value":"empty","lag":1500},{"at":29500,"kind":"tv","value":"empty","lag":1700},{"at":31500,"kind":"tv","value":"watching","lag":1800},{"at":33500,"kind":"tv","value":"watching","lag":1500}],"source":"composed external power operation; the TV rule stops watching, so photos return to 2 s"}
+{"kind":"variant","name":"cadence_wrong","replace_from":26499,"rows":[{"at":26499,"kind":"manual_off"},{"at":26500,"kind":"tv","value":"empty","lag":1800},{"at":27500,"kind":"tv","value":"empty","lag":1500},{"at":28500,"kind":"tv","value":"empty","lag":1900},{"at":29500,"kind":"tv","value":"empty","lag":1700}],"source":"deliberately wrong: keeps 1 s photos after a manual off, when the TV rule no longer watches"}
+{"kind":"variant","name":"lag_missing","replace_from":26500,"rows":[{"at":26500,"kind":"tv","value":"empty"}],"source":"deliberately wrong: a photo row without lag would arrive at its capture time"}
 {"at":0,"kind":"initial","source":"composed"}
-{"at":150,"kind":"eye","value":"meal_watch","source":"composed"}
+{"at":150,"kind":"eye","value":"meal_watch","source":"composed phone arrival"}
 {"at":500,"kind":"fridge_open","source":"composed"}
-{"at":900,"kind":"eye","value":"kitchen_entry","source":"composed"}
-{"at":1500,"kind":"table","value":"standing","frame":"e93","source":"wide-mug-v1#e93 (VLM); composed position and household"}
-{"at":2300,"kind":"table","value":"sitting","frame":"e112","source":"wide-mug-v1#e112 (VLM); composed position and household"}
-{"at":2700,"kind":"eye","value":"meal_watch","source":"composed"}
-{"at":3200,"kind":"table","value":"drinking","frame":"e36","source":"wide-mug-v1#e36 (VLM); composed position and household"}
-{"at":3800,"kind":"table","value":"drinking","frame":"e93","source":"wide-mug-v1#e93 (VLM); composed position and household"}
-{"at":4500,"kind":"away","value":"table","frame":"e112","source":"wide-mug-v1#e112 (VLM); composed position and household"}
-{"at":5000,"kind":"away","value":"table","frame":"e162","source":"wide-mug-v1#e162 (VLM); composed position and household"}
-{"at":7200,"kind":"tv","value":"watching","source":"composed"}
-{"at":7550,"kind":"pam","value":"watching_tv","response":{"observation":"거실에서 TV를 봄","reasoning":"시청 중","state":"watching_tv","from":null,"next_index":-1},"source":"composed"}
-{"at":8000,"kind":"eye","value":"table","source":"composed"}
-{"at":8250,"kind":"tv","value":"watching","frame":"e243","source":"wide-mug-v1#e243 (VLM); composed position and household"}
-{"at":8750,"kind":"tv","value":"watching","frame":"e340","source":"wide-mug-v1#e340 (VLM); composed position and household"}
-{"at":9100,"kind":"tv","value":"watching","frame":"e410","source":"wide-mug-v1#e410 (VLM); composed position and household"}
-{"at":9450,"kind":"eye","value":"sink","source":"composed"}
-{"at":10000,"kind":"tv","value":"watching","frame":"e727","source":"wide-mug-v1#e727 (VLM); composed position and household"}
-{"at":11000,"kind":"tv","value":"watching","frame":"e807","source":"wide-mug-v1#e807 (VLM); composed position and household"}
-{"at":14500,"kind":"tv","value":"watching","source":"composed"}
-{"at":15000,"kind":"eye","value":"living_standby","source":"composed"}
-{"at":15500,"kind":"tv","value":"watching","lag":1700,"source":"composed VLM answer: at is the capture time, the answer arrives lag ms later"}
-{"at":16500,"kind":"tv","value":"watching","lag":1600,"source":"composed VLM answer: at is the capture time, the answer arrives lag ms later"}
-{"at":16550,"kind":"left","source":"composed: the viewer leaves the sofa"}
-{"at":17500,"kind":"tv","value":"empty","lag":1800,"source":"composed VLM answer: at is the capture time, the answer arrives lag ms later"}
-{"at":18500,"kind":"tv","value":"empty","lag":1500,"source":"composed VLM answer: at is the capture time, the answer arrives lag ms later"}
-{"at":19500,"kind":"tv","value":"empty","lag":1900,"source":"composed VLM answer: at is the capture time, the answer arrives lag ms later"}
-{"at":20500,"kind":"tv","value":"empty","lag":1700,"source":"composed VLM answer: at is the capture time, the answer arrives lag ms later"}
-{"at":21500,"kind":"tv","value":"empty","lag":1600,"source":"composed VLM answer: at is the capture time, the answer arrives lag ms later"}
-{"at":22500,"kind":"tv","value":"watching","lag":1800,"source":"composed VLM answer: at is the capture time, the answer arrives lag ms later"}
-{"at":23500,"kind":"tv","value":"watching","lag":1700,"source":"composed VLM answer: at is the capture time, the answer arrives lag ms later"}
-{"at":24500,"kind":"tv","value":"watching","lag":1500,"source":"composed VLM answer: at is the capture time, the answer arrives lag ms later"}
+{"at":900,"kind":"eye","value":"kitchen_entry","source":"composed phone arrival"}
+{"at":1500,"kind":"table","value":"standing","lag":2000,"frame":"e93","source":"wide-mug-v1#e93 (VLM); composed position and household; answer arrives lag ms after capture"}
+{"at":3500,"kind":"table","value":"sitting","lag":1600,"frame":"e112","source":"wide-mug-v1#e112 (VLM); composed position and household; answer arrives lag ms after capture"}
+{"at":4500,"kind":"table","value":"sitting","lag":1800,"source":"composed VLM answer: at is the capture time, the answer arrives lag ms later"}
+{"at":5500,"kind":"eye","value":"meal_watch","source":"composed phone arrival"}
+{"at":5500,"kind":"table","value":"drinking","lag":1500,"frame":"e36","source":"wide-mug-v1#e36 (VLM); composed position and household; answer arrives lag ms after capture"}
+{"at":6500,"kind":"table","value":"drinking","lag":1900,"frame":"e93","source":"wide-mug-v1#e93 (VLM); composed position and household; answer arrives lag ms after capture"}
+{"at":7500,"kind":"away","value":"table","lag":1700,"frame":"e112","source":"wide-mug-v1#e112 (VLM); composed position and household; answer arrives lag ms after capture"}
+{"at":8500,"kind":"away","value":"table","lag":1600,"frame":"e162","source":"wide-mug-v1#e162 (VLM); composed position and household; answer arrives lag ms after capture"}
+{"at":9500,"kind":"away","value":"table","lag":1800,"frame":"e162","source":"wide-mug-v1#e162 (VLM); composed position and household; answer arrives lag ms after capture"}
+{"at":10500,"kind":"tv","value":"watching","lag":1500,"frame":"e162","source":"wide-mug-v1#e162 (VLM); composed position and household; answer arrives lag ms after capture"}
+{"at":12350,"kind":"pam","value":"watching_tv","response":{"observation":"거실에서 TV를 봄","reasoning":"시청 중","state":"watching_tv","from":null,"next_index":-1},"source":"composed: PAM answers 350 ms after the first watching answer"}
+{"at":11500,"kind":"tv","value":"watching","lag":1900,"frame":"e162","source":"wide-mug-v1#e162 (VLM); composed position and household; answer arrives lag ms after capture"}
+{"at":12800,"kind":"eye","value":"table","source":"composed phone arrival"}
+{"at":12500,"kind":"tv","value":"watching","lag":1700,"frame":"e243","source":"wide-mug-v1#e243 (VLM); composed position and household; answer arrives lag ms after capture"}
+{"at":13500,"kind":"tv","value":"watching","lag":1600,"frame":"e340","source":"wide-mug-v1#e340 (VLM); composed position and household; answer arrives lag ms after capture"}
+{"at":14500,"kind":"tv","value":"watching","lag":1800,"frame":"e340","source":"wide-mug-v1#e340 (VLM); composed position and household; answer arrives lag ms after capture"}
+{"at":15500,"kind":"tv","value":"watching","lag":1500,"frame":"e410","source":"wide-mug-v1#e410 (VLM); composed position and household; answer arrives lag ms after capture"}
+{"at":16500,"kind":"tv","value":"watching","lag":1900,"source":"composed VLM answer: at is the capture time, the answer arrives lag ms later"}
+{"at":17350,"kind":"eye","value":"sink","source":"composed phone arrival"}
+{"at":17500,"kind":"tv","value":"watching","lag":1700,"source":"composed VLM answer: at is the capture time, the answer arrives lag ms later"}
+{"at":18500,"kind":"tv","value":"watching","lag":1600,"frame":"e727","source":"wide-mug-v1#e727 (VLM); composed position and household; answer arrives lag ms after capture"}
+{"at":19500,"kind":"tv","value":"watching","lag":1800,"frame":"e807","source":"wide-mug-v1#e807 (VLM); composed position and household; answer arrives lag ms after capture"}
+{"at":20500,"kind":"tv","value":"watching","lag":1500,"source":"composed VLM answer: at is the capture time, the answer arrives lag ms later"}
+{"at":21500,"kind":"tv","value":"watching","lag":1900,"source":"composed VLM answer: at is the capture time, the answer arrives lag ms later"}
+{"at":22500,"kind":"tv","value":"watching","lag":1700,"source":"composed VLM answer: at is the capture time, the answer arrives lag ms later"}
+{"at":23500,"kind":"tv","value":"watching","lag":1600,"source":"composed VLM answer: at is the capture time, the answer arrives lag ms later"}
+{"at":24200,"kind":"eye","value":"living_standby","source":"composed phone arrival"}
+{"at":24500,"kind":"tv","value":"watching","lag":1700,"source":"composed VLM answer: at is the capture time, the answer arrives lag ms later"}
+{"at":25500,"kind":"tv","value":"watching","lag":1600,"source":"composed VLM answer: at is the capture time, the answer arrives lag ms later"}
+{"at":25550,"kind":"left","source":"composed: the viewer leaves the sofa"}
+{"at":26500,"kind":"tv","value":"empty","lag":1800,"source":"composed VLM answer: at is the capture time, the answer arrives lag ms later"}
+{"at":27500,"kind":"tv","value":"empty","lag":1500,"source":"composed VLM answer: at is the capture time, the answer arrives lag ms later"}
+{"at":28500,"kind":"tv","value":"empty","lag":1900,"source":"composed VLM answer: at is the capture time, the answer arrives lag ms later"}
+{"at":29500,"kind":"tv","value":"empty","lag":1700,"source":"composed VLM answer: at is the capture time, the answer arrives lag ms later"}
+{"at":30500,"kind":"tv","value":"empty","lag":1600,"source":"composed VLM answer: at is the capture time, the answer arrives lag ms later"}
+{"at":31500,"kind":"tv","value":"watching","lag":1800,"source":"composed VLM answer: at is the capture time, the answer arrives lag ms later"}
+{"at":32500,"kind":"tv","value":"watching","lag":1700,"source":"composed VLM answer: at is the capture time, the answer arrives lag ms later"}
+{"at":33500,"kind":"tv","value":"watching","lag":1500,"source":"composed VLM answer: at is the capture time, the answer arrives lag ms later"}

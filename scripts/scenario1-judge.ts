@@ -56,9 +56,29 @@ const order = [
 
 export const scenarioRank = (kind: ScenarioEvent["kind"]) => order.findIndex((k) => k === kind);
 
+const TV_POWER = new Set<ScenarioEvent["kind"]>(["tv_off", "tv_off_ack", "tv_on", "tv_on_ack"]);
+const TV_CYCLE = ["tv_off", "tv_off_ack", "tv_on", "tv_on_ack"] as const;
+
+/** 대기 자리 도착 전 TV 끔→켬: 식탁에서 소파로 걷는 동안 시청 구역이 2초 비면 끄고, 앉아 보면 다시 켠다(2026-11-21 사용자 결정).
+ *  같은 TV를 끄고 허브가 확인한 뒤, 다시 켜고 허브가 확인한 묶음이어야 한다. 틀리면 early_tv:<까닭>. */
+function earlyTv(early: readonly ScenarioEvent[]): string | null {
+  for (let i = 0; i < early.length; i++) {
+    const e = early[i]!,
+      off = early[i - (i % 4)]!;
+    if (e.kind !== TV_CYCLE[i % 4]) return "early_tv:" + e.kind;
+    if (e.kind.endsWith("_ack") && (e.id !== early[i - 1]!.id || !e.command || e.command !== early[i - 1]!.command))
+      return "early_tv:unconfirmed";
+    if (e.kind === "tv_on" && e.id !== off.id) return "early_tv:wrong_tv";
+  }
+  return early.length % 4 === 0 ? null : early.length % 4 === 2 ? "early_tv:not_back_on" : "early_tv:unconfirmed";
+}
+
 export function judgeScenario1(trace: readonly ScenarioEvent[]) {
   const seen = new Map<ScenarioEvent["kind"], ScenarioEvent>();
-  let firstMismatch: string | null = null;
+  const standbyAt = trace.find((e) => e.kind === "standby")?.at ?? Infinity;
+  const isEarly = (e: ScenarioEvent) => e.at < standbyAt && TV_POWER.has(e.kind);
+  const early = trace.filter(isEarly);
+  let firstMismatch: string | null = earlyTv(early);
   let previous = -Infinity;
   let next = 0;
   const manuallyOff = new Set<string | undefined>();
@@ -68,7 +88,7 @@ export function judgeScenario1(trace: readonly ScenarioEvent[]) {
       firstMismatch = "manual_off_then_on";
       break;
     }
-    if (e.kind === "manual_off") continue;
+    if (e.kind === "manual_off" || isEarly(e)) continue;
     if (firstMismatch) continue;
     if (!Number.isFinite(e.at) || e.at < previous) {
       firstMismatch = "out_of_order:" + e.kind;
@@ -111,5 +131,6 @@ export function judgeScenario1(trace: readonly ScenarioEvent[]) {
     leftToOffMs,
     noViewerToOffMs: elapsed("empty", "tv_off"),
     noViewerToAckMs: elapsed("empty", "tv_off_ack"),
+    earlyTvCycles: Math.floor(early.length / 4),
   };
 }

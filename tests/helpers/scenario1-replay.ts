@@ -40,11 +40,11 @@ import { historyRoutes } from "../../src/record/history.js";
 import type { PlannedCommand } from "../../src/contract/phone.js";
 import type { ScenarioEvent } from "../../scripts/scenario1-judge.js";
 
-type Variant = "normal" | "back" | "brief" | "manual" | "cadence_wrong";
-/** at: 촬영(또는 사건) 시각. lag가 있는 사진 줄은 VLM 답이 at + lag에 도착한다(집 상태가 그때 바뀐다). */
+type Variant = "normal" | "back" | "brief" | "manual" | "cadence_wrong" | "lag_missing";
+/** at: 촬영(또는 사건) 시각. 사진 줄(table·away·tv)은 lag가 반드시 있고, VLM 답이 at + lag에 도착한다(집 상태가 그때 바뀐다). */
 type Line = { at: number; kind: string; value?: string; frame?: string; response?: object; source: string; lag?: number };
-/** 재생에 넣은 사진: 촬영 시각(절대 ms)과 VLM 지연을 실은 줄인가. */
-type Photo = { at: number; lagged: boolean };
+/** 재생에 넣은 사진의 촬영 시각(절대 ms). */
+type Photo = { at: number };
 const scene = loadScene(resolveHome(DEFAULT_TWIN_DIR, "mokryeon_180b"))!;
 const map = scene.stations,
   floor = floorPlanFrom(scene);
@@ -82,6 +82,9 @@ const frames: { frame: string; scene: SceneObservation }[] = JSON.parse(
   readFileSync(new URL("../fixtures/replay/wide-mug-v1.json", import.meta.url), "utf8"),
 );
 const base = Date.UTC(2026, 10, 20, 12);
+/** 재생 길이(ms)와 폰 자세 간격(ms, ui/src/phone/core/ar.js SEND_MS). */
+const REPLAY_MS = 40000,
+  POSE_MS = 100;
 function makeBag(bag: Bag, variant: Variant): { left: number | null; photos: Photo[] } {
   const world = new WorldState({
     devices: () => [],
@@ -118,6 +121,12 @@ function makeBag(bag: Bag, variant: Variant): { left: number | null; photos: Pho
     (row) => Number.isFinite(row.at) && row.at < (patch?.replace_from ?? Infinity),
   );
   for (const r of patch?.rows ?? []) source.push({ ...r, source: patch.source });
+  // 실제 폰은 마지막으로 선 자리에서 자세를 100ms마다 보낸다(ui/src/phone/core/ar.js SEND_MS). 도착 줄(eye) 사이를 그렇게 채운다
+  const eyes = source.filter((r) => r.kind === "eye").sort((a, b) => a.at - b.at);
+  eyes.forEach((e, i) => {
+    for (let t = e.at + 200; t < (eyes[i + 1]?.at ?? REPLAY_MS); t += POSE_MS)
+      source.push({ at: t, kind: "pose", value: e.value, source: "composed phone pose stream" });
+  });
   let left: number | null = null;
   const photos: Photo[] = [];
   // 집 상태는 도착 차례로 쌓는다: 늦게 온 VLM 답은 그 사이 사건 뒤에 들어간다(사진 시각은 촬영 시각 그대로)
@@ -143,13 +152,14 @@ function makeBag(bag: Bag, variant: Variant): { left: number | null; photos: Pho
       );
       continue;
     }
+    const eyePos = (value: string | undefined) =>
+      value === "table" ? table.position : value === "sink" ? sink.position : map.stations.find((s) => s.id === value)!.position;
+    if (r.kind === "pose") {
+      put("/phone/pose", "phone", { quality: "usable", position: eyePos(r.value), pose_gen: 1, observed_ms: at }, at);
+      continue;
+    }
     if (r.kind === "eye") {
-      const pos =
-        r.value === "table"
-          ? table.position
-          : r.value === "sink"
-          ? sink.position
-          : map.stations.find((s) => s.id === r.value)!.position;
+      const pos = eyePos(r.value);
       world.eye = {
         position: pos,
         room: r.value === "sink" || r.value === "kitchen_entry" ? "kitchen" : "living",
@@ -202,7 +212,8 @@ function makeBag(bag: Bag, variant: Variant): { left: number | null; photos: Pho
       fridge.status = "열림";
     }
     if (["table", "away", "tv"].includes(r.kind)) {
-      photos.push({ at, lagged: r.lag !== undefined });
+      if (r.lag === undefined) throw Error(`합성 기록 사진 ${r.at}ms에 VLM 답 지연(lag)이 없습니다.`);
+      photos.push({ at });
       const record = r.frame ? frames.find((f) => f.frame === r.frame) : null;
       if (r.frame && !record) throw Error("없는 녹화 장 " + r.frame);
       const facts = record?.scene.observations ?? [];
@@ -314,7 +325,7 @@ export async function replayScenario(
       bag,
       resolveDecision: (d) => resolveDecision(d),
       from: base,
-      to: base + 30000,
+      to: base + REPLAY_MS,
       topics: ["/world/state", "/brain/decision", "/phone/pose", "/device/changes"],
       launch: async (bus, clock) => {
         const node = (name: "manager" | "act" | "goal" | "devices" | "recorder") =>
@@ -614,10 +625,10 @@ export async function replayScenario(
         return [manager, goal, act, device, recorder];
       },
     });
-    // 지연을 실은 사진은 앞 사진 뒤 실제 VLM 간격의 촬영이어야 한다(합성 기록이 시스템보다 자주·드물게 찍지 않게)
+    // 사진은 앞 사진 뒤 실제 VLM 간격의 촬영이어야 한다(합성 기록이 시스템보다 자주·드물게 찍지 않게)
     const fastWhen = (t: number) => fastAt.findLast(([at]) => at <= t)?.[1] ?? false;
     photos.forEach((p, i) => {
-      if (!p.lagged || i === 0) return;
+      if (i === 0) return;
       const want = nextVlmCapture(photos[i - 1]!.at, fastWhen);
       if (p.at !== want)
         throw Error(`합성 기록 사진 ${p.at - base}ms가 VLM 간격과 다릅니다: 앞 사진 ${photos[i - 1]!.at - base}ms 뒤 ${want - base}ms여야 합니다.`);
