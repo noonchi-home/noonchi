@@ -3,7 +3,7 @@ import { composedPhotos, heldCupAt, map, personSight, phoneCamera, replayScenari
 import { inView, ndc } from "../src/world/place.js";
 import { yawPitchQuat } from "../ui/src/phone/core/video-math.js";
 import { judgeScenario1, scenarioRank, type ScenarioEvent } from "../scripts/scenario1-judge.js";
-import { earlyTvEvidence, LiveScenario } from "../scripts/scenario1-live.js";
+import { earlyTvEvidence, LiveScenario, standbyTvEvidence } from "../scripts/scenario1-live.js";
 
 import { leftServerAt, parseArgs, scenarioSettled } from "../scripts/video-check.js";
 import type { HistoryRow } from "../src/contract/history.js";
@@ -117,10 +117,11 @@ describe("시나리오 1 합성(composed) 판단 재생", () => {
     });
     const rows = [row(1, 1000, false), row(2, 2000, true), row(3, 3000, true)];
     expect(live.judge(rows, [], null).events.filter((e) => e.kind === "photo_gap")).toEqual([]);
-    expect(live.photoSamples().map((p) => [p.at, p.arrived, p.empty, p.watching])).toEqual([
-      [1000, 2500, false, true],
-      [2000, 3500, true, false],
-      [3000, 4500, true, false],
+    // since: 그 사진까지 TV 규칙이 센 부재의 시작(촬영 시각)
+    expect(live.photoSamples().map((p) => [p.at, p.arrived, p.since, p.watching])).toEqual([
+      [1000, 2500, null, true],
+      [2000, 3500, 2000, false],
+      [3000, 4500, 2000, false],
     ]);
     const gap = live.judge([rows[0]!, rows[2]!], [], null);
     expect(gap.firstMismatch).toBe("photo_gap");
@@ -128,6 +129,36 @@ describe("시나리오 1 합성(composed) 판단 재생", () => {
     // 놓친 사진은 다시 받을 수 없다: 실영상 판정을 바로 끝낸다
     expect(scenarioSettled(gap)).toBe(true);
     expect(judgeScenario1([{ kind: "photo_gap", at: 5 }]).firstMismatch).toBe("photo_gap");
+  });
+  it("판정기는 시청자 부재를 TV 규칙과 같이 센다: 처리 상한으로 건너뛴 한 장은 이어 세고, 늦은 답이 같은 촬영의 빈 사진을 무효로 하면 끊는다", () => {
+    const live = new LiveScenario(scene);
+    const tv = { id: "tv_62442cb3", kind: "tv", label: "거실 TV", status: "켜짐", state: ["on"], history: [], changed_ms: 0, event_ms: null, started_ms: null, remaining_min: null, active: false } as WorldDevice;
+    live.sample({ at_ms: 0, objects: [], devices: [tv], household_photo: undefined } as unknown as WorldView);
+    const camera = phoneCamera("living_standby");
+    const empty = { camera, seats: "clear", person_count: 0, dining_food: "unknown", person: null };
+    const row = (serial: number, at: number, proof: object | null, extra: object = {}, id = "photo-" + serial): HistoryRow => ({
+      id: serial, day: "2026-11-22", kind: "household", at_ms: at + 1500, text: "집 사진", subject: id,
+      data: { event: "photo", photo: { id, serial, at_ms: at, answered_ms: at + 1500, proof, ...extra } },
+    });
+    // 2초 사진은 처리 상한으로 VLM에 보내지 않았다(proof 없음, 앞 촬영 1초를 이어 받음). 3초 사진도 그 1초를 이어 받는다(src/world/state/world.ts noteHousehold)
+    live.judge([row(1, 1000, empty), row(2, 2000, null, { cap_from_ms: 1000 }), row(3, 3000, empty, { cap_from_ms: 1000 })], [], null);
+    expect(live.photoSamples().map((p) => p.since)).toEqual([1000, 1000, 1000]);
+    // 2초 빈 사진의 앞 촬영(1초)에 대한 늦은 답이 사람을 보여 그 빈 사진을 무효로 했다(같은 촬영 시각, 새 번호, proof 없음): 부재는 3초부터 다시 센다
+    live.judge([row(1, 1000, empty), row(2, 2000, empty), row(3, 2000, null, {}, "photo-2"), row(4, 3000, empty)], [], null);
+    expect(live.photoSamples().map((p) => p.since)).toEqual([1000, 1000, null, 3000]);
+  });
+  it("대기 뒤 다시 켜기의 시청자 근거는 그 사진의 답이 집 상태에 들어온 때다: 켠 뒤에 답이 온 사진은 근거가 아니다(촬영만 켜기 전이어도)", () => {
+    const tv = "tv_1";
+    const photo = (t: number, arrived: number, since: number | null, watching = false) => ({ at: t, arrived, tv, since, watching });
+    const photos = [photo(1000, 2500, null), photo(2000, 3500, 2000), photo(4000, 5500, 2000), photo(7000, 9800, null, true)];
+    // 대기 0초, 끄기 6초, 끈 확인 6.1초: 끄기 전 마지막 사진(4초)에서 센 부재는 2초부터
+    const evidence = standbyTvEvidence(photos, tv, 0, 6000, 6100);
+    expect(evidence).toEqual([
+      { kind: "empty", at: 2000, id: tv },
+      { kind: "vacant", at: 4000, id: tv },
+      { kind: "viewer_returned", at: 9800, id: tv },
+    ]);
+    // 9초에 켰다면 앉아 보는 사진(7초 촬영)의 답은 9.8초에야 들어와 켜기의 근거가 아니다: 시청자 돌아옴(9.8초)이 켜기(9초)보다 늦어 판정이 실패한다
   });
   it("빈 판에서 빠진 첫 단계는 주방 입구 관찰이다", () => {
     expect(judgeScenario1([]).firstMismatch).toBe("missing:kitchen");
@@ -200,6 +231,10 @@ describe("시나리오 1 합성(composed) 판단 재생", () => {
       ).passed,
     ).toBe(false);
     expect(judgeScenario1(trace.filter((e) => e.kind !== "tv_off_ack")).passed).toBe(false);
+    // 시청자 돌아옴(앉아 보는 사진의 답이 들어온 때)이 다시 켜기보다 늦으면 실패한다
+    const on = trace.find((e) => e.kind === "tv_on" && e.at > standby.at)!;
+    const late = trace.map((e) => (e.kind === "viewer_returned" ? { ...e, at: on.at + 1 } : e)).sort((a, b) => a.at - b.at || scenarioRank(a.kind) - scenarioRank(b.kind));
+    expect(judgeScenario1(late).firstMismatch).not.toBeNull();
   });
   it("합성 기록의 지연 사진 간격이 그 촬영 때 VLM 간격(빠름 1초·보통 2초)과 다르면 재생을 멈춘다", async () => {
     // 직접 끈 TV는 TV 규칙이 지켜보지 않는데도 1초 간격 사진을 그대로 둔 기록
@@ -221,16 +256,17 @@ describe("시나리오 1 합성(composed) 판단 재생", () => {
     const tv = "tv_1",
       at = (kind: ScenarioEvent["kind"], t: number, command?: string): ScenarioEvent => ({ kind, at: t, id: tv, command });
     const events = [at("tv_off", 5000, "c1"), at("tv_off_ack", 5100, "c1"), at("tv_on", 9000, "c2"), at("tv_on_ack", 9100, "c2"), { kind: "standby", at: 20000 } as ScenarioEvent];
-    const photo = (t: number, arrived: number, empty: boolean, watching = false) => ({ at: t, arrived, tv, empty, watching });
+    // since: 그 사진까지 TV 규칙이 센 부재의 시작(촬영 시각). 사진 번호 차례로 놓는다
+    const photo = (t: number, arrived: number, since: number | null, watching = false) => ({ at: t, arrived, tv, since, watching });
     const photos = [
-      photo(1000, 2800, false),
-      photo(2000, 3600, true),
-      photo(3000, 4900, true),
+      photo(1000, 2800, null),
+      photo(2000, 3600, 2000),
+      photo(3000, 4900, 2000),
       // 끈 뒤에 도착한 앞선 촬영은 그 끄기의 근거가 아니다
-      photo(1500, 5200, false),
-      photo(6000, 7800, false, true),
+      photo(1500, 5200, null),
+      photo(6000, 7800, null, true),
       // 다시 켠 뒤에 도착한 사진도 근거가 아니다
-      photo(8000, 9500, false, true),
+      photo(8000, 9500, null, true),
     ];
     // 빈 구간 첫 촬영(2초)과 끄기를 정한 마지막 빈 촬영(3초, 끄기 전에 도착)
     expect(earlyTvEvidence(events, photos)).toEqual([

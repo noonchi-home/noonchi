@@ -28,6 +28,8 @@ export interface TriggerFacts {
    *  구역 전체를 본다는 뜻은 아니다(그 화면 안에 사람이 없음). */
   seesNobody(stationId:string,after:number):boolean;
   trail: NonNullable<WorldView["person_trail"]>;
+  /** 방마다 지금 이어지는 시청자 부재가 시작된 사진의 촬영 시각(TV 규칙과 같은 셈: 처리 상한으로 건너뛴 한 장은 이어 세고, 늦은 답이 끊으면 지운다). 판정 도구가 읽는다. */
+  vacant?: ReadonlyMap<string,number>;
 }
 
 function deviceFact(devices: WorldDevice[], t: Extract<Trigger,{kind:"device"}>, rev:number, changed: Map<string,Set<string>>) {
@@ -142,6 +144,7 @@ export class GoalTriggers {
       ...(station ? {meal:{rev, zone: zone || null, outsideZones: zone === false, watching, count: recent ? proof?.person_count ?? null : null,
         dining:station.observes_zone_ids, surfaces:station.surfaces}} : {}),
       trail:view.person_trail ?? [],
+      vacant:windows,
       observes:(id,after)=>{
         const s=map?.stations.find(station=>station.id===id);
         if (!s || !map || !recent || !current || current.at_ms<=after || !proof || proof.person_count!==0) return false;

@@ -11,8 +11,9 @@ import { judgeScenario1, scenarioRank, type ScenarioEvent } from "./scenario1-ju
 
 type Scene = SceneJson & { stations: StationMap };
 type Received = { id: string; step: string; kind?: string; target?: { id: string } | null };
-/** at: 촬영 시각, arrived: 그 사진의 VLM 답이 집 상태에 들어온 시각(집 사진 answered_ms. 없으면 그 기록 줄의 시각). */
-type Sample = { at: number; arrived: number; tv: string; empty: boolean; watching: boolean };
+/** at: 촬영 시각, arrived: 그 사진의 VLM 답이 집 상태에 들어온 시각(집 사진 answered_ms. 없으면 그 기록 줄의 시각).
+ *  since: 이 사진까지 TV 규칙이 센 시청자 부재가 시작된 촬영 시각(src/goal/triggers.ts 그대로: 건너뛴 한 장은 이어 세고 늦은 답이 끊으면 null). 비어 있지 않으면 null. */
+export type Sample = { at: number; arrived: number; tv: string; since: number | null; watching: boolean };
 export const SCENARIO_KINDS = ["household", "decision", "goal", "plan", "robot"];
 
 export class LiveScenario {
@@ -150,14 +151,7 @@ export class LiveScenario {
       // 대기 자리 도착 전 끔→켬(식탁에서 소파로 걷는 동안)은 판정 함수가 따로 본다. 여기서는 대기 뒤 끄기만 쓴다
       const off = events.find((e) => e.kind === "tv_off" && e.at >= standby.at);
       const tv = off?.id ?? this.photos.at(-1)?.tv;
-      // 끌 때 시스템이 가진 사진(그때까지 들어온 것)을 촬영 차례로: 빈 구간 첫 촬영과 끄기를 정한 마지막 빈 촬영
-      const before = this.photos.filter((p) => p.tv === tv && p.at >= standby.at && (!off || p.arrived <= off.at)).sort((a, b) => a.at - b.at);
-      const first = before[before.findLastIndex((p) => !p.empty) + 1];
-      if (first) add("empty", first.at, tv);
-      if (first && before.at(-1)!.empty) add("vacant", before.at(-1)!.at, tv);
-      const ack = events.find((e) => e.kind === "tv_off_ack" && e.at >= standby.at);
-      const again = this.photos.find((p) => p.tv === tv && ack && p.at > ack.at && p.watching);
-      if (again) add("viewer_returned", again.at, tv);
+      events.push(...standbyTvEvidence(this.photos, tv, standby.at, off?.at ?? null, events.find((e) => e.kind === "tv_off_ack" && e.at >= standby.at)?.at ?? null));
     }
     // Questions may have no target. Check the phone's own record as well as dispatch receipts.
     if (received.some((c) => !["go", "pick", "place"].includes(c.kind ?? "") && !c.step.startsWith("done:")))
@@ -191,7 +185,7 @@ export class LiveScenario {
           at: photo.at_ms,
           arrived,
           tv,
-          empty: f.read({ kind: "noViewer", room, ms: 0 }).value === true,
+          since: f.vacant?.get(room) ?? null,
           watching: f.read({ kind: "postureAttention", target: tv, posture: "seated" }).value === true,
         });
     }
@@ -211,17 +205,31 @@ export function earlyTvEvidence(events: readonly ScenarioEvent[], photos: readon
   const standby = events.find((e) => e.kind === "standby")?.at ?? Infinity;
   const out: ScenarioEvent[] = [];
   for (const off of events.filter((e) => e.kind === "tv_off" && e.at < standby)) {
-    // 끌 때 시스템이 가진 사진(그때까지 들어온 것)만 본다: 촬영은 앞서도 늦게 온 답은 그 판단의 근거가 아니다
-    const seen = photos.filter((p) => p.tv === off.id && p.arrived <= off.at).sort((a, b) => a.at - b.at);
-    const first = seen[seen.findLastIndex((p) => !p.empty) + 1];
-    if (first?.empty) {
-      out.push({ kind: "early_empty", at: first.at, id: off.id });
-      out.push({ kind: "early_vacant", at: seen.at(-1)!.at, id: off.id });
+    // 끌 때 시스템이 가진 마지막 사진(사진 번호 차례로 그때까지 답이 들어온 것): 그 사진에서 TV 규칙이 센 부재의 시작과 그 사진
+    const last = photos.findLast((p) => p.tv === off.id && p.arrived <= off.at);
+    if (last?.since != null) {
+      out.push({ kind: "early_empty", at: last.since, id: off.id });
+      out.push({ kind: "early_vacant", at: last.at, id: off.id });
     }
     const ack = events.find((e) => e.kind === "tv_off_ack" && e.id === off.id && e.at >= off.at);
     const on = events.find((e) => e.kind === "tv_on" && e.id === off.id && ack && e.at >= ack.at && e.at < standby);
     const back = ack && on && photos.find((p) => p.tv === off.id && p.watching && p.at > ack.at && p.arrived <= on.at);
     if (back) out.push({ kind: "early_viewer", at: back.at, id: off.id });
   }
+  return out;
+}
+
+/** 대기 자리 도착 뒤 TV 끄기·켜기의 근거(photos는 사진 번호 차례).
+ *  empty·vacant: 끌 때 시스템이 가진 마지막 사진(답이 끄기 전에 들어온 것)에서 TV 규칙이 센 부재의 시작(촬영 시각)과 그 사진의 촬영 시각.
+ *  viewer_returned: 끈 확인 뒤 찍힌 앉아 보는 사진의 답이 집 상태에 들어온 때(켜기는 그 답 뒤여야 한다). */
+export function standbyTvEvidence(photos: readonly Sample[], tv: string | undefined, standby: number, off: number | null, ack: number | null): ScenarioEvent[] {
+  const out: ScenarioEvent[] = [];
+  const last = photos.findLast((p) => p.tv === tv && p.at >= standby && (off === null || p.arrived <= off));
+  if (last?.since != null) {
+    out.push({ kind: "empty", at: last.since, id: tv });
+    out.push({ kind: "vacant", at: last.at, id: tv });
+  }
+  const again = ack === null ? undefined : photos.find((p) => p.tv === tv && p.at > ack && p.watching);
+  if (again) out.push({ kind: "viewer_returned", at: again.arrived, id: tv });
   return out;
 }
