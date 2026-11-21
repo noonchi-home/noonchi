@@ -147,6 +147,8 @@ export interface WorldSighting { cls: ObjClass; position: [number, number, numbe
 export interface HouseholdPhoto {
   cap_from_ms?: number;
   id: string; at_ms: number; serial: number;
+  /** 집 상태 노드가 이 사진의 VLM 답(또는 답 없음)을 넣은 때(노드 시계). at_ms는 촬영 시각이다. 다시 낸 상태의 발행 시각(WorldView at_ms)과 다르다. */
+  answered_ms?: number;
   proof: {
     camera: SceneLookInput["view"]; seats: "clear"|"obscured"|"unknown";
     person_count: number; dining_food: "yes"|"no"|"unknown";

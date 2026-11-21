@@ -105,12 +105,12 @@ describe("집 상태 노드", () => {
     const d: WorldChange[] = [];
     for (const [id, at] of [["e1", 1000], ["e2", 2000], ["e3", 3000]] as const) {
       const r1 = direct.applyDetections(meta(id, at), [cupIn, person]);
-      d.push(...r1.changes, ...direct.applyScene(id, at, sceneOf([cupIn, person], ["d1", "in_sink"]), r1.ids, lookOf(id, at, [cupIn, person])));
+      d.push(...r1.changes, ...direct.applyScene(id, at, sceneOf([cupIn, person], ["d1", "in_sink"]), r1.ids, lookOf(id, at, [cupIn, person]), at, NOW));
     }
     const rc = direct.applyCloser([pass("e4", 4000, [cupFar]), pass("e5", 5000, [person, cupFar])]);
     d.push(...rc.changes, ...direct.applyCloserScene("e5", 5000, sceneOf([person, cupFar], ["d2", "on_floor"]), rc.ids, rc.pending, AT));
     d.push(...direct.applyTop("cup_1", "e6", 6000, "empty"));
-    d.push(...direct.applyMissing("e7", 7000, { vlm: "timeout" }), ...direct.applyMissing("e8", 8000, { yolo: "error" }));
+    d.push(...direct.applyMissing("e7", 7000, { vlm: "timeout" }, NOW), ...direct.applyMissing("e8", 8000, { yolo: "error" }, NOW));
 
     const r = await rig();
     for (const [id, at] of [["e1", 1000], ["e2", 2000], ["e3", 3000]] as const) {
@@ -182,6 +182,16 @@ describe("집 상태 노드", () => {
     expect(canRelink({ id: "remote_1", cls: "remote", status: "present" }, cup)).toBe(false);
   });
 
+  it("집 사진(household_photo)에 그 VLM 답을 집 상태 노드가 넣은 때(answered_ms, 노드 시계)를 싣는다: 다시 낸 상태의 발행 시각(at_ms)이 아니다", async () => {
+    const r = await rig();
+    await r.clock.advanceTo(NOW + 700, r.flush);
+    await r.perception.publish("/perception/scene", { kind: "scene", frame_id: "e1", observed_ms: 1000, scene: { ...sceneOf([]), household: { seats: "clear", people: [], dining_food: "unknown" } }, look: { ...lookOf("e1", 1000, []), fresh: true, person_ids: [] } });
+    await r.flush();
+    await r.clock.advanceTo(NOW + 1300, r.flush);
+    const v = lastView(r.got);
+    expect(v.household_photo).toMatchObject({ at_ms: 1000, answered_ms: NOW + 700 });
+    expect(v.at_ms).toBeGreaterThan(NOW + 700);
+  });
   it("장면 VLM 답의 사건 구간 시작(from_ms, 그 답이 본 가장 옛 사진)을 World State에 넘긴다(마시기·따르기 사건)", async () => {
     const s = spy(ws());
     const r = await rig(s.proxy);

@@ -11,7 +11,7 @@ import { judgeScenario1, scenarioRank, type ScenarioEvent } from "./scenario1-ju
 
 type Scene = SceneJson & { stations: StationMap };
 type Received = { id: string; step: string; kind?: string; target?: { id: string } | null };
-/** at: 촬영 시각, arrived: 그 사진이 집 상태에 들어온 시각(World State at_ms). */
+/** at: 촬영 시각, arrived: 그 사진의 VLM 답이 집 상태에 들어온 시각(집 사진 answered_ms. 없으면 처음 본 World State의 발행 시각). */
 type Sample = { at: number; arrived: number; tv: string; empty: boolean; watching: boolean };
 export const SCENARIO_KINDS = ["household", "decision", "goal", "plan", "robot"];
 
@@ -37,7 +37,7 @@ export class LiveScenario {
       for (const [tv, room] of f.tvRooms ?? [])
         this.photos.push({
           at,
-          arrived: w.at_ms,
+          arrived: w.household_photo!.answered_ms ?? w.at_ms,
           tv,
           empty: f.read({ kind: "noViewer", room, ms: 0 }).value === true,
           watching: f.read({ kind: "postureAttention", target: tv, posture: "seated" }).value === true,
@@ -160,9 +160,11 @@ export class LiveScenario {
       // 대기 자리 도착 전 끔→켬(식탁에서 소파로 걷는 동안)은 판정 함수가 따로 본다. 여기서는 대기 뒤 끄기만 쓴다
       const off = events.find((e) => e.kind === "tv_off" && e.at >= standby.at);
       const tv = off?.id ?? this.photos.at(-1)?.tv;
-      const before = this.photos.filter((p) => p.tv === tv && p.at >= standby.at && (!off || p.at <= off.at));
+      // 끌 때 시스템이 가진 사진(그때까지 들어온 것)을 촬영 차례로: 빈 구간 첫 촬영과 끄기를 정한 마지막 빈 촬영
+      const before = this.photos.filter((p) => p.tv === tv && p.at >= standby.at && (!off || p.arrived <= off.at)).sort((a, b) => a.at - b.at);
       const first = before[before.findLastIndex((p) => !p.empty) + 1];
       if (first) add("empty", first.at, tv);
+      if (first && before.at(-1)!.empty) add("vacant", before.at(-1)!.at, tv);
       const ack = events.find((e) => e.kind === "tv_off_ack" && e.at >= standby.at);
       const again = this.photos.find((p) => p.tv === tv && ack && p.at > ack.at && p.watching);
       if (again) add("viewer_returned", again.at, tv);
@@ -182,7 +184,8 @@ export class LiveScenario {
 }
 
 /** 대기 자리 도착 전 TV 끔→켬마다 근거 사진을 찾는다(촬영 시각, 판정 scripts/scenario1-judge.ts earlyTv).
- *  early_empty: 그 끄기 전 마지막으로 사람이 보인 사진 다음의 빈 사진(빈 구간의 시작). early_viewer: 끈 확인 뒤 찍혀 다시 켜기 전에 온 앉아 보는 사진. */
+ *  early_empty: 그 끄기 전 마지막으로 사람이 보인 사진 다음의 빈 사진(빈 구간의 시작). early_vacant: 끄기 전에 들어온 빈 구간의 마지막 촬영(끄기를 정한 사진).
+ *  early_viewer: 끈 확인 뒤 찍혀 다시 켜기 전에 온 앉아 보는 사진. */
 export function earlyTvEvidence(events: readonly ScenarioEvent[], photos: readonly Sample[]): ScenarioEvent[] {
   const standby = events.find((e) => e.kind === "standby")?.at ?? Infinity;
   const out: ScenarioEvent[] = [];
@@ -190,7 +193,10 @@ export function earlyTvEvidence(events: readonly ScenarioEvent[], photos: readon
     // 끌 때 시스템이 가진 사진(그때까지 들어온 것)만 본다: 촬영은 앞서도 늦게 온 답은 그 판단의 근거가 아니다
     const seen = photos.filter((p) => p.tv === off.id && p.arrived <= off.at).sort((a, b) => a.at - b.at);
     const first = seen[seen.findLastIndex((p) => !p.empty) + 1];
-    if (first?.empty) out.push({ kind: "early_empty", at: first.at, id: off.id });
+    if (first?.empty) {
+      out.push({ kind: "early_empty", at: first.at, id: off.id });
+      out.push({ kind: "early_vacant", at: seen.at(-1)!.at, id: off.id });
+    }
     const ack = events.find((e) => e.kind === "tv_off_ack" && e.id === off.id && e.at >= off.at);
     const on = events.find((e) => e.kind === "tv_on" && e.id === off.id && ack && e.at >= ack.at && e.at < standby);
     const back = ack && on && photos.find((p) => p.tv === off.id && p.watching && p.at > ack.at && p.arrived <= on.at);

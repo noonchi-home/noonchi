@@ -119,8 +119,9 @@ export class WorldState {
 
   /** 전체 사진의 VLM 답(facts.ts). */
   /** 장면 VLM 답: 물건 목록(sceneobjects.ts, VLM 무조건 우선)을 먼저 넣어 답 번호를 물건 id에 잇고, 사실을 넣는다(facts.ts). look: 그 사진의 카메라·크기. */
-  applyScene(frameId: string, capturedAtMs: number, scene: SceneObservation, ids: Map<string, string>, look?: SceneLook, fromMs = capturedAtMs): WorldChange[] {
-    this.noteHousehold(frameId, capturedAtMs, scene, look);
+  /** answeredMs: 이 답을 넣는 때(집 상태 노드 시계). 집 사진에 answered_ms로 싣는다. */
+  applyScene(frameId: string, capturedAtMs: number, scene: SceneObservation, ids: Map<string, string>, look?: SceneLook, fromMs = capturedAtMs, answeredMs?: number): WorldChange[] {
+    this.noteHousehold(frameId, capturedAtMs, scene, look, false, answeredMs);
     const linked = this.core.scene.link(frameId, capturedAtMs, scene, ids, look);
     this.core.placeDups();
     for (const [k, v] of ids) { const o = this.core.objects.get(v); if (o?.status === "gone" && o.followed) ids.set(k, o.followed.id); }
@@ -235,19 +236,20 @@ export class WorldState {
     return true;
   }
 
-  private noteHousehold(id: string, at: number, scene?: SceneObservation, look?: SceneLook, capped = false) {
+  private noteHousehold(id: string, at: number, scene?: SceneObservation, look?: SceneLook, capped = false, answeredMs?: number) {
+    const answered = answeredMs === undefined ? {} : { answered_ms: answeredMs };
     const h = scene?.household;
     const old = this.householdPhoto;
     if (at <= this.sceneAt) {
       // A late interruption can disprove continuous vacancy without replacing the latest capture.
       if (old && old.id !== id && (old.proof?.person_count === 0 || old.cap_from_ms !== undefined)) {
-        this.householdPhoto = {id:old.id, at_ms:old.at_ms, serial:old.serial + 1, proof:null};
+        this.householdPhoto = {id:old.id, at_ms:old.at_ms, serial:old.serial + 1, proof:null, ...answered};
       }
       return;
     }
     this.sceneAt = at;
     if (!h && !old) return;
-    const photo: NonNullable<WorldView["household_photo"]> = {id, at_ms:at, serial:(old?.serial ?? 0)+1, proof:null};
+    const photo: NonNullable<WorldView["household_photo"]> = {id, at_ms:at, serial:(old?.serial ?? 0)+1, proof:null, ...answered};
     // Carry the previous capture across one capacity skip, even if a STATE subscriber misses that update.
     if (capped && old?.proof && old.id !== id) photo.cap_from_ms = old.at_ms;
     this.householdPhoto = photo;
@@ -264,12 +266,12 @@ export class WorldState {
   }
 
   /** 분석 없음 프레임: 셈을 늘리고 변화 하나. 등장·사라짐 셈은 그대로다. VLM 답이 없으면 그 프레임의 가전 맞춤도 버린다(값이 아니다). */
-  applyMissing(frameId: string, capturedAtMs: number, m: { yolo?: YoloMissing; vlm?: VlmMissing }): WorldChange[] {
+  applyMissing(frameId: string, capturedAtMs: number, m: { yolo?: YoloMissing; vlm?: VlmMissing }, answeredMs?: number): WorldChange[] {
     this.core.start(capturedAtMs);
     if (m.yolo) this.yoloMissing++;
     if (m.vlm) {
       this.vlmMissing++;
-      this.noteHousehold(frameId, capturedAtMs, undefined, undefined, m.vlm === "cap");
+      this.noteHousehold(frameId, capturedAtMs, undefined, undefined, m.vlm === "cap", answeredMs);
       this.core.sight.dropLinks(frameId);
     }
     if (m.yolo) return [{ kind: "yolo_missing", at_ms: capturedAtMs, subject: frameId, meaningful: false, text: CHANGE_TEXT.yoloMissing[m.yolo] }];

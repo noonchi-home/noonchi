@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { composedPhotos, map, phoneCamera, replayScenario } from "./helpers/scenario1-replay.js";
+import { composedPhotos, heldCupAt, map, personSight, phoneCamera, replayScenario, scene } from "./helpers/scenario1-replay.js";
 import { inView, ndc } from "../src/world/place.js";
+import { yawPitchQuat } from "../ui/src/phone/core/video-math.js";
 import { judgeScenario1, scenarioRank, type ScenarioEvent } from "../scripts/scenario1-judge.js";
-import { earlyTvEvidence } from "../scripts/scenario1-live.js";
+import { earlyTvEvidence, LiveScenario } from "../scripts/scenario1-live.js";
 
 import { leftServerAt, parseArgs, scenarioSettled } from "../scripts/video-check.js";
 
@@ -57,9 +58,34 @@ describe("시나리오 1 합성(composed) 판단 재생", () => {
     expect(new Set(photos.map((p) => p.phone.join())).size).toBeGreaterThan(1);
     for (const p of photos) {
       expect([p.camera.origin[0], p.camera.origin[2]]).toEqual(p.phone);
-      // 바라볼 곳이 화면 가운데 세로줄에 온다
+      // 바라볼 곳(걷는 중이면 도착할 자리)이 화면 가운데 세로줄에 온다
       expect(ndc(p.camera, [p.look[0], 0.8, p.look[1]])![0]).toBeCloseTo(0, 6);
     }
+  });
+  it("가는 명령을 받은 뒤 걷는 동안 찍힌 사진은 안내 길 위 걷는 자리에서 다음 경유점 쪽을 본다(앞 자리·방향에 머물지 않는다)", () => {
+    const spots = [...map.stations.map((s) => s.position), ...map.surface_fronts.map((f) => f.position)];
+    const walking = composedPhotos("normal").filter((p) => !spots.some((s) => Math.hypot(s[0] - p.phone[0], s[1] - p.phone[1]) < 1e-6));
+    expect(walking.length).toBeGreaterThan(0);
+    for (const p of walking) expect(Math.hypot(p.look[0] - p.phone[0], p.look[1] - p.phone[1])).toBeGreaterThan(0);
+  });
+  it("사진의 사람: 몸통이 화면 안이면 사람 수만, 발이 화면 아래 끝보다 위에 보여야 발 자리·방을 안다", () => {
+    const middle = (id: string): [number, number] => {
+      const ps = map.zones.find((z) => z.id === id)!.polygon;
+      return [ps.reduce((a, p) => a + p[0], 0) / ps.length, ps.reduce((a, p) => a + p[1], 0) / ps.length];
+    };
+    // 주방 입구에서 1.4m 앞 냉장고 앞 사람: 몸통은 보이지만 발이 화면 아래로 잘린다
+    expect(personSight(phoneCamera("kitchen_entry"), middle("fridge_front"))).toEqual({ visible: true, located: false });
+    expect(personSight(phoneCamera("living_standby"), middle("sofa_watch"))).toEqual({ visible: true, located: true });
+    expect(personSight(phoneCamera("kitchen_entry"), middle("dining_seat"))).toEqual({ visible: false, located: false });
+  });
+  it("손에 든 컵은 폰을 든 사람이 카메라 앞에 들어 올린 자리다: 바라볼 곳을 비추면 화면 안, 위를 보는 폰에는 찍히지 않는다", () => {
+    const at = { position: map.surface_fronts.find((f) => f.surface_id.startsWith("dining_table"))!.position, look: [0, 0] as [number, number] };
+    at.look = map.surface_fronts.find((f) => f.surface_id.startsWith("dining_table"))!.look_at;
+    const cup = heldCupAt(at);
+    const cam = phoneCamera("table");
+    expect(inView(cam, cup)).toBe(true);
+    const up = { ...cam, orientation: yawPitchQuat(Math.atan2(-(at.look[0] - at.position[0]), -(at.look[1] - at.position[1])), 35) };
+    expect(inView(up, cup)).toBe(false);
   });
   it("가로로 든 폰은 거실 대기 자리에서 소파 시청 구역 전체를, 식탁 관찰 자리에서 식탁에 앉은 사람을 본다. 주방 입구에서는 식탁이 등 뒤라 안 보인다", () => {
     const zone = (id: string) => map.zones.find((z) => z.id === id)!;
@@ -87,11 +113,12 @@ describe("시나리오 1 합성(composed) 판단 재생", () => {
     expect(v.firstMismatch, JSON.stringify(trace)).toBeNull();
     expect(v.passed).toBe(true);
     expect(v.tvConfirmToCupCommandMs).toBeGreaterThanOrEqual(0);
-    // 떠남(74.55초) → 다음 촬영 74.7초(빈 구역) → 2초 이어진 빈 사진(76.7초 촬영) → 그 답이 1.5초 뒤 도착해 끔
-    expect(v.leftToOffMs).toBe(3650);
-    expect(v.noViewerToOffMs).toBe(1700);
+    // 떠남(82.05초) → 다음 촬영 82.6초(빈 구역) → 2초 이어진 빈 사진(84.6초 촬영) → 그 답이 1.7초 뒤 도착해 끔
+    expect(v.leftToOffMs).toBe(4250);
+    // 빈 구간 첫 촬영(82.6초)부터 끄기까지
+    expect(v.noViewerToOffMs).toBe(3700);
     expect(v.noViewerToAckMs).toBeGreaterThanOrEqual(v.noViewerToOffMs!);
-    expect(judgeScenario1(trace.map((e) => (e.kind === "left" ? { ...e, at: e.at - 1351 } : e))).firstMismatch).toBe(
+    expect(judgeScenario1(trace.map((e) => (e.kind === "left" ? { ...e, at: e.at - 751 } : e))).firstMismatch).toBe(
       "late:tv_off",
     );
     expect(judgeScenario1(trace.filter((e) => e.kind !== "left")).firstMismatch).toBe("unexpected:empty");
@@ -104,6 +131,7 @@ describe("시나리오 1 합성(composed) 판단 재생", () => {
       t0 = standby.at - 9000;
     const cycle: ScenarioEvent[] = [
       { kind: "early_empty", at: t0, id: tv },
+      { kind: "early_vacant", at: t0 + 2000, id: tv },
       { kind: "tv_off", at: t0 + 2100, id: tv, command: "early:1" },
       { kind: "tv_off_ack", at: t0 + 2100, id: tv, command: "early:1" },
       { kind: "early_viewer", at: t0 + 3000, id: tv },
@@ -117,9 +145,18 @@ describe("시나리오 1 합성(composed) 판단 재생", () => {
     for (const drop of ["tv_on", "tv_on_ack"]) expect(withCycle(cycle.filter((e) => e.kind !== drop)).firstMismatch).toMatch(/^early_tv:/);
     // 끄기 전 시청 구역이 2초 비었다는 사진, 다시 켜기 전 앉아 보는 사진이 있어야 한다(계속 보는데 껐다 켜거나, 오기 전에 켜면 실패)
     expect(withCycle(cycle.filter((e) => e.kind !== "early_empty")).firstMismatch).toBe("early_tv:no_vacancy");
-    expect(withCycle(cycle.map((e) => (e.kind === "early_empty" ? { ...e, at: t0 + 101 } : e))).firstMismatch).toBe(
+    expect(withCycle(cycle.map((e) => (e.kind === "early_empty" ? { ...e, at: t0 + 1 } : e))).firstMismatch).toBe(
       "early_tv:no_vacancy",
     );
+    // 빈 사진 한 장의 답이 2초 늦게 와 바로 끈 것: 촬영 시각으로 빈 구간이 2초가 안 된다
+    expect(withCycle(cycle.map((e) => (e.kind === "early_vacant" ? { ...e, at: t0 } : e))).firstMismatch).toBe("early_tv:no_vacancy");
+    expect(withCycle(cycle.filter((e) => e.kind !== "early_vacant")).firstMismatch).toBe("early_tv:no_vacancy");
+    // 대기 뒤 끄기도 같다: 빈 구간 첫 촬영(empty)과 끄기를 정한 빈 촬영(vacant)이 2초 넘게 떨어져야 한다
+    const vacant = trace.find((e) => e.kind === "vacant")!,
+      empty = trace.find((e) => e.kind === "empty")!;
+    expect(vacant.at - empty.at).toBeGreaterThanOrEqual(2000);
+    expect(judgeScenario1(trace.map((e) => (e.kind === "vacant" ? { ...e, at: empty.at + 1999 } : e))).firstMismatch).toBe("no_vacancy:tv_off");
+    expect(judgeScenario1(trace.filter((e) => e.kind !== "vacant")).firstMismatch).toBe("unexpected:tv_off");
     expect(withCycle(cycle.filter((e) => e.kind !== "early_viewer")).firstMismatch).toBe("early_tv:no_viewer");
     expect(
       judgeScenario1(trace.map((e) => (e.kind === "pick" ? { ...e, id: "another_cup" } : e))).firstMismatch,
@@ -139,8 +176,15 @@ describe("시나리오 1 합성(composed) 판단 재생", () => {
     await expect(replayScenario("cadence_wrong")).rejects.toThrow("VLM 간격");
   });
   it("합성 기록의 폰 도착은 그 자리로 보낸 가기 명령 뒤, 걸어서 닿는 시간 뒤여야 한다", async () => {
-    // 식탁 관찰 자리로 가라는 명령(9.1초) 뒤 4.2m를 0.8m/s로 걸어도 14.4초인데 12초에 도착한 기록
+    // 식탁 관찰 자리로 가라는 명령(9.1초) 뒤 9.2초에 출발해 안내 길(4.3m)을 0.8m/s로 걸어도 14.6초인데 12초에 도착한 기록
     await expect(replayScenario("arrive_early")).rejects.toThrow("가기 명령");
+  });
+  it("판정기가 늦게 조회해도 사진이 집 상태에 들어온 때는 World State가 실은 VLM 답 시각(answered_ms)이다(다시 낸 상태의 발행 시각 at_ms가 아니다)", () => {
+    const live = new LiveScenario(scene as never);
+    const tv = { id: "tv_62442cb3", kind: "tv", label: "거실 TV", status: "켜짐", state: ["on"], history: [], changed_ms: 0 };
+    const view = { at_ms: 9000, objects: [], devices: [tv], person: { visible: false }, household_photo: { id: "p1", serial: 1, at_ms: 5000, answered_ms: 6800, proof: null } };
+    live.sample(view as never);
+    expect(live.photoSamples().map((p) => p.arrived)).toEqual([6800]);
   });
   it("대기 전 끔→켬 근거는 끌 때 이미 받은 사진에서 빈 구간의 첫 사진, 끈 확인 뒤 찍혀 다시 켜기 전에 온 앉아 보는 사진이다", () => {
     const tv = "tv_1",
@@ -157,11 +201,16 @@ describe("시나리오 1 합성(composed) 판단 재생", () => {
       // 다시 켠 뒤에 도착한 사진도 근거가 아니다
       photo(8000, 9500, false, true),
     ];
+    // 빈 구간 첫 촬영(2초)과 끄기를 정한 마지막 빈 촬영(3초, 끄기 전에 도착)
     expect(earlyTvEvidence(events, photos)).toEqual([
       { kind: "early_empty", at: 2000, id: tv },
+      { kind: "early_vacant", at: 3000, id: tv },
       { kind: "early_viewer", at: 6000, id: tv },
     ]);
-    expect(earlyTvEvidence(events, photos.filter((p) => p.at !== 6000))).toEqual([{ kind: "early_empty", at: 2000, id: tv }]);
+    expect(earlyTvEvidence(events, photos.filter((p) => p.at !== 6000))).toEqual([
+      { kind: "early_empty", at: 2000, id: tv },
+      { kind: "early_vacant", at: 3000, id: tv },
+    ]);
   });
   it("합성 기록의 사진 줄은 모두 VLM 답 지연(lag)을 실어야 한다", async () => {
     // 지연 없는 사진은 촬영 순간 도착한 증거가 되고 간격 검사도 건너뛴다

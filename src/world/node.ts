@@ -53,17 +53,17 @@ export class WorldInputs {
       case "frame":
         return { changes: this.frame(b.frame, b.dets, b.poses) };
       case "yolo_missing":
-        return { changes: this.world.applyMissing(b.frame_id, b.observed_ms, { yolo: b.yolo, ...(b.vlm ? { vlm: b.vlm } : {}) }) };
+        return { changes: this.world.applyMissing(b.frame_id, b.observed_ms, { yolo: b.yolo, ...(b.vlm ? { vlm: b.vlm } : {}) }, this.now()) };
       case "closer_merge":
         return { changes: this.closer(b.look, b.passes) };
       case "scene": {
         const ids = this.#idsOf.get(b.frame_id)?.ids ?? new Map<string, string>();
         this.#idsOf.delete(b.frame_id);
-        return { changes: this.world.applyScene(b.frame_id, b.observed_ms, b.scene, ids, b.look, b.from_ms ?? b.observed_ms) };
+        return { changes: this.world.applyScene(b.frame_id, b.observed_ms, b.scene, ids, b.look, b.from_ms ?? b.observed_ms, this.now()) };
       }
       case "missing":
         this.#idsOf.delete(b.frame_id);
-        return { changes: this.world.applyMissing(b.frame_id, b.observed_ms, { vlm: b.missing }) };
+        return { changes: this.world.applyMissing(b.frame_id, b.observed_ms, { vlm: b.missing }, this.now()) };
       case "closer_scene": {
         const l = this.#looks.get(b.look);
         this.#looks.delete(b.look);
