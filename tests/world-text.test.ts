@@ -10,6 +10,7 @@ import { sha256 } from "../src/observe/ring.js";
 import { WorldState } from "../src/world/state/world.js";
 import { det } from "./helpers/detectors.js";
 import { see } from "./helpers/vlm-scene.js";
+import { cameraAt } from "./helpers/home-realism.js";
 
 const T = (h: number, m: number, s: number) => Date.UTC(2026, 10, 7, h - 9, m, s);
 describe("PAM 관찰 텍스트", () => {
@@ -314,6 +315,41 @@ describe("PAM 관찰 텍스트", () => {
     const lines = textFromWorld(view, [], { nowMs: T(21, 1, 0), offsetMinutes: 540 }).split("\n");
     expect(lines).toContain("[지속] 사람 앉아 있음: 21:00:01부터 59초째");
     expect(lines.some((l) => l.includes("마시는 중"))).toBe(false);
+  });
+
+  describe("사람 곁 면에 마실 것 없음", () => {
+    const now = T(20, 0, 5);
+    const desk = { id: "desk_1", label: "책상", room: "bed_sw", center: [6.24, 11.73] as [number, number], seen_ms: T(20, 0, 3) };
+    const person = (room: string, position: [number, number]): WorldView["person"] => ({ visible: true, since_ms: T(19, 54, 5), last_seen_ms: T(20, 0, 3), count: 1, room, room_label: "침실 1", position, position_ms: T(20, 0, 3), near: [], holding: [], answered_ms: null, facts: {} });
+    const cup = (surface: string, status: WorldView["objects"][number]["status"] = "present"): WorldView["objects"][number] => ({ id: "cup_1", cls: "cup", position: [6.2, 0.75, 11.7], surface, surface_label: "책상", room: "bed_sw", error_m: 0.05, status,
+      first_seen_ms: T(20, 0, 0), last_seen_ms: T(20, 0, 3), last_in_view_ms: T(20, 0, 3), facts: {}, answered_ms: null, devices: [], closer_hold: false, followed_by: null });
+    const text = (o: { objects?: WorldView["objects"]; seen?: number; p?: WorldView["person"] }) => textFromWorld({ at_ms: now, objects: o.objects ?? [], person: o.p ?? person("bed_sw", [6.25, 11.1]),
+      surfaces_seen: [{ ...desk, seen_ms: o.seen ?? desk.seen_ms }], fixtures: [], devices: [], eye: null, frame_ms: null, vlm_missing: 0, yolo_missing: 0 }, [], { nowMs: now, offsetMinutes: 540 });
+    it("사람 곁 면을 방금 본 사진에 그 면 위 컵·병이 없으면 [지속] 줄로 쓴다", () => {
+      expect(text({}).split(String.fromCharCode(10))).toContain("[지속] 책상 위 마실 것 없음: 20:00:03 확인");
+    });
+    it("그 면 위 컵이 있거나(시야 밖이어도), 본 지 10초가 넘었거나, 사람이 다른 방·먼 곳이면 쓰지 않는다", () => {
+      expect(text({ objects: [cup("desk_1")] })).not.toContain("마실 것 없음");
+      expect(text({ objects: [cup("desk_1", "out_of_view")] })).not.toContain("마실 것 없음");
+      expect(text({ objects: [cup("desk_1", "gone")] })).toContain("책상 위 마실 것 없음");
+      expect(text({ seen: T(19, 59, 54) })).not.toContain("마실 것 없음");
+      expect(text({ p: person("living", [6.25, 11.1]) })).not.toContain("마실 것 없음");
+      expect(text({ p: person("bed_sw", [6.25, 9.5]) })).not.toContain("마실 것 없음");
+    });
+    it("World State는 전체 사진 VLM 답의 사진(자세를 잰 장)에 윗면 가운데가 든 같은 방 면만 본 면으로 적는다", () => {
+      const surfaces = [{ id: "desk_1", label: "책상", center: [6.24, 11.73] as [number, number], top: 0.75, radius: 0.5 },
+        { id: "bed_1", label: "침대", center: [6.24, 8.6] as [number, number], top: 0.5, radius: 0.8 },
+        { id: "desk_2", label: "책상", center: [6.24, 13.5] as [number, number], top: 0.75, radius: 0.5 }];
+      const w = new WorldState({ evidenceStepMs: 1000, surfaces: () => surfaces, floorAt: () => 0, roomAt: (p) => ({ id: p[1] > 13 ? "bed_ne" : "bed_sw", label: "침실" }), devices: () => [] });
+      const frame = (id: string, at: number): EngineFrame => ({ id, capturedAtMs: at, latestAtMs: at, jpeg: Buffer.from(id), sha256: sha256(Buffer.from(id)), width: 480, height: 270, eye: null, view: cameraAt([6.0, 10.0], [6.24, 11.73]) });
+      const scene = { scene: "desk", observations: [], summary: "책상" };
+      const f1 = frame("e1", T(20, 0, 1));
+      w.applyScene("e1", f1.capturedAtMs, scene, new Map(), { view: f1.view!, width: 480, height: 270, fresh: false });
+      expect(w.view(T(20, 0, 2)).surfaces_seen).toBeUndefined();
+      const f2 = frame("e2", T(20, 0, 3));
+      w.applyScene("e2", f2.capturedAtMs, scene, new Map(), { view: f2.view!, width: 480, height: 270, fresh: true });
+      expect(w.view(T(20, 0, 4)).surfaces_seen).toEqual([{ id: "desk_1", label: "책상", room: "bed_sw", center: [6.24, 11.73], seen_ms: T(20, 0, 3) }]);
+    });
   });
 
   it("docs/pam-interface.md 예시 관찰 텍스트는 World State가 실제로 만드는 글이다", () => {

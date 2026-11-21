@@ -31,12 +31,12 @@
 // objects.ts 감지 합치기·물건 움직임·들고 감 보호, people.ts 사람 자리·방·관절·쓰러짐 의심, facts.ts VLM 사실, closer.ts 가까이 보기·지킴·옮김 표시,
 // devices.ts 가전 설비·카메라로 본 가전·가전 상태. 다른 도메인은 src/world/index.ts로 가져온다.
 import type { EyePose } from "../../contract/events.js";
-import type { VlmMissing, WorldChange, WorldEye, WorldFixture, WorldObject, WorldPerson, WorldView, YoloMissing } from "../../contract/world.js";
+import type { VlmMissing, WorldChange, WorldEye, WorldFixture, WorldObject, WorldPerson, WorldSurfaceSeen, WorldView, YoloMissing } from "../../contract/world.js";
 import type { Detection, FrameMeta, Pose, SceneObservation } from "../../contract/observe.js";
 import { headWithin } from "../../shared/cut.js";
 import type { DeviceState, SightEvidence, VisionResult } from "../../contract/devices.js";
 import { CHANGE_TEXT, HEARD_MAX } from "../labels.js";
-import type { PlaneSurface, RestSpot } from "../place.js";
+import { inView, type PlaneSurface, type RestSpot } from "../place.js";
 import type { FallConfig } from "../fall.js";
 import { relatedDeviceIds } from "../relations.js";
 import { cameraKindOf } from "../../devices/kinds.js";
@@ -90,6 +90,8 @@ export class WorldState {
   private readonly core: WorldCore;
   private householdPhoto: WorldView["household_photo"];
   private sceneAt = -Infinity;
+  /** 본 트윈 면(면 id → 가장 새로 본 사진). */
+  private readonly seenSurfaces = new Map<string, WorldSurfaceSeen>();
   private eye: WorldEye | null = null;
   private vlmMissing = 0;
   private yoloMissing = 0;
@@ -122,6 +124,7 @@ export class WorldState {
   /** answeredMs: 이 답을 넣는 때(집 상태 노드 시계). 집 사진에 answered_ms로 싣는다. */
   applyScene(frameId: string, capturedAtMs: number, scene: SceneObservation, ids: Map<string, string>, look?: SceneLook, fromMs = capturedAtMs, answeredMs?: number): WorldChange[] {
     this.noteHousehold(frameId, capturedAtMs, scene, look, false, answeredMs);
+    this.noteSurfaces(capturedAtMs, look);
     const linked = this.core.scene.link(frameId, capturedAtMs, scene, ids, look);
     this.core.placeDups();
     for (const [k, v] of ids) { const o = this.core.objects.get(v); if (o?.status === "gone" && o.followed) ids.set(k, o.followed.id); }
@@ -236,6 +239,17 @@ export class WorldState {
     return true;
   }
 
+  /** 전체 사진 VLM 답: 그 사진(지금 자세)에 윗면 가운데가 든 트윈 면을 적는다. 눈과 다른 방 면은 벽 뒤일 수 있어 적지 않는다. */
+  private noteSurfaces(at: number, look?: SceneLook) {
+    if (!look?.fresh) return;
+    const eyeRoom = this.core.o.roomAt([look.view.origin[0], look.view.origin[2]])?.id ?? null;
+    for (const s of this.core.o.surfaces()) {
+      const room = this.core.o.roomAt(s.center)?.id ?? null;
+      if (room !== eyeRoom || !inView(look.view, [s.center[0], s.top, s.center[1]])) continue;
+      if ((this.seenSurfaces.get(s.id)?.seen_ms ?? -Infinity) < at) this.seenSurfaces.set(s.id, { id: s.id, label: s.label, room, center: s.center, seen_ms: at });
+    }
+  }
+
   private noteHousehold(id: string, at: number, scene?: SceneObservation, look?: SceneLook, capped = false, answeredMs?: number) {
     const answered = answeredMs === undefined ? {} : { answered_ms: answeredMs };
     const h = scene?.household;
@@ -343,6 +357,7 @@ export class WorldState {
     return {
       at_ms: nowMs, objects, ...(sightings.length ? { sightings } : {}), person, fixtures,
       ...(this.householdPhoto ? {household_photo:this.householdPhoto} : {}),
+      ...(this.seenSurfaces.size ? { surfaces_seen: [...this.seenSurfaces.values()].map((s) => ({ ...s })) } : {}),
       ...(core.people.trail.length ? {person_trail:core.people.trail} : {}),
       devices: core.sight.deviceViews(nowMs),
       eye: this.eye, frame_ms: core.frameAt, vlm_missing: this.vlmMissing, yolo_missing: this.yoloMissing,

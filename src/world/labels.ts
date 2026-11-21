@@ -62,6 +62,8 @@ export const CHANGE_TEXT = {
   personRoom: (room: string) => `사람 ${room}에 있음`,
   people: (n: number) => `${n}명`,
   near: (label: string) => `${label} 가까이`,
+  /** 사람 곁 면을 본 사진에 그 면 위 컵·병이 없음([지속] 줄, 끝에 본 시각). */
+  noDrink: (label: string) => `${label} 위 마실 것 없음`,
   state: (name: string, value: string) => `${name} ${STATE_TEXT[value] ?? value}`,
   /** 마시기·따르기 사건이나 따르기 단계로 내용물을 다시 확인한다(판단 계기 아님). */
   contentsAgain: (name: string, why: keyof typeof AGAIN_WHY) => `${name} ${AGAIN_WHY[why]} · 내용물 다시 확인`,

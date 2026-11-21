@@ -30,6 +30,7 @@ import type { Vec2 } from "../../src/contract/layout.js";
 import type { WorldObject, WorldView } from "../../src/contract/world.js";
 import { testTracker } from "./tracker-ports.js";
 import { callSteps, planContext, waterSteps } from "./planner.js";
+import { textFromWorld } from "../../src/world/text.js";
 import { PHONE, POSE_MS, REACT_MS, VLM_STEP_MS, WALK_MPS, cameraAt, center, fact, floor, heldCupAt, map, nextVlmCapture, personSight, scene, walkMap } from "./home-realism.js";
 
 import type { S2Event, S2Kind } from "../../scripts/scenario2-judge.js";
@@ -41,6 +42,8 @@ const tasks = tasksFor("noonchi");
 const deskFront = map.surface_fronts.find((f) => f.surface_id === DESK)!;
 const sinkFront = map.surface_fronts.find((f) => f.surface_id === SINK)!;
 const seat = center("desk_seat");
+/** 책상 트윈 면(src/world/place.ts surfacesFromLayout: 배치 이름·자리, 윗면 높이는 책상 보통 높이). 사진에 윗면 가운데가 들면 집 상태 노드가 본 면으로 적는다. */
+const DESK_SURFACE = { id: DESK, label: "침실 1 책상", room: "bed_sw", center: [floor.objects.get(DESK)!.position[0], floor.objects.get(DESK)!.position[1]] as [number, number], top: 0.75 };
 const living = map.stations.find((s) => s.id === "living_standby")!;
 /** VLM 답 지연(ms): 잰 평균 nano 1.6초·mini 1.8초 근처를 돈다. */
 const LAGS = [1600, 1800, 1500, 1900, 1700];
@@ -122,7 +125,8 @@ export async function replayDay(o: {
     const cupSeen = truth.cup.where === "hand" || seen(cupAt);
     const bottleSeen = truth.bottle.where === "hand" ? true : truth.bottle.where === "counter" ? seen([sinkFront.look_at[0], 0.95, sinkFront.look_at[1] + 0.2]) : false;
     const lag = LAGS[shots++ % LAGS.length]!;
-    const snap = { cup: { ...truth.cup }, bottle: { ...truth.bottle }, cupAt, cupSeen, bottleSeen, sight, camera };
+    const deskSeen = roomAt(floor, ph.position) === DESK_SURFACE.room && seen([DESK_SURFACE.center[0], DESK_SURFACE.top, DESK_SURFACE.center[1]]);
+    const snap = { cup: { ...truth.cup }, bottle: { ...truth.bottle }, cupAt, cupSeen, bottleSeen, sight, camera, deskSeen };
     answers.push({ at: t + lag, shot: () => {
       const at = t, now = clock.now();
       const objs = world.objects.filter((x) => !(x.cls === "cup" && snap.cupSeen) && !(x.cls === "bottle" && snap.bottleSeen));
@@ -137,6 +141,8 @@ export async function replayDay(o: {
         surface: snap.bottle.where === "counter" ? SINK : null, surface_label: snap.bottle.where === "counter" ? "싱크대" : null, room: "kitchen",
         first_seen_ms: at, last_seen_ms: at, facts: { place: fact(snap.bottle.where === "hand" ? "in_hand" : "on_table", at) } } as WorldObject);
       world.objects = objs;
+      // 집 상태 노드처럼(src/world/state/world.ts noteSurfaces) 사진에 책상 윗면 가운데가 들면 본 면으로 적는다
+      if (snap.deskSeen) world.surfaces_seen = [{ id: DESK_SURFACE.id, label: DESK_SURFACE.label, room: DESK_SURFACE.room, center: DESK_SURFACE.center, seen_ms: at }];
       const visible = snap.sight.visible, was = world.person.visible;
       // 집 상태 노드의 기록 줄(사람 보임·하는 일): 밤 반성의 하루 기록이 된다
       if (visible !== was) o.db.add("detection", now, visible ? "사람 보임" : "사람 안 보임");
@@ -154,13 +160,16 @@ export async function replayDay(o: {
       if (snap.sight.located) world.person_trail = [...(world.person_trail ?? []).slice(-1), { room: "bed_sw", position: seat, at_ms: at }];
       void worldNode.publish("/world/household_photo", { photo: structuredClone(world.household_photo) });
       add("photo");
-      photoSeen(snap.sight.visible && snap.cup.where !== "desk");
+      photoSeen();
     } });
   };
-  // ── PAM(습관 날): 책상 관찰 자리에서 공부 중·책상에 물 없음을 본 사진이 오면 배운 화살표로 물 한 잔 가져다주기 ──
+  // ── PAM(습관 날): 관찰 글(src/world/text.ts)에 노트북 쓰는 중과 「책상 위 마실 것 없음」이 있으면 배운 화살표로 물 한 잔 가져다주기
+  //    (실제 PAM이 이 두 줄로 그 화살표를 고른다: 2026-11-22 실제 모델 4/4, 마실 것 없음 줄이 없으면 0/4) ──
   let pamSent = false, decSeq = 0;
-  const photoSeen = (studyingNoWater: boolean) => {
-    if (o.mode !== "habit" || pamSent || !studyingNoWater) return;
+  const photoSeen = () => {
+    if (o.mode !== "habit" || pamSent) return;
+    const textSent = textFromWorld(world, [], { nowMs: clock.now(), offsetMinutes: 540 });
+    if (!/\[지속\] 사람 노트북 쓰는 중/.test(textSent) || !/\[지속\] 침실 1 책상 위 마실 것 없음/.test(textSent)) return;
     const st = map.stations.find((s) => s.id === "desk_watch")!;
     if (Math.hypot(phone.position[0] - st.position[0], phone.position[1] - st.position[1]) > 0.6 || phone.walk) return;
     const state = o.memory.states.find((s) => s.id === "studying");
@@ -169,7 +178,7 @@ export async function replayDay(o: {
     pamSent = true;
     later(PAM_MS, () => {
       const prediction = { observation: "사용자가 책상에서 노트북으로 공부하고 있고 책상 위에 마실 물이 없다.", reasoning: "평소 이 시간에 물을 찾는다.", task_index: tasks.indexOf(WATER_ACTION), state: "studying", from: "studying", next_index: next };
-      const d: DecisionRecord = { id: `pam-${++decSeq}`, seq: decSeq, atMs: clock.now(), request_rev: rev, finalTime: new Date(clock.now()).toISOString(), textSent: "", tasks,
+      const d: DecisionRecord = { id: `pam-${++decSeq}`, seq: decSeq, atMs: clock.now(), request_rev: rev, finalTime: new Date(clock.now()).toISOString(), textSent, tasks,
         status: "valid", action: WATER_ACTION, prediction, fsm: fsmStep(o.memory, prediction), memoryVersion: 2,
         world: { objects: [], person_visible: true, yolo_missing: 0, vlm_missing: 0 } };
       add("water", { via: "pam", learned: d.fsm?.learned });
