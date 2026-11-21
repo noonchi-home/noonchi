@@ -5,7 +5,7 @@ import { applyPhoneProgress, showPhoneCommand, syncPhoneClaims } from "./phone.j
 // 집 실행 묶음의 관찰 흐름·World State 잇기(src/observe·src/world): 트윈 윗면·침대 소파(쓰러짐 의심에서 뺄 자리), World State, 관찰 흐름(YOLO·VLM),
 // 주기 타이머(관찰·판단·실행 추적·보기 담당·말풍선 카드). 관찰 흐름은 BRAIN=1이고 PHONE_PORT가 있을 때만 켠다(폰 카메라가 입력).
 import { join } from "node:path";
-import { datasetWriter, findRoutines, memoryForDay, routineEdge, type HelpRoutine } from "../../brain/index.js";
+import { datasetWriter, findRoutines, readDayMemory, routineEdge, type HelpRoutine } from "../../brain/index.js";
 import { GoalTriggers, startGoalNode } from "../../goal/index.js";
 import { managerRoutes } from "../../manage/index.js";
 import { BrainPlans, planningRoutes } from "../../brain/index.js";
@@ -142,7 +142,8 @@ export async function startNodes(core: HomeCore, emit: (event: BrainLog) => void
     if (routineCache && now - routineCache.at < 60_000) return routineCache.list;
     const db = ctx.history.db, off = db.offsetMinutes;
     const day = new Date(now + off * 60_000).toISOString().slice(0, 10);
-    const memory = memoryForDay(db, day).memory;
+    // 그날 기억을 읽기만 한다(고정하지 않는다: 고정은 판단이 그날 처음 쓸 때 한다)
+    const memory = readDayMemory(db, day).memory;
     const helps = db.list({ since: now - 30 * 86_400_000, until: now, kinds: ["help"], limit: Number.MAX_SAFE_INTEGER });
     const has = (r: HelpRoutine) => "states" in memory && memory.states.some((st) => st.next.some((e) => e.action === r.action && e.on === routineEdge(r).on));
     routineCache = { at: now, list: findRoutines(helps, off).filter(has) };

@@ -88,9 +88,10 @@ export const TASKS: Record<string, TaskSpec> = {
     name: "부름에 응하기", description: "사람이 클로이드를 부르면 사람이 있는 곳(책상 등)으로 가서 무엇을 도와드릴지 묻는다. 질문은 help 답 묶음을 쓴다.",
     allow: { kinds: ["go", "ask", "say"], need: ["go", "ask"] },
   },
-  // 대상 컵은 주방에 있어(사람 곁에서 판단할 때는 안 보인다) target을 두지 않는다. 물병은 냉장고 안이라 안 보여도 집기를 받는다
+  // 대상 컵은 주방에 있어(사람 곁에서 판단할 때는 안 보인다) target을 두지 않는다. 물병은 냉장고 안이라 안 보여도 집기를 받는다.
+  // 습관은 반성(LLM)이 아니라 도움 기록의 시각으로 찾는다(src/brain/history/routines.ts)라 learn을 두지 않는다
   "물 한 잔 가져다주기": {
-    name: "물 한 잔 가져다주기", maxSteps: 10, learn: true, carry: "bottle", carryUnseen: true, carryAlso: ["cup"],
+    name: "물 한 잔 가져다주기", maxSteps: 10, carry: "bottle", carryUnseen: true, carryAlso: ["cup"],
     description: "사람이 책상에서 공부하거나 일하는 중 마실 물이 없거나 물을 부탁하면, 사람이 냉장고에서 물병을 꺼내 싱크대에서 컵에 물을 따르고 그 컵을 책상에 놓게 한다.",
     allow: { kinds: ["go", "pick", "do", "place"], need: ["go", "pick", "do", "place"] },
   },
