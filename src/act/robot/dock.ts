@@ -48,13 +48,13 @@ export class Dock extends Part {
 
   private context(now: number) {
     const view = this.o.state.view(), p = view.person;
-    const fresh = p.visible && p.count === 1 && p.position && p.position_ms !== null && p.position_ms <= now && now - p.position_ms <= FRESH_MS;
-    // 지금 안 보여도 최근에 확인한 방: 한 사람만 보인 사진의 발 자리로만 쌓이는 사람 자취(person_trail)의 마지막 방.
-    // 둘 이상 보이면 자취가 비므로(src/world/state/people.ts) 다른 사람의 방으로 가지 않는다
+    // 사용자 방은 한 사람만 보인 사진의 발 자리로만 쌓이는 사람 자취(person_trail)의 마지막 방으로만 정한다. 둘 이상 보이면 자취가 비므로
+    // (src/world/state/people.ts) 둘이 보일 때 남은 발 자리를 지금 보이는 한 사람의 방으로 쓰지 않는다. 보이면 5초 안의 것, 안 보이면 5분 안의 것
     const last = view.person_trail?.at(-1);
-    const recent = !p.visible && last && last.at_ms <= now && now - last.at_ms <= USER_ROOM_MS ? last.room : null;
+    const age = last && last.at_ms <= now ? now - last.at_ms : Infinity;
+    const userRoom = !last ? null : p.visible ? (p.count === 1 && age <= FRESH_MS ? last.room : null) : age <= USER_ROOM_MS ? last.room : null;
     const hour = new Date(now + (this.o.offsetMinutes ?? 540) * 60_000).getUTCHours();
-    return {userRoom: fresh ? p.room : recent, night: DAY_PARTS.findLast(part => hour >= part.from)?.key === "night",
+    return {userRoom, night: DAY_PARTS.findLast(part => hour >= part.from)?.key === "night",
       batteryLow:this.o.layout.batteryLow?.() ?? null};
   }
 

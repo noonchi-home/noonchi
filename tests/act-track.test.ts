@@ -5233,7 +5233,8 @@ describe("실행 추적: 계획이 끝나면 충전 자리로", () => {
     let seen = -60_000;
     const w = world([cup("present")]);
     const station = {id:"living_standby",name:"거실 대기 자리",room:"living",roles:["standby" as const],position:[5,6] as [number,number],look_at:[4,5] as [number,number],rooms:[],surfaces:[],observes_zone_ids:[]};
-    const s = dockSetup(() => ({...w,person:{...w.person,count:1,visible:true,position:[5,6],position_ms:seen,room:"living",room_label:"거실"}}), {
+    const s = dockSetup(() => ({...w,person:{...w.person,count:1,visible:true,position:[5,6],position_ms:seen,room:"living",room_label:"거실"},
+      person_trail:[{position:[5,6] as [number,number],room:"living",at_ms:seen}]}), {
       offsetMinutes:540, stations:{map:()=>({version:1,stations:[station],zones:[],surface_fronts:[],kitchen_entry:null,meal_watch:null}),rev:()=>3,
         target:id=>({id,label:station.name,position:[5,0,6],look:null}),result:()=>{}},
     });
@@ -5266,6 +5267,21 @@ describe("실행 추적: 계획이 끝나면 충전 자리로", () => {
     await finishCup(s);
     s.at(1,1,DOCK.lookMs);
     expect(s.docks().map((c) => c.target?.id ?? null).at(-1) ?? null).toBe(target);
+  });
+
+  it("둘이 보인 사진 직후 한 사람의 상체만 보이면(발 자리는 둘이 보일 때의 것) 그 방으로 돌아가지 않는다", async () => {
+    const w = world([cup("present")]);
+    const station = {id:"living_standby",name:"거실 대기 자리",room:"living",roles:["standby" as const],position:[5,6] as [number,number],look_at:[4,5] as [number,number],rooms:[],surfaces:[],observes_zone_ids:[]};
+    let now = () => 0;
+    // 지금 한 사람이 보이고 발 자리는 2초 전 것이지만, 그 사진은 둘이 보여 사람 자취가 비었다
+    const s = dockSetup(() => ({...w,person:{...w.person,count:1,visible:true,position:[5,6],position_ms:now()-2000,room:"living",room_label:"거실"},person_trail:[]}), {
+      offsetMinutes:540, stations:{map:()=>({version:1,stations:[station],zones:[],surface_fronts:[],kitchen_entry:null,meal_watch:null}),rev:()=>3,
+        target:id=>({id,label:station.name,position:[5,0,6],look:null}),result:()=>{}},
+    });
+    now = () => s.clock.t;
+    await finishCup(s);
+    s.at(1,1,DOCK.lookMs);
+    expect(s.docks()).toHaveLength(0);
   });
 
   it("사용자 위치: 보이면 그 방, 안 보이면 마지막으로 본 방, 둘 다 모르면 모른다고 한다. 이미 충전 자리 1.2m 안이면 명령 없이 지켜본다", async () => {
