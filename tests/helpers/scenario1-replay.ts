@@ -23,7 +23,7 @@ import { loadScene } from "../../src/layout/scene.js";
 import { resolveHome } from "../../src/layout/homes.js";
 import { DEFAULT_TWIN_DIR } from "../../src/layout/twin-files.js";
 import { LOOK_HEIGHT_M, locateZone } from "../../src/layout/stations.js";
-import { WorldState } from "../../src/world/index.js";
+import { WORLD_TICK_MS, WorldState } from "../../src/world/index.js";
 import { fsmStep } from "../../src/brain/decision.js";
 import { parsePrediction } from "../../src/brain/pam/answer.js";
 import { LEARNED_FSM_MEMORY } from "../../scripts/learned-memory.js";
@@ -136,9 +136,21 @@ export function phoneCamera(value: string | undefined): CameraView {
 type Stop = { at: number; value: string; depart?: number };
 /** 앞 자리에서 다음 자리까지 걷는 길: 시스템이 폰에 보내는 안내 길(src/layout/walk-guide.ts plan, 문·경유점)과 같다. 길이 없으면 곧게. */
 const walkMap = walkingMap(floor, scene);
-function pathBetween(a: Vec2, b: Vec2): Vec2[] {
+function pathBetween(a: Vec2, b: Vec2): Vec2[] | null {
   const guide = walkMap.plan(a, b, 0.5, true);
-  return guide ? [a, ...guide.remaining.map((p) => [p.position[0], p.position[2]] as Vec2)] : [a, b];
+  return guide ? [a, ...guide.remaining.map((p) => [p.position[0], p.position[2]] as Vec2)] : null;
+}
+/** 시스템이 그 두 자리 사이에 보내는 안내 길(가기 명령 guide와 같은 계산). */
+export const guideBetween = (a: Vec2, b: Vec2) => walkMap.plan(a, b, 0.5, true);
+/** 폰이 걸은 길(안내 길)이 가기 명령이 보낸 안내 길과 같은가. 다르거나 안내가 없으면(보류) 까닭 글, 같으면 null. */
+export function walkProblem(from: Vec2, to: Vec2, guide: PlannedCommand["guide"] | null | undefined): string | null {
+  const path = pathBetween(from, to);
+  if (!path) return "걸을 안내 길 없음";
+  if (!guide) return "보낸 안내 길 없음·보류";
+  const same =
+    guide.remaining.length === path.length - 1 &&
+    guide.remaining.every((p, j) => Math.hypot(p.position[0] - path[j + 1]![0], p.position[2] - path[j + 1]![1]) < 0.05);
+  return same ? null : `걸은 길 경유점 ${path.length - 1}개가 보낸 안내 길 경유점 ${guide.remaining.length}개와 다름`;
 }
 const pathLength = (path: readonly Vec2[]) => path.slice(1).reduce((sum, p, i) => sum + Math.hypot(p[0] - path[i]![0], p[1] - path[i]![1]), 0);
 /** t(합성 기록 ms)에 폰이 있는 자리와 보는 곳. 다음 도착 줄의 출발(depart)부터 도착까지는 앞 자리에서 안내 길을 따라 같은 빠르기로 걸으며
@@ -148,7 +160,10 @@ function phoneAt(stops: readonly Stop[], t: number): { position: Vec2; look: Vec
   const here = stops[i]!,
     next = stops[i + 1];
   if (next?.depart !== undefined && t >= next.depart) {
-    const path = pathBetween(spotOf(here.value).position, spotOf(next.value).position);
+    // 안내 길이 없으면(시스템도 안내를 보류한다) 곧게 그려 두고, 도착 검사가 그 걸음을 거부한다
+    const a = spotOf(here.value).position,
+      b = spotOf(next.value).position;
+    const path = pathBetween(a, b) ?? [a, b];
     const k = next.at > next.depart ? Math.min(1, (t - next.depart) / (next.at - next.depart)) : 1;
     let left = pathLength(path) * k;
     for (let j = 1; j < path.length; j++) {
@@ -170,7 +185,12 @@ const REPLAY_MS = 100000,
   POSE_MS = 100,
   /** 폰을 든 사람의 걷기(m/s, ui/src/phone/core/video-ar.js WALK_MPS). */
   WALK_MPS = 0.8;
-function makeBag(bag: Bag, variant: Variant): { left: number | null; photos: Photo[]; arrivals: { at: number; value: string; depart?: number }[] } {
+function makeBag(bag: Bag, variant: Variant): {
+  left: number | null;
+  photos: Photo[];
+  arrivals: { at: number; value: string; depart?: number }[];
+  states: { at: number; rev: number; serial: number | null }[];
+} {
   const world = new WorldState({
     devices: () => [],
     surfaces: () => [],
@@ -203,6 +223,22 @@ function makeBag(bag: Bag, variant: Variant): { left: number | null; photos: Pho
       at,
     );
   }
+  // rev는 집 상태가 바뀐 변화(물건·사람 보임·방·하는 일·가전)가 있을 때만 오른다(src/world/node.ts emit). 사진·폰 눈만 바뀐 상태는 같은 rev로 낸다
+  let lastSig = "";
+  const states: { at: number; rev: number; serial: number | null }[] = [];
+  const publishState = (at: number) => {
+    const sig = JSON.stringify([
+      world.objects.map((o) => [o.id, o.status, o.surface, o.surface_part ?? null, o.facts.place?.value ?? null]),
+      [world.person.visible, world.person.count, world.person.room, world.person.facts.activity?.value ?? null],
+      world.devices.map((d) => [d.id, d.state]),
+    ]);
+    if (sig !== lastSig) {
+      rev++;
+      lastSig = sig;
+    }
+    put("/world/state", "world", { rev, view: world }, at);
+    states.push({ at, rev, serial: world.household_photo?.serial ?? null });
+  };
   const patch = raw.find((row) => row.kind === "variant" && row.name === variant);
   const source: Line[] = raw.filter(
     (row) => Number.isFinite(row.at) && row.at < (patch?.replace_from ?? Infinity),
@@ -214,6 +250,8 @@ function makeBag(bag: Bag, variant: Variant): { left: number | null; photos: Pho
   const eyeAt = new Set(eyes.map((e) => e.at));
   for (let t = (eyes[0]?.at ?? 0) + POSE_MS; t < REPLAY_MS; t += POSE_MS)
     if (!eyeAt.has(t)) source.push({ at: t, kind: "pose", source: "composed phone pose stream" });
+  // 집 상태 노드는 바뀐 것이 없어도 WORLD_TICK_MS(250ms)마다 같은 rev로 상태를 다시 낸다(src/world/node.ts): 그때 폰 눈이 새것이다
+  for (let t = 0; t < REPLAY_MS; t += WORLD_TICK_MS) source.push({ at: t, kind: "tick", source: "world node 250 ms republish" });
   let left: number | null = null;
   const photos: Photo[] = [];
   // 집 상태는 도착 차례로 쌓는다: 늦게 온 VLM 답은 그 사이 사건 뒤에 들어간다(사진 시각은 촬영 시각 그대로)
@@ -257,11 +295,19 @@ function makeBag(bag: Bag, variant: Variant): { left: number | null; photos: Pho
         pitch_deg: PHONE.pitchDeg,
       };
     };
+    if (r.kind === "tick") {
+      world.eye = eyeOf(r.at);
+      world.at_ms = at;
+      world.frame_ms = at;
+      publishState(at);
+      continue;
+    }
     if (r.kind === "eye") {
       const pos = spotOf(r.value).position;
       world.eye = eyeOf(r.at);
       world.at_ms = at;
-      put("/world/state", "world", { rev: ++rev, view: world }, at);
+      world.frame_ms = at;
+      publishState(at);
       // 도착한 자세 하나, 그 뒤는 100ms마다(아래 자세 줄): 실제 폰보다 빨리 도착을 확인하지 않게
       put("/phone/pose", "phone", { quality: "usable", position: pos, pose_gen: 1, observed_ms: at }, at);
       continue;
@@ -393,16 +439,18 @@ function makeBag(bag: Bag, variant: Variant): { left: number | null; photos: Pho
       // 사람 자취(person_trail): 한 사람의 발이 보인 사진의 자리만 마지막 둘까지 남는다(src/world/state/people.ts)
       if (located) world.person_trail = [...(world.person_trail ?? []).slice(-1), { room, position: pos, at_ms: at }];
     }
+    // 상태를 내는 때(답이 들어온 때)의 폰 눈과 엔진 프레임(엔진 프레임은 100ms마다라 거의 지금이다)
+    world.eye = eyeOf(arrival(r));
     world.at_ms = arrive;
-    world.frame_ms = at;
+    world.frame_ms = arrive;
     // 집 상태 노드는 새 집 사진마다 그 사진을 /world/household_photo(RELIABLE)로도 낸다(src/world/node.ts)
     if (world.household_photo && world.household_photo.serial !== sentPhoto) {
       sentPhoto = world.household_photo.serial;
       put("/world/household_photo", "world", { photo: structuredClone(world.household_photo) }, arrive);
     }
-    put("/world/state", "world", { rev: ++rev, view: world }, arrive);
+    publishState(arrive);
   }
-  return { left, photos, arrivals: stops.map((e) => ({ at: base + e.at, value: e.value, ...(e.depart !== undefined ? { depart: base + e.depart } : {}) })) };
+  return { left, photos, states, arrivals: stops.map((e) => ({ at: base + e.at, value: e.value, ...(e.depart !== undefined ? { depart: base + e.depart } : {}) })) };
 }
 
 /** VLM 사진 간격(src/observe/pipeline.ts frame.vlm): 앞 VLM 촬영 prev 뒤 엔진 프레임마다 보고, 처음으로 「그때 간격(빠름 1초·보통 2초)」 이상 지난 프레임.
@@ -415,6 +463,10 @@ const OBSERVE = loadObserveConfig({}),
   /** 합성 기록 VLM 답 지연의 아래 끝(ms): 잰 평균은 nano 1.6초, mini 1.8초다. */
   VLM_LAG_MIN_MS = 1000;
 
+/** 그 변형의 합성 기록으로 낸 World State(낸 때, rev, 집 사진 번호). */
+export function composedStates(variant: Variant) {
+  return makeBag(Bag.open(":memory:"), variant).states;
+}
 /** 그 변형의 합성 기록으로 만든 사진들(촬영 시각·폰 자리·카메라). */
 export function composedPhotos(variant: Variant): Photo[] {
   return makeBag(Bag.open(":memory:"), variant).photos;
@@ -430,7 +482,7 @@ export async function replayScenario(
     live = new LiveScenario(scene);
   const received: PlannedCommand[] = [];
   /** 폰에 보낸 가기 명령(보낸 시각, 목적지 id). */
-  const goes: { at: number; target: string }[] = [];
+  const goes: { at: number; target: string; guide: PlannedCommand["guide"] | null }[] = [];
   let resolveDecision: (d: DecisionRecord) => DecisionRecord = (d) => d;
   // 녹화한 World State의 TV 전원은 재생 중 허브 전원을 따른다(실제 집 상태 노드는 /device/changes로 기기 상태를 바꾼다)
   let tvPower: () => "on" | "off" = () => "on";
@@ -633,7 +685,7 @@ export async function replayScenario(
             if (heard.has(key)) return;
             heard.add(key);
             // 같은 명령을 안내만 바꿔 다시 보낸 것은 새 명령이 아니다
-            if (m.kind === "go" && m.target?.id) goes.push({ at: clock.now(), target: m.target.id });
+            if (m.kind === "go" && m.target?.id) goes.push({ at: clock.now(), target: m.target.id, guide: m.guide ?? null });
             const id = m.target?.id;
             if (m.kind === "go") {
               const kind =
@@ -769,7 +821,10 @@ export async function replayScenario(
       const prev = arrivals[i - 1]!;
       const target = e.value === "table" ? table.surface_id : e.value === "sink" ? sink.surface_id : e.value;
       // 안내 길(문·경유점)을 따라 걷는 길이
-      const walkMs = Math.ceil((pathLength(pathBetween(spotOf(prev.value).position, spotOf(e.value).position)) / WALK_MPS) * 1000);
+      const from = spotOf(prev.value).position,
+        to = spotOf(e.value).position;
+      const path = pathBetween(from, to);
+      const walkMs = Math.ceil((pathLength(path ?? [from, to]) / WALK_MPS) * 1000);
       // 앞 걷기를 시작한 뒤 보낸 명령만 이 걷기의 명령이다(같은 자리로 갔던 옛 명령이 아니다)
       const since = prev.depart ?? prev.at;
       const sent = e.depart === undefined ? undefined : goes.filter((g) => g.target === target && g.at > since && g.at <= e.depart!).at(-1);
@@ -781,6 +836,9 @@ export async function replayScenario(
             `가기 명령(${sent ? sent.at - base + "ms" : "없음"}) 뒤 출발, 걷는 시간 ${walkMs}ms 뒤 도착이 아닙니다. ` +
             `보낸 가기 명령: ${goes.map((g) => `${g.target}@${g.at - base}`).join(", ")}`,
         });
+      // 폰은 그 명령이 보낸 안내 길(문·경유점)을 걷는다: 안내가 없거나(보류) 걸은 길과 다르면 벽을 지나간 걸음일 수 있다
+      const walk = sent ? walkProblem(from, to, sent.guide) : null;
+      if (walk) wrong.push({ at: e.depart ?? e.at, text: `합성 기록 폰이 ${e.value}까지 걸은 길이 가기 명령(${sent!.at - base}ms)의 안내 길과 다릅니다: ${walk}.` });
     });
     // 사진은 앞 사진 뒤 실제 VLM 간격의 촬영이어야 한다(합성 기록이 시스템보다 자주·드물게 찍지 않게)
     const fastWhen = (t: number) => fastAt.findLast(([at]) => at <= t)?.[1] ?? false;

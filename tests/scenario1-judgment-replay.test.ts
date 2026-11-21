@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { composedPhotos, heldCupAt, map, personSight, phoneCamera, replayScenario, scene } from "./helpers/scenario1-replay.js";
+import { composedPhotos, composedStates, guideBetween, heldCupAt, map, personSight, phoneCamera, replayScenario, scene, walkProblem } from "./helpers/scenario1-replay.js";
 import { inView, ndc } from "../src/world/place.js";
 import { yawPitchQuat } from "../ui/src/phone/core/video-math.js";
 import { judgeScenario1, scenarioRank, type ScenarioEvent } from "../scripts/scenario1-judge.js";
@@ -159,6 +159,24 @@ describe("시나리오 1 합성(composed) 판단 재생", () => {
       { kind: "viewer_returned", at: 9800, id: tv },
     ]);
     // 9초에 켰다면 앉아 보는 사진(7초 촬영)의 답은 9.8초에야 들어와 켜기의 근거가 아니다: 시청자 돌아옴(9.8초)이 켜기(9초)보다 늦어 판정이 실패한다
+  });
+  it("합성 재생의 World State는 집 상태 노드처럼 낸다: 사진·폰 눈만 바뀐 상태는 같은 rev이고, 바뀐 것이 없어도 250ms마다 다시 낸다", () => {
+    const states = composedStates("normal");
+    // 새 집 사진인데 rev는 그대로인 상태가 있다(목표 노드는 그때 조건 사실과 TV 규칙만 돌고, 사용자 찾기는 250ms 틱이나 새 rev에)
+    expect(states.some((x, i) => i > 0 && x.serial !== null && x.serial !== states[i - 1]!.serial && x.rev === states[i - 1]!.rev)).toBe(true);
+    expect(new Set(states.map((x) => x.rev)).size).toBeLessThan(new Set(states.map((x) => x.serial)).size);
+    // 250ms를 넘게 비는 때가 없다
+    expect(states.every((x, i) => i === 0 || x.at - states[i - 1]!.at <= 250)).toBe(true);
+  });
+  it("합성 재생의 폰은 가기 명령이 보낸 안내 길을 걷는다: 안내가 없거나(보류) 걸은 길과 다르면 그 걸음을 거부한다", () => {
+    const from = map.stations.find((s) => s.id === "meal_watch")!.position,
+      to = map.stations.find((s) => s.id === "living_standby")!.position;
+    const guide = guideBetween(from, to)!;
+    expect(walkProblem(from, to, guide)).toBeNull();
+    expect(walkProblem(from, to, null)).toMatch("보류");
+    // 다른 길(경유점이 0.5m 옆)
+    const moved = guide.remaining.map((p) => ({ ...p, position: [p.position[0] + 0.5, p.position[1], p.position[2]] as [number, number, number] }));
+    expect(walkProblem(from, to, { ...guide, remaining: moved as typeof guide.remaining })).toMatch("다름");
   });
   it("빈 판에서 빠진 첫 단계는 주방 입구 관찰이다", () => {
     expect(judgeScenario1([]).firstMismatch).toBe("missing:kitchen");
