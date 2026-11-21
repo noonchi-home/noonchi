@@ -3,7 +3,7 @@
   "kitchen_entry": "kitchen_entry",
   "meal_watch": "meal_watch",
   "stations": [
-    {"id":"living_standby","name":"거실 대기 자리","room":"living","roles":["standby","observe"],"position":[10.5,9],"look_at":[7.4,9.8],"surfaces":["tv_62442cb3","sofa_a848b595"],"rooms":["living"],"observes_zone_ids":["sofa_watch"]},
+    {"id":"living_standby","name":"거실 대기 자리","room":"living","roles":["standby","observe"],"position":[6.98,6.38],"look_at":[8.92,9.95],"surfaces":["tv_62442cb3","sofa_a848b595"],"rooms":["living"],"observes_zone_ids":["sofa_watch"]},
     {"id":"meal_watch","name":"식탁 관찰 자리","room":"living","roles":["observe"],"position":[10.55,6.35],"look_at":[9.7,3.9],"surfaces":["dining_table_978b20c7"],"rooms":["living"],"observes_zone_ids":["dining_seat"]},
     {"id":"kitchen_entry","name":"주방 입구","room":"kitchen","roles":["standby","observe"],"position":[8.15,2.9],"look_at":[5.92,2.46],"surfaces":["fridge_bbc363a3","sink_counter_kitchen"],"rooms":["kitchen"],"observes_zone_ids":["fridge_front"]},
     {"id":"desk_watch","name":"책상 앞 대기 자리","room":"bed_sw","roles":["standby","observe"],"position":[5.75,10.05],"look_at":[6.23,11.73],"surfaces":["desk_small_ce7e768b"],"rooms":["bed_sw"],"observes_zone_ids":["desk_seat"]},

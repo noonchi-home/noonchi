@@ -5,6 +5,7 @@ import type { StationMap } from "../../contract/stations.js";
 import { standbyFor } from "../../layout/index.js";
 import { DAY_PARTS, FRESH_MS } from "../../world/vocab.js";
 import { josa } from "../../shared/korean.js";
+import { stationSeen } from "./station-arrival.js";
 import { dockId } from "../dock-step.js";
 import { DOCK_TEXT, VISION_TEXT } from "../labels.js";
 import { emergencyOf } from "../mode.js";
@@ -109,7 +110,8 @@ export class Dock extends Part {
     const near = q.charging ? DOCK.nearM : STATION_NEAR_M;
     const distance = this.distance(target,now);
     const nav=q.charging?undefined:core.walk(q.id,{id:target.id,label:target.label,position:target.position},true);
-    if (nav?nav.arrived:distance !== null && distance <= near) return this.arrived();
+    const atStand = nav ? nav.arrived : distance !== null && distance <= near;
+    if (atStand && stationSeen(core,target,near,now)) return this.arrived();
     const line = idleLine(core,q);
     if (this.blocked()) return line.clear();
     const vision = nav?.vision??VISION_TEXT.distance(target.label,distance);
