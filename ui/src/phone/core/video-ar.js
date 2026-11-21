@@ -399,7 +399,7 @@ export function createVideoAr({ link, params, hooks, deps }) {
       startWalk(waypoint,0,clipMs);
     }
     let aboveAim = null;
-    // 영상 모드: 자세 흉내. 관찰 자리 가기의 비출 곳(명령 대상 look, AR): 도착해 명령이 지워지면 그쪽을 바라본다(「…을 비춰 주세요」)
+    // 영상 모드: 자세 흉내. 관찰 자리 가기의 비출 곳(명령 대상 look, AR): 명령이 떠 있는 동안 도착 반경에 닿으면 그쪽을 바라본다(「…을 비춰 주세요」)
     let lookAfter = null;
     let lastKey = null; // 마지막으로 받은 명령 id:단계(같은 명령이 다시 오면 비전 상태만 바뀐 것)
     // 영상 모드: 자세 흉내
@@ -477,6 +477,11 @@ export function createVideoAr({ link, params, hooks, deps }) {
 
     const sendPose = () => {
       stepWalk();
+      // 영상 모드: 자세 흉내. 관찰 자리 가기가 떠 있는 동안 걷기가 끝나 도착 반경 안이면 비출 곳을 한 번 바라본다. 서버는 그쪽을 비춰야 도착으로 본다
+      if (lookAfter && !lookAfter.faced && !walk && Math.hypot(position[0] - lookAfter.target[0], position[2] - lookAfter.target[2]) <= lookAfter.near + ARRIVE_SLACK_M) {
+        lookAfter.faced = true;
+        face(lookAfter.at);
+      }
       link.send({
         type: "pose", ...link.stamp(performance.timeOrigin + performance.now()), position, orientation, tracking: "ok", hit: state.hitPoint, hit_estimated: state.hitEstimated,
         floor_y: 0, epoch: state.epoch,
@@ -698,7 +703,7 @@ export function createVideoAr({ link, params, hooks, deps }) {
         const fresh = key !== lastKey;
         // 영상 모드: 자세 흉내
         if (cmd.kind === "go" && Array.isArray(cmd.target?.ar) && Array.isArray(cmd.target?.look))
-          lookAfter = { id: cmd.id, target: cmd.target.ar, at: cmd.target.look, near: typeof cmd.near_m === "number" ? cmd.near_m : WALK_STOP_M };
+          lookAfter = lookAfter?.id === cmd.id ? lookAfter : { id: cmd.id, target: cmd.target.ar, at: cmd.target.look, near: typeof cmd.near_m === "number" ? cmd.near_m : WALK_STOP_M };
         else if (fresh) lookAfter = null;
         const guided=cmd.kind==="go" && cmd.guide!==undefined;
         const nextGuide=guided?cmd.guide?.remaining[0]:null;
@@ -809,10 +814,8 @@ export function createVideoAr({ link, params, hooks, deps }) {
        *  줄에 든 조각과 조각과 함께 걷는 걸음은 그대로 튼다(원본 영상을 자르지 않는다). */
       commandClear(id) {
         if (id !== undefined && id !== lastCmdId) return;
-        // 영상 모드: 자세 흉내. 관찰 자리에 닿아(명령 반경 안) 지워진 가기면 그 자리의 비출 곳을 바라본다. 닿기 전에 지워지면 그대로 둔다
-        const aim = lookAfter && (id === undefined || id === lookAfter.id) ? lookAfter : null;
+        // 명령이 지워지면(도착·그만·연결 끊김) 비출 곳을 더 바라보지 않는다: 지움만으로는 도착인지 알 수 없다
         lookAfter = null;
-        if (aim && Math.hypot(position[0] - aim.target[0], position[2] - aim.target[2]) <= aim.near + ARRIVE_SLACK_M) face(aim.at);
         cmdGen++;
         lastKey = null;
         if(guidedKey) walk=null;

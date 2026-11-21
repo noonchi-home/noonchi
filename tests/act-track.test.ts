@@ -86,7 +86,10 @@ it("station arrival uses the walk guide, never the last generic eye or the door 
 it("관찰 자리는 맞춘 눈으로만 도착하고 승인 질문이 오면 방문 줄을 거둔다",()=>{
   const results:string[]=[];
   let pending=false;
-  const s=setup({approvalsWaiting:()=>pending,stations:{rev:()=>7,target:id=>({id,label:"주방 입구",position:[4,0,4],look:{label:"냉장고 앞",position:[2,0.6,4]}}),result:r=>results.push(r.outcome)}});
+  // 폰 눈 방향(World State eye yaw_deg, 평면 x축에서 잰 각): 0이면 +x(냉장고 반대쪽), 180이면 냉장고 앞 쪽
+  let yaw=0;
+  const s=setup({approvalsWaiting:()=>pending,w:()=>({...world([cup("present")]),eye:{position:[4,4],height_m:1.15,yaw_deg:yaw,pitch_deg:-10,room:null,room_label:null,at_ms:10_000}}),
+    stations:{rev:()=>7,target:id=>({id,label:"주방 입구",position:[4,0,4],look:{label:"냉장고 앞",position:[2,0.6,4]}}),result:r=>results.push(r.outcome)}});
   const d={op:"grant",id:"visit:1",kind:"visit",target_id:"entry",rev:3,goal_id:null,until_ms:20000} as const;
   s.t.onEye([0,0]); s.t.onDirective(d);
   expect(s.phone.at(-1)).toMatchObject({type:"command",text:"주방 입구로 이동해 냉장고 앞을 비춰 주세요.",choices:[],target:{position:[4,0,4],look:[2,0.6,4]}});
@@ -95,7 +98,12 @@ it("관찰 자리는 맞춘 눈으로만 도착하고 승인 질문이 오면 �
   expect(s.phone.at(-1)).toMatchObject({type:"command_clear",id:d.id});
   pending=false; s.t.onEye([4,4]); s.t.onDirective(d);
   expect(results).toEqual(["cancelled"]);
-  s.t.onDirective({...d,id:"visit:2"});expect(results.at(-1)).toBe("arrived");
+  // 이미 반경 안이어도 비출 곳(냉장고 앞)을 보지 않으면 도착이 아니다: 「…을 비춰 주세요」를 띄우고 기다린다
+  s.t.onDirective({...d,id:"visit:2"});
+  expect(results).toEqual(["cancelled"]);
+  expect(s.phone.at(-1)).toMatchObject({type:"command",id:"visit:2",text:"주방 입구로 이동해 냉장고 앞을 비춰 주세요."});
+  yaw=180; s.t.tick();
+  expect(results.at(-1)).toBe("arrived");
 });
 let llm: FakePlanner;
 beforeAll(async () => { llm = await startFakePlanner(); });

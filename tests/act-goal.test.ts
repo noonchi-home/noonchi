@@ -1167,6 +1167,8 @@ describe("미리 세운 목표: 떠나기 직전에 본 컵으로 바로 시작"
       expect(s.t.robotTransition({ ...s.t.machineFacts(), observing: false }, s.clock.t)?.state).toBe("observe");
       for (let i = 0; i < 280; i++) s.tick();
       expect(s.logs.filter((l) => l.type === "execution").at(-1)).toMatchObject({ plan_id: "plan:pam-2", state: "failed", text: CHECK_TEXT.no_target });
+      // 다시 보다가 계획이 끝나면(실패) 원래 사진 간격으로 돌아간다: 다음 계획까지 1초 간격이 남지 않는다
+      expect(s.t.fastVlm()).toBe(false);
     });
   });
 

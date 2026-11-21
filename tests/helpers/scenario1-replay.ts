@@ -252,7 +252,8 @@ function makeBag(bag: Bag, variant: Variant): { left: number | null; photos: Pho
         room_label: null,
         at_ms: base + t,
         height_m: PHONE.heightM,
-        yaw_deg: (Math.atan2(-(look[0] - position[0]), -(look[1] - position[1])) * 180) / Math.PI,
+        // 평면 x축에서 잰 보는 쪽 각(src/shared/geometry.ts toTwin과 같은 규칙, 0~360)
+        yaw_deg: ((Math.atan2(look[1] - position[1], look[0] - position[0]) * 180) / Math.PI + 360) % 360,
         pitch_deg: PHONE.pitchDeg,
       };
     };

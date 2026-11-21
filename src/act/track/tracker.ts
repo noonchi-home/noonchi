@@ -485,7 +485,8 @@ export class ExecutionTracker {
    *  목표가 버려지거나 계획이 시작되면(씀) 원래 간격이다(2026-11-18 사용자 결정: 목표 동안 컵 확정(사진 2장)을 빨리). */
   fastVlm(): boolean {
     const core = this.core;
-    return !core.stopped && (this.looking() || core.goal.current() !== null || core.run?.verify?.at != null);
+    // 다시 보기는 계획이 도는 동안만이다: 끝난(실패·완료) 계획에 남은 verify로 1초 간격을 두지 않는다
+    return !core.stopped && (this.looking() || core.goal.current() !== null || (!!core.run && core.run.state !== "done" && core.run.state !== "failed" && core.run.verify?.at != null));
   }
 
   /** 판단 전 보기 B가 그 컵을 잘라 봤다(src/act/look.ts looked): 계획 밖으로 가까이 가서 볼지 본다. */

@@ -1,13 +1,22 @@
 import type { DirectiveResult, HouseholdOffer, ManagerDirective } from "../../contract/machines.js";
 
 import type { TrackCore } from "../track/core.js";
-import { eyeNow, idleLine, phoneBlocked, sendLine, type IdleSlot } from "./phone-line.js";
+import { EYE_MS, eyeNow, idleLine, phoneBlocked, sendLine, type IdleSlot } from "./phone-line.js";
 import { josa } from "../../shared/korean.js";
 
 export function visitPhoneBusy(core:TrackCore) {
   return phoneBlocked(core,core.clock.now(),!!core.open()?.asking) || !!(core.finding || core.idlePeek || core.dock.busy() || core.notice);
 }
 const ARRIVAL_M=0.5;
+/** 도착해 비출 곳을 보고 있다고 볼 방향 차(도): 가장 새 엔진 프레임의 눈 방향(World State eye yaw_deg)과 비출 곳 방향의 차가 이 안이어야 한다. */
+const AIM_DEG=25;
+/** 폰이 비출 곳(트윈 [x, 높이, y])을 보고 있는가: World State 눈이 EYE_MS 안의 것이고, 그 방향과 비출 곳 방향의 차가 AIM_DEG 안. */
+function facing(core:TrackCore,look:[number,number,number],now:number):boolean {
+  const e=core.o.state.view().eye;
+  if (!e || now-e.at_ms>EYE_MS) return false;
+  const want=Math.atan2(look[2]-e.position[1],look[0]-e.position[0])*180/Math.PI;
+  return Math.abs((((want-e.yaw_deg)%360)+540)%360-180)<=AIM_DEG;
+}
 export function stationDirectives(core:TrackCore) {
   let slot:IdleSlot|null=null;
   const port=core.o.stations;
@@ -41,9 +50,10 @@ export function stationDirectives(core:TrackCore) {
       if(nav){
         if(slot?.id===job.id && slot.sent && (slot.sent.guide?.revision!==nav.guide?.revision || slot.sent.vision!==nav.vision))
           idleLine(core,slot).show({...slot.sent,speak:false,guide:nav.guide,vision:nav.vision});
-        return nav.arrived;
       }
-      return !!(eye && target && Math.hypot(eye.position[0]-target.position[0],eye.position[1]-target.position[2])<=ARRIVAL_M);
+      const near=nav ? nav.arrived : !!(eye && target && Math.hypot(eye.position[0]-target.position[0],eye.position[1]-target.position[2])<=ARRIVAL_M);
+      // 비출 곳이 있는 자리는 그쪽을 보고 있어야 도착이다: 반경 안에서 반대쪽을 보면 그 자리 사진이 구역을 담지 못한다
+      return near && (!target?.look || facing(core,target.look.position,core.clock.now()));
     },
     tv:async(job,stillActive)=>{
       const live=()=>stillActive() && port?.tvAllowed?.(job)===true;
