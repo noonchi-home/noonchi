@@ -5,9 +5,8 @@ import { Outbox, BusNode, type Body, type Envelope, type TopicName } from "../..
 import { Bag, replay } from "../../src/record/index.js";
 import { GoalTriggers, type TriggerFacts } from "../../src/goal/triggers.js";
 import { FAST_VLM_MS, loadObserveConfig, vlmStepMs } from "../../src/observe/pipeline.js";
-import { RoomWatch } from "../../src/goal/room-watch.js";
-import { TvWatch, viewerAt } from "../../src/goal/tv-watch.js";
-import { goalRoutes } from "../../src/goal/node.js";
+import { viewerAt } from "../../src/goal/tv-watch.js";
+import { startGoalNode } from "../../src/goal/start.js";
 import { managerRoutes } from "../../src/manage/node.js";
 import { PlanHub } from "../../src/act/hub.js";
 import { checkPlan } from "../../src/act/check.js";
@@ -377,7 +376,7 @@ export async function replayScenario(
       to: base + REPLAY_MS,
       topics: ["/world/state", "/brain/decision", "/phone/pose", "/device/changes"],
       launch: async (bus, clock) => {
-        const node = (name: "manager" | "act" | "goal" | "devices" | "recorder") =>
+        const node = (name: "manager" | "act" | "devices" | "recorder") =>
           new BusNode({
             bus,
             name,
@@ -388,7 +387,6 @@ export async function replayScenario(
             },
           });
         const act = node("act"),
-          goal = node("goal"),
           manager = node("manager");
         const device = node("devices"),
           recorder = node("recorder");
@@ -405,22 +403,40 @@ export async function replayScenario(
             throw Error(m);
           },
         });
-        const intents = new Outbox(goal, {
+        const triggers = new GoalTriggers(locateZone, () => 0, VLM_STEP_MS);
+        // 재생 기록(trace)의 빈 구역·돌아옴만 보는 따로 된 계기(시스템 계기의 상태를 건드리지 않는다)
+        const seenZone = new GoalTriggers(locateZone, () => 0, VLM_STEP_MS);
+        managerRoutes(manager, clock);
+        let world: WorldView,
+          rev = 0,
+          facts: TriggerFacts | null = null;
+        // 목표 노드: 실제 서버와 같은 src/goal/start.ts(World State 구독 노드에서 250ms 타이머·새 rev마다 조건 사실 → TV 규칙 → 사용자 찾기)
+        const goalNode = await startGoalNode({
+          bus,
+          epoch,
           clock,
           log: (m) => {
             throw Error(m);
           },
+          triggers,
+          portals: floor.portals,
+          map: () => map,
+          viewers: () => [tvId],
+          // src/server/home/act.ts goals.publish의 checkingVisit와 같은 값
+          checking: () => {
+            const g = tracker.goal();
+            return g?.status === "checking" && g.meal && g.object && g.checking_ms != null && g.check_until_ms != null
+              ? { id: g.id, since: g.checking_ms, until: g.check_until_ms, cup: g.object, surface: g.meal.surface }
+              : null;
+          },
+          onFacts: (f) => {
+            facts = f;
+          },
+          afterTick: () => {
+            if (world) tracker.updateGoal();
+          },
         });
-        const triggers = new GoalTriggers(locateZone, () => 0, VLM_STEP_MS);
-        // 재생 기록(trace)의 빈 구역·돌아옴만 보는 따로 된 계기(시스템 계기의 상태를 건드리지 않는다)
-        const seenZone = new GoalTriggers(locateZone, () => 0, VLM_STEP_MS);
-        const tv = new TvWatch((i) => intents.push("/goal/intent", i));
-        const rooms = new RoomWatch((i) => intents.push("/goal/intent", i), floor.portals);
-        managerRoutes(manager, clock);
-        goalRoutes(goal, clock, triggers, rooms, tv);
-        let world: WorldView,
-          rev = 0,
-          facts: TriggerFacts | null = null;
+        const tv = goalNode.tv;
         const hub = new SignalHub(new MemoryHub([tvSpec], { [tvId]: { power: "on" } }));
         const power = () => hub.powerStamp(tvId)!;
         tv.observe(tvId, power());
@@ -524,7 +540,7 @@ export async function replayScenario(
           devices: deviceRunner(hub, new Policy()),
           phoneReady: () => true,
           onGoal: (g) => {
-            intents.push("/brain/goal_changes", { goal: g });
+            goalNode.out.push("/brain/goal_changes", { goal: g });
             if (g.status === "armed" && g.prep === "ready") add("ready", g.object ?? "");
             if (g.status === "checking") add("checking", g.object ?? "");
             if (g.reason === "back") add("back");
@@ -573,29 +589,6 @@ export async function replayScenario(
           if (!world) return;
           const now = clock.now();
           world.devices.find((d) => d.kind === "tv")!.state = [power().power === "on" ? "on" : "off"];
-          facts = triggers.evaluateTriggers(world, rev, map, now);
-          const g = tracker.goal();
-          const checking =
-            g?.status === "checking" && g.meal
-              ? {
-                  id: g.id,
-                  since: g.checking_ms!,
-                  until: g.check_until_ms!,
-                  cup: g.object!,
-                  surface: g.meal.surface,
-                }
-              : null;
-          rooms.tick({
-            now,
-            rev,
-            map,
-            facts,
-            checking,
-            personSeen: world.person.visible,
-            cupSeen: world.objects.some((o) => o.id === checking?.cup && o.last_seen_ms >= checking.since),
-          });
-          tv.tick(tvId, viewerAt(facts, tvId, now), rev, now);
-          tracker.updateGoal();
           tracker.tick();
           // src/server/home/observe.ts vlmFast와 같은 식
           fastAt.push([now, tracker.fastVlm() || tv.watching()]);
@@ -674,7 +667,7 @@ export async function replayScenario(
           }
         });
         act.every(250, tick);
-        return [manager, goal, act, device, recorder];
+        return [manager, goalNode.mirror.node, act, device, recorder];
       },
     });
     // 폰 도착 줄은 그 자리로 보낸 가기 명령 뒤, 앞 자리에서 곧게 걸어도 걸리는 시간(영상 모드 걷기 초당 WALK_MPS) 뒤여야 한다(첫 자리는 처음 선 곳)
