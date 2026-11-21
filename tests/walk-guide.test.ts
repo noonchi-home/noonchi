@@ -118,4 +118,68 @@ describe("walking map", () => {
     expect(path?.remaining.some((p) => p.kind === "portal")).toBe(true);
     expect(path?.remaining.at(-1)?.position).toEqual([6.52, 0, 0.693]);
   });
+  describe("real home doors", () => {
+    const home = resolveHome(DEFAULT_TWIN_DIR, "mokryeon_180b");
+    const scene = loadScene(home)!;
+    const catalog = loadCatalog(home.catalogDir);
+    const map = walkingMap(floorPlanFrom(scene), scene, (type) => catalog.get(type)?.footprint);
+    const station = (id: string) => scene.stations.stations.find((s) => s.id === id)!.position as [number, number];
+    const front = (surface: string) => scene.stations.surface_fronts.find((f) => f.surface_id.startsWith(surface))!.position as [number, number];
+    /** 영상 모드 followGuide처럼 안내의 첫 점(문이면 다음 점 쪽 0.12m 너머)으로 0.08m씩 걷는다. 길을 잃은 읽기(distance null) 수를 센다. */
+    function walk(from: [number, number], to: [number, number], near = 0.35, exact = true) {
+      const nav = new Navigation();
+      let t = 0, at = from, lost = 0;
+      const pose = () => nav.pose({ position: at, quality: "usable", pose_gen: 1, observed_ms: (t += 100) });
+      pose();
+      pose();
+      const seen: string[] = [];
+      for (let n = 0; n < 3000; n++) {
+        const r = nav.read("go", map, to, near, exact, t);
+        if (r.arrived) return { arrived: true, lost, seen };
+        if (!r.guide || r.distance === null) {
+          lost++;
+          pose();
+          continue;
+        }
+        const [first, beyond] = r.guide.remaining;
+        const key = first!.kind === "portal" ? first!.id : first!.kind;
+        if (seen.at(-1) !== key) seen.push(key);
+        let goal: [number, number] = [first!.position[0], first!.position[2]];
+        if (first!.kind === "portal" && beyond) {
+          const dx = beyond.position[0] - goal[0], dz = beyond.position[2] - goal[1], len = Math.hypot(dx, dz);
+          goal = [goal[0] + (0.12 * dx) / len, goal[1] + (0.12 * dz) / len];
+        }
+        const d = Math.hypot(goal[0] - at[0], goal[1] - at[1]);
+        at = d <= 0.08 ? goal : [at[0] + ((goal[0] - at[0]) * 0.08) / d, at[1] + ((goal[1] - at[1]) * 0.08) / d];
+        pose();
+      }
+      return { arrived: false, lost, seen };
+    }
+    it.each([
+      ["living standby", "desk", () => station("living_standby"), () => front("desk_small")],
+      ["sink front", "desk", () => front("sink_counter"), () => front("desk_small")],
+      ["desk front", "sink", () => front("desk_small"), () => front("sink_counter")],
+    ])("walks the guide from %s to the %s front without losing it", (_a, _b, from, to) => {
+      const out = walk(from(), to());
+      expect(out).toMatchObject({ arrived: true, lost: 0 });
+      expect(out.seen).toContain("door_bed_sw");
+    });
+    it("moves a stand point that falls inside furniture clearance to the nearest walkable point (fridge has no front)", () => {
+      const fridge = floorPlanFrom(scene).objects.get("fridge_bbc363a3")!.position as [number, number];
+      for (const from of [front("desk_small"), front("sink_counter"), station("living_standby")]) {
+        const out = walk(from, fridge, 0.5, false);
+        expect(out, JSON.stringify(from)).toMatchObject({ arrived: true, lost: 0 });
+      }
+    });
+    it("approaches every door from a point on the current room's side when the straight line would cross a wall", () => {
+      const guide = map.plan(station("living_standby"), front("desk_small"), 0.35, true)!;
+      const door = guide.remaining.findIndex((p) => p.kind === "portal" && p.id === "door_bed_sw");
+      const before = guide.remaining[door - 1]!;
+      expect(before).toMatchObject({ kind: "via", room: "living" });
+      expect(guide.remaining.some((p) => map.isBearing(p))).toBe(false);
+      const gate = map.gate("door_bed_sw")!;
+      expect(map.clear(station("living_standby"), gate.point, "living", [gate])).toBe(false);
+      expect(map.clear([before.position[0], before.position[2]], gate.point, "living", [gate])).toBe(true);
+    });
+  });
 });

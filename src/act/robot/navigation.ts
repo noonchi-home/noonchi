@@ -115,30 +115,34 @@ export class Navigation {
       this.offPath
     )
       return empty();
-    if (!this.path) {
-      if (map.room(a.position) !== map.room(b.position)) return empty();
-      if (this.failed && distance(this.failed, b.position) < 0.12) return empty(true);
-      this.path = map.plan(b.position, target, near, exact, hint);
+    // 남은 길의 다음 점이 지금 자리에서 곧게 갈 수 없으면(넓은 열린 문을 문 점에서 떨어져 지난 때 등) 이 읽기에서 바로 새로 짠다. 새로 짠 길도 막히면 빈 읽기.
+    for (let fresh = false; ; ) {
       if (!this.path) {
-        this.failed = b.position;
-        return empty(true);
+        if (fresh || map.room(a.position) !== map.room(b.position)) return empty();
+        if (this.failed && distance(this.failed, b.position) < 0.12) return empty(true);
+        fresh = true;
+        this.path = map.plan(b.position, target, near, exact, hint);
+        if (!this.path) {
+          this.failed = b.position;
+          return empty(true);
+        }
+        this.failed = null;
+        this.path.revision = ++this.revision;
+        this.path.pose_gen = this.gen;
       }
-      this.failed = null;
-      this.path.revision = ++this.revision;
-      this.path.pose_gen = this.gen;
+      const first = this.path.remaining[0];
+      const gate = first.kind === "portal" ? map.gate(first.id) : undefined;
+      const previousGate = this.lastGate ? map.gate(this.lastGate) : undefined;
+      const allowed = [gate, previousGate].filter((g) => g !== undefined);
+      const inRoom = first.kind === "portal" ? (this.crossed ? first.to_room : first.from_room) : first.room;
+      if (map.isBearing(first) || map.clear(b.position, [first.position[0], first.position[2]], inRoom, allowed)) break;
+      this.path = null;
+      this.crossed = false;
     }
     const g = this.path,
       first = g.remaining[0],
       last = g.remaining[g.remaining.length - 1]!;
     const pos: XZ = [last.position[0], last.position[2]];
-    const gate = first.kind === "portal" ? map.gate(first.id) : undefined;
-    const previousGate = this.lastGate ? map.gate(this.lastGate) : undefined;
-    const allowed = [gate, previousGate].filter((g) => g !== undefined);
-    const inRoom = first.kind === "portal" ? (this.crossed ? first.to_room : first.from_room) : first.room;
-    if (!map.isBearing(first) && !map.clear(b.position, [first.position[0], first.position[2]], inRoom, allowed)) {
-      this.path = null;
-      return empty();
-    }
     const within = (m: number) =>
       first.kind === "stand" &&
       [a, b].every(
