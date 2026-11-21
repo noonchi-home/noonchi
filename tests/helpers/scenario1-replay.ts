@@ -751,6 +751,8 @@ export async function replayScenario(
         };
         act.on("/world/state", async ({ view, rev: next }) => {
           const was = world?.person.visible;
+          // 실제 act 노드(World State 구독 노드 startWorldMirror)는 새 rev에만 판단을 돌린다. 같은 rev로 다시 낸 상태는 보기만 새로 한다(250ms 틱이 돈다)
+          const fresh = next !== rev || world === undefined;
           world = view;
           rev = next;
           live.sample(view);
@@ -785,6 +787,7 @@ export async function replayScenario(
                 meaningful: true,
               },
             ]);
+          if (!fresh) return;
           tick();
           await tracker.idle();
         });

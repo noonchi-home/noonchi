@@ -9,7 +9,8 @@ import { leftServerAt, parseArgs, scenarioSettled } from "../scripts/video-check
 import type { HistoryRow } from "../src/contract/history.js";
 import type { WorldDevice, WorldView } from "../src/contract/world.js";
 
-describe("시나리오 1 합성(composed) 판단 재생", () => {
+// 재생 하나가 가상 100초(폰 자세 100ms·World State 250ms마다)를 실제 노드로 돌려 혼자 2초 남짓, 전체 시험과 함께면 5초를 넘는다(act-look·brain-detector처럼 시간을 준다)
+describe("시나리오 1 합성(composed) 판단 재생", { timeout: 20_000 }, () => {
   it("실영상 모드는 수동 완료와 가짜 서버를 거부한다", () => {
     const flags = ["--clip", "run.mp4", "--scenario", "scenario1", "--left", "62.5"];
     expect(parseArgs(flags)).toMatchObject({ scenario: "scenario1", doneAfterMs: 0, left: { clip: "run.mp4", ms: 62500 } });
