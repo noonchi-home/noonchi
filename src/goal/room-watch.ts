@@ -78,7 +78,8 @@ export class RoomWatch {
     if (this.pending) this.send({op:"withdraw",id:this.pending.id,rev:this.pending.rev});
     this.pending=null;this.selected=null;
   }
-  interrupt() { this.withdraw();this.ended=true; }
+  /** 그만·비상·바쁨·요청: 내놓은 방문을 거두고, 목표 없이 간 자리의 도착도 잊는다(멈춘 뒤 다른 곳 사진으로 식탁 관찰 자리로 다시 가지 않게). */
+  interrupt() { this.withdraw();this.ended=true;this.watching=null; }
 
   private missed(job:Offer) {
     if (job.kind==="visit" && job.goal_id!==null && job.goal_id===this.goal && !this.visited.includes(job.target_id))
@@ -136,7 +137,7 @@ export class RoomWatch {
     };
     if (!checking) {
       // 주방 입구는 냉장고를 봐 식탁이 등 뒤다: 도착 뒤 찍은 사진에 사람이 없으면(냉장고 앞을 떠남) 식탁 관찰 자리로 간다
-      const left=!opened && this.watching?.id===map.kitchen_entry && facts.seesNobody(this.watching.at);
+      const left=!opened && this.watching?.id===map.kitchen_entry && facts.seesNobody(this.watching.id,this.watching.at);
       if (left) this.watching=null;
       const id=seated?map.meal_watch:opened?map.kitchen_entry:left?map.meal_watch:null;
       if (id) offer(id,{kind:"visit"});

@@ -40,14 +40,17 @@ describe("관찰 계기",()=>{
     if (intermediate) expect(r.tick(2000).read(absence).value).toBe("unknown");
     expect(r.photo(4000).read(absence).value).toBe(true);
   });
-  it("사람 없음(seesNobody)은 그 때 뒤에 찍혀 아직 유효한 사진에 사람이 하나도 없을 때만이다",()=>{
+  it("사람 없음(seesNobody)은 그 때 뒤에 찍혀 아직 유효한 사진이 그 자리의 바라볼 곳을 비추고 사람이 하나도 없을 때만이다",()=>{
     const r=rig();
-    expect(r.tick(0).seesNobody(-1)).toBe(false);
+    expect(r.tick(0).seesNobody("table_view",-1)).toBe(false);
     const f=r.photo(1000);
-    expect(f.seesNobody(999)).toBe(true);
-    expect(f.seesNobody(1000)).toBe(false);
-    expect(r.tick(4001).seesNobody(999)).toBe(false);
-    expect(r.photo(5000,{person_ids:["p1"]},{...empty,people:[{id:"p1",attention:"unknown"}]}).seesNobody(999)).toBe(false);
+    expect(f.seesNobody("table_view",999)).toBe(true);
+    expect(f.seesNobody("table_view",1000)).toBe(false);
+    expect(f.seesNobody("nowhere",999)).toBe(false);
+    expect(r.tick(4001).seesNobody("table_view",999)).toBe(false);
+    expect(r.photo(5000,{person_ids:["p1"]},{...empty,people:[{id:"p1",attention:"unknown"}]}).seesNobody("table_view",999)).toBe(false);
+    // 폰을 바라볼 곳으로 돌리기 전에 다른 쪽을 찍은 빈 사진은 그 자리를 본 사진이 아니다
+    expect(r.photo(7000,{view:{...camera,orientation:[0,1,0,0]}}).seesNobody("table_view",999)).toBe(false);
   });
   it("설정 간격의 1.5배가 지나면 새 관찰을 기다린다",()=>{
     const r=rig(1000);r.photo(0);

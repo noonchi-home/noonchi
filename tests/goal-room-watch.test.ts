@@ -70,7 +70,7 @@ describe("집 안 관찰",()=>{
   it("냉장고 문 열림으로 주방 입구에 도착한 뒤 찍은 사진에 사람이 없으면 식탁 관찰 자리로 간다(주방 입구는 냉장고를 봐 식탁이 등 뒤다)",()=>{
     const sent:GoalIntent[]=[], w=new RoomWatch(i=>{sent.push(i);},portals);
     const tick=(at:number,door:boolean,nobodyAfter:number|null)=>w.tick({now:at,rev:at,map,checking:null,personSeen:false,cupSeen:false,
-      facts:{trail:[],read:()=>evidence(door,at),mealSeated:evidence(false,at),observes:()=>false,seesNobody:after=>nobodyAfter!==null && nobodyAfter>after}});
+      facts:{trail:[],read:()=>evidence(door,at),mealSeated:evidence(false,at),observes:()=>false,seesNobody:(id,after)=>id==="entry" && nobodyAfter!==null && nobodyAfter>after}});
     tick(1000,true,null);
     const kitchen=sent.find(s=>s.op==="offer")!;
     expect(kitchen).toMatchObject({target_id:"entry"});
@@ -84,6 +84,18 @@ describe("집 안 관찰",()=>{
     expect(sent.filter(s=>s.op==="offer").map(s=>s.target_id)).toEqual(["entry"]);
     tick(5000,false,4500);tick(5100,false,4500);
     expect(sent.filter(s=>s.op==="offer").map(s=>s.target_id)).toEqual(["entry","meal"]);
+  });
+  it.each(["busy","request"] as const)("주방 입구에 도착한 뒤 그만·비상(%s)으로 멈추면 뒤에 찍힌 빈 사진으로 식탁 관찰 자리로 가지 않는다",why=>{
+    const sent:GoalIntent[]=[], w=new RoomWatch(i=>{sent.push(i);},portals);
+    const tick=(at:number,door:boolean,nobodyAfter:number|null)=>w.tick({now:at,rev:at,map,checking:null,personSeen:false,cupSeen:false,
+      facts:{trail:[],read:()=>evidence(door,at),mealSeated:evidence(false,at),observes:()=>false,seesNobody:(id,after)=>id==="entry" && nobodyAfter!==null && nobodyAfter>after}});
+    tick(1000,true,null);
+    const kitchen=sent.find(s=>s.op==="offer")!;
+    w.result({id:kitchen.id,target_id:"entry",at_ms:3000,evidence_rev:kitchen.rev,outcome:"arrived"});
+    if(why==="busy"){w.setBusy(true);tick(3500,false,null);w.setBusy(false);}
+    else w.interrupt();
+    tick(5000,false,4500);tick(5100,false,4500);
+    expect(sent.filter(s=>s.op==="offer").map(s=>s.target_id)).toEqual(["entry"]);
   });
   it("뚜렷한 동선은 자리 선택 없이 바로 방문한다. 재등장하면 방문을 거둔다",()=>{
     const r=setup();
