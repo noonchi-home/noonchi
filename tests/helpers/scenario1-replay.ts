@@ -4,7 +4,6 @@ import { readFileSync } from "node:fs";
 import { Outbox, BusNode, type Body, type Envelope, type TopicName } from "../../src/bus/index.js";
 import { Bag, replay } from "../../src/record/index.js";
 import { GoalTriggers, type TriggerFacts } from "../../src/goal/triggers.js";
-import { FAST_VLM_MS, loadObserveConfig, vlmStepMs } from "../../src/observe/pipeline.js";
 import { NO_VIEWER_MS, viewerAt } from "../../src/goal/tv-watch.js";
 import { startGoalNode } from "../../src/goal/start.js";
 import { managerRoutes } from "../../src/manage/node.js";
@@ -14,14 +13,9 @@ import { tasksFor } from "../../src/act/tasks.js";
 import { deviceRunner } from "../../src/act/devices.js";
 import { PlanDraft, resubmit } from "../../src/agent/planTools.js";
 import { memoryApprovals } from "../../src/agent/approval.js";
-import { walkingMap } from "../../src/layout/walk-guide.js";
 import { Policy } from "../../src/agent/policy.js";
 import { MemoryHub, SignalHub } from "../../src/devices/index.js";
-import { floorPlanFrom } from "../../src/layout/floor.js";
 import { roomAt } from "../../src/layout/route.js";
-import { loadScene } from "../../src/layout/scene.js";
-import { resolveHome } from "../../src/layout/homes.js";
-import { DEFAULT_TWIN_DIR } from "../../src/layout/twin-files.js";
 import { LOOK_HEIGHT_M, locateZone } from "../../src/layout/stations.js";
 import { WORLD_TICK_MS, WorldState } from "../../src/world/index.js";
 import { fsmStep } from "../../src/brain/decision.js";
@@ -32,9 +26,12 @@ import type { DeviceSpec } from "../../src/contract/devices.js";
 import type { WorldView, WorldDevice, WorldObject } from "../../src/contract/world.js";
 import type { Vec2 } from "../../src/contract/layout.js";
 import type { CameraView, SceneObservation } from "../../src/contract/observe.js";
-import { inView, ndc } from "../../src/world/place.js";
-import { projectionFromFov, yawPitchQuat } from "../../ui/src/phone/core/video-math.js";
+import { inView } from "../../src/world/place.js";
 import { testTracker } from "./tracker-ports.js";
+import {
+  OBSERVE, PHONE, VLM_LAG_MIN_MS, VLM_STEP_MS, POSE_MS, WALK_MPS, cameraAt, center, fact, floor, heldCupAt, map, nextVlmCapture, pathBetween, pathLength, personSight, scene, walkMap, walkProblem,
+} from "./home-realism.js";
+export { guideBetween, heldCupAt, map, personSight, scene, walkProblem } from "./home-realism.js";
 import { planContext } from "./planner.js";
 import { earlyTvEvidence, LiveScenario } from "../../scripts/scenario1-live.js";
 import { HistoryDb } from "../../src/brain/history/db.js";
@@ -48,11 +45,6 @@ type Variant = "normal" | "back" | "brief" | "manual" | "cadence_wrong" | "lag_m
 type Line = { at: number; kind: string; value?: string; frame?: string; response?: object; source: string; lag?: number; depart?: number };
 /** 재생에 넣은 사진: 촬영 시각(절대 ms), 그때 폰 자리(평면 m)와 사진 카메라. */
 export type Photo = { at: number; phone: Vec2; look: Vec2; camera: CameraView };
-/** 목련 집 장면(평면도·관찰 자리). */
-export const scene = loadScene(resolveHome(DEFAULT_TWIN_DIR, "mokryeon_180b"))!;
-/** 목련 집 관찰 자리·구역(twin/data/homes/mokryeon_180b/stations.json). */
-export const map = scene.stations,
-  floor = floorPlanFrom(scene);
 const table = map.surface_fronts.find((f) => f.surface_id.startsWith("dining_table"))!,
   sink = map.surface_fronts.find((f) => f.surface_id.startsWith("sink_counter"))!;
 const cupId = "cup_1",
@@ -60,11 +52,6 @@ const cupId = "cup_1",
   fridgeId = "fridge_bbc363a3";
 const tasks = tasksFor("noonchi"),
   epoch = { boot: "composed", home: "mokryeon_180b#1" };
-const fact = (value: string, at: number) => ({ value, at_ms: at, since_ms: at, certainty: "confirmed" as const });
-function center(id: string): Vec2 {
-  const ps = map.zones.find((z) => z.id === id)!.polygon;
-  return ps.reduce<Vec2>((p, q) => [p[0] + q[0] / ps.length, p[1] + q[1] / ps.length], [0, 0]);
-}
 const tvSpec: DeviceSpec = {
   id: tvId,
   label: "거실 TV",
@@ -86,18 +73,6 @@ if (raw[0].kind !== "metadata" || !raw[0].name.includes("composed"))
 const frames: { frame: string; scene: SceneObservation; view: CameraView }[] = JSON.parse(
   readFileSync(new URL("../fixtures/replay/wide-mug-v1.json", import.meta.url), "utf8"),
 );
-/** 폰 카메라: 가로 시험 영상(1920×1080)을 찍은 대로 세로 시야각 40°·16:9, 높이 1.15m, 10° 아래(영상 모드 주소 fov=40·pitch=-10·h=1.15).
- *  자리에 서면 그 자리의 바라볼 곳(look_at)을 비춘다. 녹화 장(wide-mug-v1)의 투영과 같아야 한다. */
-const PHONE = { fovDeg: 40, aspect: 16 / 9, pitchDeg: -10, heightM: 1.15 },
-  PHONE_PROJECTION = projectionFromFov(PHONE.fovDeg, PHONE.aspect);
-if (frames[0]?.view.projection.some((v, i) => Math.abs(v - PHONE_PROJECTION[i]!) > 1e-9))
-  throw Error("폰 카메라 투영이 녹화 장 투영과 다릅니다.");
-/** 사진에 사람이 찍히는 높이(m): 앉은 사람의 몸통. 이 점이 화면 안이어야 사진에 사람이 있다(사람 수). */
-const PERSON_M = 0.9;
-/** 발 자리는 발(바닥 점)이 화면 아래 끝 2%보다 위에 있어야 안다(src/world/state/people.ts FEET_EDGE 0.98 → NDC y −0.96). */
-const FEET_NDC_Y = -0.96;
-/** 손에 든 컵: 폰을 든 사람이 컵을 카메라 앞(수평 0.45m, 높이 0.95m)에 들어 올린다(손에 있음 녹화 장처럼). 이 점이 화면 안이어야 찍힌다. */
-const HAND = { aheadM: 0.45, heightM: 0.95 };
 /** 폰이 선 자리(eye 줄 값): 관찰 자리, 식탁 앞(table), 싱크대 앞(sink)과 그 자리의 바라볼 곳. */
 function spotOf(value: string | undefined): { position: Vec2; look: Vec2 } {
   const front = value === "table" ? table : value === "sink" ? sink : null;
@@ -105,79 +80,12 @@ function spotOf(value: string | undefined): { position: Vec2; look: Vec2 } {
   if (!s) throw Error("없는 폰 자리 " + value);
   return { position: s.position, look: s.look_at };
 }
-/** p에 서서 look 쪽을 보는 폰의 엔진 프레임 카메라(src/phone/session.ts viewAt과 같은 꼴, 트윈 좌표라 theta 0). */
-function cameraAt(p: Vec2, look: Vec2): CameraView {
-  const yaw = Math.atan2(-(look[0] - p[0]), -(look[1] - p[1]));
-  return {
-    origin: [p[0], PHONE.heightM, p[1]],
-    orientation: yawPitchQuat(yaw, PHONE.pitchDeg),
-    theta: 0,
-    projection: [...PHONE_PROJECTION],
-  };
-}
-/** 사람이 그 사진에 어떻게 찍히나: 몸통(PERSON_M)이 화면 안이면 보임(사람 수), 발(바닥 점)까지 화면 아래 끝보다 위에 보이면 발 자리·방도 안다. */
-export function personSight(camera: CameraView, p: Vec2): { visible: boolean; located: boolean } {
-  const visible = inView(camera, [p[0], PERSON_M, p[1]]);
-  const n = ndc(camera, [p[0], 0, p[1]]);
-  return { visible, located: visible && !!n && Math.abs(n[0]) <= 1 && n[1] >= FEET_NDC_Y && n[1] <= 1 };
-}
-/** 폰을 든 사람이 카메라 앞에 들어 올린 컵 자리(트윈 [x, 높이, y]): 폰 자리에서 보는 쪽으로 HAND.aheadM, 높이 HAND.heightM. */
-export function heldCupAt(phone: { position: Vec2; look: Vec2 }): [number, number, number] {
-  const dx = phone.look[0] - phone.position[0],
-    dz = phone.look[1] - phone.position[1],
-    d = Math.hypot(dx, dz) || 1;
-  return [phone.position[0] + (dx / d) * HAND.aheadM, HAND.heightM, phone.position[1] + (dz / d) * HAND.aheadM];
-}
 /** 그 자리에서 바라볼 곳을 비추는 폰의 카메라. */
 export function phoneCamera(value: string | undefined): CameraView {
   const { position, look } = spotOf(value);
   return cameraAt(position, look);
 }
 type Stop = { at: number; value: string; depart?: number };
-/** 앞 자리에서 다음 자리까지 걷는 길: 시스템이 폰에 보내는 안내 길(src/layout/walk-guide.ts plan, 문·경유점)과 같다. 길이 없으면 곧게. */
-const walkMap = walkingMap(floor, scene);
-function pathBetween(a: Vec2, b: Vec2): Vec2[] | null {
-  const guide = walkMap.plan(a, b, 0.5, true);
-  return guide ? [a, ...guide.remaining.map((p) => [p.position[0], p.position[2]] as Vec2)] : null;
-}
-/** 시스템이 그 두 자리 사이에 보내는 안내 길(가기 명령 guide와 같은 계산). */
-export const guideBetween = (a: Vec2, b: Vec2) => walkMap.plan(a, b, 0.5, true);
-/** 폰이 걸은 길(안내 길)이 가기 명령이 보낸 안내 길과 같은가. 다르거나 안내가 없으면(보류) 까닭 글, 같으면 null. */
-type GuideUpdate = { at: number; remaining: PlannedCommand["guide"] | null };
-export function walkProblem(from: Vec2, to: Vec2, guide: PlannedCommand["guide"] | null | undefined,
-  updates: readonly GuideUpdate[] = [], depart = 0, arrive = 0, walkLength?: number): string | null {
-  const path = pathBetween(from, to);
-  if (!path) return "걸을 안내 길 없음";
-  const initial = updates.findLast(u => u.at <= depart);
-  const first = initial ? initial.remaining : guide;
-  if (!first) return "보낸 안내 길 없음·보류";
-  const matches = (points: NonNullable<typeof guide>["remaining"], start: number) =>
-    start >= 1 && points.every((p, i) => {
-      const step = path[start + i];
-      return step && Math.hypot(p.position[0] - step[0], p.position[2] - step[1]) < 0.05;
-    });
-  if (first.remaining.length !== path.length - 1 || !matches(first.remaining, 1))
-    return "보낸 안내 길의 경유점이 걸은 길과 다름";
-  if (arrive <= depart) return null;
-
-  const length = walkLength ?? pathLength(path);
-  const travelled = (at: number) => length * (at - depart) / (arrive - depart);
-  const revisions = [{ at: depart, remaining: first }, ...updates.filter(u => u.at > depart && u.at < arrive)];
-  for (const [i, update] of revisions.entries()) {
-    const until = revisions[i + 1]?.at ?? arrive;
-    if (until <= update.at) continue;
-    const next = update.remaining;
-    if (!next) return "보낸 안내 길 없음·보류";
-    const start = path.length - next.remaining.length;
-    if (!matches(next.remaining, start)) return "바뀐 안내 길이 걸은 길과 다름";
-    const begin = pathLength(path.slice(0, start)), end = pathLength(path.slice(0, start + 1));
-    // 영상 폰은 문을 12cm 넘어가며, 다음 100ms 자세에서 문 통과를 확인한다.
-    if (begin - travelled(update.at) > 0.2 || travelled(until) - end > 0.2)
-      return "경유점을 넘은 때가 받은 안내 길과 다름";
-  }
-  return null;
-}
-const pathLength = (path: readonly Vec2[]) => path.slice(1).reduce((sum, p, i) => sum + Math.hypot(p[0] - path[i]![0], p[1] - path[i]![1]), 0);
 /** t(합성 기록 ms)에 폰이 있는 자리와 보는 곳. 다음 도착 줄의 출발(depart)부터 도착까지는 앞 자리에서 안내 길을 따라 같은 빠르기로 걸으며
  *  다음 경유점 쪽을 본다(영상 모드 followGuide처럼). 서 있을 때는 그 자리의 바라볼 곳을 본다. */
 type Leg = { from:Vec2; target:Vec2; end:Vec2; path:Vec2[] };
@@ -224,11 +132,8 @@ function phoneAt(stops: readonly Stop[], t: number): { position: Vec2; look: Vec
   return {position:legs[i]!.end,look:spotOf(stops[i]!.value).look};
 }
 const base = Date.UTC(2026, 10, 20, 12);
-/** 재생 길이(ms)와 폰 자세 간격(ms, ui/src/phone/core/ar.js SEND_MS). */
-const REPLAY_MS = 100000,
-  POSE_MS = 100,
-  /** 폰을 든 사람의 걷기(m/s, ui/src/phone/core/video-ar.js WALK_MPS). */
-  WALK_MPS = 0.8;
+/** 재생 길이(ms). */
+const REPLAY_MS = 100000;
 function makeBag(bag: Bag, variant: Variant): {
   left: number | null;
   photos: Photo[];
@@ -505,16 +410,6 @@ function makeBag(bag: Bag, variant: Variant): {
   return { left, photos, states, arrivals: stops.map((e) => ({ at: base + e.at, value: e.value, ...(e.depart !== undefined ? { depart: base + e.depart } : {}) })) };
 }
 
-/** VLM 사진 간격(src/observe/pipeline.ts frame.vlm): 앞 VLM 촬영 prev 뒤 엔진 프레임마다 보고, 처음으로 「그때 간격(빠름 1초·보통 2초)」 이상 지난 프레임.
- *  fast(t)는 그 시각의 src/server/home/observe.ts vlmFast와 같은 값이다. */
-function nextVlmCapture(prev: number, fast: (t: number) => boolean): number {
-  for (let t = prev + FAST_VLM_MS; ; t += OBSERVE.engineMs) if (t - prev >= (fast(t) ? FAST_VLM_MS : VLM_STEP_MS)) return t;
-}
-const OBSERVE = loadObserveConfig({}),
-  VLM_STEP_MS = vlmStepMs(OBSERVE),
-  /** 합성 기록 VLM 답 지연의 아래 끝(ms): 잰 평균은 nano 1.6초, mini 1.8초다. */
-  VLM_LAG_MIN_MS = 1000;
-
 /** 그 변형의 합성 기록으로 낸 World State(낸 때, rev, 집 사진 번호). */
 export function composedStates(variant: Variant) {
   return makeBag(Bag.open(":memory:"), variant).states;
@@ -683,7 +578,7 @@ export async function replayScenario(
           topLook: true as const,
           discardLeftover: discardLeftover(),
         });
-        const walk = walkingMap(floor, scene);
+        const walk = walkMap;
         const station = (id: string) => {
           const s = map.stations.find((s) => s.id === id);
           return s

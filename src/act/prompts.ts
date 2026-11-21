@@ -15,8 +15,18 @@ export const ASK_PROMPT: ActionPrompt = {
   ],
 };
 
-/** 질문 단계(ask)의 답 묶음: 모델은 묶음 이름만 고르고 답 단추·답 말은 이 글이다. clear_keep은 컵 치우기 질문(ASK_PROMPT)의 답이다. */
-export const ASK_CHOICES: Record<"clear_keep" | "yes_no", ActionChoice[]> = {
+/** 부름에 응한 뒤 묻는 「무엇을 도와드릴까요?」의 답: 물 한 잔이면 물 한 잔 가져다주기를 말 부탁 길로 시작하고, 괜찮아요면 끝낸다. */
+export const HELP_PROMPT: ActionPrompt = {
+  text: "무엇을 도와드릴까요?",
+  choices: [
+    { id: "water", label: "물 한 잔", words: ["물 한 잔", "물 가져", "물 좀"], reply: "알겠어요. 물 한 잔 가져다드릴게요" },
+    { id: "none", label: "괜찮아요", words: ["괜찮아", "괜찮아요", "아니"], reply: "알겠어요", whole: true },
+  ],
+};
+
+/** 질문 단계(ask)의 답 묶음: 모델은 묶음 이름만 고르고 답 단추·답 말은 이 글이다. clear_keep은 컵 치우기 질문(ASK_PROMPT), help는 부름에 응한 뒤 질문(HELP_PROMPT)의 답이다. */
+export const ASK_CHOICES: Record<"clear_keep" | "yes_no" | "help", ActionChoice[]> = {
+  help: HELP_PROMPT.choices,
   clear_keep: ASK_PROMPT.choices,
   yes_no: [
     { id: "yes", label: "네", words: ["네", "응"], reply: "알겠어요", whole: true },
@@ -24,8 +34,10 @@ export const ASK_CHOICES: Record<"clear_keep" | "yes_no", ActionChoice[]> = {
   ],
 };
 
-/** 묻기 답 → 말 부탁: 「사용자에게 물어보기」 계획이 이 답으로 끝나면 그 행동을 말 부탁 길로 시작한다. 그대로 둬요는 하지 않는다. */
-export const ASK_FOLLOW: Readonly<Record<string, string>> = { clear: "컵 치우기" };
+/** 묻기 답 → 말 부탁: 묻는 행동(ASK_FROM) 계획이 이 답으로 끝나면 그 행동을 말 부탁 길로 시작한다. 그대로 둬요·괜찮아요는 하지 않는다. */
+export const ASK_FOLLOW: Readonly<Record<string, string>> = { clear: "컵 치우기", water: "물 한 잔 가져다주기" };
+/** 질문 답을 말 부탁으로 잇는 행동: 컵을 치울지 묻기, 부름에 응해 무엇을 도울지 묻기. */
+export const ASK_FROM: readonly string[] = ["사용자에게 물어보기", "부름에 응하기"];
 
 /** 단계 명령 아래 「완료」 단추: 비전이 못 알아볼 때 사람이 지금 단계를 넘긴다. 말로 해도 같다. 다음 명령을 읽으므로 읽어 줄 글이 없다. */
 export const STEP_DONE: ActionChoice = { id: "done", label: "완료", words: ["완료", "다 했어", "다 했습니다"], reply: "", whole: true };

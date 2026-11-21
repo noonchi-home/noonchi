@@ -90,6 +90,8 @@ export class RoomWatch {
       this.visited.push(job.target_id);
   }
   setBusy(busy:boolean) { this.busy=busy;if (busy) this.interrupt(); }
+  /** 실행 쪽이 바쁜가(계획·비상·부탁·복귀, /act/work). */
+  isBusy() { return this.busy; }
   revoked(id:string,now:number) {
     const job=this.pending;
     if(job?.id!==id) return;

@@ -63,7 +63,10 @@ export function homeShotViews(home: Home, scene: Scene, holdout = false) {
   const catalog = loadCatalog(home.catalogDir);
   const size = (type: string) => catalog.get(type)?.footprint;
   const front = { surface_id: "desk_small_ce7e768b", room: "bed_sw", position: desk.stand, look_at: desk.look, near_m: 0.32 };
-  validateStations({ ...scene.stations, surface_fronts: [...scene.stations.surface_fronts, front] }, scene, size);
+  // 집 자료에 책상 앞 자리가 이미 있으면(시나리오 2) 그것을 쓰고, 없을 때만 촬영 자리로 더해 검사한다
+  const fronts = scene.stations.surface_fronts.some(f => f.surface_id === front.surface_id)
+    ? scene.stations.surface_fronts : [...scene.stations.surface_fronts, front];
+  validateStations({ ...scene.stations, surface_fronts: fronts }, scene, size);
   const { floor, walkable } = walkingGeometry(scene, size);
   const walk = walkingMap(floor, scene, size);
   for (const point of walkingSpots) {

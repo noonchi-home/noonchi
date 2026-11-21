@@ -3,7 +3,7 @@
 // 칸은 그 잇기가 채우기 전에는 읽지 않는다. 말풍선 카드 speak는 say.ts가 채우기 전까지 아무것도 하지 않는다.
 import { ProgressReplies, modeNow, type ExecutionTracker, type LessonStore, type Looker, type Mode, type PlanHub, type loadActConfig } from "../../act/index.js";
 import type { Agent, ApprovalStore, Observer, PlaceInfo, Planner, Policy } from "../../agent/index.js";
-import type { BrainPlans, MakePlan, Decider, PersonLane, ThoughtFeed } from "../../brain/index.js";
+import type { BrainPlans, MakePlan, Decider, HelpRoutine, PersonLane, ThoughtFeed } from "../../brain/index.js";
 import type { BrainLog, SeenEvent } from "../../contract/events.js";
 import type { PendingGoal } from "../../contract/goal.js";
 import type { HabitFsm } from "../../contract/habit.js";
@@ -85,6 +85,8 @@ export class HomeCore {
   talk = { inflight: 0, at: Number.NEGATIVE_INFINITY };
   // 관찰 흐름·World State(observe.ts)
   surfaces!: () => PlaneSurface[];
+  /** 그날 기억에 화살표가 든 도움 습관(observe.ts가 단다). 판단이 습관 화살표를 그 시각 창 안에서만 행동으로 낸다. */
+  routines: () => HelpRoutine[] = () => [];
   world: WorldState | null = null;
   pipeline: ObservationPipeline | null = null;
   // 노드(src/bus): 집 세대, 인식·집 상태·거울(act)·폰·가전 노드
@@ -136,6 +138,8 @@ export class HomeCore {
   lookSay: { place: string; atMs: number } | null = null;
   reflected: { atMs: number; learned: number; active: number } | null = null;
   serviceSaid: { text: string; atMs: number } | null = null;
+  /** 마지막 도움 기록 글과 그 시각(메시지 상자, src/act/help-record.ts). */
+  helpSaid: { text: string; atMs: number } | null = null;
   // 앱(index.ts)
   app: TwinHomeApp | undefined;
 

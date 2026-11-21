@@ -32,11 +32,12 @@ export function walkingGeometry(scene: SceneJson, footprintOf?: (type: string)=>
     return [{p:o.plan.position,cos:Math.cos(yaw),sin:Math.sin(yaw),
       w:dims[0]*(o.scale?.[0]??1)/2+clearance,d:dims[1]*(o.scale?.[2]??1)/2+clearance}];
   });
-  const walkable = (room: string,p: Vec2, opening?:{wall?:string}) => {
+  /** furniture=false: 벽·방만 본다(가구 칸이 막혀 길을 못 찾을 때 벽을 지나지 않는 길을 고르는 데 쓴다). */
+  const walkable = (room: string,p: Vec2, opening?:{wall?:string}, furniture = true) => {
     if ((!opening && !insidePolygon(p,rooms.get(room)??[])) || !floor.robot.reachable.includes(room)) return false;
     if (solids.some(s=>(!opening?.wall || s.id!==opening.wall) && insidePolygon(p,s.polygon))) return false;
     if (walls.some(w=>(!opening?.wall || w.id!==opening.wall) && edgeDistance(p,w.a,w.b) < clearance+(w.thickness??0)/2)) return false;
-    return !boxes.some(box=>{
+    return !furniture || !boxes.some(box=>{
       const dx=p[0]-box.p[0], dz=p[1]-box.p[1];
       return Math.abs(dx*box.cos-dz*box.sin)<box.w && Math.abs(dx*box.sin+dz*box.cos)<box.d;
     });
@@ -76,20 +77,35 @@ export function walkingMap(floor: FloorPlan, scene: SceneJson, footprint?: (type
   }
   const doorRadius = (portal: Portal) => (widths.get(portal.id) ?? 0) / 2 - 0.18;
   const room = (p: Vec2) => roomAt(floor, p);
-  function clear(a: Vec2, b: Vec2, inRoom: string, gates: Portal[] = []) {
-    if(!furnitureClear(a,b)) return false;
+  /** p가 그 문의 문간인가: 문 점 가까이(원래 규칙), 또는 문이 난 벽을 따라 문 점에서 doorRadius 안이고 그 벽의 여유 폭 안(문 앞에서 곧게 들어서는 길).
+   *  문 점 둘레만 보면 벽 여유 폭(0.18m + 벽 두께 절반)이 문 원보다 넓어 문 앞에서 문까지 곧게 갈 수 없었다(곧은 선이 벽을 지나는 안내가 됐다). */
+  function inDoorway(p: Vec2, g: Portal): boolean {
+    const r = doorRadius(g);
+    if (distance(p, g.point) <= Math.min(0.3, r)) return true;
+    const wallId = doors.find((d) => d.id === g.id)?.wall;
+    if (!wallId || r <= 0) return false;
+    return walls.some((w) => {
+      if (w.id !== wallId) return false;
+      const dx = w.b[0] - w.a[0], dz = w.b[1] - w.a[1], len = Math.hypot(dx, dz);
+      if (!len) return false;
+      const along = (q: Vec2) => ((q[0] - w.a[0]) * dx + (q[1] - w.a[1]) * dz) / len;
+      return edgeDistance(g.point, w.a, w.b) < 0.05 && Math.abs(along(p) - along(g.point)) <= r && edgeDistance(p, w.a, w.b) <= clearance + (w.thickness ?? 0) / 2 + 0.02;
+    });
+  }
+  function clear(a: Vec2, b: Vec2, inRoom: string, gates: Portal[] = [], furniture = true) {
+    if(furniture && !furnitureClear(a,b)) return false;
     const n = Math.max(1, Math.ceil(distance(a, b) / 0.06));
     for (let i = 0; i <= n; i++) {
       const p: Vec2 = [a[0] + ((b[0] - a[0]) * i) / n, a[1] + ((b[1] - a[1]) * i) / n];
-      const opening = gates.find((g) => distance(p, g.point) <= Math.min(0.3, doorRadius(g)));
-      if (!walkable(inRoom, p, opening ? { wall: doors.find((d) => d.id === opening.id)?.wall } : undefined))
+      const opening = gates.find((g) => inDoorway(p, g));
+      if (!walkable(inRoom, p, opening ? { wall: doors.find((d) => d.id === opening.id)?.wall } : undefined, furniture))
         return false;
     }
     return true;
   }
   // Search only when the direct indoor segment is blocked. Every shortcut is tested again.
-  function indoor(a: Vec2, b: Vec2, inRoom: string, gates: Portal[]): Vec2[] | null {
-    const pass = (x: Vec2, y: Vec2) => clear(x, y, inRoom, gates);
+  function indoor(a: Vec2, b: Vec2, inRoom: string, gates: Portal[], furniture = true): Vec2[] | null {
+    const pass = (x: Vec2, y: Vec2) => clear(x, y, inRoom, gates, furniture);
     if (pass(a, b)) return [b];
     if (!pass(a, a) || !pass(b, b)) return null;
     const key = (x: number, y: number) => x + "," + y;
@@ -149,6 +165,16 @@ export function walkingMap(floor: FloorPlan, scene: SceneJson, footprint?: (type
     }
     return best;
   }
+  /** 문 앞 자리: 그 방 쪽에서 문 점까지 벽을 지나지 않고 곧게 갈 수 있는 점(문 점에서 0.5m). 가구는 보지 않는다. */
+  function doorFront(gate: Portal, inRoom: string, gates: Portal[], from: Vec2): Vec2 | null {
+    let best: Vec2 | null = null;
+    for (let k = 0; k < 16; k++) {
+      const q: Vec2 = [gate.point[0] + 0.5 * Math.cos((k * Math.PI) / 8), gate.point[1] + 0.5 * Math.sin((k * Math.PI) / 8)];
+      if (room(q) !== inRoom || !clear(q, gate.point, inRoom, gates, false)) continue;
+      if (!best || distance(q, from) < distance(best, from)) best = q;
+    }
+    return best;
+  }
   // A bearing names a doorway or standing point; it makes no claim that the straight segment is walkable.
   const bearings = new WeakSet<Point>();
   function plan(from: Vec2, target: Vec2, near_m: number, exact: boolean, hint?: Vec2[]): TwinWalkGuide | null {
@@ -158,6 +184,20 @@ export function walkingMap(floor: FloorPlan, scene: SceneJson, footprint?: (type
     let current: string = origin;
     const end = exact ? path : approach(path);
     if (end.length !== path.length) return null;
+    // 물건 앞 설 자리(approach)가 가구 여유 폭 안이면 0.6m 안에서 설 수 있는 가장 가까운 점으로 옮긴다(냉장고처럼 앞 자리가 없는 물건).
+    if (!exact) {
+      const n = end.length - 1, at = end[n]!, inRoom = room(at);
+      if (inRoom && !walkable(inRoom, at)) {
+        let best: Vec2 | null = null;
+        for (let x = -12; x <= 12; x++)
+          for (let z = -12; z <= 12; z++) {
+            const q: Vec2 = [Math.round((at[0] + x * 0.05) * 1000) / 1000, Math.round((at[1] + z * 0.05) * 1000) / 1000];
+            if (distance(q, at) > 0.6 || (best && distance(q, at) >= distance(best, at))) continue;
+            if (room(q) === inRoom && walkable(inRoom, q)) best = q;
+          }
+        if (best) end[n] = best;
+      }
+    }
     // Legs are cumulative. Only an unchanged segment with the same portals and endpoint can supply the stand.
     if (hint && hint.length === end.length && hint.every((p, i) => distance(p, end[i]!) < 0.01) && !exact)
       end[end.length - 1] = hint[hint.length - 1]!;
@@ -173,7 +213,18 @@ export function walkingMap(floor: FloorPlan, scene: SceneJson, footprint?: (type
       const gates = [lastGate,gate].filter((g):g is Portal=>!!g);
       const raw = end[i-1]!;
       const start = i===1 ? nearestStart(raw,current,gates) : raw;
-      const grid = start && indoor(start,p,current,gates);
+      let grid = start && indoor(start,p,current,gates);
+      // 가구 칸으로 길이 막히면 벽만 보는 길을, 그것도 없으면 문 앞 자리를 지난다: 곧은 선이 벽을 지나는 안내를 내지 않는다.
+      // 이 점들은 가구를 지날 수 있어 모두 bearing이다(지나는 곧은 선을 걸을 수 있다고 하지 않는다).
+      let loose = false;
+      if (!grid) {
+        grid = indoor(start ?? raw, p, current, gates, false);
+        if (!grid && gate) {
+          const front = doorFront(gate, current, gates, start ?? raw);
+          if (front) grid = [front, p];
+        }
+        loose = !!grid;
+      }
       const points = grid ?? [p];
       const firstIndex = remaining.length;
       for (let j = 0; j < points.length - 1; j++) {
@@ -186,7 +237,8 @@ export function walkingMap(floor: FloorPlan, scene: SceneJson, footprint?: (type
           ? { kind: "portal", id: gate.id, from_room: current, to_room: next, position }
           : { kind: "stand", room: current, position }
       );
-      if (!grid || start !== raw) bearings.add(remaining[firstIndex]!);
+      if (loose) for (let k = firstIndex; k < remaining.length; k++) bearings.add(remaining[k]!);
+      else if (!grid || start !== raw) bearings.add(remaining[firstIndex]!);
       current = next;
       lastGate = gate;
     }

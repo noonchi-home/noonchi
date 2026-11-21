@@ -157,8 +157,13 @@ export interface HouseholdPhoto {
     person: { position:[number,number]; room:string|null; seated:boolean|null; attention:"toward_tv"|"elsewhere"|"unknown" } | null;
   } | null;
 }
+/** 전체 사진 VLM 답이 온 사진에 윗면 가운데가 들어 있던 트윈 면(눈과 같은 방). seen_ms는 그 사진의 촬영 시각이다.
+ *  그 면 위 물건은 objects가 말한다: 마실 것이 없으면 PAM 글에 「그 면 위 마실 것 없음」을 쓴다(src/world/text.ts). */
+export interface WorldSurfaceSeen { id: string; label: string; room: string | null; center: [number, number]; seen_ms: number }
 export interface WorldView {
   household_photo?: HouseholdPhoto;
+  /** 본 트윈 면(본 적 없으면 없음). */
+  surfaces_seen?: WorldSurfaceSeen[];
   person_trail?: { position: [number,number]; room: string | null; at_ms: number }[];
   at_ms: number;
   objects: WorldObject[];

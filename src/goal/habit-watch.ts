@@ -1,0 +1,38 @@
+// 배운 도움 습관의 시각 계기(시나리오 2): 습관 시각(가운데 −5분 ~ +폭)이 되면 부르지 않아도 그 자리를 보는 관찰 자리로 확인하러 간다(하루 한 번).
+// 가서 본 관찰(공부 중·마실 물 없음)로 판단(PAM)이 배운 화살표의 행동을 고른다. 방문은 사용자 찾기(RoomWatch)와 같은 /goal/intent offer이고 결과는 받지 않는다.
+import type { GoalIntent } from "../contract/machines.js";
+import type { StationMap } from "../contract/stations.js";
+import { WATER_ACTION } from "../act/tasks.js";
+import { minuteOfDay, type HelpRoutine } from "../brain/index.js";
+import { josa } from "../shared/korean.js";
+
+/** 가운데 시각보다 이만큼(분) 먼저부터 확인하러 간다. */
+export const HABIT_LEAD_MIN = 5;
+/** 방문 기한(ms). */
+const VISIT_MS = 60_000;
+/** 행동 → 「평소 <무엇>을 찾는 시간이에요」의 무엇. */
+const WANT: Record<string, string> = { [WATER_ACTION]: "물" };
+
+/** 습관으로 확인하러 갈 때 생각 말풍선 글. */
+export const habitNote = (r: Pick<HelpRoutine, "action" | "place_label">): string =>
+  `평소 ${josa(WANT[r.action] ?? r.action, "을/를")} 찾는 시간이에요. ${josa(r.place_label, "을/를")} 확인할게요.`;
+
+export class HabitWatch {
+  private serial = 0;
+  private fired = new Set<string>();
+  constructor(private readonly send: (i: GoalIntent) => void) {}
+
+  tick(i: { now: number; rev: number; map: StationMap | null; routines: readonly HelpRoutine[]; offsetMinutes: number; busy: boolean }) {
+    if (!i.map || i.busy) return;
+    const day = new Date(i.now + i.offsetMinutes * 60_000).toISOString().slice(0, 10);
+    const minute = minuteOfDay(i.now, i.offsetMinutes);
+    for (const r of i.routines) {
+      const key = JSON.stringify([day, r.action, r.place]);
+      if (this.fired.has(key) || minute < r.center_min - HABIT_LEAD_MIN || minute > r.center_min + r.window_min) continue;
+      const station = i.map.stations.find((s) => s.roles.includes("observe") && s.surfaces.includes(r.place));
+      if (!station) continue;
+      this.fired.add(key);
+      this.send({ op: "offer", kind: "visit", id: `habit:${++this.serial}`, rev: i.rev, goal_id: null, target_id: station.id, until_ms: i.now + VISIT_MS, note: habitNote(r) });
+    }
+  }
+}

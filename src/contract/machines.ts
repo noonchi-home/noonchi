@@ -12,7 +12,9 @@ export interface TriggerFact {
 }
 
 export type HouseholdAction =
-  | { kind:"visit" | "tv_off" | "tv_on" }
+  /** note: 이 방문을 정한 까닭 한 줄(배운 습관으로 확인하러 갈 때 「평소 물을 찾는 시간이에요. 책상을 확인할게요.」). 생각 말풍선에 올린다. */
+  | { kind:"visit"; note?:string }
+  | { kind:"tv_off" | "tv_on" }
   | { kind:"choose_station"; candidates:string[]; direction:string; visited:string[] };
 export type HouseholdOffer = HouseholdAction & { id:string; rev:number; until_ms:number; target_id:string; goal_id:string|null };
 export type GoalIntent = (HouseholdOffer & {op:"offer"}) | {op:"withdraw";id:string;rev:number};

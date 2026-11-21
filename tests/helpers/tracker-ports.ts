@@ -42,6 +42,7 @@ export type TrackerFixture = Omit<TrackerOptions, "state" | "layout" | "phone" |
   log?: TrackerOptions["events"]["log"];
   emit: TrackerOptions["events"]["emit"];
   thought?: TrackerOptions["events"]["thought"];
+  help?: TrackerOptions["events"]["help"];
   handDevices?: TrackerOptions["appliances"]["handDevices"];
   devices?: TrackerOptions["appliances"]["run"];
 };
@@ -56,7 +57,7 @@ export function testTracker(options: TrackerFixture): ExecutionTracker {
     meal, onGoal, goalWorld, prepareGoal, reuse, goalUpdate,
     offerSpeech, cancelSpeech,
     strayed, stalled, lookContents, topReady, spotReady,
-    log, emit, thought,
+    log, emit, thought, help,
     handDevices, devices,
     ...optionsOnly
   } = options;
@@ -70,7 +71,7 @@ export function testTracker(options: TrackerFixture): ExecutionTracker {
     goals: { meal, publish: onGoal, view: goalWorld, prepare: prepareGoal, reuse, update: goalUpdate },
     manager: { offerSpeech, cancelSpeech },
     observe: { strayed, stalled, lookContents, topReady, spotReady },
-    events: { log, emit, thought },
+    events: { log, emit, thought, help },
     appliances: { handDevices, run: devices },
   });
 }

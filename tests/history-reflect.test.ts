@@ -312,7 +312,8 @@ describe("반성", () => {
       expect(r).toMatchObject({ ok: true });
       const kinds = list.mock.calls.map((c) => c[0].kinds ?? []);
       expect(kinds.some((k) => k.includes("execution") && k.includes("device") && !k.includes("detection"))).toBe(false);
-      expect(list.mock.calls.some((c) => c[0].since !== undefined)).toBe(false);
+      // 도움 습관(help 줄, 부분 색인 idx_help_at)만 기간으로 읽는다
+      expect(list.mock.calls.some((c) => c[0].since !== undefined && JSON.stringify(c[0].kinds) !== JSON.stringify(["help"]))).toBe(false);
     });
 
     it("거르기 결과가 기억 모양 검사에 걸리면 반성은 실패로 남고 판본은 늘지 않는다", async () => {

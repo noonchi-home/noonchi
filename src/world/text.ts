@@ -2,7 +2,7 @@
 import type { Facet, WorldChange, WorldFact, WorldView } from "../contract/world.js";
 import { CHANGE_TEXT, EYE_TEXT, GUESS, OBJECT_NAME, OUT_OF_VIEW_NOW, PLACE_UNKNOWN, ROOM_UNKNOWN, STATE_TEXT, dayText, fixtureName, inBasin, objectName, onSurface } from "./labels.js";
 import { RELATED_KINDS } from "./relations.js";
-import { FACT_FRESH_MS, NOW_FACETS, STATES, type StateKey, type Target } from "./vocab.js";
+import { DRINKWARE, FACT_FRESH_MS, NOW_FACETS, STATES, type StateKey, type Target } from "./vocab.js";
 import { headWithin } from "../shared/cut.js";
 
 export interface TimedLine { atMs: number; text: string }
@@ -50,6 +50,8 @@ export const PAM_TEXT_MAX = 20_000;
 /** 오래 이어진 시간: 1분 아래는 초째, 그 위는 분째. */
 const lasting = (ms: number) => (ms < 60_000 ? `${Math.max(0, Math.round(ms / 1000))}초째` : `${Math.floor(ms / 60_000)}분째`);
 
+/** 사람 곁 면: 사람 자리에서 면 가운데까지 이만큼(m) 안(책상 의자·식탁 의자에서 그 면 가운데는 0.5~1m). */
+const SURFACE_NEAR_M = 1.5;
 /** 바뀐 지 이만큼 안 된 가전은 꺼짐·멈춤이어도 [지속] 줄에 둔다. */
 const RECENT_DEVICE_MS = 600_000;
 /** 사람 [지속] 사실 줄의 면 순서. 순간 동작은 변화 줄로만 낸다. */
@@ -109,6 +111,14 @@ export function textFromWorld(world: WorldView, recent: readonly WorldChange[], 
   for (const k of PERSON_ORDER) {
     const f = p.visible ? current("person", k, p.facts[k], o.nowMs) : undefined;
     if (f) facts.push(`${CHANGE_TEXT.state(OBJECT_NAME.person!, f.value)}: ${at(f.since_ms)}부터 ${lasting(o.nowMs - f.since_ms)}`);
+  }
+  // 사람 곁(같은 방, 면 가운데가 SURFACE_NEAR_M 안) 면을 방금(FACT_FRESH_MS 안) 본 사진에 그 면 위 컵·병이 없으면 「그 면 위 마실 것 없음」
+  if (p.visible && p.position) {
+    for (const s of world.surfaces_seen ?? []) {
+      if (o.nowMs - s.seen_ms > FACT_FRESH_MS || s.room !== p.room || Math.hypot(s.center[0] - p.position[0], s.center[1] - p.position[1]) > SURFACE_NEAR_M) continue;
+      if (world.objects.some((x) => x.status !== "gone" && x.surface === s.id && (DRINKWARE as readonly string[]).includes(x.cls))) continue;
+      facts.push(`${CHANGE_TEXT.noDrink(s.label)}: ${at(s.seen_ms)} 확인`);
+    }
   }
   for (const d of world.devices.filter((x) => x.status && (x.active || RELATED_KINDS.has(x.kind) || (x.event_ms !== null && o.nowMs - x.event_ms <= RECENT_DEVICE_MS)))) {
     const from = d.event_ms ?? d.changed_ms;

@@ -35,7 +35,7 @@ import { DEVICE_STATES } from "../src/world/vocab.js";
 import { cupPlan } from "./helpers/cup-plan.js";
 import { smallFloor } from "./helpers/floor.js";
 import { startFakePamLlm, pamClientFor } from "./helpers/pam.js";
-import { CUP_SCRIPTS, FILL_SCRIPTS, microwaveScripts, microwaveSteps, ramenScripts, ramenSteps, cupSteps, fillSteps, idsFrom, planCalls, planContext, startFakePlanner, testPlanner, type FakePlanner, type PlanScript } from "./helpers/planner.js";
+import { CUP_SCRIPTS, FILL_SCRIPTS, microwaveScripts, microwaveSteps, ramenScripts, ramenSteps, cupSteps, fillSteps, waterSteps, idsFrom, planCalls, planContext, startFakePlanner, testPlanner, type FakePlanner, type PlanScript } from "./helpers/planner.js";
 import { heardAtOf } from "./helpers/ws.js";
 
 // 작은 집: 복도(hall)·주방(kitchen)·후면 발코니(balcony, 바닥 −0.1m라 로봇 이동 가능 방이 아님). 세탁기·건조기는 발코니
@@ -238,6 +238,11 @@ describe("계획 모드: 컵 치우기", () => {
     expect(at).toBeGreaterThan(0);
     // 예의 네 단계는 submit_plan steps 한 칸 JSON 그대로이고 시험 대본과 같다(동작·물건 이름·조건)
     expect(lines.slice(at + 1, at + 5).map((l) => JSON.parse(l.replace(/^\d\. /, "")))).toEqual(fillSteps({ fridge: "fridge_1", table: "table_1", cup: "cup_1", drink: "물" }));
+    // 안 보인 물건을 다루는 따르기·들기·놓기도 자리 대상·item·follow 없는 종류 조건으로 쓴다
+    expect(unseen).toContain("World State에 없는 물건(아직 안 보인 컵 등)을 다루는 다른 단계(따르기·들기·놓기)도 같다: target은 그 물건이 있거나 놓일 자리(평면도 id), pick·place에는 item(물건 이름)을 꼭 쓰고, until에는 종류 이름을 follow 없이 쓴다.");
+    const water = lines.indexOf("예(아직 안 보인 컵에 물 따라 가져다주기, 냉장고 fridge_1, 싱크대 sink_1(컵이 아직 안 보임), 책상 desk_1). submit_plan steps:");
+    expect(water).toBeGreaterThan(0);
+    expect(lines.slice(water + 1, water + 8).map((l) => JSON.parse(l.replace(/^\d\. /, "")))).toEqual(waterSteps({ fridge: "fridge_1", sink: "sink_1", desk: "desk_1" }));
   });
 
   it("가짜 모델의 도구 호출로 만든 물 채워 주기 계획은 네 명령·조건 그대로다", async () => {

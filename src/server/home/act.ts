@@ -4,7 +4,7 @@ import { viewerAt } from "../../goal/index.js";
 import { ExecutionTracker, LessonStore, Looker, PlanHub, emitRobotCommand, checkDecision, checkPlan, deviceRunner, lessonsPath, loadActConfig, pamTasks } from "../../act/index.js";
 import { lookTargets, taskOf, type TaskSpec } from "../../act/tasks.js";
 import { deviceViews, placesOf, resubmit, type PlaceInfo, type PlanAhead, type PlanContext } from "../../agent/index.js";
-import { Decider, PamClient, PersonLane, dailyMemory, habitView, lastStoredThoughts, memoryForDay, pamSettings, thoughtFeed, type FsmMemory } from "../../brain/index.js";
+import { Decider, PamClient, PersonLane, dailyMemory, routineAllows, habitView, lastStoredThoughts, memoryForDay, pamSettings, thoughtFeed, type FsmMemory } from "../../brain/index.js";
 import type { BrainLog, DecisionRecord } from "../../contract/events.js";
 import type { PendingGoal } from "../../contract/goal.js";
 import type { HabitFsm } from "../../contract/habit.js";
@@ -163,6 +163,7 @@ export function startAct(core: HomeCore): (event: BrainLog) => void {
     // 행동 중 기다리기·기기 단계 동안은 PAM을 부르지 않는다(실행 추적이 조건을 본다)
     hold: () => core.brainStatus?.hold ?? false,
     keepHeard: () => core.keepHeard,
+    edgeAllowed: (edge, atMs) => routineAllows(core.routines(), edge, atMs, history.db.offsetMinutes),
     // 판단 → 시간 줄 사람 줄 → 계획 → 실행 전 검사 → 실행 추적(src/act/)
     onDecision: (d) => {
       core.person?.onDecision(d);
@@ -374,6 +375,12 @@ export function startAct(core: HomeCore): (event: BrainLog) => void {
       log: ctx.log,
       // 찾기 상태 줄은 생각 말풍선에 모델 없이 바로 올린다
       thought: (text, decisionId) => feed.note(text, decisionId),
+      // 도움 기록: 기록 DB help 줄(여러 날 모아 습관을 찾는다)과 메시지 상자 20초
+      help: (record) => {
+        history.db.add("help", record.at_ms, record.text, { subject: record.action, data: record });
+        core.helpSaid = { text: record.text, atMs: Date.now() };
+        core.speak();
+      },
     },
     appliances: {
       run: devices,

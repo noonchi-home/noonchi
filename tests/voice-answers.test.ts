@@ -9,8 +9,11 @@ describe("실제 폰 질문은 말로 답할 수 있다", () => {
   it.each(Object.entries(QUESTION_CHOICES))("%s: 답마다 그 글자로 말하면 그 답이다", (_, choices) => {
     for (const c of choices) expect(matchChoice(c.label, choices)?.id, c.label).toBe(c.id);
   });
-  it("묶음에는 지금 쓰는 질문 답이 다 있다(물어보기 답 묶음·승인·다시 묻기·남은 음료 질문)", () => {
-    expect(Object.keys(QUESTION_CHOICES).sort()).toEqual(["again", "approve", "clear_keep", "leftover", "yes_no"]);
+  it("묶음에는 지금 쓰는 질문 답이 다 있다(물어보기 답 묶음·승인·다시 묻기·남은 음료 질문·도울 일 질문)", () => {
+    expect(Object.keys(QUESTION_CHOICES).sort()).toEqual(["again", "approve", "clear_keep", "help", "leftover", "yes_no"]);
+    // 시나리오 2: 부름에 응한 뒤 「무엇을 도와드릴까요?」에 「물 한 잔만 가져다줘」·「괜찮아」로 답한다
+    expect(matchChoice("물 한 잔만 가져다줘", QUESTION_CHOICES.help!)?.id).toBe("water");
+    expect(matchChoice("괜찮아", QUESTION_CHOICES.help!)?.id).toBe("none");
     // 2026-11-20 사용자 고른 답: 컵 안에 음료가 남았으면 버려도 될지 묻는다(치워 주세요·그대로 둬요, 말로도)
     expect(QUESTION_CHOICES.leftover!.map((c) => c.label)).toEqual(["치워 주세요", "그대로 둬요"]);
     expect(matchChoice("치워 주세요", QUESTION_CHOICES.leftover!)?.id).toBe("clear");

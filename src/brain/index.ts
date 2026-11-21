@@ -16,3 +16,5 @@ export { type ThoughtFeed, decisionLines, lastStoredThoughts, storeThought, thou
 
 export { BrainPlans, NightReflection, dailyMemory, planningRoutes, type MakePlan } from "./node.js";
 export { decisionLog } from "./decide.js";
+export { findRoutines, minuteOfDay, routineAllows, routineEdge, withRoutines, ROUTINE_WINDOW_MIN, STUDY_STATE, type HelpRoutine } from "./history/routines.js";
+export { readDayMemory } from "./history/reflect.js";

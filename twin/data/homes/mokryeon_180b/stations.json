@@ -21,6 +21,7 @@
   "surface_fronts": [
     {"surface_id":"sink_counter_kitchen","room":"kitchen","position":[6.52,0.693],"look_at":[5.86,0.693],"near_m":0.32},
     {"surface_id":"dining_table_978b20c7","room":"living","position":[9.96,5.15],"look_at":[9.9612,3.9242],"near_m":0.35},
-    {"surface_id":"sofa_a848b595","room":"living","position":[8.25,9.4],"look_at":[7.3864,9.8138],"near_m":0.32}
+    {"surface_id":"sofa_a848b595","room":"living","position":[8.25,9.4],"look_at":[7.3864,9.8138],"near_m":0.32},
+    {"surface_id":"desk_small_ce7e768b","room":"bed_sw","position":[5.5,11.7],"look_at":[6.2357,11.7339],"near_m":0.35}
   ]
 }

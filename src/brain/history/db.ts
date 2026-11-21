@@ -11,7 +11,7 @@ export type { DecisionRow, HistoryKind, HistoryRow } from "../../contract/histor
 
 /** 기록 종류 전부(GET /api/history의 kinds 검사). */
 export const HISTORY_KINDS: readonly HistoryKind[] = [
-  "device", "detection", "vlm", "yolo", "world", "pam_text", "mode", "decision", "plan", "execution", "reflection", "feedback", "photo", "link", "trigger", "look", "thought", "service", "bus_gap", "goal", "planner", "person", "robot", "safety", "manager", "household",
+  "device", "detection", "vlm", "yolo", "world", "pam_text", "mode", "decision", "plan", "execution", "reflection", "feedback", "photo", "link", "trigger", "look", "thought", "service", "bus_gap", "goal", "planner", "person", "robot", "safety", "manager", "household", "help",
 ];
 
 const SCHEMA = `
@@ -20,6 +20,7 @@ CREATE TABLE IF NOT EXISTS events (id INTEGER PRIMARY KEY, at_ms INTEGER NOT NUL
 CREATE INDEX IF NOT EXISTS idx_events_at ON events(at_ms);
 CREATE INDEX IF NOT EXISTS idx_household_photos_at ON events(at_ms) WHERE kind='household' AND json_extract(data,'$.event')='photo';
 CREATE INDEX IF NOT EXISTS idx_events_day_kind ON events(day, kind);
+CREATE INDEX IF NOT EXISTS idx_help_at ON events(at_ms) WHERE kind='help';
 CREATE TABLE IF NOT EXISTS memories (version INTEGER PRIMARY KEY, created_ms INTEGER NOT NULL, day TEXT, applies_day TEXT, kind TEXT NOT NULL, memory TEXT NOT NULL, source TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS photos (id TEXT PRIMARY KEY, at_ms INTEGER NOT NULL, path TEXT NOT NULL, origin TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS bus_seen (topic TEXT NOT NULL, grp TEXT NOT NULL, msg_key TEXT NOT NULL, msg TEXT NOT NULL, boot TEXT NOT NULL, PRIMARY KEY (topic, grp, msg_key, msg));

@@ -106,7 +106,7 @@ const isObj = (v: unknown): v is Record<string, unknown> => typeof v === "object
 const isNum = (v: unknown) => typeof v === "number" && Number.isFinite(v);
 /** 최상위 칸이 이 표의 칸뿐인가(사진 칸 jpeg·jpeg_b64 같은 모르는 칸이 없다). */
 const onlyKeys = (v: Record<string, unknown>, keys: ReadonlySet<string>) => Object.keys(v).every((k) => keys.has(k));
-const VIEW_KEYS = ["at_ms", "objects", "sightings", "person", "fixtures", "devices", "eye", "frame_ms", "vlm_missing", "yolo_missing", "person_trail", "household_photo"] as const satisfies readonly (keyof WorldView)[];
+const VIEW_KEYS = ["at_ms", "objects", "sightings", "person", "fixtures", "devices", "eye", "frame_ms", "vlm_missing", "yolo_missing", "person_trail", "household_photo", "surfaces_seen"] as const satisfies readonly (keyof WorldView)[];
 const VIEW_KEY_SET: ReadonlySet<string> = new Set(VIEW_KEYS);
 const floorPosition = z.tuple([at,at]);
 const trailPoint = z.strictObject({position:floorPosition, room:z.string().nullable(), at_ms:at});
@@ -115,11 +115,13 @@ const householdPhoto = z.strictObject({id, at_ms:at, serial:rev, cap_from_ms:at.
   person:z.strictObject({position:floorPosition,room:z.string().nullable(),seated:z.boolean().nullable(),attention:z.enum(["toward_tv","elsewhere","unknown"])}).nullable(),
 }).nullable()});
 const personTrail = z.array(trailPoint).max(2);
+const surfacesSeen = z.array(z.strictObject({ id, label: z.string(), room: z.string().nullable(), center: floorPosition, seen_ms: at }));
 /** /world/state의 보기는 집 상태 노드 하나가 타입으로 만든 18KB 객체라 깊이는 보지 않는다(지나기마다 세 번 검사하므로 지연 예산).
  *  최상위 칸은 다 있고(후보 자리 sightings는 있을 때만) 그 칸뿐인지(사진 칸 없음)와 칸의 종류만 본다. */
 const view = z.custom<WorldView>((v) => isObj(v) && onlyKeys(v, VIEW_KEY_SET) && isNum(v.at_ms) && Array.isArray(v.objects) && (v.sightings === undefined || Array.isArray(v.sightings)) && isObj(v.person) && Array.isArray(v.fixtures)
   && (v.household_photo === undefined || householdPhoto.safeParse(v.household_photo).success)
   && (v.person_trail === undefined || personTrail.safeParse(v.person_trail).success)
+  && (v.surfaces_seen === undefined || surfacesSeen.safeParse(v.surfaces_seen).success)
   && Array.isArray(v.devices) && (v.eye === null || isObj(v.eye)) && (v.frame_ms === null || isNum(v.frame_ms)) && isNum(v.vlm_missing) && isNum(v.yolo_missing));
 const worldState = z.strictObject({ rev, view });
 const CHANGE_KINDS = [
@@ -272,7 +274,8 @@ const offerFields = {id,rev,until_ms:at,target_id:id,goal_id:id.nullable()};
 function offerBody<O extends "grant"|"offer">(op:O) {
   const fields = {...offerFields,op:z.literal(op)};
   return z.discriminatedUnion("kind",[
-    z.strictObject({...fields,kind:z.enum(["visit","tv_off","tv_on"])}),
+    z.strictObject({...fields,kind:z.literal("visit"),note:z.string().min(1).max(120).optional()}),
+    z.strictObject({...fields,kind:z.enum(["tv_off","tv_on"])}),
     z.strictObject({...fields,kind:z.literal("choose_station"),candidates:z.array(id).min(2),direction:z.string(),visited:z.array(id)}),
   ]);
 }

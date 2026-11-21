@@ -2,7 +2,7 @@
 // 행동마다 정한 도구 호출(계획 전체를 한 번에 내는 submit_plan)을 낸다. 공급자는 서버와 같은 createProvider(OpenAI Responses API, OPENAI_BASE_URL)다.
 // 대본은 입력 글(src/agent/planInput.ts)에서 id를 읽는다: 식탁·싱크대는 평면도 줄의 종류, 컵은 World State 물건 줄.
 import { startFakeOpenAI, type FakeResponse } from "../../scripts/fake-openai.js";
-import { ASK_PROMPT } from "../../src/act/prompts.js";
+import { ASK_PROMPT, HELP_PROMPT } from "../../src/act/prompts.js";
 import { taskOf, type Placed } from "../../src/act/tasks.js";
 import type { LlmProvider } from "../../src/agent/agent.js";
 import { PLANNER_PROMPT } from "../../src/agent/planInput.js";
@@ -104,6 +104,46 @@ export function fillIdsFrom(input: string): { fridge: string; table: string; cup
 export const FILL_SCRIPTS: Record<string, PlanScript> = {
   "컵에 물 채워 주기": (input) => [planCalls(fillSteps({ ...fillIdsFrom(input), drink: "물" }))],
   "컵에 콜라 따라 주기": (input) => [planCalls(fillSteps({ ...fillIdsFrom(input), drink: "콜라" }))],
+};
+
+/** 부름에 응하기(시나리오 2): 사람이 있는 책상으로 가서 「무엇을 도와드릴까요?」를 help 답 묶음으로 묻는다. */
+export function callSteps(desk: string): Record<string, unknown>[] {
+  return [
+    { kind: "go", act: "가기", target: desk, until: { phone_near: desk }, timeout_s: 120 },
+    { kind: "ask", question: HELP_PROMPT.text, choices: "help", timeout_s: 120 },
+  ];
+}
+
+/** 물 한 잔 가져다주기(시나리오 2) 일곱 단계: 냉장고로 가기 → 물병 꺼내기(냉장고 안이라 자리로 집는다) → 싱크대로 가기 → 싱크대에서 컵에 물 따르기(컵 내용물 있음)
+ *  → 컵 들기(손에 있음) → 책상으로 가기 → 책상에 놓기(책상 위이고 손에 없음, 사람이 들고 있지 않음).
+ *  사용자 곁(책상)에서 계획하면 주방 컵이 아직 안 보이므로 컵 단계는 자리(싱크대)로 하고 끝 조건은 종류(cup)로 본다. cup이 보이면 id를 써도 된다. */
+export function waterSteps(ids: { fridge: string; sink: string; desk: string; cup?: string }): Record<string, unknown>[] {
+  const { fridge, sink, desk } = ids;
+  return [
+    { kind: "go", act: "가기", target: fridge, until: { phone_near: fridge }, timeout_s: 120 },
+    { kind: "pick", act: "꺼내기", item: "물병", target: fridge, until: { object: "bottle", facts: { place: "in_hand" } }, timeout_s: 120 },
+    { kind: "go", act: "가기", target: sink, until: { phone_near: sink }, timeout_s: 120 },
+    { kind: "do", act: "따르기", item: "물", target: sink, until: { object: "cup", facts: { contents: "has_contents" } }, timeout_s: 120 },
+    { kind: "pick", act: "들기", item: "컵", target: sink, until: { object: "cup", facts: { place: "in_hand" } }, timeout_s: 120 },
+    { kind: "go", act: "가기", target: desk, until: { phone_near: desk }, timeout_s: 120 },
+    {
+      kind: "place", act: "놓기", item: "컵", target: desk,
+      until: { all: [{ any: [{ all: [{ object: "cup", surface: desk }, { not: { object: "cup", facts: { place: "in_hand" } } }] }] }, { not: { person_holding: "cup" } }] },
+      timeout_s: 120,
+    },
+  ];
+}
+
+/** 입력 글에서 냉장고·싱크대·책상(평면도 종류)과 보이는 컵(「이미 치움」이 아닌 첫 컵) id. */
+export function waterIdsFrom(input: string): { fridge: string; sink: string; desk: string; cup: string } {
+  const line = (type: string) => new RegExp(`^- (\\S+) .*\\[${type}\\]`, "m").exec(input)?.[1] ?? "";
+  return { fridge: line("fridge"), sink: line("sink_counter"), desk: line("desk_small"), cup: /^- 물건 (cup_\d+) 컵 · (?:present|out_of_view)(?! · 이미 치움)/m.exec(input)?.[1] ?? "" };
+}
+
+/** 시나리오 2 대본: 부름에 응하기(책상으로 가서 묻기), 물 한 잔 가져다주기. */
+export const SCENARIO2_SCRIPTS: Record<string, PlanScript> = {
+  "부름에 응하기": (input) => [planCalls(callSteps(waterIdsFrom(input).desk))],
+  "물 한 잔 가져다주기": (input) => [planCalls(waterSteps(waterIdsFrom(input)))],
 };
 
 /** 라면 끓이기 알려 주기 시험 대본 13단계(라면 단계 글은 여기에만 있다. src에는 없다):

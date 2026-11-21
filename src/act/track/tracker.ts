@@ -256,6 +256,8 @@ export interface TrackerOptions {
     emit: (l: BrainLog) => void;
     /** 생각 말풍선에 정한 상태 글 한 줄을 올린다(src/brain/thought.ts note): 찾기 시작·찾음·못 찾음. decisionId는 그 일의 판단 id. 없으면 올리지 않는다. */
     thought?: (text: string, decisionId: string) => void;
+    /** 가져다주는 일을 끝까지 마친 도움 기록(src/act/help-record.ts): 기록 DB help 줄과 메시지 상자. 없으면 남기지 않는다. */
+    help?: (record: import("../help-record.js").HelpRecord) => void;
   };
   appliances: {
     /** 기기 단계 실행. 없으면 기기 단계는 실패한다. */

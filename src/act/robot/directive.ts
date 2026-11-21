@@ -24,6 +24,8 @@ export function stationDirectives(core:TrackCore) {
     visit:job=>{
       const station=port?.target(job.target_id);
       if (!station) return false;
+      // 배운 습관으로 확인하러 가는 방문은 그 까닭을 생각 말풍선에 올린다
+      if (job.kind==="visit" && job.note) core.o.events.thought?.(job.note,job.id);
       core.dock.drop();
       slot={id:job.id,sent:null,spokeAt:0,visionAt:0};
       const nav=core.walk(job.id,{id:station.id,label:station.label,position:station.position},true);
