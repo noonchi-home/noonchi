@@ -134,6 +134,8 @@ export class HomeCore {
   lookSay: { place: string; atMs: number } | null = null;
   reflected: { atMs: number; learned: number; active: number } | null = null;
   serviceSaid: { text: string; atMs: number } | null = null;
+  /** 마지막 도움 기록 글과 그 시각(메시지 상자, src/act/help-record.ts). */
+  helpSaid: { text: string; atMs: number } | null = null;
   // 앱(index.ts)
   app: TwinHomeApp | undefined;
 

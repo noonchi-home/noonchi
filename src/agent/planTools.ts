@@ -120,7 +120,7 @@ export const STEP_ARGS = z.object({
   item: z.enum(STEP_ITEMS).optional().describe("물건 이름(목록 안 한국어): 안 보이는 물건·do에서 다루는 것·끝 알림. pick·place가 World State 물건이면 쓰지 않는다(서버가 그 물건 종류 이름으로 부른다)"),
   notice: z.enum(NOTICE_KEYS).optional().describe(`say·wait: 알림·기다리기 열쇠(${NOTICE_KEYS.join("·")}). 폰 글과 화면 이름은 서버가 만든다. 끝은 wait에 쓰지 않는다`),
   question: z.string().min(1).max(60).optional().describe("ask: 짧은 질문, 「?」로 끝남(「주세요」 없이)"),
-  choices: z.enum(["clear_keep", "yes_no"]).optional().describe("ask: 답 묶음. clear_keep 치워 주세요·그대로 둬요, yes_no 네·아니요"),
+  choices: z.enum(["clear_keep", "yes_no", "help"]).optional().describe("ask: 답 묶음. clear_keep 치워 주세요·그대로 둬요, yes_no 네·아니요, help 물 한 잔·괜찮아요(부름에 응해 무엇을 도와드릴지 물을 때)"),
   tool: z.enum(DEVICE_TOOLS).optional().describe("device: 기기를 바꾸는 도구 이름"),
   args: z.record(z.string(), z.unknown()).optional().describe("device: 그 도구 인자(device_id 빼고)"),
   hand_device: z.object({ id: z.string().min(1), to: z.enum(["on", "off", "open", "close"]) }).optional()
@@ -323,7 +323,8 @@ export class PlanDraft {
       // 안 보이는 물건 집기(object 없음): 조건이 보는 물건·든 물건은 이 할 일이 집는 종류여야 한다(병 집기를 컵의 손에 있음으로 끝내지 않게).
       // 집는 종류가 없는 할 일(코치·세탁물)은 보지 않는다
       const carry = task.carry ?? task.target;
-      if (s.kind === "pick" && !s.object && s.until && carry && [...objectNames(s.until), ...heldNames(s.until)].some((n) => this.clsOf(n) !== carry)) {
+      const carries = carry ? [carry, ...(task.carryAlso ?? [])] : [];
+      if (s.kind === "pick" && !s.object && s.until && carry && [...objectNames(s.until), ...heldNames(s.until)].some((n) => !carries.includes(this.clsOf(n) as never))) {
         return { ok: false, error: `${i + 1}번 집기 until은 집는 물건 종류(${carry})만 봅니다` };
       }
       // 그 자리에서 하는 일: 대상이 World State 물건이면 조건은 그 물건 id만, 평면도 자리면 이 할 일의 대상 종류만 본다(다른 컵을 보고 끝내지 않게)
@@ -488,6 +489,8 @@ export class PlanDraft {
     const putAway = (id: string | null) => { if (id && this.ctx.placed?.has(id)) errors.push(`이미 치운 물건입니다(앞 계획이 놓기를 끝냄): ${id}. 「이미 치움」이 없는 물건을 쓰세요`); };
     // 집는 물건 종류: 따로 정한 것(carry, 채워 주기의 병)이 없으면 그 할 일의 대상 종류다
     const carry = this.ctx.task.carry ?? this.ctx.task.target;
+    // 더 집는 종류(carryAlso, 물 한 잔 가져다주기의 컵)도 집고 내려놓을 수 있다
+    const carries: readonly string[] = carry ? [carry, ...(this.ctx.task.carryAlso ?? [])] : [];
     switch (a.kind) {
       case "go":
         need("target", !!target);
@@ -507,14 +510,14 @@ export class PlanDraft {
         else if (target && !floor.objects.has(target)) errors.push(`pick target은 보이는 World State 물건 id나 평면도 id여야 합니다: ${target}`);
         if (object && !live(object)) errors.push(`보이는 World State 물건이 아닙니다: ${object}`);
         // 안 보이는 물건(냉장고 안 병)은 그 할 일이 받을 때만(carryUnseen) 평면도 자리로 집는다
-        if (carry && (object ? worldObject(world, object)?.cls !== carry : !this.ctx.task.carryUnseen)) errors.push(`이 할 일은 ${carry} 물건을 집습니다`);
+        if (carry && (object ? !carries.includes(worldObject(world, object)?.cls ?? "") : !this.ctx.task.carryUnseen)) errors.push(`이 할 일은 ${carries.join("·")} 물건을 집습니다`);
         putAway(object);
         break;
       case "place":
         need("target", !!target);
         if (target && !floor.objects.has(target)) errors.push(`place target은 평면도 id여야 합니다: ${target}`);
         if (object && !worldObject(world, object)) errors.push(`World State 물건이 아닙니다: ${object}`);
-        if (object && carry && worldObject(world, object)?.cls !== carry) errors.push(`이 할 일은 ${carry} 물건을 내려놓습니다`);
+        if (object && carry && !carries.includes(worldObject(world, object)?.cls ?? "")) errors.push(`이 할 일은 ${carries.join("·")} 물건을 내려놓습니다`);
         putAway(object);
         break;
       case "do":

@@ -3,8 +3,8 @@
 import type { HeardAt } from "../../contract/phone.js";
 import type { ApprovalAnswer } from "../../agent/index.js";
 import { EXEC_TEXT } from "../labels.js";
-import { ASK_FOLLOW, STEP_DONE, STOP, type ActionChoice } from "../prompts.js";
-import { ASK_ACTION, matchChoice } from "../tasks.js";
+import { ASK_FOLLOW, ASK_FROM, STEP_DONE, STOP, type ActionChoice } from "../prompts.js";
+import { matchChoice } from "../tasks.js";
 import { Part, choicesOf } from "./core.js";
 
 /** 들은 말의 결과: 답으로 받음, 말할 때와 다른 명령에 온 답이라 버림(stale), 답이 아님(null). */
@@ -74,8 +74,8 @@ export class Answers extends Part {
     } else if (step?.kind === "ask") {
       if (r.at + 1 >= r.plan.steps.length || step.prompt?.ends.includes(picked.id)) {
         steps.finish(r, "done", EXEC_TEXT.answered(picked.label));
-        // 묻기 답 → 말 부탁(「치워 주세요」면 컵 치우기를 말 부탁 길로 시작한다, 「그대로 둬요」는 하지 않는다)
-        const task = r.decision.action === ASK_ACTION ? ASK_FOLLOW[picked.id] : undefined;
+        // 묻기 답 → 말 부탁(「치워 주세요」면 컵 치우기, 「물 한 잔」이면 물 한 잔 가져다주기를 말 부탁 길로 시작한다. 「그대로 둬요」·「괜찮아요」는 하지 않는다)
+        const task = r.decision.action && ASK_FROM.includes(r.decision.action) ? ASK_FOLLOW[picked.id] : undefined;
         if (task) core.start.request({ task, heard: picked.label, atMs: now, afterSeq: this.o.brain.sentSeq?.() ?? 0, via: "answer" });
       } else steps.advance(r);
     } else steps.advance(r);

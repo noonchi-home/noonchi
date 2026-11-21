@@ -16,6 +16,7 @@ import { HUMAN_KINDS, selfStopWait, type AgentStep, type ToolResult } from "../.
 import { clearsAway, followedId, sureValue, taskOf, type Placed } from "../tasks.js";
 import { CONTENTS_HOLD } from "./contents.js";
 import { doneId } from "../done-step.js";
+import { HELP_ACTIONS, helpRecord, type HelpVia } from "../help-record.js";
 import { Part, choicesOf, clsOf, type Run } from "../track/core.js";
 
 /** 놓기를 끝낸 물건이 사라진 뒤 새 id로 다시 잡히기를 기다리는 시간(ms). 등장 확인(물건 4초)·사라짐(6초)보다 넉넉히. */
@@ -627,6 +628,14 @@ export class Steps extends Part {
     this.core.step(r, state, text);
     // 수업 기록: 코치 계획을 끝까지 마친 판만 남긴다
     if (state === "done" && taskOf(r.plan.task)?.coach && r.outcomes.length) this.o.lessons?.record(r.plan.task, r.outcomes, new Date(this.clock.now()).toISOString());
+    // 도움 기록: 가져다주는 일을 끝까지 마친 판(어디에 놓았는지·그때 사용자가 하던 일·부탁이 온 길)
+    if (state === "done" && close === "done" && HELP_ACTIONS.includes(r.plan.task)) {
+      const place = [...r.plan.steps].reverse().find((s) => s.kind === "place" && s.target)?.target ?? null;
+      const d = r.decision;
+      const via: HelpVia = d.source === "speech" ? (d.via === "answer" ? "call" : "speech") : "habit";
+      this.o.events.help?.(helpRecord({ atMs: this.clock.now(), askedMs: d.atMs, offsetMinutes: this.o.offsetMinutes ?? 540, action: r.plan.task, via, place,
+        placeLabel: place ? this.o.layout.locate?.(place)?.label ?? null : null, world: this.o.state.view() }));
+    }
     if (r.sent) {
       r.sent = null;
       this.core.robot.commands.clear(r.plan.view.id);

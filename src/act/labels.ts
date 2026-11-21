@@ -237,7 +237,7 @@ export const AGAIN_TEXT = { ask: (label: string) => `${josa(label, "을/를")} �
 /** 비전 상태 줄에 쓰는 평면도 물건 짧은 이름(낱말 표에 없는 종류). 낱말 표 종류(식탁 등)는 그 글을 쓰고(placeShort), 둘 다 없으면 배치 이름을 쓴다. */
 export const PLACE_SHORT: Record<string, string> = {
   sink_counter: "싱크대", utility_sink: "싱크대", induction_counter: "인덕션", kitchen_cabinet: "수납장", counter: "조리대", washer: "세탁기", dryer: "건조기",
-  fridge: "냉장고", kimchi_fridge: "김치냉장고", dishwasher: "식기세척기", sofa: "소파", desk: "책상", coffee_table: "탁자",
+  fridge: "냉장고", kimchi_fridge: "김치냉장고", dishwasher: "식기세척기", sofa: "소파", desk: "책상", desk_small: "책상", coffee_table: "탁자",
   bed_queen: "침대", bed_single: "침대", stand_ac: "에어컨", wall_ac: "에어컨",
 };
 

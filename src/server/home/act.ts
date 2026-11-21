@@ -374,6 +374,12 @@ export function startAct(core: HomeCore): (event: BrainLog) => void {
       log: ctx.log,
       // 찾기 상태 줄은 생각 말풍선에 모델 없이 바로 올린다
       thought: (text, decisionId) => feed.note(text, decisionId),
+      // 도움 기록: 기록 DB help 줄(여러 날 모아 습관을 찾는다)과 메시지 상자 20초
+      help: (record) => {
+        history.db.add("help", record.at_ms, record.text, { subject: record.action, data: record });
+        core.helpSaid = { text: record.text, atMs: Date.now() };
+        core.speak();
+      },
     },
     appliances: {
       run: devices,
