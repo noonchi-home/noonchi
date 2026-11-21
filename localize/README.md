@@ -54,3 +54,14 @@ npm run heavy -- python -B localize/uploads.py --root runtime/real-reference/sho
 기준 자료에 깊이가 없으면 겹친 사진의 특징을 삼각측량한다. 위의 `build`에 실제 기준 manifest를, `evaluate`에 따로 촬영하고 실측한 평가 manifest를 넣는다. 실사진·지도·보고서는 runtime 아래에 둔다.
 
 S3를 쓰는 집에서는 `LOCALIZE_BUCKET`을 설정한다. 서버 권한으로 `homes/<집>/map/latest.json`의 `revision`과 `sha256`을 읽어 같은 폴더의 `<revision>.npz`를 받는다. 체크섬, 지도에 기록된 집과 판본을 검사한다. 버킷을 설정하지 않으면 로컬 지도를 읽는다.
+
+## 실제 사진 지도(촬영 앱)
+
+트윈 렌더만으로 만든 지도는 실제 사진을 맞추지 못한다. 실영상 프레임 165장이 모두 「모름」이었다. 실제 사진과 트윈 렌더 사이에는 특징점 짝이 13~23개(기하로 맞는 짝 7~10개)뿐이고, 같은 자리의 실제 사진끼리는 113~166개(87~128개)다. 그래서 실제 기준 사진으로 지도를 만든다. 촬영 앱(home-shots)에 올라온 사진은 맞춰 찍은 장면의 카메라 값과, 그 장면의 트윈 깊이 렌더를 그대로 쓴다. 한 장면을 여러 번 찍으면 장마다 기준 줄이 된다. 비율이 장면과 다른 사진, 없는 장면의 사진은 빼고 보고에 적는다. 사진이 하나도 없으면 「촬영 앱에 올라온 사진이 아직 없습니다」로 끝낸다(종료 코드 3). 비밀번호가 틀리면 종료 코드 2다. 비밀번호는 파일로만 넘기고 출력하지 않는다.
+
+```powershell
+npm run heavy -- runtime/localize-venv/Scripts/python.exe -B localize/import_shots.py --home mokryeon_180b --passcode-file <비밀번호 파일> --scenes runtime/localize-reference-v2/manifest.json --out runtime/localize-real-ref --map runtime/homes/mokryeon_180b/localize/map.npz
+```
+
+같은 자리에서 다른 날 찍은 실제 사진(가로 시험 영상 세 편)으로 확인했다. 한 편의 끝 장면 3장을 시작 자리(8.46, 3.92, 높이 1.15, yaw 0°, −10°)의 기준으로 두고, 깊이는 그 자세의 트윈 깊이 렌더(`npm run capture -- --home-shots --depth --views <카메라 json> --out <폴더>`)를 썼다. 나머지 두 편의 처음·끝 프레임 10장이 모두 기준(맞은 점 20개, 1.25px)을 넘었다. 맞은 점은 76~148개, 오차는 0.63~1.08px, 위치는 기준 자세에서 0~2cm, 방향은 ±3° 안이었다. 이 확인은 같은 자리 사진이라 깊이가 틀려도 결과에 드러나지 않는다. 자리를 옮긴 사진의 위치 정확도는 촬영 앱 사진이 와야 잰다.
+

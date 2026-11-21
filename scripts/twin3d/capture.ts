@@ -16,7 +16,7 @@ const arg = (k: string, d?: string) => { const i = process.argv.indexOf(`--${k}`
 if (process.argv.includes("--home-shots")) {
   const { captureHomeShots } = await import("./home-shots.js");
   await captureHomeShots(arg("out", "runtime/shots")!, process.argv.includes("--software"),
-    process.argv.includes("--depth"), process.argv.includes("--holdout"));
+    process.argv.includes("--depth"), process.argv.includes("--holdout"), arg("views"));
   process.exit(0);
 }
 const url = arg("url")!;

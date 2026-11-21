@@ -1,5 +1,6 @@
-// npm run capture -- --home-shots [--out runtime/shots] [--software]
-import { createReadStream, existsSync, mkdirSync, mkdtempSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
+// npm run capture -- --home-shots [--out runtime/shots] [--software] [--depth] [--holdout] [--views <json>]
+// --views: 장면 목록 대신 그 파일의 카메라(id·position·yaw_deg·pitch_deg·vfov_deg, doors 선택)만 찍는다(예: 실영상 시작 자리 깊이).
+import { createReadStream, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { dirname, extname, join, resolve } from "node:path";
 import type { AddressInfo } from "node:net";
@@ -50,11 +51,28 @@ async function shotServer(home: Home, scene: NonNullable<ReturnType<typeof loadS
   return server;
 }
 
-export async function captureHomeShots(out: string, software: boolean, depth = false, holdout = false) {
+/** --views 파일의 카메라 줄. 없는 칸은 장면 목록과 같은 기본값(1920×1080, 문은 그대로)으로 채운다. */
+export function customViews(rows: unknown): ReturnType<typeof homeShotViews> {
+  if (!Array.isArray(rows) || !rows.length) throw new Error("--views 파일은 카메라 줄 배열이어야 합니다.");
+  return rows.map((r, i) => {
+    const row = r as Record<string, unknown>;
+    const id = String(row.id ?? "");
+    const position = row.position as number[] | undefined;
+    const nums = [row.yaw_deg, row.pitch_deg, row.vfov_deg];
+    if (!/^[A-Za-z0-9_-]+$/.test(id) || !Array.isArray(position) || position.length !== 3 ||
+        ![...position, ...nums].every(v => typeof v === "number" && Number.isFinite(v)))
+      throw new Error(`--views ${i}번 줄: id·position[x,높이,y]·yaw_deg·pitch_deg·vfov_deg가 필요합니다.`);
+    return { ...row, id, file: id + ".png", position, yaw_deg: row.yaw_deg, pitch_deg: row.pitch_deg, vfov_deg: row.vfov_deg,
+      width, height, doors: (row.doors ?? {}) as Record<string,string> } as unknown as ReturnType<typeof homeShotViews>[number];
+  });
+}
+
+export async function captureHomeShots(out: string, software: boolean, depth = false, holdout = false, viewsFile?: string) {
   const home = resolveHome("twin", "mokryeon_180b");
   const scene = loadScene(home);
   if (!scene) throw new Error("목련 집 장면을 찾을 수 없습니다.");
-  const shots = homeShotViews(home, scene, holdout).map(s => ({ ...s, home: home.id,
+  const views = viewsFile ? customViews(JSON.parse(readFileSync(viewsFile, "utf8"))) : homeShotViews(home, scene, holdout);
+  const shots = views.map(s => ({ ...s, home: home.id,
     ...(depth ? { depth_file: s.id + ".depth.png", depth_encoding: "axial_mm_rg16" } : {}) }));
   const exe = chromePath();
   await withHeavy("capture mokryeon first-person", async lock => {

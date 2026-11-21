@@ -12,6 +12,7 @@ import { TOPICS } from "../src/bus/topics.js";
 import { resolveHome } from "../src/layout/homes.js";
 import { loadScene } from "../src/layout/scene.js";
 import { homeShotViews } from "../scripts/twin3d/home-shot-views.js";
+import { customViews } from "../scripts/twin3d/home-shots.js";
 
 const projection=[1,0,0,0,0,1,0,0,0,0,-1,-1,0,0,-.02,0];
 const header:FrameHeader={kind:"engine",width:480,height:270,projection,position:[0,1.15,0],orientation:[0,0,0,1]};
@@ -125,6 +126,12 @@ describe("목련 위치 찾기", () => {
       expect(q.yaw_deg).not.toBe(ref.yaw_deg);
       expect(q.doors).toEqual(ref.doors);
     });
+  });
+  it("--views 카메라 줄은 장면 크기로 채우고, 카메라 값이 빠진 줄은 찍기 전에 거절한다", () => {
+    const [start] = customViews([{ id: "start_C", position: [8.4612, 1.15, 3.9242], yaw_deg: 0, pitch_deg: -10, vfov_deg: 40 }]);
+    expect(start).toMatchObject({ id: "start_C", file: "start_C.png", width: 1920, height: 1080, doors: {} });
+    expect(() => customViews([{ id: "x", position: [1, 1], yaw_deg: 0, pitch_deg: 0, vfov_deg: 40 }])).toThrow("--views 0번 줄");
+    expect(() => customViews([])).toThrow("--views");
   });
   it("위치 찾기 결과는 사진을 포함하지 않는 신뢰 토픽이다", () => {
     expect(TOPICS["/perception/localize"]).toMatchObject({qos:{kind:"reliable"},from:["perception"]});
