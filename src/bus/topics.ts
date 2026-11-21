@@ -348,6 +348,8 @@ export const TOPICS = {
   "/world/state": { qos: { kind: "state" }, body: worldState, key: one, order: "rev", from: ["world"] },
   "/world/changes": { qos: { kind: "reliable" }, body: worldChanges, key: one, order: "rev", from: ["world"] },
   "/world/closer": { qos: { kind: "reliable" }, body: worldCloser, key: by("look"), order: null, from: ["world"] },
+  // 새 집 사진(serial)마다 하나: /world/state는 가장 새 것만 남아 받는 쪽이 사진을 건너뛸 수 있다. 기록 노드가 사진마다 한 줄로 남긴다(실영상 판정)
+  "/world/household_photo": { qos: { kind: "reliable" }, body: z.strictObject({ photo: householdPhoto }), key: one, order: null, from: ["world"] },
   "/brain/decision": { qos: { kind: "reliable" }, body: checkedDecision, key: one, order: null, from: ["brain"] },
   "/brain/plan_request": { qos: { kind: "reliable" }, body: z.strictObject({ req: id, decision: decisionRecord, ahead: planAhead.optional(), until: at }), key: by("req"), order: null, from: ["act", "goal"] },
   "/brain/plan": { qos: { kind: "reliable" }, body: z.strictObject({ req: id, decision_id: id, result: planResult }), key: by("req"), order: null, from: ["brain"] },

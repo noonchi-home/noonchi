@@ -308,6 +308,11 @@ export class WorldState {
     return this.householdPhoto?.serial ?? null;
   }
 
+  /** 지금 집 사진(없으면 null). 집 상태 노드가 새 사진을 /world/household_photo로 낼 때 쓴다(보기의 household_photo와 같은 값). */
+  householdNow(): NonNullable<WorldView["household_photo"]> | null {
+    return this.householdPhoto ? structuredClone(this.householdPhoto) : null;
+  }
+
   view(nowMs: number): WorldView {
     const core = this.core;
     const devices = core.o.devices();

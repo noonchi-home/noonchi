@@ -35,6 +35,11 @@ export function machineWrites(db: HistoryDb) {
   const oldGoal = goalRecorder(db);
   let phoneStep = "";
   return {
+    // 집 사진 하나에 한 줄(시각 = 그 VLM 답이 집 상태에 들어간 때): 실영상 시나리오 판정이 사진을 하나도 건너뛰지 않고 매긴다(scripts/scenario1-live.ts)
+    "/world/household_photo": (b, stamp) => {
+      const photo = b.photo as import("../contract/world.js").HouseholdPhoto;
+      db.add("household", Number(photo.answered_ms ?? stamp), "집 사진", { subject: photo.id, data: { event: "photo", photo } });
+    },
     "/device/power_intent": (b) => db.add("household",Number(b.at_ms),"TV 전원 요청",{subject:String(b.device_id),data:{event:"power_request",power:b.value,command_id:b.command_id}}),
     "/act/directive_result": (b) => {
       if(b.outcome==="applied" && b.command_id && b.expected_power) db.add("household",Number(b.at_ms),"TV 전원 확인",{subject:String(b.target_id),data:{event:"power_confirm",power:b.expected_power,command_id:b.command_id}});

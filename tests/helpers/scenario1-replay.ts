@@ -194,7 +194,9 @@ function makeBag(bag: Bag, variant: Variant): { left: number | null; photos: Pho
   world.devices = [fridge, tv];
   let seq = 0,
     rev = 0,
-    serial = 0;
+    serial = 0,
+    /** 마지막으로 /world/household_photo로 낸 집 사진 serial. */
+    sentPhoto = 0;
   function put<N extends TopicName>(topic: N, node: Envelope<N>["header"]["node"], body: Body<N>, at: number) {
     bag.write(
       { topic, key: "_", header: { node, seq: ++seq, stamp: at, inst: "composed-1", ...epoch }, body },
@@ -392,6 +394,11 @@ function makeBag(bag: Bag, variant: Variant): { left: number | null; photos: Pho
     }
     world.at_ms = arrive;
     world.frame_ms = at;
+    // 집 상태 노드는 새 집 사진마다 그 사진을 /world/household_photo(RELIABLE)로도 낸다(src/world/node.ts)
+    if (world.household_photo && world.household_photo.serial !== sentPhoto) {
+      sentPhoto = world.household_photo.serial;
+      put("/world/household_photo", "world", { photo: structuredClone(world.household_photo) }, arrive);
+    }
     put("/world/state", "world", { rev: ++rev, view: world }, arrive);
   }
   return { left, photos, arrivals: stops.map((e) => ({ at: base + e.at, value: e.value, ...(e.depart !== undefined ? { depart: base + e.depart } : {}) })) };
@@ -442,7 +449,7 @@ export async function replayScenario(
       }),
       from: base,
       to: base + REPLAY_MS,
-      topics: ["/world/state", "/brain/decision", "/phone/pose", "/device/changes"],
+      topics: ["/world/state", "/world/household_photo", "/brain/decision", "/phone/pose", "/device/changes"],
       launch: async (bus, clock) => {
         const node = (name: "manager" | "act" | "devices" | "recorder") =>
           new BusNode({
@@ -795,8 +802,10 @@ export async function replayScenario(
     };
     if (left !== null) insert({ kind: "left", at: left - base });
     const absolute = trace.map((e) => ({ ...e, at: e.at + base }));
+    // 실영상 판정과 같이 기록 DB의 집 사진 줄로 매긴 뒤(judge) 그 사진으로 근거를 찾는다
+    const verdict = live.judge(db.list({ limit: 5000 }), received, left);
     for (const e of earlyTvEvidence(absolute, live.photoSamples())) insert({ ...e, at: e.at - base });
-    recording?.(live.judge(db.list({ limit: 5000 }), received, left));
+    recording?.(verdict);
     return trace;
   } finally {
     db.close();

@@ -2,7 +2,7 @@
 import type { HistoryRow } from "../src/contract/history.js";
 import type { SceneJson } from "../src/contract/layout.js";
 import type { StationMap } from "../src/contract/stations.js";
-import type { WorldView } from "../src/contract/world.js";
+import type { HouseholdPhoto, WorldDevice, WorldView } from "../src/contract/world.js";
 import { floorLookup } from "../src/layout/home-plan.js";
 import { floorPlanFrom } from "../src/layout/floor.js";
 import { locateZone } from "../src/layout/stations.js";
@@ -11,38 +11,27 @@ import { judgeScenario1, scenarioRank, type ScenarioEvent } from "./scenario1-ju
 
 type Scene = SceneJson & { stations: StationMap };
 type Received = { id: string; step: string; kind?: string; target?: { id: string } | null };
-/** at: 촬영 시각, arrived: 그 사진의 VLM 답이 집 상태에 들어온 시각(집 사진 answered_ms. 없으면 처음 본 World State의 발행 시각). */
+/** at: 촬영 시각, arrived: 그 사진의 VLM 답이 집 상태에 들어온 시각(집 사진 answered_ms. 없으면 그 기록 줄의 시각). */
 type Sample = { at: number; arrived: number; tv: string; empty: boolean; watching: boolean };
 export const SCENARIO_KINDS = ["household", "decision", "goal", "plan", "robot"];
 
 export class LiveScenario {
   private readonly map: StationMap;
-  private readonly triggers: GoalTriggers;
+  private readonly floor: (p: [number, number]) => number;
   private readonly sinks: Set<string>;
   private photos: Sample[] = [];
   private cups: ScenarioEvent[] = [];
-  private lastPhoto = -1;
+  /** 마지막으로 읽은 World State의 가전(시청 구역을 지켜볼 TV를 찾는다). */
+  private devices: WorldDevice[] = [];
   private lastSink = new Set<string>();
   constructor(scene: Scene) {
     this.map = scene.stations;
-    this.triggers = new GoalTriggers(locateZone, floorLookup(scene.plan.rooms ?? []), 2000);
+    this.floor = floorLookup(scene.plan.rooms ?? []);
     this.sinks = new Set([...floorPlanFrom(scene).objects.values()].filter((p) => p.basin).map((p) => p.id));
   }
+  /** 읽은 World State: 가전과 싱크대 안 컵만 본다. 집 사진은 1초마다 읽으면 1초 간격 사진을 건너뛸 수 있어 기록 줄(judge)로만 매긴다. */
   sample(w: WorldView) {
-    const at = w.household_photo?.at_ms;
-    if (at !== undefined && at > this.lastPhoto) {
-      this.lastPhoto = at;
-      // Evaluate each captured photo at its capture time, independently of polling delay.
-      const f = this.triggers.evaluateTriggers(w, w.household_photo!.serial, this.map, at);
-      for (const [tv, room] of f.tvRooms ?? [])
-        this.photos.push({
-          at,
-          arrived: w.household_photo!.answered_ms ?? w.at_ms,
-          tv,
-          empty: f.read({ kind: "noViewer", room, ms: 0 }).value === true,
-          watching: f.read({ kind: "postureAttention", target: tv, posture: "seated" }).value === true,
-        });
-    }
+    this.devices = w.devices;
     const sink = new Set<string>();
     for (const o of w.objects)
       if (
@@ -72,6 +61,7 @@ export class LiveScenario {
       }
     };
     const rows = [...history].sort((a, b) => a.at_ms - b.at_ms || a.id - b.id);
+    events.push(...this.photosFrom(rows));
     let checking: number | null = null,
       goalId: string | null = null,
       cup: string | undefined,
@@ -177,7 +167,38 @@ export class LiveScenario {
     return { ...judgeScenario1(sorted), events: sorted };
   }
 
-  /** 받은 집 사진마다 매긴 시청 구역(촬영 시각, 비었나, 앉아 보나). */
+  /** 기록 DB의 집 사진 줄(사진마다 한 줄, src/record/machines.ts)을 serial 차례로 매긴다(촬영 시각, 비었나, 앉아 보나).
+   *  serial이 빠졌으면 그 사이 사진의 근거를 모르므로 photo_gap을 낸다. */
+  private photosFrom(rows: readonly HistoryRow[]): ScenarioEvent[] {
+    const triggers = new GoalTriggers(locateZone, this.floor, 2000);
+    const list = new Map<number, { photo: HouseholdPhoto; at: number }>();
+    for (const r of rows) {
+      const d = (r.data ?? {}) as { event?: string; photo?: HouseholdPhoto };
+      if (r.kind === "household" && d.event === "photo" && d.photo) list.set(d.photo.serial, { photo: d.photo, at: r.at_ms });
+    }
+    const gaps: ScenarioEvent[] = [];
+    this.photos = [];
+    let last: number | null = null;
+    for (const [serial, { photo, at }] of [...list].sort((a, b) => a[0] - b[0])) {
+      if (last !== null && serial !== last + 1) gaps.push({ kind: "photo_gap", at });
+      last = serial;
+      const arrived = photo.answered_ms ?? at;
+      const view = { at_ms: arrived, objects: [], devices: this.devices, person_trail: [], household_photo: photo } as unknown as WorldView;
+      // 촬영 시각으로 매긴다(읽은 때와 상관없이)
+      const f = triggers.evaluateTriggers(view, serial, this.map, photo.at_ms);
+      for (const [tv, room] of f.tvRooms ?? [])
+        this.photos.push({
+          at: photo.at_ms,
+          arrived,
+          tv,
+          empty: f.read({ kind: "noViewer", room, ms: 0 }).value === true,
+          watching: f.read({ kind: "postureAttention", target: tv, posture: "seated" }).value === true,
+        });
+    }
+    return gaps;
+  }
+
+  /** 마지막 judge가 기록 줄에서 매긴 집 사진마다의 시청 구역(촬영 시각, 비었나, 앉아 보나). */
   photoSamples(): readonly Sample[] {
     return this.photos;
   }

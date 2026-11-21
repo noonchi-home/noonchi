@@ -52,8 +52,8 @@ function spy(world: WorldState) {
   const proxy = new Proxy(world, {
     get(target, prop, recv) {
       const v = Reflect.get(target, prop, recv);
-      // 읽기만 하는 view·householdSerial은 적지 않는다(넣기 차례만 본다)
-      if (typeof v !== "function" || prop === "view" || prop === "householdSerial") return v;
+      // 읽기만 하는 view·householdSerial·householdNow는 적지 않는다(넣기 차례만 본다)
+      if (typeof v !== "function" || prop === "view" || prop === "householdSerial" || prop === "householdNow") return v;
       return (...args: unknown[]) => {
         depth++;
         try {
@@ -90,7 +90,7 @@ async function rig(world = ws()) {
   const phone = node("phone");
   const devices = node("devices");
   const got: Got[] = [];
-  for (const t of ["/world/state", "/world/changes", "/world/closer"] as const) perception.on(t, (b) => { got.push({ topic: t, body: b }); });
+  for (const t of ["/world/state", "/world/changes", "/world/closer", "/world/household_photo"] as const) perception.on(t, (b) => { got.push({ topic: t, body: b }); });
   const all = [w.node, perception, act, phone, devices];
   for (const n of all.slice(1)) await n.prepare();
   for (const n of all) n.start();
@@ -241,6 +241,20 @@ describe("집 상태 노드", () => {
     expect(of(r.got, "/world/changes")).toHaveLength(1);
   });
 
+  it("새 집 사진(serial)마다 그 사진을 /world/household_photo(RELIABLE)로 한 번씩 낸다: 상태(STATE)는 가장 새 것만 남아 받는 쪽이 사진을 건너뛸 수 있다", async () => {
+    const r = await rig();
+    const answer = (id: string, at: number) => r.perception.publish("/perception/scene", { kind: "scene", frame_id: id, observed_ms: at, scene: { ...sceneOf([]), household: { seats: "clear", people: [], dining_food: "unknown" } }, look: { ...lookOf(id, at, []), fresh: true, person_ids: [] } });
+    await answer("e1", 1000);
+    await answer("e2", 2000);
+    // 집 답이 없는 VLM 답도 새 사진이다(근거 없음, proof null): 부재 구간을 끊으므로 함께 낸다
+    await r.perception.publish("/perception/scene", { kind: "scene", frame_id: "e3", observed_ms: 3000, scene: said(["d1", "sitting"]) });
+    // 같은 사진의 늦은 답은 새 사진이 아니다
+    await r.perception.publish("/perception/scene", { kind: "scene", frame_id: "e0", observed_ms: 500, scene: said(["d1", "sitting"]) });
+    await r.flush();
+    const photos = of(r.got, "/world/household_photo").map((b) => b.photo);
+    expect(photos.map((p) => [p.serial, p.id, p.at_ms, p.proof === null])).toEqual([[1, "e1", 1000, false], [2, "e2", 2000, false], [3, "e3", 3000, true]]);
+    expect(photos[2]).toEqual(lastView(r.got).household_photo);
+  });
   it("변화 없는 VLM 답이라도 집 사진(household_photo)을 새로 넣으면 같은 rev로 상태를 바로 낸다(250ms 다시 냄을 기다리지 않음: TV 끄기 5초)", async () => {
     const world = ws();
     let serial = 0;

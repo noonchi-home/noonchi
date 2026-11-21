@@ -6,7 +6,7 @@
 // /world/closer {look, ids}로 VLM 합치기 뒤의 최종 id 표를 답한다.
 import { BusNode, msgId, realClock, type Bus, type Clock, type Envelope, type TopicName } from "../bus/index.js";
 import type { Detection, FrameMeta, Pose } from "../contract/observe.js";
-import type { SceneInput, WorldChange, WorldCloserMsg } from "../contract/world.js";
+import type { HouseholdPhoto, SceneInput, WorldChange, WorldCloserMsg } from "../contract/world.js";
 import type { CloserPending } from "./state/closer.js";
 import type { CloserPass, WorldState } from "./state/world.js";
 
@@ -129,16 +129,17 @@ export async function startWorldNode(o: { bus: Bus; epoch: { boot: string; home:
     if (failed) throw failed.reason;
   };
   /** 넣은 결과를 낸다: 변화가 있으면 rev를 올려 그 봉투를 남은 출력에 넣고(가까이 보기 답 봉투도), 상태는 변화가 있거나 state일 때 낸다. */
-  const emit = (changes: WorldChange[], o2: { state?: boolean; closer?: WorldCloserMsg } = {}) => {
+  const emit = (changes: WorldChange[], o2: { state?: boolean; closer?: WorldCloserMsg; photo?: HouseholdPhoto } = {}) => {
     if (changes.length) rev++;
     const out: Envelope<TopicName>[] = [];
     if (changes.length) out.push(node.envelope("/world/changes", { rev, changes }));
     if (o2.closer) out.push(node.envelope("/world/closer", o2.closer));
+    if (o2.photo) out.push(node.envelope("/world/household_photo", { photo: o2.photo }));
     if (out.length) outbox.push({ out, sent: 0 });
     return flush(changes.length > 0 || !!o2.state);
   };
   /** 토픽 입력 하나: 이미 넣은 메시지면 다시 넣지 않고 남은 출력만 낸다. 넣은 뒤(발행 전)에 기억한다. */
-  const once = <N extends TopicName>(e: Envelope<N>, apply: () => { changes: WorldChange[]; state?: boolean; closer?: WorldCloserMsg }) => {
+  const once = <N extends TopicName>(e: Envelope<N>, apply: () => { changes: WorldChange[]; state?: boolean; closer?: WorldCloserMsg; photo?: HouseholdPhoto }) => {
     const id = msgId(e.header);
     if (applied.has(id)) return flush(false);
     const r = apply();
@@ -150,7 +151,9 @@ export async function startWorldNode(o: { bus: Bus; epoch: { boot: string; home:
     // 변화 없는 VLM 답도 집 사진을 새로 넣었으면 상태를 바로 낸다(같은 rev). 250ms 다시 냄을 기다리면 TV 끄기가 그만큼 늦는다
     const photo = world.householdSerial();
     const r = inputs.scene(b);
-    return { changes: r.changes, state: world.householdSerial() !== photo, ...(r.closer ? { closer: { look: r.closer.look, ids: Object.fromEntries(r.closer.ids) } } : {}) };
+    // 새 사진은 상태와 함께 /world/household_photo로도 하나씩 낸다(받는 쪽이 사진을 건너뛰지 않게)
+    const changed = world.householdSerial() !== photo, fresh = changed ? world.householdNow() : null;
+    return { changes: r.changes, state: changed, ...(fresh ? { photo: fresh } : {}), ...(r.closer ? { closer: { look: r.closer.look, ids: Object.fromEntries(r.closer.ids) } } : {}) };
   }));
   node.on("/world/input", (b, { e }) => once(e, () => {
     if (b.kind === "focus") world.focus(b.id, b.focus);

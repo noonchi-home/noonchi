@@ -32,7 +32,9 @@ export interface ScenarioEvent {
     // 대기 전 끔→켬의 근거 사진(촬영 시각): 끄기 전 시청 구역이 비기 시작한 사진, 다시 켜기 전 앉아 보는 사진(scripts/scenario1-live.ts earlyTvEvidence)
     | "early_empty"
     | "early_vacant"
-    | "early_viewer";
+    | "early_viewer"
+    // 기록 DB에서 집 사진 serial이 빠짐: 그 사이 사진의 근거를 몰라 판정할 수 없다
+    | "photo_gap";
   at: number;
   id?: string;
   command?: string;
@@ -104,7 +106,7 @@ export function judgeScenario1(trace: readonly ScenarioEvent[]) {
   const isEarly = (e: ScenarioEvent) => e.at < standbyAt && TV_POWER.has(e.kind);
   const early = trace.filter(isEarly);
   const proof = trace.filter((e) => e.kind === "early_empty" || e.kind === "early_vacant" || e.kind === "early_viewer");
-  let firstMismatch: string | null = earlyTv(early, proof);
+  let firstMismatch: string | null = trace.some((e) => e.kind === "photo_gap") ? "photo_gap" : earlyTv(early, proof);
   let previous = -Infinity;
   let next = 0;
   const manuallyOff = new Set<string | undefined>();
@@ -114,7 +116,7 @@ export function judgeScenario1(trace: readonly ScenarioEvent[]) {
       firstMismatch = "manual_off_then_on";
       break;
     }
-    if (e.kind === "manual_off" || isEarly(e) || proof.includes(e)) continue;
+    if (e.kind === "manual_off" || e.kind === "photo_gap" || isEarly(e) || proof.includes(e)) continue;
     if (firstMismatch) continue;
     if (!Number.isFinite(e.at) || e.at < previous) {
       firstMismatch = "out_of_order:" + e.kind;

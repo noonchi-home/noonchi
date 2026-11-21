@@ -168,11 +168,11 @@ export function leftServerAt(left: LeftAt, firstClip: string, record: { t0: numb
 }
 
 /** 중간 판정에서 더 볼 것 없이 실패로 끝난 결과인가: 늦은 끄기·다른 기기·다른 컵·직접 끈 TV 켜기, 그리고 대기 자리에 도착한 뒤의
- *  대기 전 끔→켬 실패(early_tv, 그 묶음은 더 채워지지 않는다). 아직 오지 않은 단계(missing)와 기록이 늦게 닿아 잠깐 생길 수 있는
+ *  대기 전 끔→켬 실패(early_tv, 그 묶음은 더 채워지지 않는다), 기록 DB에서 빠진 집 사진(photo_gap, 다시 받을 수 없다). 아직 오지 않은 단계(missing)와 기록이 늦게 닿아 잠깐 생길 수 있는
  *  순서 어긋남(unexpected·unconfirmed)은 계속 본다. */
 export function scenarioSettled(r: { passed: boolean; firstMismatch: string | null; events?: readonly { kind: string }[] }): boolean {
   const m = r.firstMismatch ?? "";
-  return !r.passed && (/^(late:|wrong_|manual_off_then_on$)/.test(m) || (m.startsWith("early_tv:") && !!r.events?.some((e) => e.kind === "standby")));
+  return !r.passed && (/^(late:|wrong_|manual_off_then_on$|photo_gap$)/.test(m) || (m.startsWith("early_tv:") && !!r.events?.some((e) => e.kind === "standby")));
 }
 
 /** 영상 시각 → 서버 시각(videoClock을 거꾸로): 짝 사이는 잇고, 멈춘 구간(영상 시각이 그대로)이면 그 영상 시각에 처음 닿은 서버 시각, 짝 밖은 빠르기(rate)로 센다. */

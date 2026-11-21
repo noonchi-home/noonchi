@@ -6,6 +6,8 @@ import { judgeScenario1, scenarioRank, type ScenarioEvent } from "../scripts/sce
 import { earlyTvEvidence, LiveScenario } from "../scripts/scenario1-live.js";
 
 import { leftServerAt, parseArgs, scenarioSettled } from "../scripts/video-check.js";
+import type { HistoryRow } from "../src/contract/history.js";
+import type { WorldDevice, WorldView } from "../src/contract/world.js";
 
 describe("시나리오 1 합성(composed) 판단 재생", () => {
   it("실영상 모드는 수동 완료와 가짜 서버를 거부한다", () => {
@@ -99,6 +101,34 @@ describe("시나리오 1 합성(composed) 판단 재생", () => {
     expect(inView(phoneCamera("meal_watch"), middle("dining_seat"))).toBe(true);
     expect(ndc(phoneCamera("kitchen_entry"), middle("dining_seat"))).toBeNull();
   });
+  it("실영상 판정은 기록 DB의 집 사진 줄(사진마다 한 줄)로 시청 구역을 매기고, 빠진 serial이 있으면 photo_gap으로 실패한다(World State를 1초마다 읽으면 1초 간격 사진을 건너뛸 수 있다)", () => {
+    const live = new LiveScenario(scene);
+    const tv = { id: "tv_62442cb3", kind: "tv", label: "거실 TV", status: "켜짐", state: ["on"], history: [], changed_ms: 0, event_ms: null, started_ms: null, remaining_min: null, active: false } as WorldDevice;
+    // 1초마다 읽은 World State에는 마지막 사진 하나뿐이다: 사진은 기록 줄에서만 매긴다
+    live.sample({ at_ms: 0, objects: [], devices: [tv], household_photo: undefined } as unknown as WorldView);
+    const sofa = map.zones.find((z) => z.id === "sofa_watch")!.polygon;
+    const seat: [number, number] = [sofa.reduce((a, p) => a + p[0], 0) / sofa.length, sofa.reduce((a, p) => a + p[1], 0) / sofa.length];
+    const camera = phoneCamera("living_standby");
+    const row = (serial: number, at: number, empty: boolean): HistoryRow => ({
+      id: serial, day: "2026-11-22", kind: "household", at_ms: at + 1500, text: "집 사진", subject: "photo-" + serial,
+      data: { event: "photo", photo: { id: "photo-" + serial, serial, at_ms: at, answered_ms: at + 1500, proof: {
+        camera, seats: "clear", person_count: empty ? 0 : 1, dining_food: "unknown",
+        person: empty ? null : { room: "living", position: seat, seated: true, attention: "toward_tv" } } } },
+    });
+    const rows = [row(1, 1000, false), row(2, 2000, true), row(3, 3000, true)];
+    expect(live.judge(rows, [], null).events.filter((e) => e.kind === "photo_gap")).toEqual([]);
+    expect(live.photoSamples().map((p) => [p.at, p.arrived, p.empty, p.watching])).toEqual([
+      [1000, 2500, false, true],
+      [2000, 3500, true, false],
+      [3000, 4500, true, false],
+    ]);
+    const gap = live.judge([rows[0]!, rows[2]!], [], null);
+    expect(gap.firstMismatch).toBe("photo_gap");
+    expect(gap.events.filter((e) => e.kind === "photo_gap")).toHaveLength(1);
+    // 놓친 사진은 다시 받을 수 없다: 실영상 판정을 바로 끝낸다
+    expect(scenarioSettled(gap)).toBe(true);
+    expect(judgeScenario1([{ kind: "photo_gap", at: 5 }]).firstMismatch).toBe("photo_gap");
+  });
   it("빈 판에서 빠진 첫 단계는 주방 입구 관찰이다", () => {
     expect(judgeScenario1([]).firstMismatch).toBe("missing:kitchen");
   });
@@ -179,11 +209,12 @@ describe("시나리오 1 합성(composed) 판단 재생", () => {
     // 식탁 관찰 자리로 가라는 명령(9.1초) 뒤 9.2초에 출발해 안내 길(4.3m)을 0.8m/s로 걸어도 14.6초인데 12초에 도착한 기록
     await expect(replayScenario("arrive_early")).rejects.toThrow("가기 명령");
   });
-  it("판정기가 늦게 조회해도 사진이 집 상태에 들어온 때는 World State가 실은 VLM 답 시각(answered_ms)이다(다시 낸 상태의 발행 시각 at_ms가 아니다)", () => {
+  it("판정기가 늦게 조회해도 사진이 집 상태에 들어온 때는 그 집 사진의 VLM 답 시각(answered_ms)이다(기록 줄 시각·다시 낸 상태의 발행 시각이 아니다)", () => {
     const live = new LiveScenario(scene as never);
     const tv = { id: "tv_62442cb3", kind: "tv", label: "거실 TV", status: "켜짐", state: ["on"], history: [], changed_ms: 0 };
-    const view = { at_ms: 9000, objects: [], devices: [tv], person: { visible: false }, household_photo: { id: "p1", serial: 1, at_ms: 5000, answered_ms: 6800, proof: null } };
-    live.sample(view as never);
+    live.sample({ at_ms: 9000, objects: [], devices: [tv], person: { visible: false } } as never);
+    const photo = { id: "p1", serial: 1, at_ms: 5000, answered_ms: 6800, proof: null };
+    live.judge([{ id: 1, day: "2026-11-22", kind: "household", at_ms: 9000, text: "집 사진", subject: "p1", data: { event: "photo", photo } }], [], null);
     expect(live.photoSamples().map((p) => p.arrived)).toEqual([6800]);
   });
   it("대기 전 끔→켬 근거는 끌 때 이미 받은 사진에서 빈 구간의 첫 사진, 끈 확인 뒤 찍혀 다시 켜기 전에 온 앉아 보는 사진이다", () => {
