@@ -145,6 +145,17 @@ export function objectNames(c: Condition, out: string[] = []): string[] {
   return out;
 }
 
+/** 조건 안에서 내용물(facts.contents)을 보는 물건 이름(id·종류): 따르기·채우기가 담는 그릇. */
+export function contentsNames(c: Condition, out: string[] = []): string[] {
+  if ("all" in c) c.all.forEach((x) => contentsNames(x, out));
+  else if ("any" in c) c.any.forEach((x) => contentsNames(x, out));
+  else if ("seq" in c) c.seq.forEach((x) => contentsNames(x, out));
+  else if ("not" in c) contentsNames(c.not, out);
+  else if ("for_s" in c) contentsNames(c.cond, out);
+  else if ("object" in c && c.facts && "contents" in c.facts) out.push(c.object);
+  return out;
+}
+
 /** 조건 안의 「사람이 들고 있음」(person_holding) 물건 이름(id·종류). */
 export function heldNames(c: Condition, out: string[] = []): string[] {
   if ("all" in c) c.all.forEach((x) => heldNames(x, out));
@@ -595,7 +606,9 @@ export class PlanDraft {
     // 사람 단계 글은 서버가 만든다: 동작 틀에 대상·물건 이름을 넣는다
     let server: { label: string; command: string; caution: string | null } | null = null;
     if (human && a.act && !errors.length) {
-      const name = this.nameOf(target);
+      // 따르기는 끝 조건이 내용물을 보는 그릇에 따른다: 대상이 그 그릇이 놓인 자리(아직 안 보인 컵)여도 그릇 이름으로 부른다
+      const vessel = a.kind === "do" && a.act === "따르기" && until ? contentsNames(until).find((n) => n !== target) : undefined;
+      const name = vessel ? (isId(vessel) ? this.nameOf(vessel) : OBJECT_NAME[vessel as keyof typeof OBJECT_NAME] ?? null) ?? this.nameOf(target) : this.nameOf(target);
       // 집고 놓는 물건이 World State 물건이면 그 물건 이름으로 부른다. item이 그 물건과 다른 것을 가리키면 버린다(글은 병, 추적은 컵이 되지 않게)
       const own = a.kind === "pick" || a.kind === "place" ? this.itemOf(object) : null;
       if (own && a.item && a.item !== own && ITEM_CLASS[a.item] !== this.clsOf(object!)) {

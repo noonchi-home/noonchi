@@ -91,6 +91,14 @@ describe("시나리오 2 판단 기능", () => {
     expect(plan.plan.steps.at(-1)).toMatchObject({ kind: "place", target: DESK });
     // 모든 사람 단계는 비전·폰 위치 조건으로 넘어간다(「완료」에만 기대지 않음)
     expect(plan.plan.steps.every((s) => !!s.until)).toBe(true);
+    // 따르기는 끝 조건이 내용물을 보는 그릇(컵)에 따른다: 대상이 싱크대 자리여도 「컵에」
+    expect(plan.plan.steps[3]).toMatchObject({ label: "컵에 물 따르기", command: "컵에 물을 따라 주세요" });
+  });
+  it("컵이 아직 안 보여도(대상은 싱크대 자리, 끝 조건은 컵 종류) 따르기 명령은 컵을 부른다", async () => {
+    const plan = await testPlanner(llm).plan(planContext({ decision: decisionFor(WATER_ACTION, "speech"), world: view([], "using_laptop"), floor }));
+    expect(plan.ok, JSON.stringify(plan)).toBe(true);
+    if (!plan.ok) return;
+    expect(plan.plan.steps[3]).toMatchObject({ kind: "do", target: "sink_counter_kitchen", command: "컵에 물을 따라 주세요" });
   });
 
   it("책상 앞 자리(물컵 놓기)는 집 자료 검사를 지나고 사용자 자리 밖이다", () => {
