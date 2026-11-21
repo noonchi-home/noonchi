@@ -92,7 +92,7 @@ export const TASKS: Record<string, TaskSpec> = {
   // 습관은 반성(LLM)이 아니라 도움 기록의 시각으로 찾는다(src/brain/history/routines.ts)라 learn을 두지 않는다
   "물 한 잔 가져다주기": {
     name: "물 한 잔 가져다주기", maxSteps: 10, carry: "bottle", carryUnseen: true, carryAlso: ["cup"],
-    description: "사람이 책상에서 공부하거나 일하는 중 마실 물이 없거나 물을 부탁하면, 사람이 냉장고에서 물병을 꺼내 싱크대에서 컵에 물을 따르고 그 컵을 책상에 놓게 한다.",
+    description: "사람이 책상에서 공부하거나 일하는 중 마실 물이 없거나 물을 부탁하면, 사람이 냉장고에서 물병을 꺼내 싱크대에서 컵에 물을 따르고 그 컵을 들어 책상에 가져가 놓게 한다. 따르기·컵 들기·놓기는 비전으로 끝을 본다(컵 내용물 있음·컵 손에 있음·책상 위이고 손에 없음). 계획할 때 주방 컵이 안 보이면 컵 단계 대상은 싱크대 자리로 하고 끝 조건은 컵 종류(cup)로 쓴다. 묻지 않는다.",
     allow: { kinds: ["go", "pick", "do", "place"], need: ["go", "pick", "do", "place"] },
   },
 };
