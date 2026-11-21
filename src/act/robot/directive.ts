@@ -1,7 +1,7 @@
 import type { DirectiveResult, HouseholdOffer, ManagerDirective } from "../../contract/machines.js";
 
 import type { TrackCore } from "../track/core.js";
-import { stationSeen } from "./station-arrival.js";
+import { StationReach, stationSeen } from "./station-arrival.js";
 import { eyeNow, idleLine, phoneBlocked, sendLine, type IdleSlot } from "./phone-line.js";
 import { josa } from "../../shared/korean.js";
 
@@ -12,6 +12,7 @@ const ARRIVAL_M=0.5;
 export function stationDirectives(core:TrackCore) {
   let slot:IdleSlot|null=null;
   const port=core.o.stations;
+  const reach=new StationReach();
   return new DirectiveRunner({
     now:()=>core.clock.now(), rev:()=>port?.rev() ?? 0,
     personSeen:()=>core.o.state.view().person.visible,
@@ -46,8 +47,11 @@ export function stationDirectives(core:TrackCore) {
           idleLine(core,slot).show({...slot.sent,speak:false,guide:nav.guide,vision:nav.vision});
       }
       const near=nav ? nav.arrived : !!(eye && target && Math.hypot(eye.position[0]-target.position[0],eye.position[1]-target.position[2])<=ARRIVAL_M);
-      // 비출 곳이 있는 자리는 그쪽을 보고 있어야 도착이다: 반경 안에서 반대쪽을 보면 그 자리 사진이 구역을 담지 못한다
-      return !!(near && target && stationSeen(core,target,ARRIVAL_M,core.clock.now()));
+      // 비출 곳이 있는 자리는 닿은 뒤 그쪽을 찍은 사진이 있어야 도착이다: 반경 안에서 반대쪽을 보면 그 자리 사진이 구역을 담지 못한다
+      const now=core.clock.now(), since=reach.since(job.id,!!(near && target),now);
+      const rule=since!==null && target ? stationSeen(core,target,ARRIVAL_M,now,since) : null;
+      if(rule) { reach.forget(job.id); core.o.events.log?.(`관찰 자리 도착 ${job.target_id}: ${rule}`); }
+      return rule!==null;
     },
     tv:async(job,stillActive)=>{
       const live=()=>stillActive() && port?.tvAllowed?.(job)===true;

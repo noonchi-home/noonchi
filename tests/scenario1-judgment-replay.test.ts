@@ -119,14 +119,18 @@ describe("시나리오 1 합성(composed) 판단 재생", { timeout: 20_000 }, (
     const view={household_photo:{serial:1,id:"seen",at_ms:1000,proof},devices:[{id:tv.id,kind:"tv"}],
       fixtures:[{device:tv.id,last_seen_ms:1000,answered_ms:1000,facts:{screen:{at_ms:1000,value:"screen_on"}}}]};
     const core={o:{state:{view:()=>view},layout:{floor:()=>floorPlanFrom(scene)},stations:{map:()=>map}}} as unknown as TrackCore;
-    expect(stationSeen(core,target,0.5,2500)).toBe(true);
+    expect(stationSeen(core,target,0.5,2500,900)).toBe("fixture");
     const towardTV=Math.atan2(-(tv.position[0]-standby.position[0]),-(tv.position[1]-standby.position[1]));
     proof.camera={...roomView,orientation:yawPitchQuat(towardTV,-10)};
     expect(inView(proof.camera,target.look.position)).toBe(true);
-    expect(stationSeen(core,target,0.5,2500)).toBe(false);
+    expect(stationSeen(core,target,0.5,2500,900)).toBeNull();
+    // 소파 구역을 다 담지 못한 사진은 기다려도 도착이 아니다
+    expect(stationSeen(core,target,0.5,9000,900)).toBeNull();
     const offlineView = {...view, devices:[], fixtures:[], household_photo:{...view.household_photo,proof:{...proof,camera:roomView}}};
     const offline = {o:{...core.o,state:{view:()=>offlineView}}} as unknown as TrackCore;
-    expect(stationSeen(offline,target,0.5,2500)).toBe(false);
+    expect(stationSeen(offline,target,0.5,2500,900)).toBeNull();
+    // VLM이 TV 사실을 6초 넘게 내지 않으면 구역을 다 담은 사진만으로 받는다
+    expect(stationSeen(offline,target,0.5,7000,900)).toBe("coverage");
     expect(inView(phoneCamera("meal_watch"), middle("dining_seat"))).toBe(true);
     expect(ndc(phoneCamera("kitchen_entry"), middle("dining_seat"))).toBeNull();
   });

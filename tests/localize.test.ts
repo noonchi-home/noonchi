@@ -108,11 +108,33 @@ describe("목련 위치 찾기", () => {
       return {o:{state:{view:()=>({household_photo:photo,devices:[],fixtures:[]})},layout:{floor:()=>({objects:new Map()})},
         stations:{map:()=>map}}} as unknown as TrackCore;
     };
-    expect(stationSeen(core([5,1.15,8]),target,0.5,1400)).toBe(true);
+    expect(stationSeen(core([5,1.15,8]),target,0.5,1400,1000)).toBe("no_appliance");
     // 사진으로 찾은 위치가 자리에서 반경보다 멀면 도착이 아니다
-    expect(stationSeen(core([5.8,1.15,8]),target,0.5,1400)).toBe(false);
+    expect(stationSeen(core([5.8,1.15,8]),target,0.5,1400,1000)).toBeNull();
     // 위치를 모르는 사진(지도 없음·특징점 부족)은 사진 근거만 본다. AR 자세와 다른 사진은 근거(proof)가 없어 여기 오지 않는다
-    expect(stationSeen(core(undefined),target,0.5,1400)).toBe(true);
+    expect(stationSeen(core(undefined),target,0.5,1400,1000)).toBe("no_appliance");
+  });
+  it("관찰 자리 도착 사진은 나이가 아니라 자리에 닿은 뒤 찍혔는지로 고르고, 가전 사실이 6초 안에 안 오면 사진 범위만으로 받는다",()=>{
+    const target={id:"s",position:[5,0,8] as [number,number,number],look:{position:[5,0.6,6] as [number,number,number]}};
+    const map={version:1,stations:[{id:"s",name:"주방 입구",room:"kitchen",roles:["observe"],position:[5,8],look_at:[5,6],rooms:["kitchen"],surfaces:["fridge-1"],observes_zone_ids:[]}],
+      zones:[],surface_fronts:[],kitchen_entry:null,meal_watch:null};
+    const core=(at:number, fact:boolean)=>{
+      const photo:HouseholdPhoto={id:"p",at_ms:at,serial:1,proof:{camera:frame(1).view!,person_count:0,dining_food:"unknown",seats:"unknown",person:null}};
+      const fixtures=fact ? [{device:"fridge-1",last_seen_ms:at,answered_ms:at,facts:{open:{at_ms:at,value:"door_closed"}}}] : [];
+      return {o:{state:{view:()=>({household_photo:photo,devices:[{id:"fridge-1",kind:"fridge"}],fixtures})},layout:{floor:()=>({objects:new Map()})},
+        stations:{map:()=>map}}} as unknown as TrackCore;
+    };
+    // 자리에 닿기(10초) 전에 찍은 사진은 신선해도 그 자리 사진이 아니다
+    expect(stationSeen(core(9500,true),target,0.5,10200,10000)).toBeNull();
+    // 닿은 뒤 찍은 사진은 답이 늦게 와 3초 넘게 지났어도 쓴다
+    expect(stationSeen(core(10100,true),target,0.5,13600,10000)).toBe("fixture");
+    // VLM이 그 자리 가전 사실을 아직 안 냈으면 기다린다
+    expect(stationSeen(core(10100,false),target,0.5,15000,10000)).toBeNull();
+    // 닿은 뒤 6초가 지나도 안 내면 비출 곳을 담은 사진만으로 도착을 받는다
+    expect(stationSeen(core(10100,false),target,0.5,16000,10000)).toBe("coverage");
+    // 그래도 비출 곳을 담지 못한 사진이면 도착이 아니다
+    const away={id:"s",position:[5,0,8] as [number,number,number],look:{position:[5,0.6,10] as [number,number,number]}};
+    expect(stationSeen(core(10100,false),away,0.5,16000,10000)).toBeNull();
   });
   it("관찰 자리·면 앞 장면의 서는 곳과 바라볼 곳은 집 자료(stations.json) 값 그대로다", () => {
     const home = resolveHome("twin", "mokryeon_180b");
