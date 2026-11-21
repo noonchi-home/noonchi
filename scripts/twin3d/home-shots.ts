@@ -80,7 +80,7 @@ export async function captureHomeShots(out: string, software: boolean) {
             const png = await page.screenshot({ format: "png" }, 60000);
             if (errors.length) throw new Error(errors.join("\n"));
             if (png.readUInt32BE(16) !== width || png.readUInt32BE(20) !== height) throw new Error(shot.id + " PNG 크기 오류");
-            writeFileSync(join(stage, shot.id + ".png"), png);
+            writeFileSync(join(stage, shot.file), png);
             console.log(shot.id);
           }
         } finally {
