@@ -136,6 +136,8 @@ const L = SYNC_LIMITS;
 
 export class SyncAligner {
   private photoFloor:number|null=null;
+  /** 맞춘 동안 AR과 다르다고 나온 사진 결과(아직 따르지 않음). 서로 맞는 결과가 한 번 더 오면 그쪽으로 다시 맞춘다. */
+  private doubt:{rigid:Rigid;floor:number}|null=null;
   private rigid: Rigid | null = null;
   private aligned = false;
   private source: SyncSource | null = null;
@@ -183,6 +185,7 @@ export class SyncAligner {
   /** 새 AR 원점·다시 맞추기: 변환·증거·시작을 모두 지운다. */
   reset(): void {
     this.photoFloor=null;
+    this.doubt=null;
     this.fixed = false;
     this.rigid = null;
     this.aligned = false;
@@ -224,10 +227,25 @@ export class SyncAligner {
   }
 
   /** 트윈 높이 0의 AR y: 실제 바닥 hit 중앙값 → 폰 어림 바닥 → 시작 높이 − 눈높이 → 마지막 폰 높이 − 눈높이. */
-  photo(position:Vec3, orientation:Quat, world:Vec3, yaw:number, conflict:boolean):void {
-    if(this.fixed) return;
+  /** 사진으로 찾은 위치 하나. 맞춘 동안 AR과 다른 결과는 한 번으로는 따르지 않고, 서로 맞는 다른 결과가 이어서 한 번 더 와야
+   *  그 결과로 다시 맞춘다(한 장의 틀린 결과로 잘 맞춘 위치를 지우지 않는다). 다시 맞췄으면(맞춤을 지웠으면) true. */
+  photo(position:Vec3, orientation:Quat, world:Vec3, yaw:number, conflict:boolean):boolean {
+    if(this.fixed) return false;
     const next=startRigid({position:[world[0],world[2]],yawDeg:yaw,label:"",facingLabel:""},position,orientation);
     const floor=position[1]-world[1];
+    if(conflict && this.aligned) {
+      const prev=this.doubt, gap=prev && rigidGap(prev.rigid,next,[[position[0],position[2]]]);
+      const agreeing=!!prev && !!gap && !photoConflict(gap.shiftM,gap.rotDeg) && Math.abs(prev.floor-floor)<=PHOTO_GAP_M;
+      if(!agreeing) { this.doubt={rigid:next,floor}; return false; }
+      this.reset();
+      this.rigid=next;
+      this.photoFloor=floor;
+      this.aligned=true;
+      this.source="photo";
+      this.updates++;
+      return true;
+    }
+    this.doubt=null;
     const gap=this.rigid && rigidGap(this.rigid,next,[[position[0],position[2]]]);
     const confirmed=!conflict && !!gap && !photoConflict(gap.shiftM,gap.rotDeg) &&
       (this.aligned || (this.source==="photo" && this.photoFloor!==null && Math.abs(this.photoFloor-floor)<=PHOTO_GAP_M));
@@ -237,7 +255,11 @@ export class SyncAligner {
     this.aligned=confirmed;
     this.source="photo";
     this.updates++;
+    return conflict;
   }
+
+  /** 맞춘 동안 AR과 맞는 사진 결과가 왔다: 앞서 미뤄 둔 어긋남은 이어지지 않았으니 잊는다. */
+  photoAgrees():void { this.doubt=null; }
 
   floorY(): number | null {
     return this.photoFloor ?? this.surface.floorY() ?? (this.floorHints.length ? median(this.floorHints) : null)

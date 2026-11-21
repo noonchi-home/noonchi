@@ -50,9 +50,33 @@ describe("목련 위치 찾기", () => {
     }
     expect(apply(1)).toBe(true);expect(phone.aligned).toBe(false);
     expect(apply(2)).toBe(true);expect(phone.aligned).toBe(true);
-    expect(apply(3,true)).toBe(true);expect(phone.aligned).toBe(false);
+    // AR과 다른 결과 한 장은 잘 맞춘 위치를 지우지 않는다(10초마다 한 장이라 지우면 도착·사진 근거가 한참 멈춘다)
+    expect(apply(3,true)).toBe(true);expect(phone.aligned).toBe(true);
+    // 그 사이에 AR과 맞는 결과가 오면 앞선 어긋남은 잊는다
+    expect(apply(4)).toBe(true);
+    expect(apply(5,true)).toBe(true);expect(phone.aligned).toBe(true);
+    // 서로 맞고 AR과는 다른 결과가 두 번 이어지면 그때 사진 쪽으로 다시 맞추고, 그 전에 표시한 프레임은 버린다
+    const marked={...header};phone.markEngine(marked);
+    expect(apply(6,true)).toBe(true);
+    expect(phone.aligned).toBe(true);
+    expect(phone.status().sync.source).toBe("photo");
+    expect(phone.localized(marked,resultFor(frame(7),fit,"r"))).toBe(false);
     const old={...header};phone.markEngine(old);phone.handle({type:"reset",epoch:"new"});
-    expect(phone.localized(old,resultFor(frame(4),fit,"r"))).toBe(false);
+    expect(phone.localized(old,resultFor(frame(7),fit,"r"))).toBe(false);
+  });
+  it("AR과 다른 결과 두 장이 서로도 다르면 다시 맞추지 않는다", () => {
+    const phone=new PhoneSession({sync:{landmarks:[],walls:[]}});
+    const apply=(n:number, at:[number,number,number], conflict=false) => {
+      const h={...header};phone.markEngine(h);
+      return phone.localized(h,{...resultFor(frame(n),{...fit,position:at},"r"),ar_gap_m:conflict?3:null,ar_gap_deg:null});
+    };
+    apply(1,[5,1.15,8]);apply(2,[5,1.15,8]);
+    expect(phone.aligned).toBe(true);
+    const before=phone.status().sync;
+    apply(3,[7,1.15,9],true);
+    apply(4,[2,1.15,4],true);
+    expect(phone.aligned).toBe(true);
+    expect(phone.status().sync).toEqual(before);
   });
   it("진행 중 한 장과 가장 새 한 장만 처리하고 결과 토픽으로 원 요청을 끝낸다",async()=>{
     const bus=new MemoryBus(), epoch={boot:"test",home:"flat#1"};

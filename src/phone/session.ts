@@ -189,9 +189,9 @@ export class PhoneSession {
     const ar=toTwin(header.position,header.orientation,{theta:0,tx:0,ty:0,floorY:0});
     const conflict=photoConflict(r.ar_gap_m,r.ar_gap_deg) || (r.pitch_deg!==null && Math.abs(ar.pitch_deg-r.pitch_deg)>PHOTO_GAP_DEG);
     if(r.position && r.yaw_deg!==null && (!this.aligned || conflict)) {
-      this.sync.photo(header.position,header.orientation,r.position,r.yaw_deg,conflict);
-      if(conflict) this.photoFrames=new WeakSet();
-    }
+      // 다시 맞췄을 때만 그 전 원점으로 표시한 프레임을 버린다
+      if(this.sync.photo(header.position,header.orientation,r.position,r.yaw_deg,conflict)) this.photoFrames=new WeakSet();
+    } else if(r.position && r.yaw_deg!==null) this.sync.photoAgrees();
     return true;
   }
   private lastPhone: Plan2 = [0, 0];
