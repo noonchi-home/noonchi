@@ -31,7 +31,9 @@ import type { DecisionRecord } from "../../src/contract/events.js";
 import type { DeviceSpec } from "../../src/contract/devices.js";
 import type { WorldView, WorldDevice, WorldObject } from "../../src/contract/world.js";
 import type { Vec2 } from "../../src/contract/layout.js";
-import type { SceneObservation } from "../../src/contract/observe.js";
+import type { CameraView, SceneObservation } from "../../src/contract/observe.js";
+import { inView } from "../../src/world/place.js";
+import { projectionFromFov, yawPitchQuat } from "../../ui/src/phone/core/video-math.js";
 import { testTracker } from "./tracker-ports.js";
 import { planContext } from "./planner.js";
 import { earlyTvEvidence, LiveScenario } from "../../scripts/scenario1-live.js";
@@ -40,13 +42,14 @@ import { historyRoutes } from "../../src/record/history.js";
 import type { PlannedCommand } from "../../src/contract/phone.js";
 import type { ScenarioEvent } from "../../scripts/scenario1-judge.js";
 
-type Variant = "normal" | "back" | "brief" | "manual" | "cadence_wrong" | "lag_missing" | "lag_zero";
+type Variant = "normal" | "back" | "brief" | "manual" | "cadence_wrong" | "lag_missing" | "lag_zero" | "arrive_early";
 /** at: 촬영(또는 사건) 시각. 사진 줄(table·away·tv)은 lag가 반드시 있고, VLM 답이 at + lag에 도착한다(집 상태가 그때 바뀐다). */
 type Line = { at: number; kind: string; value?: string; frame?: string; response?: object; source: string; lag?: number };
-/** 재생에 넣은 사진의 촬영 시각(절대 ms). */
-type Photo = { at: number };
+/** 재생에 넣은 사진: 촬영 시각(절대 ms), 그때 폰 자리(평면 m)와 사진 카메라. */
+export type Photo = { at: number; phone: Vec2; look: Vec2; camera: CameraView };
 const scene = loadScene(resolveHome(DEFAULT_TWIN_DIR, "mokryeon_180b"))!;
-const map = scene.stations,
+/** 목련 집 관찰 자리·구역(twin/data/homes/mokryeon_180b/stations.json). */
+export const map = scene.stations,
   floor = floorPlanFrom(scene);
 const table = map.surface_fronts.find((f) => f.surface_id.startsWith("dining_table"))!,
   sink = map.surface_fronts.find((f) => f.surface_id.startsWith("sink_counter"))!;
@@ -78,14 +81,42 @@ const raw = readFileSync(new URL("../fixtures/scenario1/judgment-composed.ndjson
   .map((s) => JSON.parse(s));
 if (raw[0].kind !== "metadata" || !raw[0].name.includes("composed"))
   throw new Error("합성 자료 머리말이 없습니다.");
-const frames: { frame: string; scene: SceneObservation }[] = JSON.parse(
+const frames: { frame: string; scene: SceneObservation; view: CameraView }[] = JSON.parse(
   readFileSync(new URL("../fixtures/replay/wide-mug-v1.json", import.meta.url), "utf8"),
 );
+/** 폰 카메라: 가로 시험 영상(1920×1080)을 찍은 대로 세로 시야각 40°·16:9, 높이 1.15m, 10° 아래(영상 모드 주소 fov=40·pitch=-10·h=1.15).
+ *  자리에 서면 그 자리의 바라볼 곳(look_at)을 비춘다. 녹화 장(wide-mug-v1)의 투영과 같아야 한다. */
+const PHONE = { fovDeg: 40, aspect: 16 / 9, pitchDeg: -10, heightM: 1.15 },
+  PHONE_PROJECTION = projectionFromFov(PHONE.fovDeg, PHONE.aspect);
+if (frames[0]?.view.projection.some((v, i) => Math.abs(v - PHONE_PROJECTION[i]!) > 1e-9))
+  throw Error("폰 카메라 투영이 녹화 장 투영과 다릅니다.");
+/** 사진에 사람이 찍히는 높이(m): 앉은 사람의 몸통. 이 점이 화면 안이어야 사진에 사람이 있다. */
+const PERSON_M = 0.9;
+/** 폰이 선 자리(eye 줄 값): 관찰 자리, 식탁 앞(table), 싱크대 앞(sink)과 그 자리의 바라볼 곳. */
+function spotOf(value: string | undefined): { position: Vec2; look: Vec2 } {
+  const front = value === "table" ? table : value === "sink" ? sink : null;
+  const s = front ?? map.stations.find((s) => s.id === value);
+  if (!s) throw Error("없는 폰 자리 " + value);
+  return { position: s.position, look: s.look_at };
+}
+/** 그 자리에서 바라볼 곳을 비추는 폰의 엔진 프레임 카메라(src/phone/session.ts viewAt과 같은 꼴, 트윈 좌표라 theta 0). */
+export function phoneCamera(value: string | undefined): CameraView {
+  const { position: p, look } = spotOf(value);
+  const yaw = Math.atan2(-(look[0] - p[0]), -(look[1] - p[1]));
+  return {
+    origin: [p[0], PHONE.heightM, p[1]],
+    orientation: yawPitchQuat(yaw, PHONE.pitchDeg),
+    theta: 0,
+    projection: [...PHONE_PROJECTION],
+  };
+}
 const base = Date.UTC(2026, 10, 20, 12);
 /** 재생 길이(ms)와 폰 자세 간격(ms, ui/src/phone/core/ar.js SEND_MS). */
-const REPLAY_MS = 40000,
-  POSE_MS = 100;
-function makeBag(bag: Bag, variant: Variant): { left: number | null; photos: Photo[] } {
+const REPLAY_MS = 100000,
+  POSE_MS = 100,
+  /** 폰을 든 사람의 걷기(m/s, ui/src/phone/core/video-ar.js WALK_MPS). */
+  WALK_MPS = 0.8;
+function makeBag(bag: Bag, variant: Variant): { left: number | null; photos: Photo[]; arrivals: { at: number; value: string }[] } {
   const world = new WorldState({
     devices: () => [],
     surfaces: () => [],
@@ -152,8 +183,7 @@ function makeBag(bag: Bag, variant: Variant): { left: number | null; photos: Pho
       );
       continue;
     }
-    const eyePos = (value: string | undefined) =>
-      value === "table" ? table.position : value === "sink" ? sink.position : map.stations.find((s) => s.id === value)!.position;
+    const eyePos = (value: string | undefined) => spotOf(value).position;
     if (r.kind === "pose") {
       put("/phone/pose", "phone", { quality: "usable", position: eyePos(r.value), pose_gen: 1, observed_ms: at }, at);
       continue;
@@ -165,9 +195,9 @@ function makeBag(bag: Bag, variant: Variant): { left: number | null; photos: Pho
         room: r.value === "sink" || r.value === "kitchen_entry" ? "kitchen" : "living",
         room_label: null,
         at_ms: at,
-        height_m: 1.3,
-        yaw_deg: 0,
-        pitch_deg: 0,
+        height_m: PHONE.heightM,
+        yaw_deg: (Math.atan2(-(spotOf(r.value).look[0] - pos[0]), -(spotOf(r.value).look[1] - pos[1])) * 180) / Math.PI,
+        pitch_deg: PHONE.pitchDeg,
       };
       world.at_ms = at;
       put("/world/state", "world", { rev: ++rev, view: world }, at);
@@ -206,49 +236,66 @@ function makeBag(bag: Bag, variant: Variant): { left: number | null; photos: Pho
       fridge.event_ms = at;
       fridge.status = "열림";
     }
-    if (["table", "away", "tv"].includes(r.kind)) {
+    if (["fridge", "table", "away", "tv"].includes(r.kind)) {
       // 답 지연은 실제 VLM 범위 안이어야 한다: 1초 미만(촬영 순간 도착 포함)이나 시간 초과(VLM_TIMEOUT_MS) 넘음은 실제로 오지 않는 답이다
       if (!(typeof r.lag === "number" && r.lag >= VLM_LAG_MIN_MS && r.lag <= OBSERVE.vlmTimeoutMs))
         throw Error(`합성 기록 사진 ${r.at}ms의 VLM 답 지연(lag ${r.lag})이 ${VLM_LAG_MIN_MS}~${OBSERVE.vlmTimeoutMs}ms 밖입니다.`);
-      photos.push({ at });
+      // 줄은 집에서 실제로 일어난 일(사람·컵 자리)이고, 사진에는 그때 폰 카메라 화면 안에 든 것만 찍힌다
+      const phone = eyes.filter((e) => e.at <= r.at).at(-1)?.value;
+      const camera = phoneCamera(phone);
+      const seen = (p: Vec2, h: number) => inView(camera, [p[0], h, p[1]]);
+      photos.push({ at, phone: spotOf(phone).position, look: spotOf(phone).look, camera });
       const record = r.frame ? frames.find((f) => f.frame === r.frame) : null;
       if (r.frame && !record) throw Error("없는 녹화 장 " + r.frame);
       const facts = record?.scene.observations ?? [];
       const place = facts.find(
         (o) => o.object_id === "v1" && ["on_table", "in_hand", "in_sink"].includes(o.state),
       )?.state;
+      const dining = r.kind === "table",
+        zone = dining ? "dining_seat" : r.kind === "fridge" ? "fridge_front" : "sofa_watch",
+        pos = center(zone),
+        room = map.zones.find((z) => z.id === zone)!.room,
+        there = r.kind !== "away" && r.value !== "empty",
+        visible = there && seen(pos, PERSON_M),
+        seated = r.value !== "standing" && r.kind !== "fridge";
       if (place) {
         const onSink = place === "in_sink",
           held = place === "in_hand",
           front = onSink ? sink : table;
-        const cup: WorldObject = {
-          id: cupId,
-          cls: "cup",
-          position: [...front.look_at.slice(0, 1), 0.8, front.look_at[1]] as [number, number, number],
-          surface: held ? null : front.surface_id,
-          surface_label: onSink ? "싱크대" : "식탁",
-          surface_part: onSink ? "basin" : undefined,
-          room: front.room,
-          status: "present",
-          first_seen_ms: world.objects[0]?.first_seen_ms ?? at,
-          last_seen_ms: at,
-          last_in_view_ms: at,
-          error_m: 0.05,
-          facts: { place: fact(place, at) },
-          answered_ms: null,
-          closer_hold: false,
-          devices: [],
-          followed_by: null,
-        };
-        world.objects = [cup];
+        const spot: [number, number, number] = [front.look_at[0], 0.8, front.look_at[1]];
+        // 손에 든 컵은 폰을 든 사람 손에 있어 카메라 앞에 찍힌다
+        if (held || seen([spot[0], spot[2]], spot[1])) {
+          const cup: WorldObject = {
+            id: cupId,
+            cls: "cup",
+            position: spot,
+            surface: held ? null : front.surface_id,
+            surface_label: onSink ? "싱크대" : "식탁",
+            surface_part: onSink ? "basin" : undefined,
+            room: front.room,
+            status: "present",
+            first_seen_ms: world.objects[0]?.first_seen_ms ?? at,
+            last_seen_ms: at,
+            last_in_view_ms: at,
+            error_m: 0.05,
+            facts: { place: fact(place, at) },
+            answered_ms: null,
+            closer_hold: false,
+            devices: [],
+            followed_by: null,
+          };
+          world.objects = [cup];
+        }
       }
-      const was = world.person.visible,
-        visible = r.kind !== "away" && r.value !== "empty";
-      const dining = r.kind === "table",
-        pos = center(dining ? "dining_seat" : "sofa_watch"),
-        seated = r.value !== "standing";
+      const was = world.person.visible;
       const observedDrink = facts.some((f) => f.object_id === "d1" && f.state === "drinking");
-      const activity = dining ? (observedDrink ? "drinking" : world.person.facts.activity?.value) : "watching_tv";
+      const activity = dining
+        ? observedDrink
+          ? "drinking"
+          : world.person.facts.activity?.value
+        : r.kind === "tv"
+        ? "watching_tv"
+        : undefined;
       world.person = {
         ...world.person,
         answered_ms: visible ? at : null,
@@ -256,43 +303,39 @@ function makeBag(bag: Bag, variant: Variant): { left: number | null; photos: Pho
         count: visible ? 1 : 0,
         since_ms: was === visible ? world.person.since_ms : at,
         last_seen_ms: visible ? at : world.person.last_seen_ms,
-        room: "living",
-        room_label: "거실",
-        position: visible ? pos : null,
-        position_ms: visible ? at : null,
+        room: visible ? room : world.person.room,
+        room_label: visible ? (room === "kitchen" ? "주방" : "거실") : world.person.room_label,
+        // World State는 안 보여도 마지막으로 본 발 자리와 그 방·시각을 남긴다(src/contract/world.ts WorldPerson)
+        position: visible ? pos : world.person.position,
+        position_ms: visible ? at : world.person.position_ms,
         holding: [],
         facts: visible && activity ? { activity: fact(activity, at) } : {},
       };
+      const table_ = table.look_at;
       world.household_photo = {
         serial: ++serial,
         id: "photo-" + serial,
         at_ms: at,
         proof: {
-          camera: {
-            origin: [7, 1.2, 16],
-            orientation: [0, 0, 0, 1],
-            theta: 0,
-            projection: [0.6, 0, 0, 0, 0, 0.6, 0, 0, 0, 0, -1, -1, 0, 0, -0.2, 0],
-          },
+          camera,
           seats: "clear",
           person_count: visible ? 1 : 0,
-          dining_food: dining ? "yes" : "unknown",
-          person: visible
-            ? { room: "living", position: pos, seated, attention: dining ? "elsewhere" : "toward_tv" }
-            : null,
+          dining_food: dining && seen(table_, 0.8) ? "yes" : "unknown",
+          person: visible ? { room, position: pos, seated, attention: dining ? "elsewhere" : r.kind === "tv" ? "toward_tv" : "unknown" } : null,
         },
       };
-      if (r.kind === "away")
+      // 사람 자취는 카메라가 걷는 사람을 본 자리만 남는다
+      if (r.kind === "away" && r.value === "table")
         world.person_trail = [
           { room: "living", position: center("dining_seat"), at_ms: at - 1000 },
-          { room: "living", position: [9.4, 5.5], at_ms: at - 500 },
-        ];
+          { room: "living", position: [9.4, 5.5] as Vec2, at_ms: at - 500 },
+        ].filter((t) => seen(t.position, PERSON_M));
     }
     world.at_ms = arrive;
     world.frame_ms = at;
     put("/world/state", "world", { rev: ++rev, view: world }, arrive);
   }
-  return { left, photos };
+  return { left, photos, arrivals: eyes.map((e) => ({ at: base + e.at, value: e.value! })) };
 }
 
 /** VLM 사진 간격(src/observe/pipeline.ts frame.vlm): 앞 VLM 촬영 prev 뒤 엔진 프레임마다 보고, 처음으로 「그때 간격(빠름 1초·보통 2초)」 이상 지난 프레임.
@@ -305,6 +348,11 @@ const OBSERVE = loadObserveConfig({}),
   /** 합성 기록 VLM 답 지연의 아래 끝(ms): 잰 평균은 nano 1.6초, mini 1.8초다. */
   VLM_LAG_MIN_MS = 1000;
 
+/** 그 변형의 합성 기록으로 만든 사진들(촬영 시각·폰 자리·카메라). */
+export function composedPhotos(variant: Variant): Photo[] {
+  return makeBag(Bag.open(":memory:"), variant).photos;
+}
+
 export async function replayScenario(
   variant: Variant,
   recording?: (v: ReturnType<LiveScenario["judge"]>) => void,
@@ -314,11 +362,13 @@ export async function replayScenario(
   const db = HistoryDb.open(":memory:"),
     live = new LiveScenario(scene);
   const received: PlannedCommand[] = [];
+  /** 폰에 보낸 가기 명령(보낸 시각, 목적지 id). */
+  const goes: { at: number; target: string }[] = [];
   let resolveDecision: (d: DecisionRecord) => DecisionRecord = (d) => d;
   // 재생 틱마다 그때 관찰 흐름이 VLM 사진 간격을 1초로 줄일지(vlmFast)를 남긴다
   const fastAt: [number, boolean][] = [];
   try {
-    const { left, photos } = makeBag(bag, variant);
+    const { left, photos, arrivals } = makeBag(bag, variant);
     if (raw[0].learned_discard) db.cupAnswers.seedDemo(raw[0].home);
     await replay({
       bag,
@@ -362,6 +412,8 @@ export async function replayScenario(
           },
         });
         const triggers = new GoalTriggers(locateZone, () => 0, VLM_STEP_MS);
+        // 재생 기록(trace)의 빈 구역·돌아옴만 보는 따로 된 계기(시스템 계기의 상태를 건드리지 않는다)
+        const seenZone = new GoalTriggers(locateZone, () => 0, VLM_STEP_MS);
         const tv = new TvWatch((i) => intents.push("/goal/intent", i));
         const rooms = new RoomWatch((i) => intents.push("/goal/intent", i), floor.portals);
         managerRoutes(manager, clock);
@@ -414,7 +466,12 @@ export async function replayScenario(
         const station = (id: string) => {
           const s = map.stations.find((s) => s.id === id);
           return s
-            ? { id, label: s.name, position: [s.position[0], 0, s.position[1]] as [number, number, number] }
+            ? {
+                id,
+                label: s.name,
+                position: [s.position[0], 0, s.position[1]] as [number, number, number],
+                look: map.zones.filter((z) => s.observes_zone_ids.includes(z.id)).map((z) => z.name).join("·") || null,
+              }
             : null;
         };
         const heard = new Set<string>();
@@ -479,6 +536,8 @@ export async function replayScenario(
             const key = JSON.stringify([m.id, m.step]);
             if (heard.has(key)) return;
             heard.add(key);
+            // 같은 명령을 안내만 바꿔 다시 보낸 것은 새 명령이 아니다
+            if (m.kind === "go" && m.target?.id) goes.push({ at: clock.now(), target: m.target.id });
             const id = m.target?.id;
             if (m.kind === "go") {
               const kind =
@@ -570,19 +629,13 @@ export async function replayScenario(
           world = view;
           rev = next;
           live.sample(view);
-          if (
-            world.household_photo?.proof?.person_count === 0 &&
-            trace.some((e) => e.kind === "watch") &&
-            !firstEmpty
-          ) {
+          // 빈 시청 구역은 그 구역 전체가 보이는 사진에서만 안다(TV 규칙과 같은 사실)
+          const zone = seenZone.evaluateTriggers(view, next, map, clock.now());
+          if (zone.read({ kind: "noViewer", room: "living", ms: 0 }).value === true && trace.some((e) => e.kind === "watch") && !firstEmpty) {
             add("empty");
             firstEmpty = true;
           }
-          if (
-            firstEmpty &&
-            view.household_photo?.proof?.person?.attention === "toward_tv" &&
-            !trace.some((e) => e.kind === "viewer_returned")
-          )
+          if (firstEmpty && zone.read({ kind: "postureAttention", target: tvId, posture: "seated" }).value === true && !trace.some((e) => e.kind === "viewer_returned"))
             add("viewer_returned");
           if (view.objects[0]?.surface_part === "basin" && !trace.some((e) => e.kind === "in_sink"))
             add("in_sink", view.objects[0].id);
@@ -623,6 +676,21 @@ export async function replayScenario(
         act.every(250, tick);
         return [manager, goal, act, device, recorder];
       },
+    });
+    // 폰 도착 줄은 그 자리로 보낸 가기 명령 뒤, 앞 자리에서 곧게 걸어도 걸리는 시간(영상 모드 걷기 초당 WALK_MPS) 뒤여야 한다(첫 자리는 처음 선 곳)
+    arrivals.forEach((e, i) => {
+      if (i === 0) return;
+      const target = e.value === "table" ? table.surface_id : e.value === "sink" ? sink.surface_id : e.value;
+      const from = spotOf(arrivals[i - 1]!.value).position,
+        to = spotOf(e.value).position;
+      const walkMs = Math.ceil((Math.hypot(to[0] - from[0], to[1] - from[1]) / WALK_MPS) * 1000);
+      // 앞 자리에 도착한 뒤 보낸 명령만 이 도착의 명령이다(같은 자리로 갔던 옛 명령이 아니다)
+      const sent = goes.filter((g) => g.target === target && g.at >= arrivals[i - 1]!.at && g.at <= e.at).at(-1);
+      if (!sent || e.at < sent.at + walkMs)
+        throw Error(
+          `합성 기록 폰 도착 ${e.at - base}ms(${e.value})가 가기 명령(${sent ? sent.at - base + "ms" : "없음"})과 걷는 시간 ${walkMs}ms 뒤가 아닙니다. ` +
+            `보낸 가기 명령: ${goes.map((g) => `${g.target}@${g.at - base}`).join(", ")}`,
+        );
     });
     // 사진은 앞 사진 뒤 실제 VLM 간격의 촬영이어야 한다(합성 기록이 시스템보다 자주·드물게 찍지 않게)
     const fastWhen = (t: number) => fastAt.findLast(([at]) => at <= t)?.[1] ?? false;
