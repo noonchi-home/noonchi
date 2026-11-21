@@ -10,11 +10,11 @@ Install **IRremote 4.4.1** in Arduino IDE, select **Arduino Uno**, and upload [i
 
 ## Calibrate and learn the remote
 
-1. Select **시험 모드** in Noonchi. Open the Arduino Serial Monitor at 115200 baud. Press a TV power key and check for a `remote` line. Test the light readings with the screen off, on with dark content, and on with normal content. Pick two ADC thresholds between the off and on readings. If the ranges overlap, reposition the sensor and repeat. Close the monitor to release the COM port.
-2. From the Noonchi repository on the Windows laptop, run the command below with the runtime directory used by the server, the home ID, the TV's twin ID, the board's COM port, the key, and the two thresholds. The values in this example must be replaced with the measured ones. Press and release the requested remote key twice. For separate power keys, repeat with `on` and `off`. For a single power key, use `toggle` once.
+1. Select **시험 모드** in Noonchi. Open the Arduino Serial Monitor at 115200 baud. Press a TV power key and check for a `remote` line. Test the light readings with the screen off, on with dark content, and on with normal content. The starting thresholds on the 0–1023 scale are **180 or lower for off** and **420 or higher for on**. If the measured ranges need different thresholds, select values between the ranges. If the ranges overlap, reposition the sensor and repeat. Close the monitor to release the COM port.
+2. From the Noonchi repository on the Windows laptop, run the command below with the runtime directory used by the server, the home ID, the TV's twin ID, the board's COM port, and the key. On first registration the learner saves the defaults. To use measured thresholds, append both numbers in off/on order. Omitting them on a later run preserves that home's calibration. Press and release the requested remote key twice. For separate power keys, repeat with `on` and `off`. For a single power key, use `toggle` once.
 
    ```powershell
-   npx tsx scripts/ir-learn.ts runtime mokryeon_180b tv_62442cb3 COM3 toggle 180 420
+   npx tsx scripts/ir-learn.ts runtime mokryeon_180b tv_62442cb3 COM3 toggle
    ```
 
 3. Restart Noonchi or reopen the home to load the saved settings. Switch to **실제 모드** and accept the confirmation. This home can use IR without a ThinQ token. Test mode operates the twin. To recover after disconnecting USB, reconnect the board and switch to test mode and back to live.

@@ -10,6 +10,14 @@ export interface IrConfig {
   holdMs: number;
   confirmMs: number;
 }
+/** Starting values for a 10-bit light sensor. Each home can supply its measured thresholds. */
+export const IR_DEFAULTS = {
+  offBelow: 180,
+  onAbove: 420,
+  holdMs: 600,
+  confirmMs: 4000,
+} as const satisfies Pick<IrConfig, "offBelow" | "onAbove" | "holdMs" | "confirmMs">;
+
 interface Connection { send(line: string): void; close(): void }
 export type IrPort = (port: string, received: (line: string) => void, lost: () => void) => Connection;
 

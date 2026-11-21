@@ -12,8 +12,8 @@ interface Options {
   device: string;
   port: string;
   key: keyof IrConfig["codes"];
-  offBelow: number;
-  onAbove: number;
+  offBelow?: number;
+  onAbove?: number;
 }
 
 export async function learnKey(options: Options, open: IrPort = openIrPort): Promise<void> {
@@ -37,7 +37,12 @@ export async function learnKey(options: Options, open: IrPort = openIrPort): Pro
         previous = code;
       }, () => reject(new Error("The serial port disconnected.")));
     });
-    const config = irSettings.parse({...existing, device, port, offBelow, onAbove, codes:{...existing?.codes, [key]:code}});
+    const config = irSettings.parse({
+      ...existing, device, port,
+      offBelow: offBelow ?? existing?.offBelow,
+      onAbove: onAbove ?? existing?.onAbove,
+      codes: { ...existing?.codes, [key]:code },
+    });
     const dir = join(runtime, "homes", home);
     mkdirSync(dir, {recursive:true});
     const file = join(dir, "ir.json");
@@ -53,13 +58,16 @@ export async function learnKey(options: Options, open: IrPort = openIrPort): Pro
 }
 
 if (isEntry(import.meta.url)) {
-  const [runtime,home,device,port,key,off,on] = process.argv.slice(2);
-  if (!runtime || !home || !device || !port || !on || !off || (key!=="on" && key!=="off" && key!=="toggle")) {
-    console.error("Usage: ir-learn <runtime> <home> <device> <COM port> <on|off|toggle> <off threshold> <on threshold>");
+  const args = process.argv.slice(2);
+  const [runtime,home,device,port,key,off,on] = args;
+  const validThresholdArgs = args.length === 5 || (args.length === 7 && off.trim() !== "" && on.trim() !== "");
+  if (!runtime || !home || !device || !port || !validThresholdArgs || (key!=="on" && key!=="off" && key!=="toggle")) {
+    console.error("Usage: ir-learn <runtime> <home> <device> <COM port> <on|off|toggle> [<off threshold> <on threshold>]");
     process.exitCode = 2;
   } else {
     console.log("Press and release the " + key + " key twice.");
-    learnKey({runtime,home,device,port,key,offBelow:Number(off),onAbove:Number(on)})
+    const thresholds = off === undefined ? {} : { offBelow:Number(off), onAbove:Number(on) };
+    learnKey({runtime,home,device,port,key,...thresholds})
       .then(() => console.log("Saved the learned TV power key for " + home + "."))
       .catch(e => { console.error((e as Error).message); process.exitCode = 1; });
   }
