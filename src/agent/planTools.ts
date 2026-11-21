@@ -125,7 +125,7 @@ export const STEP_ARGS = z.object({
   args: z.record(z.string(), z.unknown()).optional().describe("device: 그 도구 인자(device_id 빼고)"),
   hand_device: z.object({ id: z.string().min(1), to: z.enum(["on", "off", "open", "close"]) }).optional()
     .describe("do 켜기·끄기·열기·닫기: 그 대상 가전(id는 target과 같음)과 동작(on·off·open·close). 그 밖의 단계에는 쓰지 않는다"),
-  until: z.record(z.string(), z.unknown()).optional().describe(`끝나는 조건: World State 조건 JSON(조건 낱말의 키만). wait에는 꼭. place는 자리 사실 또는 트윈 자리(손에 없음, not in_hand)를 any로 묶고, 그 any와 사람이 들고 있지 않음(not person_holding)을 all로 묶는다. 트윈 자리는 위에 놓기면 놓을 면(target) 위, 안에 넣기(싱크대)면 그 면의 싱크볼 안(part basin). 물건 조건({"object": …})은 모두 follow: true(person_holding에는 쓰지 않음)`),
+  until: z.record(z.string(), z.unknown()).optional().describe(`끝나는 조건: World State 조건 JSON(조건 낱말의 키만). wait에는 꼭. place는 자리 사실 또는 트윈 자리(손에 없음, not in_hand)를 any로 묶고, 그 any와 사람이 들고 있지 않음(not person_holding)을 all로 묶는다. 트윈 자리는 위에 놓기면 놓을 면(target) 위, 안에 넣기(싱크대)면 그 면의 싱크볼 안(part basin). 물건 id 조건({"object": id})은 모두 follow: true(종류 이름 조건·person_holding에는 쓰지 않음)`),
   timeout_s: z.number().int().describe("이 단계 시간 한도(초)"),
   on_timeout: z.enum(["ask", "fail"]).optional().describe("시간이 지나면 ask 계속할지 묻기, fail 실패(기본)"),
 });
@@ -143,6 +143,21 @@ export function objectNames(c: Condition, out: string[] = []): string[] {
   else if ("for_s" in c) objectNames(c.cond, out);
   else if ("object" in c) out.push(c.object);
   return out;
+}
+
+/** 종류 이름 물건 조건의 follow를 뺀다: follow는 id 하나를 옮겨 붙은 새 id까지 따라가는 표시라 종류 이름(그 종류 아무거나)에는 뜻이 없다.
+ *  모델이 「물건 조건은 follow」를 안 보인 컵 종류에도 붙여 차례를 버리던 것(2026-11-22 실제 모델 4/5판)을 받는다. id 조건은 그대로 둔다. */
+export function classWithoutFollow(c: Condition): Condition {
+  if ("all" in c) return { ...c, all: c.all.map(classWithoutFollow) };
+  if ("any" in c) return { ...c, any: c.any.map(classWithoutFollow) };
+  if ("seq" in c) return { ...c, seq: c.seq.map(classWithoutFollow) };
+  if ("not" in c) return { ...c, not: classWithoutFollow(c.not) };
+  if ("for_s" in c) return { ...c, cond: classWithoutFollow(c.cond) };
+  if ("object" in c && c.follow && !isId(c.object)) {
+    const { follow: _drop, ...rest } = c;
+    return rest as Condition;
+  }
+  return c;
 }
 
 /** 조건 안에서 내용물(facts.contents)을 보는 물건 이름(id·종류): 따르기·채우기가 담는 그릇. */
@@ -584,7 +599,7 @@ export class PlanDraft {
       const c = ConditionSchema.safeParse(a.until);
       if (!c.success) errors.push(`until이 조건 낱말 모양이 아닙니다: ${conditionProblems(a.until).slice(0, 3).join("; ")}`);
       else {
-        until = c.data;
+        until = classWithoutFollow(c.data);
         const bad = checkCondition(until, this.home);
         errors.push(...bad.map((e) => `until: ${e}`));
         if (bad.some((e) => e.startsWith("물건 종류나 id가 아님"))) errors.push("World State 물건 종류에 없는 것(세탁물 등)은 until 없이 두면 사람이 「완료」로 넘깁니다");

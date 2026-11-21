@@ -2,6 +2,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { helpRecord } from "../src/act/help-record.js";
 import { ASK_FOLLOW, ASK_FROM, HELP_PROMPT } from "../src/act/prompts.js";
+import { classWithoutFollow } from "../src/agent/planTools.js";
 import { CALL_ACTION, TASK_NAMES, WATER_ACTION, matchChoice } from "../src/act/tasks.js";
 import { CUP_FSM_MEMORY, validateMemory, type FsmMemory } from "../src/brain/decision.js";
 import { habitView } from "../src/brain/habit.js";
@@ -16,7 +17,7 @@ import { loadScene } from "../src/layout/scene.js";
 import { resolveHome } from "../src/layout/homes.js";
 import { DEFAULT_TWIN_DIR } from "../src/layout/twin-files.js";
 import { validateStations } from "../src/layout/stations.js";
-import { planContext, SCENARIO2_SCRIPTS, startFakePlanner, testPlanner, type FakePlanner } from "./helpers/planner.js";
+import { planCalls, planContext, SCENARIO2_SCRIPTS, startFakePlanner, testPlanner, waterIdsFrom, waterSteps, type FakePlanner } from "./helpers/planner.js";
 import { testTracker } from "./helpers/tracker-ports.js";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -93,6 +94,23 @@ describe("시나리오 2 판단 기능", () => {
     expect(plan.plan.steps.every((s) => !!s.until)).toBe(true);
     // 따르기는 끝 조건이 내용물을 보는 그릇(컵)에 따른다: 대상이 싱크대 자리여도 「컵에」
     expect(plan.plan.steps[3]).toMatchObject({ label: "컵에 물 따르기", command: "컵에 물을 따라 주세요" });
+  });
+  it("종류 이름 물건 조건에 붙은 follow는 빼고 받는다(id 조건의 follow는 그대로)", async () => {
+    const withFollow = (c: unknown): unknown => Array.isArray(c) ? c.map(withFollow)
+      : c && typeof c === "object" ? Object.fromEntries([...Object.entries(c).map(([k, v]) => [k, withFollow(v)]), ...("object" in c ? [["follow", true]] : [])]) : c;
+    const saved = llm.scripts[WATER_ACTION]!;
+    llm.scripts[WATER_ACTION] = (input) => [planCalls(waterSteps(waterIdsFrom(input)).map((st) => ({ ...st, until: withFollow(st.until) })))];
+    try {
+      const plan = await testPlanner(llm).plan(planContext({ decision: decisionFor(WATER_ACTION, "speech"), world: view([], "using_laptop"), floor }));
+      expect(plan.ok, JSON.stringify(plan)).toBe(true);
+      if (!plan.ok) return;
+      expect(JSON.stringify(plan.plan.steps.map((st) => st.until))).not.toContain("follow");
+      expect(plan.plan.steps[1]!.until).toEqual({ object: "bottle", facts: { place: "in_hand" } });
+      const byId = { not: { object: "cup_1", follow: true, facts: { place: "in_hand" } } } as const;
+      expect(classWithoutFollow(byId)).toEqual(byId);
+    } finally {
+      llm.scripts[WATER_ACTION] = saved;
+    }
   });
   it("컵이 아직 안 보여도(대상은 싱크대 자리, 끝 조건은 컵 종류) 따르기 명령은 컵을 부른다", async () => {
     const plan = await testPlanner(llm).plan(planContext({ decision: decisionFor(WATER_ACTION, "speech"), world: view([], "using_laptop"), floor }));
