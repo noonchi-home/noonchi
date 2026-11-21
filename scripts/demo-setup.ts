@@ -6,6 +6,7 @@
 //   reflect [--api URL] [--day 어제]                      어제를 반성해 오늘부터 쓰게 한다(폰을 켜기 전에)
 //   reflect --scripted [--dir runtime/demo/week]          서버를 끈 채 합성 마지막 판본(배운 컵 치우기·말없이 에어컨)을 오늘부터로 넣는다
 //   learned [--dir runtime/demo/day1]                     서버를 끈 채 배운 뒤 기억(떠나면 바로 컵 치우기)을 오늘 판본으로 넣는다(치우기를 보는 시연·영상)
+//   water [--dir runtime/demo/day1]                       서버를 끈 채 지난 사흘(20:00·19:58·20:04) 침실 1 책상 물 한 잔 도움 기록과 그 습관 화살표를 든 오늘 기억을 넣는다(시나리오 2 나흘째: 20:00 전후 부르지 않고 확인하러 감)
 // 한 폴더 안에서 판본·날 고정을 지우거나 덮지 않는다. 다시 할 때는 서버를 끄고 week --fresh부터 한다.
 import { existsSync, mkdirSync, readdirSync, renameSync, rmdirSync, rmSync, writeFileSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
@@ -26,6 +27,7 @@ import { TASKS } from "../src/act/tasks.js";
 import { describeStart, parseStartPose, startPosePath, type DescribeObject } from "../src/phone/sync/start.js";
 import { DEMO_STARTS, startFor, type DemoScene } from "./demo-start.js";
 import { saveLearned } from "./learned-memory.js";
+import { seedWaterHabit } from "./water-habit.js";
 import { seedHistory } from "./seed-history.js";
 
 export const DEMO_HOME = "mokryeon_180b";
@@ -318,6 +320,27 @@ export async function demoSetup(argv: string[], deps: DemoDeps): Promise<void> {
     return;
   }
 
+  if (cmd === "water") {
+    const dir = resolve(arg("--dir") ?? join("runtime", "demo", "day1"));
+    const dbPath = join(dir, "noonchi.db");
+    if (!existsSync(dbPath)) throw new DemoStop(`기록 DB가 없어요(${dbPath}). day1부터 하세요`);
+    // 그 폴더의 잠금을 쥔 채로 넣는다(그동안 서버가 이 폴더로 뜨지 못한다)
+    const folder = holdFolder(dir);
+    try {
+      await requireServerOff();
+      const db = HistoryDb.open(dbPath, tz);
+      try {
+        const { version } = seedWaterHabit(db, today, now());
+        log(`지난 사흘 물 한 잔 도움 기록을 넣고, 습관 화살표를 든 기억 ${version}판을 ${today}부터 쓰게 넣었어요`);
+      } finally {
+        db.close();
+      }
+    } finally {
+      folder.release();
+    }
+    return;
+  }
+
   if (cmd === "reflect" && has("--chain")) {
     const from = day("--from", addDays(today, -7));
     const to = day("--to", addDays(today, -2));
@@ -354,7 +377,7 @@ export async function demoSetup(argv: string[], deps: DemoDeps): Promise<void> {
     return;
   }
 
-  throw new DemoStop("쓰는 법: day1 | week | learned | start <cup|tv|microwave|kitchen> | reflect [--chain | --scripted]");
+  throw new DemoStop("쓰는 법: day1 | week | learned | water | start <cup|tv|microwave|kitchen> | reflect [--chain | --scripted]");
 }
 
 function sceneOf(twinDir: string) {
