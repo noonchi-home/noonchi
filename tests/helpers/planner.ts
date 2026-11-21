@@ -140,9 +140,15 @@ export function waterIdsFrom(input: string): { fridge: string; sink: string; des
   return { fridge: line("fridge"), sink: line("sink_counter"), desk: line("desk_small"), cup: /^- 물건 (cup_\d+) 컵 · (?:present|out_of_view)(?! · 이미 치움)/m.exec(input)?.[1] ?? "" };
 }
 
-/** 시나리오 2 대본: 부름에 응하기(책상으로 가서 묻기), 물 한 잔 가져다주기. */
+/** 입력의 [부름 목적지] 줄이 준 go target(코드가 사용자 방으로 정한 목적지). 방을 모르면 후보의 첫 id. */
+export function callTargetFrom(input: string): string {
+  const line = /^\[부름 목적지\] (.*)$/m.exec(input)?.[1] ?? "";
+  return /^(\S+) · /.exec(line)?.[1] ?? /후보 ([^,\s]+)/.exec(line)?.[1] ?? "";
+}
+
+/** 시나리오 2 대본: 부름에 응하기(서버가 정한 목적지로 가서 묻기), 물 한 잔 가져다주기. */
 export const SCENARIO2_SCRIPTS: Record<string, PlanScript> = {
-  "부름에 응하기": (input) => [planCalls(callSteps(waterIdsFrom(input).desk))],
+  "부름에 응하기": (input) => [planCalls(callSteps(callTargetFrom(input)))],
   "물 한 잔 가져다주기": (input) => [planCalls(waterSteps(waterIdsFrom(input)))],
 };
 

@@ -3,7 +3,8 @@ import type { PlannedCommand } from "../../contract/phone.js";
 import type { WorldView } from "../../contract/world.js";
 import type { StationMap } from "../../contract/stations.js";
 import { standbyFor } from "../../layout/index.js";
-import { DAY_PARTS, FRESH_MS } from "../../world/vocab.js";
+import { DAY_PARTS } from "../../world/vocab.js";
+import { userRoomOf } from "../../world/index.js";
 import { josa } from "../../shared/korean.js";
 import { StationReach, stationSeen } from "./station-arrival.js";
 import { dockId } from "../dock-step.js";
@@ -15,8 +16,7 @@ import { eyeNow, idleLine, refreshLine, sendLine, type IdleSlot } from "./phone-
 
 export const DOCK = { nearM: 1.2, lookMs: 3000, totalMs: 120_000 } as const;
 const STATION_NEAR_M = 0.5;
-/** 사용자 방을 마지막으로 확인한(혼자 보인 사진에서 발 자리를 본) 뒤 이만큼(ms) 안이면 그 방으로 돌아간다. 폰은 일하는 동안 사용자를 못 보기 쉽다(싱크대 앞에서 소파는 등 뒤). 목표 확인 창 5분과 같다. */
-export const USER_ROOM_MS = 300_000;
+export { USER_ROOM_MS } from "../../world/index.js";
 type Position = [number, number, number];
 type Destination = {kind: "station"; id: string} | {kind: "dock"; position: Position};
 type Place = {id: string; label: string; position: Position; look: {label: string | null; position: Position} | null};
@@ -50,12 +50,8 @@ export class Dock extends Part {
   private readonly reach = new StationReach();
 
   private context(now: number) {
-    const view = this.o.state.view(), p = view.person;
-    // 사용자 방은 한 사람만 보인 사진의 발 자리로만 쌓이는 사람 자취(person_trail)의 마지막 방으로만 정한다. 둘 이상 보이면 자취가 비므로
-    // (src/world/state/people.ts) 둘이 보일 때 남은 발 자리를 지금 보이는 한 사람의 방으로 쓰지 않는다. 보이면 5초 안의 것, 안 보이면 5분 안의 것
-    const last = view.person_trail?.at(-1);
-    const age = last && last.at_ms <= now ? now - last.at_ms : Infinity;
-    const userRoom = !last ? null : p.visible ? (p.count === 1 && age <= FRESH_MS ? last.room : null) : age <= USER_ROOM_MS ? last.room : null;
+    // 사용자 방은 한 사람만 보인 사진으로 쌓인 자취의 마지막 방(src/world/user-room.ts)
+    const userRoom = userRoomOf(this.o.state.view(), now)?.room ?? null;
     const hour = new Date(now + (this.o.offsetMinutes ?? 540) * 60_000).getUTCHours();
     return {userRoom, night: DAY_PARTS.findLast(part => hour >= part.from)?.key === "night",
       batteryLow:this.o.layout.batteryLow?.() ?? null};

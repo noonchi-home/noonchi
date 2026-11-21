@@ -11,3 +11,4 @@ export { Policy } from "./policy.js";
 export { ServiceRetryStore, contactsPath, loadContacts, serviceRecord, serviceRetryPath, serviceSay } from "./service.js";
 export { createProvider, type AgentEndpoint, agentEndpoint } from "./providers/index.js";
 export { AGENT_TOOLS, localBackend, runTool, type ToolBackend, type ToolResult, deviceViews, roomViews } from "./tools.js";
+export { callDestination, callPlaces, withChosenStation, type CallDestination } from "./call-target.js";

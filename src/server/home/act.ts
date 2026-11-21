@@ -2,8 +2,8 @@
 // 판단 → 계획(에이전트 계획 모드) → 실행 전 검사 → 실행 추적이 실제 폰에 명령을 낸다. 생각 메시지는 판단 기록 뒤에 따로 만들어 대시보드로 보내고 기록 DB(thought)에 남긴다.
 import { viewerAt } from "../../goal/index.js";
 import { ExecutionTracker, LessonStore, Looker, PlanHub, emitRobotCommand, checkDecision, checkPlan, deviceRunner, lessonsPath, loadActConfig, pamTasks } from "../../act/index.js";
-import { lookTargets, taskOf, type TaskSpec } from "../../act/tasks.js";
-import { deviceViews, placesOf, resubmit, type PlaceInfo, type PlanAhead, type PlanContext } from "../../agent/index.js";
+import { CALL_ACTION, lookTargets, taskOf, type TaskSpec } from "../../act/tasks.js";
+import { callDestination, callPlaces, withChosenStation, deviceViews, placesOf, resubmit, type PlaceInfo, type PlanAhead, type PlanContext } from "../../agent/index.js";
 import { Decider, PamClient, PersonLane, dailyMemory, routineAllows, habitView, lastStoredThoughts, memoryForDay, pamSettings, thoughtFeed, type FsmMemory } from "../../brain/index.js";
 import type { BrainLog, DecisionRecord } from "../../contract/events.js";
 import type { PendingGoal } from "../../contract/goal.js";
@@ -208,11 +208,20 @@ export function startAct(core: HomeCore): (event: BrainLog) => void {
     // 관찰 흐름이 위에서 본 사진으로 컵 안을 본다(topReady·lookContents top): 컵 치우기 계획에 컵 안 보기 단계가 든다
     topLook: true,
     discardLeftover: task.topLook && discardLeftover(world),
+    // 부름의 목적지는 코드가 사용자 방으로 정한다(계획 모델은 그 목적지로 가는 계획만 낸다)
+    ...(task.name === CALL_ACTION ? { call: callDestination(world, core.scene?.stations ?? null, plans.floor(), now()) } : {}),
   });
   core.makePlan = async ({ decision, ahead }, signal) => {
     const task = taskOf(decision.action);
     if (!task) return { ok: false, error: "행동 목록에 없는 행동" };
-    return planner.plan(planCtx(decision, task, brainView(), ahead), signal);
+    const ctx = planCtx(decision, task, brainView(), ahead);
+    // 부름인데 사용자 방을 모르면 사용자 찾기와 같은 자리 고르기(관찰 모드)로 목적지를 정한다
+    if (ctx.call && !ctx.call.target && core.looker) {
+      const map = core.scene?.stations ?? null;
+      const chosen = await core.looker.chooseStation(callPlaces(ctx.call, map, plans.floor()), JSON.stringify(ctx.world.person_trail ?? []), [], signal);
+      ctx.call = withChosenStation(ctx.call, map, plans.floor(), chosen);
+    }
+    return planner.plan(ctx, signal);
   };
   let geometryVersion=-1;
   let walkScene:typeof core.scene=null;

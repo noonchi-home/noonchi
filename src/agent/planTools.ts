@@ -106,6 +106,8 @@ export interface PlanContext {
   topLook?: true;
   /** Confirmed preference for the identified resident in this planning snapshot. */
   discardLeftover?: boolean;
+  /** 부름에 응하기의 목적지(src/agent/call-target.ts, 코드가 정함). 있으면 입력에 [부름 목적지] 줄을 넣고, 계획 검사는 첫 go가 그 목적지(모르면 후보 중 하나)인 계획만 받는다. */
+  call?: import("./call-target.js").CallDestination;
 }
 
 
@@ -369,6 +371,15 @@ export class PlanDraft {
       // 계획 때 안 보인 물건을 자리로 집었으면(물 한 잔 가져다주기: 사용자 곁에서 계획하면 주방 컵이 안 보인다) 그 집기 조건이 본 종류만 본다
       const unseenKinds = !s.object && pickStep?.until ? new Set([...objectNames(pickStep.until), ...heldNames(pickStep.until)].filter((n) => !worldObject(this.ctx.world, n))) : null;
       if (s.until && objectNames(s.until).some((n) => n !== s.object && !unseenKinds?.has(n))) return { ok: false, error: `${i + 1}번 내려놓기 until은 든 물건(${s.object ?? "없음"}) id만 봅니다` };
+    }
+    // 부름 목적지는 코드가 정한다(사용자 방의 관찰 자리 면). 계획 모델이 다른 곳으로 보내면 받지 않는다
+    const call = this.ctx.call;
+    if (call) {
+      const go = steps.find((s) => s.kind === "go")?.target ?? null;
+      if (call.target ? go !== call.target : !go || !call.candidates.includes(go))
+        return { ok: false, error: call.target
+          ? `부름 목적지는 ${call.target}입니다(사용자가 마지막으로 보인 방 ${call.room}). 첫 go target을 ${call.target}로 쓰세요`
+          : `사용자 방을 모릅니다. 첫 go target은 후보(${call.candidates.join(", ")}) 중 하나로 쓰세요` };
     }
     // 미리 세운 목표의 계획은 목표 물건만 쓴다: 같은 종류의 다른 World State 물건을 쓰는 단계(물건·대상·끝 조건)는 버린다(컵이 둘이면 다른 컵 계획을 받지 않는다)
     const goal = this.ctx.ahead?.object;

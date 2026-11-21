@@ -30,6 +30,10 @@ import type { Vec2 } from "../../src/contract/layout.js";
 import type { WorldObject, WorldView } from "../../src/contract/world.js";
 import { testTracker } from "./tracker-ports.js";
 import { callSteps, planContext, waterSteps } from "./planner.js";
+import { callDestination, callPlaces, withChosenStation } from "../../src/agent/call-target.js";
+
+/** 관찰 모드 자리 고르기(chooseStation, LLM)의 재생 대역: 사람 말 「클로이드!」만 있고 사용자 자리를 모를 때 책상 관찰 자리를 고른다. */
+const chooseForCall = (places: { id: string; name: string }[]) => places.find((p) => p.id === "desk_watch")?.id ?? null;
 import { textFromWorld } from "../../src/world/text.js";
 import { PHONE, POSE_MS, REACT_MS, VLM_STEP_MS, WALK_MPS, cameraAt, center, fact, floor, heldCupAt, map, nextVlmCapture, personSight, scene, walkMap } from "./home-realism.js";
 
@@ -259,7 +263,15 @@ export async function replayDay(o: {
   tracker = testTracker({
     approvals: memoryApprovals(), clock, plans, world: () => worldSeen, floor: () => floor, planGapMs: 0, offsetMinutes: 540, tasks: () => tasks,
     habit: () => ({ kind: "fsm", state: "studying", version: 2, memory: o.memory }),
-    planner: async (d) => new PlanDraft(planContext({ decision: d, world: worldSeen, floor })).submit({ steps: d.action === CALL_ACTION ? callSteps(DESK) : waterSteps(ids) }),
+    // 서버(src/server/home/act.ts planCtx)처럼 부름 목적지는 코드가 사용자 방으로 정하고, 가짜 계획 모델은 그 목적지를 그대로 쓴다
+    planner: async (d) => {
+      let call = d.action === CALL_ACTION ? callDestination(worldSeen, map, floor, clock.now()) : undefined;
+      // 사용자 방을 모르면 서버는 관찰 모드 자리 고르기(LLM)로 정한다(src/server/home/act.ts makePlan). 그 고르기의 대역:
+      // 이 재생은 매일 사용자를 보기 전에 부르므로 방을 모른다. 실제 모델이 무엇을 고를지는 실제 모델로만 안다(시연 위험)
+      if (call && !call.target) call = withChosenStation(call, map, floor, chooseForCall(callPlaces(call, map, floor)));
+      const ctx = { ...planContext({ decision: d, world: worldSeen, floor }), ...(call ? { call } : {}) };
+      return new PlanDraft(ctx).submit({ steps: call ? callSteps(call.target ?? "") : waterSteps(ids) });
+    },
     check: (d, plan, seenSince) => checkPlan({ decision: d, plan, world: worldSeen, tasks, nowMs: clock.now(), staleMs: 3000, mode: "test", seenSince }),
     locate: (id) => { const f = floor.objects.get(id); if (!f) return undefined; const p = f.basin ?? f.position; return { label: id === DESK ? "책상" : id === SINK ? "싱크대" : id === FRIDGE ? "냉장고" : id, position: [p[0], 0.8, p[1]] }; },
     walking: () => walk,

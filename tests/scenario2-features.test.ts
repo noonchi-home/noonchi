@@ -15,6 +15,9 @@ import type { DecisionRecord } from "../src/contract/events.js";
 import type { GoalIntent } from "../src/contract/machines.js";
 import type { WorldObject, WorldView } from "../src/contract/world.js";
 import { HabitWatch } from "../src/goal/habit-watch.js";
+import { callDestination, callPlaces, withChosenStation } from "../src/agent/call-target.js";
+import { PlanDraft } from "../src/agent/planTools.js";
+import { PLANNER_PROMPT, planInput } from "../src/agent/planInput.js";
 import { floorPlanFrom } from "../src/layout/floor.js";
 import { loadScene } from "../src/layout/scene.js";
 import { resolveHome } from "../src/layout/homes.js";
@@ -69,13 +72,56 @@ const helpRow = (id: number, day: string, hm: string, over: Partial<HelpRecord> 
   return { id, at_ms: data.at_ms, day, kind: "help", subject: WATER_ACTION, text: data.text, data };
 };
 
+describe("부름 목적지(「클로이드!」)는 코드가 사용자 방으로 정한다", () => {
+  const NOW = kst("2026-11-25", "20:00");
+  const away = (trail: WorldView["person_trail"], visible = false, room = "bed_sw"): WorldView => ({
+    ...view([], visible ? "using_laptop" : null), person: { ...person(visible ? "using_laptop" : null, room), count: visible ? 1 : 0 }, person_trail: trail,
+  });
+  it("사람이 안 보이면 한 사람만 보인 자취의 마지막 방(5분 안) 관찰 자리의 면으로 간다", () => {
+    expect(callDestination(away([{ position: [6.2, 11.0], room: "bed_sw", at_ms: NOW - 60_000 }]), map, floor, NOW))
+      .toMatchObject({ room: "bed_sw", station: "desk_watch", target: DESK, seen_ms: NOW - 60_000 });
+    // 보이는 한 사람이면 지금 그 방
+    expect(callDestination(away([{ position: [6.6, 2.5], room: "kitchen", at_ms: NOW - 1000 }], true, "kitchen"), map, floor, NOW))
+      .toMatchObject({ room: "kitchen", station: "kitchen_entry", target: "fridge_bbc363a3" });
+    // 5분 넘은 자취나 자취가 없으면 방을 모른다: 관찰 자리 면 후보만 준다
+    const unknown = callDestination(away([{ position: [6.2, 11.0], room: "bed_sw", at_ms: NOW - 301_000 }]), map, floor, NOW);
+    expect(unknown).toMatchObject({ room: null, target: null });
+    expect(unknown.candidates).toEqual(expect.arrayContaining([DESK, "fridge_bbc363a3"]));
+    expect(callDestination(away(undefined), map, floor, NOW)).toMatchObject({ room: null, target: null });
+    // 방을 모르면 사용자 찾기와 같은 자리 고르기에 관찰 자리를 넘기고, 고른 자리의 면을 목적지로 쓴다(후보가 아닌 답은 버린다)
+    const places = callPlaces(unknown, map, floor);
+    expect(places.map((p) => p.id)).toEqual(expect.arrayContaining(["desk_watch", "kitchen_entry"]));
+    expect(withChosenStation(unknown, map, floor, "desk_watch")).toMatchObject({ station: "desk_watch", target: DESK });
+    expect(withChosenStation(unknown, map, floor, "bed_ne_standby")).toMatchObject({ target: null });
+  });
+  it("계획 입력에 부름 목적지와 사용자 마지막 방을 넣고, 계획 검사는 그 목적지로 가는 계획만 받는다", () => {
+    const world = away([{ position: [6.2, 11.0], room: "bed_sw", at_ms: NOW - 60_000 }]);
+    const ctx = { ...planContext({ decision: decisionFor(CALL_ACTION, "speech"), world, floor }), call: callDestination(world, map, floor, NOW), nowIso: new Date(NOW).toISOString() };
+    const text = planInput(ctx);
+    expect(text).toContain(`[부름 목적지] ${DESK}`);
+    expect(text).toMatch(/사람 안 보임 · 마지막 방 bed_sw/);
+    // 계획 지시문의 ask 답 묶음 목록에 help(물 한 잔·괜찮아요)가 있다
+    expect(PLANNER_PROMPT).toMatch(/choices는 답 묶음 이름\([^)]*help [^)]*\)/);
+    const go = (target: string) => [{ kind: "go", act: "가기", target, until: { phone_near: target }, timeout_s: 120 }, { kind: "ask", question: HELP_PROMPT.text, choices: "help", timeout_s: 120 }];
+    expect(new PlanDraft(ctx).submit({ steps: go("fridge_bbc363a3") })).toMatchObject({ ok: false, error: expect.stringContaining(DESK) });
+    expect(new PlanDraft(ctx).submit({ steps: go(DESK) })).toMatchObject({ ok: true });
+    // 방을 모르면 관찰 자리 면 후보 중 하나여야 한다
+    const lost = { ...ctx, call: callDestination(away(undefined), map, floor, NOW) };
+    expect(new PlanDraft(lost).submit({ steps: go("sink_counter_kitchen") }).ok).toBe(false);
+    expect(new PlanDraft(lost).submit({ steps: go(DESK) }).ok).toBe(true);
+  });
+});
+
 describe("시나리오 2 판단 기능", () => {
   let llm: FakePlanner;
   beforeAll(async () => { llm = await startFakePlanner({ ...SCENARIO2_SCRIPTS }); });
   afterAll(async () => { await llm.close(); });
 
   it("부르면 책상으로 가서 「무엇을 도와드릴까요?」를 묻고, 「물 한 잔만 가져다줘」는 물 한 잔 가져다주기로 이어진다", async () => {
-    const plan = await testPlanner(llm).plan(planContext({ decision: decisionFor(CALL_ACTION, "speech"), world: view([], null), floor }));
+    // 사용자는 1분 전 침실 1 책상에서 보였고 지금은 폰 화면 밖이다. 서버처럼 목적지는 코드가 정한다(src/server/home/act.ts planCtx)
+    const now = kst("2026-11-22", "20:00");
+    const world: WorldView = { ...view([], null), at_ms: now, person_trail: [{ room: "bed_sw", position: [6.2, 11.0], at_ms: now - 60_000 }] };
+    const plan = await testPlanner(llm).plan({ ...planContext({ decision: decisionFor(CALL_ACTION, "speech"), world, floor }), call: callDestination(world, map, floor, now) });
     expect(plan.ok, JSON.stringify(plan)).toBe(true);
     if (!plan.ok) return;
     expect(plan.plan.steps.map((s) => [s.kind, s.kind === "go" ? s.target : s.prompt?.text])).toEqual([["go", DESK], ["ask", "무엇을 도와드릴까요?"]]);
@@ -224,14 +270,14 @@ describe("시나리오 2 판단 기능", () => {
     const plans = new PlanHub(floor, () => {}, () => new Date(clock.t).toISOString());
     const objs: WorldObject[] = [{ ...sinkCup }];
     // 책상 앞 사용자는 보이고 VLM이 늘 답한다(손에 든 것 없음 = 들고 있다는 사실이 없음)
-    const w = (): WorldView => { const v = view(objs, "using_laptop"); return { ...v, at_ms: clock.t, frame_ms: clock.t, person: { ...v.person, answered_ms: clock.t, facts: { activity: { value: "using_laptop", at_ms: clock.t, since_ms: clock.t, certainty: "confirmed" } } } }; };
+    const w = (): WorldView => { const v = view(objs, "using_laptop"); return { ...v, at_ms: clock.t, frame_ms: clock.t, person_trail: [{ room: "bed_sw", position: [6.2, 11.0], at_ms: clock.t }], person: { ...v.person, answered_ms: clock.t, facts: { activity: { value: "using_laptop", at_ms: clock.t, since_ms: clock.t, certainty: "confirmed" } } } }; };
     const planner = testPlanner(llm);
     const phone: PlannedCommandMessage[] = [];
     const decided: DecisionRecord[] = [];
     const records: HelpRecord[] = [];
     const t = testTracker({
       plans, world: w, check: () => ({ ok: true }), floor: () => floor, planGapMs: 0, approvals: memoryApprovals(), offsetMinutes: 540,
-      planner: (d, signal) => planner.plan(planContext({ decision: d, world: w(), floor }), signal), onSpeech: (d) => decided.push(d),
+      planner: (d, signal) => planner.plan({ ...planContext({ decision: d, world: w(), floor }), ...(d.action === CALL_ACTION ? { call: callDestination(w(), map, floor, clock.t) } : {}) }, signal), onSpeech: (d) => decided.push(d),
       toPhone: (m) => phone.push(m), emit: () => {}, clock, sentSeq: () => 0, help: (r) => records.push(r),
       locate: (id) => { const o = floor.objects.get(id); return o ? { label: id === DESK ? "책상" : id, position: [o.position[0], 0.8, o.position[1]] } : undefined; },
     });
