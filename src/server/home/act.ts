@@ -239,8 +239,9 @@ export function startAct(core: HomeCore): (event: BrainLog) => void {
       map:()=>core.scene?.stations ?? null,
       rev:()=>core.mirror?.rev() ?? 0,
       target:id=>{
-        const station=core.scene?.stations.stations.find(s=>s.id===id);
-        return station ? {id,label:station.name,position:[station.position[0],stationFloor(station.position),station.position[1]]} : null;
+        const map=core.scene?.stations, station=map?.stations.find(s=>s.id===id);
+        const look=map?.zones.filter(z=>station?.observes_zone_ids.includes(z.id)).map(z=>z.name).join("·") || null;
+        return station ? {id,label:station.name,position:[station.position[0],stationFloor(station.position),station.position[1]],look} : null;
       },
       choose:(job,signal)=>{
         const map=core.scene?.stations;

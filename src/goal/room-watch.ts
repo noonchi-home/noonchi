@@ -66,6 +66,8 @@ export class RoomWatch {
   private visited:string[]=[];
   private selected:string|null=null;
   private arrived:{id:string;at:number;until:number}|null=null;
+  /** 목표 없이 간 관찰 자리에 도착한 때(냉장고 → 주방 입구 뒤 식탁 관찰 자리로 넘길 때 쓴다). */
+  private watching:{id:string;at:number}|null=null;
   private attempted="";
   private mealAt:number|null=null;
   private doorAt:number|null=null;
@@ -96,6 +98,7 @@ export class RoomWatch {
     if (job.kind==="choose_station" && result.evidence_rev!==job.rev && result.outcome==="selected") return;
     if (job.kind==="visit" && result.target_id!==job.target_id) return;
     this.pending=null;
+    if (job.goal_id===null && job.kind==="visit" && result.outcome==="arrived") this.watching={id:job.target_id,at:result.at_ms};
     if (job.goal_id===null || this.ended || this.goal!==job.goal_id) return;
     if (result.outcome==="cancelled") {this.ended=true;return;}
     if (result.at_ms>=job.until_ms || result.outcome==="failed" || result.outcome==="unknown") {this.missed(job);return;}
@@ -110,7 +113,7 @@ export class RoomWatch {
   tick(input:WatchInput) {
     const {checking,map,facts,rev,now}=input;
     if (this.goal!==(checking?.id??null)) {
-      this.interrupt();this.goal=checking?.id??null;this.ended=false;this.visited=[];this.arrived=null;this.attempted="";
+      this.interrupt();this.goal=checking?.id??null;this.ended=false;this.visited=[];this.arrived=null;this.attempted="";this.watching=null;
     }
     const door=facts.read(DOOR), meal=facts.mealSeated;
     const opened=door.value===true && door.observed_ms!==this.doorAt;
@@ -132,7 +135,10 @@ export class RoomWatch {
       this.send(this.pending);
     };
     if (!checking) {
-      const id=seated?map.meal_watch:opened?map.kitchen_entry:null;
+      // 주방 입구는 냉장고를 봐 식탁이 등 뒤다: 도착 뒤 찍은 사진에 사람이 없으면(냉장고 앞을 떠남) 식탁 관찰 자리로 간다
+      const left=!opened && this.watching?.id===map.kitchen_entry && facts.seesNobody(this.watching.at);
+      if (left) this.watching=null;
+      const id=seated?map.meal_watch:opened?map.kitchen_entry:left?map.meal_watch:null;
       if (id) offer(id,{kind:"visit"});
       return;
     }

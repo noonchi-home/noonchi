@@ -290,7 +290,8 @@ export const DOCK_TEXT = {
   userUnknown: "사용자가 어디 계신지 몰라요",
   going: "충전 자리로 갈게요",
   docked: "충전 자리에서 지켜볼게요",
-  stationCommand: (toward: string) => `${toward} 가 주세요`,
+  /** look: 도착해서 비출 곳(그 자리가 보는 구역 이름, 을/를까지). 없으면 가기만. */
+  stationCommand: (toward: string, look: string | null = null) => (look ? `${toward} 가서 ${look} 비춰 주세요` : `${toward} 가 주세요`),
   stationGoing: (toward: string) => `${toward} 갈게요`,
   standing: (place: string) => `${place}에서 기다릴게요`,
   gaveUp: "충전 자리로 가지 못했어요",

@@ -26,8 +26,10 @@ export function stationDirectives(core:TrackCore) {
       core.dock.drop();
       slot={id:job.id,sent:null,spokeAt:0,visionAt:0};
       const nav=core.walk(job.id,station,true);
+      // 관찰 자리는 그 자리가 보는 구역을 비춰야 사진이 그 구역을 담는다(폰 방향 안내)
+      const text=josa(station.label,"으로/로")+" 이동해 "+(station.look ? josa(station.look,"을/를")+" 비춰 주세요." : "주세요.");
       sendLine(idleLine(core,slot),{type:"command",id:job.id,step:job.id+":go",kind:"go",near_m:ARRIVAL_M,
-        text:josa(station.label,"으로/로")+" 이동해 주세요.",choices:[],speak:true,vision:nav?.vision??null,target:station,...(nav?{guide:nav.guide}:{})},core.clock.now());
+        text,choices:[],speak:true,vision:nav?.vision??null,target:{id:station.id,label:station.label,position:station.position},...(nav?{guide:nav.guide}:{})},core.clock.now());
       return true;
     },
     shown:id=>slot?.id===id && core.robot.commands.shows(id) ? slot.sent : null,

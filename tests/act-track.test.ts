@@ -25,7 +25,7 @@ import { PlanHub } from "../src/act/hub.js";
 import { APPROVAL_TEXT, CAUTION_TEXT, CHECK_TEXT, DOCK_TEXT, EXEC_TEXT, CAUTION_LINE, PEEK_TEXT, STEP_COMMAND, STEP_LABEL, TOP_TEXT, USE_THOUGHT, type TellMode } from "../src/act/labels.js";
 import { CONTENTS_HOLD, PEEK } from "../src/act/robot/contents.js";
 import { FIND } from "../src/act/robot/find.js";
-import { DOCK } from "../src/act/robot/dock.js";
+import { DOCK, USER_ROOM_MS } from "../src/act/robot/dock.js";
 import { POSE_FALL } from "../src/world/vocab.js";
 import { PHONE_PROTOCOL } from "../src/phone/protocol.js";
 /** 인덕션 켜기 전 질문(서버 글). */
@@ -72,7 +72,7 @@ async function toOn(s: ReturnType<typeof setup>, d: DecisionRecord = ramenDecisi
 it("station arrival uses the walk guide, never the last generic eye or the door threshold",()=>{
   const map=walkingMap(smallFloor(),SMALL_SCENE as unknown as import("../src/contract/layout.js").SceneJson);
   const result:string[]=[];
-  const s=setup({walking:()=>map,stations:{rev:()=>1,target:id=>({id,label:"서기",position:[5,0,2]}),result:r=>result.push(r.outcome)}});
+  const s=setup({walking:()=>map,stations:{rev:()=>1,target:id=>({id,label:"서기",position:[5,0,2],look:null}),result:r=>result.push(r.outcome)}});
   const sample=(x:number)=>{s.clock.t+=200;s.t.onNavigationPose({quality:"usable",observed_ms:s.clock.t,pose_gen:1,position:[x,2]});s.t.tick();};
   s.t.onEye([5,2]);sample(3.5);sample(3.7);
   s.t.onDirective({op:"grant",id:"visit:walk",kind:"visit",target_id:"spot",rev:1,goal_id:null,until_ms:30000});
@@ -86,10 +86,10 @@ it("station arrival uses the walk guide, never the last generic eye or the door 
 it("관찰 자리는 맞춘 눈으로만 도착하고 승인 질문이 오면 방문 줄을 거둔다",()=>{
   const results:string[]=[];
   let pending=false;
-  const s=setup({approvalsWaiting:()=>pending,stations:{rev:()=>7,target:id=>({id,label:"주방 입구",position:[4,0,4]}),result:r=>results.push(r.outcome)}});
+  const s=setup({approvalsWaiting:()=>pending,stations:{rev:()=>7,target:id=>({id,label:"주방 입구",position:[4,0,4],look:"냉장고 앞"}),result:r=>results.push(r.outcome)}});
   const d={op:"grant",id:"visit:1",kind:"visit",target_id:"entry",rev:3,goal_id:null,until_ms:20000} as const;
   s.t.onEye([0,0]); s.t.onDirective(d);
-  expect(s.phone.at(-1)).toMatchObject({type:"command",text:"주방 입구로 이동해 주세요.",choices:[],target:{position:[4,0,4]}});
+  expect(s.phone.at(-1)).toMatchObject({type:"command",text:"주방 입구로 이동해 냉장고 앞을 비춰 주세요.",choices:[],target:{position:[4,0,4]}});
   expect(s.t.openCommand()).toMatchObject({planId:d.id,kind:"command",choices:[]});
   pending=true; s.t.tick();
   expect(s.phone.at(-1)).toMatchObject({type:"command_clear",id:d.id});
@@ -5221,12 +5221,13 @@ describe("실행 추적: 계획이 끝나면 충전 자리로", () => {
   });
 
   it("낮에는 새 위치를 기다려 그 방으로 한 번 가고 맞춘 눈으로만 도착을 확인한다", async () => {
-    let seen = 0;
+    // 보이는 사용자의 위치가 5초 넘게 묵었으면 새 위치를 기다린다
+    let seen = -60_000;
     const w = world([cup("present")]);
     const station = {id:"living_standby",name:"거실 대기 자리",room:"living",roles:["standby" as const],position:[5,6] as [number,number],look_at:[4,5] as [number,number],rooms:[],surfaces:[],observes_zone_ids:[]};
     const s = dockSetup(() => ({...w,person:{...w.person,count:1,visible:true,position:[5,6],position_ms:seen,room:"living",room_label:"거실"}}), {
       offsetMinutes:540, stations:{map:()=>({version:1,stations:[station],zones:[],surface_fronts:[],kitchen_entry:null,meal_watch:null}),rev:()=>3,
-        target:id=>({id,label:station.name,position:[5,0,6]}),result:()=>{}},
+        target:id=>({id,label:station.name,position:[5,0,6],look:null}),result:()=>{}},
     });
     await finishCup(s);
     s.at(1,1,DOCK.lookMs);
@@ -5241,6 +5242,20 @@ describe("실행 추적: 계획이 끝나면 충전 자리로", () => {
     expect(s.t.machineFacts().dock).toBe("standby");
     s.at(1,1);
     expect(s.t.machineFacts().dock).toBeNull();
+  });
+
+  it.each([[60_000, "living_standby"], [USER_ROOM_MS + 1, null]] as const)("낮에 지금 안 보이는 사용자는 마지막으로 발 자리를 본 방(%i ms 전)이 5분 안이면 그 방 대기 자리로 간다", async (ago, target) => {
+    const w = world([cup("present")]);
+    const station = {id:"living_standby",name:"거실 대기 자리",room:"living",roles:["standby" as const],position:[5,6] as [number,number],look_at:[4,5] as [number,number],rooms:[],surfaces:[],observes_zone_ids:[]};
+    let now = () => 0;
+    const s = dockSetup(() => ({...w,person:{...w.person,count:0,visible:false,position:[5,6],position_ms:now()-ago,room:"living",room_label:"거실"}}), {
+      offsetMinutes:540, stations:{map:()=>({version:1,stations:[station],zones:[],surface_fronts:[],kitchen_entry:null,meal_watch:null}),rev:()=>3,
+        target:id=>({id,label:station.name,position:[5,0,6],look:null}),result:()=>{}},
+    });
+    now = () => s.clock.t;
+    await finishCup(s);
+    s.at(1,1,DOCK.lookMs);
+    expect(s.docks().map((c) => c.target?.id ?? null).at(-1) ?? null).toBe(target);
   });
 
   it("사용자 위치: 보이면 그 방, 안 보이면 마지막으로 본 방, 둘 다 모르면 모른다고 한다. 이미 충전 자리 1.2m 안이면 명령 없이 지켜본다", async () => {

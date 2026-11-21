@@ -70,7 +70,7 @@ describe("TV 규칙: 빈 자리 2초와 지켜보는 동안",()=>{
   const facts=(empty:TriggerFact["value"],asked:Trigger[]):TriggerFacts=>({
     photoValidUntil:5000,tvRooms:new Map([["screen","room"]]),
     read:t=>{asked.push(t);return {value:t.kind==="noViewer"?empty:false,observed_ms:3000,rev:3};},
-    mealSeated:{value:"unknown",observed_ms:null,rev:null},observes:()=>false,trail:[],
+    mealSeated:{value:"unknown",observed_ms:null,rev:null},observes:()=>false,seesNobody:()=>false,trail:[],
   });
   it("빈 자리는 2초 이어진 사진으로 읽고, 시청 구역이 지금 사진에 보이는지 함께 낸다",()=>{
     const asked:Trigger[]=[];

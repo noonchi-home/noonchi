@@ -117,7 +117,8 @@ export interface TrackerOptions {
   stations?: {
     map?():import("../../contract/stations.js").StationMap | null;
     rev():number;
-    target(id:string): {id:string;label:string;position:[number,number,number]} | null;
+    /** look: 도착해서 비출 곳 이름(그 자리가 보는 구역 이름). 보는 구역이 없는 자리는 null. */
+    target(id:string): {id:string;label:string;position:[number,number,number];look:string|null} | null;
     choose?(job:Extract<import("../../contract/machines.js").HouseholdOffer,{kind:"choose_station"}>, signal:AbortSignal):Promise<string|null>;
     tvAllowed?(job:import("../../contract/machines.js").HouseholdOffer):boolean;
     result(value:DirectiveResult):void;

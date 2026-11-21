@@ -14,9 +14,11 @@ import { eyeNow, idleLine, refreshLine, sendLine, type IdleSlot } from "./phone-
 
 export const DOCK = { nearM: 1.2, lookMs: 3000, totalMs: 120_000 } as const;
 const STATION_NEAR_M = 0.5;
+/** 사용자 방을 마지막으로 확인한(발 자리를 본) 뒤 이만큼(ms) 안이면 그 방으로 돌아간다. 폰은 일하는 동안 사용자를 못 보기 쉽다(싱크대 앞에서 소파는 등 뒤). 목표 확인 창 5분과 같다. */
+export const USER_ROOM_MS = 300_000;
 type Position = [number, number, number];
 type Destination = {kind: "station"; id: string} | {kind: "dock"; position: Position};
-type Place = {id: string; label: string; position: Position};
+type Place = {id: string; label: string; position: Position; look: string | null};
 
 export function returnTarget(ctx: {batteryLow: boolean | null; night: boolean; userRoom: string | null}, map: StationMap | null, dock: Position | null): Destination | null {
   if (ctx.batteryLow === true || ctx.night) return dock ? {kind:"dock", position:dock} : null;
@@ -47,8 +49,10 @@ export class Dock extends Part {
   private context(now: number) {
     const p = this.o.state.view().person;
     const fresh = p.visible && p.count === 1 && p.position && p.position_ms !== null && p.position_ms <= now && now - p.position_ms <= FRESH_MS;
+    // 지금 안 보여도 최근에 확인한 방(World State는 마지막 발 자리와 그 방을 남긴다)
+    const recent = !p.visible && p.position && p.position_ms !== null && p.position_ms <= now && now - p.position_ms <= USER_ROOM_MS;
     const hour = new Date(now + (this.o.offsetMinutes ?? 540) * 60_000).getUTCHours();
-    return {userRoom: fresh ? p.room : null, night: DAY_PARTS.findLast(part => hour >= part.from)?.key === "night",
+    return {userRoom: fresh || recent ? p.room : null, night: DAY_PARTS.findLast(part => hour >= part.from)?.key === "night",
       batteryLow:this.o.layout.batteryLow?.() ?? null};
   }
 
@@ -91,7 +95,7 @@ export class Dock extends Part {
       if (now - q.startedAt < DOCK.lookMs) return;
       const destination = returnTarget(this.context(now), this.o.stations?.map?.() ?? null, this.o.layout.dock?.() ?? null);
       if (!destination) return;
-      const place = destination.kind === "dock" ? {id:"dock",label:DOCK_TEXT.label,position:destination.position}
+      const place = destination.kind === "dock" ? {id:"dock",label:DOCK_TEXT.label,position:destination.position,look:null}
         : this.o.stations?.target(destination.id);
       if (!place) return;
       this.o.events.thought?.(userWhere(this.o.state.view()),q.decision);
@@ -108,8 +112,8 @@ export class Dock extends Part {
     if (this.blocked()) return line.clear();
     const vision = nav?.vision??VISION_TEXT.distance(target.label,distance);
     if (!q.sent) {
-      const sent: PlannedCommand = {type:"command", id:q.id, step:`${q.id}:1`, kind:"go", near_m:near, ...(nav?{guide:nav.guide}:{}), target, speak:true, vision,
-        text:q.charging ? DOCK_TEXT.command : DOCK_TEXT.stationCommand(josa(target.label,"으로/로")),
+      const sent: PlannedCommand = {type:"command", id:q.id, step:`${q.id}:1`, kind:"go", near_m:near, ...(nav?{guide:nav.guide}:{}), target:{id:target.id,label:target.label,position:target.position}, speak:true, vision,
+        text:q.charging ? DOCK_TEXT.command : DOCK_TEXT.stationCommand(josa(target.label,"으로/로"),target.look ? josa(target.look,"을/를") : null),
         choices:q.charging ? [{id:STEP_DONE.id,label:STEP_DONE.label}] : []};
       sendLine(line,sent,now);
       this.o.events.thought?.(q.charging ? DOCK_TEXT.going : DOCK_TEXT.stationGoing(josa(target.label,"으로/로")),q.decision);

@@ -40,6 +40,15 @@ describe("관찰 계기",()=>{
     if (intermediate) expect(r.tick(2000).read(absence).value).toBe("unknown");
     expect(r.photo(4000).read(absence).value).toBe(true);
   });
+  it("사람 없음(seesNobody)은 그 때 뒤에 찍혀 아직 유효한 사진에 사람이 하나도 없을 때만이다",()=>{
+    const r=rig();
+    expect(r.tick(0).seesNobody(-1)).toBe(false);
+    const f=r.photo(1000);
+    expect(f.seesNobody(999)).toBe(true);
+    expect(f.seesNobody(1000)).toBe(false);
+    expect(r.tick(4001).seesNobody(999)).toBe(false);
+    expect(r.photo(5000,{person_ids:["p1"]},{...empty,people:[{id:"p1",attention:"unknown"}]}).seesNobody(999)).toBe(false);
+  });
   it("설정 간격의 1.5배가 지나면 새 관찰을 기다린다",()=>{
     const r=rig(1000);r.photo(0);
     expect(r.tick(1500).read(absence).value).toBe(false);

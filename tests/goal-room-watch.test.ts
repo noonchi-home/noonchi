@@ -13,7 +13,7 @@ const map:StationMap={version:1,kitchen_entry:"entry",meal_watch:"meal",zones:[]
 const portals=[{rooms:["living","kitchen"] as [string,string],point:[1,3] as [number,number]}];
 it.each(["timeout","failed","unknown","cancelled","cancelAtDeadline","window"] as const)("첫 방문 %s 뒤 남은 자리와 확인 기한을 지킨다",why=>{
   const s=setup(), checking={id:"g",since:0,until:300000};
-  const facts:TriggerFacts={trail:[trail(0,0,0),trail(1,0,100)],read:()=>evidence(false,100),mealSeated:evidence(false,100),observes:()=>false};
+  const facts:TriggerFacts={trail:[trail(0,0,0),trail(1,0,100)],read:()=>evidence(false,100),mealSeated:evidence(false,100),observes:()=>false,seesNobody:()=>false};
   const tick=(at:number)=>s.tick(at,{checking,facts,cupSeen:true});
   tick(200);const first=s.offers()[0]!;
   expect(first.target_id).toBe("sofa");
@@ -29,7 +29,7 @@ function setup(){
   const sent:GoalIntent[]=[];
   const w=new RoomWatch(i=>{sent.push(i);},portals);
   const tick=(at:number,over:Partial<WatchInput>={},edge=false,meal=false)=>{
-    const facts:TriggerFacts={trail:[],read:()=>evidence(edge,at),mealSeated:evidence(meal,at),observes:()=>false};
+    const facts:TriggerFacts={trail:[],read:()=>evidence(edge,at),mealSeated:evidence(meal,at),observes:()=>false,seesNobody:()=>false};
     w.tick({now:at,rev:at,map,facts,checking:null,personSeen:false,cupSeen:false,...over});
   };
   return {w,tick,sent,offers:()=>sent.filter(s=>s.op==="offer")};
@@ -55,7 +55,7 @@ describe("집 안 관찰",()=>{
       await act.publish("/act/work",{active:false,activeAction:null,docking:false,emergency:false,goal:null,handling:null,requested:false,
         at_ms:Date.now(),mode:"noonchi",tasks:[],plan:null});
       await settle(bus,nodes);
-      const now=Date.now(), facts:TriggerFacts={trail:[],read:()=>evidence(true,now),mealSeated:evidence(false,now),observes:()=>false};
+      const now=Date.now(), facts:TriggerFacts={trail:[],read:()=>evidence(true,now),mealSeated:evidence(false,now),observes:()=>false,seesNobody:()=>false};
       const input={now,rev:7,map,facts,checking:null,personSeen:false,cupSeen:false};
       rooms.tick(input);rooms.tick(input);
       await settle(bus,nodes);expect(reached).toEqual(["entry"]);
@@ -67,9 +67,27 @@ describe("집 안 관찰",()=>{
     r.tick(4,{},false,true);r.tick(4,{},false,true);
     expect(r.offers().map(x=>x.target_id)).toEqual(["entry","meal"]);
   });
+  it("냉장고 문 열림으로 주방 입구에 도착한 뒤 찍은 사진에 사람이 없으면 식탁 관찰 자리로 간다(주방 입구는 냉장고를 봐 식탁이 등 뒤다)",()=>{
+    const sent:GoalIntent[]=[], w=new RoomWatch(i=>{sent.push(i);},portals);
+    const tick=(at:number,door:boolean,nobodyAfter:number|null)=>w.tick({now:at,rev:at,map,checking:null,personSeen:false,cupSeen:false,
+      facts:{trail:[],read:()=>evidence(door,at),mealSeated:evidence(false,at),observes:()=>false,seesNobody:after=>nobodyAfter!==null && nobodyAfter>after}});
+    tick(1000,true,null);
+    const kitchen=sent.find(s=>s.op==="offer")!;
+    expect(kitchen).toMatchObject({target_id:"entry"});
+    // 도착 전에 찍은 빈 사진은 주방을 본 사진이 아니다
+    tick(2000,false,1500);
+    w.result({id:kitchen.id,target_id:"entry",at_ms:3000,evidence_rev:kitchen.rev,outcome:"arrived"});
+    tick(3500,false,2500);
+    expect(sent.filter(s=>s.op==="offer").map(s=>s.target_id)).toEqual(["entry"]);
+    // 도착 뒤 사진에 아직 사람이 있으면 기다린다
+    tick(4000,false,null);
+    expect(sent.filter(s=>s.op==="offer").map(s=>s.target_id)).toEqual(["entry"]);
+    tick(5000,false,4500);tick(5100,false,4500);
+    expect(sent.filter(s=>s.op==="offer").map(s=>s.target_id)).toEqual(["entry","meal"]);
+  });
   it("뚜렷한 동선은 자리 선택 없이 바로 방문한다. 재등장하면 방문을 거둔다",()=>{
     const r=setup();
-    const facts:TriggerFacts={trail:[trail(0,0,100),trail(1,0,300)],read:()=>evidence(false,300),mealSeated:evidence(false,300),observes:()=>false};
+    const facts:TriggerFacts={trail:[trail(0,0,100),trail(1,0,300)],read:()=>evidence(false,300),mealSeated:evidence(false,300),observes:()=>false,seesNobody:()=>false};
     r.tick(3100,{checking,facts});
     expect(r.offers().map(o=>[o.kind,o.target_id])).toEqual([["visit","sofa"]]);
     r.tick(3200,{checking,personSeen:true,facts});
@@ -107,7 +125,7 @@ describe("집 안 관찰",()=>{
     expect(visit).toMatchObject({kind:"visit",target_id:"sofa",goal_id:"goal"});
     r.w.result({id:visit.id,evidence_rev:2020,target_id:"sofa",at_ms:2020,outcome:"arrived"});
     r.tick(2100,{checking});expect(r.offers()).toHaveLength(2);
-    const facts:TriggerFacts={trail:[],read:()=>evidence(false,3000),mealSeated:evidence(false,3000),observes:(id,after)=>id==="sofa" && after===2020};
+    const facts:TriggerFacts={trail:[],read:()=>evidence(false,3000),mealSeated:evidence(false,3000),observes:(id,after)=>id==="sofa" && after===2020,seesNobody:()=>false};
     if (fresh) r.tick(3100,{checking,facts});
     else r.tick(visit.until_ms,{checking});
     expect(r.offers().map(o=>o.target_id)).toEqual(["sofa","sofa","entry"]);

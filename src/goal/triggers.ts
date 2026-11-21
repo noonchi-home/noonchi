@@ -24,6 +24,8 @@ export interface TriggerFacts {
   read(trigger: Trigger): TriggerFact;
   mealSeated: TriggerFact;
   observes(stationId:string,after:number):boolean;
+  /** 지금 유효한 집 사진이 after 뒤에 찍혔고 사람이 하나도 없다(그 카메라 화면 안에 사람이 없음, 구역 전체를 본다는 뜻은 아님). */
+  seesNobody(after:number):boolean;
   trail: NonNullable<WorldView["person_trail"]>;
 }
 
@@ -147,6 +149,7 @@ export class GoalTriggers {
         const [x,z]=s.look_at, y=this.floor(s.look_at);
         return proof.seats==="clear" && [y,y+1.2].every(h=>inView(proof.camera,[x,h,z]));
       },
+      seesNobody:after=>recent && !!current && current.at_ms>after && proof?.person_count===0,
       mealSeated: stamp !== null && now >= stamp && now-stamp <= MEAL_PHOTO_GAP_MS ? this.mealSeated : see("unknown"),
       read: t => {
         if (t.kind==="device") return deviceFact(view.devices,t,rev,changedDevices);
