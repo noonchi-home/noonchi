@@ -155,6 +155,7 @@ export interface PipelineOptions {
   onFrame?: () => void;
   /** 시험 자료 저장(DATASET_COLLECT=1일 때만). 고리에 넣은 프레임마다 부른다. */
   dataset?: (f: EngineFrame) => void;
+  needsHouseholdPhoto?: () => boolean;
   localize?: (frame:EngineFrame, header:FrameHeader)=>Promise<[number,number,number]|null>;
   /** 감지가 끝난 프레임(받은 JPEG 그대로)과 감지 결과. 폰 위치 맞추기가 기준점 상자(landmarks)를 쓴다(src/server/home/observe.ts). */
   onDetected?: (jpeg: Buffer, result: DetectResult) => void;
@@ -194,7 +195,7 @@ export class ObservationPipeline {
   private readonly ring: FrameRing;
   private readonly photoChecks = new WeakMap<EngineFrame, Promise<void>>();
   private readonly photoPositions = new WeakMap<EngineFrame, [number,number,number]>();
-  private lastPhotoAt = -Infinity;
+  private lastAlignmentCheck = -Infinity;
   private alignedFrame = false;
   private readonly measuredOriginal = new WeakSet<EngineFrame>();
   private readonly pool: VlmPool;
@@ -315,14 +316,16 @@ export class ObservationPipeline {
     if (!header.held && eye?.tracking === "ok" && !eye.estimated && view &&
         !this.ring.frames().some(other => other !== frame && other.sha256 === frame.sha256)) this.measuredOriginal.add(frame);
     const aligned = !!frame.view;
-    if (this.o.localize && !header.held && header.tracking !== "limited" &&
-        (frame.vlm || (aligned && !this.alignedFrame) || frame.capturedAtMs-this.lastPhotoAt >= 10_000)) {
-      this.lastPhotoAt=frame.capturedAtMs;
-      this.photoChecks.set(frame,this.o.localize(frame,header).then(position=>{
-        if(position) this.photoPositions.set(frame,position);
-      }).catch(()=>{}));
+    if (this.o.localize && !header.held && header.tracking !== "limited") {
+      const periodic = (aligned && !this.alignedFrame) || frame.capturedAtMs - this.lastAlignmentCheck >= 10_000;
+      this.alignedFrame = aligned;
+      if (periodic) this.lastAlignmentCheck = frame.capturedAtMs;
+      if (periodic || (frame.vlm && this.o.needsHouseholdPhoto?.())) {
+        this.photoChecks.set(frame,this.o.localize(frame,header).then(position=>{
+          if(position) this.photoPositions.set(frame,position);
+        }).catch(()=>{}));
+      }
     }
-    this.alignedFrame=aligned;
     if (frame.vlm) this.lastVlmAt = t.atMs;
     if (this.o.dataset) {
       try {
@@ -779,6 +782,7 @@ async function createDetector(env: Env, log: (line: string) => void): Promise<De
 
 /** 환경 변수로 관찰 흐름을 만든다. VLM은 추론 모드가 고른 OpenAI 호환 주소(src/infer)이고, 가까이 보기는 같은 주소에 VLM_CLOSER_MODEL 모델로 보낸다. */
 export async function createPipeline(o: {
+  needsHouseholdPhoto?: () => boolean;
   localize?: (frame:EngineFrame, header:FrameHeader)=>Promise<[number,number,number]|null>;
   env: Env; world: WorldPort; emit: (log: BrainLog) => void;
   onView?: (f: LatestFrame) => void;
@@ -798,7 +802,7 @@ export async function createPipeline(o: {
   if (o.dataset) o.log("[경고] 시험 자료 모으기가 켜져 있습니다. 엔진 프레임을 디스크에 씁니다.");
   for (const w of config.warnings ?? []) o.log(w);
   return new ObservationPipeline({
-    config, detector, vlm, closerVlm, world: o.world, emit: o.emit, onFrame: o.onFrame, onView: o.onView, onSeen: o.onSeen, dataset: o.dataset, onDetected: o.onDetected, localize:o.localize, vlmFast: o.vlmFast, clock: o.inject?.clock,
+    config, detector, vlm, closerVlm, world: o.world, emit: o.emit, onFrame: o.onFrame, onView: o.onView, onSeen: o.onSeen, dataset: o.dataset, onDetected: o.onDetected, localize:o.localize, needsHouseholdPhoto:o.needsHouseholdPhoto, vlmFast: o.vlmFast, clock: o.inject?.clock,
   });
 }
 

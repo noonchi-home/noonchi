@@ -8,6 +8,8 @@ import cv2
 import numpy as np
 from geometry import axes, backproject, estimate, intrinsics
 
+LIMITS = json.loads((Path(__file__).resolve().parents[1] / "src/shared/photo-limits.json").read_text(encoding="utf-8"))
+
 cv2.setNumThreads(2)
 sift = cv2.SIFT_create(nfeatures=850, contrastThreshold=.008)
 matcher = cv2.BFMatcher(cv2.NORM_L2)
@@ -145,7 +147,7 @@ def build(manifest, output, home):
             desc, xyz = triangulate(i, rows, entries, globals_)
         data[f"d{i}"] = desc
         data[f"p{i}"] = xyz.astype(np.float32)
-    if max(len(data[f"d{i}"]) for i in range(len(rows))) < 10:
+    if max(len(data[f"d{i}"]) for i in range(len(rows))) < LIMITS["min_matches"]:
         raise ValueError("insufficient calibrated overlapping views or depth")
     digest = hashlib.sha256(b"localize-map-v1")
     for key, value in sorted(data.items()):
@@ -163,6 +165,19 @@ def build(manifest, output, home):
     return data["revision"]
 
 
+
+def select_pose(solutions, min_matches, max_rms):
+    eligible = sorted((s for s in solutions if s["matches"] >= min_matches and s["rms_px"] <= max_rms),
+                      key=lambda s: (s["matches"], -s["rms_px"]), reverse=True)
+    if not eligible or eligible[0]["confidence"] < .23:
+        return None
+    best = eligible[0]
+    for rival in eligible[1:]:
+        if rival["matches"] >= .8*best["matches"] and np.linalg.norm(np.subtract(rival["position"], best["position"])) > .45:
+            return None
+    return best
+
+
 class PhotoMap:
     def __init__(self, path, home):
         with np.load(path, allow_pickle=False) as data:
@@ -175,7 +190,7 @@ class PhotoMap:
             self.centers = data["centers"]
             self.refs = [(data[f"d{i}"], data[f"p{i}"]) for i in range(len(self.ids))]
 
-    def solve(self, image, camera):
+    def candidates(self, image, camera):
         g, uv, desc, k, size = features(image, camera)
         color = np.mean((self.globals-g)**2, axis=1)
         bag = normalize(np.sqrt(histogram(desc, self.words))*self.idf)
@@ -190,15 +205,9 @@ class PhotoMap:
             a, b = pairs(desc, reference)
             pose = estimate(xyz[b], uv[a], k, size)
             if pose and np.linalg.norm(pose["position"]-self.centers[i]) < 4:
+                pose["rms_px"] *= camera["width"]/size[0]
                 solutions.append(pose)
-        solutions.sort(key=lambda s: (s["matches"], -s["rms_px"]), reverse=True)
-        if not solutions:
-            return None
-        best = solutions[0]
-        for rival in solutions[1:]:
-            if rival["matches"] >= .8*best["matches"] and np.linalg.norm(np.subtract(rival["position"], best["position"])) > .45:
-                return None
-        if best["confidence"] < .23:
-            return None
-        best["rms_px"] *= camera["width"]/size[0]
-        return best
+        return solutions
+
+    def solve(self, image, camera):
+        return select_pose(self.candidates(image, camera), LIMITS["min_matches"], LIMITS["max_rms_px"])

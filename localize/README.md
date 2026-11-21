@@ -27,7 +27,21 @@ npm run heavy -- python -B localize/worker.py evaluate --home mokryeon_180b --ma
 
 전역 색 배치와 시각 단어 분포로 후보 5장을 고른 뒤 SIFT 특징을 대응시키고 PnP RANSAC으로 자세를 푼다. 지도는 사진 경계의 깊이 단차를 제외한다. 특징점이 한곳에 몰리거나 두 후보의 위치가 충돌하면 모름을 낸다. 폰 맞춤, 10초 확인, 집 사진용 VLM 프레임에서 요청하고 처리 중에는 최신 대기 한 장만 보관한다.
 
-사진과 같은 시점의 AR 위치가 35cm 또는 시선이 12° 넘게 다르면 폰은 어림으로 돌아간다. 현재 트윈 시험용 문턱이다. 세계 상태는 사진마다 위치가 맞았을 때만 빈 구역 근거를 남긴다. 관찰 자리에서는 도착 후 촬영한 사진의 위치, 바라볼 곳, 해당 가전을 함께 확인한다.
+맞은 점이 20개 이상이고 입력 사진 픽셀 기준 재투영 RMS가 1.25px 이하여야 자세를 채택한다. 사진과 같은 시점의 AR 위치가 16cm 또는 시선이 15° 넘게 다르면 폰은 어림으로 돌아간다. 세계 상태는 사진마다 위치가 맞았을 때만 빈 구역 근거를 남긴다. 관찰 자리에서는 도착 후 촬영한 사진의 위치, 바라볼 곳, 해당 가전을 함께 확인한다.
+
+## 6.15절 이름과 기준값
+
+Python 폴더와 버스 노드 이름은 `localize`다. `/perception/localize`로 요청하고 `/perception/localized`로 응답한다. 둘 다 RELIABLE이다. 첫 맞춤과 그 뒤 10초마다 들어온 첫 원본 프레임을 확인한다. 그 사이 집 사진이나 관찰 자리 도착에 쓴 장면도 요청할 수 있다. 같은 장면에서 두 조건이 겹치면 한 번 푼다.
+
+`GET /api/homes/{집}/scenes`는 manifest의 장면별 카메라 값과 RGB PNG의 `image_url`을 준다. 서버는 `RUNTIME_DIR/homes/<집>/scenes/manifest.json`과 그림을 읽는다. 집 id가 붙은 `runtime/shots`와 `runtime/localize-reference` 렌더도 읽는다. `POST /api/homes/{집}/shots`에 `{"scene_id":"living_standby_C"}`를 보내면 600초짜리 S3 PUT 주소 두 개가 생긴다. 앱은 `photo.url`에 JPEG, `label.url`에 같은 촬영의 JSON을 보내며 각 응답의 `content_type`을 PUT 헤더에 쓴다. 두 객체는 집별 `shots/<장면>/<촬영 id>` 아래 같은 이름으로 짝을 이룬다. 이 API에도 `LOCALIZE_BUCKET`과 서버의 AWS 자격 증명을 쓴다.
+
+`localize/calibrate.py`는 기본 엔진 너비 480px, JPEG 품질 80으로 평가한다. 기준 카메라 위치가 같은 사진은 한 묶음으로 두고 51장으로 문턱을 고른 뒤 나머지 25장으로 검증했다. PnP 문턱 42개 조합을 비교해 틀린 자세와 좌우 반전 대조 사진의 오채택을 먼저 줄이고, 맞은 장수를 늘렸다. 허용 자세 오차는 10cm·4°다. AR 시험은 렌더의 정답과 원래 카메라 자세, 가장 가까운 다른 자리, 좌우 30°로 틀어진 가상 자세를 썼다. 위치와 시선은 각각 오판이 가장 적은 연속 구간의 가운데 값을 썼다.
+
+검증 25장은 성공 17장·모름 8장·오채택 0장이었다. 반전 대조 25장은 전부 모름이었다. 위치가 나온 17장에서는 가상 AR 위치·방향 오류를 모두 검출했다. 선정용 자료에서는 서로 18cm 떨어진 주방 입구와 걷는 길 사이의 위치 오류를 한 건 놓쳤다. 실제 폰으로 찍은 자료가 생기면 각 평가 줄의 `reference_id`에 대응하는 기준 줄 id를 넣고 같은 명령으로 다시 보정한다. 적용값은 `src/shared/photo-limits.json`에 있다.
+
+```powershell
+npm run heavy -- python -B localize/calibrate.py --home mokryeon_180b --map runtime/homes/mokryeon_180b/localize/map.npz --reference runtime/localize-reference/manifest.json --holdout runtime/localize-holdout/manifest.json --report runtime/localize-holdout/calibration.json
+```
 
 ## 실제 촬영 자료
 

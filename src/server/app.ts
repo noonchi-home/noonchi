@@ -29,6 +29,7 @@ import { brainRoutes } from "./routes/brain.js";
 import { devicesRoutes, type MatterControl, type MatterInfoView } from "./routes/devices.js";
 import { homeRoutes, layoutRoutes } from "./routes/layout.js";
 import { observeRoutes } from "./routes/observe.js";
+import { sceneImage, shotRoutes } from "./routes/home-shots.js";
 import { phoneRoutes } from "./routes/phone.js";
 import { planRoutes } from "./routes/plan.js";
 
@@ -69,6 +70,8 @@ export interface AppOptions {
   /** 폰 위치 맞추기 시작 위치(src/phone/sync/start.ts StartStore). 있으면 /api/phone/start-pose*. */
   start?: { get(): StartPose | null; save(raw: unknown): StartPose; preview(raw: unknown): StartPose; clear(): void };
   /** 폰 위치 맞춤 모듈 상태(GET /api/phone/sync). 폰 서버가 없으면 null. */
+  sceneRuntimeDir?: string;
+  signShot?: (home:string, scene:string)=>Promise<{expires_in:number;photo:{url:string};label:{url:string}}>;
   localizeStatus?: () => unknown;
   phoneSync?: () => SyncState | null;
   /** 관찰 흐름(BRAIN=1, src/observe/pipeline.ts). 있으면 GET /api/brain에 상태를 보인다. */
@@ -192,6 +195,7 @@ export function createApp(opts: AppOptions): TwinHomeApp {
   phoneRoutes(kit);
   planRoutes(kit);
   homeRoutes(kit);
+  shotRoutes(kit);
   devicesRoutes(kit);
   agentRoutes(kit);
 
@@ -260,6 +264,15 @@ export function createApp(opts: AppOptions): TwinHomeApp {
       return;
     }
     const head = req.method === "HEAD";
+    if(path.startsWith("/home-scenes/")) {
+      const match=/^\/home-scenes\/([A-Za-z0-9_-]+)\/([A-Za-z0-9_-]+)\.png$/.exec(path);
+      try {
+        const root=match && sceneImage(opts,match[1],match[2]);
+        if(root && match && serveFile(res,root,match[2]+".png",head)) return;
+      } catch(e) { if(!(e instanceof HttpError)) throw e; }
+      sendJson(res,404,{ok:false,error:"촬영 장면 그림이 없습니다."});
+      return;
+    }
     if (path === "/twin") {
       res.writeHead(301, { location: "/twin/" });
       res.end();

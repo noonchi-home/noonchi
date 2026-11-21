@@ -153,6 +153,7 @@ export async function startNodes(core: HomeCore, emit: (event: BrainLog) => void
   });
   core.goalMirror = goal.mirror;
   core.tvWatch = goal.tv;
+  core.roomWatch = goal.rooms;
   core.mirror = await startWorldMirror({
     bus, epoch, name: "act", clock, log,
     routes: (node, afterRev) => {
@@ -287,6 +288,12 @@ export async function startPipeline(core: HomeCore, emit: (event: BrainLog) => v
   const perception = core.perception!;
   const { engineHeaders } = core;
   core.pipeline = await createPipeline({
+    needsHouseholdPhoto:()=>{
+      const map=core.scene?.stations;
+      if(core.tvWatch?.armed() || core.checkingVisit || core.roomWatch?.needsPhoto(map?.kitchen_entry ?? null)) return true;
+      const dining=map?.stations.find(s=>s.id===map.meal_watch);
+      return !!dining && !!core.view()?.objects.some(o=>o.cls==="cup" && o.status==="present" && o.surface && dining.surfaces.includes(o.surface));
+    },
     localize:core.localizer ? (f,h)=>core.localizer!.request(f,h) : undefined,
     env, log, world: perception.port, inject: ctx.brain, emit,
     // 물체 모양은 /perception/detections로(폰 노드가 대시보드로만 보낸다)

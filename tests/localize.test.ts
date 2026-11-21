@@ -4,6 +4,7 @@ import { PhoneSession } from "../src/phone/session.js";
 import { agrees, PhotoLocalizer, resultFor } from "../src/localize/index.js";
 import type { EngineFrame } from "../src/contract/observe.js";
 import type { HouseholdPhoto } from "../src/contract/world.js";
+import { PHOTO_GAP_M, PHOTO_GAP_DEG, PHOTO_MAX_RMS_PX, PHOTO_MIN_MATCHES } from "../src/shared/photo-alignment.js";
 import { stationPhotoMatches } from "../src/act/robot/directive.js";
 import { describe, expect, it } from "vitest";
 import { TOPICS } from "../src/bus/topics.js";
@@ -29,6 +30,12 @@ describe("목련 위치 찾기", () => {
     expect(agrees(resultFor({...frame(3),view:null},fit,"revision"))).toBe(false);
     expect(resultFor(frame(4),null,"revision")).toMatchObject({position:null,confidence:0,matches:0});
     const schema=TOPICS["/perception/localized"].body;
+    expect(agrees({...result,ar_gap_m:PHOTO_GAP_M,ar_gap_deg:PHOTO_GAP_DEG})).toBe(true);
+    expect(agrees({...result,ar_gap_m:PHOTO_GAP_M+.001})).toBe(false);
+    expect(agrees({...result,ar_gap_deg:PHOTO_GAP_DEG+.01})).toBe(false);
+    expect(schema.safeParse({...result,matches:PHOTO_MIN_MATCHES,rms_px:PHOTO_MAX_RMS_PX}).success).toBe(true);
+    expect(schema.safeParse({...result,matches:PHOTO_MIN_MATCHES-1}).success).toBe(false);
+    expect(schema.safeParse({...result,rms_px:PHOTO_MAX_RMS_PX+.001}).success).toBe(false);
     expect(schema.safeParse({...result,jpeg:"pixels"}).success).toBe(false);
     expect(schema.safeParse({...result,confidence:0}).success).toBe(false);
     expect(schema.safeParse({...result,position:null}).success).toBe(false);
@@ -88,6 +95,7 @@ describe("목련 위치 찾기", () => {
     });
   });
   it("위치 찾기 결과는 사진을 포함하지 않는 신뢰 토픽이다", () => {
-    expect(TOPICS["/perception/localized"]?.qos.kind).toBe("reliable");
+    expect(TOPICS["/perception/localize"]).toMatchObject({qos:{kind:"reliable"},from:["perception"]});
+    expect(TOPICS["/perception/localized"]).toMatchObject({qos:{kind:"reliable"},from:["localize"]});
   });
 });

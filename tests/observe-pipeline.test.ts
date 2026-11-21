@@ -27,13 +27,31 @@ function gatedVlm() {
 const head = (at: number) => ({ kind: "engine" as const, width: 100, height: 100, captured_at: at, time_err_ms: 0 });
 
 describe("관찰 흐름", () => {
+  it("맞춤 직후와 10초마다 한 장을 확인하고 중간의 집 사진이 주기를 미루지 않는다",async()=>{
+    const requested:number[]=[];
+    let household=false;
+    const p=pipelineOn({config:{engineMs:100,vlmMs:1000,vlmMaxInflight:1,vlmTimeoutMs:5000,detectQueueMax:8,keepMs:20000},
+      needsHouseholdPhoto:()=>household,localize:async f=>{requested.push(f.capturedAtMs);return null;},
+      detector:null,world:new WorldState({surfaces:()=>[],floorAt:()=>0,roomAt:()=>null,devices:()=>[]}),
+      vlm:{model:"test",json:async()=>({value:{scene:"home",summary:"",observations:[]},costUsd:0,model:"test"})} as unknown as VlmClient,emit:()=>{}});
+    const camera={origin:[0,1,0] as [number,number,number],orientation:[0,0,0,1] as [number,number,number,number],theta:0,projection:[]};
+    try{
+      const times=[1000,2000,3000,4000,7000,12900,13000,14000,23000,23100];
+      for(const [i,at] of times.entries()){
+        household=at===7000 || at===13000;
+        p.onEngine(jpeg(i),{...head(at),...(at===23000 ? {held:true as const} : {})},null,at<3000?null:camera,at);
+        await p.idle();
+      }
+      expect(requested).toEqual([1000,3000,7000,13000,23100]);
+    } finally {await p.close();}
+  });
   it("같은 사진의 위치 답을 기다린 뒤에만 그 사진의 빈 구역을 기록한다",async()=>{
     const world=new WorldState({surfaces:()=>[],floorAt:()=>0,roomAt:()=>null,devices:()=>[]});
     const vlm={model:"test",json:async()=>({value:{scene:"living",summary:"",observations:[],
       household:{seats:"clear",people:[],dining_food:"unknown"}},costUsd:0,model:"test"})} as unknown as VlmClient;
     let answer!:(p:[number,number,number]|null)=>void;
     const pipeline=pipelineOn({config:{engineMs:1000,vlmMaxInflight:1,vlmTimeoutMs:5000,detectQueueMax:8,keepMs:20000},
-      localize:()=>new Promise(r=>{answer=r;}),vlm,detector:new ScriptedDetector(()=>[]),world,emit:()=>{}});
+      needsHouseholdPhoto:()=>true,localize:()=>new Promise(r=>{answer=r;}),vlm,detector:new ScriptedDetector(()=>[]),world,emit:()=>{}});
     const eye={position:[0,0] as [number,number],height_m:1.15,yaw_deg:0,pitch_deg:0,tracking:"ok" as const,at:""};
     const camera={origin:[0,1.15,0] as [number,number,number],orientation:[0,0,0,1] as [number,number,number,number],
       theta:0,projection:[1,0,0,0,0,1,0,0,0,0,-1,-1,0,0,-.02,0]};

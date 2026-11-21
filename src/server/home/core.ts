@@ -95,6 +95,7 @@ export class HomeCore {
   goalMirror: WorldMirror | null = null;
   goalPlans: BrainPlans | null = null;
   goalPulse: number | null = null;
+  roomWatch?: import("../../goal/index.js").RoomWatch;
   tvWatch?: import("../../goal/index.js").TvWatch;
   goalFacts: import("../../goal/index.js").TriggerFacts | null = null;
   checkingVisit: (import("../../goal/index.js").CheckingVisit & {cup:string;surface:string}) | null = null;

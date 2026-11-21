@@ -36,11 +36,11 @@ def estimate(xyz, uv, k, size):
     xyz = np.ascontiguousarray(xyz, np.float64)
     uv = np.ascontiguousarray(uv, np.float64)
     w, h = size
-    if len(xyz) < 10 or (np.ptp(uv, axis=0) < [w*.08, h*.08]).any():
+    if len(xyz) < 6 or (np.ptp(uv, axis=0) < [w*.08, h*.08]).any():
         return None
     ok, rv, tv, inliers = cv2.solvePnPRansac(xyz, uv, k, None, iterationsCount=200,
         reprojectionError=2.5, confidence=.995, flags=cv2.SOLVEPNP_EPNP)
-    if not ok or inliers is None or len(inliers) < max(10, len(xyz)*.35):
+    if not ok or inliers is None or len(inliers) < max(6, len(xyz)*.35):
         return None
     indices = inliers.ravel()
     points, pixels = xyz[indices], uv[indices]
@@ -52,7 +52,7 @@ def estimate(xyz, uv, k, size):
         return None
     projected = cv2.projectPoints(points, rv, tv, k, None)[0].reshape(-1, 2)
     rms = float(np.sqrt(np.mean(np.sum((projected-pixels)**2, axis=1))))
-    if not np.isfinite(rms) or rms > 1.9:
+    if not np.isfinite(rms):
         return None
     forward = rotation[2]
     return dict(position=(-rotation.T @ tv).ravel().tolist(),

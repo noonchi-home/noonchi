@@ -3,6 +3,7 @@
 // 몸 모양은 그 토픽을 옮기는 묶음에서 실제 모양으로 바꾼다(그 전에는 객체인지와 순서 칸만 본다).
 // 실제 모양으로 바꾼 토픽은 계약(src/contract)의 타입과 같은지 아래 Assert로 tsc가 본다(한쪽만 바꾸면 tsc 실패).
 import { z } from "zod";
+import { PHOTO_MAX_RMS_PX, PHOTO_MIN_MATCHES } from "../shared/photo-alignment.js";
 import { CHECK_TEXT } from "../act/labels.js";
 import { ConditionSchema } from "../world/condition-schema.js";
 import type { DecisionRecord } from "../contract/events.js";
@@ -316,7 +317,7 @@ const localized = photoRequest.extend({
   map_rev:id.nullable(), ar_gap_m:at.nonnegative().nullable(), ar_gap_deg:at.nonnegative().nullable(),
 }).refine(r=>r.position===null
   ? r.yaw_deg===null && r.pitch_deg===null && r.confidence===0 && r.matches===0 && r.rms_px===null && r.ar_gap_m===null && r.ar_gap_deg===null
-  : r.yaw_deg!==null && r.pitch_deg!==null && r.confidence>=.23 && r.matches>=10 && r.rms_px!==null && r.map_rev!==null &&
+  : r.yaw_deg!==null && r.pitch_deg!==null && r.confidence>=.23 && r.matches>=PHOTO_MIN_MATCHES && r.rms_px!==null && r.rms_px<=PHOTO_MAX_RMS_PX && r.map_rev!==null &&
     (r.ar_gap_m===null)===(r.ar_gap_deg===null));
 export const TOPICS = {
   "/perception/localize": {qos:{kind:"reliable"}, body:photoRequest, key:by("frame_id"), order:null, from:["perception"]},
