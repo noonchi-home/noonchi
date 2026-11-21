@@ -134,11 +134,13 @@ export async function startNodes(core: HomeCore, emit: (event: BrainLog) => void
   core.out.manager = managerRoutes(manager, clock);
   await manager.prepare();
   const triggers = new GoalTriggers(locateZone, floorLookup(core.plan.rooms), vlmStepMs(loadObserveConfig(ctx.env)));
-  // 목표 판단: 250ms마다, 그리고 새 집 상태(새 VLM 답)가 오는 즉시. 답이 온 뒤 다음 틱까지 기다리지 않는다(TV 끄기 5초)
-  let evaluateGoals: (() => void) | null = null;
+  // 목표 판단: 250ms마다와 새 rev가 오면 전부, 같은 rev에 새 집 사진(새 VLM 답)만 오면 끄고 켤 TV가 있을 때 조건 사실과 TV 규칙만(TV 끄기 5초).
+  // 새 사진마다 전부 돌리면 같은 상태를 받는 대시보드 world 발행이 늦는다(tests/latency-world.test.ts p95 26~60ms)
+  let evaluateGoals: (() => void) | null = null, evaluateTv: (() => void) | null = null;
   core.goalMirror = await startWorldMirror({
     bus, epoch, name: "goal", clock, log,
     onView: () => evaluateGoals?.(),
+    onPhoto: () => { if (core.tvWatch?.armed()) evaluateTv?.(); },
     routes: (node, afterRev) => {
       const rooms=new RoomWatch(intent=>core.out.goal?.push("/goal/intent",intent),core.floorPlan.portals);
       const tv = core.tvWatch = new TvWatch(intent=>core.out.goal?.push("/goal/intent",intent));
@@ -146,15 +148,23 @@ export async function startNodes(core: HomeCore, emit: (event: BrainLog) => void
       core.goalPlans = new BrainPlans(core.out.goal, clock, "goal:");
       core.goalPlans.routes(node);
       node.on("/goal/update", (b, ctx) => afterRev(b.rev, ctx, () => { if (!core.closed) core.tracker?.updateGoal(); }));
-      node.every(250, evaluateGoals = () => {
+      // 조건 사실을 새로 매기고 TV 규칙을 돌린다. 새 집 사진마다는 이것만 돈다(사용자 찾기·실행 추적은 250ms 틱과 새 rev에)
+      const facts = () => {
         const view = core.goalMirror?.view(), rev = core.goalMirror?.rev();
-        if (core.closed || !view || rev == null) return;
+        if (core.closed || !view || rev == null) return null;
         const map=core.scene?.stations ?? null, now=clock.now();
-        core.goalFacts = triggers.evaluateTriggers(view,rev,map,now);
-        for (const device of core.twin.devices) if (device.kind===HOUSEHOLD_KINDS.viewerPower) tv.tick(device.id,viewerAt(core.goalFacts,device.id,now),rev,now);
+        const goalFacts = core.goalFacts = triggers.evaluateTriggers(view,rev,map,now);
+        for (const device of core.twin.devices) if (device.kind===HOUSEHOLD_KINDS.viewerPower) tv.tick(device.id,viewerAt(goalFacts,device.id,now),rev,now);
+        return {view,rev,map,now,goalFacts};
+      };
+      evaluateTv = () => { facts(); };
+      node.every(250, evaluateGoals = () => {
+        const f = facts();
+        if (!f) return;
+        const {view,rev,map,now,goalFacts}=f;
         const checking=core.checkingVisit;
         const cup=checking && view.objects.find(o=>o.id===checking.cup);
-        rooms.tick({now,rev,map,facts:core.goalFacts,checking,
+        rooms.tick({now,rev,map,facts:goalFacts,checking,
           personSeen:view.person.visible || !!(checking && view.household_photo?.proof &&
             view.household_photo.at_ms>=checking.since && view.household_photo.proof.person_count>0),
           cupSeen:!!(checking && cup?.status==="present" && cup.surface===checking.surface &&

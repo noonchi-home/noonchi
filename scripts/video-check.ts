@@ -159,10 +159,12 @@ export function videoClock(t0: number, sync: readonly (readonly [number, number]
 export interface LeftAt { clip: string; ms: number }
 
 /** 떠난 때 → 서버 시각. 첫 영상(--clip)은 영상 시각 0에서, 단계 영상은 폰 페이지가 그 영상을 튼 영상 시각(clips의 첫 기록)에서 시작한다.
- *  아직 틀지 않은 영상이면 null. 영상 시각과 sync는 같은 폰 페이지 시계라 끝 장면을 붙잡은 시간이 섞여도 어긋나지 않는다. */
-export function leftServerAt(left: LeftAt, firstClip: string, record: { t0: number; sync: readonly (readonly [number, number])[]; clips: readonly VideoClip[] }, rate = 1): number | null {
-  const start = left.clip === firstClip ? 0 : record.clips.find((c) => c.clip === left.clip)?.video_ms;
-  return start === undefined ? null : serverClock(record.t0, record.sync, rate)(start + left.ms);
+ *  아직 틀지 않은 영상이거나, 영상 길이(단계 영상은 clips의 duration_ms, 첫 영상은 firstDurationMs)를 넘으면 null:
+ *  넘은 시각은 붙잡은 끝 장면이나 다음 영상 시각이 된다. 영상 시각과 sync는 같은 폰 페이지 시계라 끝 장면을 붙잡은 시간이 섞여도 어긋나지 않는다. */
+export function leftServerAt(left: LeftAt, firstClip: string, record: { t0: number; sync: readonly (readonly [number, number])[]; clips: readonly VideoClip[] }, rate = 1, firstDurationMs?: number | null): number | null {
+  const clip = left.clip === firstClip ? { video_ms: 0, duration_ms: firstDurationMs ?? undefined } : record.clips.find((c) => c.clip === left.clip);
+  if (!clip || (clip.duration_ms != null && left.ms > clip.duration_ms)) return null;
+  return serverClock(record.t0, record.sync, rate)(clip.video_ms + left.ms);
 }
 
 /** 중간 판정에서 더 볼 것 없이 실패로 끝난 결과인가: 늦은 끄기·다른 기기·다른 컵·직접 끈 TV 켜기. 아직 오지 않은 단계(missing)와
@@ -784,7 +786,9 @@ export function parseArgs(argv: string[]): Args | string {
   if (scenario && (argv.includes("--fake") || argv.includes("--approve") || argv.includes("--done-on") || argv.includes("--answer") || Number(arg("done-after")??0)!==0)) return "시나리오 1은 실제 입력과 자동 도착으로 판정합니다."
   const leftArg = /^(?:([^:]+):)?(\d+(?:\.\d+)?)$/.exec(arg("left") ?? "");
   const left: LeftAt | null = leftArg && (leftArg[1] === undefined || CLIP_NAME.test(leftArg[1])) ? { clip: leftArg[1] ?? clip, ms: Number(leftArg[2]) * 1000 } : null;
-  if (scenario && !left) return "시나리오 1은 시청자가 떠난 때를 --left [<영상.mp4>:]<초>로 주세요(영상을 빼면 --clip 첫 영상).";;
+  if (scenario && !left) return "시나리오 1은 시청자가 떠난 때를 --left [<영상.mp4>:]<초>로 주세요(영상을 빼면 --clip 첫 영상).";
+  if (scenario && left!.clip !== clip && !argv.some((a, i) => argv[i - 1] === "--step" && a.split(":")[2] === left!.clip))
+    return `--left의 영상 ${left!.clip}이 --clip·--step에 없어요.`;;
   const steps = argv.flatMap((a, i) => (a === "--step" ? [argv[i + 1] ?? ""] : []));
   const bad = steps.find((s) => !STEP_ARG.test(s));
   if (bad !== undefined) return `--step은 <go|pick|place|do>:<낱말 a-z·_>:<영상.mp4|webm>예요: 「${bad}」`;
@@ -1087,7 +1091,8 @@ async function main(): Promise<number> {
         if(!response.ok)throw Error("시나리오 1 기록 조회 실패 "+response.status);
         const {rows}=await response.json() as {rows:HistoryRow[]};
         if(rows.length>=5000)throw Error("시나리오 1 기록 조회 한도를 넘었어요.");
-        const left=args.left?leftServerAt(args.left,args.clip,rec,args.rate):null;
+        const left=args.left?leftServerAt(args.left,args.clip,rec,args.rate,firstDurationMs):null;
+        if(final && args.left && left===null) throw Error(`--left ${args.left.clip}:${args.left.ms/1000}초가 튼 영상 안에 없어요(안 튼 영상이거나 영상 길이를 넘음).`);
         return scenario!.judge(rows,received,left!==null && (final || left<=Date.now())?left:null);
       };
       const pollWorld = async () => {

@@ -13,7 +13,7 @@ function rig(){
   let generation=0;
   const note=(power:"on"|"off",command_id:string|null=null)=>tv.observe("screen",{power,generation,command_id});
   note("on");
-  const tick=(now:number,empty:boolean,watch=false,seen=true)=>tv.tick("screen",{empty,watch,photo:now,seen},3,now);
+  const tick=(now:number,empty:boolean,watch=false,seen=true,photo=now)=>tv.tick("screen",{empty,watch,photo,seen},3,now);
   const jobs=()=>offers.filter(x=>x.op==="offer");
   const result=(id:string,at:number,kind:"on"|"off")=>tv.result({id,at_ms:at,target_id:"screen",evidence_rev:3,outcome:"applied",command_id:id,expected_power:kind});
   return {tv,tick,note,jobs,result,manual:()=>{generation++;note("off");}};
@@ -86,18 +86,33 @@ describe("TV 규칙: 빈 자리 2초와 지켜보는 동안",()=>{
     expect(r.tv.watching()).toBe(false);
     r.tick(0,false,true);
     expect(r.tv.watching()).toBe(true);
-    // 사진 한 장이 처리 한도로 빠지거나 답이 늦어 유효한 사진이 잠깐 없어도 WATCH_HOLD_MS 동안은 1초 간격을 지킨다
+    // 사진 한 장이 처리 한도로 빠지거나 답이 늦어 유효한 사진이 잠깐 없어도, 시청 구역을 본 사진의 촬영 시각부터 WATCH_HOLD_MS 동안은 1초 간격을 지킨다
     r.tick(1000,false,false,false);
     expect(r.tv.watching()).toBe(true);
+    // 같은 사진(촬영 0)을 다시 평가해도 지키는 시간은 늘지 않는다
+    r.tick(2500,false,true,true,0);
     r.tick(WATCH_HOLD_MS,false,false,false);
     expect(r.tv.watching()).toBe(true);
     r.tick(WATCH_HOLD_MS+1,false,false,false);
     expect(r.tv.watching()).toBe(false);
-    r.tick(3000,true);const off=r.jobs()[0]!;
-    r.result(off.id,3001,"off");r.note("off",off.id);
-    r.tick(4000,true);
+    r.tick(6000,true);const off=r.jobs()[0]!;
+    r.result(off.id,6001,"off");r.note("off",off.id);
+    r.tick(7000,true);
     expect(r.tv.watching()).toBe(true);
-    r.manual();r.tick(5000,true);
+    r.manual();r.tick(8000,true);
     expect(r.tv.watching()).toBe(false);
+  });
+  it("켤 일·끌 일이 있는 TV(켜진 TV, 우리가 끈 TV)가 있을 때만 armed다: 새 집 사진마다 판단할지 정한다",()=>{
+    const r=rig();
+    expect(r.tv.armed()).toBe(true);
+    r.manual();
+    expect(r.tv.armed()).toBe(false);
+    r.note("on");
+    r.tick(0,true);const off=r.jobs()[0]!;
+    r.result(off.id,1,"off");r.note("off",off.id);
+    expect(r.tv.armed()).toBe(true);
+  });
+  it("지키는 시간은 1초 간격 사진 한 장이 빠지고(2초 뒤 촬영) 그 답이 2초 늦어도 이어진다",()=>{
+    expect(WATCH_HOLD_MS).toBe(4000);
   });
 });

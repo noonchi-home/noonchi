@@ -301,6 +301,11 @@ export class WorldState {
       : null;
   }
 
+  /** 지금 집 사진의 serial(없으면 null). 집 상태 노드가 새 사진을 넣었는지 볼 때 쓴다(보기 전체를 만들지 않고). */
+  householdSerial(): number | null {
+    return this.householdPhoto?.serial ?? null;
+  }
+
   view(nowMs: number): WorldView {
     const core = this.core;
     const devices = core.o.devices();

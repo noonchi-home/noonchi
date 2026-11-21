@@ -5,8 +5,9 @@ import type { TriggerFacts } from "./triggers.js";
 
 /** 시청 구역이 이만큼(촬영 시각 기준) 이어서 비면 끈다. 떠남 → 다음 촬영(1초) + 2초 + VLM 답(약 1.7초)이 5초 안에 들게(2026-11-21 사용자 결정). */
 export const NO_VIEWER_MS = 2000;
-/** 시청 구역이 마지막으로 보인 뒤 이만큼은 지켜보는 것으로 둔다: 1초 간격 사진 한 장이 처리 한도로 빠지거나 답이 늦어 유효한 사진이 잠깐 없어도 2초 간격으로 돌아가지 않게. */
-export const WATCH_HOLD_MS = 2000;
+/** 시청 구역을 본 사진의 촬영 시각부터 이만큼은 지켜보는 것으로 둔다: 1초 간격 사진 한 장이 처리 한도로 빠져(다음 촬영 2초 뒤)
+ *  그 답이 2초 늦게 와도 2초 간격으로 돌아가지 않게. 같은 사진을 다시 평가해도 늘지 않는다. */
+export const WATCH_HOLD_MS = 4000;
 /** seen: 시청 구역이 지금 유효한 사진에 보인다(빈 자리 판단이 unknown이 아니다). */
 export interface ViewerEvidence { empty:boolean; watch:boolean; photo:number|null; seen:boolean }
 export function viewerAt(facts:TriggerFacts | null,id:string,now:number):ViewerEvidence {
@@ -66,8 +67,13 @@ export class TvWatch {
       this.desired(s,e)===p.power);
   }
 
-  /** 관찰 흐름이 VLM 사진 간격을 1초로 줄일 때인가(src/server/home/observe.ts vlmFast): 시청 구역이 보이고(마지막으로 보인 뒤 WATCH_HOLD_MS 안),
+  /** 관찰 흐름이 VLM 사진 간격을 1초로 줄일 때인가(src/server/home/observe.ts vlmFast): 시청 구역이 보이고(그 사진 촬영 뒤 WATCH_HOLD_MS 안),
    *  켜진 TV이거나 우리가 끈 TV(다시 켤 차례)다. */
+  /** 끌 일(켜진 TV)이나 다시 켤 일(우리가 끈 TV)이 있는가. 없으면 새 집 사진마다 조건을 다시 매길 까닭이 없다(src/server/home/observe.ts onPhoto). */
+  armed():boolean {
+    return [...this.screens.values()].some(s=>s.stamp.power==="on" || s.owner!==null);
+  }
+
   watching():boolean {
     return [...this.screens.values()].some(s=>s.seen && (s.stamp.power==="on" || s.owner!==null));
   }
@@ -75,7 +81,7 @@ export class TvWatch {
   tick(id:string,e:ViewerEvidence,rev:number,now:number) {
     const s=this.screens.get(id);
     if (!s) return;
-    if (e.seen) s.seenAt=now;
+    if (e.seen && e.photo!==null) s.seenAt=Math.max(s.seenAt ?? -Infinity,e.photo);
     s.seen=s.seenAt!==null && now-s.seenAt<=WATCH_HOLD_MS;
     const want=this.desired(s,e);
     const p=s.pending;

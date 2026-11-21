@@ -52,7 +52,8 @@ function spy(world: WorldState) {
   const proxy = new Proxy(world, {
     get(target, prop, recv) {
       const v = Reflect.get(target, prop, recv);
-      if (typeof v !== "function" || prop === "view") return v;
+      // 읽기만 하는 view·householdSerial은 적지 않는다(넣기 차례만 본다)
+      if (typeof v !== "function" || prop === "view" || prop === "householdSerial") return v;
       return (...args: unknown[]) => {
         depth++;
         try {
@@ -228,6 +229,24 @@ describe("집 상태 노드", () => {
     expect(of(r.got, "/world/state").slice(states).map((b) => b.rev)).toEqual([1, 1, 1, 1]);
     expect(of(r.got, "/world/state").at(-1).view.at_ms).toBe(NOW + 1000);
     expect(of(r.got, "/world/changes")).toHaveLength(1);
+  });
+
+  it("변화 없는 VLM 답이라도 집 사진(household_photo)을 새로 넣으면 같은 rev로 상태를 바로 낸다(250ms 다시 냄을 기다리지 않음: TV 끄기 5초)", async () => {
+    const world = ws();
+    let serial = 0;
+    world.applyScene = () => { serial++; return []; };
+    world.householdSerial = () => serial || null;
+    const r = await rig(world);
+    const states = of(r.got, "/world/state").length;
+    await r.perception.publish("/perception/scene", { kind: "scene", frame_id: "e1", observed_ms: NOW, scene: said(["d1", "sitting"]) });
+    await r.flush();
+    expect(of(r.got, "/world/state").slice(states).map((b) => b.rev)).toEqual([0]);
+    expect(of(r.got, "/world/changes")).toHaveLength(0);
+    // 집 사진이 그대로인 답은 상태를 다시 내지 않는다
+    world.applyScene = () => [];
+    await r.perception.publish("/perception/scene", { kind: "scene", frame_id: "e2", observed_ms: NOW, scene: said(["d1", "sitting"]) });
+    await r.flush();
+    expect(of(r.got, "/world/state").slice(states)).toHaveLength(1);
   });
 
   it("/world/input 지킴·따르기 창은 world.guard·contentsAction을 그 값으로 부른다", async () => {

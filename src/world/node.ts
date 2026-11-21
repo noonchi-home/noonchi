@@ -147,8 +147,10 @@ export async function startWorldNode(o: { bus: Bus; epoch: { boot: string; home:
     return emit(r.changes, r);
   };
   node.on("/perception/scene", (b, { e }) => once(e, () => {
+    // 변화 없는 VLM 답도 집 사진을 새로 넣었으면 상태를 바로 낸다(같은 rev). 250ms 다시 냄을 기다리면 TV 끄기가 그만큼 늦는다
+    const photo = world.householdSerial();
     const r = inputs.scene(b);
-    return { changes: r.changes, ...(r.closer ? { closer: { look: r.closer.look, ids: Object.fromEntries(r.closer.ids) } } : {}) };
+    return { changes: r.changes, state: world.householdSerial() !== photo, ...(r.closer ? { closer: { look: r.closer.look, ids: Object.fromEntries(r.closer.ids) } } : {}) };
   }));
   node.on("/world/input", (b, { e }) => once(e, () => {
     if (b.kind === "focus") world.focus(b.id, b.focus);

@@ -13,10 +13,19 @@ describe("시나리오 1 합성(composed) 판단 재생", () => {
   });
   it("실영상 모드는 시청자가 떠난 때(--left [영상:]초)를 받아야 TV 끄기 5초를 잴 수 있다", () => {
     const flags = ["--clip", "run.mp4", "--scenario", "scenario1"];
-    expect(parseArgs([...flags, "--left", "walk-tv.mp4:3.5"])).toMatchObject({ left: { clip: "walk-tv.mp4", ms: 3500 } });
+    expect(parseArgs([...flags, "--step", "go:sofa:walk-tv.mp4", "--left", "walk-tv.mp4:3.5"])).toMatchObject({ left: { clip: "walk-tv.mp4", ms: 3500 } });
     for (const left of [[], ["--left"], ["--left", "-1"], ["--left", "x"], ["--left", "walk tv.mp4:3"], ["--left", "walk-tv.mp4:"]])
       expect(typeof parseArgs([...flags, ...left])).toBe("string");
     expect(parseArgs(["--clip", "run.mp4"])).not.toHaveProperty("left");
+    // --clip·--step에 없는 영상 이름이면 떠남 단계가 영원히 채워지지 않는다
+    expect(typeof parseArgs([...flags, "--left", "other.mp4:3"])).toBe("string");
+    expect(parseArgs([...flags, "--step", "go:sofa:other.mp4", "--left", "other.mp4:3"])).toMatchObject({ left: { clip: "other.mp4", ms: 3000 } });
+  });
+  it("떠난 때가 그 영상 길이를 넘으면 서버 시각으로 옮기지 않는다(붙잡은 장면·다음 영상 시각이 되지 않게)", () => {
+    const record = { t0: 1000, sync: [[1000, 0]] as [number, number][], clips: [{ video_ms: 4000, clip: "walk-tv.mp4", duration_ms: 2000 }] };
+    expect(leftServerAt({ clip: "walk-tv.mp4", ms: 2000 }, "run.mp4", record, 1)).toBe(7000);
+    expect(leftServerAt({ clip: "walk-tv.mp4", ms: 2001 }, "run.mp4", record, 1)).toBeNull();
+    expect(leftServerAt({ clip: "run.mp4", ms: 3001 }, "run.mp4", record, 1, 3000)).toBeNull();
   });
   it("떠난 때는 그 영상이 이어 붙은 영상 시각에서 시작한 자리에 초를 더해 서버 시각으로 옮긴다", () => {
     // 서버 5~9초 동안 첫 영상 끝 장면을 붙잡았다가 단계 영상 walk-tv.mp4를 영상 시각 4초에서 틀었다
