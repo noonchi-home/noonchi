@@ -271,7 +271,8 @@ const offerFields = {id,rev,until_ms:at,target_id:id,goal_id:id.nullable()};
 function offerBody<O extends "grant"|"offer">(op:O) {
   const fields = {...offerFields,op:z.literal(op)};
   return z.discriminatedUnion("kind",[
-    z.strictObject({...fields,kind:z.enum(["visit","tv_off","tv_on"])}),
+    z.strictObject({...fields,kind:z.literal("visit"),note:z.string().min(1).max(120).optional()}),
+    z.strictObject({...fields,kind:z.enum(["tv_off","tv_on"])}),
     z.strictObject({...fields,kind:z.literal("choose_station"),candidates:z.array(id).min(2),direction:z.string(),visited:z.array(id)}),
   ]);
 }
