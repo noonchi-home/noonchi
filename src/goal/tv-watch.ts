@@ -3,20 +3,23 @@ import type { DirectiveResult, GoalIntent, HouseholdOffer } from "../contract/ma
 
 import type { TriggerFacts } from "./triggers.js";
 
-export interface ViewerEvidence { empty:boolean; watch:boolean; photo:number|null }
+/** 시청 구역이 이만큼(촬영 시각 기준) 이어서 비면 끈다. 떠남 → 다음 촬영(1초) + 2초 + VLM 답(약 1.7초)이 5초 안에 들게(2026-11-21 사용자 결정). */
+export const NO_VIEWER_MS = 2000;
+/** seen: 시청 구역이 지금 유효한 사진에 보인다(빈 자리 판단이 unknown이 아니다). */
+export interface ViewerEvidence { empty:boolean; watch:boolean; photo:number|null; seen:boolean }
 export function viewerAt(facts:TriggerFacts | null,id:string,now:number):ViewerEvidence {
   const room=facts?.tvRooms?.get(id);
-  if (!room || facts?.photoValidUntil == null || now > facts.photoValidUntil) return {empty:false,watch:false,photo:null};
-  const empty=facts.read({kind:"noViewer",room,ms:4000});
+  if (!room || facts?.photoValidUntil == null || now > facts.photoValidUntil) return {empty:false,watch:false,photo:null,seen:false};
+  const empty=facts.read({kind:"noViewer",room,ms:NO_VIEWER_MS});
   const watch=facts.read({kind:"postureAttention",posture:"seated",target:id});
-  return {empty:empty.value===true,watch:watch.value===true,photo:empty.observed_ms};
+  return {empty:empty.value===true,watch:watch.value===true,photo:empty.observed_ms,seen:empty.value!=="unknown"};
 }
 interface Pending {
   offer:HouseholdOffer; power:"on"|"off"; generation:number; successAt:number|null;
 }
 interface Screen {
   stamp:PowerStamp; pending:Pending|null; owner:{id:string; generation:number; at:number}|null;
-  attempted:"on"|"off"|null;
+  attempted:"on"|"off"|null; seen:boolean;
 }
 
 /** The goal node owns this memory for one boot. A manual generation always invalidates an older command. */
@@ -28,7 +31,7 @@ export class TvWatch {
   observe(id:string,stamp:PowerStamp) {
     const screen=this.screens.get(id);
     if (!screen) {
-      this.screens.set(id,{stamp,pending:null,owner:null,attempted:null});
+      this.screens.set(id,{stamp,pending:null,owner:null,attempted:null,seen:false});
       return;
     }
     if (stamp.generation<screen.stamp.generation) return;
@@ -61,9 +64,15 @@ export class TvWatch {
       this.desired(s,e)===p.power);
   }
 
+  /** 관찰 흐름이 VLM 사진 간격을 1초로 줄일 때인가(src/server/home/observe.ts vlmFast): 시청 구역이 보이고, 켜진 TV이거나 우리가 끈 TV(다시 켤 차례)다. */
+  watching():boolean {
+    return [...this.screens.values()].some(s=>s.seen && (s.stamp.power==="on" || s.owner!==null));
+  }
+
   tick(id:string,e:ViewerEvidence,rev:number,now:number) {
     const s=this.screens.get(id);
     if (!s) return;
+    s.seen=e.seen;
     const want=this.desired(s,e);
     const p=s.pending;
     if (p && (now>=p.offer.until_ms || (want!==p.power && p.successAt===null &&

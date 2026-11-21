@@ -1,6 +1,7 @@
 // 미리 세운 목표를 처음부터 끝까지(가짜 서버, 한양목련, 기준점을 맞춘 카메라): 사람이 컵으로 마시는 동안 「컵 치우기」 목표를 세우고 계획을 미리 만든다.
 // 식탁에서 떠난 뒤에는 확인 중이다. 폰이 거실을 비추고 TV 시청이 확인된 때부터 첫 명령 지연을 잰다.
 // 목표가 서 있는 동안 VLM 사진 간격은 1초이고, 계획이 시작되면 2초로 돌아간다(src/observe/pipeline.ts FAST_VLM_MS, src/act/track/tracker.ts fastVlm).
+// 다만 TV 규칙이 켜진 TV(또는 우리가 끈 TV)의 시청 구역을 보는 동안은 1초다(src/goal/tv-watch.ts watching).
 // 물건은 장면 VLM 물건 목록(objects)으로만 생기고 VLM 사진 간격(VLM_FRAME_MS 2초)마다 확정되므로, 컵이 서고 목표가 서기까지 몇 초가 걸린다. 주기 판단은 기본 5초다.
 // 폰 눈·카메라는 tests/mokryeon-e2e.test.ts와 같다(식탁 윗면 가운데를 1.5 m 떨어진 거실에서 높이 1.5 m로 본다).
 import { mkdtempSync } from "node:fs";
@@ -161,17 +162,22 @@ describe("미리 세운 목표(가짜 서버 처음부터 끝까지)", () => {
     expect(goals().slice(-2)).toEqual(["fired/ready", "used/ready"]);
     expect(JSON.stringify(phone)).not.toContain("할까요");
 
-    // 3 계획이 시작되면(목표 씀) VLM 사진 간격은 다시 2초
+    // 3 계획이 시작되면(목표 씀) 목표의 1초 간격은 끝난다. 그래도 켜진 거실 TV의 시청 구역이 보이면 TV 규칙이 지켜보는 동안이라 1초다(2026-11-21 사용자 결정)
     const started = Date.now();
-    // 전환 직후 1초를 빼면 다음 사진까지 최대 한 주기를 더 기다려야 한다.
-    await pump(() => gaps(started + 1000).length >= 2, "계획 뒤 VLM 사진 세 장", 8000);
-    expect(Math.min(...gaps(started + 1000)), JSON.stringify(gaps(started + 1000))).toBeGreaterThanOrEqual(1800);
+    await pump(() => gaps(started + 1000).length >= 3, "계획 뒤 VLM 사진 네 장", 8000);
+    expect(median(gaps(started + 1000)), JSON.stringify(gaps(started + 1000))).toBeLessThanOrEqual(1300);
     // A running phone plan leaves the independent TV slot available.
     const viewer=scene.dets;
     scene.dets=[]; scene.facts={};
     await pump(()=>srv!.signals.get(tv.id)?.twin.power==="off","시청자 부재로 허브 TV 끄기",15_000);
     scene.dets=viewer; scene.facts={person:["sitting","watching_tv"]};
     await pump(()=>srv!.signals.get(tv.id)?.twin.power==="on","다시 보는 사람이 있어 허브 TV 켜기",10_000);
+    // 4 직접 끈 TV는 TV 규칙이 지켜보지 않는다: 계획이 도는 동안 VLM 사진 간격은 다시 2초
+    expect((await srv.hub.command(tv.id,{type:"off"})).ok).toBe(true);
+    const manual = Date.now();
+    // 전환 직후 1초를 빼면 다음 사진까지 최대 한 주기를 더 기다려야 한다.
+    await pump(() => gaps(manual + 1000).length >= 2, "직접 끈 뒤 VLM 사진 세 장", 8000);
+    expect(Math.min(...gaps(manual + 1000)), JSON.stringify(gaps(manual + 1000))).toBeGreaterThanOrEqual(1800);
 
   }, 120_000);
 });

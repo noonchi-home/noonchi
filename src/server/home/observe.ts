@@ -299,8 +299,8 @@ export async function startPipeline(core: HomeCore, emit: (event: BrainLog) => v
       void perception.node.publish("/perception/frame_seen", { at_ms: core.nowMs() }).catch((e: Error) => { if (!core.closed) log(e.message); });
     },
     onView: (f) => { void perception.node.publish("/perception/view", f).catch((e: Error) => { if (!core.closed) log(e.message); }); },
-    // 실행 추적이 가까이 보는 차례(찾기·내용물 보류)인 동안만 VLM 사진 간격을 1초로 줄인다
-    vlmFast: () => core.tracker?.fastVlm() ?? false,
+    // VLM 사진 간격을 1초로 줄이는 때: 실행 추적이 가까이 보거나 목표가 선 동안, TV 규칙이 시청 구역을 지켜보는 동안
+    vlmFast: () => (core.tracker?.fastVlm() ?? false) || (core.tvWatch?.watching() ?? false),
     // 분석한 프레임은 디스크에 쓰지 않는다. DATASET_COLLECT=1일 때만 시험 자료로 RUNTIME_DIR/dataset에 쓴다
     dataset: env.DATASET_COLLECT?.trim() === "1" ? datasetWriter(join(runtimeDir, "dataset"), history.db) : undefined,
     onDetected: (jpeg, r) => {
