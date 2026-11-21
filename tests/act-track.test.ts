@@ -86,10 +86,10 @@ it("station arrival uses the walk guide, never the last generic eye or the door 
 it("관찰 자리는 맞춘 눈으로만 도착하고 승인 질문이 오면 방문 줄을 거둔다",()=>{
   const results:string[]=[];
   let pending=false;
-  const s=setup({approvalsWaiting:()=>pending,stations:{rev:()=>7,target:id=>({id,label:"주방 입구",position:[4,0,4],look:"냉장고 앞"}),result:r=>results.push(r.outcome)}});
+  const s=setup({approvalsWaiting:()=>pending,stations:{rev:()=>7,target:id=>({id,label:"주방 입구",position:[4,0,4],look:{label:"냉장고 앞",position:[2,0.6,4]}}),result:r=>results.push(r.outcome)}});
   const d={op:"grant",id:"visit:1",kind:"visit",target_id:"entry",rev:3,goal_id:null,until_ms:20000} as const;
   s.t.onEye([0,0]); s.t.onDirective(d);
-  expect(s.phone.at(-1)).toMatchObject({type:"command",text:"주방 입구로 이동해 냉장고 앞을 비춰 주세요.",choices:[],target:{position:[4,0,4]}});
+  expect(s.phone.at(-1)).toMatchObject({type:"command",text:"주방 입구로 이동해 냉장고 앞을 비춰 주세요.",choices:[],target:{position:[4,0,4],look:[2,0.6,4]}});
   expect(s.t.openCommand()).toMatchObject({planId:d.id,kind:"command",choices:[]});
   pending=true; s.t.tick();
   expect(s.phone.at(-1)).toMatchObject({type:"command_clear",id:d.id});
@@ -5244,11 +5244,13 @@ describe("실행 추적: 계획이 끝나면 충전 자리로", () => {
     expect(s.t.machineFacts().dock).toBeNull();
   });
 
-  it.each([[60_000, "living_standby"], [USER_ROOM_MS + 1, null]] as const)("낮에 지금 안 보이는 사용자는 마지막으로 발 자리를 본 방(%i ms 전)이 5분 안이면 그 방 대기 자리로 간다", async (ago, target) => {
+  it.each([[60_000, true, "living_standby"], [USER_ROOM_MS + 1, true, null], [60_000, false, null]] as const)("낮에 지금 안 보이는 사용자는 혼자 보인 사진의 마지막 발 자리 방(%i ms 전, 혼자 %s)이 5분 안이면 그 방 대기 자리로 간다", async (ago, alone, target) => {
     const w = world([cup("present")]);
     const station = {id:"living_standby",name:"거실 대기 자리",room:"living",roles:["standby" as const],position:[5,6] as [number,number],look_at:[4,5] as [number,number],rooms:[],surfaces:[],observes_zone_ids:[]};
     let now = () => 0;
-    const s = dockSetup(() => ({...w,person:{...w.person,count:0,visible:false,position:[5,6],position_ms:now()-ago,room:"living",room_label:"거실"}}), {
+    // 둘이 보인 사진은 가장 큰 사람의 발 자리만 남기고 사람 자취(person_trail)를 비운다(src/world/state/people.ts): 그 자리는 누구의 방인지 모른다
+    const s = dockSetup(() => ({...w,person:{...w.person,count:0,visible:false,position:[5,6],position_ms:now()-ago,room:"living",room_label:"거실"},
+      ...(alone ? {person_trail:[{position:[5,6] as [number,number],room:"living",at_ms:now()-ago}]} : {})}), {
       offsetMinutes:540, stations:{map:()=>({version:1,stations:[station],zones:[],surface_fronts:[],kitchen_entry:null,meal_watch:null}),rev:()=>3,
         target:id=>({id,label:station.name,position:[5,0,6],look:null}),result:()=>{}},
     });

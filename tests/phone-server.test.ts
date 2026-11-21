@@ -708,6 +708,22 @@ describe("폰 대화·승인·초점", () => {
     expect(later.box[1]).toEqual({ ...cmd, target: { id: "cup_1", label: "컵", ar: [1, 0.9, 3.7] }, speak: false });
   });
 
+  it("관찰 자리 가기의 비출 곳(target.look)도 맞춘 변환으로 AR 자리로 바꿔 보낸다. 없는 명령에는 칸을 만들지 않는다", async () => {
+    const { phone, phoneBase } = await talkSetup();
+    const first = await connect(phoneBase, 2);
+    const cmd: PlannedCommand = {
+      type: "command", id: "visit:1", step: "visit:1:go", text: "주방 입구로 이동해 냉장고 앞을 비춰 주세요.", vision: null, choices: [], kind: "go",
+      target: { id: "kitchen_entry", label: "주방 입구", position: [1, 0, 3.7], look: [0.5, 0.6, 3.2] }, speak: true,
+    };
+    const got = next(first.ws, (m) => m.type === "command" && m.target !== null);
+    sendAlign(first.ws);
+    phone.command(cmd);
+    expect(await got).toMatchObject({ target: { id: "kitchen_entry", label: "주방 입구", ar: [1, 0, 3.7], look: [0.5, 0.6, 3.2] } });
+    const plain = next(first.ws, (m) => m.type === "command" && m.id === "visit:2");
+    phone.command({ ...cmd, id: "visit:2", target: { id: "kitchen_entry", label: "주방 입구", position: [1, 0, 3.7] } });
+    expect((await plain).target).not.toHaveProperty("look");
+  });
+
   it("소리 등급(grade): 실행 추적이 붙인 등급을 그대로 보내고, 없는 명령에는 칸을 만들지 않는다. reply(text, \"safety\")는 safety를 싣는다", async () => {
     const { phone, phoneBase } = await talkSetup();
     const first = await connect(phoneBase, 2);

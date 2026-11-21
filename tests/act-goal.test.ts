@@ -1145,6 +1145,15 @@ describe("미리 세운 목표: 떠나기 직전에 본 컵으로 바로 시작"
       s.tick();
       expect(s.commands().at(-1)).toMatchObject({ id: "plan:pam-2", text: "컵을 들어 주세요" });
     });
+    it("집기 전에 컵을 다시 보는 동안은 VLM 사진 간격을 1초로 줄이고(다시 보기 기한 3초 안에 새 사진의 답이 오게), 다시 보면 원래 간격이다", async () => {
+      const s = await answered();
+      expect(s.t.fastVlm()).toBe(true);
+      s.freeze(false);
+      s.tick();
+      s.tick();
+      expect(s.commands().at(-1)).toMatchObject({ text: "컵을 들어 주세요" });
+      expect(s.t.fastVlm()).toBe(false);
+    });
     it("다시 보기 기한이 지나도 안 보이면 그 자리로 찾으러 가고(멀면 「식탁으로 가 주세요」, 가까우면 「식탁 위를 비춰 주세요」), 못 찾으면 대상이 없다고 닫는다", async () => {
       const s = await answered();
       s.setObjects((xs) => xs.map((x) => ({ ...x, status: "gone" as const })));

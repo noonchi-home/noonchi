@@ -13,7 +13,7 @@ import { AGAIN, APPROVE } from "../../act/prompts.js";
 import type { WorldInput, WorldView } from "../../contract/world.js";
 import type { SignalHub } from "../../devices/index.js";
 import type { PlanView } from "../../contract/plan.js";
-import { walkingMap, floorLookup, floorPlanFrom, loadScene, type LayoutEditor, type PlaceNames } from "../../layout/index.js";
+import { walkingMap, floorLookup, floorPlanFrom, loadScene, LOOK_HEIGHT_M, type LayoutEditor, type PlaceNames } from "../../layout/index.js";
 import { Trigger, canRelink, deviceStateKeys, deviceStatus, loadTriggerConfig, type PlaneSurface, type TriggerConfig } from "../../world/index.js";
 import { loadEndpoints } from "../../infer/endpoints.js";
 import { DEVICE_STATES } from "../../world/vocab.js";
@@ -240,8 +240,10 @@ export function startAct(core: HomeCore): (event: BrainLog) => void {
       rev:()=>core.mirror?.rev() ?? 0,
       target:id=>{
         const map=core.scene?.stations, station=map?.stations.find(s=>s.id===id);
-        const look=map?.zones.filter(z=>station?.observes_zone_ids.includes(z.id)).map(z=>z.name).join("·") || null;
-        return station ? {id,label:station.name,position:[station.position[0],stationFloor(station.position),station.position[1]],look} : null;
+        if (!station) return null;
+        const label=map!.zones.filter(z=>station.observes_zone_ids.includes(z.id)).map(z=>z.name).join("·") || null;
+        const look={label,position:[station.look_at[0],stationFloor(station.look_at)+LOOK_HEIGHT_M,station.look_at[1]] as [number,number,number]};
+        return {id,label:station.name,position:[station.position[0],stationFloor(station.position),station.position[1]],look};
       },
       choose:(job,signal)=>{
         const map=core.scene?.stations;

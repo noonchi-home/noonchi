@@ -117,8 +117,8 @@ export interface TrackerOptions {
   stations?: {
     map?():import("../../contract/stations.js").StationMap | null;
     rev():number;
-    /** look: 도착해서 비출 곳 이름(그 자리가 보는 구역 이름). 보는 구역이 없는 자리는 null. */
-    target(id:string): {id:string;label:string;position:[number,number,number];look:string|null} | null;
+    /** look: 도착해서 비출 곳(트윈 [x, 높이, y])과 그 이름(그 자리가 보는 구역 이름, 보는 구역이 없는 자리는 null). */
+    target(id:string): {id:string;label:string;position:[number,number,number];look:{label:string|null;position:[number,number,number]}|null} | null;
     choose?(job:Extract<import("../../contract/machines.js").HouseholdOffer,{kind:"choose_station"}>, signal:AbortSignal):Promise<string|null>;
     tvAllowed?(job:import("../../contract/machines.js").HouseholdOffer):boolean;
     result(value:DirectiveResult):void;
@@ -480,11 +480,12 @@ export class ExecutionTracker {
     return !core.stopped && (!!core.run?.top || core.finder.looking() || core.contents.looking());
   }
 
-  /** VLM 사진 간격을 줄일 때인가(src/observe/pipeline.ts vlmFast, FAST_VLM_MS 1초): 가까이 보는 차례이거나 미리 세운 목표가 서 있는 동안(세움·떠남).
+  /** VLM 사진 간격을 줄일 때인가(src/observe/pipeline.ts vlmFast, FAST_VLM_MS 1초): 가까이 보는 차례이거나 미리 세운 목표가 서 있는 동안(세움·떠남),
+   *  또는 집기 전에 목표 컵을 다시 보는 동안(start.ts held, 다시 보기 기한 recheckMs 3초: 2초 간격이면 새 사진의 답이 기한 뒤에 온다).
    *  목표가 버려지거나 계획이 시작되면(씀) 원래 간격이다(2026-11-18 사용자 결정: 목표 동안 컵 확정(사진 2장)을 빨리). */
   fastVlm(): boolean {
     const core = this.core;
-    return !core.stopped && (this.looking() || core.goal.current() !== null);
+    return !core.stopped && (this.looking() || core.goal.current() !== null || core.run?.verify?.at != null);
   }
 
   /** 판단 전 보기 B가 그 컵을 잘라 봤다(src/act/look.ts looked): 계획 밖으로 가까이 가서 볼지 본다. */

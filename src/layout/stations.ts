@@ -33,6 +33,9 @@ export function locateZone(map: StationMap, room: string | null, p: Vec2 | null,
 export function zoneAt(map: StationMap, room: string | null, p: Vec2 | null, marginM: number): string | null {
   return locateZone(map,room,p,marginM) || null;
 }
+/** 관찰 자리에서 비출 곳의 높이(바닥 위 m): 그 자리가 보는 구역 판정(바닥~1.2m)의 가운데. 폰이 이 점을 겨누면 구역이 화면 가운데 온다. */
+export const LOOK_HEIGHT_M = 0.6;
+
 export function standbyFor(map: StationMap, room: string) {
   return map.stations.find(s => s.room===room && s.roles.includes("standby")) ?? null;
 }

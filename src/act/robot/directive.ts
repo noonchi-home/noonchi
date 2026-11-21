@@ -25,18 +25,19 @@ export function stationDirectives(core:TrackCore) {
       if (!station) return false;
       core.dock.drop();
       slot={id:job.id,sent:null,spokeAt:0,visionAt:0};
-      const nav=core.walk(job.id,station,true);
+      const nav=core.walk(job.id,{id:station.id,label:station.label,position:station.position},true);
       // 관찰 자리는 그 자리가 보는 구역을 비춰야 사진이 그 구역을 담는다(폰 방향 안내)
-      const text=josa(station.label,"으로/로")+" 이동해 "+(station.look ? josa(station.look,"을/를")+" 비춰 주세요." : "주세요.");
+      const text=josa(station.label,"으로/로")+" 이동해 "+(station.look?.label ? josa(station.look.label,"을/를")+" 비춰 주세요." : "주세요.");
       sendLine(idleLine(core,slot),{type:"command",id:job.id,step:job.id+":go",kind:"go",near_m:ARRIVAL_M,
-        text,choices:[],speak:true,vision:nav?.vision??null,target:{id:station.id,label:station.label,position:station.position},...(nav?{guide:nav.guide}:{})},core.clock.now());
+        text,choices:[],speak:true,vision:nav?.vision??null,
+        target:{id:station.id,label:station.label,position:station.position,...(station.look?{look:station.look.position}:{})},...(nav?{guide:nav.guide}:{})},core.clock.now());
       return true;
     },
     shown:id=>slot?.id===id && core.robot.commands.shows(id) ? slot.sent : null,
     clear:id=>{ if (slot?.id===id) { idleLine(core,slot).clear();slot=null; } },
     arrived:job=>{
       const eye=eyeNow(core,core.clock.now()), target=port?.target(job.target_id);
-      const nav=core.walk(job.id,target??null,true);
+      const nav=core.walk(job.id,target?{id:target.id,label:target.label,position:target.position}:null,true);
       if(nav){
         if(slot?.id===job.id && slot.sent && (slot.sent.guide?.revision!==nav.guide?.revision || slot.sent.vision!==nav.vision))
           idleLine(core,slot).show({...slot.sent,speak:false,guide:nav.guide,vision:nav.vision});

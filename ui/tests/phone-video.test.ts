@@ -1147,6 +1147,36 @@ describe("영상 입력 모드: 단계 영상·걷기", () => {
     expect(videos[0]!.element.isConnected).toBe(false);
   });
 
+  it("관찰 자리 가기(대상에 비출 곳 look)는 도착해 명령이 지워지면 그 자리에서 비출 곳을 바라본다. 도착 전에 지워지면 걷던 쪽 그대로다", async () => {
+    fakeTimers();
+    // 맞는 단계 영상이 없는 관찰 자리 가기: 반응 시간 뒤 초당 0.8m로 0.6m 앞까지 걷는다
+    const SPOT = { id: "living_standby", label: "거실 대기 자리", ar: [0, 0, -1.2], look: [-1.5, 0.6, -0.6] };
+    const goSpot = command({ id: "visit:1", step: "visit:1:go", kind: "go", text: "거실 대기 자리로 이동해 소파 시청 자리를 비춰 주세요.", target: SPOT, near_m: 0.5, speak: false, choices: [] });
+    const arrived = makeEnded({}, STEPS);
+    await arrived.startAr();
+    arrived.ws.push(ALIGNED);
+    arrived.ws.push(goSpot);
+    await after(1500 + 1000);
+    const stop = lastPose(arrived.sent).position;
+    // near_m 0.5 안까지 걸었다(도착)
+    expect(Math.hypot(stop[0] - SPOT.ar[0], stop[2] - SPOT.ar[2])).toBeLessThanOrEqual(0.5);
+    arrived.ws.push({ type: "command_clear", id: "visit:1" });
+    await after(200);
+    const look = lookAt(stop, SPOT.look)!;
+    closeTo(lastPose(arrived.sent).position, stop);
+    closeTo(lastPose(arrived.sent).orientation, yawPitchQuat(look.yaw, look.pitchDeg));
+    // 도착 전(1m 넘게 남음)에 지워지면 비출 곳으로 돌지 않는다
+    const early = makeEnded({}, STEPS);
+    await early.startAr();
+    early.ws.push(ALIGNED);
+    early.ws.push(goSpot);
+    await after(1500 + 100);
+    const walking = lastPose(early.sent).orientation;
+    early.ws.push({ type: "command_clear", id: "visit:1" });
+    await after(200);
+    closeTo(lastPose(early.sent).orientation, walking);
+  });
+
   it("go 단계 영상으로 바꾸면 자세가 초당 0.8m로 대상 쪽으로 걸어 대상 0.6m 앞([0, 1.4, −0.9])에서 멈춘다. 높이·pitch는 그대로, 엔진·화면 프레임 머리도 새 자리", async () => {
     fakeTimers();
     const { ws, sent, videos, startAr } = makeEnded({}, STEPS);

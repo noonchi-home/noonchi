@@ -324,7 +324,8 @@ export function createPhoneServer(opts: PhoneServerOptions): PhoneServer {
     const wireGuide=guide && ar && owner && guide.pose_gen===navGen ? {...guide,remaining:guide.remaining.map(({position,...point})=>({
       ...point,ar:session.toAr(position)!})) as NonNullable<PhoneCommand["guide"]>["remaining"]} : null;
     const vision=guide && !wireGuide ? "위치를 다시 맞춰 주세요." : command.vision;
-    return { ...command, vision, ...(guide===undefined?{}:{guide:wireGuide}), target: c.target && ar ? { id: c.target.id, label: c.target.label, ar } : null, speak };
+    const look = c.target?.look ? session.toAr(c.target.look) : null;
+    return { ...command, vision, ...(guide===undefined?{}:{guide:wireGuide}), target: c.target && ar ? { id: c.target.id, label: c.target.label, ar, ...(look ? { look } : {}) } : null, speak };
   };
   /** 맞춤이 바뀌었으면(moved: 맞춘 변환이 움직였어도) 지금 명령을 새 대상 자리로 다시 보낸다. */
   const resendIf = (wasAligned: boolean, moved = false) => {

@@ -109,7 +109,7 @@ const VIEW_KEYS = ["at_ms", "objects", "sightings", "person", "fixtures", "devic
 const VIEW_KEY_SET: ReadonlySet<string> = new Set(VIEW_KEYS);
 const floorPosition = z.tuple([at,at]);
 const trailPoint = z.strictObject({position:floorPosition, room:z.string().nullable(), at_ms:at});
-const householdPhoto = z.strictObject({id, at_ms:at, serial:rev, cap_from_ms:at.optional(), proof:z.strictObject({
+const householdPhoto = z.strictObject({id, at_ms:at, serial:rev, cap_from_ms:at.optional(), answered_ms:at.optional(), proof:z.strictObject({
   camera, seats:z.enum(["clear","obscured","unknown"]), person_count:z.int().nonnegative(), dining_food:z.enum(["yes","no","unknown"]),
   person:z.strictObject({position:floorPosition,room:z.string().nullable(),seated:z.boolean().nullable(),attention:z.enum(["toward_tv","elsewhere","unknown"])}).nullable(),
 }).nullable()});
@@ -171,7 +171,7 @@ const phoneCommand = z.strictObject({ revision: rev.optional(), cmd: z.discrimin
   z.strictObject({ type: z.literal("command_clear"), id: id.optional() }),
   z.strictObject({ type: z.literal("command"), id, step: id, text: z.string(), vision: z.string().nullable(),
     choices: z.array(z.strictObject({ id, label: z.string() })), speak: z.boolean(),
-    target: z.strictObject({ id, label: z.string(), position: z.tuple([at, at, at]) }).nullable(),
+    target: z.strictObject({ id, label: z.string(), position: z.tuple([at, at, at]), look: z.tuple([at, at, at]).optional() }).nullable(),
     guide: walkGuide.nullable().optional(), kind: z.enum(["go", "pick", "place", "do"]).optional(), near_m: z.number().positive().optional(),
     view: z.literal("above").optional(), grade: z.enum(["question", "safety"]).optional() }),
 ]) });

@@ -53,6 +53,8 @@ const REACT_S = 1.5;
 const RATE = { min: 0.25, max: 2 };
 const WALK_MPS = 0.8;
 const WALK_STOP_M = 0.6;
+/** 관찰 자리 도착을 볼 때 명령 반경(near_m)에 더하는 여유(m): 서버가 도착을 본 자세와 마지막으로 보낸 자세의 차이. */
+const ARRIVE_SLACK_M = 0.2;
 /** 가까이 가서 보기 go(near_m)는 그 거리의 이만큼까지 걷는다(자세 흔들림 여유). */
 const NEAR_WALK = 0.8;
 /** 위에서 비추기 자세: 대상에서 지금 자리 쪽으로 수평(m)·대상 위(m). 크기를 모르는 좁고 깊은 컵도 입구 바로 위라 안이 보인다(src/world/place.ts topView). */
@@ -397,6 +399,8 @@ export function createVideoAr({ link, params, hooks, deps }) {
       startWalk(waypoint,0,clipMs);
     }
     let aboveAim = null;
+    // 영상 모드: 자세 흉내. 관찰 자리 가기의 비출 곳(명령 대상 look, AR): 도착해 명령이 지워지면 그쪽을 바라본다(「…을 비춰 주세요」)
+    let lookAfter = null;
     let lastKey = null; // 마지막으로 받은 명령 id:단계(같은 명령이 다시 오면 비전 상태만 바뀐 것)
     // 영상 모드: 자세 흉내
     let posedKey = null; // 단계 영상 칸 없이 자세만 옮기기로 한 명령 id:단계(같은 명령이 다시 와도 다시 하지 않는다)
@@ -692,6 +696,10 @@ export function createVideoAr({ link, params, hooks, deps }) {
       command(cmd) {
         const key = `${cmd.id}:${cmd.step}`;
         const fresh = key !== lastKey;
+        // 영상 모드: 자세 흉내
+        if (cmd.kind === "go" && Array.isArray(cmd.target?.ar) && Array.isArray(cmd.target?.look))
+          lookAfter = { id: cmd.id, target: cmd.target.ar, at: cmd.target.look, near: typeof cmd.near_m === "number" ? cmd.near_m : WALK_STOP_M };
+        else if (fresh) lookAfter = null;
         const guided=cmd.kind==="go" && cmd.guide!==undefined;
         const nextGuide=guided?cmd.guide?.remaining[0]:null;
         if(guided && (fresh || guideRevision!==(cmd.guide?.revision??null))){
@@ -801,6 +809,10 @@ export function createVideoAr({ link, params, hooks, deps }) {
        *  줄에 든 조각과 조각과 함께 걷는 걸음은 그대로 튼다(원본 영상을 자르지 않는다). */
       commandClear(id) {
         if (id !== undefined && id !== lastCmdId) return;
+        // 영상 모드: 자세 흉내. 관찰 자리에 닿아(명령 반경 안) 지워진 가기면 그 자리의 비출 곳을 바라본다. 닿기 전에 지워지면 그대로 둔다
+        const aim = lookAfter && (id === undefined || id === lookAfter.id) ? lookAfter : null;
+        lookAfter = null;
+        if (aim && Math.hypot(position[0] - aim.target[0], position[2] - aim.target[2]) <= aim.near + ARRIVE_SLACK_M) face(aim.at);
         cmdGen++;
         lastKey = null;
         if(guidedKey) walk=null;
