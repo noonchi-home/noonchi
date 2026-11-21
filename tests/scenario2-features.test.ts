@@ -26,6 +26,11 @@ import { runNight } from "../src/brain/history/night.js";
 import { memoryForDay } from "../src/brain/history/reflect.js";
 import { candidateFsmOf } from "../src/brain/pam/adopt.js";
 import { pamClientFor, startFakePamLlm, type ChunkView, type MarkView } from "./helpers/pam.js";
+import { BusNode, MemoryBus, realClock } from "../src/bus/index.js";
+import { settle } from "../src/record/replay.js";
+import { managerRoutes } from "../src/manage/node.js";
+import { goalRoutes } from "../src/goal/node.js";
+import type { ManagerDirective } from "../src/contract/machines.js";
 import { PlanHub } from "../src/act/hub.js";
 import { memoryApprovals } from "../src/agent/approval.js";
 import type { PlannedCommandMessage, PlannedCommand } from "../src/contract/phone.js";
@@ -36,6 +41,8 @@ const floor = floorPlanFrom(scene);
 const DESK = "desk_small_ce7e768b";
 /** 집 시간대(서울) 그날 HH:MM의 ms. */
 const kst = (day: string, hm: string) => Date.parse(`${day}T${hm}:00+09:00`);
+/** 지금 서울 시각(자정부터 분). */
+const minuteNow = () => { const d = new Date(Date.now() + 540 * 60_000); return d.getUTCHours() * 60 + d.getUTCMinutes(); };
 const person = (activity: string | null, room = "bed_sw"): WorldView["person"] => ({
   visible: activity !== null, since_ms: 0, last_seen_ms: 0, count: activity ? 1 : 0, room, room_label: "침실 1", position: [6.2, 11.0], position_ms: 0, near: [], holding: [], answered_ms: null,
   facts: activity ? { activity: { value: activity, at_ms: 0, since_ms: 0, certainty: "confirmed" } } : {},
@@ -228,5 +235,26 @@ describe("시나리오 2 판단 기능", () => {
     tick("2026-11-25", "20:16");
     tick("2026-11-26", "20:00");
     expect(sent).toHaveLength(2);
+  });
+
+  it("습관 방문은 그 까닭 글을 실은 채 goal → manager → act로 닿는다(토픽 계약)", async () => {
+    const bus = new MemoryBus(), epoch = { boot: "boot", home: "home:1" };
+    const goal = new BusNode({ bus, epoch, name: "goal" }), manager = new BusNode({ bus, epoch, name: "manager" }), act = new BusNode({ bus, epoch, name: "act" });
+    const habits = new HabitWatch((i) => out.push("/goal/intent", i));
+    const out = goalRoutes(goal, realClock);
+    managerRoutes(manager, realClock);
+    const got: ManagerDirective[] = [];
+    act.on("/manager/directive", (d) => { got.push(d); });
+    const nodes = [goal, manager, act];
+    try {
+      for (const n of nodes) await n.prepare();
+      for (const n of nodes) n.start();
+      await act.publish("/act/work", { active: false, activeAction: null, docking: false, emergency: false, goal: null, handling: null, requested: false, at_ms: Date.now(), mode: "noonchi", tasks: [], plan: null });
+      await settle(bus, nodes);
+      const r: HelpRoutine = { action: WATER_ACTION, place: DESK, place_label: "책상", room: "bed_sw", center_min: minuteNow(), window_min: 15, days: ["a", "b", "c"] };
+      habits.tick({ now: Date.now(), rev: 3, map, routines: [r], offsetMinutes: 540, busy: false });
+      await settle(bus, nodes);
+      expect(got).toEqual([expect.objectContaining({ op: "grant", kind: "visit", target_id: "desk_watch", note: "평소 물을 찾는 시간이에요. 책상을 확인할게요." })]);
+    } finally { for (const n of nodes) await n.stop(); await bus.close(); }
   });
 });
