@@ -1,7 +1,8 @@
 // npx tsx scripts/video-check.ts --clip cup-demo.mp4 [--step <종류>:<낱말>:<영상.mp4> ...] [--phone http://127.0.0.1:8210] [--api http://127.0.0.1:8200]
 //   [--done-after 3] [--out runtime/videos/cup-demo.<시각>.timeline.md] [--expect-after 36.3] [--record <폴더>] [--record-view <top|minimap>] [--record-fps 10] [--fake]
 //   [--say <초>:<글> ...] [--start-at <cup|tv|microwave|kitchen>] [--home mokryeon_180b] [--tail 30] [--max 1800] [--approve <초>] [--done-on <초>:<명령 글> ...]
-//   [--fov <도>] [--pitch <도>] [--h <m>] [--rate 1]
+//   [--fov <도>] [--pitch <도>] [--h <m>] [--rate 1] [--scenario scenario1 --left <초>]
+// --left: 시나리오 1에서 시청자가 실제로 떠난 영상 시각(초, 필수). 서버 시각으로 옮겨 TV 끄기 5초를 그때부터 잰다(scripts/scenario1-judge.ts left).
 // --rate: 영상 빠르기(0.25~2, 기본 1). 1이 아니면 폰 주소에 rate=로 붙고 폰 페이지가 첫 영상·단계 영상을 그 빠르기로 튼다(영상 시각은 원본 시각 그대로).
 //   서버 시각 ↔ 영상 시각 옮기기(videoClock·serverClock)는 짝 밖을 그 빠르기로 세고, 지금 영상이 너무 오래 도는지는 영상 길이 ÷ 빠르기로 본다.
 //   판정 줄 아래 반응 줄(reactionLine): 사람이 떠난 때(기록의 사람 사라짐) → 그 뒤 첫 명령을 서버 시각으로 세어 빠르기와 상관없이 같은 초다.
@@ -727,7 +728,7 @@ async function startFake(clip: string, steps: string[]): Promise<Fake> {
 // 돌리기
 
 const USAGE = "쓰는 법: npx tsx scripts/video-check.ts --clip <이름.mp4> [--step <종류>:<낱말>:<영상.mp4> ...] [--phone http://127.0.0.1:8210] [--api http://127.0.0.1:8200] [--done-after 3] [--out <파일.md>] [--expect-after 36.3] [--record <폴더>] [--record-view <top|minimap>] [--record-fps 10] [--fake]"
-  + " [--scenario scenario1] [--say <초>:<글> ...] [--start-at <cup|tv|microwave|kitchen>] [--home mokryeon_180b] [--tail 30] [--max 1800] [--approve <초>] [--done-on <초>:<명령 글> ...]"
+  + " [--scenario scenario1 --left <초>] [--say <초>:<글> ...] [--start-at <cup|tv|microwave|kitchen>] [--home mokryeon_180b] [--tail 30] [--max 1800] [--approve <초>] [--done-on <초>:<명령 글> ...]"
   + " [--fov <도>] [--pitch <도>] [--h <m>] [--rate 1] [--answer <초>:<답 단추 글> ...]";
 
 /** 영상 모드 카메라(폰 주소 fov·pitch·h): 준 값만 있다. 없는 값은 폰 페이지 기본값(세로 시야각 60°, pitch −25°, 높이 1.4m). */
@@ -738,6 +739,8 @@ const CAMERA_RANGE: Record<keyof Camera, [number, number]> = { fov: [20, 120], p
 export interface Args {
   /** expectSet: --expect-after를 적었는가(아니면 스스로 시험은 대본 사람 시간을 영상 시각으로 옮겨 쓴다). */
   scenario?: "scenario1";
+  /** --left: 시나리오 1에서 시청자가 떠난 영상 시각(ms). 시나리오 1이면 반드시 있다. */
+  leftMs?: number;
   clip: string; fake: boolean; steps: string[]; doneAfterMs: number; expectMs: number; expectSet: boolean; phone: string; api: string; out: string | undefined; record: string | undefined;
   says: { atMs: number; text: string }[]; startAt: DemoScene | null; home: string; tailMs: number; maxMs: number; approveAfterMs: number; doneOn: { afterMs: number; text: string }[];
   /** --answer: 질문에 누를 답 단추 글과 기다릴 시간. */
@@ -761,7 +764,10 @@ export function parseArgs(argv: string[]): Args | string {
   if (!CLIP_NAME.test(clip)) return USAGE;
   const scenario = arg("scenario");
   if (argv.includes("--scenario") && scenario !== "scenario1") return "--scenario scenario1을 지정해 주세요.";
-  if (scenario && (argv.includes("--fake") || argv.includes("--approve") || argv.includes("--done-on") || argv.includes("--answer") || Number(arg("done-after")??0)!==0)) return "시나리오 1은 실제 입력과 자동 도착으로 판정합니다.";
+  if (scenario && (argv.includes("--fake") || argv.includes("--approve") || argv.includes("--done-on") || argv.includes("--answer") || Number(arg("done-after")??0)!==0)) return "시나리오 1은 실제 입력과 자동 도착으로 판정합니다."
+  const leftRaw = arg("left");
+  const leftMs = Number(leftRaw) * 1000;
+  if (scenario && (!leftRaw?.trim() || leftRaw.startsWith("--") || !Number.isFinite(leftMs) || leftMs < 0)) return "시나리오 1은 시청자가 떠난 영상 시각을 --left <초>로 주세요.";;
   const steps = argv.flatMap((a, i) => (a === "--step" ? [argv[i + 1] ?? ""] : []));
   const bad = steps.find((s) => !STEP_ARG.test(s));
   if (bad !== undefined) return `--step은 <go|pick|place|do>:<낱말 a-z·_>:<영상.mp4|webm>예요: 「${bad}」`;
@@ -813,7 +819,7 @@ export function parseArgs(argv: string[]): Args | string {
   const rate = Number(rawRate);
   if (!rawRate?.trim() || rawRate.startsWith("--") || !Number.isFinite(rate) || rate < 0.25 || rate > 2) return `--rate는 0.25~2 숫자(영상 빠르기)예요. ${USAGE}`;
   return {
-    ...(scenario==="scenario1"?{scenario}:{}), recordPhone: argv.includes("--record-phone"), chrome, recordView, recordFps, rate,
+    ...(scenario==="scenario1"?{scenario,leftMs}:{}), recordPhone: argv.includes("--record-phone"), chrome, recordView, recordFps, rate,
     clip, fake, steps, doneAfterMs, expectMs, expectSet: arg("expect-after") !== undefined, phone: arg("phone") ?? "http://127.0.0.1:8210", api: arg("api") ?? "http://127.0.0.1:8200", out: arg("out"), record,
     says: says.map((x) => ({ atMs: x!.ms, text: x!.text })), startAt: startAt as DemoScene | null, home: arg("home") ?? HOME, tailMs, maxMs, approveAfterMs,
     doneOn: doneOn.map((x) => ({ afterMs: x!.ms, text: x!.text })), answers: answers.map((x) => ({ afterMs: x!.ms, label: x!.text })), camera,
@@ -1057,12 +1063,13 @@ async function main(): Promise<number> {
       const rooms = roomLabels(sceneAnswer);
       if(args.scenario && !sceneAnswer?.scene?.stations) throw Error("시나리오 1 자리 설정을 받지 못했어요.");
       const scenario=args.scenario && sceneAnswer?.scene ? new LiveScenario(sceneAnswer.scene) : null;
-      const scenarioResult=async(since:number, received:VideoCommand[])=>{
+      // t0·sync: 그때 폰 페이지가 남긴 서버 시각 ↔ 영상 시각 짝. --left(영상 시각)를 서버 시각으로 옮긴다
+      const scenarioResult=async(since:number, received:VideoCommand[], t0:number, sync:readonly (readonly [number, number])[])=>{
         const response=await fetch(`${api}/api/history?since=${since}&kinds=${SCENARIO_KINDS.join(",")}&limit=5000`,{signal:AbortSignal.timeout(5000)});
         if(!response.ok)throw Error("시나리오 1 기록 조회 실패 "+response.status);
         const {rows}=await response.json() as {rows:HistoryRow[]};
         if(rows.length>=5000)throw Error("시나리오 1 기록 조회 한도를 넘었어요.");
-        return scenario!.judge(rows,received);
+        return scenario!.judge(rows,received,args.leftMs===undefined?null:serverClock(t0,sync,args.rate)(args.leftMs));
       };
       const pollWorld = async () => {
         const w = (await getJson<{ world?: WorldView }>(`${api}/api/world`))?.world;
@@ -1167,7 +1174,7 @@ async function main(): Promise<number> {
           doneNotice: { shownForMs: noticeAt === null ? null : Date.now() - noticeAt, waitedMs: planDoneAt === null ? 0 : Date.now() - planDoneAt },
         });
         if(scenario) {
-          const result=await scenarioResult(Math.min(firstT0,seen.record?.t0??firstT0),commands);
+          const result=await scenarioResult(Math.min(firstT0,seen.record?.t0??firstT0),commands,seen.record?.t0??firstT0,seen.record?.sync??[]);
           if(result.passed && !offOpen) break;
           if(stop || Date.now()-runStart>=args.maxMs){
             unfinished.push((stop?"중단":"전체 시간 초과")+" · "+(result.firstMismatch??"끄기 안내 대기"));
@@ -1222,7 +1229,7 @@ async function main(): Promise<number> {
       const personUntil = fake?.personUntil() ?? null;
       const expect = fakeMode && !args.expectSet && personUntil !== null ? toVideo(personUntil) : expectMs;
       const v = verdict(rows, commands, history, expect);
-      const scenarioVerdict=scenario?await scenarioResult(Math.min(firstT0,t0),commands):null;
+      const scenarioVerdict=scenario?await scenarioResult(Math.min(firstT0,t0),commands,t0,sync):null;
       if(scenarioVerdict) {
         const n=scenarioVerdict;
         v.text=[n.passed?"시나리오 1 통과":"시나리오 1 실패 · "+n.firstMismatch,

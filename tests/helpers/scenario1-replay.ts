@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import { Outbox, BusNode, type Body, type Envelope, type TopicName } from "../../src/bus/index.js";
 import { Bag, replay } from "../../src/record/index.js";
 import { GoalTriggers, type TriggerFacts } from "../../src/goal/triggers.js";
+import { FAST_VLM_MS, loadObserveConfig, vlmStepMs } from "../../src/observe/pipeline.js";
 import { RoomWatch } from "../../src/goal/room-watch.js";
 import { TvWatch, viewerAt } from "../../src/goal/tv-watch.js";
 import { goalRoutes } from "../../src/goal/node.js";
@@ -39,8 +40,11 @@ import { historyRoutes } from "../../src/record/history.js";
 import type { PlannedCommand } from "../../src/contract/phone.js";
 import type { ScenarioEvent } from "../../scripts/scenario1-judge.js";
 
-type Variant = "normal" | "back" | "brief" | "manual";
-type Line = { at: number; kind: string; value?: string; frame?: string; response?: object; source: string };
+type Variant = "normal" | "back" | "brief" | "manual" | "cadence_wrong";
+/** at: 촬영(또는 사건) 시각. lag가 있는 사진 줄은 VLM 답이 at + lag에 도착한다(집 상태가 그때 바뀐다). */
+type Line = { at: number; kind: string; value?: string; frame?: string; response?: object; source: string; lag?: number };
+/** 재생에 넣은 사진: 촬영 시각(절대 ms)과 VLM 지연을 실은 줄인가. */
+type Photo = { at: number; lagged: boolean };
 const scene = loadScene(resolveHome(DEFAULT_TWIN_DIR, "mokryeon_180b"))!;
 const map = scene.stations,
   floor = floorPlanFrom(scene);
@@ -78,7 +82,7 @@ const frames: { frame: string; scene: SceneObservation }[] = JSON.parse(
   readFileSync(new URL("../fixtures/replay/wide-mug-v1.json", import.meta.url), "utf8"),
 );
 const base = Date.UTC(2026, 10, 20, 12);
-function makeBag(bag: Bag, variant: Variant) {
+function makeBag(bag: Bag, variant: Variant): { left: number | null; photos: Photo[] } {
   const world = new WorldState({
     devices: () => [],
     surfaces: () => [],
@@ -114,8 +118,17 @@ function makeBag(bag: Bag, variant: Variant) {
     (row) => Number.isFinite(row.at) && row.at < (patch?.replace_from ?? Infinity),
   );
   for (const r of patch?.rows ?? []) source.push({ ...r, source: patch.source });
-  for (const r of source.sort((a, b) => a.at - b.at)) {
-    const at = base + r.at;
+  let left: number | null = null;
+  const photos: Photo[] = [];
+  // 집 상태는 도착 차례로 쌓는다: 늦게 온 VLM 답은 그 사이 사건 뒤에 들어간다(사진 시각은 촬영 시각 그대로)
+  const arrival = (r: Line) => r.at + (r.lag ?? 0);
+  for (const r of source.sort((a, b) => arrival(a) - arrival(b) || a.at - b.at)) {
+    const at = base + r.at,
+      arrive = base + arrival(r);
+    if (r.kind === "left") {
+      left = at;
+      continue;
+    }
     if (r.kind === "manual_off") {
       const manual = new MemoryHub([tvSpec], { [tvId]: { power: "off" } });
       put(
@@ -189,6 +202,7 @@ function makeBag(bag: Bag, variant: Variant) {
       fridge.status = "열림";
     }
     if (["table", "away", "tv"].includes(r.kind)) {
+      photos.push({ at, lagged: r.lag !== undefined });
       const record = r.frame ? frames.find((f) => f.frame === r.frame) : null;
       if (r.frame && !record) throw Error("없는 녹화 장 " + r.frame);
       const facts = record?.scene.observations ?? [];
@@ -266,11 +280,19 @@ function makeBag(bag: Bag, variant: Variant) {
           { room: "living", position: [9.4, 5.5], at_ms: at - 500 },
         ];
     }
-    world.at_ms = at;
+    world.at_ms = arrive;
     world.frame_ms = at;
-    put("/world/state", "world", { rev: ++rev, view: world }, at);
+    put("/world/state", "world", { rev: ++rev, view: world }, arrive);
   }
+  return { left, photos };
 }
+
+/** VLM 사진 간격(src/observe/pipeline.ts): 앞 VLM 촬영 prev 뒤 처음으로 「그때 간격(빠름 1초·보통 2초)」 이상 지난 촬영.
+ *  fast(t)는 그 시각의 src/server/home/observe.ts vlmFast와 같은 값이다. 재생 틱(250ms) 칸으로 본다. */
+function nextVlmCapture(prev: number, fast: (t: number) => boolean): number {
+  for (let t = prev + FAST_VLM_MS; ; t += 250) if (t - prev >= (fast(t) ? FAST_VLM_MS : VLM_STEP_MS)) return t;
+}
+const VLM_STEP_MS = vlmStepMs(loadObserveConfig({}));
 
 export async function replayScenario(
   variant: Variant,
@@ -282,8 +304,10 @@ export async function replayScenario(
     live = new LiveScenario(scene);
   const received: PlannedCommand[] = [];
   let resolveDecision: (d: DecisionRecord) => DecisionRecord = (d) => d;
+  // 재생 틱마다 그때 관찰 흐름이 VLM 사진 간격을 1초로 줄일지(vlmFast)를 남긴다
+  const fastAt: [number, boolean][] = [];
   try {
-    makeBag(bag, variant);
+    const { left, photos } = makeBag(bag, variant);
     if (raw[0].learned_discard) db.cupAnswers.seedDemo(raw[0].home);
     await replay({
       bag,
@@ -326,7 +350,7 @@ export async function replayScenario(
             throw Error(m);
           },
         });
-        const triggers = new GoalTriggers(locateZone, () => 0, 2000);
+        const triggers = new GoalTriggers(locateZone, () => 0, VLM_STEP_MS);
         const tv = new TvWatch((i) => intents.push("/goal/intent", i));
         const rooms = new RoomWatch((i) => intents.push("/goal/intent", i), floor.portals);
         managerRoutes(manager, clock);
@@ -337,6 +361,9 @@ export async function replayScenario(
         const hub = new SignalHub(new MemoryHub([tvSpec], { [tvId]: { power: "on" } }));
         const power = () => hub.powerStamp(tvId)!;
         tv.observe(tvId, power());
+        // src/server/home/observe.ts처럼 기기 상태가 바뀔 때마다 지금 전원 기록을 TV 규칙에 알린다(/device/changes note.power).
+        // 구독이 있어야 허브가 직접 끈 전원도 기록한다(src/devices/hub/signals.ts emit).
+        hub.subscribe((s) => tv.observe(s.id, hub.powerStamp(s.id)!));
         const add = (kind: ScenarioEvent["kind"], id?: string, command?: string) =>
           trace.push({ kind, at: clock.now() - base, id, command });
         let powerSeq = 0;
@@ -500,6 +527,8 @@ export async function replayScenario(
           tv.tick(tvId, viewerAt(facts, tvId, now), rev, now);
           tracker.updateGoal();
           tracker.tick();
+          // src/server/home/observe.ts vlmFast와 같은 식
+          fastAt.push([now, tracker.fastVlm() || tv.watching()]);
           const f = tracker.machineFacts(),
             v = tracker.goal();
           const robot = tracker.robotTransition({ ...f, observing: false }, now);
@@ -584,7 +613,19 @@ export async function replayScenario(
         return [manager, goal, act, device, recorder];
       },
     });
-    recording?.(live.judge(db.list({ limit: 5000 }), received));
+    // 지연을 실은 사진은 앞 사진 뒤 실제 VLM 간격의 촬영이어야 한다(합성 기록이 시스템보다 자주·드물게 찍지 않게)
+    const fastWhen = (t: number) => fastAt.findLast(([at]) => at <= t)?.[1] ?? false;
+    photos.forEach((p, i) => {
+      if (!p.lagged || i === 0) return;
+      const want = nextVlmCapture(photos[i - 1]!.at, fastWhen);
+      if (p.at !== want)
+        throw Error(`합성 기록 사진 ${p.at - base}ms가 VLM 간격과 다릅니다: 앞 사진 ${photos[i - 1]!.at - base}ms 뒤 ${want - base}ms여야 합니다.`);
+    });
+    if (left !== null) {
+      const i = trace.findIndex((e) => e.at > left - base);
+      trace.splice(i < 0 ? trace.length : i, 0, { kind: "left", at: left - base });
+    }
+    recording?.(live.judge(db.list({ limit: 5000 }), received, left));
     return trace;
   } finally {
     db.close();

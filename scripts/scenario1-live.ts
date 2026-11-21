@@ -54,8 +54,10 @@ export class LiveScenario {
       }
     this.lastSink = sink;
   }
-  judge(history: readonly HistoryRow[], received: readonly Received[]) {
+  /** leftAt: 시청자가 실제로 떠난 서버 시각(영상 시각 --left를 옮긴 값). 없으면 left 단계가 빠져 실패한다. */
+  judge(history: readonly HistoryRow[], received: readonly Received[], leftAt: number | null) {
     const events: ScenarioEvent[] = [];
+    if (leftAt !== null) events.push({ kind: "left", at: leftAt });
     const seen = new Set<string>();
     const delivered = new Set(received.map((c) => JSON.stringify([c.id, c.step, c.kind, c.target?.id])));
     let cupPlan: string | null = null;

@@ -13,6 +13,7 @@ export interface ScenarioEvent {
     | "plan_done"
     | "return"
     | "standby"
+    | "left"
     | "empty"
     | "tv_off"
     | "tv_off_ack"
@@ -43,6 +44,8 @@ const order = [
   "plan_done",
   "return",
   "standby",
+  // 시청자가 실제로 떠난 때(합성 기록의 left 줄, 실영상은 --left 영상 시각). 시스템이 아니라 기록·촬영한 사람이 준다.
+  "left",
   "empty",
   "tv_off",
   "tv_off_ack",
@@ -97,14 +100,16 @@ export function judgeScenario1(trace: readonly ScenarioEvent[]) {
       b = seen.get(last);
     return a && b ? b.at - a.at : null;
   };
-  const noViewerToOffMs = elapsed("empty", "tv_off");
-  if (!firstMismatch && noViewerToOffMs !== null && noViewerToOffMs > 5000) firstMismatch = "late:tv_off";
+  // TV 끄기 5초는 시청자가 떠난 때부터 잰다(2026-11-21 사용자 결정)
+  const leftToOffMs = elapsed("left", "tv_off");
+  if (!firstMismatch && leftToOffMs !== null && leftToOffMs > 5000) firstMismatch = "late:tv_off";
   if (!firstMismatch && next < order.length) firstMismatch = "missing:" + order[next];
   return {
     passed: firstMismatch === null,
     firstMismatch,
     tvConfirmToCupCommandMs: elapsed("watch", "table_go"),
-    noViewerToOffMs,
+    leftToOffMs,
+    noViewerToOffMs: elapsed("empty", "tv_off"),
     noViewerToAckMs: elapsed("empty", "tv_off_ack"),
   };
 }

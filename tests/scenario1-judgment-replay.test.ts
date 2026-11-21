@@ -6,10 +6,16 @@ import { parseArgs } from "../scripts/video-check.js";
 
 describe("시나리오 1 합성(composed) 판단 재생", () => {
   it("실영상 모드는 수동 완료와 가짜 서버를 거부한다", () => {
-    const flags = ["--clip", "run.mp4", "--scenario", "scenario1"];
-    expect(parseArgs(flags)).toMatchObject({ scenario: "scenario1", doneAfterMs: 0 });
+    const flags = ["--clip", "run.mp4", "--scenario", "scenario1", "--left", "62.5"];
+    expect(parseArgs(flags)).toMatchObject({ scenario: "scenario1", doneAfterMs: 0, leftMs: 62500 });
     for (const extra of [["--fake"], ["--done-after", "3"], ["--done-on", "2:가기"]])
       expect(typeof parseArgs([...flags, ...extra])).toBe("string");
+  });
+  it("실영상 모드는 시청자가 떠난 영상 시각(--left 초)을 받아야 TV 끄기 5초를 잴 수 있다", () => {
+    const flags = ["--clip", "run.mp4", "--scenario", "scenario1"];
+    for (const left of [[], ["--left"], ["--left", "-1"], ["--left", "x"]])
+      expect(typeof parseArgs([...flags, ...left])).toBe("string");
+    expect(parseArgs(["--clip", "run.mp4"])).not.toHaveProperty("leftMs");
   });
   it("빈 판에서 빠진 첫 단계는 주방 입구 관찰이다", () => {
     expect(judgeScenario1([]).firstMismatch).toBe("missing:kitchen");
@@ -25,8 +31,14 @@ describe("시나리오 1 합성(composed) 판단 재생", () => {
     expect(v.firstMismatch, JSON.stringify(trace)).toBeNull();
     expect(v.passed).toBe(true);
     expect(v.tvConfirmToCupCommandMs).toBeGreaterThanOrEqual(0);
-    expect(v.noViewerToOffMs).toBe(4000);
+    // 떠남(16.55초) → 다음 촬영 17.5초 → 2초 이어진 빈 사진(19.5초 촬영) → 그 답이 1.9초 뒤 도착해 끔
+    expect(v.leftToOffMs).toBe(4850);
+    expect(v.noViewerToOffMs).toBe(2100);
     expect(v.noViewerToAckMs).toBeGreaterThanOrEqual(v.noViewerToOffMs!);
+    expect(judgeScenario1(trace.map((e) => (e.kind === "left" ? { ...e, at: e.at - 151 } : e))).firstMismatch).toBe(
+      "late:tv_off",
+    );
+    expect(judgeScenario1(trace.filter((e) => e.kind !== "left")).firstMismatch).toBe("unexpected:empty");
     expect(
       judgeScenario1(trace.map((e) => (e.kind === "pick" ? { ...e, id: "another_cup" } : e))).firstMismatch,
     ).toBe("wrong_cup:pick");
@@ -39,6 +51,10 @@ describe("시나리오 1 합성(composed) 판단 재생", () => {
       ).passed,
     ).toBe(false);
     expect(judgeScenario1(trace.filter((e) => e.kind !== "tv_off_ack")).passed).toBe(false);
+  });
+  it("합성 기록의 지연 사진 간격이 그 촬영 때 VLM 간격(빠름 1초·보통 2초)과 다르면 재생을 멈춘다", async () => {
+    // 직접 끈 TV는 TV 규칙이 지켜보지 않는데도 1초 간격 사진을 그대로 둔 기록
+    await expect(replayScenario("cadence_wrong")).rejects.toThrow("VLM 간격");
   });
   it("같은 식탁에서 식사를 이어가면 목표를 거두고 컵 명령을 내지 않는다", async () => {
     const trace = await replayScenario("back");
