@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
 import { Navigation } from "../src/act/robot/navigation.js";
-import { walkingMap } from "../src/layout/walk-guide.js";
+import { walkingMap, type WalkingMap } from "../src/layout/walk-guide.js";
 import { floorPlanFrom } from "../src/layout/floor.js";
 import type { SceneJson } from "../src/contract/layout.js";
 it("never advances through a wall beside a doorway; a new origin needs two fixes",()=>{
@@ -17,6 +17,27 @@ it("never advances through a wall beside a doorway; a new origin needs two fixes
   expect(sample(4.25,1400,2,0.2).guide).toBeNull();
   expect(sample(4.25,1700,2).arrived).toBe(false);
   expect(sample(4.25,2000,2).arrived).toBe(true);
+});
+
+it("keeps guiding to a corner until the next segment is clear from the phone", () => {
+  const map = {
+    room: () => "living",
+    plan: () => ({remaining: [
+      {kind:"via", room:"living", position:[1,0,1]},
+      {kind:"stand", room:"living", position:[0,0,1]},
+    ]}),
+    isBearing: () => false,
+    clear: (from:number[], to:number[]) => to[0] === 1 || from[1]! >= 0.99,
+  } as unknown as WalkingMap;
+  const nav = new Navigation();
+  const at = (z:number, t:number) => {
+    nav.pose({quality:"usable", position:[1,z], pose_gen:1, observed_ms:t});
+    return nav.read("return", map, [0,1], 0.5, true, t).guide?.remaining[0].kind;
+  };
+  at(0.6,100);
+  expect(at(0.7,200)).toBe("via");
+  expect(at(0.9,300)).toBe("via");
+  expect(at(1,400)).toBe("stand");
 });
 
 it("holds on repeated or stale poses, confirms crossing and arrival with distinct fixes", () => {

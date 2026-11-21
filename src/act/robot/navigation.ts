@@ -80,8 +80,15 @@ export class Navigation {
       this.path = null;
       this.crossed = false;
     } else if (first.kind === "via" && distance(b, [first.position[0], first.position[2]]) < 0.15) {
-      this.advance();
+      const next = this.path.remaining[1];
+      if (next && this.clearTo(this.map, b, next, first.room)) this.advance();
     }
+  }
+  private clearTo(map: WalkingMap, from: XZ, point: TwinWalkGuide["remaining"][number], room: string) {
+    if (map.isBearing(point)) return true;
+    const gate = point.kind === "portal" ? map.gate(point.id) : undefined;
+    const previous = this.lastGate ? map.gate(this.lastGate) : undefined;
+    return map.clear(from, [point.position[0], point.position[2]], room, [gate, previous].filter(g => g !== undefined));
   }
   private advance() {
     if (this.path && this.path.remaining.length > 1) {
@@ -131,11 +138,8 @@ export class Navigation {
       first = g.remaining[0],
       last = g.remaining[g.remaining.length - 1]!;
     const pos: XZ = [last.position[0], last.position[2]];
-    const gate = first.kind === "portal" ? map.gate(first.id) : undefined;
-    const previousGate = this.lastGate ? map.gate(this.lastGate) : undefined;
-    const allowed = [gate, previousGate].filter((g) => g !== undefined);
     const inRoom = first.kind === "portal" ? (this.crossed ? first.to_room : first.from_room) : first.room;
-    if (!map.isBearing(first) && !map.clear(b.position, [first.position[0], first.position[2]], inRoom, allowed)) {
+    if (!this.clearTo(map, b.position, first, inRoom)) {
       this.path = null;
       return empty();
     }
