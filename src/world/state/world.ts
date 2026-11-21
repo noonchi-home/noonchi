@@ -121,7 +121,7 @@ export class WorldState {
   /** 장면 VLM 답: 물건 목록(sceneobjects.ts, VLM 무조건 우선)을 먼저 넣어 답 번호를 물건 id에 잇고, 사실을 넣는다(facts.ts). look: 그 사진의 카메라·크기. */
   /** answeredMs: 이 답을 넣는 때(집 상태 노드 시계). 집 사진에 answered_ms로 싣는다. */
   applyScene(frameId: string, capturedAtMs: number, scene: SceneObservation, ids: Map<string, string>, look?: SceneLook, fromMs = capturedAtMs, answeredMs?: number): WorldChange[] {
-    this.noteHousehold(frameId, capturedAtMs, scene, look, false, answeredMs);
+    this.noteHousehold(frameId, capturedAtMs, scene, look, false, answeredMs, ids);
     const linked = this.core.scene.link(frameId, capturedAtMs, scene, ids, look);
     this.core.placeDups();
     for (const [k, v] of ids) { const o = this.core.objects.get(v); if (o?.status === "gone" && o.followed) ids.set(k, o.followed.id); }
@@ -236,7 +236,7 @@ export class WorldState {
     return true;
   }
 
-  private noteHousehold(id: string, at: number, scene?: SceneObservation, look?: SceneLook, capped = false, answeredMs?: number) {
+  private noteHousehold(id: string, at: number, scene?: SceneObservation, look?: SceneLook, capped = false, answeredMs?: number, ids?: Map<string,string>) {
     const answered = answeredMs === undefined ? {} : { answered_ms: answeredMs };
     const h = scene?.household;
     const old = this.householdPhoto;
@@ -261,7 +261,15 @@ export class WorldState {
     const states = scene!.observations.filter(o=>o.object_id===match?.id).map(o=>o.state);
     const postures = new Set(states.filter(s => s === "sitting" || s === "standing" || s === "lying"));
     const seated = postures.size === 1 && !states.includes("not_visible") ? postures.has("sitting") : null;
-    photo.proof = {camera:look.view, seats:h.seats, dining_food:h.dining_food, person_count:Math.max(h.people.length, look.person_ids.length),
+    const fixtures = new Set<string>();
+    if (look.localized_position && ids) {
+      for (const [det,id] of ids) {
+        const fix=this.core.fixtures.get(id);
+        const states=scene!.observations.filter(o=>o.object_id===det).map(o=>o.state);
+        if(fix && states.length && !states.includes("not_visible")) fixtures.add(fix.cls);
+      }
+    }
+    photo.proof = {...(look.localized_position ? {localized_position:look.localized_position, localized_fixtures:[...fixtures]} : {}), camera:look.view, seats:h.seats, dining_food:h.dining_food, person_count:Math.max(h.people.length, look.person_ids.length),
       person: position && match ? {position, room:this.core.o.roomAt(position)?.id ?? null, seated, attention:match.attention} : null};
   }
 

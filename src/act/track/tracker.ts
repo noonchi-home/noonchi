@@ -115,6 +115,7 @@ export interface TrackerOptions {
     rememberLeftover?: (allow:boolean) => void;
   };
   stations?: {
+    photoRequired?():boolean;
     map?():import("../../contract/stations.js").StationMap | null;
     rev():number;
     /** look: 도착해서 비출 곳(트윈 [x, 높이, y])과 그 이름(그 자리가 보는 구역 이름, 보는 구역이 없는 자리는 null). */

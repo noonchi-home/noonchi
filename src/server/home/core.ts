@@ -64,6 +64,7 @@ export class HomeCore {
   /** 지금 배치의 물건 기준점(폰 위치 맞추기). */
   landmarksNow!: () => ReturnType<typeof twinLandmarks>;
   /** 엔진 프레임 헤더(찍은 순간 AR 자세·투영): 감지가 끝나면 기준점 상자와 함께 폰 위치 맞추기로 넘긴다. */
+  localizer: import("../../localize/index.js").PhotoLocalizer|null = null;
   engineHeaders = new WeakMap<Buffer, FrameHeader>();
   phone: PhoneServer | undefined;
   phoneUrls: string[] = [];

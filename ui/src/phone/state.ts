@@ -30,7 +30,7 @@ export type Setup = "place" | "start";
 /** 서버 위치 맞춤 상태(status.sync). state: none 변환 없음, estimated 어림, aligned 맞춤. source video: 영상 입력 모드의 고정 카메라. */
 export interface SyncView {
   state: "none" | "estimated" | "aligned";
-  source: "start" | "objects" | "walls" | "video" | null;
+  source: "start" | "objects" | "walls" | "video" | "photo" | null;
   /** 이 집 시작 위치 이름(없으면 null). */
   start: { label: string; facing: string } | null;
   started: boolean;

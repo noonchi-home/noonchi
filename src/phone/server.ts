@@ -143,6 +143,7 @@ export interface PhoneServer {
   /** 트윈 물건 기준점을 바꾼다(배치 보정). */
   setLandmarks(list: readonly TwinLandmark[]): void;
   /** 엔진 프레임 YOLO 기준점 상자(관찰 흐름이 넘긴다). 맞춤이 바뀌면 폰에 상태를 보낸다. */
+  localized(header:FrameHeader, result:import("../bus/index.js").Body<"/perception/localized">):boolean;
   landmarks(header: FrameHeader, boxes: readonly LandmarkBoxIn[]): void;
   /** 위치 맞춤 모듈 상태. */
   syncState(): SyncState;
@@ -253,7 +254,9 @@ export function createPhoneServer(opts: PhoneServerOptions): PhoneServer {
     if (header.kind === "engine") {
       const view = header.position && header.orientation ? session.viewAt(header.position, header.orientation, header.projection, header.epoch) : null;
       // 영상 모드: held
-      opts.onEngine?.(jpeg, engineHeader(header, video), eyeOf(), view, receivedAtMs);
+      const original=engineHeader(header,video);
+      session.markEngine(original);
+      opts.onEngine?.(jpeg, original, eyeOf(), view, receivedAtMs);
       return;
     }
     // 화면 프레임은 표시만, 사진은 저장만 한다(관찰 흐름에는 엔진 프레임만 들어간다)
@@ -469,6 +472,13 @@ export function createPhoneServer(opts: PhoneServerOptions): PhoneServer {
       broadcastStatus();
     },
     setLandmarks: (list) => session.setLandmarks(list),
+    localized(header,result) {
+      const before=session.aligned;
+      if(!session.localized(header,result)) return false;
+      const moved=session.navigationShifted();
+      if(moved || before!==session.aligned) {invalidate();broadcastStatus();resendIf(before,moved);}
+      return true;
+    },
     landmarks(header, boxes) {
       const wasAligned = session.aligned;
       if (!session.landmarks(header, boxes)) return;

@@ -69,6 +69,7 @@ export interface AppOptions {
   /** 폰 위치 맞추기 시작 위치(src/phone/sync/start.ts StartStore). 있으면 /api/phone/start-pose*. */
   start?: { get(): StartPose | null; save(raw: unknown): StartPose; preview(raw: unknown): StartPose; clear(): void };
   /** 폰 위치 맞춤 모듈 상태(GET /api/phone/sync). 폰 서버가 없으면 null. */
+  localizeStatus?: () => unknown;
   phoneSync?: () => SyncState | null;
   /** 관찰 흐름(BRAIN=1, src/observe/pipeline.ts). 있으면 GET /api/brain에 상태를 보인다. */
   brain?: { status(): object };

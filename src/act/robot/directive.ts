@@ -1,3 +1,5 @@
+import type { HouseholdPhoto } from "../../contract/world.js";
+import { inView } from "../../world/index.js";
 import type { DirectiveResult, HouseholdOffer, ManagerDirective } from "../../contract/machines.js";
 
 import type { TrackCore } from "../track/core.js";
@@ -17,8 +19,18 @@ function facing(core:TrackCore,look:[number,number,number],now:number):boolean {
   const want=Math.atan2(look[2]-e.position[1],look[0]-e.position[0])*180/Math.PI;
   return Math.abs((((want-e.yaw_deg)%360)+540)%360-180)<=AIM_DEG;
 }
+export function stationPhotoMatches(photo:HouseholdPhoto|undefined, entered:number, now:number,
+  target:{position:[number,number,number];look:{position:[number,number,number]}|null}, fixture:string|null):boolean {
+  const proof=photo?.proof, pos=proof?.localized_position;
+  if(!photo || !proof || !pos || photo.at_ms<entered || photo.at_ms>now || now-photo.at_ms>10_000) return false;
+  return Math.hypot(pos[0]-target.position[0],pos[2]-target.position[2])<=ARRIVAL_M &&
+    (!target.look || inView(proof.camera,target.look.position)) &&
+    (!fixture || !!proof.localized_fixtures?.includes(fixture));
+}
+
 export function stationDirectives(core:TrackCore) {
   let slot:IdleSlot|null=null;
+  let entered:{job:string;at:number}|null=null;
   const port=core.o.stations;
   return new DirectiveRunner({
     now:()=>core.clock.now(), rev:()=>port?.rev() ?? 0,
@@ -53,7 +65,14 @@ export function stationDirectives(core:TrackCore) {
       }
       const near=nav ? nav.arrived : !!(eye && target && Math.hypot(eye.position[0]-target.position[0],eye.position[1]-target.position[2])<=ARRIVAL_M);
       // 비출 곳이 있는 자리는 그쪽을 보고 있어야 도착이다: 반경 안에서 반대쪽을 보면 그 자리 사진이 구역을 담지 못한다
-      return near && (!target?.look || facing(core,target.look.position,core.clock.now()));
+      if(!near || !target) {entered=null;return false;}
+      const now=core.clock.now();
+      if(port?.photoRequired?.()) {
+        if(entered?.job!==job.id) entered={job:job.id,at:now};
+        const fixture=target.id===port.map?.()?.kitchen_entry ? "refrigerator" : target.id==="living_standby" ? "tv" : null;
+        if(!stationPhotoMatches(core.o.state.view().household_photo,entered.at,now,target,fixture)) return false;
+      }
+      return !target.look || facing(core,target.look.position,now);
     },
     tv:async(job,stillActive)=>{
       const live=()=>stillActive() && port?.tvAllowed?.(job)===true;

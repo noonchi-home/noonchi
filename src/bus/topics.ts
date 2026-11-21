@@ -16,7 +16,7 @@ import type { PlanView } from "../contract/plan.js";
 import type { SceneInput, VlmMissing, WorldChange, WorldChangeKind, WorldChangesMsg, WorldCloserMsg, WorldInput, WorldStateMsg, WorldView, YoloMissing } from "../contract/world.js";
 import { CLASSES, SCENE_STATES, type DetLabel } from "../world/vocab.js";
 
-export const NODES = ["phone", "perception", "world", "brain", "act", "goal", "manager", "devices", "recorder"] as const;
+export const NODES = ["phone", "perception", "world", "brain", "act", "goal", "manager", "devices", "recorder", "localize"] as const;
 export type NodeName = (typeof NODES)[number];
 export type Qos = { kind: "sensor"; depth: number; record?: boolean } | { kind: "state" } | { kind: "reliable" };
 /** 낡음을 보는 기준: 근거 시각(observed_ms 칸), 상태 판본(rev 칸), 발행 시각(머리 stamp), 없음. */
@@ -77,7 +77,7 @@ const closerPass = z.strictObject({
 const size = { width: z.number().int().positive(), height: z.number().int().positive() };
 /** 장면 VLM 답을 받은 사진의 카메라·크기·폰 눈 자리. */
 const sceneLook = z.strictObject({
-  fresh: z.boolean().optional(), person_ids: z.array(id).optional(),
+  localized_position: z.tuple([at, at, at]).optional(), fresh: z.boolean().optional(), person_ids: z.array(id).optional(),
   view: camera, ...size, eye: z.tuple([at, at]).nullable().optional(), dets: z.array(z.strictObject({ id: z.string(), box, foot: z.tuple([at, at]).optional() })).optional(),
 });
 /** 가까이 본 그 장의 카메라·크기·자른 자리. */
@@ -110,7 +110,7 @@ const VIEW_KEY_SET: ReadonlySet<string> = new Set(VIEW_KEYS);
 const floorPosition = z.tuple([at,at]);
 const trailPoint = z.strictObject({position:floorPosition, room:z.string().nullable(), at_ms:at});
 const householdPhoto = z.strictObject({id, at_ms:at, serial:rev, cap_from_ms:at.optional(), answered_ms:at.optional(), proof:z.strictObject({
-  camera, seats:z.enum(["clear","obscured","unknown"]), person_count:z.int().nonnegative(), dining_food:z.enum(["yes","no","unknown"]),
+  localized_fixtures:z.array(id).optional(), localized_position:z.tuple([at, at, at]).optional(), camera, seats:z.enum(["clear","obscured","unknown"]), person_count:z.int().nonnegative(), dining_food:z.enum(["yes","no","unknown"]),
   person:z.strictObject({position:floorPosition,room:z.string().nullable(),seated:z.boolean().nullable(),attention:z.enum(["toward_tv","elsewhere","unknown"])}).nullable(),
 }).nullable()});
 const personTrail = z.array(trailPoint).max(2);
@@ -309,7 +309,18 @@ export type TopicBodiesSame = [
   Assert<Same<z.infer<typeof managerState>, Timed<ManagerState>>>,
 ];
 
+const photoRequest = z.strictObject({frame_id:id, captured_ms:at});
+const localized = photoRequest.extend({
+  position:xyz.nullable(), yaw_deg:at.nullable(), pitch_deg:at.nullable(),
+  confidence:z.number().min(0).max(1), matches:z.int().nonnegative(), rms_px:at.nonnegative().nullable(),
+  map_rev:id.nullable(), ar_gap_m:at.nonnegative().nullable(), ar_gap_deg:at.nonnegative().nullable(),
+}).refine(r=>r.position===null
+  ? r.yaw_deg===null && r.pitch_deg===null && r.confidence===0 && r.matches===0 && r.rms_px===null && r.ar_gap_m===null && r.ar_gap_deg===null
+  : r.yaw_deg!==null && r.pitch_deg!==null && r.confidence>=.23 && r.matches>=10 && r.rms_px!==null && r.map_rev!==null &&
+    (r.ar_gap_m===null)===(r.ar_gap_deg===null));
 export const TOPICS = {
+  "/perception/localize": {qos:{kind:"reliable"}, body:photoRequest, key:by("frame_id"), order:null, from:["perception"]},
+  "/perception/localized": {qos:{kind:"reliable"}, body:localized, key:by("frame_id"), order:null, from:["localize"]},
   "/goal/intent": { qos:{kind:"reliable"}, body:goalIntent, key:one, order:null, from:["goal"] },
   "/manager/directive": { qos:{kind:"reliable"}, body:managerDirective, key:one, order:null, from:["manager"] },
   "/act/directive_result": { qos:{kind:"reliable"}, body:directiveResult, key:one, order:null, from:["act"] },

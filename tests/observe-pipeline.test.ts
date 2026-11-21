@@ -27,6 +27,29 @@ function gatedVlm() {
 const head = (at: number) => ({ kind: "engine" as const, width: 100, height: 100, captured_at: at, time_err_ms: 0 });
 
 describe("관찰 흐름", () => {
+  it("같은 사진의 위치 답을 기다린 뒤에만 그 사진의 빈 구역을 기록한다",async()=>{
+    const world=new WorldState({surfaces:()=>[],floorAt:()=>0,roomAt:()=>null,devices:()=>[]});
+    const vlm={model:"test",json:async()=>({value:{scene:"living",summary:"",observations:[],
+      household:{seats:"clear",people:[],dining_food:"unknown"}},costUsd:0,model:"test"})} as unknown as VlmClient;
+    let answer!:(p:[number,number,number]|null)=>void;
+    const pipeline=pipelineOn({config:{engineMs:1000,vlmMaxInflight:1,vlmTimeoutMs:5000,detectQueueMax:8,keepMs:20000},
+      localize:()=>new Promise(r=>{answer=r;}),vlm,detector:new ScriptedDetector(()=>[]),world,emit:()=>{}});
+    const eye={position:[0,0] as [number,number],height_m:1.15,yaw_deg:0,pitch_deg:0,tracking:"ok" as const,at:""};
+    const camera={origin:[0,1.15,0] as [number,number,number],orientation:[0,0,0,1] as [number,number,number,number],
+      theta:0,projection:[1,0,0,0,0,1,0,0,0,0,-1,-1,0,0,-.02,0]};
+    try{
+      for(const n of [1,2]){
+        const at=n*1000;
+        pipeline.onEngine(jpeg(n),head(at),eye,camera,at);
+        expect(world.view(at).household_photo?.at_ms).not.toBe(at);
+        answer(n===1 ? [0,1.15,0] : null);
+        await until(()=>world.view(at).household_photo?.at_ms===at);
+        const proof=world.view(at).household_photo?.proof;
+        if(n===1) expect(proof?.localized_position).toEqual([0,1.15,0]);
+        else expect(proof).toBeNull();
+      }
+    } finally {await pipeline.close();}
+  });
   it("맞춘 새 원본만 부재와 사람 발자국의 근거로 쓴다. held·추정 눈·반복 원본은 제외한다", async () => {
     const world = new WorldState({ surfaces:()=>[], floorAt:()=>0, roomAt:()=>({id:"living",label:"거실"}), devices:()=>[] });
     const vlm = { model:"test", json: async () => ({value:{scene:"living", observations:[],summary:"",household:{seats:"clear",people:[],dining_food:"unknown"}},costUsd:0,model:"test"}) } as unknown as VlmClient;

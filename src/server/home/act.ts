@@ -236,6 +236,7 @@ export function startAct(core: HomeCore): (event: BrainLog) => void {
       },
     },
     stations:{
+      photoRequired:()=>!!core.localizer,
       map:()=>core.scene?.stations ?? null,
       rev:()=>core.mirror?.rev() ?? 0,
       target:id=>{
