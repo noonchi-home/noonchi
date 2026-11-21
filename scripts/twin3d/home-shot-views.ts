@@ -58,7 +58,7 @@ function shot(station: Station, view: View) {
   };
 }
 
-export function homeShotViews(home: Home, scene: Scene) {
+export function homeShotViews(home: Home, scene: Scene, holdout = false) {
   const desk = stations.find(s => s.id === "desk_front")!;
   const catalog = loadCatalog(home.catalogDir);
   const size = (type: string) => catalog.get(type)?.footprint;
@@ -82,8 +82,19 @@ export function homeShotViews(home: Home, scene: Scene) {
   });
   const living = stations.find(s => s.id === "living_standby")!;
   const entryShot = shot({ ...living, id: "living_entry", scenario: [1], name: "거실 대기 자리", look: entry.point }, "C");
-  return [
+  const all = [
     ...views, { ...entryShot, look_name: "주방과 거실 사이 통로" },
     ...walkingSpots.flatMap(point => (["C","L30","R30"] as const).map(view => shot(point, view))),
   ];
+  if (!holdout) return all;
+  return all.map((ref,i) => {
+    const [x,h,z] = ref.position;
+    const room = walk.room([x,z]);
+    const offsets = [[0.08,0.06],[-0.06,0.08],[-0.08,-0.06],[0.06,-0.08]];
+    const stand = offsets.map((_,j) => offsets[(j+i)%offsets.length]!)
+      .map(([dx,dz]): Vec2 => [x+dx!,z+dz!]).find(p => room && walkable(room,p));
+    if (!stand) throw new Error(ref.id + ": 평가 카메라를 놓을 수 없습니다.");
+    return { ...ref, position: [stand[0],h+0.03,stand[1]] as [number,number,number],
+      yaw_deg: (ref.yaw_deg + (i%2 ? -4 : 4) + 360)%360, pitch_deg: ref.pitch_deg + (i%2 ? 2 : -2) };
+  });
 }

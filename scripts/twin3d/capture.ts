@@ -15,7 +15,8 @@ import { maskFromBits, sampleColors, shotStats, type MaskBits } from "./shot-sta
 const arg = (k: string, d?: string) => { const i = process.argv.indexOf(`--${k}`); return i > 0 ? process.argv[i + 1]! : d; };
 if (process.argv.includes("--home-shots")) {
   const { captureHomeShots } = await import("./home-shots.js");
-  await captureHomeShots(arg("out", "runtime/shots")!, process.argv.includes("--software"));
+  await captureHomeShots(arg("out", "runtime/shots")!, process.argv.includes("--software"),
+    process.argv.includes("--depth"), process.argv.includes("--holdout"));
   process.exit(0);
 }
 const url = arg("url")!;

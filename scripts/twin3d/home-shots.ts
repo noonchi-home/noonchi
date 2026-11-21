@@ -50,11 +50,12 @@ async function shotServer(home: Home, scene: NonNullable<ReturnType<typeof loadS
   return server;
 }
 
-export async function captureHomeShots(out: string, software: boolean) {
+export async function captureHomeShots(out: string, software: boolean, depth = false, holdout = false) {
   const home = resolveHome("twin", "mokryeon_180b");
   const scene = loadScene(home);
   if (!scene) throw new Error("목련 집 장면을 찾을 수 없습니다.");
-  const shots = homeShotViews(home, scene);
+  const shots = homeShotViews(home, scene, holdout).map(s => ({ ...s, home: home.id,
+    ...(depth ? { depth_file: s.id + ".depth.png", depth_encoding: "axial_mm_rg16" } : {}) }));
   const exe = chromePath();
   await withHeavy("capture mokryeon first-person", async lock => {
     if (existsSync(out)) throw new Error(`출력 폴더가 이미 있습니다. --out 으로 새 폴더를 고르세요: ${out}`);
@@ -81,6 +82,12 @@ export async function captureHomeShots(out: string, software: boolean) {
             if (errors.length) throw new Error(errors.join("\n"));
             if (png.readUInt32BE(16) !== width || png.readUInt32BE(20) !== height) throw new Error(shot.id + " PNG 크기 오류");
             writeFileSync(join(stage, shot.file), png);
+            if (shot.depth_file) {
+              const packed = await page.evaluate(`window.drawHomeShot(${JSON.stringify(shot)}, true)`, 60000);
+              if (typeof packed !== "string" || !packed) throw new Error(shot.id + " 깊이 렌더 오류");
+              writeFileSync(join(stage, shot.depth_file), Buffer.from(packed,"base64"));
+              if (errors.length) throw new Error(errors.join("\n"));
+            }
             console.log(shot.id);
           }
         } finally {
