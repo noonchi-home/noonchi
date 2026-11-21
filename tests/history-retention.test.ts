@@ -26,6 +26,16 @@ describe("보관 기간", () => {
     expect(sweep(db, { photoDays: 7, datasetDays: 2, nowMs: now })).toEqual({ photos: 0, dataset: 0 });
   });
 
+  it("보관 기간이 지난 집 사진 줄만 지우고 같은 날의 TV 전원 기록을 남긴다", () => {
+    const db = HistoryDb.open(":memory:");
+    try {
+      for (const [event, at] of [["photo", 1], ["power_request", 1], ["photo", 3]] as const)
+        db.add("household", at, event, { data: { event } });
+      sweep(db, { photoDays: 1, datasetDays: 1, nowMs: 86400002 });
+      expect(db.list({}).map(r => r.at_ms + ":" + r.text).sort()).toEqual(["1:power_request", "3:photo"]);
+    } finally { db.close(); }
+  });
+
   it("파일이 이미 없어도 표 줄은 지운다", () => {
     const db = HistoryDb.open(":memory:");
     db.addPhoto({ id: "gone", atMs: 0, path: join(tmpdir(), "no-such-photo-xyz.jpg"), origin: "photo" });

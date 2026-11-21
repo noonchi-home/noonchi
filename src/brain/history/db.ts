@@ -18,6 +18,7 @@ const SCHEMA = `
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS events (id INTEGER PRIMARY KEY, at_ms INTEGER NOT NULL, day TEXT NOT NULL, kind TEXT NOT NULL, subject TEXT, text TEXT NOT NULL, data TEXT);
 CREATE INDEX IF NOT EXISTS idx_events_at ON events(at_ms);
+CREATE INDEX IF NOT EXISTS idx_household_photos_at ON events(at_ms) WHERE kind='household' AND json_extract(data,'$.event')='photo';
 CREATE INDEX IF NOT EXISTS idx_events_day_kind ON events(day, kind);
 CREATE TABLE IF NOT EXISTS memories (version INTEGER PRIMARY KEY, created_ms INTEGER NOT NULL, day TEXT, applies_day TEXT, kind TEXT NOT NULL, memory TEXT NOT NULL, source TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS photos (id TEXT PRIMARY KEY, at_ms INTEGER NOT NULL, path TEXT NOT NULL, origin TEXT NOT NULL);
@@ -203,6 +204,10 @@ export class HistoryDb {
   listPhotos(): StoredPhoto[] {
     return (this.db.prepare("SELECT id, at_ms, path, origin FROM photos ORDER BY at_ms, id").all() as unknown as { id: string; at_ms: number; path: string; origin: StoredPhoto["origin"] }[])
       .map((r) => ({ id: r.id, atMs: r.at_ms, path: r.path, origin: r.origin }));
+  }
+
+  removeExpiredHouseholdPhotos(cutoffMs: number): void {
+    this.db.prepare("DELETE FROM events WHERE kind='household' AND json_extract(data,'$.event')='photo' AND at_ms <= ?").run(cutoffMs);
   }
 
   removePhoto(id: string): void {
