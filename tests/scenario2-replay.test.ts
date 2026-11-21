@@ -40,7 +40,7 @@ describe("시나리오 2 합성 재생", { timeout: 240_000 }, () => {
       expect(night.ok, JSON.stringify(night)).toBe(true);
       const memory = memoryForDay(db, "2026-11-25").memory as FsmMemory;
       const edge = memory.states.find((s) => s.id === "studying")?.next.find((e) => e.action === WATER_ACTION);
-      expect(edge).toMatchObject({ on: "사용자가 저녁 8시 전후에 책상에서 공부한다.", when: "책상 위에 마실 물이 없다." });
+      expect(edge).toMatchObject({ on: "사용자가 저녁 8시 전후에 책상에서 공부한다.", when: "지금 시각이 저녁 7시 45분부터 저녁 8시 15분 사이이고 책상 위에 마실 물이 없다." });
       expect(adoptedRoutines(db, memory, kstMs("2026-11-25", "19:00:00"))).toEqual([expect.objectContaining({ action: WATER_ACTION, center_min: 20 * 60, place_label: "책상" })]);
       // 4일: 부르지 않는다. 19:55에 책상 관찰 자리로 확인하러 가서 공부 중·물 없음을 보고 배운 화살표로 물을 가져다준다
       const day4 = await replayDay({ db, day: "2026-11-25", mode: "habit", start: kstMs("2026-11-25", "19:54:50"), until: kstMs("2026-11-25", "20:08:00"), memory });

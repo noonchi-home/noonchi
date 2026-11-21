@@ -66,6 +66,8 @@ export interface DeciderOptions {
   hold?: () => boolean;
   /** 참이면 기록에 남는 판단 줄에도 들은 말을 그대로 둔다(KEEP_HEARD_TEXT, 기본 꺼짐). 없거나 거짓이면 「들은 말 있음」만 남긴다. */
   keepHeard?: () => boolean;
+  /** PAM이 고른 화살표 행동을 지금 할 수 있는가(습관 화살표는 그 시각 창 안만, src/brain/history/routines.ts routineAllows). 거짓이면 행동 없이 기록한다. 없으면 참. */
+  edgeAllowed?: (edge: { on: string | null; action: string | null }, atMs: number) => boolean;
 }
 
 export class Decider {
@@ -208,12 +210,13 @@ export class Decider {
           this.setLink(true);
           const newest = base.seq > this.answered;
           this.answered = Math.max(this.answered, base.seq);
-          const action = p.task_index === -1 ? null : tasks[p.task_index] ?? null;
+          const picked = p.task_index === -1 ? null : tasks[p.task_index] ?? null;
           // PAM의 생각 글은 계획 이유·판단 기록·대시보드에 남는다: 들은 말을 그대로 옮겼으면 뺀다
           const said = this.o.keepHeard?.() ? [] : saidIn(textSent);
           const prediction = said.length ? { ...p, observation: redactSaid(p.observation, said), reasoning: redactSaid(p.reasoning, said) } : p;
           // PAM 답의 상태·화살표를 그대로 싣는다(거꾸로 찾지 않는다)
           const step = mem.kind === "fsm" && "states" in mem.memory ? fsmStep(mem.memory, p) : null;
+          const action = picked !== null && step && this.o.edgeAllowed && !this.o.edgeAllowed(step, now) ? null : picked;
           if (step) {
             const stale = this.released !== null && step.from === this.released.from && step.next_index === this.released.next && base.seq <= this.released.seq;
             // 늦은 답 전체를 버린다: 상태·pending을 바꾸지 않고 행동 없이 기록만(실행 추적은 late를 「앞선 판단」으로 남긴다)

@@ -59,9 +59,21 @@ export function findRoutines(rows: readonly HistoryRow[], offsetMinutes: number)
   return out.sort((a, b) => a.center_min - b.center_min);
 }
 
-/** 습관 → 로봇 FSM 화살표(공부하는 중 → 공부하는 중). on은 시각과 자리, when은 그 자리에 마실 물이 없음. */
+/** 습관 → 로봇 FSM 화살표(공부하는 중 → 공부하는 중). on은 시각과 자리, when은 지금이 습관 시각 창 안이고 그 자리에 마실 물이 없음.
+ *  when에 창을 적는다: on의 「전후」만으로는 실제 PAM이 낮에도 그 화살표를 골랐다(2026-11-22 낮 3시 관찰 2/2). */
 export function routineEdge(r: HelpRoutine): FsmEdge {
-  return { to: STUDY_STATE, on: `사용자가 ${hourText(r.center_min)} 전후에 ${r.place_label}에서 공부한다.`, when: `${r.place_label} 위에 마실 물이 없다.`, action: r.action };
+  const from = (r.center_min - r.window_min + DAY_MIN) % DAY_MIN, to = (r.center_min + r.window_min) % DAY_MIN;
+  return { to: STUDY_STATE, on: `사용자가 ${hourText(r.center_min)} 전후에 ${r.place_label}에서 공부한다.`,
+    when: `지금 시각이 ${hourText(from)}부터 ${hourText(to)} 사이이고 ${r.place_label} 위에 마실 물이 없다.`, action: r.action };
+}
+
+/** 그 화살표(on·action)가 습관 화살표면 지금이 그 습관 시각 창(가운데 ± window_min) 안일 때만 참. 습관 화살표가 아니면 참.
+ *  PAM은 when의 시각 창을 느슨하게 본다(2026-11-22 실제 모델: 창 밖 8시 30분에 2/2 골랐다). */
+export function routineAllows(routines: readonly HelpRoutine[], edge: { on?: string | null; action?: string | null }, atMs: number, offsetMinutes: number): boolean {
+  const r = routines.find((x) => x.action === edge.action && routineEdge(x).on === edge.on);
+  if (!r) return true;
+  const d = Math.abs(minuteOfDay(atMs, offsetMinutes) - r.center_min);
+  return Math.min(d, DAY_MIN - d) <= r.window_min;
 }
 
 /** 공부하는 중 상태(없으면 더한다): 책상에서 노트북·책. */

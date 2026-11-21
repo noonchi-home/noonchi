@@ -149,6 +149,7 @@ export async function startNodes(core: HomeCore, emit: (event: BrainLog) => void
     routineCache = { at: now, list: findRoutines(helps, off).filter(has) };
     return routineCache.list;
   };
+  core.routines = routines;
   const goal = await startGoalNode({
     bus, epoch, clock, log, triggers, portals: core.floorPlan.portals, routines, offsetMinutes: ctx.history.db.offsetMinutes,
     map: () => core.scene?.stations ?? null,

@@ -6,7 +6,10 @@ import { classWithoutFollow } from "../src/agent/planTools.js";
 import { CALL_ACTION, TASK_NAMES, WATER_ACTION, matchChoice } from "../src/act/tasks.js";
 import { CUP_FSM_MEMORY, validateMemory, type FsmMemory } from "../src/brain/decision.js";
 import { habitView } from "../src/brain/habit.js";
-import { findRoutines, hourText, routineEdge, withRoutines, STUDY_STATE, type HelpRoutine } from "../src/brain/history/routines.js";
+import { findRoutines, hourText, routineAllows, routineEdge, withRoutines, STUDY_STATE, type HelpRoutine } from "../src/brain/history/routines.js";
+import { Decider } from "../src/brain/decide.js";
+import { Trigger } from "../src/world/trigger.js";
+import { WorldState } from "../src/world/state/world.js";
 import type { HelpRecord, HistoryRow } from "../src/contract/history.js";
 import type { DecisionRecord } from "../src/contract/events.js";
 import type { GoalIntent } from "../src/contract/machines.js";
@@ -158,13 +161,56 @@ describe("시나리오 2 판단 기능", () => {
     expect(findRoutines([...rows, helpRow(5, "2026-11-24", "22:30")], 540)).toHaveLength(1);
   });
 
+  it("습관 화살표 행동은 그 시각 창(가운데 ± 15분) 안에서만 낸다. 판단은 창 밖이면 PAM이 그 화살표를 골라도 행동 없이 기록한다", async () => {
+    const r: HelpRoutine = { action: WATER_ACTION, place: DESK, place_label: "책상", room: "bed_sw", center_min: 20 * 60, window_min: 15, days: ["a", "b", "c"] };
+    const edge = routineEdge(r);
+    expect(routineAllows([r], edge, kst("2026-11-25", "20:14"), 540)).toBe(true);
+    expect(routineAllows([r], edge, kst("2026-11-25", "19:45"), 540)).toBe(true);
+    expect(routineAllows([r], edge, kst("2026-11-25", "20:30"), 540)).toBe(false);
+    expect(routineAllows([r], edge, kst("2026-11-25", "15:00"), 540)).toBe(false);
+    // 습관 화살표가 아니면 막지 않는다. 자정을 넘는 창도 센다
+    expect(routineAllows([r], { on: "다른 화살표", action: WATER_ACTION }, kst("2026-11-25", "15:00"), 540)).toBe(true);
+    const late: HelpRoutine = { ...r, center_min: 23 * 60 + 55 };
+    expect(routineAllows([late], routineEdge(late), kst("2026-11-26", "00:05"), 540)).toBe(true);
+    const memory = withRoutines(CUP_FSM_MEMORY, [r]);
+    // 앉아 공부를 시작하면 자리에 없음 → 공부하는 중(행동 없음), 그다음 판단에서 습관 화살표(공부하는 중 → 공부하는 중)
+    const sit = memory.states.find((st) => st.id === "away")!.next.findIndex((e) => e.to === STUDY_STATE);
+    const pam = await startFakePamLlm({ predict: (v) => v.last_state === STUDY_STATE
+      ? { observation: "o", reasoning: "r", state: STUDY_STATE, from: STUDY_STATE, next_index: 0 }
+      : { observation: "o", reasoning: "r", state: STUDY_STATE, from: "away", next_index: sit } });
+    try {
+      const run = async (hm: string, allowed: boolean) => {
+        const world = new WorldState({ surfaces: () => [], floorAt: () => 0, roomAt: () => null, devices: () => [] });
+        const clock = { t: kst("2026-11-25", hm), now() { return this.t; } };
+        const out: DecisionRecord[] = [];
+        const d = new Decider({
+          pam: pamClientFor(pam), world, trigger: new Trigger({ mode: "event", minGapMs: 0, periodMs: 1000, idleStopMs: 1e9, liveMs: 10_000, maxInflight: 1 }, 0),
+          tasks: () => [...TASK_NAMES], memory: () => ({ memory, kind: "fsm" as const, version: 0 }), emit: () => {}, offsetMinutes: 540, clock,
+          onDecision: (x) => out.push(x), ...(allowed ? {} : { edgeAllowed: (e: { on: string | null; action: string | null }, at: number) => routineAllows([r], e, at, 540) }),
+        });
+        for (let i = 0; i < 2; i++) {
+          d.onChanges(world.heard(`물 ${i}`, clock.t));
+          d.tick();
+          await d.idle();
+          clock.t += 2000;
+        }
+        return out.at(-1)!;
+      };
+      expect(await run("20:30", true)).toMatchObject({ action: WATER_ACTION });
+      expect(await run("20:30", false)).toMatchObject({ action: null, fsm: { from: STUDY_STATE, action: WATER_ACTION } });
+      expect(await run("20:05", false)).toMatchObject({ action: WATER_ACTION });
+    } finally {
+      await pam.close();
+    }
+  });
+
   it("습관은 로봇 FSM에 「공부하는 중」 상태와 배운 화살표로 들어가 대시보드 FSM에 보인다", () => {
     const r: HelpRoutine = { action: WATER_ACTION, place: DESK, place_label: "책상", room: "bed_sw", center_min: 20 * 60, window_min: 15, days: ["a", "b", "c"] };
     const m = validateMemory(withRoutines(CUP_FSM_MEMORY, [r]), "fsm") as FsmMemory;
     const study = m.states.find((s) => s.id === STUDY_STATE)!;
     expect(study.activity).toEqual(["using_laptop", "reading"]);
     expect(study.next[0]).toEqual(routineEdge(r));
-    expect(routineEdge(r)).toMatchObject({ on: "사용자가 저녁 8시 전후에 책상에서 공부한다.", when: "책상 위에 마실 물이 없다.", action: WATER_ACTION });
+    expect(routineEdge(r)).toMatchObject({ on: "사용자가 저녁 8시 전후에 책상에서 공부한다.", when: "지금 시각이 저녁 7시 45분부터 저녁 8시 15분 사이이고 책상 위에 마실 물이 없다.", action: WATER_ACTION });
     expect(m.states.find((s) => s.id === "away")!.next.some((e) => e.to === STUDY_STATE)).toBe(true);
     // 같은 습관을 두 번 더해도 화살표는 하나
     expect(withRoutines(m, [r]).states.find((s) => s.id === STUDY_STATE)!.next.filter((e) => e.action === WATER_ACTION)).toHaveLength(1);
