@@ -9,6 +9,7 @@ export interface HabitFsm {
   initial: string;
   /** 상태: id, 화면 이름, seed 기억에 없는 상태인가. 기억 차례 그대로. */
   states: { id: string; name: string; learned: boolean }[];
-  /** 전이: 어디서, 어디로(같으면 제자리), 조건(짧은 화면 글), 그때 로봇이 하는 행동(없으면 null), seed 기억에 없는 전이인가. */
-  transitions: { from: string; to: string; trigger: string; action: string | null; learned: boolean }[];
+  /** 전이: 어디서, 어디로(같으면 제자리), 조건(짧은 화면 글, 맥락이 있으면 앞에 「토요일 18~21시 · 」), 그때 로봇이 하는 행동(없으면 null), seed 기억에 없는 전이인가,
+   *  요일·시각 맥락 글(있을 때만, 예: 「토요일 18~21시」). */
+  transitions: { from: string; to: string; trigger: string; action: string | null; learned: boolean; ctx?: string }[];
 }

@@ -4,6 +4,7 @@
 import type { HabitFsm } from "../contract/habit.js";
 import { FSM_STATE_TEXT, NEXT_ON, ruleIf } from "../world/labels.js";
 import { CUP_FSM_MEMORY, edgeLearned, seedTrigger, type FsmMemory } from "./decision.js";
+import { ctxText } from "./ctx.js";
 
 /** 글 끝 마침표를 뗀다. */
 const bare = (t: string) => t.trim().replace(/[.。]+$/, "");
@@ -21,7 +22,9 @@ export function habitView(memory: FsmMemory, version: number): HabitFsm {
         // 행동 화살표: 배운 화살표라도 seed와 같은 트리거(묻기 자리를 바꾼 컵 치우기)면 사용자가 정한 짧은 꼴
         const learned = edgeLearned(s.id, e);
         const short = !learned || seedTrigger(s.id, e.on, e.when ?? null);
-        return { from: s.id, to: e.to, trigger: ruleIf({ trigger: e.when ? `${e.on} ${e.when}` : e.on, action: e.action, learned: !short }), action: e.action as string | null, learned };
+        const rule = ruleIf({ trigger: e.when ? `${e.on} ${e.when}` : e.on, action: e.action, learned: !short });
+        // 요일·시각 맥락이 있는 화살표는 조건 글 앞에 맥락 글을 붙이고 ctx 칸에도 싣는다(맥락이 없으면 예전 모양 그대로)
+        return { from: s.id, to: e.to, trigger: e.ctx ? `${ctxText(e.ctx)} · ${rule}` : rule, action: e.action as string | null, learned, ...(e.ctx ? { ctx: ctxText(e.ctx) } : {}) };
       }
       // 상태 넘김: 행동 없이 다른 상태로
       const learned = !seed.find((x) => x.id === s.id)?.next.some((x) => !x.action && x.to === e.to && x.on === e.on);

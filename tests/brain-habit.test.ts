@@ -27,6 +27,21 @@ describe("습관 FSM 그림 자료(habitView)", () => {
     expect(habitView(LEARNED_FSM_MEMORY, 2).transitions).toContainEqual({ from: "drinking", to: "*", trigger: RULE_IF["컵 치우기"], action: "컵 치우기", learned: true });
   });
 
+  // 2026-11-22: 맥락(요일·시각 칸)이 있는 화살표는 조건 글 앞에 맥락 글이 붙고 ctx 칸에도 맥락 글이 있다. 맥락이 없으면 예전 모양 그대로다
+  it("맥락이 있는 화살표: trigger 앞에 「토요일 · 」이 붙고 ctx 칸이 있다. 묻기 화살표와 맥락 없는 전이는 그대로다", () => {
+    const m = structuredClone(CUP_FSM_MEMORY) as FsmMemory;
+    const drink = m.states.find((s) => s.id === "drinking")!;
+    const ask = drink.next[0]!;
+    drink.next.push({ to: "*", on: ask.on, action: "컵 치우기", ctx: { dow: 5 } }, { to: "*", on: ask.on, action: "컵 치우기", ctx: { dow: 6, slot: 6 } });
+    const h = habitView(m, 4);
+    expect(h.transitions.filter((t) => t.from === "drinking" && t.action === "컵 치우기")).toEqual([
+      { from: "drinking", to: "*", trigger: `토요일 · ${RULE_IF["컵 치우기"]}`, action: "컵 치우기", learned: true, ctx: "토요일" },
+      { from: "drinking", to: "*", trigger: `일요일 18~21시 · ${RULE_IF["컵 치우기"]}`, action: "컵 치우기", learned: true, ctx: "일요일 18~21시" },
+    ]);
+    expect(h.transitions.find((t) => t.from === "drinking" && t.action === "사용자에게 물어보기")).not.toHaveProperty("ctx");
+    expect(h.transitions).toHaveLength(CUP_FSM_MEMORY.states.reduce((n, s) => n + s.next.length, 0) + 2);
+  });
+
   it("seed 기억의 행동 없는 화살표 글은 모두 NEXT_ON에 짧은 글이 있다(화살표·괄호 없이 12자 안)", () => {
     for (const s of CUP_FSM_MEMORY.states) for (const n of s.next.filter((e) => !e.action)) {
       expect(NEXT_ON[n.on], n.on).toBeTruthy();
