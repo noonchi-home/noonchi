@@ -124,7 +124,7 @@ The phone guides the person to the table to show the inside of the cup. Once two
 
 ### F. Habit Learning: Nightly Reflection and the Adoption Test
 
-Once a day, the day's records are grouped into activity chunks, and PAM reflection proposes a candidate FSM. Each candidate passes a code check (shape) and an LLM check (meaning), then the adoption test. If the person did that task within 300 s after the candidate's trigger at least 75% of the time, with a one-sided binomial test p < 0.001, the candidate is adopted into the next day's FSM. Before the cup-clearing habit is learned, CLOiD asks whether to clear the cup. Learning that habit lets it clear a confirmed empty cup without asking. Risky appliance commands still require approval.
+Once a day, the day's records are grouped into activity chunks, and PAM reflection proposes a candidate FSM. Each candidate passes a code check (shape) and an LLM check (meaning), then the adoption test. If the person did that task within 300 s after the candidate's trigger at least 75% of the time, with a one-sided binomial test p < 0.01, the candidate is adopted into the next day's FSM. If it does not pass as is, the code looks for a weekday and/or a 3-hour time slot that makes it pass (none, then one, then two contexts, compared with the rate without the context), so a Saturday-only habit becomes a Saturday-only edge; by day, only the edges whose context matches right now are shown to PAM. Before the cup-clearing habit is learned, CLOiD asks whether to clear the cup. Learning that habit lets it clear a confirmed empty cup without asking. Risky appliance commands still require approval.
 
 ### G. Screens People See
 
