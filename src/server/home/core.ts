@@ -152,7 +152,7 @@ export class HomeCore {
 
   /** 노드 시계: 시각은 nowMs(시험 시계가 있으면 그 시계), 타이머는 실제 시계. */
   busClock(): Clock {
-    return { now: () => this.nowMs(), every: realClock.every, after: realClock.after };
+    return this.ctx.clock ?? { now: () => this.nowMs(), every: realClock.every, after: realClock.after };
   }
 
   /** 집 상태 보기: 거울이 받은 가장 새 /world/state(관찰 흐름이 없거나 아직 못 받았으면 null). */

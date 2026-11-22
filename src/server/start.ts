@@ -5,7 +5,7 @@
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import type { Agent, Policy } from "../agent/index.js";
-import { openBus, type Bus } from "../bus/index.js";
+import { openBus, type Bus, type Clock } from "../bus/index.js";
 import { agentEndpoint } from "../agent/index.js";
 import type { BrainLog } from "../contract/events.js";
 import type { PlanView } from "../contract/plan.js";
@@ -53,6 +53,8 @@ const msListOf = (raw: string | undefined, fallback: number[]) => {
 };
 
 export interface StartServerOptions {
+  /** Optional scheduler shared by household nodes and the in-memory replay bus. */
+  clock?: Clock;
   irPort?: IrPort;
   /** 기본 process.env. HUB, MATTER_*, AGENT_PROVIDER, TWIN_STUDIO_DIR, HOME_ID(저장한 집이 없을 때 띄울 집, 기본 집), PORT(0이면 빈 포트), HOST,
    *  ALLOWED_ORIGINS(이 PC 말고 대시보드를 여는 출처, 쉼표로 여러 개), PLAN_TOKEN(다른 주소에서 POST /api/plan을 받을 토큰),
@@ -209,7 +211,7 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
     }
   };
   const ctx: HomeContext = {
-    env, log, runtimeDir, importer: opts.importer, matter: opts.matter, brain: opts.brain, askFirst: opts.askFirst, servedPhoneUrls: opts.servedPhoneUrls, webDir: opts.webDir,
+    env, log, runtimeDir, importer: opts.importer, matter: opts.matter, brain: opts.brain, clock: opts.clock, askFirst: opts.askFirst, servedPhoneUrls: opts.servedPhoneUrls, webDir: opts.webDir,
     irPort: opts.irPort,
     homeInfrared(homeId) {
       ir = loadIrConfig(runtimeDir, homeId);

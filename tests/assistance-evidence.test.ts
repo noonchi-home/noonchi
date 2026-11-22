@@ -4,7 +4,7 @@ import { EvidenceRun, allowedEvidence } from "../src/act/track/evidence.js";
 import type { AssistanceGoal, EvidenceChoice } from "../src/contract/assistance.js";
 import { Observer } from "../src/agent/index.js";
 import { createProvider } from "../src/agent/providers/index.js";
-import { startFakeOpenAI } from "../scripts/fake-openai.js";
+import { inProcessModel } from "./helpers/in-process-model.js";
 
 const goal: AssistanceGoal = { kind: "clear", objectId: "cup_1", from: "table", to: "sink", basin: true };
 
@@ -55,15 +55,17 @@ it("aborts at thirty seconds, even when a chooser resolves after the deadline", 
 
 it("offers a different next observation through the production provider when the first read changes", async () => {
   const traces: string[][] = [];
-  const fake = await startFakeOpenAI({ respond: (body) => {
+  const model = inProcessModel({ respond: (body) => {
     const input = JSON.parse(body.input[0].content);
     const check = input.checks?.at(-1);
     const name = !check ? "last_seen" : check.status === "position_known" ? "look_closer" : "wait_for_new_photo";
     const args = name === "wait_for_new_photo" ? {} : { target: "cup_1" };
     return { calls: [{ name, args }] };
   }});
+  const original = globalThis.fetch;
+  globalThis.fetch = model.fetch;
   try {
-    const observer = new Observer({ provider: createProvider({ OPENAI_API_KEY: "fixture-only", OPENAI_BASE_URL: fake.url + "/v1",
+    const observer = new Observer({ provider: createProvider({ OPENAI_API_KEY: "fixture-only", OPENAI_BASE_URL: model.base,
       OPENAI_MODEL: "gpt-5.4-mini" }).provider });
     for (const status of ["position_known", "stale"] as const) {
       const attempt = new AttemptBook("b", "h").issue({id: "d", atMs: 10, action: "clear"});
@@ -83,5 +85,6 @@ it("offers a different next observation through the production provider when the
       traces.push(selected);
     }
     expect(traces).toEqual([["last_seen", "look_closer"], ["last_seen", "wait_for_new_photo"]]);
-  } finally { await fake.close(); }
+    expect(model.network).toEqual([]);
+  } finally { globalThis.fetch = original; }
 });
