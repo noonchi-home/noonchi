@@ -1,6 +1,9 @@
 import { expect, it, vi } from "vitest";
 import { AttemptBook } from "../src/act/track/attempt.js";
 import { EvidenceRun, allowedEvidence } from "../src/act/track/evidence.js";
+import { Looker } from "../src/act/look.js";
+import { VirtualClock } from "../src/bus/index.js";
+import { WorldState } from "../src/world/index.js";
 import type { AssistanceGoal, EvidenceChoice } from "../src/contract/assistance.js";
 import { Observer } from "../src/agent/index.js";
 import { createProvider } from "../src/agent/providers/index.js";
@@ -51,6 +54,47 @@ it("aborts at thirty seconds, even when a chooser resolves after the deadline", 
   resolve({ tool: "look_closer", target: "cup_1" });
   await run.idle();
   expect(acquire).not.toHaveBeenCalled();
+});
+
+it.each([1000, 31_000])("keeps the original budget when an existing closer job takes %d ms", async duration => {
+  const clock = new VirtualClock(100);
+  const world = new WorldState({ surfaces: () => [], floorAt: () => 0, roomAt: () => null, devices: () => [] });
+  const chosen = vi.fn<() => Promise<EvidenceChoice>>().mockResolvedValue({ tool: "last_seen", target: "cup_1" });
+  const looker = new Looker({
+    clock, frame: () => null, world: () => world.view(clock.now()), targets: () => [], emit: () => {},
+    observer: { chooseEvidence: chosen, status: vi.fn(), decide: vi.fn() },
+    closer: () => new Promise(resolve => { clock.after(duration, () => resolve({ ok: false, why: "no_fresh_frames" })); }),
+  });
+  const acquire = vi.fn(async () => ({ status: "position_known" as const }));
+  const attempt = new AttemptBook("boot", "home").issue({ id: "d", atMs: 100, action: "clear" });
+  const run = new EvidenceRun(attempt, { choose: (q, signal) => looker.chooseEvidence(q, signal), acquire });
+  expect(looker.contents({ planId: "existing", objectId: "cup_2", spot: { id: "cup_2", label: "컵", position: [1, 1, 1] },
+    done: () => {}, signal: new AbortController().signal })).toBe(true);
+  const ask = () => run.request(0, clock.now(), "p1", goal, allowedEvidence(goal, true));
+  for (let ms = 100; ms < 1100; ms += 250) {
+    await clock.advanceTo(ms);
+    expect(ask()).toBe("pending");
+    await run.idle();
+  }
+  expect(chosen).not.toHaveBeenCalled();
+  if (duration === 1000) {
+    await clock.advanceTo(1100);
+    await looker.idle();
+    expect(ask()).toBe("pending");
+    await run.idle();
+    expect(chosen).toHaveBeenCalledTimes(1);
+    expect(acquire).toHaveBeenCalledExactlyOnceWith({ tool: "last_seen", target: "cup_1" }, expect.any(AbortSignal));
+  } else {
+    await clock.advanceTo(30_099);
+    expect(ask()).toBe("pending");
+    await run.idle();
+    await clock.advanceTo(30_100);
+    expect(ask()).toBe("exhausted");
+    expect(chosen).not.toHaveBeenCalled();
+    expect(acquire).not.toHaveBeenCalled();
+    await clock.advanceTo(31_100);
+    await looker.idle();
+  }
 });
 
 it("offers a different next observation through the production provider when the first read changes", async () => {

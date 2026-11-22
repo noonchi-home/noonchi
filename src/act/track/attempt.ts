@@ -17,11 +17,11 @@ export class AttemptBook {
   private readonly decisions = new Map<string, Attempt>();
   constructor(private readonly boot: string, private readonly homeEpoch: string) {}
 
-  issue(decision: Pick<DecisionRecord, "id" | "atMs" | "action">): Attempt {
+  issue(decision: Pick<DecisionRecord, "id" | "atMs" | "action">, resumedId?: string): Attempt {
     const current = this.decisions.get(decision.id);
-    if (current) return current;
+    if (current && (!resumedId || !current.ended)) return current;
     const attempt: Attempt = {
-      key: { boot: this.boot, homeEpoch: this.homeEpoch, attemptId: decision.id, gen: 0 },
+      key: { boot: this.boot, homeEpoch: this.homeEpoch, attemptId: resumedId ?? decision.id, gen: 0 },
       since: decision.atMs, goal: null, ended: false, evidence: [],
     };
     this.decisions.set(decision.id, attempt);

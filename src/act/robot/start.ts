@@ -23,6 +23,7 @@ const SETTLED: ReadonlySet<CheckFail> = new Set<CheckFail>(["in_sink", "contents
 /** 판단 받기·계획 시작. */
 export class Starter extends Part {
   private readonly jobs = new Set<Promise<void>>();
+  private readonly deferredDrafts = new WeakSet<DecisionRecord>();
   private readonly planAt = new Map<string, number>();
   private gen = 0;
   private lastSeq = 0;
@@ -155,7 +156,8 @@ export class Starter extends Part {
     // 미리 세운 목표는 여기서 버리지 않는다: 다른 행동의 계획이 실제로 시작할 때(begin) 버린다. 골라졌다가 막히면(계획 실패·쓰는 중·실행 전 검사) 목표가 그대로 맡는다
     // 계획을 만드는 중이던 다른 행동은 끊고 버린다(답이 와도 쓰지 않는다)
     this.dropPlanning(EXEC_TEXT.superseded);
-    const attempt = core.attempts.issue(d);
+    const resumedId = resumed && this.deferredDrafts.delete(d) ? `${d.id}:resumed:${this.gen + 1}` : undefined;
+    const attempt = core.attempts.issue(d, resumedId);
     if (attempt.ended) return;
     const gateState = core.adaptive.preflight(attempt, d);
     if (gateState === "fulfilled") {
@@ -303,6 +305,10 @@ export class Starter extends Part {
     if (core.stopped || core.planning !== job) return;
     core.planning = null;
     const d = job.decision;
+    const cancelDraft = (text: string) => {
+      core.adaptive.finish(job.attempt, "cancelled");
+      core.emit(planIdOf(d.id), "failed", text);
+    };
     const replacement = job.replan;
     if (replacement) {
       const { previous, room, skip } = replacement;
@@ -331,10 +337,10 @@ export class Starter extends Part {
       return core.emit(planIdOf(d.id), "failed", EXEC_TEXT.badPlan, r.error);
     }
     // 만드는 사이 진행 중 계획이 기다리기·기기 단계에 들어갔으면 바꾸지 않는다(그 판단은 그 단계 전 관찰이다)
-    if (core.waiting() || (d.source !== "speech" && d.atMs < core.quietFrom)) return core.emit(planIdOf(d.id), "failed", EXEC_TEXT.busy);
+    if (core.waiting() || (d.source !== "speech" && d.atMs < core.quietFrom)) return cancelDraft(EXEC_TEXT.busy);
     if (this.closerNewer(d)) {
       this.ungap(d, job.at);
-      return core.emit(planIdOf(d.id), "failed", EXEC_TEXT.closerNewer);
+      return cancelDraft(EXEC_TEXT.closerNewer);
     }
     // 만드는 사이 진행 중 계획이 손대는 단계에 들어갔으면 바꾸지 않는다(판단 받을 때와 같은 지킴, Codex 79f25b8). 다음 판단에서 다시 짠다
     const context = this.context();
@@ -342,14 +348,15 @@ export class Starter extends Part {
       job.resumedStep !== undefined && job.resumedStep === context.handling);
     if (gate !== "take") {
       this.ungap(d, job.at);
+      if (gate === "defer") this.deferredDrafts.add(d);
       const text = gate === "dock" ? EXEC_TEXT.docking : gate === "request" ? EXEC_TEXT.requestWait
         : context.emergency ? EXEC_TEXT.safetyWait : EXEC_TEXT.handling;
-      return core.emit(planIdOf(d.id), "failed", text);
+      return cancelDraft(text);
     }
     // 만드는 사이 사람이 떠나 목표가 판단을 불렀으면 떠나기 전 판단의 계획은 시작하지 않는다(판단 받을 때와 같은 지킴)
     if (this.beforeLeave(d)) {
       this.ungap(d, job.at);
-      return core.emit(planIdOf(d.id), "failed", EXEC_TEXT.beforeLeave);
+      return cancelDraft(EXEC_TEXT.beforeLeave);
     }
     const open = core.open();
     // 새 계획이 있으면 PlanHub.onDecision이 지금 계획을 취소로 닫고 supersedes를 단다

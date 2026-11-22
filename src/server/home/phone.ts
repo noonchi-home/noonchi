@@ -7,6 +7,7 @@ import { captionOf } from "./act.js";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { PROGRESS_MS } from "../../act/index.js";
+import { REQUEST_TASK } from "../../agent/index.js";
 import type { Body } from "../../bus/index.js";
 import { APPROVE } from "../../act/prompts.js";
 import { EXEC_TEXT } from "../../act/labels.js";
@@ -114,9 +115,8 @@ export function applyPhoneProgress(core: HomeCore, b: Body<"/phone/progress">): 
   const req = b.req;
   const tracker = core.tracker;
   if (core.closed || !tracker) return { req, status: "stale" };
-  if (b.kind === "voice" && core.resumeProactive?.(b.text, req)) {
-    return { req, status: "answer", reply: "알겠어요. 다음 날부터 같은 상황에서 먼저 도울게요." };
-  }
+  const preferenceReply = b.kind === "voice" ? core.resumeProactive?.(b.text, req) : null;
+  if (preferenceReply) return { req, status: "answer", reply: preferenceReply };
   const open = tracker.openCommand();
   const at = b.kind === "voice" && b.at ? { ...b.at, pending: [] } : undefined;
   const before = core.speechOrder;
@@ -182,7 +182,12 @@ export async function startPhone(core: HomeCore): Promise<void> {
       core.talk.inflight++;
       syncPhoneClaims(core);
       try {
+        const remember = core.captureProactiveRequest?.();
         const r = await agent.chat(PHONE_SESSION, text, { heard: true });
+        if (remember) {
+          const tasks = new Set(r.actions.flatMap(a => a.ok && a.tool === REQUEST_TASK && typeof a.args.task === "string" ? [a.args.task] : []));
+          if (tasks.size === 1) remember([...tasks][0]!);
+        }
         return { reply: r.reply, pending: r.pendingConfirmations.map((p) => ({ token: p.token, deviceLabel: p.deviceLabel, reason: p.reason, choices: p.choices })) };
       } finally {
         core.talk.inflight--;

@@ -111,7 +111,8 @@ export class HomeCore {
   phoneNode: BusNode | null = null;
   machineRecorder: BusNode | null = null;
   readonly machines = new HomeMachines();
-  resumeProactive?: (text: string, originId: string) => boolean;
+  resumeProactive?: (text: string, originId: string) => string | null;
+  captureProactiveRequest?: () => ((action: string) => void) | undefined;
   pamHeard = false;
   devicesNode: BusNode | null = null;
   /** 노드가 내는 입력의 차례대로 보내기 줄(실패하면 같은 봉투로 다시, 닫기 전 비운다): 실행 추적(거울 노드)·폰·가전. */
@@ -148,10 +149,10 @@ export class HomeCore {
 
   /** 지금 시각(시험 시계가 있으면 그 시계). */
   nowMs(): number {
-    return this.ctx.brain?.clock?.now() ?? Date.now();
+    return this.ctx.clock?.now() ?? this.ctx.brain?.clock?.now() ?? Date.now();
   }
 
-  /** 노드 시계: 시각은 nowMs(시험 시계가 있으면 그 시계), 타이머는 실제 시계. */
+  /** 집 노드는 재생에서 주입한 공통 시계 또는 실제 시계로 돈다. */
   busClock(): Clock {
     return this.ctx.clock ?? { now: () => this.nowMs(), every: realClock.every, after: realClock.after };
   }

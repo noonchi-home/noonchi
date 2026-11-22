@@ -2,6 +2,11 @@ import { expect, it } from "vitest";
 import type { DecisionRecord } from "../src/contract/events.js";
 import { assistanceReplay } from "./helpers/assistance-replay.js";
 import { planCalls, plannerRespond } from "./helpers/planner.js";
+import { CUP_FSM_MEMORY } from "../src/brain/decision.js";
+import { candidateFsmOf } from "../src/brain/pam/adopt.js";
+import { pamView } from "./helpers/pam.js";
+import { at, evenings, mixedEvenings } from "./fixtures/assistance/evenings.js";
+import { residentStudio, seeResident } from "./fixtures/assistance/resident.js";
 
 it("runs a safe request through the live manager and act nodes without a phone, network device or model", async () => {
   const replay = await assistanceReplay({});
@@ -87,3 +92,68 @@ it("finishes on the oneroom hub's fresh power state without invoking the model o
     expect(replay.network).toEqual([]);
   } finally { await replay.close(); }
 });
+
+it("learns only from recorded answers across evenings and gates a real next-day phone command", async () => {
+  async function play(tape: readonly { day: string; capture: string; arrive: string; answer?: string }[]) {
+    const studio = residentStudio();
+    const planner = plannerRespond({ "에어컨 켜기": () => [planCalls([
+      { kind: "device", label: "에어컨 켜기", target: "ac_1", tool: "turn_on", timeout_s: 60 },
+    ])] });
+    const result: { asks: number; power: unknown; reactions: string[]; policy: string }[] = [];
+    for (const item of tape) {
+      const replay = await assistanceReplay({
+        home: "oneroom", start: at(item.day, "23:29:48"), reflectAt: "23:30", askFirst: true,
+        ...studio,
+        model: {
+          respond: planner,
+          reply: body => {
+            const view = pamView(body);
+            if (view.role === "predict") {
+              if (!view.observation_text.includes("사람 보임")) return JSON.stringify({ observation: "조용함", reasoning: "대기", state: "away", from: "away", next_index: -1 });
+              return JSON.stringify({ observation: "TV 시청", reasoning: "관찰 확인", state: "watching_tv",
+                from: view.last_state === "watching_tv" ? "watching_tv" : "away", next_index: 1 });
+            }
+            return JSON.stringify(view.role === "reflect" ? candidateFsmOf(CUP_FSM_MEMORY) : view.role === "check"
+              ? { ok: true, items: [] } : view.role === "chunk" ? { chunks: [] } : { candidates: [], actions: [], unseen: [] });
+          },
+        },
+      });
+      try {
+        expect(replay.server.hub.get("ac_1")?.twin.power).toBe("off");
+        const seen = at(item.day, item.capture);
+        const arrive = at(item.day, item.arrive);
+        await replay.publish("phone", "/phone/link", { ready: true });
+        for (let offset = 0; offset <= 6000; offset += 2000) {
+          const captured = seen + offset;
+          await replay.advance(arrive + offset);
+          await seeResident(replay, captured);
+        }
+        await replay.advance(arrive + 6_250);
+        const asks = replay.phoneCommands().filter(c => c.type === "command" && c.choices.some(a => a.id === "reject"));
+        if (item.answer) await replay.answer(item.answer);
+        await replay.advance(at(item.day, "23:30:01"));
+        const reflection = () => replay.server.history.list({ day: item.day, kinds: ["reflection"] }).at(-1)?.data;
+        await expect.poll(reflection, { timeout: 3000 }).toMatchObject({ ok: true });
+        const rows = replay.server.history.list({ kinds: ["assistance_outcome"] });
+        if (item.answer) expect(rows.at(-1)?.data).toMatchObject({
+          user: "resident", proof: { evidence: { source: "phone_answer", subjectId: "resident" } },
+        });
+        result.push({
+          asks: new Set(asks.flatMap(c => c.type === "command" ? [c.step] : [])).size,
+          power: replay.server.signals.get("ac_1")?.twin.power,
+          reactions: rows.map(row => (row.data as { reaction: string }).reaction).sort(),
+          policy: replay.server.history.policyFor("oneroom", "resident", { action: "에어컨 켜기", context: JSON.stringify(["state", "watching_tv"]) }, item.day),
+        });
+        expect(replay.network).toEqual([]);
+      } finally { await replay.close(); }
+    }
+    return result;
+  }
+  const refused = await play(evenings);
+  const mixed = await play(mixedEvenings);
+  expect(refused[1]?.reactions).toEqual(["declined", "declined"]);
+  expect(refused[2]).toMatchObject({ policy: "defer_proactive", asks: 0, power: "off" });
+  expect(mixed[1]?.reactions).toEqual(["accepted", "declined"]);
+  // The prior approval authorizes the normal device step without showing the approval again.
+  expect(mixed[2]).toMatchObject({ policy: "default", asks: 0, power: "on" });
+}, 45000);

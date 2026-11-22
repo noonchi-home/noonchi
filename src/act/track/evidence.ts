@@ -3,7 +3,7 @@ import { acceptEvidence, sameAttempt, type Attempt } from "./attempt.js";
 
 export interface EvidencePorts {
   now?(): number;
-  choose(question: EvidenceQuestion, signal: AbortSignal): Promise<EvidenceChoice | null>;
+  choose(question: EvidenceQuestion, signal: AbortSignal): Promise<EvidenceChoice | null> | null;
   acquire(choice: EvidenceChoice, signal: AbortSignal): Promise<{ status: EvidenceStatus; ref?: EvidenceRef } | null>;
 }
 
@@ -54,8 +54,6 @@ export class EvidenceRun {
     if (this.job) return "pending";
     if (this.calls >= 3 || this.total >= 6) return "exhausted";
     if (this.waitFor === origin) return "pending";
-    this.calls++;
-    this.total++;
     const abort = new AbortController();
     const key = this.attempt.key;
     const signal = abort.signal;
@@ -64,8 +62,12 @@ export class EvidenceRun {
       if (!live()) return;
       const previous = this.used.get(origin) ?? [];
       const available = allowed.filter(item => !previous.some(p => sameChoice(p, item)));
-      const choice = await this.ports.choose({ goal, missing, allowed: available, observations: [...this.attempt.evidence],
+      const requested = this.ports.choose({ goal, missing, allowed: available, observations: [...this.attempt.evidence],
         checks: [...this.checks] }, signal);
+      if (!requested) return;
+      this.calls++;
+      this.total++;
+      const choice = await requested;
       if (!live() || !choice || !available.some(a => sameChoice(a, choice))) return;
       if (choice.tool === "stop") { this.stopped = true; return; }
       if (choice.tool === "wait_for_new_photo") { this.waitFor = origin; return; }

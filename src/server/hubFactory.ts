@@ -15,6 +15,7 @@ export type MatterTransport = "network" | "local";
 type Env = Record<string, string | undefined>;
 
 export interface HubFactoryOptions {
+  memoryNow?: () => Date;
   transport?: MatterTransport;
   storageDir?: string;
   /** MatterHub에 그대로 넘길 추가 옵션(port, commissionTimeoutMs, log 등). */
@@ -53,7 +54,7 @@ function pickFactory(mod: Record<string, unknown>): Factory | undefined {
 
 export async function createHub(kind: string, twin: TwinLike, opts: HubFactoryOptions = {}): Promise<CreatedHub> {
   const k = (kind || "memory").trim().toLowerCase();
-  if (k === "memory") return { hub: MemoryHub.fromTwin(twin), kind: "memory" };
+  if (k === "memory") return { hub: MemoryHub.fromTwin(twin, { now: opts.memoryNow }), kind: "memory" };
   if (k !== "matter") throw new Error(`HUB 값은 memory 또는 matter여야 합니다(받은 값: ${kind}).`);
   let mod: Record<string, unknown>;
   try {
@@ -61,7 +62,7 @@ export async function createHub(kind: string, twin: TwinLike, opts: HubFactoryOp
   } catch (e) {
     if (!isMissingModule(e)) throw e;
     return {
-      hub: MemoryHub.fromTwin(twin),
+      hub: MemoryHub.fromTwin(twin, { now: opts.memoryNow }),
       kind: "memory",
       warning: `Matter 허브(src/devices/matter/matterHub.ts)를 불러오지 못해 MemoryHub로 대신합니다: ${(e as Error).message}`,
     };
@@ -75,6 +76,7 @@ export async function createHub(kind: string, twin: TwinLike, opts: HubFactoryOp
 // ── 시작(대체 경로 포함) ───────────────────────────────────
 
 export interface StartHubOptions {
+  memoryNow?: () => Date;
   /** HUB, MATTER_TRANSPORT, MATTER_STORAGE_DIR, MATTER_COMMISSION_TIMEOUT_MS를 읽는다. */
   env?: Env;
   log?: (line: string) => void;
@@ -114,7 +116,7 @@ export async function startHub(twin: TwinLike, opts: StartHubOptions = {}): Prom
   };
 
   const create = (t: MatterTransport) =>
-    createHub(kind, twin, { transport: t, storageDir, importer: opts.importer, matter: { commissionTimeoutMs, ...opts.matter } });
+    createHub(kind, twin, { transport: t, storageDir, importer: opts.importer, memoryNow: opts.memoryNow, matter: { commissionTimeoutMs, ...opts.matter } });
 
   const first = await create(transport);
   if (first.warning) warn(first.warning);
@@ -145,7 +147,7 @@ export async function startHub(twin: TwinLike, opts: StartHubOptions = {}): Prom
     lastError = localError;
   }
   warn(`Matter 허브를 시작하지 못해 MemoryHub로 대신합니다(${errorText(lastError)}).`);
-  const memory = MemoryHub.fromTwin(twin);
+  const memory = MemoryHub.fromTwin(twin, { now: opts.memoryNow });
   await memory.start();
   return { hub: memory, kind: "memory", warnings };
 }

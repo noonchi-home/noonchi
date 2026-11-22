@@ -2,7 +2,7 @@
 // 판단 → 계획(에이전트 계획 모드) → 실행 전 검사 → 실행 추적이 실제 폰에 명령을 낸다. 생각 메시지는 판단 기록 뒤에 따로 만들어 대시보드로 보내고 기록 DB(thought)에 남긴다.
 import { viewerAt } from "../../goal/index.js";
 import { ExecutionTracker, LessonStore, Looker, PlanHub, publishAssistanceOutcome, emitRobotCommand, checkDecision, checkPlan, deviceRunner, lessonsPath, loadActConfig, pamTasks } from "../../act/index.js";
-import { assistanceResident } from "./assistance.js";
+import { assistanceResident, proactiveIntent } from "./assistance.js";
 import { assistanceContext, assistanceOutcome } from "../../contract/assistance-outcome.js";
 import type { Intervention } from "../../brain/index.js";
 import { CALL_ACTION, lookTargets, taskOf, type TaskSpec } from "../../act/tasks.js";
@@ -222,14 +222,45 @@ export function startAct(core: HomeCore): (event: BrainLog) => void {
   const interventionFor = (d: Pick<DecisionRecord, "action" | "source"> & { fsm?: { from: string | null } | null }, w: WorldView): Intervention =>
     d.source === "speech" || !d.action ? "default"
       : history.db.policyFor(home.id, policyResident(w), { action: d.action, context: assistanceContext(d, w) }, history.db.dayOf(now()));
-  core.resumeProactive = (text, originId) => {
-    const action = /^(?:앞으로|다음부터) 먼저 (.+) 해 ?주세요[.!]?$/.exec(text.trim())?.[1];
-    if (!action || !taskOf(action)) return false;
+  const preferenceScope = () => {
     const world = view();
     const user = observedResident(world);
     const state = decide.habit()?.state ?? null;
     const context = assistanceContext({ fsm: { from: state } }, world);
-    return !!user && !!context && history.db.recordInterventionPreference({ home: home.id, user, action, context, atMs: now(), originId });
+    return user && context ? { user, context, since: world.person.since_ms } : null;
+  };
+  type Scope = NonNullable<ReturnType<typeof preferenceScope>>;
+  const sameScope = (a: Scope, b: Scope | null) => b && a.user === b.user && a.context === b.context && a.since === b.since;
+  const followupMs = 30_000;
+  let voiceTurn = 0;
+  let lastRequest: { scope: Scope; action: string; at: number } | null = null;
+  core.captureProactiveRequest = () => {
+    const scope = preferenceScope();
+    if (!scope) return;
+    const at = now();
+    const turn = voiceTurn;
+    return action => {
+      if (turn === voiceTurn && now() - at <= followupMs && sameScope(scope, preferenceScope())) {
+        lastRequest = { scope, action, at };
+      }
+    };
+  };
+  core.resumeProactive = (text, originId) => {
+    voiceTurn++;
+    const previous = lastRequest;
+    lastRequest = null;
+    const intent = proactiveIntent(text);
+    if (!intent) return null;
+    if (intent.kind === "decline") return "지금 설정을 유지할게요.";
+    const scope = preferenceScope();
+    const atMs = now();
+    const action = intent.kind === "named" ? intent.action
+      : previous && atMs >= previous.at && atMs - previous.at <= followupMs && sameScope(previous.scope, scope) ? previous.action : null;
+    if (!action) return "어떤 일을 먼저 도와드리면 될까요?";
+    if (scope && history.db.recordInterventionPreference({ home: home.id, user: scope.user, action, context: scope.context, atMs, originId })) {
+      return "알겠어요. 다음 날부터 같은 상황에서 먼저 도울게요.";
+    }
+    return "지금 설정을 유지할게요.";
   };
   const discardLeftover = (world: WorldView) => answers.allowDiscard(home.id, resident(world));
   const planCtx = (d: DecisionRecord, task: TaskSpec, world: WorldView, ahead?: PlanAhead): PlanContext => ({
@@ -298,7 +329,7 @@ export function startAct(core: HomeCore): (event: BrainLog) => void {
       cropVisible: id => !!core.looker?.evidenceSpot(id),
       evidence: {
         now,
-        choose: (question, signal) => core.looker?.chooseEvidence(question, signal) ?? Promise.resolve(null),
+        choose: (question, signal) => core.looker?.chooseEvidence(question, signal) ?? null,
         acquire: async (choice, signal) => {
           if (!("target" in choice) || signal.aborted) return null;
           const id = choice.target;

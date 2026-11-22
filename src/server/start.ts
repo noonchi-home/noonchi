@@ -196,6 +196,7 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
     // 반성 사건은 지금 집의 대시보드로 보내고 집 묶음에도 넘긴다(말풍선 카드가 배운 습관을 말한다)
     const job = runReflection(db, pam, day, {
       signal: life ? AbortSignal.any([life, closing.signal]) : closing.signal, log,
+      now: opts.clock ? () => opts.clock!.now() : undefined,
       // 시각 찾기·검사 결과 사본: runtime/homes/<집>/habit
       ...(current ? { dir: join(runtimeDir, "homes", current.twin.home.id, "habit") } : {}),
       emit: (event) => {
@@ -506,7 +507,7 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
   clean();
   const cleaner = setInterval(clean, 3_600_000);
   cleaner.unref?.();
-  const night = reflectAt ? new NightReflection({ bus, boot, at: reflectAt, offsetMinutes: db.offsetMinutes, run: reflect }) : null;
+  const night = reflectAt ? new NightReflection({ bus, boot, at: reflectAt, offsetMinutes: db.offsetMinutes, clock: opts.clock, run: reflect }) : null;
   await night?.start();
   if (reflectAt) log(`반성: 매일 ${reflectAt}`);
   const live = () => current ?? last;
