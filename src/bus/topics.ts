@@ -7,6 +7,7 @@ import { PHOTO_MAX_RMS_PX, PHOTO_MIN_MATCHES } from "../shared/photo-alignment.j
 import { CHECK_TEXT } from "../act/labels.js";
 import { ConditionSchema } from "../world/condition-schema.js";
 import type { DecisionRecord } from "../contract/events.js";
+import type { AssistanceOutcome } from "../contract/assistance-outcome.js";
 import type { PlanAhead, PlanResult } from "../contract/plan-work.js";
 import type { WorldObject } from "../contract/world.js";
 import type { DeviceState } from "../contract/devices.js";
@@ -322,6 +323,20 @@ const localized = photoRequest.extend({
   ? r.yaw_deg===null && r.pitch_deg===null && r.confidence===0 && r.matches===0 && r.rms_px===null && r.ar_gap_m===null && r.ar_gap_deg===null
   : r.yaw_deg!==null && r.pitch_deg!==null && r.confidence>=.23 && r.matches>=PHOTO_MIN_MATCHES && r.rms_px!==null && r.rms_px<=PHOTO_MAX_RMS_PX && r.map_rev!==null &&
     (r.ar_gap_m===null)===(r.ar_gap_deg===null));
+const identity = z.string().min(1);
+const attemptKey = z.strictObject({ boot: identity, homeEpoch: identity, attemptId: identity, gen: z.int().nonnegative() });
+const assistanceProof = z.strictObject({
+  key: attemptKey, home: identity, user: identity,
+  kind: z.enum(["explicit_accept", "explicit_decline", "confirmed_handoff", "self_resolved"]),
+  evidence: z.strictObject({ source: identity, subjectId: identity, observedMs: z.number(), originId: identity }),
+});
+const assistanceOutcome = z.strictObject({
+  key: attemptKey, home: identity, user: identity.nullable(), action: identity, context: identity.nullable(),
+  request: z.enum(["direct", "proactive"]), startedMs: z.number(), endedMs: z.number(),
+  execution: z.enum(["done", "cancelled", "failed"]), reaction: z.enum(["unknown", "accepted", "declined", "self_resolved"]),
+  proof: assistanceProof.nullable(),
+}) satisfies z.ZodType<AssistanceOutcome>;
+
 export const TOPICS = {
   "/perception/localize": {qos:{kind:"reliable"}, body:photoRequest, key:by("frame_id"), order:null, from:["perception"]},
   "/perception/localized": {qos:{kind:"reliable"}, body:localized, key:by("frame_id"), order:null, from:["localize"]},
@@ -378,6 +393,10 @@ export const TOPICS = {
   "/act/plan": { qos: { kind: "state" }, body: z.strictObject({ plan: wirePlan.nullable() }), key: one, order: "stamp", from: ["act"] },
   "/act/status": { qos: { kind: "state" }, body: actStatus, key: one, order: "stamp", from: ["act"] },
   "/act/log": { qos: { kind: "reliable" }, body: actLog, key: one, order: "stamp", from: ["act"] },
+  "/act/assistance_outcome": { qos: { kind: "reliable" }, body: assistanceOutcome, key: (b: Record<string, unknown>) => {
+    const key = b.key as AssistanceOutcome["key"];
+    return JSON.stringify([b.home, key.boot, key.homeEpoch, key.attemptId]);
+  }, order: null, from: ["act"] },
   "/act/phone_changes": { qos: { kind: "reliable" }, body: z.union([phoneCommand, z.strictObject({ plan: wirePlan.nullable() }), z.strictObject({ status: actStatus })]), key: one, order: "stamp", from: ["act"] },
   "/act/phone_command": { qos: { kind: "state" }, body: phoneCommand, key: one, order: "stamp", from: ["act"] },
   "/phone/claim": { qos: { kind: "state" }, body: phoneClaim, key: by("claim_id"), order: "stamp", from: ["act", "phone"] },

@@ -2,7 +2,8 @@ import { GOAL_LOG } from "../act/labels.js";
 import type { HistoryDb } from "../brain/index.js";
 import type { ManagerState, RobotState, SafetyState } from "../contract/machines.js";
 import type { PendingGoal } from "../contract/goal.js";
-import type { Envelope, TopicName } from "../bus/index.js";
+import type { Body, Envelope, TopicName } from "../bus/index.js";
+import { assistanceOutcome } from "../contract/assistance-outcome.js";
 
 /** 목표 전환 한 줄: 바로 앞 상태(같은 목표)와 견줘 무엇이 바뀌었는지(세움·미리 만들기·사람 떠남·씀·버림). */
 function goalLine(prev: PendingGoal | null, g: PendingGoal): string {
@@ -35,6 +36,11 @@ export function machineWrites(db: HistoryDb) {
   const oldGoal = goalRecorder(db);
   let phoneStep = "";
   return {
+    "/act/assistance_outcome": (body, _stamp, header) => {
+      const outcome = body as Body<"/act/assistance_outcome">;
+      if (outcome.key.boot !== header.boot || outcome.key.homeEpoch !== header.home || outcome.endedMs < outcome.startedMs) return;
+      db.recordAssistanceOutcome(assistanceOutcome(outcome, outcome.execution, outcome.endedMs, outcome.proof ? [outcome.proof] : []));
+    },
     // 집 사진 하나에 한 줄(시각 = 그 VLM 답이 집 상태에 들어간 때): 실영상 시나리오 판정이 사진을 하나도 건너뛰지 않고 매긴다(scripts/scenario1-live.ts)
     "/world/household_photo": (b, stamp, header) => {
       const photo = b.photo as import("../contract/world.js").HouseholdPhoto;

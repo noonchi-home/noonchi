@@ -6,12 +6,13 @@ import { dirname } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { CupAnswers } from "./cup-answer.js";
 import type { DecisionRow, HistoryKind, HistoryRow } from "../../contract/history.js";
+import type { AssistanceOutcome } from "../../contract/assistance-outcome.js";
 
 export type { DecisionRow, HistoryKind, HistoryRow } from "../../contract/history.js";
 
 /** 기록 종류 전부(GET /api/history의 kinds 검사). */
 export const HISTORY_KINDS: readonly HistoryKind[] = [
-  "device", "detection", "vlm", "yolo", "world", "pam_text", "mode", "decision", "plan", "execution", "reflection", "feedback", "photo", "link", "trigger", "look", "thought", "service", "bus_gap", "goal", "planner", "person", "robot", "safety", "manager", "household", "help",
+  "device", "detection", "vlm", "yolo", "world", "pam_text", "mode", "decision", "plan", "execution", "reflection", "feedback", "photo", "link", "trigger", "look", "thought", "service", "bus_gap", "goal", "planner", "person", "robot", "safety", "manager", "household", "help", "assistance_outcome",
 ];
 
 const SCHEMA = `
@@ -25,6 +26,8 @@ CREATE TABLE IF NOT EXISTS memories (version INTEGER PRIMARY KEY, created_ms INT
 CREATE TABLE IF NOT EXISTS photos (id TEXT PRIMARY KEY, at_ms INTEGER NOT NULL, path TEXT NOT NULL, origin TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS bus_seen (topic TEXT NOT NULL, grp TEXT NOT NULL, msg_key TEXT NOT NULL, msg TEXT NOT NULL, boot TEXT NOT NULL, PRIMARY KEY (topic, grp, msg_key, msg));
 CREATE TABLE IF NOT EXISTS device_last (id TEXT PRIMARY KEY, twin TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS assistance_seen (home TEXT NOT NULL, boot TEXT NOT NULL, home_epoch TEXT NOT NULL, attempt_id TEXT NOT NULL, PRIMARY KEY (home, boot, home_epoch, attempt_id));
+CREATE INDEX IF NOT EXISTS idx_assistance_outcome_day ON events(day, at_ms) WHERE kind = 'assistance_outcome';
 CREATE TABLE IF NOT EXISTS cup_answers (
   home TEXT NOT NULL, resident TEXT NOT NULL, discard_leftover_cup INTEGER NOT NULL CHECK(discard_leftover_cup IN (0,1)),
   single_demo INTEGER NOT NULL DEFAULT 0 CHECK(single_demo IN (0,1)), PRIMARY KEY(home, resident)
@@ -263,6 +266,14 @@ export class HistoryDb {
       this.db.exec("ROLLBACK");
       throw e;
     }
+  }
+
+  /** Called inside the recorder's envelope transaction, before it acknowledges delivery. */
+  recordAssistanceOutcome(outcome: AssistanceOutcome): void {
+    const added = this.db.prepare("INSERT INTO assistance_seen(home, boot, home_epoch, attempt_id) VALUES (?, ?, ?, ?) ON CONFLICT DO NOTHING")
+      .run(outcome.home, outcome.key.boot, outcome.key.homeEpoch, outcome.key.attemptId).changes;
+    if (added) this.add("assistance_outcome", outcome.endedMs, `${outcome.action} · ${outcome.execution} · ${outcome.reaction}`,
+      { subject: outcome.key.attemptId, data: outcome });
   }
 
   /** 메시지 하나를 한 번만 쓴다: 처리표에 넣고 write(같은 연결의 add 등)를 한 트랜잭션으로. 이미 처리했으면 쓰지 않고 false.
