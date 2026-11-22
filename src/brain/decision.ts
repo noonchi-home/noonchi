@@ -4,7 +4,7 @@
 // 검사 메시지는 PAM 원문(영어)과 같게 두어 두 쪽 기록을 대조하기 쉽게 한다.
 
 import type { CandidateFsm, Ctx, Prediction, FsmStep } from "../contract/pam.js";
-import { ctxOverlap, DOW_COUNT, SLOT_COUNT } from "./ctx.js";
+import { ctxKey, ctxOverlap, DOW_COUNT, SLOT_COUNT } from "./ctx.js";
 import { PAM_TEXT_MAX } from "../world/browser.js";
 import { STATES } from "../world/vocab.js";
 import { TASKS, TASK_NAMES } from "../act/tasks.js";
@@ -129,9 +129,9 @@ function validateFsm(value: Json): FsmMemory {
       if (owner.has(v)) throw new ContractError(`${p}.activity[${j}]: activity ${pyRepr(v)} is in two states`);
       owner.set(v, id);
     });
-    // (사건, 조건)마다 이미 본 맥락: 맥락 없는 화살표는 하나까지, 맥락 있는 화살표끼리는 겹치지 않아야 한다.
-    // 맥락 없는 화살표와 맥락 있는 화살표는 함께 둔다(맥락이 맞는 때는 맥락 있는 쪽이 이긴다. 예: 배우기 전의 묻기 + 토요일에만 배운 행동).
-    const seen = new Map<string, (Ctx | null)[]>();
+    // (사건, 조건)마다 이미 본 화살표의 맥락·행동: 맥락 없는 화살표는 하나까지, 맥락이 똑같은 화살표는 둘 못 두고, 겹치는 맥락은 행동이 같을 때만 둔다
+    // (겹치는 곳에서도 결과가 같아 모호하지 않다). 맥락 없는 화살표와 맥락 있는 화살표는 함께 둔다(맥락이 맞는 때는 맥락 있는 쪽이 이긴다. 예: 배우기 전의 묻기 + 토요일에만 배운 행동).
+    const seen = new Map<string, { ctx: Ctx | null; action: string | null }[]>();
     array(s.next, `${p}.next`).forEach((e, j) => {
       const ep = `${p}.next[${j}]`;
       const edge = objectWith(e, ["to", "on"], ["when", "action", "ctx"], ep);
@@ -139,11 +139,13 @@ function validateFsm(value: Json): FsmMemory {
       const on = text(edge.on, `${ep}.on`);
       const when = "when" in edge ? text(edge.when, `${ep}.when`) : null;
       const ctx = "ctx" in edge ? parseCtx(edge.ctx, `${ep}.ctx`) : null;
+      const action = "action" in edge ? text(edge.action, `${ep}.action`) : null;
       const key = JSON.stringify([on, when]);
       const before = seen.get(key) ?? [];
-      if (before.some((c) => (c === null && ctx === null) || (c !== null && ctx !== null && ctxOverlap(c, ctx)))) throw new ContractError(`${ep}: duplicate transition (on, when) in state ${pyRepr(id)}`);
-      seen.set(key, [...before, ctx]);
-      const action = "action" in edge ? text(edge.action, `${ep}.action`) : null;
+      const clash = before.some((b) => (b.ctx === null && ctx === null)
+        || (b.ctx !== null && ctx !== null && (ctxKey(b.ctx) === ctxKey(ctx) || (ctxOverlap(b.ctx, ctx) && b.action !== action))));
+      if (clash) throw new ContractError(`${ep}: duplicate transition (on, when) in state ${pyRepr(id)}`);
+      seen.set(key, [...before, { ctx, action }]);
       if (ctx !== null && action === null) throw new ContractError(`${ep}.ctx: a context needs an action`);
       if (action !== null && !isAction(action)) throw new ContractError(`${ep}.action: ${pyRepr(action)} is not an action in the task list (no action means no transition)`);
       if (to === ANY_STATE && action === null) throw new ContractError(`${ep}.to: '*' needs an action`);

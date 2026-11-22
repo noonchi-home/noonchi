@@ -293,3 +293,49 @@ describe("밤 흐름: 채택 검사", () => {
     }
   });
 });
+
+// 2026-11-22 사용자 결정: 규칙에 요일·시각 맥락을 붙인다(맥락 없음 → 하나 → 둘). 4주 동안 매일 떠나지만 「치워 주세요」는 토요일에만 한다.
+describe("밤 흐름: 맥락 규칙", () => {
+  const dayOf = (i: number) => new Date(Date.UTC(2026, 9, 12 + i)).toISOString().slice(0, 10);   // 2026-10-12는 월요일
+  async function record(weeks: number) {
+    const pam = await fake();
+    const db = HistoryDb.open(":memory:");
+    const days = Array.from({ length: weeks * 7 }, (_, i) => dayOf(i));
+    days.forEach((d, i) => leaveAndAnswer(db, d, "08:00:00", "08:01:30", i % 7 === 5 ? "clear" : "keep"));
+    return { pam, db, days };
+  }
+  it("맥락 없이는 4/28(14%)로 떨어지고 토요일 맥락(4번 중 4번)이 통과해, 묻기 화살표는 두고 토요일에만 컵 치우기 화살표가 생긴다", async () => {
+    const { pam, db, days } = await record(4);
+    try {
+      const res = await runNight(db, pamClientFor(pam), days.at(-1)!, { dir: tmp() });
+      expect(res.ok).toBe(true);
+      const r = res as Extract<NightResult, { ok: true }>;
+      expect(r.checks).toHaveLength(1);
+      expect(r.checks[0]).toMatchObject({ n: 28, k: 4, passed: true });
+      expect(r.checks[0]!.ctx_rules).toHaveLength(1);
+      expect(r.checks[0]!.ctx_rules![0]).toMatchObject({ ctx: { dow: 5 }, n: 4, k: 4 });
+      expect(r.passed).toEqual([{ state: "drinking", action: "컵 치우기", on: LEAVE_ON, ctx: [{ dow: 5 }] }]);
+      expect(r.learned).toEqual([{ from: "drinking", to: "*", on: LEAVE_ON, when: null, action: "컵 치우기", ctx: { dow: 5 } }]);
+      // 저장된 로봇 FSM: 묻기 화살표(맥락 없음)는 그대로이고 토요일 화살표가 끝에 있다
+      const saved = memoryForDay(db, r.appliesDay) as { memory: FsmMemory } | FsmMemory;
+      const memory = ("memory" in saved ? saved.memory : saved) as FsmMemory;
+      const drink = memory.states.find((s) => s.id === "drinking")!;
+      expect(drink.next[0]).toEqual({ to: "*", on: LEAVE_ON, action: "사용자에게 물어보기" });
+      expect(drink.next.at(-1)).toEqual({ to: "*", on: LEAVE_ON, action: "컵 치우기", ctx: { dow: 5 } });
+    } finally {
+      await pam.close();
+    }
+  });
+  it("토요일 3번(3주)은 겨우 통과하고 2주는 통과하지 못한다(우연일 확률 0.0029, 0.020)", async () => {
+    for (const [weeks, want] of [[3, true], [2, false]] as const) {
+      const { pam, db, days } = await record(weeks);
+      try {
+        const r = (await runNight(db, pamClientFor(pam), days.at(-1)!, { dir: tmp() })) as Extract<NightResult, { ok: true }>;
+        expect(r.checks[0]!.passed, `${weeks}주`).toBe(want);
+        expect(r.learned.length).toBe(want ? 1 : 0);
+      } finally {
+        await pam.close();
+      }
+    }
+  });
+});

@@ -158,7 +158,7 @@ describe("화살표 맥락(ctx) 칸", () => {
     expect(validateMemory(CUP_FSM_MEMORY, "fsm")).toBe(CUP_FSM_MEMORY);
   });
   // base()의 drinking.next[0]은 맥락 없는 「묻기」 화살표다. 같은 (사건·조건)에 맥락 있는 행동 화살표를 더해도 된다(맥락이 맞는 때는 맥락 있는 쪽이 이긴다. 5단계)
-  it("같은 (사건·조건)에서 맥락 없는 화살표는 하나까지, 맥락 있는 화살표끼리는 겹치지 않아야 한다", () => {
+  it("같은 (사건·조건)에서 맥락 없는 화살표는 하나까지, 맥락이 똑같은 화살표는 둘 못 두고, 겹치는 맥락은 행동이 같을 때만 허용한다", () => {
     const ok = base(); drink(ok).next.push(edge(ok, { dow: 5 }), edge(ok, { dow: 6 }));          // 토요일·일요일 + 맥락 없는 묻기
     expect(validateMemory(ok, "fsm")).toBe(ok);
     const slots = base(); drink(slots).next.push(edge(slots, { slot: 2 }), edge(slots, { slot: 6 }));   // 6~9시·18~21시
@@ -167,8 +167,10 @@ describe("화살표 맥락(ctx) 칸", () => {
     expect(validateMemory(split, "fsm")).toBe(split);
     const same = base(); drink(same).next.push(edge(same, { dow: 5 }), edge(same, { dow: 5 }));
     expect(() => validateMemory(same, "fsm")).toThrow(/duplicate transition/);
-    const cross = base(); drink(cross).next.push(edge(cross, { dow: 5 }), edge(cross, { slot: 6 }));   // 토요일 18~21시에 둘 다 맞는다
-    expect(() => validateMemory(cross, "fsm")).toThrow(/duplicate transition/);
+    const cross = base(); drink(cross).next.push(edge(cross, { dow: 5 }), edge(cross, { slot: 6 }));   // 토요일 18~21시에 둘 다 맞지만 행동이 같아 결과가 같다
+    expect(validateMemory(cross, "fsm")).toBe(cross);
+    const clash = base(); drink(clash).next.push(edge(clash, { dow: 5 }), { ...edge(clash, { slot: 6 }), action: "에어컨 켜기" });   // 겹치는데 행동이 다르면 모호하다
+    expect(() => validateMemory(clash, "fsm")).toThrow(/duplicate transition/);
     const loose = base(); drink(loose).next.push(edge(loose));                                  // 맥락 없는 화살표가 둘
     expect(() => validateMemory(loose, "fsm")).toThrow(/duplicate transition/);
   });

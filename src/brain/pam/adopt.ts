@@ -6,7 +6,7 @@
 // 다른 때 비율은 후보 창에 닿지 않고 안 보인 구간과 겹치지 않는 창 길이 칸 가운데 행동이 든 칸의 몫이다.
 // 로봇 FSM 만들기(adoptedFsm)는 석준 님 predictor_fsm을 사람 상태 FSM 화살표로 옮긴 것이다: 통과 후보마다 화살표 하나(PAM 답이 화살표 번호로 가리킨다).
 import type { Candidate, CandidateFsm, Ctx } from "../../contract/pam.js";
-import { ctxMatches, dowOfDay, slotOf, DOW_COUNT, SLOT_COUNT } from "../ctx.js";
+import { ctxKey, ctxMatches, dowOfDay, slotOf, DOW_COUNT, SLOT_COUNT } from "../ctx.js";
 import { ASK_ACTION, LEARNED_ACTIONS } from "../../act/tasks.js";
 import { edgeLearned, validateMemory, type FsmEdge, type FsmMemory, type FsmState } from "../decision.js";
 
@@ -134,8 +134,9 @@ export const adoptKey = (state: string, action: string, c: Candidate) => JSON.st
 const trig = (on: string, when?: string | null) => JSON.stringify([on, when ?? null]);
 
 /** 로봇 FSM: seed 상태는 seed 화살표 차례 그대로(사용자가 정한 습관은 늘), 통과한 배우는 행동 후보가 같은 트리거의 묻기(또는 행동 없는) 화살표를
- *  그 자리에서 바꾸고, 새 트리거면 끝에 더한다. 사용자가 정한 습관 자리와 트리거가 같은 후보·배우는 행동이 아닌 후보는 넣지 않는다. 후보 FSM은 바꾸지 않는다. */
-export function adoptedFsm(c: CandidateFsm, passed: ReadonlySet<string>, seed: FsmMemory): FsmMemory {
+ *  그 자리에서 바꾸고, 새 트리거면 끝에 더한다. 사용자가 정한 습관 자리와 트리거가 같은 후보·배우는 행동이 아닌 후보는 넣지 않는다. 후보 FSM은 바꾸지 않는다.
+ *  ctxs: 통과한 후보(adoptKey)마다 맥락 목록(findRules). 있으면 맥락 없는 화살표를 바꾸지 않고(다른 때는 그대로 묻는다) 맥락마다 맥락 있는 행동 화살표를 끝에 더한다. */
+export function adoptedFsm(c: CandidateFsm, passed: ReadonlySet<string>, seed: FsmMemory, ctxs?: ReadonlyMap<string, readonly Ctx[]>): FsmMemory {
   const states: FsmState[] = c.states.map((s) => {
     const own = seed.states.find((x) => x.id === s.id);
     const next: FsmEdge[] = own ? own.next.map((e) => ({ ...e })) : [];
@@ -143,9 +144,17 @@ export function adoptedFsm(c: CandidateFsm, passed: ReadonlySet<string>, seed: F
     for (const r of s.rules) {
       if (!LEARNED_ACTIONS.includes(r.action)) continue;
       for (const cand of r.candidates) {
-        if (!passed.has(adoptKey(s.id, r.action, cand))) continue;
+        const key = adoptKey(s.id, r.action, cand);
+        if (!passed.has(key)) continue;
         const edge: FsmEdge = { to: r.to, on: cand.on, ...(cand.when ? { when: cand.when } : {}), action: r.action };
-        const at = next.findIndex((x) => trig(x.on, x.when) === trig(cand.on, cand.when));
+        const contexts = ctxs?.get(key) ?? [];
+        if (contexts.length) {
+          const at = next.findIndex((x) => trig(x.on, x.when) === trig(cand.on, cand.when) && !x.ctx);
+          if (at !== -1 && next[at]!.action && next[at]!.action !== ASK_ACTION) continue;   // 사용자가 정한 습관 자리와 같은 트리거
+          for (const ctx of contexts) if (!next.some((x) => x.ctx && x.action === r.action && trig(x.on, x.when) === trig(cand.on, cand.when) && ctxKey(x.ctx) === ctxKey(ctx))) next.push({ ...edge, ctx });
+          continue;
+        }
+        const at = next.findIndex((x) => trig(x.on, x.when) === trig(cand.on, cand.when) && !x.ctx);
         if (at === -1) next.push(edge);
         else if (!next[at]!.action || next[at]!.action === ASK_ACTION) next[at] = edge;
       }
@@ -168,7 +177,8 @@ export function candidateFsmOf(m: FsmMemory): CandidateFsm {
         if (!e.action || !edgeLearned(s.id, e)) continue;
         const cand: Candidate = { on: e.on, ...(e.when ? { when: e.when } : {}) };
         const same = rules.find((r) => r.to === e.to && r.action === e.action);
-        if (same) same.candidates.push(cand);
+        // 맥락만 다른 화살표(토요일·일요일)는 후보로는 같은 트리거이므로 한 번만 넣는다(후보는 서로 달라야 한다)
+        if (same) { if (!same.candidates.some((x) => x.on === cand.on && (x.when ?? null) === (cand.when ?? null))) same.candidates.push(cand); }
         else rules.push({ to: e.to, action: e.action, candidates: [cand] });
       }
       return { id: s.id, description: s.description, activity: [...s.activity], next: s.next.filter((e) => !e.action).map(({ to, on }) => ({ to, on })), rules };

@@ -3,7 +3,7 @@
 //    사용자가 정한 습관 화살표(물 채우기·콜라·에어컨·코치)는 로봇 FSM을 만들 때(src/brain/pam/adopt.ts adoptedFsm) seed에서 가져와 지킨다.
 // 2) HabitFilter: 습관 거르기 자리. 로봇 FSM에 들 배운 화살표를 뺄 수만 있다(정한 습관 화살표는 바꾸지 못한다). 기본은 모두 두는 keepAll.
 import { LEARNED_ACTIONS, TASKS } from "../../act/tasks.js";
-import type { CandidateFsm } from "../../contract/pam.js";
+import type { CandidateFsm, Ctx } from "../../contract/pam.js";
 import type { FsmMemory } from "../decision.js";
 import type { HistoryRow } from "../../contract/history.js";
 
@@ -22,12 +22,13 @@ export interface HabitRuleNote {
 export interface HabitOutput { memory: FsmMemory; notes: HabitRuleNote[] }
 export type HabitFilter = (i: HabitInput) => HabitOutput | Promise<HabitOutput>;
 
-/** 행동 있는 화살표 한 줄(출발·도착·사건·조건·행동). */
-export interface EdgeLine { from: string; to: string; on: string; when: string | null; action: string }
+/** 행동 있는 화살표 한 줄(출발·도착·사건·조건·행동, 있으면 요일·시각 맥락). */
+export interface EdgeLine { from: string; to: string; on: string; when: string | null; action: string; ctx?: Ctx }
 
 const isCoach = (action: string) => TASKS[action]?.coach === true;
-export const edgeKey = (e: EdgeLine) => JSON.stringify([e.from, e.to, e.on, e.when, e.action]);
-const linesOf = (m: FsmMemory): EdgeLine[] => m.states.flatMap((s) => s.next.filter((e) => e.action).map((e) => ({ from: s.id, to: e.to, on: e.on, when: e.when ?? null, action: e.action! })));
+/** 맥락이 없으면 예전과 같은 열쇠이고, 있으면 맥락이 달라야 다른 화살표다. */
+export const edgeKey = (e: EdgeLine) => JSON.stringify([e.from, e.to, e.on, e.when, e.action, ...(e.ctx ? [e.ctx] : [])]);
+const linesOf = (m: FsmMemory): EdgeLine[] => m.states.flatMap((s) => s.next.filter((e) => e.action).map((e) => ({ from: s.id, to: e.to, on: e.on, when: e.when ?? null, action: e.action!, ...(e.ctx ? { ctx: e.ctx } : {}) })));
 
 /** proposed에만 있는 행동 화살표. */
 export function learnedEdges(previous: FsmMemory, proposed: FsmMemory): EdgeLine[] {

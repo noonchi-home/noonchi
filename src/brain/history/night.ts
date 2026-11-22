@@ -14,7 +14,8 @@ import type { BrainLog, PamUsage } from "../../contract/events.js";
 import type { CandidateFsm } from "../../contract/pam.js";
 import { CUP_FSM_MEMORY, ContractError, MAX_REFLECT_TEXT, validateMemory, type FsmMemory } from "../decision.js";
 import { candidateText, type PamClient } from "../pam/index.js";
-import { adoptKey, adoptedFsm, candidateFsmOf, checkCandidate, type CheckDay, type CheckResult } from "../pam/adopt.js";
+import { adoptKey, adoptedFsm, candidateFsmOf, findRules, type CtxDay, type CheckResult } from "../pam/adopt.js";
+import type { Ctx } from "../../contract/pam.js";
 import { clock, type Chunk, type Marks } from "../pam/marks.js";
 import { headWithin } from "../../shared/cut.js";
 import type { HistoryDb } from "./db.js";
@@ -149,10 +150,12 @@ export interface NightOptions {
   writeFile?: (path: string, text: string) => void;
   log?: (line: string) => void;
 }
-export type NightCheck = CheckResult & { state: string; action: string; on: string; when: string | null };
+/** 후보 하나의 채택 검사 결과. n·k·rate…는 맥락 없는 검사 숫자다. 맥락 없이 통과하지 못해도 요일·시각 맥락이 통과하면 ctx_rules에 맥락마다 숫자가 있고 passed가 true다
+ *  (src/brain/pam/adopt.ts findRules: 맥락 없음 → 하나 → 둘). */
+export type NightCheck = CheckResult & { state: string; action: string; on: string; when: string | null; ctx_rules?: { ctx: Ctx; n: number; k: number; rate: number; base_rate: number; p_value: number }[] };
 /** 밤 흐름 결과. ok면 새 로봇 판본(version)·적용일·배운·쓰는 화살표·뺀 후보도 있다. */
 export type NightResult =
-  | { ok: true; version: number; appliesDay: string; learned: EdgeLine[]; active: EdgeLine[]; dropped: HabitRuleNote[]; passed: { state: string; action: string; on: string; when?: string }[]; checks: NightCheck[] }
+  | { ok: true; version: number; appliesDay: string; learned: EdgeLine[]; active: EdgeLine[]; dropped: HabitRuleNote[]; passed: { state: string; action: string; on: string; when?: string; ctx?: Ctx[] }[]; checks: NightCheck[] }
   | { ok: false; error: string; empty?: true; passed: []; checks: [] };
 
 export async function runNight(db: HistoryDb, pam: PamClient, day: string, o: NightOptions = {}): Promise<NightResult> {
@@ -311,7 +314,7 @@ export async function runNight(db: HistoryDb, pam: PamClient, day: string, o: Ni
     }
     // 4) 채택 검사(지난 날을 모두 모아 다시 센다)
     const checks: NightCheck[] = rules.map((r) => {
-      const perDay: CheckDay[] = days.flatMap((d) => {
+      const perDay: CtxDay[] = days.flatMap((d) => {
         const dl = linesOf(d);
         const m = marksOf(d);
         // 시각 찾기가 실패한 날(그 후보·행동 시각이 없음)은 셈에 넣지 않는다
@@ -323,6 +326,7 @@ export async function runNight(db: HistoryDb, pam: PamClient, day: string, o: Ni
         const byRobot = (a: number) => robot.some(([s, e]) => s <= a && a <= e);
         const times = dl.map((l) => sec(l.time));
         return [{
+          date: d,
           start: times[0]!, end: times.at(-1)! + 1,
           candidate: (m.candidates[markKey(r.state, candidateText(r.cand))] ?? []).map(sec),
           action: [...(m.actions[r.action] ?? []).map(sec).filter((a) => !byRobot(a)), ...asked],
@@ -330,11 +334,16 @@ export async function runNight(db: HistoryDb, pam: PamClient, day: string, o: Ni
           answered: answerTimes(db, d, r.action),
         }];
       });
-      return { ...checkCandidate(perDay), state: r.state, action: r.action, on: r.cand.on, when: r.cand.when ?? null };
+      // 맥락 없음 → 하나 → 둘(요일·3시간 칸): 첫 줄이 맥락 없는 검사이고 통과하지 못하면 맥락 규칙이 이어진다
+      const [plain, ...withCtx] = findRules(perDay);
+      const { ctx: _none, ...base } = plain!;
+      const ctxRules = withCtx.map((x) => ({ ctx: x.ctx!, n: x.n, k: x.k, rate: x.rate, base_rate: x.base_rate, p_value: x.p_value }));
+      return { ...base, passed: base.passed || ctxRules.length > 0, state: r.state, action: r.action, on: r.cand.on, when: r.cand.when ?? null, ...(ctxRules.length ? { ctx_rules: ctxRules } : {}) };
     });
+    const ctxOf = new Map<string, Ctx[]>(checks.flatMap((c) => (c.ctx_rules?.length ? [[adoptKey(c.state, c.action, { on: c.on, ...(c.when ? { when: c.when } : {}) }), c.ctx_rules.map((x) => x.ctx)] as const] : [])));
     let passed = new Set(checks.filter((c) => c.passed).map((c) => adoptKey(c.state, c.action, { on: c.on, ...(c.when ? { when: c.when } : {}) })));
-    // 5) 로봇 FSM(seed 화살표 + 통과한 배우는 행동 후보) → 습관 거르기(배운 화살표만 뺄 수 있음) → 코드 검사
-    let robot = adoptedFsm(candidates, passed, CUP_FSM_MEMORY);
+    // 5) 로봇 FSM(seed 화살표 + 통과한 배우는 행동 후보, 맥락이 통과했으면 맥락 있는 화살표) → 습관 거르기(배운 화살표만 뺄 수 있음) → 코드 검사
+    let robot = adoptedFsm(candidates, passed, CUP_FSM_MEMORY, ctxOf);
     let filtered: HabitRuleNote[] = [];
     if (o.filter) {
       const windowDays = o.windowDays ?? 30;
@@ -346,7 +355,7 @@ export async function runNight(db: HistoryDb, pam: PamClient, day: string, o: Ni
       const kept = new Set(learnedEdges(CUP_FSM_MEMORY, validateMemory(out.memory, "fsm") as FsmMemory).map(edgeKey));
       const removed = learnedEdges(CUP_FSM_MEMORY, robot).filter((e) => !kept.has(edgeKey(e))).map((e) => adoptKey(e.from, e.action, { on: e.on, ...(e.when ? { when: e.when } : {}) }));
       passed = new Set([...passed].filter((k) => !removed.includes(k)));
-      robot = adoptedFsm(candidates, passed, CUP_FSM_MEMORY);
+      robot = adoptedFsm(candidates, passed, CUP_FSM_MEMORY, ctxOf);
       filtered = out.notes;
     }
     const memory = validateMemory(robot, "fsm") as FsmMemory;
@@ -354,7 +363,7 @@ export async function runNight(db: HistoryDb, pam: PamClient, day: string, o: Ni
     const learned = learnedEdges(today, memory).filter((r) => !TASKS[r.action]?.coach);
     const active = learnedEdges(CUP_FSM_MEMORY, memory).filter((r) => !TASKS[r.action]?.coach);
     const passedList = checks.filter((c) => passed.has(adoptKey(c.state, c.action, { on: c.on, ...(c.when ? { when: c.when } : {}) })))
-      .map((c) => ({ state: c.state, action: c.action, on: c.on, ...(c.when ? { when: c.when } : {}) }));
+      .map((c) => ({ state: c.state, action: c.action, on: c.on, ...(c.when ? { when: c.when } : {}), ...(c.ctx_rules?.length ? { ctx: c.ctx_rules.map((x) => x.ctx) } : {}) }));
     // 저장 바로 전에도 끊겼는지 본다(끊긴 반성은 날 고정·새 판본·성공 기록을 남기지 않는다)
     if (o.signal?.aborted) return cancelled();
     // 6) 저장: 끝난 반성만 그날 판본을 고정하고(판본이 없으면 seed를 저장), 로봇·후보 판본과 반성 기록을 한 트랜잭션으로
