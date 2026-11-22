@@ -5,7 +5,7 @@ import { planCalls, plannerRespond } from "./helpers/planner.js";
 import { CUP_FSM_MEMORY } from "../src/brain/decision.js";
 import { candidateFsmOf } from "../src/brain/pam/adopt.js";
 import { pamView } from "./helpers/pam.js";
-import { at, evenings, mixedEvenings } from "./fixtures/assistance/evenings.js";
+import { ambiguousVariant, assistanceEvenings, learningVariant, localTime as at, type LearningEvening } from "./fixtures/assistance/learning.js";
 import { residentStudio, seeResident } from "./fixtures/assistance/resident.js";
 
 it("runs a safe request through the live manager and act nodes without a phone, network device or model", async () => {
@@ -94,16 +94,16 @@ it("finishes on the oneroom hub's fresh power state without invoking the model o
 });
 
 it("learns only from recorded answers across evenings and gates a real next-day phone command", async () => {
-  async function play(tape: readonly { day: string; capture: string; arrive: string; answer?: string }[]) {
+  async function play(tape: readonly LearningEvening[], omitAssistanceRecords = false) {
     const studio = residentStudio();
     const planner = plannerRespond({ "에어컨 켜기": () => [planCalls([
       { kind: "device", label: "에어컨 켜기", target: "ac_1", tool: "turn_on", timeout_s: 60 },
     ])] });
-    const result: { asks: number; power: unknown; reactions: string[]; policy: string }[] = [];
+    const result: { commands: number; power: unknown; reactions: string[]; emitted: string[]; policy: string }[] = [];
     for (const item of tape) {
       const replay = await assistanceReplay({
         home: "oneroom", start: at(item.day, "23:29:48"), reflectAt: "23:30", askFirst: true,
-        ...studio,
+        ...studio, omitAssistanceRecords,
         model: {
           respond: planner,
           reply: body => {
@@ -123,25 +123,36 @@ it("learns only from recorded answers across evenings and gates a real next-day 
         const seen = at(item.day, item.capture);
         const arrive = at(item.day, item.arrive);
         await replay.publish("phone", "/phone/link", { ready: true });
+        if (item.speech) await replay.publish("phone", "/phone/heard", { text: item.speech, observed_ms: replay.clock.now() });
         for (let offset = 0; offset <= 6000; offset += 2000) {
           const captured = seen + offset;
           await replay.advance(arrive + offset);
-          await seeResident(replay, captured);
+          await seeResident(replay, captured, item.people);
         }
         await replay.advance(arrive + 6_250);
         const asks = replay.phoneCommands().filter(c => c.type === "command" && c.choices.some(a => a.id === "reject"));
-        if (item.answer) await replay.answer(item.answer);
+        if (item.answer) {
+          const diagnostic = JSON.stringify({
+            day: item.day,
+            decisions: replay.output("/brain/decision").map(e => [e.body.decision.action, e.body.decision.error]),
+            activity: replay.output("/world/state").at(-1)?.body.view.person,
+            execution: replay.output("/act/log").map(e => e.body),
+          });
+          expect(asks.length, diagnostic).toBeGreaterThan(0);
+          await replay.answer(item.answer);
+        }
         await replay.advance(at(item.day, "23:30:01"));
         const reflection = () => replay.server.history.list({ day: item.day, kinds: ["reflection"] }).at(-1)?.data;
         await expect.poll(reflection, { timeout: 3000 }).toMatchObject({ ok: true });
         const rows = replay.server.history.list({ kinds: ["assistance_outcome"] });
-        if (item.answer) expect(rows.at(-1)?.data).toMatchObject({
+        if (item.answer && item.people === 1 && !omitAssistanceRecords) expect(rows.at(-1)?.data).toMatchObject({
           user: "resident", proof: { evidence: { source: "phone_answer", subjectId: "resident" } },
         });
         result.push({
-          asks: new Set(asks.flatMap(c => c.type === "command" ? [c.step] : [])).size,
+          commands: new Set(asks.flatMap(c => c.type === "command" ? [c.step] : [])).size,
           power: replay.server.signals.get("ac_1")?.twin.power,
           reactions: rows.map(row => (row.data as { reaction: string }).reaction).sort(),
+          emitted: replay.output("/act/assistance_outcome").map(e => e.body.reaction),
           policy: replay.server.history.policyFor("oneroom", "resident", { action: "에어컨 켜기", context: JSON.stringify(["state", "watching_tv"]) }, item.day),
         });
         expect(replay.network).toEqual([]);
@@ -149,11 +160,16 @@ it("learns only from recorded answers across evenings and gates a real next-day 
     }
     return result;
   }
-  const refused = await play(evenings);
-  const mixed = await play(mixedEvenings);
+  const refused = await play(assistanceEvenings);
+  const mixed = await play(learningVariant);
+  const ambiguous = await play(ambiguousVariant);
+  const missing = await play(assistanceEvenings, true);
   expect(refused[1]?.reactions).toEqual(["declined", "declined"]);
-  expect(refused[2]).toMatchObject({ policy: "defer_proactive", asks: 0, power: "off" });
+  expect(refused[2]).toMatchObject({ policy: "defer_proactive", commands: 0, power: "off" });
   expect(mixed[1]?.reactions).toEqual(["accepted", "declined"]);
-  // The prior approval authorizes the normal device step without showing the approval again.
-  expect(mixed[2]).toMatchObject({ policy: "default", asks: 0, power: "on" });
+  expect(mixed[2]).toMatchObject({ policy: "default", commands: 0, power: "on" });
+  expect(ambiguous[1]?.reactions).toEqual(["declined", "unknown"]);
+  expect(ambiguous[2]).toMatchObject({ policy: "default", commands: 1 });
+  expect(missing.slice(0, 2).flatMap(day => day.emitted)).toEqual(["declined", "declined"]);
+  expect(missing[2]).toMatchObject({ reactions: [], policy: "default", commands: 1 });
 }, 45000);

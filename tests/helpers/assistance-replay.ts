@@ -9,13 +9,17 @@ import { startServer } from "../../src/server/start.js";
 class TraceBus extends MemoryBus {
   readonly sent: Envelope<TopicName>[] = [];
   private delivering = 0;
+  omitAssistanceRecords = false;
 
   override async publish<N extends TopicName>(message: Envelope<N>): Promise<void> {
     await super.publish(message);
     this.sent.push(message as Envelope<TopicName>);
   }
 
-  override subscribe<N extends TopicName>(topic: N, node: NodeName, deliver: Deliver<N>, options?: { mode?: ReadMode }) {
+  override async subscribe<N extends TopicName>(topic: N, node: NodeName, deliver: Deliver<N>, options?: { mode?: ReadMode }) {
+    if (this.omitAssistanceRecords && topic === "/act/assistance_outcome" && node === "recorder") {
+      return { start() {}, async stop() {}, lost: () => 0 };
+    }
     return super.subscribe(topic, node, async message => {
       this.delivering++;
       try { return await deliver(message); }
@@ -46,13 +50,16 @@ export async function assistanceReplay(options: {
   reflectAt?: string;
   askFirst?: boolean;
   model?: Parameters<typeof inProcessModel>[0];
+  omitAssistanceRecords?: boolean;
 }) {
   const clock = new VirtualClock(options.start ?? Date.now());
   const bus = new TraceBus({ clock });
+  bus.omitAssistanceRecords = options.omitAssistanceRecords ?? false;
   const model = inProcessModel(options.model);
   const runtimeDir = options.runtimeDir ?? mkdtempSync(join(tmpdir(), "adaptive-replay-"));
   let boot = "";
   const fetcher = globalThis.fetch;
+  const startupDiagnostics: string[] = [];
   globalThis.fetch = model.fetch;
   const server = await drive(clock, startServer({
     env: { RUNTIME_DIR: runtimeDir, TWIN_STUDIO_DIR: options.studioDir ?? resolve("twin"), HOME_ID: options.home, HOST: "127.0.0.1", PORT: "0",
@@ -63,9 +70,10 @@ export async function assistanceReplay(options: {
     brain: { clock, detector: null }, clock, askFirst: options.askFirst,
     servedPhoneUrls: async port => ["http://127.0.0.1:" + port],
     openBus: async (_env, state) => { boot = state.boot; return bus; },
-    log: () => {},
+    log: line => { if (/^\[(?:world|act|brain|recorder)\]/.test(line)) startupDiagnostics.push(line); },
   }).catch(error => {
     globalThis.fetch = fetcher;
+    if (startupDiagnostics.length) throw new Error(startupDiagnostics.join("\n"), { cause: error });
     throw error;
   }));
   const actors = new Map<NodeName, BusNode>();
