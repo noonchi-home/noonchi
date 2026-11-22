@@ -110,6 +110,10 @@
           ]
         },
         {
+          "type": "phone_command",
+          "text": null
+        },
+        {
           "type": "say",
           "text": "식탁을 보고 있어요."
         },
@@ -567,6 +571,10 @@
           ]
         },
         {
+          "type": "phone_command",
+          "text": "식탁으로 가 주세요"
+        },
+        {
           "type": "mode",
           "mode": "noonchi"
         },
@@ -1006,6 +1014,10 @@
           ]
         },
         {
+          "type": "phone_command",
+          "text": "컵을 들어 주세요"
+        },
+        {
           "type": "mode",
           "mode": "noonchi"
         },
@@ -1433,6 +1445,10 @@
             "height": 720
           },
           "shapes": []
+        },
+        {
+          "type": "phone_command",
+          "text": "싱크대로 가 주세요"
         },
         {
           "type": "mode",
@@ -1884,6 +1900,10 @@
               }
             }
           ]
+        },
+        {
+          "type": "phone_command",
+          "text": "컵을 싱크대에 넣어 주세요"
         },
         {
           "type": "mode",

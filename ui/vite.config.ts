@@ -1,5 +1,6 @@
 /// <reference types="vitest/config" />
 import { fileURLToPath } from "node:url";
+import { realpathSync } from "node:fs";
 import react from "@vitejs/plugin-react";
 import tailwind from "@tailwindcss/vite";
 import { defineConfig } from "vite";
@@ -17,7 +18,8 @@ export default defineConfig({
   build: { outDir: "dist", emptyOutDir: true, rollupOptions: { input: { main: page("index.html"), setup: page("setup/index.html"), phone: page("phone/index.html"), ...shots } } },
   server: {
     host: "127.0.0.1", port: 5173, strictPort: true,
-    fs: { allow: [page("..")] },
+    // 공유 node_modules를 연결한 worktree에서도 Vite가 한글 글꼴의 실제 파일을 읽는다.
+    fs: { allow: [page(".."), realpathSync(page("./node_modules/@fontsource-variable/noto-sans-kr/files"))] },
     proxy: { "/api": SERVER, "/twin": SERVER, "/events": { target: SERVER.replace(/^http/, "ws"), ws: true } },
   },
   test: { environment: "jsdom", include: ["tests/**/*.test.{ts,tsx}"], setupFiles: ["tests/setup.ts"] },

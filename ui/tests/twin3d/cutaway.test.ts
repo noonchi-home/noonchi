@@ -172,3 +172,25 @@ describe("자른 키 큰 가구 뚜껑이 가구를 따라간다", () => {
     expect(lid.material).toBe(material);
   });
 });
+
+it("대시보드에서는 낮춘 벽 곁의 문과 옷장이 온전히 보이고 식탁 의자만 숨는다", () => {
+  const root = new THREE.Group(), house = new THREE.Scene();
+  house.add(root);
+  const entries = [
+    { id: "chair1", type: "dining_chair" }, { id: "seat", type: "armchair" }, { id: "table", type: "dining_table" },
+    { id: "closet", type: "wardrobe_2" }, { id: "shelf", type: "storage_cabinet" },
+    { id: "door1", type: "mk_door_main_r", mount: "opening", plan: {wall: "w"} },
+  ];
+  const base = new THREE.MeshBasicMaterial();
+  for (const e of entries) { const node = new THREE.Group(); node.name=e.id; node.add(new THREE.Mesh(new THREE.BoxGeometry(1,2,1),base)); root.add(node); }
+  applyDefaultView({root, scene: house, data: {objects:entries, plan:{walls:[], doors:[{id:"door1",wall:"w"}]}},
+    view:{clip:["closet","shelf","door1"],hide:[],rails:{}}, cut:1.05, heading:[1,0], target:new THREE.Vector3(),
+    dashboardFurniture:true, find:id=>root.getObjectByName(id) ?? null});
+  expect(root.getObjectByName("chair1")!.visible).toBe(false);
+  for (const id of ["seat","table","closet","door1"]) {
+    const node=root.getObjectByName(id)!;
+    expect(node.visible).toBe(true);
+    expect((node.children[0] as THREE.Mesh).material).toBe(base);
+  }
+  expect((root.getObjectByName("shelf")!.children[0] as THREE.Mesh).material).not.toBe(base);
+});

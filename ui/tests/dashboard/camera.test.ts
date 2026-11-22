@@ -2,7 +2,7 @@
 // 트윈 지도 카메라: 트윈이 화면 전체라 구운 보기 그림(1920×1536)보다 옆으로 넓다. 지켜보기는 집 전체(모든 방)를, 계획 단계는 그 단계에 중요한 것(목적지·클로이드·확인한 것·지금 길·말풍선·방 이름표)을
 // 지도 카메라 칸(focus) 안, 얹은 것(말풍선 카드·마스코트·미니맵·생각 말풍선) 밑이 아닌 곳에 맞춘다. 그림 밖은 3D 장면 바탕이라 비워 둬도 된다. 가장자리 표시 흐리기, 방 이름표 자리.
 import { describe, expect, it } from "vitest";
-import { coverScale, focusOf, legOf, livedOf, MAX_SCALE, still, toScreen, watchFocus, wholeOf, wideCamera } from "../../src/dashboard/camera";
+import { activityFocus, coverScale, focusOf, legOf, livedOf, MAX_SCALE, still, toScreen, watchFocus, wholeOf, wideCamera } from "../../src/dashboard/camera";
 import { BUBBLE_BOX, edgeFade } from "../../src/dashboard/checks";
 import { twinFrame } from "../../src/dashboard/frame";
 import { avoidBoxes, placeLabel } from "../../src/dashboard/labels";
@@ -28,6 +28,16 @@ const LINE_R = 6;
 
 const checksAt = (n: number) => (n > 0 ? PLAN_CHECKS : []);
 const frameAt = (n: number) => twinFrame({ ...moment(n), checks: checksAt(n), anchor: anchorOf, home: HOME, cam: CAM });
+
+it("작은 트윈은 지금 집는 물건 둘레를 확대하고 다음 목적지가 멀어도 끌려가지 않는다", () => {
+  const frame = frameAt(2);
+  const step = frame.planned.step!;
+  expect(step).toBeTruthy();
+  const focus = activityFocus({ ...frame, target: [5000, 5000] }, HOME.shapes)!;
+  expect(inside({ x: step.px[0], y: step.px[1] }, focus)).toBe(true);
+  expect(focus.x1 - focus.x0).toBeLessThan(650);
+  expect(focus.y1 - focus.y0).toBeLessThan(600);
+});
 
 /** 고치기 전(2026-11-19 c4801a0) 배율: 지켜보기(순간 0)와 계획 단계(순간 1~4). 사용자 「지금 트윈이 너무 멀어」. */
 const BEFORE: Record<string, number[]> = {

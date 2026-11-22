@@ -11,7 +11,7 @@ export const TIMELINE_SPAN_S = 30;
 /** 굵은 눈금과 「N초 전」 간격(초). */
 export const TIMELINE_TICK_S = 10;
 /** 줄 이름 열 너비(px). */
-const COLUMN_W = 64;
+const COLUMN_W = 88;
 /** 지금을 옮기는 간격(ms): 초당 약 12px이라 0.2초에 2px쯤. 움직임 줄이기면 1초. */
 const TICK_MS = 200;
 const REDUCED_TICK_MS = 1000;

@@ -45,6 +45,7 @@ export interface TwinFrame {
   /** 지금 이동 구간 끝(지금 단계가 이동이 아니면 다음 이동 구간 끝), 없으면 null. */
   target: Px | null;
   marks: MapMark[];
+  relations: (MapMark & { label: string })[];
   /** 밝힐 방(정렬). 비었으면 어둡게 하지 않는다. */
   rooms: string[];
   planned: PlannedView;
@@ -104,6 +105,7 @@ export function twinFrame(o: {
   world?: WorldView | null;
   /** 미리 세운 목표(goal.ts): 선 동안 그 물건 위 고리, 준비되면 미리 만든 계획의 길. */
   goal?: GoalMarkInput | null;
+  anchors?: readonly { id: string; label: string; target: PlanTarget }[];
 }): TwinFrame {
   const { cam, home } = o;
   const plan = isOpen(o.plan) ? o.plan : null;
@@ -146,6 +148,10 @@ export function twinFrame(o: {
   };
   const pm = planMarks({ plan, robot: eye ? eye.position : null, world: o.world ?? null, at, goal: o.goal ?? null });
   const toPx = (v: Vec3): Px => planToPixel(cam, [v[0], v[2]], v[1]);
+  const relations = (o.anchors ?? []).flatMap(({ id, label, target }) => {
+    const position = at(target);
+    return position?.every(Number.isFinite) ? [{ id, label, px: toPx(position) }] : [];
+  });
   const planned: PlannedView = {
     route: { done: pm.route.done.map(toPx), now: pm.route.now.map(toPx), ahead: pm.route.ahead.map(toPx) },
     stops: pm.stops.map((s) => ({ n: s.n, px: toPx(s.at), status: s.status, now: s.now })),
@@ -159,7 +165,7 @@ export function twinFrame(o: {
     plan, index, step, robot,
     route: { points, legs },
     target: next ? points[next.to] ?? null : null,
-    marks,
+    marks, relations,
     rooms: plan ? litRooms(plan, k, home) : [],
     planned,
   };

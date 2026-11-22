@@ -9,6 +9,9 @@ import { WORDS } from "./words";
 
 type Decision = Extract<BrainLog, { type: "decision" }>;
 type Reflection = Extract<BrainLog, { type: "reflection" }>;
+// Recorded updates can include room-return states even when the current server only returns to its dock.
+export type DashboardRobotMessage = Omit<RobotMessage, "state"> & { state: keyof typeof WORDS.timeline.robot };
+export type DashboardMessage = ServerMessage | DashboardRobotMessage;
 
 export interface DashData {
   plan: PlanView | null;
@@ -36,7 +39,7 @@ export interface DashData {
   /** 사람 상태가 바뀐 때들(오래된 것부터 최근 PEOPLE_KEPT개). 시간 줄 사람 줄이 쓴다. 서버 사람 상태(person 메시지: 판단 PAM 답과 판단 사이 World State 하는 일,
    *  이름은 서버가 붙임)를 받으면 그것만 쓰고, 받기 전에는 유효한 판단의 fsm.state와 그 판단 시각으로 잇는다. 상태를 모르는 판단(null)은 더하지 않는다. */
   people: PersonAt[];
-  robots: RobotMessage[];
+  robots: DashboardRobotMessage[];
   /** person 메시지를 받았는가(그 뒤로는 판단 상태로 사람 줄을 잇지 않는다). */
   personFed: boolean;
   /** 최근 계획(id마다 마지막 판본, 받은 차례로 최근 PLANS_KEPT개). 시간 줄 로봇 줄이 단계 시각(started_ms·ended_ms)을 쓴다. */
@@ -46,11 +49,23 @@ export interface DashData {
 /** 사람 상태 하나: 상태 id와 그 상태가 된 때(서버 시각), 서버가 붙인 이름(person 메시지만, 판단에서 온 것은 습관 그림 이름을 쓴다). */
 export interface PersonAt { state: string; at_ms: number; name?: string }
 const PEOPLE_KEPT = 8;
+const ROBOTS_KEPT = 64;
 const PLANS_KEPT = 4;
 
 export const EMPTY_DASH: DashData = {
   plan: null, eye: null, decision: null, thoughts: [], reflection: null, say: null, mode: null, says: 0, safety: null, talk: [], goal: null, habit: null, people: [], robots: [], personFed: false, plans: [],
 };
+
+/** 서버 시각순으로 최근 전이를 보존한다. 같은 시각의 다른 전이는 첫 수신 순서를 유지한다. */
+function addTransition<T>(
+  list: T[], event: T, limit: number,
+  timeOf: (event: T) => number, sameState: (a: T, b: T) => boolean,
+): T[] {
+  const at = timeOf(event);
+  if (list.some(known => timeOf(known) === at && sameState(known, event))) return list;
+  if (list.length === limit && list.every(known => timeOf(known) > at)) return list;
+  return [...list, event].sort((a, b) => timeOf(a) - timeOf(b)).slice(-limit);
+}
 
 /** 유효한 판단 하나로 사람 상태 줄을 잇는다: 상태(서버 fsmNow)를 모르면(null) 그대로, 마지막과 같으면 그대로. */
 function peopleNext(list: PersonAt[], d: Decision): PersonAt[] {
@@ -99,7 +114,7 @@ function reflectionThoughts(r: Reflection): ThoughtMessage[] {
   ];
 }
 
-export function reduceDash(s: DashData, m: ServerMessage, now: number): DashData {
+export function reduceDash(s: DashData, m: DashboardMessage, now: number): DashData {
   switch (m.type) {
     case "hello":
       return EMPTY_DASH;
@@ -128,14 +143,15 @@ export function reduceDash(s: DashData, m: ServerMessage, now: number): DashData
       return { ...s, say: m.text, safety, talk, says: changed && m.text ? s.says + 1 : s.says };
     }
     case "robot": {
-      const prev = s.robots.at(-1);
-      if (prev && (m.since_ms < prev.since_ms || (m.since_ms === prev.since_ms && m.state === prev.state &&
-        m.step?.plan_id === prev.step?.plan_id && m.step?.number === prev.step?.number && m.step?.label === prev.step?.label))) return s;
-      return { ...s, robots: [...s.robots, m].slice(-64) };
+      const robots = addTransition(s.robots, m, ROBOTS_KEPT, r => r.since_ms, (a, b) =>
+        a.state === b.state && a.step?.plan_id === b.step?.plan_id &&
+        a.step?.number === b.step?.number && a.step?.label === b.step?.label);
+      return robots === s.robots ? s : { ...s, robots };
     }
     case "person": {
-      const people = s.people.at(-1)?.state === m.state ? s.people : [...s.people, { state: m.state, at_ms: m.since_ms, name: m.name }].slice(-PEOPLE_KEPT);
-      return { ...s, people, personFed: true };
+      const event: PersonAt = { state: m.state, at_ms: m.since_ms, name: m.name };
+      const people = addTransition(s.people, event, PEOPLE_KEPT, p => p.at_ms, (a, b) => a.state === b.state && a.name === b.name);
+      return people === s.people && s.personFed ? s : { ...s, people, personFed: true };
     }
     case "thought": {
       const thoughts = addThoughts(s.thoughts, m.messages);

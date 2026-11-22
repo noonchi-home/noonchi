@@ -25,12 +25,8 @@ function ClockChip({ tzMinutes }: { tzMinutes: number | null }) {
   );
 }
 
-/**
- * 트윈 칸(화면 전체, 여백 안): 칸을 꽉 채운 지도 자리(map)와 그 위 위쪽 미니맵 왼쪽 칩 줄(오른쪽 끝에서 chipsRight만큼 띄운다):
- * 맨 위 날짜·시간 칩(늘), 그 아래 클로이드 위치를 모를 때·연결이 끊겼을 때만 그 칩. 할 일 진행도 알약은 없다(계획은 트윈 위 번호 길, MapOverlay).
- * 비전 미니맵·메시지 상자·마스코트도 지도 위에 얹힌다. 칸은 늘 같은 자리·크기다.
- */
-export function TwinPane({ robotKnown, connected, map, chipsRight, tzMinutes = null }: {
+/** 연결을 읽는 동안에도 같은 지도를 유지해 돌아왔을 때 모델을 다시 받지 않는다. */
+export function TwinPane({ robotKnown, connected, map, chipsRight, tzMinutes = null, tiled = false }: {
   robotKnown: boolean;
   /** 서버와 실시간 연결: 끊김 false, 모름 null. */
   connected: boolean | null;
@@ -39,13 +35,14 @@ export function TwinPane({ robotKnown, connected, map, chipsRight, tzMinutes = n
   chipsRight: number;
   /** 서버 기록 시간대(분). 모르면 null(브라우저 시간대). */
   tzMinutes?: number | null;
+  tiled?: boolean;
 }) {
   const offline = connected === false;
   return (
-    <section aria-label="트윈" data-twin className="relative h-full min-h-0 min-w-0 flex-1">
+    <section aria-label="트윈" data-twin className="relative flex h-full min-h-0 min-w-0 flex-1 flex-col">
       <div data-map className="absolute inset-0 overflow-hidden">{map}</div>
-      <div data-chips className="pointer-events-none absolute top-4 flex flex-col items-end gap-2" style={{ right: chipsRight }}>
-        <ClockChip tzMinutes={tzMinutes} />
+      <div data-chips className={tiled ? "pointer-events-none absolute bottom-2 flex flex-wrap justify-end gap-1" : "pointer-events-none absolute top-4 flex flex-col items-end gap-2"} style={{ right: chipsRight }}>
+            <ClockChip tzMinutes={tzMinutes} />
         {!robotKnown && (
             <Status>
               <MapPin className="size-3.5" aria-hidden="true" />

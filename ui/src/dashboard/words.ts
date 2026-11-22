@@ -7,9 +7,9 @@ export const WORDS = {
   more: "▼",
   /** 시간 줄 카드: 줄 이름, 계획 밖 로봇, 지금 선, 초 눈금 「N초 전」, 반응 간격 「N.N초」. */
   timeline: {
-    rows: { person: "사람", robot: "로봇" },
+    rows: { person: "사용자", robot: "클로이드" },
     watch: "지켜봄",
-    robot: { idle: "지켜봄", observe: "살펴보는 중", move: "이동 중", run: "실행 중", return: "충전 자리로 가는 중", recover: "다시 확인하는 중" },
+    robot: { idle: "지켜봄", observe: "살펴보는 중", move: "이동 중", run: "실행 중", return: "충전 자리로 가는 중", return_room: "대기 자리로 가는 중", standby: "대기 중", recover: "다시 확인하는 중" },
     now: "지금",
     ago: (sec: number) => `${sec}초 전`,
     gap: (sec: string) => `${sec}초`,

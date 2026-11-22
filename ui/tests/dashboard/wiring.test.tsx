@@ -1,6 +1,6 @@
 // 대시보드가 서버 자료(/events·health)를 화면에 잇는다: 할 일 진행도·말풍선 카드·마스코트 방향·시간 줄 카드·대시보드 폰 칸 영상과 YOLO 상자·연결 끊김 칩.
 // 승인 대기는 대시보드에 보이지 않는다(D37). 서버 메시지는 가짜 단계(fake-run.json) 순간 2(컵 집기)를 쓴다.
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from "vitest";
 import type { DeviceView, HealthView, ServerMessage } from "../../../src/contract/events.ts";
 import { Dashboard } from "../../src/dashboard/Dashboard";
@@ -52,8 +52,7 @@ function stubServer(eye: boolean, twin = true) {
 const moment = (n: number) => run.moments[n]!.messages as ServerMessage[];
 /** 그 순간 자료의 가장 늦은 때(시간 줄의 지금으로 쓴다). */
 const lastOf = (n: number) => timelineLast(moment(n).reduce((s, m) => reduceDash(s, m, 0), EMPTY_DASH))!;
-/** 시간 줄 줄 하나의 칸 글. */
-const rowText = (id: string) => [...document.querySelectorAll(`[data-timeline-card] [data-slot=timeline-row][data-row=${id}] [data-slot=timeline-slot]`)].map((s) => s.textContent);
+const statusCells = (label: string) => within(screen.getByRole("rowheader", { name: label }).closest("tr")!).getAllByRole("cell");
 const turnedOn: ServerMessage = {
   type: "agent", event: "action", sessionId: "phone",
   action: { tool: "turn_on", args: {}, ok: true, deviceId: "lamp", deviceLabel: "플로어 스탠드", reason: "켜 달라고 해서", at: "t" },
@@ -105,15 +104,26 @@ describe("대시보드 자료 연결", () => {
     history.replaceState(null, "", "/");
   });
 
-  it("순간 2(컵 집기)를 받으면 단계 2, 말풍선 카드 말, 시간 줄 사람 줄 지금 상태는 자리에 없음이고 로봇 줄 지금 단계는 컵 집기, 마스코트는 늘 왼쪽을 본다", async () => {
+  it("벤토 상태표는 새 단계가 오면 사용자와 클로이드의 현재 칸을 같은 표에서 갱신한다", async () => {
+    await mount(false);
+    send(moment(1));
+    const table = screen.getByRole("table");
+    expect(table).toHaveTextContent("식탁으로 가기");
+    send(moment(2));
+    expect(screen.getByRole("table")).toBe(table);
+    expect(screen.getByRole("row", { name: /클로이드/ })).toHaveTextContent("컵 집기");
+    expect(screen.getByRole("row", { name: /사용자/ })).toHaveTextContent("자리에 없음");
+  });
+
+  it("집 전체 보기에서도 상태표와 현재 단계가 유지된다", async () => {
     const clock = vi.spyOn(Date, "now").mockReturnValue(lastOf(2) + 1000);
+    history.replaceState(null, "", "/?view=overview");
     await mount(false);
     send(moment(2));
     expect(document.querySelector("[data-progress]")).toBeNull();
     expect(sayLine()).toHaveTextContent("컵을 들게요.");
-    expect(rowText("person").at(-1)).toBe("자리에 없음");
-    expect(rowText("robot").at(-1)).toBe("컵 집기");
-    expect(document.querySelector('[data-timeline-card] [data-row=robot] [data-tone=brand]')).toHaveTextContent("컵 집기");
+    expect(statusCells("사용자")[0]).toHaveTextContent("자리에 없음");
+    expect(statusCells("클로이드")[0]).toHaveTextContent("컵 집기");
     clock.mockRestore();
     expect(screen.getByRole("region", { name: "마스코트" }).querySelector<HTMLElement>("[data-mascot-turn]")!.style.transform).toBe("scaleX(-1)");
     expect(document.querySelector("main")).toHaveAttribute("data-step", "2");
@@ -121,19 +131,21 @@ describe("대시보드 자료 연결", () => {
 
   it("지켜보기(순간 0)는 사람이 마시는 중이고 목표가 서 있다: 최신 줄은 목표 문장이고 목표 칩은 없다, 마스코트는 늘 왼쪽을 본다", async () => {
     const clock = vi.spyOn(Date, "now").mockReturnValue(lastOf(2) + 1000);
+    history.replaceState(null, "", "/?view=overview");
     await mount(false);
     send(moment(2));
     send(moment(0));
     expect(screen.getByRole("region", { name: "마스코트" }).querySelector<HTMLElement>("[data-mascot-turn]")!.style.transform).toBe("scaleX(-1)");
     expect(sayLine()).toHaveTextContent("컵을 두고 자리를 뜨면 컵을 치울게요");
     // 순간 0의 판단(seq 1)은 순간 2의 판단(seq 2)보다 늦게 온 옛 판단이라 사람 줄 지금 상태는 그대로다
-    expect(rowText("person").at(-1)).toBe("자리에 없음");
+    expect(statusCells("사용자")[0]).toHaveTextContent("자리에 없음");
     expect(talk().querySelector("[data-goal-line], [data-talk-goal]")).toBeNull();
-    expect(document.querySelector("[data-timeline-card]")).not.toHaveTextContent("목표");
+    expect(screen.getByRole("table")).not.toHaveTextContent("목표");
     clock.mockRestore();
   });
 
   it("판단 없이 반성 사건만 와도 메시지 상자에 그 규칙 두 줄이 쌓인다. 칩은 없다", async () => {
+    history.replaceState(null, "", "/?view=overview");
     await mount(false);
     expect(messageTexts()).toEqual([]);
     const rule = { from: "away", to: "watching_tv", on: "사용자가 소파에 앉아 TV를 보기 시작한다.", when: null, action: "에어컨 켜기" };
@@ -143,6 +155,7 @@ describe("대시보드 자료 연결", () => {
   });
 
   it("마스코트 모드 말풍선은 서버 mode 메시지를 따른다: 받기 전과 눈치면 「눈치 모드」, 코치면 「코치 모드」. 코치 행동 판단·계획만으로는 바뀌지 않는다", async () => {
+    history.replaceState(null, "", "/?view=overview");
     await mount(false);
     const mode = () => document.querySelector("[data-mode-text]")?.textContent ?? null;
     await waitFor(() => expect(mode()).toBe("눈치 모드"));
@@ -156,6 +169,7 @@ describe("대시보드 자료 연결", () => {
   });
 
   it("/events thought 메시지와 말이 받은 차례로 쌓이고 최근 세 줄만 보인다. 원래 생각은 보이지 않는다", async () => {
+    history.replaceState(null, "", "/?view=overview");
     await mount(false);
     send(moment(2).filter((m) => m.type !== "thought" && m.type !== "say"));
     expect(messageTexts()).toEqual([]);
@@ -205,10 +219,16 @@ describe("대시보드 자료 연결", () => {
     expect(phonePane().querySelector('[data-detection], [data-slot="bounding-box"]')).toBeNull();
   });
 
-  it("실제 폰 명령 자막(phone_command)은 비전 미니맵만 보기(?view=minimap)에만 있고 대시보드에는 없다", async () => {
+  it("실제 폰 명령을 영상 위 고정 줄에 한 번만 띄우고, 해제하면 글만 지운다", async () => {
     await mount(true);
     send([{ type: "phone_command", text: "식탁으로 가 주세요" }]);
-    expect(document.querySelector("[data-phone-command]")).toBeNull();
+    const line = phonePane().querySelector<HTMLElement>("[data-phone-line]")!;
+    expect(line).toHaveTextContent("식탁으로 가 주세요");
+    expect(screen.getAllByText("식탁으로 가 주세요")).toHaveLength(1);
+    expect(line.closest("[data-video]")).toBe(phonePane().querySelector("[data-video]"));
+    send([{ type: "phone_command", text: null }]);
+    expect(line).not.toHaveTextContent("식탁으로 가 주세요");
+    expect(line).toBeInTheDocument();
   });
 
   it("소켓이 닫히면 「연결 끊김 · 다시 연결 중」 칩이 생기고 다시 열리면 없어진다", async () => {
@@ -259,14 +279,17 @@ describe("가짜 단계(?debug=steps)", () => {
   it("&step=2면 서버 자료 없이 그 순간이다: 단계·말·대시보드 폰 칸 눈 그림·시간 줄 카드(그 순간 때로 멈춤)·컵 이름표", async () => {
     open("&step=2");
     expect(document.querySelector("main")).toHaveAttribute("data-step", "2");
-    expect(sayLine()).toHaveTextContent("컵을 들게요.");
+    expect(screen.getByRole("region", {name: "현재 상황"})).toHaveTextContent("컵");
+    expect(phonePane().querySelector("[data-phone-text=명령]")).toHaveTextContent("컵을 들어 주세요");
     const img = phonePane().querySelector<HTMLImageElement>('img[alt="폰 카메라 영상"]')!;
     expect(img.getAttribute("src")).toBe("/debug-eye/eye-table-near.webp");
-    expect(document.querySelector("[data-mode-text]")).toHaveTextContent(/^눈치 모드$/);
-    expect(talk().querySelector("[data-talk-pill]")).toBeNull();
-    expect(rowText("person")).toEqual(["먹거나 마시는 중", "자리에 없음"]);
-    expect(rowText("robot")).toEqual(["지켜봄", "식탁으로 가기", "컵 집기"]);
-    expect(document.querySelector("[data-timeline-card] [data-slot=timeline-drop-region]")).toHaveTextContent("4.0초");
+    expect(document.querySelector("[data-mode-text]")).toBeNull();
+    expect(document.querySelector("[data-talk-pill]")).toBeNull();
+    expect(statusCells("사용자")[0]).not.toHaveTextContent("먹거나 마시는 중");
+    expect(statusCells("사용자")[0]).toHaveTextContent("자리에 없음");
+    expect(statusCells("클로이드")[0]).not.toHaveTextContent("식탁으로 가기");
+    expect(statusCells("클로이드")[0]).toHaveTextContent("컵 집기");
+    expect(statusCells("클로이드")[1]!.querySelector("time")).toBeInTheDocument();
     expect([...phonePane().querySelectorAll("[data-detection-label]")].map((t) => t.textContent?.split(" ")[0])).toEqual(["컵"]);
     expect(phonePane().querySelector("canvas[data-masks]")).not.toBeNull();
   });
@@ -283,7 +306,7 @@ describe("가짜 단계(?debug=steps)", () => {
     await waitFor(() => expect(FakeSocket.last).not.toBeNull());
     send(moment(4));
     expect(document.querySelector("main")).toHaveAttribute("data-step", "2");
-    expect(sayLine()).toHaveTextContent("컵을 들게요.");
+    expect(screen.getByRole("region", {name: "현재 상황"})).toHaveTextContent("컵");
   });
 
   it("window.__dash.step(n)으로 그 순간으로 간다", () => {
@@ -291,13 +314,15 @@ describe("가짜 단계(?debug=steps)", () => {
     expect(document.querySelector("main")).toHaveAttribute("data-step", "1");
     act(() => window.__dash!.step(3));
     expect(document.querySelector("main")).toHaveAttribute("data-step", "3");
-    expect(sayLine()).toHaveTextContent("싱크대로 갈게요.");
+    expect(phonePane().querySelector("[data-phone-text=명령]")).toHaveTextContent("싱크대");
     expect(phonePane().querySelector('img[alt="폰 카메라 영상"]')!.getAttribute("src")).toBe("/debug-eye/eye-sink.webp");
     act(() => window.__dash!.step(0));
     expect(document.querySelector("main")).toHaveAttribute("data-step", "0");
-    expect(rowText("person")).toEqual(["먹거나 마시는 중"]);
-    expect(rowText("robot")).toEqual(["지켜봄"]);
-    expect(document.querySelector("[data-timeline-card] [data-row=guess], [data-timeline-card] [data-timeline-caption]")).toBeNull();
+    expect(phonePane().querySelector("[data-phone-text=명령]")).toBeNull();
+    expect(statusCells("사용자")[0]).toHaveTextContent("먹거나 마시는 중");
+    // 옛 0번 샘플에는 실행 상태 사건도 시작한 단계도 없다.
+    expect(statusCells("클로이드")[0]).toHaveTextContent("—");
+    expect(screen.getAllByRole("rowheader")).toHaveLength(2);
   });
 
   it("&play=MS면 지도가 준비된 뒤부터 MS마다 4→0→1 차례로 넘긴다", async () => {

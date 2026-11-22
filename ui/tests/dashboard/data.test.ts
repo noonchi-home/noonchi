@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import type { ServerMessage } from "../../../src/contract/events.ts";
 import type { PendingGoal } from "../../../src/contract/goal.ts";
 import { EMPTY_DASH, modeNow, reduceDash, stepIndex, TALK_SHOWN, talkOf } from "../../src/dashboard/data";
+import { currentStatusRowsOf } from "../../src/dashboard/timeline";
 import run from "../../src/dashboard/fake-run.json";
 import type { FsmStep } from "../../../src/contract/pam.ts";
 import { STATE_TEXT } from "../../../src/world/labels.ts";
@@ -17,6 +18,23 @@ const said = (decision: string, atMs: number, ...texts: string[]): ServerMessage
 const textsOf = (s: ReturnType<typeof feed>) => talkOf(s)?.lines.map((m: { text: string }) => m.text);
 
 describe("대시보드 자료", () => {
+  it("사용자 A@10 재전송 뒤 A@30으로 돌아간 전이를 보존하고 늦은 B@20도 사이에 넣는다", () => {
+    const a10 = { type: "person", state: "A", name: "읽는 중", since_ms: 10, source: "world", decision_id: null } as const;
+    const b20 = { ...a10, state: "B", name: "공부 중", since_ms: 20 };
+    const a30 = { ...a10, since_ms: 30 };
+    for (const messages of [[a10, b20, { ...a10 }, a30], [a10, a30, b20, { ...a10 }]]) {
+      const dash = feed(messages);
+      expect(dash.people.map(p => [p.state, p.at_ms])).toEqual([["A", 10], ["B", 20], ["A", 30]]);
+      expect(currentStatusRowsOf(dash)[0]).toEqual({ id: "person", previous: "공부 중", current: "읽는 중", since: 30 });
+    }
+  });
+  it("로봇 이동@20 뒤 도착한 지켜봄@10은 이전 상태로 남고 재전송은 한 번만 센다", () => {
+    const move = { type: "robot", state: "move", step: null, since_ms: 20 } as const;
+    const idle = { type: "robot", state: "idle", step: null, since_ms: 10 } as const;
+    const dash = feed([move, idle, { ...idle }, { ...move }]);
+    expect(dash.robots).toEqual([idle, move]);
+    expect(currentStatusRowsOf(dash)[1]).toEqual({ id: "robot", previous: "지켜봄", current: "이동 중", since: 20 });
+  });
   it("지켜보기: 계획 없음, 마스코트는 그림 그대로. 줄이 없으면 메시지 상자 자료가 없다", () => {
     const s = at(0);
     expect(stepIndex(s.plan)).toBe(0);

@@ -123,6 +123,7 @@ export class LayoutOps {
     this.pending.delete(id);
     const holder = new THREE.Group();
     holder.name = id;
+    holder.visible = ticket.object.type !== "dining_chair";
     holder.userData = { id, added: true };
     if (isVec3(ticket.object.scale)) holder.scale.fromArray(ticket.object.scale);
     holder.add(body);
