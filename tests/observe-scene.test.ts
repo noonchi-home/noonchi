@@ -73,7 +73,7 @@ describe("VLM 장면 분석", () => {
   it("스키마 objects의 종류 enum은 낱말 표에서 VLM 종류 기준(vlm)이 있는 물건(VLM_FIND)이고, 프롬프트가 감지 목록에 없는 물건도 상자와 함께 답하라고 한다", () => {
     const schema = JSON.stringify(SCENE_JSON_SCHEMA);
     for (const c of VLM_FIND) expect(schema).toContain(`"${c}"`);
-    expect([...VLM_FIND].sort()).toEqual(["bottle", "bowl", "cup", "pot", "ramen"]);
+    expect([...VLM_FIND].sort()).toEqual(["beer_can", "bottle", "bowl", "cup", "pot", "ramen"]);
     expect(VLM_FIND).toEqual((Object.keys(CLASSES) as (keyof typeof CLASSES)[]).filter((k) => CLASSES[k].role === "object" && "vlm" in CLASSES[k]));
     expect(SCENE_PROMPT).toContain("including ones missing from Detections");
   });

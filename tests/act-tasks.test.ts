@@ -24,7 +24,7 @@ describe("행동 목록", () => {
       const t = TASKS[name]!;
       expect(t.name).toBe(name);
       expect(t.description.length).toBeGreaterThan(5);
-      const more = [...(t.coach ? ["coach"] : []), ...(t.maxSteps ? ["maxSteps"] : []), ...(t.target ? ["target"] : []), ...(t.look ? ["look"] : []), ...(t.want ? ["want"] : []), ...(t.learn ? ["learn"] : []), ...(t.carry ? ["carry"] : []), ...(t.carryAlso ? ["carryAlso"] : []), ...(t.carryUnseen ? ["carryUnseen"] : []), ...(t.touch ? ["touch"] : []), ...(t.topLook ? ["topLook"] : []), ...(t.afterUse ? ["afterUse"] : []), ...(t.uses ? ["uses"] : [])];
+      const more = [...(t.completion ? ["completion"] : []), ...(t.coach ? ["coach"] : []), ...(t.maxSteps ? ["maxSteps"] : []), ...(t.target ? ["target"] : []), ...(t.look ? ["look"] : []), ...(t.want ? ["want"] : []), ...(t.learn ? ["learn"] : []), ...(t.carry ? ["carry"] : []), ...(t.carryAlso ? ["carryAlso"] : []), ...(t.carryUnseen ? ["carryUnseen"] : []), ...(t.touch ? ["touch"] : []), ...(t.topLook ? ["topLook"] : []), ...(t.afterUse ? ["afterUse"] : []), ...(t.uses ? ["uses"] : [])];
       expect(Object.keys(t).sort()).toEqual(["allow", "description", "name", ...more].sort());
       expect(t.allow.kinds.length).toBeGreaterThan(0);
     }
@@ -47,10 +47,10 @@ describe("행동 목록", () => {
     expect(TASKS["전자레인지로 데우기 알려 주기"]!.uses).toEqual(["bowl"]);
   });
 
-  it("눈치 모드 행동 목록은 여덟이고 앞 넷의 순서는 그대로다(시나리오 2 행동은 끝에 더함). 코치 행동은 없다", () => {
-    expect(tasksFor("noonchi")).toEqual(["컵 치우기", "사용자에게 물어보기", "세탁물 건조기로 옮기기", "에어컨 켜기", "컵에 물 채워 주기", "컵에 콜라 따라 주기", "부름에 응하기", "물 한 잔 가져다주기"]);
-    expect(TASK_NAMES).toEqual([...tasksFor("noonchi").slice(0, 6), "라면 끓이기 알려 주기", "전자레인지로 데우기 알려 주기", "부름에 응하기", "물 한 잔 가져다주기"]);
-    expect(TASK_NAMES).toHaveLength(10);
+  it("눈치 모드 행동 목록에 시나리오 2 행동을 순서대로 더하고 코치 행동은 뺀다", () => {
+    expect(tasksFor("noonchi")).toEqual(["컵 치우기", "사용자에게 물어보기", "세탁물 건조기로 옮기기", "에어컨 켜기", "컵에 물 채워 주기", "컵에 콜라 따라 주기", "부름에 응하기", "물 한 잔 가져다주기", "맥주 가져다주기", "맥주 캔 치우기"]);
+    expect(TASK_NAMES).toEqual([...tasksFor("noonchi").slice(0, 6), "라면 끓이기 알려 주기", "전자레인지로 데우기 알려 주기", "부름에 응하기", "물 한 잔 가져다주기", "맥주 가져다주기", "맥주 캔 치우기"]);
+    expect(TASK_NAMES).toHaveLength(12);
     expect(tasksFor("noonchi")).not.toContain("전자레인지로 데우기 알려 주기");
   });
 

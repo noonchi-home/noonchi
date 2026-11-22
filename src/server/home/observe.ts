@@ -204,8 +204,13 @@ export async function startNodes(core: HomeCore, emit: (event: BrainLog) => void
       });
     },
     onChanges: (changes) => routeWorldChanges({ tracker: core.tracker, decider: null, keepHeard: core.keepHeard, nowMs: () => core.nowMs() }, emit, changes),
+    onPhoto: () => {
+      const world = core.mirror?.view();
+      if (world) core.beer?.see(world);
+    },
     onView: (view) => {
       first();
+      core.beer?.see(view);
       core.app?.broadcast({ type: "world", world: view });
       core.speak();
     },

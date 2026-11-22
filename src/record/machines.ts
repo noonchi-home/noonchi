@@ -36,6 +36,10 @@ export function machineWrites(db: HistoryDb) {
   const oldGoal = goalRecorder(db);
   let phoneStep = "";
   return {
+    "/act/beer_observation": body => {
+      const observation = body as Body<"/act/beer_observation">;
+      db.add("household", observation.atMs, "맥주 시청 관측", { subject: observation.device, data: { event: "beer_observation", observation } });
+    },
     "/act/assistance_outcome": (body, _stamp, header) => {
       const outcome = body as Body<"/act/assistance_outcome">;
       if (outcome.key.boot !== header.boot || outcome.key.homeEpoch !== header.home || outcome.endedMs < outcome.startedMs) return;

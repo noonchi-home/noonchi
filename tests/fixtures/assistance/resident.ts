@@ -5,16 +5,16 @@ import type { assistanceReplay } from "../../helpers/assistance-replay.js";
 import { viewLooking } from "../../helpers/camera.js";
 import { det } from "../../helpers/detectors.js";
 
-export function residentStudio() {
+export function residentStudio(home = "oneroom") {
   const root = mkdtempSync(join(tmpdir(), "adaptive-resident-"));
   const studioDir = join(root, "twin");
   const runtimeDir = join(root, "runtime");
   cpSync(resolve("twin/data"), join(studioDir, "data"), { recursive: true });
-  mkdirSync(join(studioDir, "homes", "oneroom"), { recursive: true });
+  mkdirSync(join(studioDir, "homes", home), { recursive: true });
   mkdirSync(runtimeDir);
-  cpSync(resolve("twin/homes/oneroom/scene.json"), join(studioDir, "homes/oneroom/scene.json"));
-  writeFileSync(join(studioDir, "homes.json"), JSON.stringify({ default: "oneroom",
-    homes: [{ id: "oneroom", name: "Replay residence", data: "data/homes/oneroom", out: "homes/oneroom", single_resident: "resident" }] }));
+  cpSync(resolve("twin/homes", home, "scene.json"), join(studioDir, "homes", home, "scene.json"));
+  writeFileSync(join(studioDir, "homes.json"), JSON.stringify({ default: home,
+    homes: [{ id: home, name: "Replay residence", data: `data/homes/${home}`, out: `homes/${home}`, single_resident: "resident" }] }));
   return { studioDir, runtimeDir };
 }
 

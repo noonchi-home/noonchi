@@ -22,6 +22,7 @@ import { loadEndpoints } from "../../infer/endpoints.js";
 import { DEVICE_STATES } from "../../world/vocab.js";
 import { type HomeCore } from "./core.js";
 import type { EvidenceRef } from "../../contract/assistance.js";
+import { HomeBeer, isBeerAction } from "./beer.js";
 
 /** 명령 대상·가까이 볼 자리(이름과 트윈 자리 [x, 높이, y]): 면(식탁·싱크대처럼 윗면이 있는 배치)이면 윗면 가운데(싱크볼이 있으면 윗면 높이의 싱크볼 가운데),
  *  그 밖은 배치 가운데. 배치 가운데는 싱크대면 높이 약 0.45m라, 대상을 겨눈 폰 사진에서 윗면(컵이 놓이는 곳)보다 한참 아래다.
@@ -139,6 +140,7 @@ export function startAct(core: HomeCore): (event: BrainLog) => void {
   const now = () => core.nowMs();
   // 집 상태는 거울(가장 새 /world/state)로 읽고 가전 지금 상태는 허브 값으로 맞춘다. 노드는 실행 추적을 만든 뒤 띄우고 첫 상태를 받은 뒤에 판단·실행이 돈다
   const view = () => liveDevices(core.view()!, signals);
+  if (home.singleResident) core.beer = new HomeBeer(core, home.singleResident);
   // 메시지 상자 문장은 모델 없이 판단 기록의 사실로만 만든다(src/brain/thought.ts). 다시 띄우면 이 집의 최근 메시지(10분 안)로 시작한다
   const feed = thoughtFeed({
     send: (m) => core.out.brain?.push("/brain/thought", { ...m, home: home.id }),
@@ -178,7 +180,8 @@ export function startAct(core: HomeCore): (event: BrainLog) => void {
     hold: () => core.brainStatus?.hold ?? false,
     keepHeard: () => core.keepHeard,
     interventionFor: (d, w) => interventionFor(d, w),
-    edgeAllowed: (edge, atMs) => routineAllows(core.routines(), edge, atMs, history.db.offsetMinutes),
+    edgeAllowed: (edge, atMs) => routineAllows(core.routines(), edge, atMs, history.db.offsetMinutes)
+      && (!isBeerAction(edge.action) || !!core.beer?.available(edge.action)),
     // 판단 → 시간 줄 사람 줄 → 계획 → 실행 전 검사 → 실행 추적(src/act/)
     onDecision: (d) => {
       core.person?.onDecision(d);
@@ -276,14 +279,26 @@ export function startAct(core: HomeCore): (event: BrainLog) => void {
     const task = taskOf(decision.action);
     if (!task) return { ok: false, error: "행동 목록에 없는 행동" };
     if (interventionFor(decision, brainView()) === "defer_proactive") return { ok: false, error: "이번에는 먼저 돕지 않아요." };
-    const ctx = planCtx(decision, task, brainView(), ahead);
+    const action = decision.action;
+    const beer = decision.source !== "speech" && isBeerAction(action);
+    const cue = beer ? core.beer?.available(action) : null;
+    if (beer && !cue) return { ok: false, error: "현재 맥주를 도울 근거가 없어요." };
+    const current = brainView();
+    const planningWorld = cue?.object ? { ...current, objects: current.objects.filter(o => o.cls !== "beer_can" || o.id === cue.object) } : current;
+    const basins = cue?.object ? (core.beer?.basinIds() ?? []) : [];
+    if (cue?.object && !basins.length) return { ok: false, error: "놓을 싱크볼을 확인할 수 없어요." };
+    const destination = cue?.object ? ` 마지막 놓기 대상은 싱크볼이 있는 싱크대 ${basins.join(", ")} 중 하나이며, ${cue.object}만 집어 놓는다.`
+      : cue ? ` 마지막 놓기 대상은 시청자 곁에서 확인한 면 ${cue.surface}이다.` : "";
+    const ctx = planCtx(decision, destination ? { ...task, description: task.description + destination } : task, planningWorld, ahead);
     // 부름인데 사용자 방을 모르면 사용자 찾기와 같은 자리 고르기(관찰 모드)로 목적지를 정한다
     if (ctx.call && !ctx.call.target && core.looker) {
       const map = core.scene?.stations ?? null;
       const chosen = await core.looker.chooseStation(callPlaces(ctx.call, map, plans.floor()), JSON.stringify(ctx.world.person_trail ?? []), [], signal);
       ctx.call = withChosenStation(ctx.call, map, plans.floor(), chosen);
     }
-    return planner.plan(ctx, signal);
+    const result = await planner.plan(ctx, signal);
+    if (cue && result.ok && !core.beer?.reserve(decision, cue, result.plan)) return { ok: false, error: "맥주를 도울 근거가 달라졌어요." };
+    return result;
   };
   let geometryVersion=-1;
   let walkScene:typeof core.scene=null;
@@ -318,7 +333,9 @@ export function startAct(core: HomeCore): (event: BrainLog) => void {
       bindResident: policyResident,
       interventionFor,
       ended: (attempt, execution, endedMs, proofs) => {
-        if (core.out.act) publishAssistanceOutcome(core.out.act, assistanceOutcome(attempt, execution, endedMs, proofs));
+        const outcome = assistanceOutcome(attempt, execution, endedMs, proofs);
+        if (outcome.action === "맥주 가져다주기" && outcome.proof?.kind === "confirmed_handoff") core.beer?.handoff(outcome.proof.evidence.subjectId);
+        if (core.out.act) publishAssistanceOutcome(core.out.act, outcome);
       },
       targetDevice: (d, world) => {
         const kinds = taskOf(d.action)?.allow.devices?.kinds;
@@ -399,6 +416,8 @@ export function startAct(core: HomeCore): (event: BrainLog) => void {
     askFirst: ctx.askFirst,
     check: (d, p, seenSince) => {
       const world = view();
+      if (d.source !== "speech" && isBeerAction(d.action) && !core.beer?.valid(d, world, p))
+        return { ok: false, reason: "unknown_task", text: "현재 맥주를 도울 근거가 없어요." };
       return checkPlan({
         decision: d, tasks: d.tasks ?? pamTasks(core.mode(), false), plan: p, world, nowMs: now(), staleMs: core.act.staleMs, mode: ctx.mode?.() ?? "test", deviceSteps: deviceSteps(p),
         placed: core.tracker?.placed(), ...(seenSince !== undefined ? { seenSince } : {}),

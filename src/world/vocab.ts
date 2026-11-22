@@ -35,6 +35,7 @@ export const CLASSES = {
   person: { label: "사람", role: "person", coco: { 0: "person" }, minScore: 0.5, facets: ["posture", "place", "holding", "activity", "moment"] },
   cup: { label: "컵", role: "object", coco: { 41: "cup", 40: "wine glass" }, minScore: 0.4, facets: VESSEL, vlm: "any drinking vessel you drink from directly: drinking glass (clear or colored), cup, mug, tumbler, wine glass" },
   bottle: { label: "병", role: "object", coco: { 39: "bottle" }, minScore: 0.4, facets: VESSEL, vlm: "only a container with a narrow neck or a cap for pouring, such as a water, wine or soda bottle" },
+  beer_can: { label: "맥주 캔", role: "object", coco: {}, minScore: 0.4, facets: VESSEL, vlm: "a can clearly identifiable as beer by its visible packaging; exclude unlabeled cans and other beverages" },
   bowl: { label: "그릇", role: "object", coco: { 45: "bowl" }, minScore: 0.4, facets: VESSEL, vlm: "a wide, low open dish for food; a drinking glass, cup or mug is never a bowl" },
   fork: { label: "포크", role: "object", coco: { 42: "fork" }, minScore: 0.45, facets: OBJ },
   knife: { label: "칼", role: "object", coco: { 43: "knife" }, minScore: 0.45, facets: OBJ },

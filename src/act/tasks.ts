@@ -100,6 +100,16 @@ export const TASKS: Record<string, TaskSpec> = {
     description: "사람이 책상에서 공부하거나 일하는 중 마실 물이 없거나 물을 부탁하면, 사람이 냉장고에서 물병을 꺼내 싱크대에서 컵에 물을 따르고 그 컵을 들어 책상에 가져가 놓게 한다. 따르기·컵 들기·놓기는 비전으로 끝을 본다(컵 내용물 있음·컵 손에 있음·책상 위이고 손에 없음). 단계는 일곱이다: 냉장고로 가기, 물병 꺼내기, 싱크대로 가기, 컵에 따르기, 컵 들기, 책상으로 가기, 컵 놓기. 냉장고 문 열기·닫기 단계는 넣지 않는다. 계획할 때 주방 컵이 안 보이면 컵 단계 대상은 싱크대 자리로 하고 끝 조건은 컵 종류(cup)로 쓴다. 묻지 않는다.",
     allow: { kinds: ["go", "pick", "do", "place"], need: ["go", "pick", "do", "place"] },
   },
+  "맥주 가져다주기": {
+    name: "맥주 가져다주기", completion: "deliver", carry: "beer_can", carryUnseen: true,
+    description: "냉장고로 가 맥주 캔 한 개를 꺼내 확인된 시청자 자리로 가져가 건네도록 안내한다. 질문하거나 다른 마실 것을 가져오지 않는다.",
+    allow: { kinds: HAND, need: HAND },
+  },
+  "맥주 캔 치우기": {
+    name: "맥주 캔 치우기", completion: "clear", target: "beer_can", touch: true,
+    description: "TV를 끄고 방을 옮긴 사용자가 탁자에 남긴 같은 맥주 캔을 들어 싱크대에 놓도록 안내한다. 놓기와 손을 뺀 상태를 확인한다.",
+    allow: { kinds: HAND, need: HAND },
+  },
 };
 
 /** 모든 행동 이름(검사·tasks.json 견주기). PAM에 보내는 목록은 지금 모드를 따른다(src/act/mode.ts pamTasks). */

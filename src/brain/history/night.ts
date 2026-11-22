@@ -15,6 +15,7 @@ import type { CandidateFsm } from "../../contract/pam.js";
 import { CUP_FSM_MEMORY, ContractError, MAX_REFLECT_TEXT, validateMemory, type FsmMemory } from "../decision.js";
 import { candidateText, type PamClient } from "../pam/index.js";
 import { adoptKey, adoptedFsm, candidateFsmOf, checkCandidate, type CheckDay, type CheckResult } from "../pam/adopt.js";
+import { learnBeerRules, withBeerRules } from "./beer-rules.js";
 import { clock, type Chunk, type Marks } from "../pam/marks.js";
 import { headWithin } from "../../shared/cut.js";
 import type { HistoryDb } from "./db.js";
@@ -167,7 +168,7 @@ export async function runNight(db: HistoryDb, pam: PamClient, day: string, o: Ni
     db.add("reflection", at, text, { data: { day, ok, version, applies_day: appliesDay, ...found, ...used } });
     o.emit?.({ type: "reflection", at_ms: at, day, ok, version, applies_day: appliesDay, text, ...found, ...used } as BrainLog);
   };
-  if (!db.hasInterventionPreference(day) && !db.list({ day, kinds: [...DAY_KINDS, "assistance_outcome"], limit: 1 }).length) {
+  if (!db.hasInterventionPreference(day) && !db.beerEvents(day, day).length && !db.list({ day, kinds: [...DAY_KINDS, "assistance_outcome"], limit: 1 }).length) {
     done(false, REFLECT_TEXT.failed(REFLECT_TEXT.empty), null, null);
     return fail(REFLECT_TEXT.empty, { empty: true });
   }
@@ -361,7 +362,9 @@ export async function runNight(db: HistoryDb, pam: PamClient, day: string, o: Ni
       const helps = db.list({ since: dayStart - ((o.windowDays ?? 30) - 1) * DAY_MS, until: dayStart + DAY_MS - 1, kinds: ["help"], limit: Number.MAX_SAFE_INTEGER });
       robot = withRoutines(robot, findRoutines(helps, db.offsetMinutes));
     }
-    const memory = validateMemory(robot, "fsm") as FsmMemory;
+    const firstBeerDay = new Date(Date.parse(`${day}T00:00:00Z`) - 29 * DAY_MS).toISOString().slice(0, 10);
+    const beer = learnBeerRules(db.beerEvents(firstBeerDay, day), db.offsetMinutes);
+    const memory = validateMemory(withBeerRules(robot, beer.rules), "fsm") as FsmMemory;
     const dropped = [...got.notes, ...filtered].filter((n) => !n.kept);
     const learned = learnedEdges(today, memory).filter((r) => !TASKS[r.action]?.coach);
     const active = learnedEdges(CUP_FSM_MEMORY, memory).filter((r) => !TASKS[r.action]?.coach);
@@ -373,10 +376,10 @@ export async function runNight(db: HistoryDb, pam: PamClient, day: string, o: Ni
     let appliesDay = nextDay(day);
     while (db.pinnedMemory(appliesDay) !== null) appliesDay = nextDay(appliesDay);
     const at = now();
-    const found = { learned, active, dropped, rejected: null, ...(checks.length ? { checks } : {}) };
+    const found = { learned, active, dropped, rejected: null, ...(checks.length ? { checks } : {}), ...(beer.tvOn ? { beer } : {}) };
     const used = usage ? { usage } : {};
     const saved = db.saveNight({
-      day, appliesDay, robot: memory, candidates, pin: () => memoryForDay(db, day),
+      day, appliesDay, robot: memory, candidates, beerRules: beer.rules, pin: () => memoryForDay(db, day),
       reflection: (version) => {
         const text = REFLECT_TEXT.done(version, appliesDay) + (learned.length ? ` · ${REFLECT_TEXT.learned(learned.length)}` : "");
         return { atMs: at, text, data: { day, ok: true, version, applies_day: appliesDay, ...found, ...used } };
