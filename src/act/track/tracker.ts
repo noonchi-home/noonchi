@@ -109,6 +109,7 @@ export interface DeviceRunner {
 export interface SpeechRequest { task: string; heard: string; atMs: number; afterSeq: number; via?: "answer" }
 
 export interface TrackerOptions {
+  assistance?: { boot: string; homeEpoch: string };
   /** Recheck the current resident after any approval or phone wait. */
   cupAnswers?: {
     discardLeftover?: () => boolean;

@@ -26,6 +26,8 @@ import type { Dock, DockSlot } from "../robot/dock.js";
 import type { Starter } from "../robot/start.js";
 import type { Steps } from "../robot/steps.js";
 import type { TrackerOptions } from "./tracker.js";
+import { randomUUID } from "node:crypto";
+import { AttemptBook, type Attempt } from "./attempt.js";
 
 /** at: 지금 단계 번호(실행 전 -1). sent: 실제 폰에 띄운 지금 명령. others: 계획 물건 id → 계획을 받을 때 있던 같은 종류의 다른 물건.
  *  alias: 계획 물건 id → 지금 그 물건으로 보는 World State id(옮겨서 새 id가 붙으면 이어 간다). carried: 집기 단계를 마친(사람이 든) 계획 물건.
@@ -33,6 +35,7 @@ import type { TrackerOptions } from "./tracker.js";
  *  deadline: 이 단계 시간 한도(계속이면 한 번 늘어난다). again: 이 단계에서 시간 초과로 한 번 다시 물었다.
  *  looks·lookAt: 이 단계에서 받아 센 멈춘 단계 부름 수(돌려받은 것은 뺌)와 마지막으로 받은 시각. stepEnd: 이 단계가 끝나면 끊는 신호(멈춘 단계 알림). */
 export interface Run {
+  attempt: Attempt;
   plan: AgentPlan; decision: DecisionRecord; state: ExecState; since: number;
   at: number; stepAt: number; spokeAt: number; visionAt: number; sent: PlannedCommand | null;
   asking: Asking | null; askAt: number; watch: ConditionWatch | null; others: Map<string, Set<string>>; alias: Map<string, string>; carried: Set<string>;
@@ -88,7 +91,7 @@ export interface Run {
 
 /** at: 같은 행동 다시 계획 간격(planGapMs)을 세려고 적은 시각. */
 /** prepared: 미리 만든 계획을 쓴 판단(goal.ts take): 그 목표 id와 실행 전 검사 기준(사람이 떠난 때). */
-export interface Job { decision: DecisionRecord; gen: number; abort: AbortController; at: number; resumedStep?: string | null; prepared?: { goal: string; seenSince: number; leftAt: number; meal?: Run["meal"] } }
+export interface Job { decision: DecisionRecord; gen: number; abort: AbortController; at: number; attempt: Attempt; resumedStep?: string | null; prepared?: { goal: string; seenSince: number; leftAt: number; meal?: Run["meal"] } }
 
 export const OPEN = new Set<ExecState>(["planned", "running", "verifying"]);
 export const clsOf = (w: WorldView, id: string) => w.objects.find((o) => o.id === id)?.cls ?? id.replace(/_\d+$/, "");
@@ -101,6 +104,7 @@ export interface TrackConfig {
 
 /** 실행 추적의 안쪽 공유 객체: 상태와 기록·실제 폰 길, 부분(ExecutionTracker가 단다). */
 export class TrackCore {
+  readonly attempts: AttemptBook;
   readonly navigation = new Navigation();
   walk(key:string,target:PlannedCommand["target"],station=false,hint?:XZ[]) {
     if (!this.o.layout.walking) return undefined;
@@ -156,7 +160,9 @@ export class TrackCore {
   goal!: GoalWatch;
   dock!: Dock;
 
-  constructor(readonly o: TrackerOptions, readonly clock: { now(): number }, readonly cfg: TrackConfig) {}
+  constructor(readonly o: TrackerOptions, readonly clock: { now(): number }, readonly cfg: TrackConfig) {
+    this.attempts = new AttemptBook(o.assistance?.boot ?? randomUUID(), o.assistance?.homeEpoch ?? "local");
+  }
 
   open(): Run | null {
     return this.run && OPEN.has(this.run.state) ? this.run : null;

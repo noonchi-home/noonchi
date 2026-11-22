@@ -14,6 +14,7 @@ import { isoWithOffset } from "../../shared/time.js";
 import type { SpeechRequest } from "../track/tracker.js";
 import { emergencyOf } from "../mode.js";
 import { Part, clsOf, type Job, type Run } from "../track/core.js";
+import { goalOf } from "../track/attempt.js";
 
 /** 계획 전 검사가 막은 까닭 가운데 분명한 것(더 봐도 바뀌지 않음): 이미 치움·확인된 내용물 반대·행동 목록 밖.
  *  대상이 안 보임(no_target)은 확정 전 컵일 수 있는 모름이라 넣지 않는다(판단이 그 화살표를 기다려 컵이 확정되면 다시 켠다). */
@@ -153,7 +154,9 @@ export class Starter extends Part {
     // 미리 세운 목표는 여기서 버리지 않는다: 다른 행동의 계획이 실제로 시작할 때(begin) 버린다. 골라졌다가 막히면(계획 실패·쓰는 중·실행 전 검사) 목표가 그대로 맡는다
     // 계획을 만드는 중이던 다른 행동은 끊고 버린다(답이 와도 쓰지 않는다)
     this.dropPlanning(EXEC_TEXT.superseded);
-    const job: Job = { decision: d, gen: ++this.gen, abort: new AbortController(), at: now };
+    const attempt = core.attempts.issue(d);
+    if (attempt.ended) return;
+    const job: Job = { decision: d, gen: ++this.gen, abort: new AbortController(), at: now, attempt };
     if (resumed) job.resumedStep = context.handling;
     core.planning = job;
     core.emit(planIdOf(d.id), "decided");
@@ -301,6 +304,7 @@ export class Starter extends Part {
     const now = this.clock.now();
     const world = this.o.state.view();
     const ids = new Set<string>();
+    job.attempt.goal ??= goalOf(r.plan, { objects: world.objects, room: world.person.room }, null);
     for (const s of r.plan.steps) {
       if (s.object) ids.add(s.object);
       // 그 자리에서 하는 일의 대상 물건도 계획 물건이다(옮겨 새 id가 붙으면 이어 간다)
@@ -309,7 +313,7 @@ export class Starter extends Part {
     }
     const others = new Map([...ids].map((id) => [id, new Set(world.objects.filter((o) => o.cls === clsOf(world, id) && o.id !== id).map((o) => o.id))]));
     const run: Run = {
-      plan: r.plan, decision: d, state: "decided", since: now, at: -1, stepAt: now, spokeAt: now, visionAt: now, sent: null,
+      plan: r.plan, decision: d, attempt: job.attempt, state: "decided", since: now, at: -1, stepAt: now, spokeAt: now, visionAt: now, sent: null,
       asking: null, askAt: now, watch: null, others, alias: new Map([...ids].map((id) => [id, id])), carried: new Set(), placeAt: (id) => (id ? this.o.layout.floor().objects.get(id)?.position ?? null : null), deadline: now, again: false, device: "idle", gen: 0,
       looks: 0, lookAt: Number.NEGATIVE_INFINITY, stepEnd: null, gapAt: job.at, onAt: new Map(), ends: new Map(), offAsked: -1, deferred: false, phoneWait: false, phone: false,
       strays: 0, strayAt: Number.NEGATIVE_INFINITY, strayNear: null, told: null, helped: false,

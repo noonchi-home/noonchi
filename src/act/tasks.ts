@@ -14,6 +14,8 @@ export interface TaskAllow { kinds: readonly Kind[]; need: readonly Kind[]; devi
 /** 행동 하나: 이름, 에이전트에게 주는 설명, 쓸 수 있는 단계, 계획 전 검사의 대상 종류(이 종류 중 치우지 않은 물건이 보여야 부른다),
  *  판단 전에 더 잘 볼 대상 물건의 면(look: 모르면 관찰 모드 B가 가까이 볼지 고른다, src/act/look.ts). */
 export interface TaskSpec {
+  /** Positive completion proof for adaptive execution. Other actions keep their existing checks. */
+  completion?: "clear" | "deliver" | "device";
   name: string; description: string; allow: TaskAllow; target?: ObjClass; look?: readonly Facet[];
   /** 행동 조건: 대상 물건의 그 면이 이 값으로 확인돼야 한다(계획 전 검사는 확인된 반대 값이면 막고, 실행 전 검사는 모르면 보류, src/act/check.ts). 면은 look 안이다. */
   want?: Partial<Record<Facet, StateKey>>;
@@ -50,6 +52,7 @@ const FILL: TaskAllow = { kinds: ["go", "pick", "do", "place"], need: ["go", "pi
 
 export const TASKS: Record<string, TaskSpec> = {
   "컵 치우기": {
+    completion: "clear",
     name: "컵 치우기", description: "사람이 자리를 비운 뒤 식탁 등에 남은 컵을 사람이 싱크대에 넣게 한다.", target: "cup", touch: true, afterUse: true, learn: true, topLook: true,
     allow: { kinds: HAND, need: HAND },
   },
@@ -59,6 +62,7 @@ export const TASKS: Record<string, TaskSpec> = {
     allow: { kinds: ["wait", ...HAND, "device", "ask", "say"], need: [...HAND, "device"], devices: { kinds: ["dryer"], tools: ["start"] } },
   },
   "에어컨 켜기": {
+    completion: "device",
     name: "에어컨 켜기", description: "더울 때 사람이 있는 방의 에어컨을 켠다.", learn: true,
     allow: { kinds: ["device", "say"], need: ["device"], devices: { kinds: ["aircon"], tools: ["turn_on"] } },
   },
@@ -91,6 +95,7 @@ export const TASKS: Record<string, TaskSpec> = {
   // 대상 컵은 주방에 있어(사람 곁에서 판단할 때는 안 보인다) target을 두지 않는다. 물병은 냉장고 안이라 안 보여도 집기를 받는다.
   // 습관은 반성(LLM)이 아니라 도움 기록의 시각으로 찾는다(src/brain/history/routines.ts)라 learn을 두지 않는다
   "물 한 잔 가져다주기": {
+    completion: "deliver",
     name: "물 한 잔 가져다주기", maxSteps: 10, carry: "bottle", carryUnseen: true, carryAlso: ["cup"],
     description: "사람이 책상에서 공부하거나 일하는 중 마실 물이 없거나 물을 부탁하면, 사람이 냉장고에서 물병을 꺼내 싱크대에서 컵에 물을 따르고 그 컵을 들어 책상에 가져가 놓게 한다. 따르기·컵 들기·놓기는 비전으로 끝을 본다(컵 내용물 있음·컵 손에 있음·책상 위이고 손에 없음). 단계는 일곱이다: 냉장고로 가기, 물병 꺼내기, 싱크대로 가기, 컵에 따르기, 컵 들기, 책상으로 가기, 컵 놓기. 냉장고 문 열기·닫기 단계는 넣지 않는다. 계획할 때 주방 컵이 안 보이면 컵 단계 대상은 싱크대 자리로 하고 끝 조건은 컵 종류(cup)로 쓴다. 묻지 않는다.",
     allow: { kinds: ["go", "pick", "do", "place"], need: ["go", "pick", "do", "place"] },
