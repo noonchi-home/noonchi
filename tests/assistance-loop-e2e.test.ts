@@ -79,6 +79,10 @@ it("finishes on the oneroom hub's fresh power state without invoking the model o
     expect(replay.server.signals.get(device.id)?.updatedAt).toBe(synced?.updatedAt);
     expect(replay.output("/device/command")).toHaveLength(0);
     expect(replay.requests).toHaveLength(before);
+    const rows = replay.server.history.list({}).filter(row => row.kind === ("assistance_outcome" as string));
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.data).toMatchObject({ key: { homeEpoch: "oneroom#1", attemptId: "already-cool", gen: 0 },
+      home: "oneroom", execution: "done", reaction: "unknown", proof: null });
     expect(replay.phoneCommands().some(c => c.type === "command")).toBe(false);
     expect(replay.network).toEqual([]);
   } finally { await replay.close(); }

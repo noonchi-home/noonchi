@@ -12,7 +12,7 @@
 export type HistoryKind =
   | "device" | "detection" | "vlm" | "yolo" | "world" | "pam_text" | "mode" | "decision" | "plan" | "execution" | "reflection" | "feedback" | "photo"
   | "link" | "trigger" | "look" | "thought" | "service" | "bus_gap" | "goal" | "planner" | "person" | "robot" | "safety" | "manager" | "household"
-  | "help";
+  | "help" | "assistance_outcome";
 
 export interface HistoryRow {
   id: number;

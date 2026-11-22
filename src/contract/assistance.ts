@@ -34,4 +34,3 @@ export interface EvidenceQuestion {
 }
 
 export type Intervention = "default" | "verify_first" | "defer_proactive";
-export type AssistanceExecution = "done" | "cancelled" | "failed";

@@ -6,6 +6,24 @@ import { TASKS, tasksFor } from "../src/act/tasks.js";
 import { LEARNED_FSM_MEMORY, learnedFsm } from "../scripts/learned-memory.js";
 
 describe("goalAhead (사람 상태 FSM)", () => {
+  it("keeps the surviving transition's original PAM index when policy excludes the first", () => {
+    const action = "컵 치우기";
+    const memory = {
+      initial_state: "drinking",
+      states: [
+        { id: "drinking", description: "", activity: [], next: [
+          { to: "away", on: "first", action },
+          { to: "reading", on: "second", action },
+        ] },
+        { id: "away", description: "", activity: [], next: [] },
+        { id: "reading", description: "", activity: [], next: [] },
+      ],
+    };
+    const allows = (_state: string, edge: { on: string }) => edge.on === "second";
+    const picked = goalAhead({ memory, kind: "fsm", state: "drinking", tasks, cls: "cup", allows });
+    expect(picked).toMatchObject({ action, index: 1, on: "second" });
+    expect(memory.states[0]?.next.map(edge => edge.on)).toEqual(["first", "second"]);
+  });
   const tasks = tasksFor("noonchi");
   it("배운 뒤 기억에서 마시는 중이면 그 상태에서 나가는 배운 화살표의 손대는 다 쓴 뒤 행동(컵 치우기)을 고른다", () => {
     expect(goalAhead({ memory: LEARNED_FSM_MEMORY, kind: "fsm", state: "drinking", tasks, cls: "cup" })).toEqual({

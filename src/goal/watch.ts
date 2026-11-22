@@ -43,7 +43,8 @@ export interface GoalPorts {
   placed(): Placed;
   holding(): { cls: string; id: string | null }[];
   planner(d: DecisionRecord, signal: AbortSignal, ahead?: PlanAhead): PlanResult | Promise<PlanResult>;
-  habit?(): { memory: PamMemory; kind: "list" | "fsm"; state: string | null; version: number } | null;
+  habit?(): { memory: PamMemory; kind: "list" | "fsm"; state: string | null; version: number;
+    allows?: NonNullable<Parameters<typeof goalAhead>[0]["allows"]> } | null;
   reuse?(d: DecisionRecord, plan: AgentPlan, rename?: Readonly<Record<string, string>>): PlanResult;
   surfaces?(): PlaneSurface[];
   tasks?(): readonly string[];
@@ -122,7 +123,7 @@ export class GoalWatch {
     // 지금 상태: World State 하는 일로 정한 것이 먼저(판단 전에도 목표가 4초쯤 선다), 없으면 마지막 판단의 상태
     const state = ("states" in habit.memory ? stateOfWorld(habit.memory, world) : null) ?? habit.state;
     for (const h of held) {
-      const pick = goalAhead({ memory: habit.memory, kind: habit.kind, state, tasks, cls: h.cls });
+      const pick = goalAhead({ memory: habit.memory, kind: habit.kind, state, tasks, cls: h.cls, allows: habit.allows });
       const objectId = h.id ?? targetOf({ target: h.cls as ObjClass }, world, this.o.placed())?.id ?? null;
       if (!pick) continue;
       const evidence = this.o.meal ? this.o.meal() : null;

@@ -114,6 +114,9 @@ export function applyPhoneProgress(core: HomeCore, b: Body<"/phone/progress">): 
   const req = b.req;
   const tracker = core.tracker;
   if (core.closed || !tracker) return { req, status: "stale" };
+  if (b.kind === "voice" && core.resumeProactive?.(b.text, req)) {
+    return { req, status: "answer", reply: "알겠어요. 다음 날부터 같은 상황에서 먼저 도울게요." };
+  }
   const open = tracker.openCommand();
   const at = b.kind === "voice" && b.at ? { ...b.at, pending: [] } : undefined;
   const before = core.speechOrder;

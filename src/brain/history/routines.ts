@@ -33,7 +33,8 @@ export function hourText(min: number): string {
 
 function isHelp(row: HistoryRow): row is HistoryRow & { data: HelpRecord } {
   const d = row.data as Partial<HelpRecord> | null;
-  return row.kind === "help" && !!d && typeof d.action === "string" && typeof d.asked_ms === "number" && typeof d.place === "string" && typeof d.place_label === "string";
+  return row.kind === "help" && !!d && (d.via === "speech" || d.via === "call") && typeof d.action === "string"
+    && typeof d.asked_ms === "number" && typeof d.place === "string" && typeof d.place_label === "string";
 }
 
 /** help 줄들 → 습관 목록(행동·자리마다 하나). */

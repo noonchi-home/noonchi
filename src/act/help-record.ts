@@ -1,6 +1,15 @@
 // 도움 기록(시나리오 2): 사람에게 가져다준 일을 끝까지 마치면 한 줄로 남긴다. 「20:02 · 책상에서 공부 중 · 물 한 잔 요청 · 전달 완료」.
 // 대시보드 메시지 상자(SAY_DONE_MS 동안)와 기록 DB help 줄에 같은 글이 간다. 여러 날의 help 줄이 습관 찾기(src/brain/history/routines.ts)의 입력이다.
 import type { WorldView } from "../contract/world.js";
+import type { BusNode, Outbox } from "../bus/index.js";
+import type { AssistanceOutcome } from "../contract/assistance-outcome.js";
+
+export { assistanceOutcome } from "../contract/assistance-outcome.js";
+
+export function publishAssistanceOutcome(act: BusNode | Outbox, outcome: AssistanceOutcome): void {
+  if ("push" in act) act.push("/act/assistance_outcome", outcome);
+  else act.post(async () => { await act.publish("/act/assistance_outcome", outcome); });
+}
 import type { HelpRecord, HelpVia } from "../contract/history.js";
 import { STUDY_ACTIVITIES, WATER_ACTION } from "./tasks.js";
 

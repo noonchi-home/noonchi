@@ -1,4 +1,5 @@
-import type { AssistanceExecution, AttemptKey, EvidenceRef } from "../../contract/assistance.js";
+import type { EvidenceRef } from "../../contract/assistance.js";
+import { assistanceContext, type AssistanceAttempt, type AssistanceExecution, type AssistanceReactionProof } from "../../contract/assistance-outcome.js";
 import type { DecisionRecord } from "../../contract/events.js";
 import type { AgentStep } from "../../contract/plan-work.js";
 import { EXEC_TEXT } from "../labels.js";
@@ -7,33 +8,15 @@ import { assess, type AssessmentWorld, type Attempt } from "./attempt.js";
 import { Part, type Run } from "./core.js";
 import { allowedEvidence, EvidenceRun } from "./evidence.js";
 
-export interface OutcomeAttempt {
-  key: AttemptKey;
-  home: string;
-  user: string | null;
-  action: string;
-  context: string | null;
-  request: "direct" | "proactive";
-  startedMs: number;
-}
-
-export interface ReactionProof {
-  key: AttemptKey;
-  home: string;
-  user: string;
-  kind: "explicit_accept" | "explicit_decline" | "confirmed_handoff" | "self_resolved";
-  evidence: EvidenceRef;
-}
-
 const NEED_STATE = "지금 상태를 확인할 수 없어 멈췄어요.";
 const ALREADY_DONE = "이미 필요한 일이 끝났어요.";
 const LOCATION_CHANGED = "지금 자리에 맞춰 다시 계획해요.";
 const POLICY_DEFER = "이번에는 먼저 돕지 않아요.";
 
 export class AdaptiveExecution extends Part {
-  private readonly identity = new WeakMap<Attempt, Omit<OutcomeAttempt, "key">>();
+  private readonly identity = new WeakMap<Attempt, Omit<AssistanceAttempt, "key">>();
   private readonly evidence = new WeakMap<Attempt, EvidenceRun>();
-  private readonly proofs = new WeakMap<Attempt, ReactionProof[]>();
+  private readonly proofs = new WeakMap<Attempt, AssistanceReactionProof[]>();
   private readonly handoffs = new Map<Run, { at: number; target: string; objectId: string }>();
 
   direct(d: DecisionRecord): boolean { return d.source === "speech"; }
@@ -48,9 +31,9 @@ export class AdaptiveExecution extends Part {
     if (old) return old.user;
     if (!ad || !d.action) return null;
     const world = this.o.state.view();
-    const user = ad.resident?.(world) ?? null;
+    const user = (ad.bindResident ?? ad.resident)?.(world) ?? null;
     this.identity.set(a, { home: ad.home ?? ad.homeEpoch, user, action: d.action,
-      context: d.fsm?.from ?? world.person.room, request: this.direct(d) ? "direct" : "proactive", startedMs: this.clock.now() });
+      context: assistanceContext(d, world), request: this.direct(d) ? "direct" : "proactive", startedMs: this.clock.now() });
     return user;
   }
 
@@ -103,7 +86,7 @@ export class AdaptiveExecution extends Part {
     }
   }
 
-  response(r: Run, kind: ReactionProof["kind"], evidence: EvidenceRef): void {
+  response(r: Run, kind: AssistanceReactionProof["kind"], evidence: EvidenceRef): void {
     const { attempt } = r;
     const i = this.identity.get(attempt);
     const world = this.o.state.view();

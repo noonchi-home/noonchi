@@ -115,11 +115,13 @@ export interface TrackerOptions {
     homeEpoch: string;
     home?: string;
     resident?(world: WorldView): string | null;
+    bindResident?(world: WorldView): string | null;
     targetDevice?(decision: DecisionRecord, world: WorldView): string | null;
     readDevice?(id: string): import("./attempt.js").AssessmentWorld["device"] | null;
     interventionFor?(decision: DecisionRecord, world: WorldView): import("../../contract/assistance.js").Intervention;
-    ended?(attempt: import("./adaptive.js").OutcomeAttempt, execution: import("../../contract/assistance.js").AssistanceExecution,
-      endedMs: number, proofs: readonly import("./adaptive.js").ReactionProof[]): void;
+    ended?(attempt: import("../../contract/assistance-outcome.js").AssistanceAttempt,
+      execution: import("../../contract/assistance-outcome.js").AssistanceExecution, endedMs: number,
+      proofs: readonly import("../../contract/assistance-outcome.js").AssistanceReactionProof[]): void;
     evidence?: import("./evidence.js").EvidencePorts;
     cropVisible?(id: string): boolean;
   };
