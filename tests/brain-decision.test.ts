@@ -97,7 +97,7 @@ describe("사람 활동 FSM 코드 검사", () => {
   });
   it("seed에는 컵 치우기 화살표가 없고(배우는 습관) 사용자가 정한 습관 화살표는 있다. 배운 뒤 기억은 마시는 중에서 떠나는 묻기 화살표 자리만 컵 치우기다", () => {
     const actions = (m: FsmMemory) => m.states.flatMap((s) => s.next.flatMap((e) => (e.action ? [e.action] : [])));
-    expect(LEARNED_ACTIONS).toEqual(["컵 치우기", "에어컨 켜기"]);
+    expect(LEARNED_ACTIONS).toEqual(["컵 치우기", "에어컨 켜기", "맥주 가져다주기", "맥주 캔 치우기"]);
     expect(actions(CUP_FSM_MEMORY)).not.toContain("컵 치우기");
     expect(actions(CUP_FSM_MEMORY)).toEqual(expect.arrayContaining(["컵에 물 채워 주기", "컵에 콜라 따라 주기", "에어컨 켜기", "라면 끓이기 알려 주기", "전자레인지로 데우기 알려 주기"]));
     expect(validateMemory(LEARNED_FSM_MEMORY, "fsm")).toBe(LEARNED_FSM_MEMORY);

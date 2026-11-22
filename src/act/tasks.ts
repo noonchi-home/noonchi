@@ -69,6 +69,16 @@ export const TASKS: Record<string, TaskSpec> = {
     name: "컵에 콜라 따라 주기", description: "사람이 TV를 보는 중인데 컵이 비어 있으면 사람이 냉장고에서 콜라를 꺼내 와 컵에 따르게 한다.", target: "cup", touch: true, look: ["contents"], want: { contents: "empty" },
     carry: "bottle", carryUnseen: true, allow: FILL,
   },
+  // 맥주 갈래(2026-11-22 사용자 결정, 시연 2번 «토요일 저녁 TV와 맥주»): 둘 다 배우는 행동이다(learn). 물건 종류에 캔이 없어 대상(target)을 두지 않으니 계획 전 검사·물건 찾기는 하지 않는다.
+  // 이 행동들은 요일·시각 맥락 학습과 낮 판단을 시험하려는 것이고, 캔을 집어 싱크대에 놓는 실행은 물건 인식이 따로 있어야 한다. 코치 행동 앞에 둔다(코치 행동은 목록 끝).
+  "맥주 가져다주기": {
+    name: "맥주 가져다주기", description: "사람이 TV를 보기 시작하면 사람이 냉장고에서 맥주를 꺼내 사람에게 가져다준다.", learn: true,
+    allow: { kinds: [...HAND, "say"], need: HAND },
+  },
+  "맥주 캔 치우기": {
+    name: "맥주 캔 치우기", description: "사람이 TV를 다 보고 자리를 뜬 뒤 탁자 등에 남은 맥주 캔을 사람이 싱크대에 넣게 한다.", learn: true,
+    allow: { kinds: HAND, need: HAND },
+  },
   // 코치 행동(2026-11-13): 단계 목록은 에이전트 계획 모드가 만든다. 여기에는 설명과 쓸 수 있는 단계만 둔다(device 없음)
   "라면 끓이기 알려 주기": {
     name: "라면 끓이기 알려 주기", coach: true, maxSteps: 14, uses: ["pot", "ramen", "bowl"],
@@ -107,6 +117,8 @@ export const TASK_SAY: Readonly<Record<string, { may: string; will: string }>> =
   "에어컨 켜기": { may: "에어컨을 켜도", will: "에어컨을 켤게요" },
   "컵에 물 채워 주기": { may: "물을 채워 드려도", will: "컵에 물을 채울게요" },
   "컵에 콜라 따라 주기": { may: "콜라를 따라 드려도", will: "컵에 콜라를 따를게요" },
+  "맥주 가져다주기": { may: "맥주를 가져다 드려도", will: "맥주를 가져다 드릴게요" },
+  "맥주 캔 치우기": { may: "맥주 캔을 치워도", will: "맥주 캔을 치울게요" },
   "라면 끓이기 알려 주기": { may: "알려 드려도", will: "라면 끓이는 법을 알려 드릴게요" },
   "전자레인지로 데우기 알려 주기": { may: "알려 드려도", will: "전자레인지 쓰는 법을 알려 드릴게요" },
 };

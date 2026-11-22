@@ -47,10 +47,10 @@ describe("행동 목록", () => {
     expect(TASKS["전자레인지로 데우기 알려 주기"]!.uses).toEqual(["bowl"]);
   });
 
-  it("눈치 모드 행동 목록은 여섯이고 앞 넷의 순서는 그대로다. 코치 행동은 없다", () => {
-    expect(tasksFor("noonchi")).toEqual(["컵 치우기", "사용자에게 물어보기", "세탁물 건조기로 옮기기", "에어컨 켜기", "컵에 물 채워 주기", "컵에 콜라 따라 주기"]);
+  it("눈치 모드 행동 목록은 여덟이고 앞 넷의 순서는 그대로다(맥주 갈래 둘은 콜라 뒤, 코치 행동 앞). 코치 행동은 없다", () => {
+    expect(tasksFor("noonchi")).toEqual(["컵 치우기", "사용자에게 물어보기", "세탁물 건조기로 옮기기", "에어컨 켜기", "컵에 물 채워 주기", "컵에 콜라 따라 주기", "맥주 가져다주기", "맥주 캔 치우기"]);
     expect(TASK_NAMES).toEqual([...tasksFor("noonchi"), "라면 끓이기 알려 주기", "전자레인지로 데우기 알려 주기"]);
-    expect(TASK_NAMES).toHaveLength(8);
+    expect(TASK_NAMES).toHaveLength(10);
     expect(tasksFor("noonchi")).not.toContain("전자레인지로 데우기 알려 주기");
   });
 
