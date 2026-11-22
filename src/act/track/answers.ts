@@ -64,6 +64,16 @@ export class Answers extends Part {
       steps.timeout(r, step);
       return false;
     }
+    // The answer must belong to this exact shown question and an identified
+    // current resident. A safety approval or a generic stop is not a preference.
+    if (a?.why === "plan" || a?.why === "leftover") {
+      const user = this.o.assistance?.resident?.(this.o.state.view());
+      if (user && ["approve", "reject", "clear", "keep"].includes(picked.id)) {
+        const kind = picked.id === "reject" || picked.id === "keep" ? "explicit_decline" : "explicit_accept";
+        core.adaptive.response(r, kind, { source: "phone_answer", subjectId: user,
+          originId: `${planId}:${stepId}:${now}`, observedMs: now });
+      }
+    }
     if (a?.why === "plan") approval.approvedPlan(r, picked.id as ApprovalAnswer);
     else if (a?.why === "device") approval.approvedDevice(r, a.token, picked.id as ApprovalAnswer);
     else if (a?.why === "hand") approval.approvedHand(r, picked.id as ApprovalAnswer);

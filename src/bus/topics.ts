@@ -206,6 +206,7 @@ const prediction = z.strictObject({ observation: z.string(), reasoning: z.string
 const fsmStep = z.strictObject({ state: id, from: maybeText, next_index: z.int(), to: maybeText, on: maybeText, when: maybeText, action: maybeText, learned: z.boolean() });
 const decisionRecord = z.strictObject({
   request_rev: rev.optional(),
+  assistanceRevision: z.strictObject({ room: id, objectId: maybeText, completed: rev }).optional(),
   id, seq: rev, atMs: at, finalTime: id, textSent: z.string(), status: z.enum(["valid", "failed"]), prediction: prediction.nullable(), action: maybeText,
   fsm: fsmStep.nullable().optional(), late: z.literal(true).optional(), goal: z.literal(true).optional(), error: z.string().optional(),
   usage: z.strictObject({ model: id, prompt: rev, completion: rev, cached: rev, cost_usd: at.nullable() }).optional(), memoryVersion: rev, tasks: z.array(id).optional(),

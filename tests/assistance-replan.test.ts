@@ -1,0 +1,159 @@
+import { expect, it, vi } from "vitest";
+import { PlanHub } from "../src/act/index.js";
+import type { EvidenceRef } from "../src/contract/assistance.js";
+import type { DecisionRecord } from "../src/contract/events.js";
+import type { WorldObject, WorldView } from "../src/contract/world.js";
+import type { AgentPlan, AgentStep } from "../src/contract/plan-work.js";
+import { VirtualClock } from "../src/bus/clock.js";
+import { floorPlanFrom } from "../src/layout/index.js";
+import { SMALL_SCENE } from "./helpers/floor.js";
+import { testTracker, type TrackerFixture } from "./helpers/tracker-ports.js";
+import { cameraAt } from "./helpers/home-realism.js";
+
+const world: WorldView = {
+  at_ms: 1000, frame_ms: null, objects: [], fixtures: [], devices: [], eye: null, vlm_missing: 0, yolo_missing: 0,
+  person: { visible: false, count: 0, since_ms: null, last_seen_ms: null, room: "living", room_label: null, position: null,
+    position_ms: null, near: [], holding: [], facts: {}, answered_ms: null },
+};
+const decision: DecisionRecord = {
+  id: "d", seq: 1, atMs: 1000, action: "에어컨 켜기", status: "valid", textSent: "", finalTime: "", prediction: null,
+  memoryVersion: 1, world: { objects: [], person_visible: false, vlm_missing: 0, yolo_missing: 0 },
+};
+
+function rig(ports: Partial<NonNullable<TrackerFixture["assistance"]>> = {}) {
+  const clock = new VirtualClock(1000);
+  const toPhone = vi.fn(), emit = vi.fn(), run = vi.fn();
+  const planner = vi.fn(() => ({ ok: false as const, error: "no_plan" }));
+  const ended = vi.fn();
+  const floor = () => floorPlanFrom(SMALL_SCENE);
+  const tracker = testTracker({
+    plans: new PlanHub(floor(), () => {}, () => ""), approvals: { memory: () => ({ always: {} }), answer: () => {} }, check: () => ({ ok: true }), planner,
+    world: () => world, clock, toPhone, floor, emit, devices: { run, confirm: vi.fn(), cancel: vi.fn() },
+    assistance: { boot: "b", homeEpoch: "h#1", home: "h", targetDevice: () => "ac", ended, ...ports },
+  });
+  return { tracker, clock, toPhone, emit, run, planner, ended };
+}
+
+it("uses a recent hardware read from before the attempt without calling a model or issuing a command", async () => {
+  const ref: EvidenceRef = { source: "hub", subjectId: "ac", originId: "device-read:19", observedMs: 900 };
+  const choose = vi.fn();
+  const r = rig({ readDevice: () => ({ attr: "power", value: true, ref }), evidence: { choose, acquire: vi.fn() } });
+  r.tracker.onDecision(decision);
+  await r.tracker.idle();
+  expect(r.planner).not.toHaveBeenCalled();
+  expect(choose).not.toHaveBeenCalled();
+  expect(r.run).not.toHaveBeenCalled();
+  expect(r.toPhone).not.toHaveBeenCalled();
+  expect(r.ended).toHaveBeenCalledTimes(1);
+  expect(r.ended.mock.calls[0]?.[1]).toBe("done");
+});
+
+it("does not emit even an approval or a planner call for a deferred proactive request", () => {
+  const r = rig({ interventionFor: () => "defer_proactive" });
+  r.tracker.onDecision(decision);
+  expect(r.planner).not.toHaveBeenCalled();
+  expect(r.toPhone).not.toHaveBeenCalled();
+  expect(r.run).not.toHaveBeenCalled();
+});
+
+it("does not turn a proactive decision into a direct request because the observation contains unrelated speech", () => {
+  const r = rig({ interventionFor: () => "defer_proactive" });
+  r.tracker.onDecision({ ...decision, action: "물 한 잔 가져다주기", textSent: "들은 말: 지금 몇 시야?" });
+  expect(r.planner).not.toHaveBeenCalled();
+  expect(r.toPhone).not.toHaveBeenCalled();
+});
+
+const step = (id: string, kind: AgentStep["kind"], target: string, object: string | null = null): AgentStep => ({
+  id, kind, target, object, label: kind, command: "해주세요", prompt: null, text: null, device: null, hand: null,
+  caution: null, until: null, timeoutMs: 60000, onTimeout: "fail",
+});
+function plan(d: DecisionRecord, steps: AgentStep[]): AgentPlan {
+  return { task: d.action!, steps, view: { id: "plan:" + d.id, revision: 1, source: "agent", goal: "테스트", judgment: "", dryRun: false,
+    robot: { position: null, room: null }, path: [], legs: [], status: "planned", updatedAt: new Date(d.atMs).toISOString(),
+    steps: steps.map(s => ({ id: s.id, kind: s.kind === "go" ? "move" : "act", label: s.label, status: "pending" })) } };
+}
+function cameraWorld(room: string, count: number, t: number, surface: string | null, held = false): WorldView {
+  const cup: WorldObject = { id: "cup_1", cls: "cup", position: [6, .8, 2], surface, surface_label: null, room, error_m: .05,
+    status: "present", first_seen_ms: 800, last_seen_ms: t, last_in_view_ms: t, facts: {
+      place: { value: held ? "in_hand" : "on_table", certainty: "confirmed", at_ms: t, since_ms: t },
+      contents: { value: "has_contents", certainty: "confirmed", at_ms: t, since_ms: t },
+    }, answered_ms: t, devices: [], closer_hold: false, followed_by: null };
+  return { ...world, at_ms: t, objects: [cup],
+    person: { ...world.person, room, visible: true, count, holding: held ? [cup.id] : [], position_ms: t },
+    household_photo: { id: "frame-" + t, at_ms: t, serial: t,
+      proof: { camera: cameraAt([5, 1], [6, 2]), seats: "clear", person_count: count, dining_food: "unknown",
+        person: { position: [6, 2], room, seated: false, attention: "elsewhere" } } } };
+}
+function movement(start: WorldView, planner: TrackerFixture["planner"]) {
+  const clock = new VirtualClock(1000), commands = vi.fn(), ended = vi.fn();
+  const floor = () => floorPlanFrom({ ...SMALL_SCENE, objects: [...SMALL_SCENE.objects,
+    { id: "hall_table", room: "hall", type: "dining_table", plan: { position: [2, 2] } }] });
+  const approvals = { memory: () => ({ always: {} }), answer: () => {} };
+  let w = start;
+  const tracker = testTracker({
+    plans: new PlanHub(floor(), () => {}, () => ""), approvals, check: () => ({ ok: true }), planner, world: () => w,
+    clock, toPhone: commands, floor, emit: vi.fn(),
+    assistance: { boot: "b", homeEpoch: "h#1", home: "h", resident: v => v.person.count === 1 ? "member" : null, ended },
+  });
+  return { tracker, commands, ended, photo: (next: WorldView) => { clock.set(next.at_ms); w = next; tracker.onWorld(); } };
+}
+
+it("does not fail the active pickup when the selected cup appears in hand", () => {
+  const d = { ...decision, action: "컵 치우기" };
+  const r = movement(cameraWorld("kitchen", 1, 1000, "table_1"),
+    current => ({ ok: true, plan: plan(current, [step("pick", "pick", "table_1", "cup_1"), step("place", "place", "sink_1", "cup_1")]) }));
+  r.tracker.onDecision(d);
+  expect(r.tracker.openCommand()?.stepId).toBe("pick");
+  r.photo(cameraWorld("kitchen", 1, 1200, null, true));
+  expect(r.tracker.current()?.state).toBe("running");
+  expect(r.ended).not.toHaveBeenCalled();
+});
+
+it("does not attribute the same cup held by an unidentified person to the recipient", () => {
+  const d = { ...decision, action: "물 한 잔 가져다주기" };
+  const r = movement(cameraWorld("kitchen", 1, 1000, "sink_1"), current => ({
+    ok: true, plan: plan(current, [step("go", "go", "table_1"), step("place", "place", "table_1", "cup_1")]),
+  }));
+  r.tracker.onDecision(d);
+  r.photo(cameraWorld("kitchen", 2, 1200, null, true));
+  expect(r.ended).not.toHaveBeenCalled();
+  r.photo(cameraWorld("kitchen", 1, 1300, null, true));
+  expect(r.ended).toHaveBeenCalledWith(expect.objectContaining({user: "member"}), "done", 1300,
+    [expect.objectContaining({ kind: "self_resolved" })]);
+});
+
+it("withdraws the old phone command and keeps the attempt when the empty-handed recipient changes rooms", async () => {
+  const d = { ...decision, action: "물 한 잔 가져다주기" };
+  const planner = vi.fn<TrackerFixture["planner"]>(current => {
+    const dest = current.id === d.id ? "table_1" : "hall_table";
+    return { ok: true, plan: plan(current, [step("go", "go", dest), step("place", "place", dest, "cup_1")]) };
+  });
+  const r = movement(cameraWorld("kitchen", 1, 1000, "sink_1"), planner);
+  r.tracker.onDecision(d);
+  r.photo(cameraWorld("hall", 1, 1200, "sink_1"));
+  await r.tracker.idle();
+  expect(planner).toHaveBeenCalledTimes(2);
+  expect(r.tracker.onAnswer("plan:d", "go", "done")).toBe(false);
+  expect(r.tracker.openCommand()?.planId).toMatch(/^plan:d:replacement:/);
+  r.tracker.onHeard("그만");
+  expect(r.ended).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
+    key: { boot: "b", homeEpoch: "h#1", attemptId: "d", gen: 1 },
+  }), "cancelled", 1200, []);
+});
+
+it("ignores a replacement planner that answers after stop", async () => {
+  const d = { ...decision, action: "물 한 잔 가져다주기" };
+  let next!: (value: Awaited<ReturnType<TrackerFixture["planner"]>>) => void;
+  const r = movement(cameraWorld("kitchen", 1, 1000, "sink_1"), current => current.id === d.id
+    ? { ok: true, plan: plan(current, [step("go", "go", "table_1"), step("place", "place", "table_1", "cup_1")]) }
+    : new Promise(resolve => { next = resolve; }));
+  r.tracker.onDecision(d);
+  r.photo(cameraWorld("hall", 1, 1200, "sink_1"));
+  await Promise.resolve();
+  r.tracker.onHeard("그만");
+  const count = r.commands.mock.calls.length;
+  next({ ok: true, plan: plan({ ...d, id: "late" }, [step("go", "go", "hall_table"), step("place", "place", "hall_table", "cup_1")]) });
+  await r.tracker.idle();
+  expect(r.commands).toHaveBeenCalledTimes(count);
+  expect(r.ended).toHaveBeenCalledTimes(1);
+});

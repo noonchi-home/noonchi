@@ -123,6 +123,7 @@ export function planInput(ctx: PlanContext): string {
     `- 쓸 수 있는 단계: ${allow}`,
     `- 단계 한도: ${Math.min(task.maxSteps ?? PLAN_LIMITS.maxSteps, PLAN_LIMITS.hardMaxSteps)}개`,
     `[PAM 판단] 관찰: ${d.prediction?.observation ?? "없음"} / 이유: ${d.prediction?.reasoning ?? "없음"}`,
+    ...(d.assistanceRevision ? [`[같은 전달 목표의 새 목적지] 확인된 사용자 방은 ${d.assistanceRevision.room}입니다. 마지막 놓기와 그 이동은 이 방의 면을 고르세요. 지정된 물건은 ${d.assistanceRevision.objectId ?? "아직 없음"}입니다. 전체 형태로 제출하되 끝낸 앞 ${d.assistanceRevision.completed}단계는 바꾸지 마세요. 실행기는 그 단계들을 다시 보내지 않습니다.`] : []),
     ...(ctx.ahead
       ? [`[미리 세운 목표] 목표 물건 ${ctx.ahead.object}${ctx.ahead.stand ? `(사람이 지금 쓰는 것을 다 쓰고 ${ctx.ahead.stand.surface_label ?? "곁 면"} 위에 둘 것으로 본 자리)` : ""}. 사람이 아직 쓰는 중이다. 「${ctx.ahead.on ?? ctx.ahead.trigger}」가 되면 서버가 이 계획을 시작한다. 그때를 기다리거나 할지 묻는 단계 없이 그 뒤에 할 단계만 계획하고, 물건은 ${ctx.ahead.object}만 쓴다.`]
       : []),

@@ -378,4 +378,6 @@ export interface DecisionRecord {
   via?: "answer";
   /** 말 부탁을 받은 때까지 판단이 보낸 마지막 PAM 요청 번호(src/brain/decide.ts sentSeq): 이 번호 이하 요청의 PAM 판단은 이 부탁의 계획을 바꾸지 않는다. */
   afterSeq?: number;
+  /** Internal replacement plan request for a tracked delivery. */
+  assistanceRevision?: { room: string; objectId: string | null; completed: number };
 }

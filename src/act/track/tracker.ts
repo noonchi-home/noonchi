@@ -82,6 +82,7 @@ import type { Stray } from "../robot/coach.js";
 import type { ContentsLook } from "../robot/contents.js";
 import { OPEN, TrackCore, type TrackConfig } from "./core.js";
 import { SafetyTracker, type Cycle, type CycleEnd } from "./safety.js";
+import { AdaptiveExecution } from "./adaptive.js";
 import { Starter } from "../robot/start.js";
 import { UseWatch } from "../../manage/index.js";
 import { GoalWatch, type GoalPorts } from "../../goal/index.js";
@@ -109,7 +110,19 @@ export interface DeviceRunner {
 export interface SpeechRequest { task: string; heard: string; atMs: number; afterSeq: number; via?: "answer" }
 
 export interface TrackerOptions {
-  assistance?: { boot: string; homeEpoch: string };
+  assistance?: {
+    boot: string;
+    homeEpoch: string;
+    home?: string;
+    resident?(world: WorldView): string | null;
+    targetDevice?(decision: DecisionRecord, world: WorldView): string | null;
+    readDevice?(id: string): import("./attempt.js").AssessmentWorld["device"] | null;
+    interventionFor?(decision: DecisionRecord, world: WorldView): import("../../contract/assistance.js").Intervention;
+    ended?(attempt: import("./adaptive.js").OutcomeAttempt, execution: import("../../contract/assistance.js").AssistanceExecution,
+      endedMs: number, proofs: readonly import("./adaptive.js").ReactionProof[]): void;
+    evidence?: import("./evidence.js").EvidencePorts;
+    cropVisible?(id: string): boolean;
+  };
   /** Recheck the current resident after any approval or phone wait. */
   cupAnswers?: {
     discardLeftover?: () => boolean;
@@ -288,6 +301,7 @@ export class ExecutionTracker {
       rearmMs: o.rearmMs ?? TRACK_DEFAULTS.rearmMs, showAskMs: o.showAskMs ?? TRACK_DEFAULTS.showAskMs,
     };
     const core = new TrackCore(o, clock, cfg);
+    core.adaptive = new AdaptiveExecution(core);
     core.start = new Starter(core);
     core.safety = new SafetyTracker(core);
     core.answers = new Answers(core);
@@ -389,6 +403,7 @@ export class ExecutionTracker {
    *  사람 방·가전·가전 설비 변화가 왔는데 지금 단계가 넘어가지 않았으면 strayed를 부른다. */
   onWorld(changes: readonly WorldChange[] = []): void {
     const core = this.core;
+    if (!core.stopped) core.adaptive.handoffTick();
     core.steps.placed();
     core.safety.reminderTick();
     core.coach.see(changes);
@@ -396,6 +411,8 @@ export class ExecutionTracker {
     if (!core.stopped) this.changedGoal();
     const r = core.run;
     if (core.stopped || r?.state !== "running") return;
+    if (r.pendingStep !== undefined) return core.steps.activate(r, r.pendingStep);
+    if (core.adaptive.gate(r, r.at)) return;
     const gen = r.gen;
     if (core.steps.look(r) || r.gen !== gen) return;
     core.coach.strayOn(r, changes);
@@ -431,6 +448,7 @@ export class ExecutionTracker {
   tick(): void {
     const core = this.core;
     const { steps, safety } = core;
+    if (!core.stopped) core.adaptive.handoffTick();
     if (!core.stopped) safety.reminderTick();
     if (!core.stopped) core.directives.tick();
     if (!core.stopped && core.start.resumeRequest()) return;
@@ -448,7 +466,10 @@ export class ExecutionTracker {
     if (!core.stopped) core.contents.idle();
     if (core.stopped || !r || !OPEN.has(r.state)) return;
     const now = core.clock.now();
+    if (core.planning?.replan?.previous === r) return;
     if (r.state === "planned" && !r.asking) return core.start.tryStart(r, now - r.since >= core.cfg.recheckMs);
+    if (r.pendingStep !== undefined) return steps.activate(r, r.pendingStep);
+    if (r.state === "running" && core.adaptive.gate(r, r.at)) return;
     if (r.asking) {
       if (r.asking.why === "again" && steps.look(r)) return;
       if (now - r.askAt > core.cfg.askMs) return steps.finish(r, "failed", EXEC_TEXT.noAnswer);
@@ -509,9 +530,15 @@ export class ExecutionTracker {
     core.contents.dropIdle();
     core.finder.drop();
     core.dock.drop();
-    core.planning?.abort.abort();
+    if (core.planning) {
+      core.planning.abort.abort();
+      core.adaptive.finish(core.planning.attempt, "cancelled");
+    }
     core.planning = null;
     core.run?.stepEnd?.abort();
+    core.adaptive.handoffTick(true);
+    const open = core.open();
+    if (open) core.adaptive.finish(open.attempt, "cancelled");
     const a = core.run?.asking;
     if (a?.why === "device") core.o.appliances.run?.cancel(a.token);
     // 집기·내려놓기 대상(World State focus)도 푼다

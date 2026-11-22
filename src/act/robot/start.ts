@@ -129,6 +129,7 @@ export class Starter extends Part {
     // 행동 중 기다리기·기기 단계에는 다른 판단으로 바꾸지 않는다(그동안 판단도 멈춘다, waiting)
     if (open && core.waiting()) return this.note(d, EXEC_TEXT.busy);
     if (this.closerNewer(d)) return this.note(d, EXEC_TEXT.closerNewer);
+    if (core.adaptive.policy(d) === "defer_proactive") return this.note(d, "이번에는 먼저 돕지 않아요.");
     // 남은 음료를 그대로 두라고 한 컵만 남았으면 치우지 않는다(사람이 다시 보일 때까지, steps.ts leftover). 판단이 그 화살표를 기다리지 않게 알린다
     if (this.kept(d)) {
       core.emit(planIdOf(d.id), "decided");
@@ -156,6 +157,12 @@ export class Starter extends Part {
     this.dropPlanning(EXEC_TEXT.superseded);
     const attempt = core.attempts.issue(d);
     if (attempt.ended) return;
+    const gateState = core.adaptive.preflight(attempt, d);
+    if (gateState === "fulfilled") {
+      core.emit(planIdOf(d.id), "done", "기기가 이미 원하는 상태예요.");
+      return core.adaptive.finish(attempt, "done");
+    }
+    if (gateState === "deferred") return;
     const job: Job = { decision: d, gen: ++this.gen, abort: new AbortController(), at: now, attempt };
     if (resumed) job.resumedStep = context.handling;
     core.planning = job;
@@ -256,7 +263,33 @@ export class Starter extends Part {
     if (!job) return;
     this.core.planning = null;
     job.abort.abort();
+    this.core.adaptive.finish(job.attempt, "cancelled");
     this.core.emit(planIdOf(job.decision.id), "failed", text);
+  }
+
+  replan(r: Run, room: string, next: number): boolean {
+    const core = this.core;
+    if (core.planning?.replan?.previous === r) return true;
+    if (core.planning || !core.adaptive.canReplan(r, next) || r.attempt.goal?.kind !== "deliver") return false;
+    const now = this.clock.now();
+    const gen = ++this.gen;
+    const d: DecisionRecord = { ...r.decision, id: `${r.decision.id}:replacement:${gen}`, atMs: now, world: decisionWorld(this.o.state.view()),
+      assistanceRevision: { room, objectId: r.attempt.goal.objectId, completed: next } };
+    const job: Job = { decision: d, gen, abort: new AbortController(), at: now, attempt: r.attempt,
+      replan: { previous: r, room, skip: next } };
+    r.attempt.replans = (r.attempt.replans ?? 0) + 1;
+    core.attempts.advance(r.attempt);
+    core.adaptive.cancel(r.attempt);
+    r.stepEnd?.abort();
+    r.gen++;
+    core.steps.clear(r);
+    core.planning = job;
+    core.emit(r.plan.view.id, "verifying", core.adaptive.changedRoomText());
+    const p = Promise.resolve().then(() => this.o.planner(d, job.abort.signal))
+      .then(out => this.planned(job, out), () => this.planned(job, { ok: false, error: "재계획 실패" }))
+      .finally(() => this.jobs.delete(p));
+    this.jobs.add(p);
+    return true;
   }
 
   /** 만들던 계획이 끝날 때까지 기다린다(시험용). */
@@ -270,11 +303,31 @@ export class Starter extends Part {
     if (core.stopped || core.planning !== job) return;
     core.planning = null;
     const d = job.decision;
+    const replacement = job.replan;
+    if (replacement) {
+      const { previous, room, skip } = replacement;
+      const state = this.o.state.view();
+      const g = job.attempt.goal;
+      const target = r.ok ? [...r.plan.steps].reverse().find(s => s.kind === "place") : undefined;
+      const prefix = r.ok && r.plan.steps.length > skip && r.plan.steps.slice(0, skip).every((s, i) => {
+        const before = previous.plan.steps[i];
+        return s.kind === before?.kind && s.target === before.target;
+      });
+      const candidate = target?.target ? this.o.layout.floor().objects.get(target.target) : undefined;
+      if (core.open() !== previous || job.attempt.ended) return;
+      if (this.context().emergency || !r.ok || !prefix || g?.kind !== "deliver" || state.person.room !== room ||
+          candidate?.room !== room || target?.object !== g.objectId) {
+        return core.steps.finish(previous, "failed", "바뀐 자리에서 안전하게 이어갈 수 없어요.", "cancelled");
+      }
+      g.room = room;
+      core.steps.finish(previous, "failed", EXEC_TEXT.superseded, null, true);
+    }
     if (!r.ok) {
       // 계획 검사(PlanDraft)가 버린 까닭(첫 틀린 단계와 이유)을 실행 기록과 서버 로그에 남기고, 같은 행동 다시 계획 간격 없이 다음 판단에서 바로 다시 짠다
       // (2026-11-18 wide-glass q3: 까닭 없이 버리고 「방금 계획한 일이라 잠시 뒤 다시 봄」으로 12초를 기다렸다)
       this.ungap(d, job.at);
       this.o.events.log?.(`[실행 추적] ${planIdOf(d.id)} 계획 버림(${d.action}): ${r.error}`);
+      core.adaptive.finish(job.attempt, "failed");
       return core.emit(planIdOf(d.id), "failed", EXEC_TEXT.badPlan, r.error);
     }
     // 만드는 사이 진행 중 계획이 기다리기·기기 단계에 들어갔으면 바꾸지 않는다(그 판단은 그 단계 전 관찰이다)
@@ -304,7 +357,13 @@ export class Starter extends Part {
     const now = this.clock.now();
     const world = this.o.state.view();
     const ids = new Set<string>();
-    job.attempt.goal ??= goalOf(r.plan, { objects: world.objects, room: world.person.room }, null);
+    const goal = goalOf(r.plan, { objects: world.objects, room: world.person.room }, core.adaptive.bind(job.attempt, d));
+    if (!replacement && job.attempt.goal?.kind === "device" &&
+        (goal?.kind !== "device" || goal.deviceId !== job.attempt.goal.deviceId || goal.value !== job.attempt.goal.value)) {
+      core.adaptive.finish(job.attempt, "failed");
+      return core.emit(planIdOf(d.id), "failed", "계획의 기기가 확인한 대상과 달라요.");
+    }
+    if (!replacement) job.attempt.goal = goal;
     for (const s of r.plan.steps) {
       if (s.object) ids.add(s.object);
       // 그 자리에서 하는 일의 대상 물건도 계획 물건이다(옮겨 새 id가 붙으면 이어 간다)
@@ -330,6 +389,11 @@ export class Starter extends Part {
     core.run = run;
     this.o.plans.onDecision(r.plan.view, this.clock.now());
     core.step(run, "planned");
+    if (replacement?.skip) {
+      this.o.plans.setSteps(run.plan.view.id, Object.fromEntries(run.plan.steps.slice(0, replacement.skip).map(s => [s.id, "done" as const])), now);
+      run.at = replacement.skip - 1;
+      run.pendingStep = replacement.skip;
+    }
     this.tryStart(run, false);
   }
 
@@ -347,6 +411,7 @@ export class Starter extends Part {
     if (r.goal !== null && emergencyOf({ world: this.o.state.view(), offNotices: safety.offTrack().notices })) return steps.finish(r, "failed", EXEC_TEXT.goalSafety, "cancelled");
     // 사람이 계획 대상을 쓰는 중이면 사람이 사라질 때까지 첫 명령·찾기·가까이 보기를 미룬다(holdMs 넘으면 닫음, src/manage/use.ts)
     if (this.userBusy(r)) return;
+    if (this.core.adaptive.gate(r, r.pendingStep ?? 0)) return;
     if (r.meal && !this.mealCup(r, r.plan.steps[0]?.kind !== "go")) {
       if (last) steps.finish(r,"failed",CHECK_TEXT.stale);
       return;
@@ -445,7 +510,7 @@ export class Starter extends Part {
     this.core.step(r, "running");
     if (r.plan.steps.length === 0) return this.core.steps.finish(r, "done");
     this.verifyFrom(r);
-    this.core.steps.activate(r, 0);
+    this.core.steps.activate(r, r.pendingStep ?? 0);
   }
 
   /** 목표 실행의 대상 물건 id(실행 전 검사와 같은 기준: 집는 것이 대상 자신인 행동이면 지금 종류, Codex 59447ec P2). 목표 실행이 아니거나 없으면 null. */

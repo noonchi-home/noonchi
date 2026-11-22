@@ -169,6 +169,14 @@ export class Steps extends Part {
   activate(r: Run, i: number): void {
     const prev = r.plan.steps[r.at];
     const step = r.plan.steps[i]!;
+    if (this.core.adaptive.gate(r, i, true)) {
+      if (r.state === "running" && !this.core.planning) {
+        r.pendingStep = i;
+        this.clear(r);
+      }
+      return;
+    }
+    r.pendingStep = undefined;
     const now = this.clock.now();
     const insideSince = prev?.kind === "go" ? r.stepAt : now;
     r.stepEnd?.abort();
@@ -209,6 +217,7 @@ export class Steps extends Part {
 
   /** 사람 단계·질문·알림을 실제 폰에 띄운다(소리로 읽음). */
   show(r: Run, step: AgentStep): void {
+    if (this.core.adaptive.gate(r, r.at, true)) return;
     const world = this.o.state.view();
     const human = HUMAN_KINDS.includes(step.kind);
     const nav=this.walk(r,step,world);
@@ -232,7 +241,8 @@ export class Steps extends Part {
     if (!devices || !step.device) return this.finish(r, "failed", EXEC_TEXT.deviceFailed);
     const gen = r.gen;
     r.device = "running";
-    devices.run(step.device.tool, step.device.deviceId, step.device.args, () => this.core.live(r, gen)).then(
+    const commandId = `${r.attempt.key.boot}:${r.attempt.key.homeEpoch}:${r.plan.view.id}:${step.id}`;
+    devices.run(step.device.tool, step.device.deviceId, step.device.args, () => this.core.live(r, gen), commandId).then(
       (res) => {
         const token = res.needsConfirmation?.token;
         if (!this.core.live(r, gen)) {
@@ -615,7 +625,7 @@ export class Steps extends Part {
   }
 
   /** close: 계획을 닫을 상태. null이면 닫지 않는다(새 계획이 PlanHub.onDecision으로 취소로 닫는다). */
-  finish(r: Run, state: "done" | "failed", text?: string, close: "done" | "failed" | "cancelled" | null = state): void {
+  finish(r: Run, state: "done" | "failed", text?: string, close: "done" | "failed" | "cancelled" | null = state, replacing = false): void {
     this.core.contents.release(r);
     this.endTop(r);
     this.core.finder.release(r);
@@ -645,6 +655,7 @@ export class Steps extends Part {
     this.core.notice = state === "done" && close === "done" && r.phone ? { id: doneId(r.plan.view.id), text: SAY_TEXT.done(r.plan.view.goal), since: this.clock.now(), sent: false } : this.core.notice;
     // 손으로 켠 위험 가전이 작동 끝남 확인 전에 닫혔다: 가전마다 끄기 안내 줄로 옮기고 차례로 띄운다(확인된 꺼짐으로만 하나씩 지운다)
     this.core.safety.handOver(r);
+    if (!replacing) this.core.adaptive.finishRun(r, close ?? "cancelled");
     r.ends.clear();
     // 계획이 끝나면(새 계획으로 바뀐 것이 아니면) 사용자 위치를 확인하고 충전 자리로 돌아간다(dock.ts)
     this.core.dock.planClosed(r, close);
