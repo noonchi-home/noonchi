@@ -6,6 +6,7 @@ import type { BrainLog, DecisionRecord, ExecState, PamUsage } from "../contract/
 import type { WorldChange, WorldView } from "../contract/world.js";
 import { modeOf, planIdOf } from "../act/tasks.js";
 import { checkInput, fsmStep, isoWithOffset, type PamMemory } from "./decision.js";
+import { contextView, ctxNow } from "./ctx.js";
 import { PamLinkError, type PamClient } from "./pam/index.js";
 import { CHANGE_TEXT, HEARD_MAX, LINK_TEXT, TRIGGER_TEXT, redactHeard, redactSaid, saidIn } from "../world/labels.js";
 import { headWithin } from "../shared/cut.js";
@@ -188,7 +189,9 @@ export class Decider {
     const textSent = textFromWorld(view, this.recent, { nowMs: now, offsetMinutes: this.o.offsetMinutes });
     const finalTime = isoWithOffset(now, this.o.offsetMinutes);
     const tasks = this.o.tasks(saidIn(textSent).length > 0);
-    const mem = this.o.memory();
+    const stored = this.o.memory();
+    // 맥락(요일·시각) 화살표는 지금 맞는 것만 맥락 칸 없이 PAM에 보인다(src/brain/ctx.ts contextView). 답 해석(fsmStep)과 목표 미리 세우기(lastMem)도 같은 걸러낸 기억을 써서 화살표 번호가 같다.
+    const mem = stored.kind === "fsm" && "states" in stored.memory ? { ...stored, memory: contextView(stored.memory, ctxNow(now, this.o.offsetMinutes)) } : stored;
     this.lastMem = mem;
     const base = { id: `pam-${seq}`, seq, atMs: now, textSent, finalTime, memoryVersion: mem.version, world: decisionWorld(view), tasks };
     // 직전 사람 상태: 행동이 아직 시작되지 않은 화살표가 있으면 그 출발 상태(PENDING_EDGE_MS 안), 아니면 마지막 판단의 상태
