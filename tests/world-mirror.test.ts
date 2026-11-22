@@ -56,6 +56,27 @@ describe("거울", () => {
     expect(r.seen).toEqual(["보기 100", "보기 400", "변화 cup_2@400"]);
   });
 
+  it("같은 rev에서 집 사진(household_photo serial)만 바뀌면 onPhoto를 부른다(TV 규칙이 새 VLM 답을 바로 보게). rev가 바뀌면 onView만 부른다", async () => {
+    const bus = new MemoryBus({ warn: () => {} });
+    const world = new BusNode({ name: "world", bus, epoch: EPOCH, log: () => {} });
+    await world.prepare();
+    world.start();
+    const seen: string[] = [];
+    const m = await startWorldMirror({
+      bus, epoch: EPOCH, name: "goal", log: () => {},
+      onView: (v) => { seen.push(`보기 ${v.household_photo?.serial}`); },
+      onPhoto: (v) => { seen.push(`사진 ${v.household_photo?.serial}`); },
+    });
+    m.node.start();
+    const flush = () => settle(bus, [world, m.node]);
+    const photo = (serial: number) => ({ ...view(100), household_photo: { id: `p${serial}`, at_ms: 100, serial, proof: null } });
+    for (const [rev, serial] of [[1, 1], [1, 2], [1, 2], [2, 3], [2, 3]] as const) {
+      await world.publish("/world/state", { rev, view: photo(serial) });
+      await flush();
+    }
+    expect(seen).toEqual(["보기 1", "사진 2", "보기 3"]);
+  });
+
   it("onView가 실패하면 그 rev를 보인 것으로 치지 않고, 같은 rev가 다시 오면 다시 부른다", async () => {
     const bus = new MemoryBus({ warn: () => {} });
     const world = new BusNode({ name: "world", bus, epoch: EPOCH, log: () => {} });

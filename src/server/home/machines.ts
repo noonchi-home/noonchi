@@ -32,9 +32,10 @@ export class HomeMachines {
     const mode = core.mode();
     const g = core.goal;
     const goal = g && { id: g.id, action: g.action, status: g.status, prep: g.prep, gone_ms: g.gone_ms, reason: g.reason };
-    const work = { ...tracker.workContext(), active: f.active, requested: f.requested, goal,
+    const context=tracker.workContext();
+    const work = { ...context, active: f.active, requested: f.requested || context.requested, goal,
       plan: plan && plan.id === f.planId ? { goal: f.goalId, status: plan.status } : null,
-      mode, tasks: pamTasks(mode, core.pamHeard) };
+      phoneBusy:tracker.visitPhoneBusy(), mode, tasks: pamTasks(mode, core.pamHeard) };
     const key = JSON.stringify(work);
     if (key !== this.lastWork) {
       this.lastWork = key;

@@ -47,7 +47,7 @@ export interface DeciderOptions {
   node?: () => Pick<BusNode, "spawn" | "post">;
   pam: PamClient;
   /** 집 상태 보기(거울). */
-  world: { view(now: number): WorldView };
+  world: { view(now: number): WorldView; rev?(): number | null };
   trigger: Trigger;
   /** PAM에 보내는 행동 목록. heard: 이번 관찰 텍스트에 사람이 한 말이 있다(지금 모드와 함께 목록을 정한다, src/act/mode.ts pamTasks). */
   tasks: (heard: boolean) => string[];
@@ -66,6 +66,8 @@ export interface DeciderOptions {
   hold?: () => boolean;
   /** 참이면 기록에 남는 판단 줄에도 들은 말을 그대로 둔다(KEEP_HEARD_TEXT, 기본 꺼짐). 없거나 거짓이면 「들은 말 있음」만 남긴다. */
   keepHeard?: () => boolean;
+  /** PAM이 고른 화살표 행동을 지금 할 수 있는가(습관 화살표는 그 시각 창 안만, src/brain/history/routines.ts routineAllows). 거짓이면 행동 없이 기록한다. 없으면 참. */
+  edgeAllowed?: (edge: { on: string | null; action: string | null }, atMs: number) => boolean;
 }
 
 export class Decider {
@@ -190,7 +192,8 @@ export class Decider {
     const tasks = this.o.tasks(saidIn(textSent).length > 0);
     const mem = this.o.memory();
     this.lastMem = mem;
-    const base = { id: `pam-${seq}`, seq, atMs: now, textSent, finalTime, memoryVersion: mem.version, world: decisionWorld(view), tasks };
+    const requestRev = this.o.world.rev?.();
+    const base = { id: `pam-${seq}`, seq, atMs: now, ...(requestRev != null ? {request_rev:requestRev} : {}), textSent, finalTime, memoryVersion: mem.version, world: decisionWorld(view), tasks };
     // 직전 사람 상태: 행동이 아직 시작되지 않은 화살표가 있으면 그 출발 상태(PENDING_EDGE_MS 안), 아니면 마지막 판단의 상태
     if (this.pending && now - this.pending.at > PENDING_EDGE_MS) this.pending = null;
     const last = this.pending?.from ?? this.lastState;
@@ -207,19 +210,20 @@ export class Decider {
           this.setLink(true);
           const newest = base.seq > this.answered;
           this.answered = Math.max(this.answered, base.seq);
-          const action = p.task_index === -1 ? null : tasks[p.task_index] ?? null;
+          const picked = p.task_index === -1 ? null : tasks[p.task_index] ?? null;
           // PAM의 생각 글은 계획 이유·판단 기록·대시보드에 남는다: 들은 말을 그대로 옮겼으면 뺀다
           const said = this.o.keepHeard?.() ? [] : saidIn(textSent);
           const prediction = said.length ? { ...p, observation: redactSaid(p.observation, said), reasoning: redactSaid(p.reasoning, said) } : p;
           // PAM 답의 상태·화살표를 그대로 싣는다(거꾸로 찾지 않는다)
           const step = mem.kind === "fsm" && "states" in mem.memory ? fsmStep(mem.memory, p) : null;
+          const action = picked !== null && step && this.o.edgeAllowed && !this.o.edgeAllowed(step, now) ? null : picked;
           if (step) {
             const stale = this.released !== null && step.from === this.released.from && step.next_index === this.released.next && base.seq <= this.released.seq;
             // 늦은 답 전체를 버린다: 상태·pending을 바꾸지 않고 행동 없이 기록만(실행 추적은 late를 「앞선 판단」으로 남긴다)
             if (stale) return this.finish({ ...base, status: "valid", prediction, action: null, fsm: step, late: true, ...(usage ? { usage } : {}) });
           }
           // 더 뒤에 보낸 요청의 답을 이미 받았다: 앞선 관찰의 답이라 상태·기다리는 화살표·들은 말은 그대로 두고 기록만 넘긴다(실행 추적은 번호로 늦은 답이라 본다)
-          if (!newest) return this.finish({ ...base, status: "valid", prediction, action, fsm: step, ...(usage ? { usage } : {}) });
+          if (!newest) return this.finish({ ...base, status: "valid", prediction, action, fsm: step, late:true, ...(usage ? { usage } : {}) });
           if (step) {
             this.lastState = step.state;
             const same = this.pending !== null && step.from === this.pending.from && step.next_index === this.pending.next;
@@ -252,7 +256,7 @@ export class Decider {
 
   private finish(r: DecisionRecord): void {
     if (this.stopped) return;
-    const action = r.status === "valid" && r.action === null && !r.late ? this.o.goalTrigger?.(r) ?? null : null;
+    const action = r.status === "valid" && !r.late && !r.source ? this.o.goalTrigger?.(r) ?? null : null;
     if (action) r = { ...r, action, goal: true };
     this.emitDecision(r);
     this.o.onDecision?.(r);

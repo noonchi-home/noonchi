@@ -20,6 +20,7 @@ import { headWithin } from "../../shared/cut.js";
 import type { HistoryDb } from "./db.js";
 import { edgeKey, learnedEdges, settingsGuard, type EdgeLine, type HabitFilter, type HabitRuleNote } from "./habits.js";
 import { NIGHT_TEXT, REFLECT_TEXT } from "./labels.js";
+import { findRoutines, withRoutines } from "./routines.js";
 import { memoryForDay, readDayMemory } from "./reflect.js";
 import { daySummary, fitLines } from "./summary.js";
 
@@ -348,6 +349,12 @@ export async function runNight(db: HistoryDb, pam: PamClient, day: string, o: Ni
       passed = new Set([...passed].filter((k) => !removed.includes(k)));
       robot = adoptedFsm(candidates, passed, CUP_FSM_MEMORY);
       filtered = out.notes;
+    }
+    // 도움 습관(src/brain/history/routines.ts): 지난 기록 창의 help 줄에서 매일 비슷한 시각의 같은 부탁을 찾아 공부하는 중 화살표로 더한다
+    {
+      const dayStart = Date.parse(`${day}T00:00:00Z`) - db.offsetMinutes * 60_000;
+      const helps = db.list({ since: dayStart - ((o.windowDays ?? 30) - 1) * DAY_MS, until: dayStart + DAY_MS - 1, kinds: ["help"], limit: Number.MAX_SAFE_INTEGER });
+      robot = withRoutines(robot, findRoutines(helps, db.offsetMinutes));
     }
     const memory = validateMemory(robot, "fsm") as FsmMemory;
     const dropped = [...got.notes, ...filtered].filter((n) => !n.kept);

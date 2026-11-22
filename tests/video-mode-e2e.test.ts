@@ -126,7 +126,7 @@ describe("영상 모드 처음부터 끝까지", () => {
     pumping = true;
     void (async () => {
       for (let n = 0; pumping; n++) {
-        ws.send(JSON.stringify({ type: "pose", position: POSITION, orientation: ORIENTATION, tracking: "ok", epoch: EPOCH }));
+        ws.send(JSON.stringify({ type: "pose", position: POSITION, orientation: ORIENTATION, tracking: "ok", epoch: EPOCH, captured_at: Date.now(), time_err_ms: 0 }));
         ws.send(encodeFramePacket({ kind: "engine", width: 480, height: 360, position: POSITION, orientation: ORIENTATION, tracking: "ok", projection: PROJECTION,
           epoch: EPOCH, captured_at: Date.now(), time_err_ms: 0 }, Buffer.from([0xff, 0xd8, n % 256, n >> 8])));
         await new Promise((r) => setTimeout(r, 250));
@@ -140,7 +140,10 @@ describe("영상 모드 처음부터 끝까지", () => {
     expect(first.text).toBe(STEPS[0]);
     expect(first.target).not.toBeNull();
     expect(first.target).toMatchObject({ id: TABLE_ID, ar: expect.any(Array) });
-    expect(first.vision).toMatch(/^식탁까지 \d+\.\dm$/);
+    const tableStand = first.guide?.remaining.at(-1);
+    expect(tableStand).toMatchObject({ kind: "stand", room: "living", ar: expect.any(Array) });
+    expect(Math.hypot(tableStand.ar[0], tableStand.ar[2])).toBeCloseTo(Math.hypot(START[0] - 9.96, START[1] - 5.15), 3);
+    expect(first.vision).toBe(`식탁 앞까지 ${Math.hypot(START[0] - 9.96, START[1] - 5.15).toFixed(1)}m`);
     expect(first.choices).toEqual([{ id: "done", label: "완료" }]);
     const appeared = timeline.indexOf("person_appeared"), gone = timeline.indexOf("person_gone");
     const firstCommand = timeline.findIndex((t) => t.startsWith("command:"));

@@ -15,7 +15,7 @@ export function startSay(core: HomeCore): void {
     const toldAt = tracker?.toldAt() ?? null;
     const { text, safety } = sayOf({ plan: plans.current(), command: core.command, world: core.view(), nowMs: Date.now(), look: core.lookSay,
       told: toldAt === null ? null : { atMs: toldAt }, quiet: tracker?.quietStep() ?? null, reflected: core.reflected, offWait: tracker?.offWaiting() ?? null,
-      offTold: tracker?.offTold() ?? null, service: core.serviceSaid });
+      offTold: tracker?.offTold() ?? null, service: core.serviceSaid, help: core.helpSaid });
     // 지금 행동 모드(모드 말풍선)는 말과 같은 때 다시 보고 바뀔 때만 보낸다
     const mode = core.mode();
     const status: Body<"/act/status"> = { mode, hold: !!(tracker?.waiting() || tracker?.coaching()), text, safety, tasks: pamTasks(mode, core.pamHeard), placed: [...(tracker?.placed() ?? [])] };

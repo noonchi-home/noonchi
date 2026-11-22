@@ -86,6 +86,15 @@ describe("설정: 운영 모드", () => {
     expect(alert).not.toHaveBeenCalled();
   });
 
+  it("적외선 TV만 등록해도 확인을 거쳐 실제 모드를 켠다", async () => {
+    const {api,user} = open(setupView({thinq:{ready:false}, ir:{ready:true}}));
+    const mode = await screen.findByRole("radio", {name:/실제 모드/});
+    expect(mode).toBeEnabled();
+    await user.click(mode);
+    await user.click(screen.getByRole("button",{name:"실제 모드로 바꾸기"}));
+    await waitFor(()=>expect(mode).toBeChecked());
+    expect(api.calls.some(c=>c.path==="/api/setup/thinq")).toBe(false);
+  });
   it("토큰이 없으면 실제 모드를 고를 수 없다", async () => {
     open(setupView({ thinq: { ready: false } }));
     expect(await screen.findByRole("radio", { name: /실제 모드/ })).toBeDisabled();

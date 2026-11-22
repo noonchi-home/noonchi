@@ -4,24 +4,32 @@
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import { CupAnswers } from "./cup-answer.js";
 import type { DecisionRow, HistoryKind, HistoryRow } from "../../contract/history.js";
 
 export type { DecisionRow, HistoryKind, HistoryRow } from "../../contract/history.js";
 
 /** 기록 종류 전부(GET /api/history의 kinds 검사). */
 export const HISTORY_KINDS: readonly HistoryKind[] = [
-  "device", "detection", "vlm", "yolo", "world", "pam_text", "mode", "decision", "plan", "execution", "reflection", "feedback", "photo", "link", "trigger", "look", "thought", "service", "bus_gap", "goal", "planner", "person", "robot", "safety", "manager",
+  "device", "detection", "vlm", "yolo", "world", "pam_text", "mode", "decision", "plan", "execution", "reflection", "feedback", "photo", "link", "trigger", "look", "thought", "service", "bus_gap", "goal", "planner", "person", "robot", "safety", "manager", "household", "help",
 ];
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS events (id INTEGER PRIMARY KEY, at_ms INTEGER NOT NULL, day TEXT NOT NULL, kind TEXT NOT NULL, subject TEXT, text TEXT NOT NULL, data TEXT);
 CREATE INDEX IF NOT EXISTS idx_events_at ON events(at_ms);
+CREATE INDEX IF NOT EXISTS idx_household_photos_at ON events(at_ms) WHERE kind='household' AND json_extract(data,'$.event')='photo';
 CREATE INDEX IF NOT EXISTS idx_events_day_kind ON events(day, kind);
+CREATE INDEX IF NOT EXISTS idx_help_at ON events(at_ms) WHERE kind='help';
 CREATE TABLE IF NOT EXISTS memories (version INTEGER PRIMARY KEY, created_ms INTEGER NOT NULL, day TEXT, applies_day TEXT, kind TEXT NOT NULL, memory TEXT NOT NULL, source TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS photos (id TEXT PRIMARY KEY, at_ms INTEGER NOT NULL, path TEXT NOT NULL, origin TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS bus_seen (topic TEXT NOT NULL, grp TEXT NOT NULL, msg_key TEXT NOT NULL, msg TEXT NOT NULL, boot TEXT NOT NULL, PRIMARY KEY (topic, grp, msg_key, msg));
 CREATE TABLE IF NOT EXISTS device_last (id TEXT PRIMARY KEY, twin TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS cup_answers (
+  home TEXT NOT NULL, resident TEXT NOT NULL, discard_leftover_cup INTEGER NOT NULL CHECK(discard_leftover_cup IN (0,1)),
+  single_demo INTEGER NOT NULL DEFAULT 0 CHECK(single_demo IN (0,1)), PRIMARY KEY(home, resident)
+);
+CREATE UNIQUE INDEX IF NOT EXISTS single_demo_resident ON cup_answers(home) WHERE single_demo = 1;
 `;
 
 /** 기록 날짜의 시간대(분). HISTORY_TZ_MINUTES(기본 540 = 서울). -720~840 사이 정수가 아니면 시작을 막는다. */
@@ -59,12 +67,15 @@ type RawRow = Omit<HistoryRow, "data"> & { data: string | null };
 const parseRow = (r: RawRow): HistoryRow => ({ ...r, data: r.data === null ? null : JSON.parse(r.data) as unknown });
 
 export class HistoryDb {
-  private constructor(readonly db: DatabaseSync, readonly offsetMinutes: number) {}
+  readonly cupAnswers: CupAnswers;
+  private constructor(readonly db: DatabaseSync, readonly offsetMinutes: number) {
+    this.cupAnswers = new CupAnswers(db);
+  }
 
   static open(path: string, offsetMinutes = 540): HistoryDb {
     if (path !== ":memory:") mkdirSync(dirname(path), { recursive: true });
     const db = new DatabaseSync(path);
-    db.exec(`PRAGMA busy_timeout = 5000; PRAGMA journal_mode = WAL; ${SCHEMA}`);
+    db.exec(`PRAGMA busy_timeout = 5000; PRAGMA journal_mode = WAL; PRAGMA synchronous = FULL; ${SCHEMA}`);
     return new HistoryDb(db, offsetMinutes);
   }
 
@@ -77,9 +88,27 @@ export class HistoryDb {
     return new Date(ms + this.offsetMinutes * 60_000).toISOString().slice(0, 10);
   }
 
+  /** 시간축 한 줄 넣기는 프레임마다 여러 번 불린다. 문장은 한 번만 준비하고, 그 한 줄만 디스크 동기화 없이(NORMAL) 넣은 뒤 FULL로 돌린다.
+   *  줄마다 동기화하면 엔진 프레임 → 집 상태 지연에 약 3ms가 더해진다. 정전 때 잃을 수 있는 것은 마지막 디스크 동기화 뒤에 넣은
+   *  시간축 줄들이다. 기억·컵 답 같은 다른 쓰기는 FULL 그대로이고, 그 커밋이 앞선 시간축 줄도 함께 동기화한다.
+   *  트랜잭션 안에서는 이 설정을 바꿀 수 없다: 그때는 그대로 넣고, 그 트랜잭션의 커밋(FULL)이 동기화한다.
+   *  설정은 매번 exec로 바꾼다: 준비해 둔 PRAGMA 문장은 준비할 때 적용되고 다시 실행해도 적용되지 않을 때가 있다(첫 줄이 FULL로 들어갔다). */
+  #insert: ReturnType<DatabaseSync["prepare"]> | null = null;
+
   add(kind: HistoryKind, atMs: number, text: string, o: { subject?: string; data?: unknown } = {}): void {
-    this.db.prepare("INSERT INTO events(at_ms, day, kind, subject, text, data) VALUES (?, ?, ?, ?, ?, ?)")
-      .run(atMs, this.dayOf(atMs), kind, o.subject ?? null, text, o.data === undefined ? null : JSON.stringify(o.data));
+    let relaxed = false;
+    try {
+      this.db.exec("PRAGMA synchronous = NORMAL");
+      relaxed = true;
+    } catch {
+      // 트랜잭션 안: FULL 그대로 넣는다
+    }
+    try {
+      (this.#insert ??= this.db.prepare("INSERT INTO events(at_ms, day, kind, subject, text, data) VALUES (?, ?, ?, ?, ?, ?)"))
+        .run(atMs, this.dayOf(atMs), kind, o.subject ?? null, text, o.data === undefined ? null : JSON.stringify(o.data));
+    } finally {
+      if (relaxed) this.db.exec("PRAGMA synchronous = FULL");
+    }
   }
 
   /** 시각 순(같으면 넣은 순). limit 기본 10,000. */
@@ -176,6 +205,10 @@ export class HistoryDb {
   listPhotos(): StoredPhoto[] {
     return (this.db.prepare("SELECT id, at_ms, path, origin FROM photos ORDER BY at_ms, id").all() as unknown as { id: string; at_ms: number; path: string; origin: StoredPhoto["origin"] }[])
       .map((r) => ({ id: r.id, atMs: r.at_ms, path: r.path, origin: r.origin }));
+  }
+
+  removeExpiredHouseholdPhotos(cutoffMs: number): void {
+    this.db.prepare("DELETE FROM events WHERE kind='household' AND json_extract(data,'$.event')='photo' AND at_ms <= ?").run(cutoffMs);
   }
 
   removePhoto(id: string): void {

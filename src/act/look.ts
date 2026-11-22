@@ -47,7 +47,7 @@ const WAITS: ReadonlySet<CloserMiss | CloserVlm> = new Set<CloserWait>(["no_fres
 const KEYS_MAX = 50;
 
 export interface LookerOptions {
-  observer: Pick<Observer, "decide" | "status">;
+  observer: Pick<Observer, "decide" | "status"> & Partial<Pick<Observer,"chooseStation">>;
   /** 가까이 보기(src/observe/pipeline.ts closer). 감지를 합치기 전에 signal이 끊기면 넣지 않고 aborted, 합친 뒤에 끊기면 ok(vlm aborted),
    *  VLM 답이 왔을 때 사진이 끊겼으면 ok(vlm no_fresh_frames). */
   closer: (spot: LookSpot, signal?: AbortSignal, sinceMs?: number) => Promise<CloserResult>;
@@ -247,6 +247,25 @@ export class Looker {
       this.lastB = now;
       this.start({ trigger: "unknown_fact", key: o.id, goal: `${spot.label} ${o.id}의 ${facet}을 모름 · 판단 전에 더 잘 보기`, stuckMs: null, spots: [spot], tools: ["look_closer", "wait"] });
       return;
+    }
+  }
+
+  async chooseStation(places:{id:string;name:string}[],direction:string,visited:string[],signal:AbortSignal):Promise<string|null> {
+    const observer=this.o.observer;
+    if (this.stopped || signal.aborted || this.job || !observer.chooseStation || !this.allow(this.clock.now())) return null;
+    const abort=new AbortController();
+    const job:Job={trigger:"unknown_fact",key:"station",goal:"사용자 위치 확인",stuckMs:null,spots:[],tools:[],
+      abort,signal:AbortSignal.any([signal,abort.signal]),phase:"observer"};
+    this.job=job;
+    const selected=observer.chooseStation(places,direction,visited,job.signal);
+    const done=selected.then(()=>{},()=>{});
+    this.running.add(done);
+    try {
+      const id=await selected;
+      return !job.signal.aborted && places.some(p=>p.id===id) ? id : null;
+    } finally {
+      if (this.job===job) this.job=null;
+      this.running.delete(done);
     }
   }
 

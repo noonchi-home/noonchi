@@ -35,9 +35,7 @@ function objectTarget(object: WorldObject, world: WorldView | null, now: number)
 }
 
 /** 열린 계획, 서 있는 목표, 최근 판단 순으로 하나를 고른다. 행동 이름은 같은 실행의 증거가 아니다. */
-type RelationWorld = WorldView & { surfaces_seen?: readonly { id: string; label: string }[] };
-
-export function relationsOf<T extends Pick<DashData, "plan" | "decision" | "goal">>(data: T, world: RelationWorld | null, nowMs: number, names?: ReadonlyMap<string, string>): RelationGraphData {
+export function relationsOf<T extends Pick<DashData, "plan" | "decision" | "goal">>(data: T, world: WorldView | null, nowMs: number, names?: ReadonlyMap<string, string>): RelationGraphData {
   const graph: RelationGraphData = { nodes: [], edges: [], anchors: [] };
   const plan = isOpen(data.plan) ? data.plan : null;
   const goal = data.goal && data.goal.status !== "dropped" && data.goal.status !== "used" &&

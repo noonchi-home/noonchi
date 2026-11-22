@@ -1,6 +1,9 @@
 // 가상 가전·ThinQ(구현명세서 3.1·4·9.2)
 // 다른 도메인은 이 입구로만 가져온다.
 export { buildDevices, type Attrs, type RawObject, type SkippedObject, type StatesSpec } from "./devices.js";
+export { loadIrConfig } from "./hub/ir-config.js";
+export { openIrPort } from "./hub/ir-serial.js";
+export type { IrConfig, IrPort } from "./hub/ir.js";
 export { MemoryHub } from "./hub/memory.js";
 export { isUnknown, SignalHub, type SignalSource } from "./hub/signals.js";
 export { checkKinds } from "./kinds-check.js";

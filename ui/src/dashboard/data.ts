@@ -9,9 +9,6 @@ import { WORDS } from "./words";
 
 type Decision = Extract<BrainLog, { type: "decision" }>;
 type Reflection = Extract<BrainLog, { type: "reflection" }>;
-// Recorded updates can include room-return states even when the current server only returns to its dock.
-export type DashboardRobotMessage = Omit<RobotMessage, "state"> & { state: keyof typeof WORDS.timeline.robot };
-export type DashboardMessage = ServerMessage | DashboardRobotMessage;
 
 export interface DashData {
   plan: PlanView | null;
@@ -39,7 +36,7 @@ export interface DashData {
   /** 사람 상태가 바뀐 때들(오래된 것부터 최근 PEOPLE_KEPT개). 시간 줄 사람 줄이 쓴다. 서버 사람 상태(person 메시지: 판단 PAM 답과 판단 사이 World State 하는 일,
    *  이름은 서버가 붙임)를 받으면 그것만 쓰고, 받기 전에는 유효한 판단의 fsm.state와 그 판단 시각으로 잇는다. 상태를 모르는 판단(null)은 더하지 않는다. */
   people: PersonAt[];
-  robots: DashboardRobotMessage[];
+  robots: RobotMessage[];
   /** person 메시지를 받았는가(그 뒤로는 판단 상태로 사람 줄을 잇지 않는다). */
   personFed: boolean;
   /** 최근 계획(id마다 마지막 판본, 받은 차례로 최근 PLANS_KEPT개). 시간 줄 로봇 줄이 단계 시각(started_ms·ended_ms)을 쓴다. */
@@ -114,7 +111,7 @@ function reflectionThoughts(r: Reflection): ThoughtMessage[] {
   ];
 }
 
-export function reduceDash(s: DashData, m: DashboardMessage, now: number): DashData {
+export function reduceDash(s: DashData, m: ServerMessage, now: number): DashData {
   switch (m.type) {
     case "hello":
       return EMPTY_DASH;

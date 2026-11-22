@@ -30,8 +30,8 @@ function statusLine(data: DashData, decision: DashData["decision"]): string {
   const person = people.at(-1);
   const state = person?.state ?? decision?.fsm?.state;
   const at = person?.at_ms ?? decision?.at_ms;
-  const goal: { status: string; checking_ms?: number } | null = data.goal;
-  if (goal?.status === "checking" && goal.checking_ms != null && (at == null || goal.checking_ms >= at)) {
+  const checking = data.goal?.checking_ms;
+  if (data.goal?.status === "checking" && checking != null && (at == null || checking >= at)) {
     return "사용자 상태를 확인하고 있어요.";
   }
   if (state === "away") {

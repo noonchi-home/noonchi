@@ -52,7 +52,8 @@ function spy(world: WorldState) {
   const proxy = new Proxy(world, {
     get(target, prop, recv) {
       const v = Reflect.get(target, prop, recv);
-      if (typeof v !== "function" || prop === "view") return v;
+      // 읽기만 하는 view·householdSerial·householdNow는 적지 않는다(넣기 차례만 본다)
+      if (typeof v !== "function" || prop === "view" || prop === "householdSerial" || prop === "householdNow") return v;
       return (...args: unknown[]) => {
         depth++;
         try {
@@ -89,7 +90,7 @@ async function rig(world = ws()) {
   const phone = node("phone");
   const devices = node("devices");
   const got: Got[] = [];
-  for (const t of ["/world/state", "/world/changes", "/world/closer"] as const) perception.on(t, (b) => { got.push({ topic: t, body: b }); });
+  for (const t of ["/world/state", "/world/changes", "/world/closer", "/world/household_photo"] as const) perception.on(t, (b) => { got.push({ topic: t, body: b }); });
   const all = [w.node, perception, act, phone, devices];
   for (const n of all.slice(1)) await n.prepare();
   for (const n of all) n.start();
@@ -104,12 +105,12 @@ describe("집 상태 노드", () => {
     const d: WorldChange[] = [];
     for (const [id, at] of [["e1", 1000], ["e2", 2000], ["e3", 3000]] as const) {
       const r1 = direct.applyDetections(meta(id, at), [cupIn, person]);
-      d.push(...r1.changes, ...direct.applyScene(id, at, sceneOf([cupIn, person], ["d1", "in_sink"]), r1.ids, lookOf(id, at, [cupIn, person])));
+      d.push(...r1.changes, ...direct.applyScene(id, at, sceneOf([cupIn, person], ["d1", "in_sink"]), r1.ids, lookOf(id, at, [cupIn, person]), at, NOW));
     }
     const rc = direct.applyCloser([pass("e4", 4000, [cupFar]), pass("e5", 5000, [person, cupFar])]);
     d.push(...rc.changes, ...direct.applyCloserScene("e5", 5000, sceneOf([person, cupFar], ["d2", "on_floor"]), rc.ids, rc.pending, AT));
     d.push(...direct.applyTop("cup_1", "e6", 6000, "empty"));
-    d.push(...direct.applyMissing("e7", 7000, { vlm: "timeout" }), ...direct.applyMissing("e8", 8000, { yolo: "error" }));
+    d.push(...direct.applyMissing("e7", 7000, { vlm: "timeout" }, NOW), ...direct.applyMissing("e8", 8000, { yolo: "error" }, NOW));
 
     const r = await rig();
     for (const [id, at] of [["e1", 1000], ["e2", 2000], ["e3", 3000]] as const) {
@@ -181,6 +182,16 @@ describe("집 상태 노드", () => {
     expect(canRelink({ id: "remote_1", cls: "remote", status: "present" }, cup)).toBe(false);
   });
 
+  it("집 사진(household_photo)에 그 VLM 답을 집 상태 노드가 넣은 때(answered_ms, 노드 시계)를 싣는다: 다시 낸 상태의 발행 시각(at_ms)이 아니다", async () => {
+    const r = await rig();
+    await r.clock.advanceTo(NOW + 700, r.flush);
+    await r.perception.publish("/perception/scene", { kind: "scene", frame_id: "e1", observed_ms: 1000, scene: { ...sceneOf([]), household: { seats: "clear", people: [], dining_food: "unknown" } }, look: { ...lookOf("e1", 1000, []), fresh: true, person_ids: [] } });
+    await r.flush();
+    await r.clock.advanceTo(NOW + 1300, r.flush);
+    const v = lastView(r.got);
+    expect(v.household_photo).toMatchObject({ at_ms: 1000, answered_ms: NOW + 700 });
+    expect(v.at_ms).toBeGreaterThan(NOW + 700);
+  });
   it("장면 VLM 답의 사건 구간 시작(from_ms, 그 답이 본 가장 옛 사진)을 World State에 넘긴다(마시기·따르기 사건)", async () => {
     const s = spy(ws());
     const r = await rig(s.proxy);
@@ -228,6 +239,38 @@ describe("집 상태 노드", () => {
     expect(of(r.got, "/world/state").slice(states).map((b) => b.rev)).toEqual([1, 1, 1, 1]);
     expect(of(r.got, "/world/state").at(-1).view.at_ms).toBe(NOW + 1000);
     expect(of(r.got, "/world/changes")).toHaveLength(1);
+  });
+
+  it("새 집 사진(serial)마다 그 사진을 /world/household_photo(RELIABLE)로 한 번씩 낸다: 상태(STATE)는 가장 새 것만 남아 받는 쪽이 사진을 건너뛸 수 있다", async () => {
+    const r = await rig();
+    const answer = (id: string, at: number) => r.perception.publish("/perception/scene", { kind: "scene", frame_id: id, observed_ms: at, scene: { ...sceneOf([]), household: { seats: "clear", people: [], dining_food: "unknown" } }, look: { ...lookOf(id, at, []), fresh: true, person_ids: [] } });
+    await answer("e1", 1000);
+    await answer("e2", 2000);
+    // 집 답이 없는 VLM 답도 새 사진이다(근거 없음, proof null): 부재 구간을 끊으므로 함께 낸다
+    await r.perception.publish("/perception/scene", { kind: "scene", frame_id: "e3", observed_ms: 3000, scene: said(["d1", "sitting"]) });
+    // 같은 사진의 늦은 답은 새 사진이 아니다
+    await r.perception.publish("/perception/scene", { kind: "scene", frame_id: "e0", observed_ms: 500, scene: said(["d1", "sitting"]) });
+    await r.flush();
+    const photos = of(r.got, "/world/household_photo").map((b) => b.photo);
+    expect(photos.map((p) => [p.serial, p.id, p.at_ms, p.proof === null])).toEqual([[1, "e1", 1000, false], [2, "e2", 2000, false], [3, "e3", 3000, true]]);
+    expect(photos[2]).toEqual(lastView(r.got).household_photo);
+  });
+  it("변화 없는 VLM 답이라도 집 사진(household_photo)을 새로 넣으면 같은 rev로 상태를 바로 낸다(250ms 다시 냄을 기다리지 않음: TV 끄기 5초)", async () => {
+    const world = ws();
+    let serial = 0;
+    world.applyScene = () => { serial++; return []; };
+    world.householdSerial = () => serial || null;
+    const r = await rig(world);
+    const states = of(r.got, "/world/state").length;
+    await r.perception.publish("/perception/scene", { kind: "scene", frame_id: "e1", observed_ms: NOW, scene: said(["d1", "sitting"]) });
+    await r.flush();
+    expect(of(r.got, "/world/state").slice(states).map((b) => b.rev)).toEqual([0]);
+    expect(of(r.got, "/world/changes")).toHaveLength(0);
+    // 집 사진이 그대로인 답은 상태를 다시 내지 않는다
+    world.applyScene = () => [];
+    await r.perception.publish("/perception/scene", { kind: "scene", frame_id: "e2", observed_ms: NOW, scene: said(["d1", "sitting"]) });
+    await r.flush();
+    expect(of(r.got, "/world/state").slice(states)).toHaveLength(1);
   });
 
   it("/world/input 지킴·따르기 창은 world.guard·contentsAction을 그 값으로 부른다", async () => {

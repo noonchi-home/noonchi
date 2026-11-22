@@ -19,6 +19,8 @@ export interface TaskSpec {
   want?: Partial<Record<Facet, StateKey>>;
   /** 집는 물건 종류. 없으면 target이다. */
   carry?: ObjClass;
+  /** carry 말고도 집고 내려놓는 종류(물 한 잔 가져다주기: 냉장고 물병을 꺼내 따른 뒤 그 컵을 들고 가 책상에 놓는다). */
+  carryAlso?: readonly ObjClass[];
   /** 코치 행동이 다루는 물건 종류(VLM이 상자로 찾아 World State에 넣는다, src/world/vocab.ts VLM_FIND). */
   uses?: readonly ObjClass[];
   /** true면 집는 물건이 안 보여도(냉장고 안) 평면도 자리에서 집는 단계를 받는다. */
@@ -81,6 +83,18 @@ export const TASKS: Record<string, TaskSpec> = {
     description: "사람이 전자레인지 앞에서 쓰는 법을 묻거나 막히면 문 열기부터 꺼내기까지 사람이 할 일을 단계마다 천천히 알려 준다. 클로이드는 가전을 조작하지 않는다.",
     allow: { kinds: ["go", "pick", "place", "do", "wait", "say"], need: ["do", "wait"] },
   },
+  // 시나리오 2(2026-11-22, 침실 1 책상): 끝에 더해 앞 행동의 task_index를 지킨다. 부름은 말 부탁(에이전트 request_task)으로만 시작한다
+  "부름에 응하기": {
+    name: "부름에 응하기", description: "사람이 클로이드를 부르면 사람이 있는 곳(책상 등)으로 가서 무엇을 도와드릴지 묻는다. 질문은 help 답 묶음을 쓴다.",
+    allow: { kinds: ["go", "ask", "say"], need: ["go", "ask"] },
+  },
+  // 대상 컵은 주방에 있어(사람 곁에서 판단할 때는 안 보인다) target을 두지 않는다. 물병은 냉장고 안이라 안 보여도 집기를 받는다.
+  // 습관은 반성(LLM)이 아니라 도움 기록의 시각으로 찾는다(src/brain/history/routines.ts)라 learn을 두지 않는다
+  "물 한 잔 가져다주기": {
+    name: "물 한 잔 가져다주기", maxSteps: 10, carry: "bottle", carryUnseen: true, carryAlso: ["cup"],
+    description: "사람이 책상에서 공부하거나 일하는 중 마실 물이 없거나 물을 부탁하면, 사람이 냉장고에서 물병을 꺼내 싱크대에서 컵에 물을 따르고 그 컵을 들어 책상에 가져가 놓게 한다. 따르기·컵 들기·놓기는 비전으로 끝을 본다(컵 내용물 있음·컵 손에 있음·책상 위이고 손에 없음). 단계는 일곱이다: 냉장고로 가기, 물병 꺼내기, 싱크대로 가기, 컵에 따르기, 컵 들기, 책상으로 가기, 컵 놓기. 냉장고 문 열기·닫기 단계는 넣지 않는다. 계획할 때 주방 컵이 안 보이면 컵 단계 대상은 싱크대 자리로 하고 끝 조건은 컵 종류(cup)로 쓴다. 묻지 않는다.",
+    allow: { kinds: ["go", "pick", "do", "place"], need: ["go", "pick", "do", "place"] },
+  },
 };
 
 /** 모든 행동 이름(검사·tasks.json 견주기). PAM에 보내는 목록은 지금 모드를 따른다(src/act/mode.ts pamTasks). */
@@ -90,6 +104,12 @@ export const TASK_NAMES: readonly string[] = Object.keys(TASKS);
 export const LEARNED_ACTIONS: readonly string[] = TASK_NAMES.filter((n) => TASKS[n]!.learn === true);
 /** 배우기 전 떠날 때 하는 행동(seed 묻기 화살표). */
 export const ASK_ACTION = "사용자에게 물어보기";
+/** 이름을 부르면 하는 행동(말 부탁). */
+export const CALL_ACTION = "부름에 응하기";
+/** 물 한 잔 가져다주기(부탁하거나 배운 습관으로). */
+export const WATER_ACTION = "물 한 잔 가져다주기";
+/** 공부하는 중으로 묶는 사람 하는 일(책상에서 노트북·책, World State activity 값). */
+export const STUDY_ACTIVITIES: readonly string[] = ["using_laptop", "reading"];
 
 /** 그 행동이 어느 모드로 하는 행동인가: 코치 행동(TaskSpec.coach)이면 coach, 그 밖의 목록 행동이면 noonchi, 대기(null)·목록 밖이면 null.
  *  판단 기록 assist와 대시보드 메시지 상자 머리(「코치 모드」·「눈치 모드」)의 기준은 이 하나다. */
@@ -109,6 +129,8 @@ export const TASK_SAY: Readonly<Record<string, { may: string; will: string }>> =
   "컵에 콜라 따라 주기": { may: "콜라를 따라 드려도", will: "컵에 콜라를 따를게요" },
   "라면 끓이기 알려 주기": { may: "알려 드려도", will: "라면 끓이는 법을 알려 드릴게요" },
   "전자레인지로 데우기 알려 주기": { may: "알려 드려도", will: "전자레인지 쓰는 법을 알려 드릴게요" },
+  "부름에 응하기": { may: "가 봐도", will: "네, 갈게요" },
+  "물 한 잔 가져다주기": { may: "물을 가져다드려도", will: "물 한 잔 가져다드릴게요" },
 };
 
 /** 손대는 행동(touch)의 대상 종류. 손대지 않는 행동·목록 밖이면 null. */

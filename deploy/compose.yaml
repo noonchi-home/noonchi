@@ -73,6 +73,10 @@ services:
       PHONE_URL:
       PHONE_EYE_HEIGHT_M:
       FOCUS:
+      # 위치 찾기(기준 사진 지도, 구현명세서 6.15)
+      LOCALIZE_MAP:
+      LOCALIZE_BUCKET:
+      LOCALIZE_PYTHON:
       # 추론(VLM·PAM 호출)
       INFERENCE_MODE:
       VLM_BASE_URL:

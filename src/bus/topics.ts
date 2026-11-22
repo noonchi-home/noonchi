@@ -3,6 +3,7 @@
 // 몸 모양은 그 토픽을 옮기는 묶음에서 실제 모양으로 바꾼다(그 전에는 객체인지와 순서 칸만 본다).
 // 실제 모양으로 바꾼 토픽은 계약(src/contract)의 타입과 같은지 아래 Assert로 tsc가 본다(한쪽만 바꾸면 tsc 실패).
 import { z } from "zod";
+import { PHOTO_MAX_RMS_PX, PHOTO_MIN_MATCHES } from "../shared/photo-alignment.js";
 import { CHECK_TEXT } from "../act/labels.js";
 import { ConditionSchema } from "../world/condition-schema.js";
 import type { DecisionRecord } from "../contract/events.js";
@@ -16,7 +17,7 @@ import type { PlanView } from "../contract/plan.js";
 import type { SceneInput, VlmMissing, WorldChange, WorldChangeKind, WorldChangesMsg, WorldCloserMsg, WorldInput, WorldStateMsg, WorldView, YoloMissing } from "../contract/world.js";
 import { CLASSES, SCENE_STATES, type DetLabel } from "../world/vocab.js";
 
-export const NODES = ["phone", "perception", "world", "brain", "act", "goal", "manager", "devices", "recorder"] as const;
+export const NODES = ["phone", "perception", "world", "brain", "act", "goal", "manager", "devices", "recorder", "localize"] as const;
 export type NodeName = (typeof NODES)[number];
 export type Qos = { kind: "sensor"; depth: number; record?: boolean } | { kind: "state" } | { kind: "reliable" };
 /** 낡음을 보는 기준: 근거 시각(observed_ms 칸), 상태 판본(rev 칸), 발행 시각(머리 stamp), 없음. */
@@ -50,6 +51,11 @@ const unitBox = z.strictObject({ x: z.number().finite(), y: z.number().finite(),
 /** VLM 물건 목록 하나(VLM이 답한 번호·종류·사진 비율 상자, 같은 물건 감지 번호). */
 const sceneObject = z.strictObject({ id: z.string(), cls: z.string(), box: unitBox, det: z.string().nullable() });
 const scene = z.strictObject({
+  household: z.strictObject({
+    seats: z.enum(["clear","obscured","unknown"]),
+    people: z.array(z.strictObject({id:z.string().nullable(), attention:z.enum(["toward_tv","elsewhere","unknown"])})),
+    dining_food: z.enum(["yes","no","unknown"]),
+  }).optional(),
   scene: z.string(), observations: z.array(z.strictObject({ object_id: z.string(), state: z.enum(SCENE_STATES) })), objects: z.array(sceneObject).optional(), summary: z.string(),
 });
 const VLM_MISSING = ["cap", "timeout", "format", "error", "stale"] as const satisfies readonly VlmMissing[];
@@ -63,7 +69,7 @@ const camera = z.strictObject({ origin: z.tuple([at, at, at]), orientation: z.tu
 const eyePose = z.strictObject({ position: z.tuple([at, at]), height_m: at, yaw_deg: at, pitch_deg: at });
 const frameMeta = z.strictObject({
   id, capturedAtMs: at, latestAtMs: at, width: z.number().int().positive(), height: z.number().int().positive(), eye: eyePose.nullable(), view: camera.nullable(),
-  crop: box.optional(), vlm: z.boolean().optional(),
+  crop: box.optional(), vlm: z.boolean().optional(), fresh_position:z.boolean().optional(),
 });
 const pose = z.strictObject({ score: z.number(), box, keypoints: z.array(z.tuple([at, at, at])) });
 const closerPass = z.strictObject({
@@ -72,6 +78,7 @@ const closerPass = z.strictObject({
 const size = { width: z.number().int().positive(), height: z.number().int().positive() };
 /** 장면 VLM 답을 받은 사진의 카메라·크기·폰 눈 자리. */
 const sceneLook = z.strictObject({
+  localized_position: z.tuple([at, at, at]).optional(), fresh: z.boolean().optional(), person_ids: z.array(id).optional(),
   view: camera, ...size, eye: z.tuple([at, at]).nullable().optional(), dets: z.array(z.strictObject({ id: z.string(), box, foot: z.tuple([at, at]).optional() })).optional(),
 });
 /** 가까이 본 그 장의 카메라·크기·자른 자리. */
@@ -99,11 +106,22 @@ const isObj = (v: unknown): v is Record<string, unknown> => typeof v === "object
 const isNum = (v: unknown) => typeof v === "number" && Number.isFinite(v);
 /** 최상위 칸이 이 표의 칸뿐인가(사진 칸 jpeg·jpeg_b64 같은 모르는 칸이 없다). */
 const onlyKeys = (v: Record<string, unknown>, keys: ReadonlySet<string>) => Object.keys(v).every((k) => keys.has(k));
-const VIEW_KEYS = ["at_ms", "objects", "sightings", "person", "fixtures", "devices", "eye", "frame_ms", "vlm_missing", "yolo_missing"] as const satisfies readonly (keyof WorldView)[];
+const VIEW_KEYS = ["at_ms", "objects", "sightings", "person", "fixtures", "devices", "eye", "frame_ms", "vlm_missing", "yolo_missing", "person_trail", "household_photo", "surfaces_seen"] as const satisfies readonly (keyof WorldView)[];
 const VIEW_KEY_SET: ReadonlySet<string> = new Set(VIEW_KEYS);
+const floorPosition = z.tuple([at,at]);
+const trailPoint = z.strictObject({position:floorPosition, room:z.string().nullable(), at_ms:at});
+const householdPhoto = z.strictObject({id, at_ms:at, serial:rev, cap_from_ms:at.optional(), answered_ms:at.optional(), proof:z.strictObject({
+  localized_fixtures:z.array(id).optional(), localized_position:z.tuple([at, at, at]).optional(), camera, seats:z.enum(["clear","obscured","unknown"]), person_count:z.int().nonnegative(), dining_food:z.enum(["yes","no","unknown"]),
+  person:z.strictObject({position:floorPosition,room:z.string().nullable(),seated:z.boolean().nullable(),attention:z.enum(["toward_tv","elsewhere","unknown"])}).nullable(),
+}).nullable()});
+const personTrail = z.array(trailPoint).max(2);
+const surfacesSeen = z.array(z.strictObject({ id, label: z.string(), room: z.string().nullable(), center: floorPosition, seen_ms: at }));
 /** /world/state의 보기는 집 상태 노드 하나가 타입으로 만든 18KB 객체라 깊이는 보지 않는다(지나기마다 세 번 검사하므로 지연 예산).
  *  최상위 칸은 다 있고(후보 자리 sightings는 있을 때만) 그 칸뿐인지(사진 칸 없음)와 칸의 종류만 본다. */
 const view = z.custom<WorldView>((v) => isObj(v) && onlyKeys(v, VIEW_KEY_SET) && isNum(v.at_ms) && Array.isArray(v.objects) && (v.sightings === undefined || Array.isArray(v.sightings)) && isObj(v.person) && Array.isArray(v.fixtures)
+  && (v.household_photo === undefined || householdPhoto.safeParse(v.household_photo).success)
+  && (v.person_trail === undefined || personTrail.safeParse(v.person_trail).success)
+  && (v.surfaces_seen === undefined || surfacesSeen.safeParse(v.surfaces_seen).success)
   && Array.isArray(v.devices) && (v.eye === null || isObj(v.eye)) && (v.frame_ms === null || isNum(v.frame_ms)) && isNum(v.vlm_missing) && isNum(v.yolo_missing));
 const worldState = z.strictObject({ rev, view });
 const CHANGE_KINDS = [
@@ -123,7 +141,8 @@ const DEVICE_KEY_SET: ReadonlySet<string> = new Set(DEVICE_KEYS);
 /** /device/changes: 기기 상태(허브가 만든 값이라 최상위 칸만 본다: 꼭 있는 칸과 그 칸뿐인지)와 기록용 메모(첫 상태·이름·종류). */
 const deviceChange = z.strictObject({
   id, state: z.custom<DeviceState>((v) => isObj(v) && onlyKeys(v, DEVICE_KEY_SET) && typeof v.id === "string" && typeof v.online === "boolean" && isObj(v.twin) && isObj(v.matter) && typeof v.updatedAt === "string"),
-  note: z.strictObject({ initial: z.boolean().optional(), label: z.string().optional(), kind: z.string().optional() }),
+  note: z.strictObject({ initial: z.boolean().optional(), label: z.string().optional(), kind: z.string().optional(),
+    power: z.strictObject({power:z.enum(["on","off"]).nullable(),generation:rev,command_id:id.nullable()}).optional() }),
 });
 /** /brain/goal·/brain/goal_changes: 미리 세운 목표 하나. 계획 보기는 실행 추적이 타입으로 만든 객체라 깊이 보지 않는다(최상위 id·steps만). */
 const xyz = z.tuple([at, at, at]);
@@ -142,12 +161,21 @@ const closerResult = z.discriminatedUnion("ok", [
     top: z.array(z.strictObject({ frame_id: id, kept: z.boolean(), why: z.enum(["moved", "vlm_missing", "not_visible", "no_contents", "no_vessel", "crowded"]).optional() })).optional() }),
 ]);
 const lookResult = z.strictObject({ req: id, observed_ms: at, result: z.union([z.boolean(), closerResult]) });
+const walkPosition = z.tuple([at,at,at]);
+const walkPoint = z.discriminatedUnion("kind",[
+  z.strictObject({kind:z.literal("portal"),id,from_room:id,to_room:id,position:walkPosition}),
+  z.strictObject({kind:z.enum(["via","stand"]),room:id,position:walkPosition}),
+]);
+const walkGuide = z.strictObject({pose_gen:rev.optional(),revision:rev,near_m:z.number().positive(),remaining:z.tuple([walkPoint],walkPoint)})
+  .refine(g=>g.remaining.every((p,i)=>(p.kind==="stand")===(i===g.remaining.length-1)));
+const navigationPose = z.union([z.strictObject({observed_ms:at}),z.strictObject({observed_ms:at,pose_gen:rev,quality:z.enum(["usable","unavailable"]),
+  position:z.tuple([at,at]).nullable(),error_m:z.number().nonnegative().optional()})]);
 const phoneCommand = z.strictObject({ revision: rev.optional(), cmd: z.discriminatedUnion("type", [
   z.strictObject({ type: z.literal("command_clear"), id: id.optional() }),
   z.strictObject({ type: z.literal("command"), id, step: id, text: z.string(), vision: z.string().nullable(),
     choices: z.array(z.strictObject({ id, label: z.string() })), speak: z.boolean(),
-    target: z.strictObject({ id, label: z.string(), position: z.tuple([at, at, at]) }).nullable(),
-    kind: z.enum(["go", "pick", "place", "do"]).optional(), near_m: z.number().positive().optional(),
+    target: z.strictObject({ id, label: z.string(), position: z.tuple([at, at, at]), look: z.tuple([at, at, at]).optional() }).nullable(),
+    guide: walkGuide.nullable().optional(), kind: z.enum(["go", "pick", "place", "do"]).optional(), near_m: z.number().positive().optional(),
     view: z.literal("above").optional(), grade: z.enum(["question", "safety"]).optional() }),
 ]) });
 const claimKind = z.enum(["safety", "approval", "dialog", "plan", "peek"]);
@@ -177,6 +205,7 @@ const prediction = z.strictObject({ observation: z.string(), reasoning: z.string
   state: id.optional(), from: maybeText.optional(), next_index: z.int().optional() });
 const fsmStep = z.strictObject({ state: id, from: maybeText, next_index: z.int(), to: maybeText, on: maybeText, when: maybeText, action: maybeText, learned: z.boolean() });
 const decisionRecord = z.strictObject({
+  request_rev: rev.optional(),
   id, seq: rev, atMs: at, finalTime: id, textSent: z.string(), status: z.enum(["valid", "failed"]), prediction: prediction.nullable(), action: maybeText,
   fsm: fsmStep.nullable().optional(), late: z.literal(true).optional(), goal: z.literal(true).optional(), error: z.string().optional(),
   usage: z.strictObject({ model: id, prompt: rev, completion: rev, cached: rev, cost_usd: at.nullable() }).optional(), memoryVersion: rev, tasks: z.array(id).optional(),
@@ -214,7 +243,9 @@ const actStatus = z.strictObject({ mode: z.enum(["noonchi", "coach"]), hold: z.b
   tasks: z.array(id), placed: z.array(z.tuple([id, z.strictObject({ target: id, part: z.literal("basin").optional(), atMs: at })])) });
 const pendingGoal = z.strictObject({
   id, action: z.string().min(1), state: z.string().min(1), trigger: z.string(), object: id.nullable(), cls: z.string().min(1),
-  status: z.enum(["armed", "fired", "used", "dropped"]), prep: z.enum(["waiting", "planning", "ready", "failed"]),
+  status: z.enum(["armed", "checking", "fired", "used", "dropped"]), prep: z.enum(["waiting", "planning", "ready", "failed"]),
+  meal: z.strictObject({zone:z.string(), surface:z.string(), activity:z.string()}).optional(),
+  checking_ms: at.optional(), check_until_ms: at.optional(), departure_rev: at.optional(), confirmed_ms: at.optional(),
   reason: z.enum(["took", "back", "moved", "replaced", "safety", "mode", "dock", "expired", "pam", "stale", "stop"]).nullable(),
   text: z.string().nullable(), armed_ms: at, ready_ms: at.nullable(), gone_ms: at.nullable(), fired_ms: at.nullable(), plan: planView.nullable(),
   error: z.string().min(1).optional(),
@@ -223,9 +254,9 @@ const pamLink = z.strictObject({ type: z.literal("link"), target: z.literal("pam
 const thoughtMessage = z.strictObject({ id, decision: id, at_ms: at, text: z.string() });
 const brainGoal = z.strictObject({ goal: pendingGoal });
 const personState = z.strictObject({ type: z.literal("person"), state: id, name: id, source: z.enum(["decision", "world"]), decision_id: id.nullable(), since_ms: at });
-const robotState = z.strictObject({ state: z.enum(["idle", "observe", "move", "run", "return", "recover"]), since_ms: at,
+const robotState = z.strictObject({ state: z.enum(["idle", "observe", "move", "run", "return", "return_room", "standby", "recover"]), since_ms: at,
   step: z.strictObject({ plan_id: id, number: z.number().int().positive(), label: id }).nullable() });
-const goalState = z.strictObject({ state: z.enum(["idle", "armed", "planning", "ready", "started", "done", "dropped"]), since_ms: at,
+const goalState = z.strictObject({ state: z.enum(["idle", "armed", "checking", "planning", "ready", "started", "done", "dropped"]), since_ms: at,
   id: id.nullable(), action: id.nullable(), left_ms: at.nullable(), reason: pendingGoal.shape.reason, result: z.enum(["done", "failed", "cancelled"]).nullable() });
 const safetyState = z.strictObject({ state: z.enum(["normal", "suspect", "emergency"]), since_ms: at, fall: z.boolean(), hot: z.array(id), notices: z.array(id) });
 const managerState = z.strictObject({ owner: z.enum(["safety", "request", "goal", "idle"]), mode: z.enum(["noonchi", "coach"]), since_ms: at, tasks: z.array(id) });
@@ -239,7 +270,26 @@ type Flat<T> = { [K in keyof T]: T[K] };
 /** 서로 넣을 수 있는가(양쪽으로). 교차 타입(감지 & edge)·Omit 타입처럼 같은 모양을 다르게 적은 계약에 쓴다. */
 type Same<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false;
 /** 실제 모양으로 바꾼 토픽 몸이 계약 타입과 같다. 미니맵 몸은 SeenEvent에서 사건 칸을 빼고 근거 시각(촬영 시각)을 단 것이다. */
+const offerFields = {id,rev,until_ms:at,target_id:id,goal_id:id.nullable()};
+function offerBody<O extends "grant"|"offer">(op:O) {
+  const fields = {...offerFields,op:z.literal(op)};
+  return z.discriminatedUnion("kind",[
+    z.strictObject({...fields,kind:z.literal("visit"),note:z.string().min(1).max(120).optional()}),
+    z.strictObject({...fields,kind:z.enum(["tv_off","tv_on"])}),
+    z.strictObject({...fields,kind:z.literal("choose_station"),candidates:z.array(id).min(2),direction:z.string(),visited:z.array(id)}),
+  ]);
+}
+const goalIntent = z.union([offerBody("offer"),z.strictObject({op:z.literal("withdraw"),id,rev})]);
+const managerDirective = z.union([offerBody("grant"),z.strictObject({op:z.literal("revoke"),id,rev})]);
+const resultFields = {id,at_ms:at,target_id:id,evidence_rev:rev};
+const directiveResult = z.discriminatedUnion("outcome",[
+  z.strictObject({...resultFields,outcome:z.enum(["arrived","selected","cancelled","failed","unknown"])}),
+  z.strictObject({...resultFields,outcome:z.literal("applied"),command_id:id,expected_power:z.enum(["on","off"])}),
+]);
 export type TopicBodiesSame = [
+  Assert<Same<z.infer<typeof goalIntent>, import("../contract/machines.js").GoalIntent>>,
+  Assert<Same<z.infer<typeof managerDirective>, import("../contract/machines.js").ManagerDirective>>,
+  Assert<Same<z.infer<typeof directiveResult>, import("../contract/machines.js").DirectiveResult>>,
   Assert<Same<z.infer<typeof closerResult>, import("../contract/events.js").CloserResult>>,
   Assert<Same<z.infer<typeof wirePlan>, PlanView>>,
   Assert<Same<z.infer<typeof decisionRecord>, DecisionRecord>>,
@@ -263,7 +313,21 @@ export type TopicBodiesSame = [
   Assert<Same<z.infer<typeof managerState>, Timed<ManagerState>>>,
 ];
 
+const photoRequest = z.strictObject({frame_id:id, captured_ms:at});
+const localized = photoRequest.extend({
+  position:xyz.nullable(), yaw_deg:at.nullable(), pitch_deg:at.nullable(),
+  confidence:z.number().min(0).max(1), matches:z.int().nonnegative(), rms_px:at.nonnegative().nullable(),
+  map_rev:id.nullable(), ar_gap_m:at.nonnegative().nullable(), ar_gap_deg:at.nonnegative().nullable(),
+}).refine(r=>r.position===null
+  ? r.yaw_deg===null && r.pitch_deg===null && r.confidence===0 && r.matches===0 && r.rms_px===null && r.ar_gap_m===null && r.ar_gap_deg===null
+  : r.yaw_deg!==null && r.pitch_deg!==null && r.confidence>=.23 && r.matches>=PHOTO_MIN_MATCHES && r.rms_px!==null && r.rms_px<=PHOTO_MAX_RMS_PX && r.map_rev!==null &&
+    (r.ar_gap_m===null)===(r.ar_gap_deg===null));
 export const TOPICS = {
+  "/perception/localize": {qos:{kind:"reliable"}, body:photoRequest, key:by("frame_id"), order:null, from:["perception"]},
+  "/perception/localized": {qos:{kind:"reliable"}, body:localized, key:by("frame_id"), order:null, from:["localize"]},
+  "/goal/intent": { qos:{kind:"reliable"}, body:goalIntent, key:one, order:null, from:["goal"] },
+  "/manager/directive": { qos:{kind:"reliable"}, body:managerDirective, key:one, order:null, from:["manager"] },
+  "/act/directive_result": { qos:{kind:"reliable"}, body:directiveResult, key:one, order:null, from:["act"] },
   "/brain/person": { qos: { kind: "state" }, body: personState, key: one, order: "stamp", from: ["brain"] },
   "/brain/person_changes": { qos: { kind: "reliable" }, body: personState, key: one, order: null, from: ["brain"] },
   "/brain/nudge": { qos: { kind: "reliable" }, body: z.strictObject({ rev }), key: one, order: null, from: ["goal"] },
@@ -271,7 +335,7 @@ export const TOPICS = {
   "/act/work": { qos: { kind: "reliable" }, body: z.strictObject({
     at_ms: at, goal: pendingGoal.pick({ id: true, action: true, status: true, prep: true, gone_ms: true, reason: true }).nullable(), plan: z.strictObject({ goal: id.nullable(), status: wirePlan.shape.status }).nullable(),
     active: z.boolean(), requested: z.boolean(), emergency: z.boolean(), handling: id.nullable(), activeAction: maybeText, docking: z.boolean(),
-    mode: z.enum(["noonchi","coach"]), tasks: z.array(id),
+    phoneBusy: z.boolean().optional(), mode: z.enum(["noonchi","coach"]), tasks: z.array(id),
   }), key: one, order: null, from: ["act"] },
   "/manager/request": { qos: { kind: "reliable" }, body: z.discriminatedUnion("kind", [
     z.strictObject({ kind: z.literal("speech"), input: checkedDecision }), z.strictObject({ kind: z.literal("cancel") }),
@@ -287,7 +351,7 @@ export const TOPICS = {
   "/manager/state": { qos: { kind: "state" }, body: managerState, key: one, order: "stamp", from: ["manager"] },
   "/manager/changes": { qos: { kind: "reliable" }, body: managerState, key: one, order: null, from: ["manager"] },
   "/perception/frame": { qos: { kind: "sensor", depth: 4 }, body: frame, key: one, order: "observed_ms", from: ["phone"], photo: "jpeg_b64" },
-  "/phone/pose": { qos: { kind: "sensor", depth: 600, record: true }, body: observed, key: one, order: "observed_ms", from: ["phone"] },
+  "/phone/pose": { qos: { kind: "sensor", depth: 600, record: true }, body: navigationPose, key: one, order: "observed_ms", from: ["phone"] },
   "/perception/detections": { qos: { kind: "sensor", depth: 600, record: true }, body: seen, key: one, order: "observed_ms", from: ["perception"] },
   "/perception/analysis": { qos: { kind: "reliable" }, body: observed, key: by("frame_id"), order: "observed_ms", from: ["perception"] },
   "/perception/scene": { qos: { kind: "reliable" }, body: sceneInput, key: one, order: null, from: ["perception"] },
@@ -299,6 +363,8 @@ export const TOPICS = {
   "/world/state": { qos: { kind: "state" }, body: worldState, key: one, order: "rev", from: ["world"] },
   "/world/changes": { qos: { kind: "reliable" }, body: worldChanges, key: one, order: "rev", from: ["world"] },
   "/world/closer": { qos: { kind: "reliable" }, body: worldCloser, key: by("look"), order: null, from: ["world"] },
+  // 새 집 사진(serial)마다 하나: /world/state는 가장 새 것만 남아 받는 쪽이 사진을 건너뛸 수 있다. 기록 노드가 사진마다 한 줄로 남긴다(실영상 판정)
+  "/world/household_photo": { qos: { kind: "reliable" }, body: z.strictObject({ photo: householdPhoto }), key: one, order: null, from: ["world"] },
   "/brain/decision": { qos: { kind: "reliable" }, body: checkedDecision, key: one, order: null, from: ["brain"] },
   "/brain/plan_request": { qos: { kind: "reliable" }, body: z.strictObject({ req: id, decision: decisionRecord, ahead: planAhead.optional(), until: at }), key: by("req"), order: null, from: ["act", "goal"] },
   "/brain/plan": { qos: { kind: "reliable" }, body: z.strictObject({ req: id, decision_id: id, result: planResult }), key: by("req"), order: null, from: ["brain"] },
@@ -324,6 +390,7 @@ export const TOPICS = {
   "/device/command": { qos: { kind: "reliable" }, body: z.looseObject({ command_id: z.string().min(1), deadline_ms: z.number().finite() }), key: by("command_id"), order: null, from: ["act", "phone"] },
   "/device/result": { qos: { kind: "reliable" }, body: z.looseObject({ command_id: z.string().min(1), status: z.enum(["done", "failed", "expired", "unknown"]) }), key: by("command_id"), order: null, from: ["devices"] },
   "/device/state": { qos: { kind: "state" }, body: obj, key: by("id"), order: "stamp", from: ["devices"] },
+  "/device/power_intent": { qos: { kind: "reliable" }, body: z.strictObject({ id, device_id:id, value:z.enum(["on","off"]), origin:z.enum(["automation","user","unknown"]), command_id:id.nullable(), at_ms:at }), key:by("device_id"), order:"stamp", from:["devices"] },
   "/device/changes": { qos: { kind: "reliable" }, body: deviceChange, key: by("id"), order: "stamp", from: ["devices"] },
   "/bus/dead": { qos: { kind: "reliable" }, body: obj, key: by("topic"), order: null, from: NODES },
 } as const satisfies Record<string, TopicSpec<Record<string, unknown>>>;

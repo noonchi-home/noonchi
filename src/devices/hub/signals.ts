@@ -9,6 +9,10 @@
 // 실제 출처: ThinQ 기기는 읽은 값이 있을 때, 가상 기기는 명령·센서 값을 한 번이라도 받은 뒤(안쪽 허브가 바뀜을 알리거나 명령이 받아짐).
 // 신호 없음 기기·읽기 전 ThinQ 기기·명령 받은 적 없는 가상 기기는 실제 출처가 없다. 실제 상태와 다르면 처음 한 번만 mismatch로 알린다.
 
+import { IrTv, type IrConfig, type IrPort } from "./ir.js";
+import { AsyncLocalStorage } from "node:async_hooks";
+import { HOUSEHOLD_KINDS } from "../kinds.js";
+import type { PowerStamp } from "../../contract/devices.js";
 import { matterFromTwin } from "../mapping.js";
 import type { ThinqLink } from "../thinq/link.js";
 import type { Command, CommandResult, DeviceHub, DeviceSpec, DeviceState, SightEvidence, VisionResult } from "../../contract/devices.js";
@@ -44,6 +48,51 @@ export class SignalHub implements DeviceHub {
   private readonly listeners = new Set<(s: DeviceState) => void>();
   private unsub: (() => void) | null = null;
   private stopped = false;
+  private readonly power = new Map<string,PowerStamp>();
+  private readonly sending = new AsyncLocalStorage<{id:string; generation:number; power:"on"|"off"}>();
+  onPowerIntent?: (id:string, power:"on"|"off", commandId:string|null) => void;
+  onPowerStamp?: (state:DeviceState) => void;
+
+  powerStamp(id:string):PowerStamp | undefined {
+    if (!this.power.has(id)) {
+      if (!this.world.list().some(d=>d.id===id && d.kind===HOUSEHOLD_KINDS.viewerPower)) return undefined;
+      this.power.set(id,{power:this.powerOf(this.get(id)),generation:0,command_id:null});
+    }
+    return {...this.power.get(id)!};
+  }
+  private powerOf(state:DeviceState|undefined) {
+    const p=state?.twin.power;
+    return state?.online && !state.signal && !state.vision?.applied && (p==="on" || p==="off") ? p : null;
+  }
+  private infrared: IrTv | null = null;
+
+  setInfrared(config: IrConfig | null, open: IrPort) {
+    if (this.stopped || this.infrared?.config === config) return;
+    const previous = this.infrared;
+    previous?.stop();
+    this.infrared = null;
+    if (previous) {
+      this.vision.delete(previous.config.device);
+      this.emit(this.get(previous.config.device)!);
+    }
+    if (!config) return;
+    const id = config.device;
+    if (!this.list().some(d => d.id === id && d.kind === HOUSEHOLD_KINDS.viewerPower))
+      throw new Error("적외선 설정의 TV를 이 집에서 찾을 수 없어요.");
+    const old = this.powerStamp(id)!;
+    const tv = new IrTv(config, commandId => {
+      if (this.infrared !== tv) return;
+      const generation = this.power.get(id)!.generation + (commandId === null ? 1 : 0);
+      this.power.set(id, { power: tv.power, generation, command_id: commandId });
+      this.emit(this.get(id)!);
+    }, (power, commandId) => this.onPowerIntent?.(id, power, commandId));
+    this.vision.delete(id);
+    this.infrared = tv;
+    this.power.set(id, {power:null, generation:old.generation+1, command_id:null});
+    this.emit(this.get(id)!);
+    tv.start(open);
+  }
+
   private link: ThinqLinkLike | null = null;
   /** 카메라로 본 트윈 속성 값과 마지막으로 본 촬영 시각. */
   private readonly vision = new Map<string, { twin: Record<string, unknown>; atMs: number; evidence: Record<string, SightEvidence> }>();
@@ -70,10 +119,14 @@ export class SignalHub implements DeviceHub {
     // 근거는 이번에 본 속성마다 새로 쓴다(근거 없이 온 속성은 옛 근거를 지운다)
     const ev: Record<string, SightEvidence> = { ...prev?.evidence };
     for (const attr of Object.keys(seen)) {
-      if (evidence[attr]) ev[attr] = evidence[attr]!;
+      if (evidence[attr]) ev[attr] = Object.freeze({ ...evidence[attr]! }); // 넘긴 값과 나누지 않는다
       else delete ev[attr];
     }
     this.vision.set(id, { twin: { ...prev?.twin, ...seen }, atMs, evidence: ev });
+    if (this.infrared?.config.device === id) {
+      this.infrared.see(seen.power, atMs, evidence.power);
+      return { kind: "seen" };
+    }
     const after = this.get(id);
     if (after && shown(after) !== shown(before)) this.emit(after);
     if (!this.real(id)) {
@@ -163,6 +216,7 @@ export class SignalHub implements DeviceHub {
 
   async stop(): Promise<void> {
     this.stopped = true;
+    this.infrared?.stop();
     this.unsub?.();
     this.unsub = null;
     await this.world.stop();
@@ -180,7 +234,36 @@ export class SignalHub implements DeviceHub {
     return this.world.states().map((s) => this.view(s)!);
   }
 
-  async command(id: string, cmd: Command): Promise<CommandResult> {
+  async command(id: string, cmd: Command, commandId?:string): Promise<CommandResult> {
+    if (this.stopped) return STOPPED;
+    if (this.infrared?.config.device === id) {
+      if (cmd.type !== "on" && cmd.type !== "off")
+        return { ok:false, outcome:"not_sent", error:"이 TV는 전원만 조절할 수 있어요." };
+      const result = await this.infrared.command(cmd.type, commandId ?? null);
+      return { ...result, state: this.get(id) };
+    }
+    const stamp = this.powerStamp(id);
+    if (!stamp || (cmd.type!=="on" && cmd.type!=="off") || this.stopped) return this.sendCommand(id,cmd);
+    if (!commandId) {
+      stamp.generation++;
+      stamp.command_id=null;
+      this.power.set(id,stamp);
+      const state=this.get(id);
+      if (state) this.onPowerStamp?.(state); // An unchanged manual request still revokes ownership.
+    }
+    const power=cmd.type;
+    this.onPowerIntent?.(id,power,commandId??null);
+    const result=await this.sending.run({id,generation:stamp.generation,power},()=>this.sendCommand(id,cmd));
+    const current=this.power.get(id)!;
+    if (commandId && current.generation===stamp.generation && result.ok && result.outcome!=="unverified" &&
+        this.powerOf(result.state)===power && this.powerOf(this.get(id))===power && !this.stopped) {
+      this.power.set(id,{generation:stamp.generation,command_id:commandId,power});
+      this.onPowerStamp?.(result.state!);
+    }
+    return result;
+  }
+
+  private async sendCommand(id: string, cmd: Command): Promise<CommandResult> {
     if (this.stopped) return STOPPED;
     if (this.source(id).kind === "thinq") {
       if (!this.link) return { ok: false, outcome: "not_sent", error: NO_LINK, state: this.get(id) };
@@ -195,7 +278,7 @@ export class SignalHub implements DeviceHub {
 
   async setSensor(id: string, attr: string, value: unknown): Promise<CommandResult> {
     if (this.stopped) return STOPPED;
-    if (this.source(id).kind === "thinq") {
+    if (this.infrared?.config.device === id || this.source(id).kind === "thinq") {
       const label = this.world.list().find((d) => d.id === id)?.label ?? id;
       return { ok: false, error: `${label}: 실제 가전 값이라 바꿀 수 없어요.`, state: this.get(id) };
     }
@@ -210,7 +293,7 @@ export class SignalHub implements DeviceHub {
     // 신호 없음 기기의 변화는 엔진이 알 수 없으므로 보내지 않는다. thinq 기기는 연결이 읽은 뒤 보낸다(setLink).
     // 가상 기기가 바뀌었다고 알리면 명령·센서 값을 받은 것이라 실제 출처가 생긴다
     this.unsub ??= this.world.subscribe((s) => {
-      if (this.source(s.id).kind !== "virtual") return;
+      if (this.infrared?.config.device === s.id || this.source(s.id).kind !== "virtual") return;
       this.commanded.add(s.id);
       this.emit(this.view(s)!);
     });
@@ -220,16 +303,30 @@ export class SignalHub implements DeviceHub {
   }
 
   private emit(s: DeviceState): void {
+    const stamp=this.power.get(s.id);
+    const power=this.powerOf(s);
+    if (stamp && stamp.power!==power) {
+      const sending=this.sending.getStore();
+      const correlated=sending?.id===s.id && sending.generation===stamp.generation && sending.power===power;
+      this.power.set(s.id,{power,generation:stamp.generation+(correlated ? 0 : 1),command_id:null});
+    }
     for (const cb of this.listeners) cb(s);
   }
 
   private view(s: DeviceState | undefined): DeviceState | undefined {
     if (!s) return s;
+    const ir = this.infrared;
+    if (ir?.config.device === s.id) {
+      const base = { id:s.id, online:ir.online, updatedAt:new Date(ir.updatedAt).toISOString() };
+      if (!ir.power) return { ...base, twin:{}, matter:{}, signal:"none" };
+      return { ...base, twin:{power:ir.power}, matter:{onOff:ir.power === "on"} };
+    }
     const base = this.sourceView(s);
     const v = this.vision.get(s.id);
     if (!v) return base;
     const applied = !this.real(s.id);
-    const vision = { twin: { ...v.twin }, at: new Date(v.atMs).toISOString(), applied, ...(Object.keys(v.evidence).length ? { evidence: { ...v.evidence } } : {}) };
+    // 근거 하나하나는 observe에서 얼린 사본이다: 돌려준 값을 고쳐 다음 조회의 근거를 바꿀 수 없다.
+    const vision = Object.freeze({ twin: Object.freeze({ ...v.twin }), at: new Date(v.atMs).toISOString(), applied, ...(Object.keys(v.evidence).length ? { evidence: Object.freeze({ ...v.evidence }) } : {}) });
     if (!applied) return { ...base, vision };
     // 실제 출처가 없다: 본 값이 상태다. 모름으로 가린 기기는 본 속성만 안다
     const { signal, ...rest } = base;

@@ -586,6 +586,16 @@ describe("물건 자리 맞추기", () => {
 });
 
 describe("AR 화면 그림", () => {
+  it("hides a walking guide on local tracking loss and on disconnect",async()=>{
+    const {ws,session,marks,startAr}=make();
+    await startAr();ws.push(status({aligned:true}));
+    ws.push(command({kind:"go",target:CUP,speak:false,guide:{revision:1,near_m:0.32,remaining:[
+      {kind:"stand",room:"kitchen",ar:[0.2,0,-0.5]}]}}));
+    session.step(100,frame());expect(marks.at(-1)).toMatchObject([{id:CUP.id,stand:true}]);
+    session.step(200,frame(true));expect(marks.at(-1)).toEqual([]);
+    ws.drop();session.step(300,frame());expect(marks.at(-1)).toEqual([]);
+  });
+
   it("명령 대상 고리: 명령에 실린 대상 하나에만 그린다. 에이전트 초점(다른 물건)은 그리지 않는다", async () => {
     const { ws, session, marks, startAr } = make();
     await startAr();

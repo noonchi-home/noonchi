@@ -6,7 +6,8 @@
 export interface PhoneChoice { id: string; label: string }
 
 /** 명령 대상 하나(실제 폰은 이것에만 작은 고리를 그린다). ar: 실제 폰 AR 좌표(폰 서버가 맞춘 기준점으로 트윈 자리를 바꾼 것). */
-export interface PhoneTarget { id: string; label: string; ar: [number, number, number] }
+/** look: 관찰 자리 가기에서 도착해 비출 곳(AR 좌표). 「…을 비춰 주세요」 명령에만 있다. */
+export interface PhoneTarget { id: string; label: string; ar: [number, number, number]; look?: [number, number, number] }
 
 /** 사람 단계 종류: 가기·집기·놓기·그 자리에서 하는 일(따르기). */
 export type PhoneStepKind = "go" | "pick" | "place" | "do";
@@ -19,7 +20,21 @@ export type TalkGrade = "safety" | "question";
  * 서버 → 실제 폰: 지금 할 명령. 바뀔 때마다 통째로 보낸다. 같은 id·step이면 같은 명령이고 비전 상태만 바뀐 것이다.
  * 새로 붙은 폰은 상태(status) 다음에 지금 명령을 speak false로 받는다.
  */
+export type WalkPoint<P> = P & (
+  | {kind:"portal"; id:string; from_room:string; to_room:string}
+  | {kind:"via" | "stand"; room:string}
+);
+export interface WalkGuide<P> {
+  pose_gen?:number;
+  revision:number;
+  near_m:number;
+  remaining:[WalkPoint<P>, ...WalkPoint<P>[]];
+}
+export type TwinWalkGuide = WalkGuide<{position:[number,number,number]}>;
+export type NavigationPose = {observed_ms:number; pose_gen:number; quality:"usable"|"unavailable"; position:[number,number]|null; error_m?:number};
+
 export interface PhoneCommand {
+  guide?: WalkGuide<{ar:[number,number,number]}> | null;
   type: "command";
   /** 계획 id(plan:pam-N). */
   id: string;
@@ -45,8 +60,10 @@ export interface PhoneCommand {
 }
 
 /** 서버 안(실행 추적 → 폰 서버)의 명령: 대상 자리가 트윈 좌표 [x, 높이, y]다. 폰 서버가 AR 좌표로 바꿔 PhoneCommand로 보낸다. */
-export interface PlannedCommand extends Omit<PhoneCommand, "target"> {
-  target: { id: string; label: string; position: [number, number, number] } | null;
+export interface PlannedCommand extends Omit<PhoneCommand, "target" | "guide"> {
+  guide?: TwinWalkGuide | null;
+  /** look: 관찰 자리 가기에서 도착해 비출 곳(트윈 [x, 높이, y]). 폰 서버가 AR 좌표로 바꿔 보낸다. */
+  target: { id: string; label: string; position: [number, number, number]; look?: [number, number, number] } | null;
 }
 
 /** 서버 → 실제 폰: 명령을 지운다(계획 완료·실패·그만·새 계획으로 바뀜). id가 있으면 그 명령일 때만, 없으면 무엇이든 지운다(명령이 없는 서버에 붙은 폰). */

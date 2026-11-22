@@ -53,6 +53,8 @@ const REACT_S = 1.5;
 const RATE = { min: 0.25, max: 2 };
 const WALK_MPS = 0.8;
 const WALK_STOP_M = 0.6;
+/** 관찰 자리 도착을 볼 때 명령 반경(near_m)에 더하는 여유(m): 서버가 도착을 본 자세와 마지막으로 보낸 자세의 차이. */
+const ARRIVE_SLACK_M = 0.2;
 /** 가까이 가서 보기 go(near_m)는 그 거리의 이만큼까지 걷는다(자세 흔들림 여유). */
 const NEAR_WALK = 0.8;
 /** 위에서 비추기 자세: 대상에서 지금 자리 쪽으로 수평(m)·대상 위(m). 크기를 모르는 좁고 깊은 컵도 입구 바로 위라 안이 보인다(src/world/place.ts topView). */
@@ -391,7 +393,14 @@ export function createVideoAr({ link, params, hooks, deps }) {
     // 명령 세대: 새 단계 영상 명령·지우기마다 오른다. 예약 타이머와 재생을 기다리는 바꾸기는 세대가 다르면 버린다
     let cmdGen = 0;
     let lastCmdId = null;
+    let guidedKey=null, guideRevision=null, waypoint=null, walkReady=null;
+    function followGuide(key, clipMs, generation=cmdGen){
+      if(generation!==cmdGen || key!==guidedKey || key!==lastKey || walkReady!==key || !waypoint) return;
+      startWalk(waypoint,0,clipMs);
+    }
     let aboveAim = null;
+    // 영상 모드: 자세 흉내. 관찰 자리 가기의 비출 곳(명령 대상 look, AR): 명령이 떠 있는 동안 도착 반경에 닿으면 그쪽을 바라본다(「…을 비춰 주세요」)
+    let lookAfter = null;
     let lastKey = null; // 마지막으로 받은 명령 id:단계(같은 명령이 다시 오면 비전 상태만 바뀐 것)
     // 영상 모드: 자세 흉내
     let posedKey = null; // 단계 영상 칸 없이 자세만 옮기기로 한 명령 id:단계(같은 명령이 다시 와도 다시 하지 않는다)
@@ -426,7 +435,7 @@ export function createVideoAr({ link, params, hooks, deps }) {
       const e = toEdge({ u, v });
       return { ...m, u: e.u, v: e.v, off: true, angle: e.angle };
     };
-    const frameMarks = () => (focus.targets.length && performance.now() < focus.until ? focusMarks(focus.targets, projection, view) : []);
+    const frameMarks = () => (focus.targets.length && performance.now() < focus.until ? focusMarks(focus.targets, projection, view).filter(m=>hooks.visibleMark?.(m.id)!==false) : []);
     const showMarks = (marks) => hooks.onMarks(marks.map(toScreen));
 
     /** go 단계 걷기 한 칸(자세 타이머마다 0.08m). 멈출 자리에 닿으면 끝. */
@@ -447,6 +456,7 @@ export function createVideoAr({ link, params, hooks, deps }) {
      *  clipMs(단계 영상 조각이 실제로 도는 시간)가 있으면 그 시간에 닿게 걷고(조각과 함께 걷는다), 없으면 초당 WALK_MPS. */
     // 영상 모드: 자세 흉내
     const startWalk = (target, stopM = WALK_STOP_M, clipMs) => {
+      if (lookAfter?.key === lastKey) lookAfter.faced = false;
       const w = walkGoal(position, target, stopM);
       const dist = w ? Math.hypot(w.goal[0] - position[0], w.goal[2] - position[2]) : 0;
       walk = w && (clipMs > 0 ? { goal: w.goal, mps: dist / (clipMs / 1000), clip: true } : { goal: w.goal, mps: WALK_MPS, clip: false });
@@ -468,8 +478,13 @@ export function createVideoAr({ link, params, hooks, deps }) {
 
     const sendPose = () => {
       stepWalk();
+      // 영상 모드: 자세 흉내. 관찰 자리 가기가 떠 있는 동안 걷기가 끝나 도착 반경 안이면 비출 곳을 한 번 바라본다. 서버는 그쪽을 비춰야 도착으로 본다
+      if (lookAfter && walkReady === lookAfter.key && (!guidedKey || waypoint) && !lookAfter.faced && !walk && Math.hypot(position[0] - lookAfter.target[0], position[2] - lookAfter.target[2]) <= lookAfter.near + ARRIVE_SLACK_M) {
+        lookAfter.faced = true;
+        face(lookAfter.at);
+      }
       link.send({
-        type: "pose", position, orientation, tracking: "ok", hit: state.hitPoint, hit_estimated: state.hitEstimated,
+        type: "pose", ...link.stamp(performance.timeOrigin + performance.now()), position, orientation, tracking: "ok", hit: state.hitPoint, hit_estimated: state.hitEstimated,
         floor_y: 0, epoch: state.epoch,
       });
     };
@@ -687,6 +702,24 @@ export function createVideoAr({ link, params, hooks, deps }) {
       command(cmd) {
         const key = `${cmd.id}:${cmd.step}`;
         const fresh = key !== lastKey;
+        // 영상 모드: 자세 흉내
+        if (cmd.kind === "go" && Array.isArray(cmd.target?.ar) && Array.isArray(cmd.target?.look))
+          lookAfter = lookAfter?.key === key ? lookAfter : { key, target: cmd.target.ar, at: cmd.target.look, near: typeof cmd.near_m === "number" ? cmd.near_m : WALK_STOP_M };
+        else if (fresh) lookAfter = null;
+        const guided=cmd.kind==="go" && cmd.guide!==undefined;
+        const nextGuide=guided?cmd.guide?.remaining[0]:null;
+        if(guided && (fresh || guideRevision!==(cmd.guide?.revision??null))){
+          walk=null;guidedKey=key;guideRevision=cmd.guide?.revision??null;waypoint=nextGuide?.ar??null;
+          if(nextGuide?.kind==="portal" && waypoint){
+            const beyond=cmd.guide.remaining[1]?.ar;
+            if(beyond){
+              const dx=beyond[0]-waypoint[0],dz=beyond[2]-waypoint[2],len=Math.hypot(dx,dz);
+              if(len>0) waypoint=[waypoint[0]+0.12*dx/len,waypoint[1],waypoint[2]+0.12*dz/len];
+            }
+          }
+          if(!fresh) followGuide(key);
+        } else if(!guided && fresh){if(guidedKey) walk=null;guidedKey=null;waypoint=null;}
+
         // 같은 명령이 이어서 다시 오면(비전 상태만 바뀜) 이미 줄에 넣은 것은 그대로 둔다(대상이 그제야 붙었으면 아래에서 넣는다)
         if (!fresh && switched.has(key)) {
           if (aboveAim?.key === key && cmd.view === "above" && Array.isArray(cmd.target?.ar)) {
@@ -701,11 +734,13 @@ export function createVideoAr({ link, params, hooks, deps }) {
         // 새 명령(다른 id·단계, 단계 영상이 없는 질문·승인도): 앞 명령의 반응 시간 예약과 조각 없는 걷기를 멈춘다. 줄에 든 조각과 그 걷기는 그대로다
         if (fresh) {
           lastKey = key;
+          walkReady = null;
           cmdGen++;
           for (const timer of reactTimers) clearTimeout(timer);
           reactTimers.clear();
           if (walk && !walk.clip) walk = null;
         }
+        if(guided && !waypoint) return;
         const id = cmd.target?.id;
         const first = typeof id === "string" ? steps.find((s) => s.kind === cmd.kind && id.includes(s.word)) : undefined;
         const target = Array.isArray(cmd.target?.ar) ? cmd.target.ar : null;
@@ -717,7 +752,12 @@ export function createVideoAr({ link, params, hooks, deps }) {
         const stopM = typeof cmd.near_m === "number" ? Math.min(WALK_STOP_M, cmd.near_m * NEAR_WALK) : WALK_STOP_M;
         const aim = target && cmd.view === "above" ? { key, at: target, playing: false } : null;
         aboveAim = aim;
-        const pose = target && (cmd.kind === "go" ? (clipMs) => startWalk(target, stopM, clipMs) : aim ? () => {
+        const pose = target && (cmd.kind === "go" ? (clipMs) => {
+          if (gen === cmdGen && lastKey === key) walkReady = key;
+          else if (guided || cmd.target.look) return;
+          if (guided) followGuide(key,clipMs,gen);
+          else startWalk(target, stopM, clipMs);
+        } : aim ? () => {
           aim.playing = true;
           holdAbove(aim.at);
         } : () => face(target));
@@ -781,8 +821,12 @@ export function createVideoAr({ link, params, hooks, deps }) {
        *  줄에 든 조각과 조각과 함께 걷는 걸음은 그대로 튼다(원본 영상을 자르지 않는다). */
       commandClear(id) {
         if (id !== undefined && id !== lastCmdId) return;
+        // 명령이 지워지면(도착·그만·연결 끊김) 비출 곳을 더 바라보지 않는다: 지움만으로는 도착인지 알 수 없다
+        lookAfter = null;
         cmdGen++;
         lastKey = null;
+        if(guidedKey) walk=null;
+        guidedKey=null;waypoint=null;guideRevision=null;
         posedKey = null;
         for (const timer of reactTimers) clearTimeout(timer);
         reactTimers.clear();

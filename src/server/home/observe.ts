@@ -1,3 +1,4 @@
+import { openLocalizer } from "../../localize/index.js";
 import { phoneCommandRoutes, phoneOwnerRoutes } from "../../phone/index.js";
 import { showStatus } from "./say.js";
 import { progressRoutes } from "../../act/index.js";
@@ -5,15 +6,16 @@ import { applyPhoneProgress, showPhoneCommand, syncPhoneClaims } from "./phone.j
 // 집 실행 묶음의 관찰 흐름·World State 잇기(src/observe·src/world): 트윈 윗면·침대 소파(쓰러짐 의심에서 뺄 자리), World State, 관찰 흐름(YOLO·VLM),
 // 주기 타이머(관찰·판단·실행 추적·보기 담당·말풍선 카드). 관찰 흐름은 BRAIN=1이고 PHONE_PORT가 있을 때만 켠다(폰 카메라가 입력).
 import { join } from "node:path";
-import { datasetWriter } from "../../brain/index.js";
-import { goalRoutes } from "../../goal/index.js";
+import { datasetWriter, findRoutines, readDayMemory, routineEdge, type HelpRoutine } from "../../brain/index.js";
+import { GoalTriggers, startGoalNode } from "../../goal/index.js";
 import { managerRoutes } from "../../manage/index.js";
 import { BrainPlans, planningRoutes } from "../../brain/index.js";
 import { BusNode, Outbox } from "../../bus/index.js";
+import { HOUSEHOLD_KINDS } from "../../devices/kinds.js";
 import type { BrainLog, SeenEvent } from "../../contract/events.js";
 import type { WorldChange } from "../../contract/world.js";
-import { floorLookup, roomNamedAt, type LayoutEditor } from "../../layout/index.js";
-import { createPipeline, LookClient, lookRoutes, startPerceptionNode } from "../../observe/index.js";
+import { floorLookup, roomNamedAt, locateZone, type LayoutEditor } from "../../layout/index.js";
+import { createPipeline, loadObserveConfig, LookClient, lookRoutes, startPerceptionNode, vlmStepMs } from "../../observe/index.js";
 import { WorldState, loadFallConfig, restsFromLayout, startWorldMirror, startWorldNode, surfacesFromLayout, type PlaneSurface, type RestSpot } from "../../world/index.js";
 import { historyRoutes } from "../../record/index.js";
 import { HEARD_MARK } from "../../world/labels.js";
@@ -132,22 +134,51 @@ export async function startNodes(core: HomeCore, emit: (event: BrainLog) => void
   core.managerNode = manager;
   core.out.manager = managerRoutes(manager, clock);
   await manager.prepare();
-  core.goalMirror = await startWorldMirror({
-    bus, epoch, name: "goal", clock, log,
-    routes: (node, afterRev) => {
-      core.out.goal = goalRoutes(node, clock);
-      core.goalPlans = new BrainPlans(core.out.goal, clock, "goal:");
+  const triggers = new GoalTriggers(locateZone, floorLookup(core.plan.rooms), vlmStepMs(loadObserveConfig(ctx.env)));
+  // 목표 판단(src/goal/start.ts): 250ms마다와 새 rev가 오면 전부, 같은 rev에 새 집 사진만 오면 끄고 켤 TV가 있을 때 조건 사실과 TV 규칙만
+  // 도움 습관(시나리오 2): 지난 30일 help 줄에서 찾은 습관 가운데 그날 기억에 화살표가 든 것만 시각 계기로 쓴다(1분마다 다시 읽는다)
+  let routineCache: { at: number; list: HelpRoutine[] } | null = null;
+  const routines = (): HelpRoutine[] => {
+    const now = core.nowMs();
+    if (routineCache && now - routineCache.at < 60_000) return routineCache.list;
+    const db = ctx.history.db, off = db.offsetMinutes;
+    const day = new Date(now + off * 60_000).toISOString().slice(0, 10);
+    // 그날 기억을 읽기만 한다(고정하지 않는다: 고정은 판단이 그날 처음 쓸 때 한다)
+    const memory = readDayMemory(db, day).memory;
+    const helps = db.list({ since: now - 30 * 86_400_000, until: now, kinds: ["help"], limit: Number.MAX_SAFE_INTEGER });
+    const has = (r: HelpRoutine) => "states" in memory && memory.states.some((st) => st.next.some((e) => e.action === r.action && e.on === routineEdge(r).on));
+    routineCache = { at: now, list: findRoutines(helps, off).filter(has) };
+    return routineCache.list;
+  };
+  core.routines = routines;
+  const goal = await startGoalNode({
+    bus, epoch, clock, log, triggers, portals: core.floorPlan.portals, routines, offsetMinutes: ctx.history.db.offsetMinutes,
+    map: () => core.scene?.stations ?? null,
+    viewers: () => core.twin.devices.filter((d) => d.kind === HOUSEHOLD_KINDS.viewerPower).map((d) => d.id),
+    checking: () => core.checkingVisit,
+    closed: () => core.closed,
+    onFacts: (facts) => { core.goalFacts = facts; },
+    afterTick: () => { if (core.mirror?.view()) core.tracker?.updateGoal(); },
+    routes: (node, afterRev, out) => {
+      core.out.goal = out;
+      core.goalPlans = new BrainPlans(out, clock, "goal:");
       core.goalPlans.routes(node);
       node.on("/goal/update", (b, ctx) => afterRev(b.rev, ctx, () => { if (!core.closed) core.tracker?.updateGoal(); }));
-      node.every(250, () => { if (!core.closed && core.goalMirror?.view() && core.mirror?.view()) core.tracker?.updateGoal(); });
     },
   });
+  core.goalMirror = goal.mirror;
+  core.tvWatch = goal.tv;
+  core.roomWatch = goal.rooms;
   core.mirror = await startWorldMirror({
     bus, epoch, name: "act", clock, log,
     routes: (node, afterRev) => {
       core.out.act = new Outbox(node, { clock, log });
       core.brainPlans = new BrainPlans(core.out.act, clock);
       core.brainPlans.routes(node);
+      node.on("/manager/directive", (d, ctx) => {
+        if (d.op==="revoke") { core.tracker?.onDirective(d); return; }
+        return afterRev(d.rev,ctx,()=>{ if (!core.closed) core.tracker?.onDirective(d); });
+      });
       node.on("/manager/order", ({ input: b, gate, resumed }, ctx) => afterRev(b.rev, ctx, (rev) => {
         if (!core.closed) core.tracker?.onOrder(b.decision, gate, resumed, rev === b.rev ? b.check : undefined);
         const feedback = core.followupFeedback.get(b.decision.id);
@@ -159,6 +190,7 @@ export async function startNodes(core: HomeCore, emit: (event: BrainLog) => void
       core.looks = new LookClient(core.out.act, clock);
       core.looks.routes(node);
       progressRoutes(node, (p) => applyPhoneProgress(core, p), () => core.nowMs());
+      node.on("/phone/pose", p=>{ if(!core.closed) core.tracker?.onNavigationReading(p); });
       node.on("/phone/link", ({ ready }) => { core.phoneReady = ready; });
       node.on("/phone/owner", ({ owner }) => { core.phoneOwner = owner; });
       node.every(250, () => {
@@ -176,7 +208,9 @@ export async function startNodes(core: HomeCore, emit: (event: BrainLog) => void
       core.speak();
     },
   });
+  core.localizer=await openLocalizer(core.perception.node,{name:"localize",bus,epoch,clock,log},core.twin.home.id,ctx.runtimeDir,ctx.env,log);
   const phone = new BusNode({ name: "phone", bus, epoch, clock, log });
+  phone.on("/perception/localized",r=>core.localizer?.receive(r,(header,result)=>core.phone?.localized(header,result) ?? false));
   let statusReady!: () => void;
   const statusStarted = new Promise<void>((resolve) => { statusReady = resolve; });
   phoneCommandRoutes(phone, (m) => { if (!core.closed) showPhoneCommand(core, m); }, {
@@ -209,11 +243,19 @@ export async function startNodes(core: HomeCore, emit: (event: BrainLog) => void
   for (const n of [core.worldNode.node, core.perception.node, core.mirror.node, core.brainMirror.node, core.goalMirror.node, manager, phone, devices, recorder]) n.start();
   const send = (s: Parameters<Parameters<typeof signals.subscribe>[0]>[0], initial: boolean) => {
     const spec = specOf.get(s.id);
-    const note = { ...(initial ? { initial: true } : {}), ...(spec ? { label: spec.label, kind: spec.kind } : {}) };
+    const power=signals.powerStamp(s.id);
+    const note = { ...(power ? {power} : {}), ...(initial ? { initial: true } : {}), ...(spec ? { label: spec.label, kind: spec.kind } : {}) };
     deviceOut.push("/device/changes", { id: s.id, state: s, note });
   };
   for (const s of signals.states()) send(s, true); // 시작 상태는 변화로 내지 않는다
-  core.unsubWorld = signals.subscribe((s) => send(s, false));
+  let powerSeq=0;
+  signals.onPowerIntent=(device_id,value,command_id)=>{
+    deviceOut.push("/device/power_intent",{id:"power:"+ ++powerSeq,device_id,value,command_id,
+      origin:command_id?"automation":"unknown",at_ms:clock.now()});
+  };
+  signals.onPowerStamp = s=>send(s,false);
+  const unsubscribe=signals.subscribe(s=>send(s,false));
+  core.unsubWorld=()=>{signals.onPowerIntent=undefined;signals.onPowerStamp=undefined;unsubscribe();};
   let timer: ReturnType<typeof setTimeout> | undefined;
   const late = new Promise<"late">((r) => { timer = setTimeout(() => r("late"), FIRST_STATE_MS); });
   const got = await Promise.race([Promise.all([ready, brainStarted, core.actStatus ? Promise.resolve() : statusStarted]).then(() => "ok" as const), late]);
@@ -249,6 +291,7 @@ export async function drainNodes(core: HomeCore, ms = DRAIN_MS): Promise<boolean
 export async function stopNodes(core: HomeCore): Promise<void> {
   for (const feedback of core.followupFeedback.values()) core.out.act?.push("/act/log", feedback);
   core.followupFeedback.clear();
+  await core.localizer?.close();
   await drainNodes(core, 3 * DRAIN_MS);
   for (const n of [core.perception?.node, core.worldNode?.node, core.brainMirror?.node, core.goalMirror?.node, core.managerNode, core.mirror?.node, core.phoneNode, core.devicesNode, core.machineRecorder]) await n?.stop();
 }
@@ -260,6 +303,13 @@ export async function startPipeline(core: HomeCore, emit: (event: BrainLog) => v
   const perception = core.perception!;
   const { engineHeaders } = core;
   core.pipeline = await createPipeline({
+    needsHouseholdPhoto:()=>{
+      const map=core.scene?.stations;
+      if(core.tvWatch?.armed() || core.checkingVisit || core.roomWatch?.needsPhoto(map?.kitchen_entry ?? null)) return true;
+      const dining=map?.stations.find(s=>s.id===map.meal_watch);
+      return !!dining && !!core.view()?.objects.some(o=>o.cls==="cup" && o.status==="present" && o.surface && dining.surfaces.includes(o.surface));
+    },
+    localize:core.localizer ? (f,h)=>core.localizer!.request(f,h) : undefined,
     env, log, world: perception.port, inject: ctx.brain, emit,
     // 물체 모양은 /perception/detections로(폰 노드가 대시보드로만 보낸다)
     onSeen: (e) => perception.seen(e),
@@ -268,8 +318,8 @@ export async function startPipeline(core: HomeCore, emit: (event: BrainLog) => v
       void perception.node.publish("/perception/frame_seen", { at_ms: core.nowMs() }).catch((e: Error) => { if (!core.closed) log(e.message); });
     },
     onView: (f) => { void perception.node.publish("/perception/view", f).catch((e: Error) => { if (!core.closed) log(e.message); }); },
-    // 실행 추적이 가까이 보는 차례(찾기·내용물 보류)인 동안만 VLM 사진 간격을 1초로 줄인다
-    vlmFast: () => core.tracker?.fastVlm() ?? false,
+    // VLM 사진 간격을 1초로 줄이는 때: 실행 추적이 가까이 보거나 목표가 선 동안, TV 규칙이 시청 구역을 지켜보는 동안
+    vlmFast: () => (core.tracker?.fastVlm() ?? false) || (core.tvWatch?.watching() ?? false),
     // 분석한 프레임은 디스크에 쓰지 않는다. DATASET_COLLECT=1일 때만 시험 자료로 RUNTIME_DIR/dataset에 쓴다
     dataset: env.DATASET_COLLECT?.trim() === "1" ? datasetWriter(join(runtimeDir, "dataset"), history.db) : undefined,
     onDetected: (jpeg, r) => {

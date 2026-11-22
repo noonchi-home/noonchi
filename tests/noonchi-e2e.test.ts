@@ -85,7 +85,7 @@ describe("NOONCHI 처음부터 끝까지", () => {
     // 3 집기: VLM이 컵을 손에 있음으로 본다
     scene.cupPlace = "in_hand";
     await pump(() => !!said("싱크대로 가 주세요"));
-    expect(said("싱크대로 가 주세요")).toMatchObject({ id: planId, step: `${planId}:4`, vision: expect.stringMatching(/^컵 · 손에 있음 · 싱크대까지 /) });
+    expect(said("싱크대로 가 주세요")).toMatchObject({ id: planId, step: `${planId}:4`, vision: "컵 · 손에 있음 · 위치를 다시 맞춰 주세요.", guide: null });
     // 4 이동: 말로 「다 했어」(답 글은 비어 있고 다음 명령이 따로 온다)
     ws.send(JSON.stringify({ type: "say", text: "다 했어", at: heardAtOf(phone) }));
     await pump(() => !!said("컵을 싱크대에 넣어 주세요"));

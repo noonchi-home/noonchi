@@ -65,7 +65,7 @@ export function route(fp: FloorPlan, from: XZ | null, to: XZ): XZ[] | null {
 }
 
 /** 마지막 구간을 stopM만큼 줄인다(목적지 물건 앞에서 멈추기). 구간이 stopM보다 짧으면 그 구간을 뺀다. */
-export function approach(path: XZ[], stopM: number): XZ[] {
+export function approach(path: XZ[], stopM = 0.55): XZ[] {
   if (path.length < 2) return path;
   const a = path[path.length - 2]!;
   const b = path[path.length - 1]!;

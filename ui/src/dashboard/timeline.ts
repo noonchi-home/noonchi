@@ -26,10 +26,20 @@ export interface TimelineData {
 /** 사람 줄: 상태가 바뀐 때마다 구간(마지막은 지금까지). 이름은 서버가 붙인 것, 없으면 습관 그림 이름이고 둘 다 없는 상태는 그리지 않는다. */
 function personSpans(s: DashData): TimeSpan[] {
   const name = (id: string) => s.habit?.states.find((x) => x.id === id)?.name ?? null;
-  return s.people.flatMap((p, i) => {
+  const spans:TimeSpan[] = s.people.flatMap((p, i) => {
     const text = p.name ?? name(p.state);
     return text ? [{ id: `person:${p.at_ms}`, row: "person" as const, from: p.at_ms, to: s.people[i + 1]?.at_ms ?? null, text, tone: "muted" as const }] : [];
   });
+  const g = s.goal;
+  if (!g || g.checking_ms == null) return spans;
+  const from = g.checking_ms;
+  const until = g.confirmed_ms ?? null;
+  if (g.status !== "checking" && until === null) return spans;
+  const before = spans.filter(p=>p.from<from).map(p=>({...p,to:Math.min(p.to??from,from)}));
+  const checking:TimeSpan = {id:"checking:"+g.id,row:"person",from,to:until,text:WORDS.timeline.checking,tone:"muted"};
+  const after = until === null ? [] : spans.filter(p=>p.from>=from && (p.to===null || p.to>until))
+    .map(p=>({...p,from:Math.max(p.from,until)}));
+  return [...before,checking,...after];
 }
 
 /** 로봇 줄: 시작한 계획 단계(지금 단계는 brand)와 그 사이 지켜봄. */
@@ -132,7 +142,7 @@ function gapOf(s: DashData): TimelineData["gap"] {
 
 /** 시간 줄 자료. 사람 상태를 모르면(첫 판단 전) null이고 카드를 두지 않는다. */
 export function timelineOf(s: DashData): TimelineData | null {
-  if (!s.people.length) return null;
+  if (!s.people.length && s.goal?.status !== "checking") return null;
   const robot = s.robots.length ? s.robots.map((r, i): TimeSpan => ({
     id: `robot:${r.since_ms}:${r.state}:${r.step?.plan_id ?? ""}:${r.step?.number ?? ""}`, row: "robot",
     from: r.since_ms, to: s.robots[i + 1]?.since_ms ?? null, text: r.step?.label ?? WORDS.timeline.robot[r.state],
@@ -147,7 +157,7 @@ export function timelineLast(s: DashData): number | null {
   const all = [
     ...s.people.map((p) => p.at_ms),
     ...s.robots.map((r) => r.since_ms),
-    ...(g ? [g.armed_ms, g.ready_ms, g.gone_ms, g.fired_ms] : []),
+    ...(g ? [g.armed_ms, g.ready_ms, g.gone_ms, g.checking_ms, g.confirmed_ms, g.fired_ms] : []),
     ...s.plans.flatMap((p) => p.steps.flatMap((x) => [x.started_ms, x.ended_ms])),
   ].filter((v): v is number => typeof v === "number" && Number.isFinite(v));
   return all.length ? Math.max(...all) : null;

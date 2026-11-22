@@ -20,7 +20,7 @@ import { GONE_KEEP_MS, OBJ_CLASSES, Part, SIZE_SAMPLES, VLM_CANDIDATE_MS, VLM_CO
 export interface LookDet { id: string; box: readonly [number, number, number, number]; foot?: readonly [number, number] }
 /** 장면 VLM 답을 본 사진: 원래 엔진 프레임의 카메라·크기와 그 사진을 찍은 때의 폰 눈 수평 자리(모르면 null), 그 사진의 YOLO 감지.
  *  VLM 물건 상자(사진 비율)나 이어진 감지의 바닥 점을 트윈 자리로 바꾼다. */
-export interface SceneLook { view: CameraView; width: number; height: number; eye?: Plan2 | null; dets?: readonly LookDet[] }
+export interface SceneLook { localized_position?: [number,number,number]; view: CameraView; width: number; height: number; eye?: Plan2 | null; dets?: readonly LookDet[]; fresh?: boolean; person_ids?: string[] }
 /** 손에 있음으로 답한 물건을 폰 눈에서 이만큼(m, 수평) 안의 물건으로 잇는다. */
 export const REACH_M = NEAR_M;
 /** 장면 VLM 새 물건을 확정하는 두 장의 폰 눈은 이만큼(m) 안이어야 한다(걷는 동안 찍힌 상자 투영은 틀린다). */

@@ -134,6 +134,7 @@ export function createAr({ link, params, hooks, deps = {} }) {
         });
     };
 
+    let previouslyTracked=false;
     const onFrame = (time, frame) => {
       xrSession.requestAnimationFrame(onFrame);
       // 아무것도 그리지 않는다(투명). 카메라 화면 위에 DOM 오버레이만 보인다.
@@ -160,6 +161,12 @@ export function createAr({ link, params, hooks, deps = {} }) {
       state.hitEstimated = aim?.estimated ?? false;
       hooks.onHit(Boolean(state.hitPoint), state.hitEstimated);
 
+      const tracked=!!pose && !pose.emulatedPosition;
+      if(!tracked && previouslyTracked){
+        link.send({type:"tracking_lost",epoch:state.epoch});
+        if(focus.targets.some(t=>t.guided)){focus={targets:[],until:0};hooks.onMarks([]);}
+      }
+      previouslyTracked=tracked;
       if (!pose) return;
       const tracking = pose.emulatedPosition ? "limited" : "ok";
       state.limited = tracking === "limited";
@@ -170,14 +177,14 @@ export function createAr({ link, params, hooks, deps = {} }) {
         // 실제 hit-test 점이면 그 면 법선(벽·바닥 가르기), 어림 바닥 점이면 법선 없음
         const normal = aim && !aim.estimated && aim.orientation ? planeNormal(aim.orientation) : null;
         link.send({
-          type: "pose", position, orientation, tracking, hit: state.hitPoint, hit_estimated: state.hitEstimated,
+          type: "pose", ...link.stamp(performance.timeOrigin + time), position, orientation, tracking, hit: state.hitPoint, hit_estimated: state.hitEstimated,
           ...(normal ? { hit_normal: normal } : {}), floor_y: floorPlaneY(position[1], localFloorY), epoch: state.epoch,
         });
       }
 
       const xrView = pose.views[0];
       const marks = xrView && focus.targets.length && time < focus.until
-        ? focusMarks(focus.targets, xrView.projectionMatrix, xrView.transform.inverse.matrix)
+        ? focusMarks(tracked?focus.targets:focus.targets.filter(t=>!t.guided), xrView.projectionMatrix, xrView.transform.inverse.matrix).filter(m=>hooks.visibleMark?.(m.id)!==false)
         : [];
       hooks.onMarks(marks);
 

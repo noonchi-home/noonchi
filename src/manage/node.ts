@@ -10,6 +10,11 @@ export function managerRoutes(node: BusNode, clock: Clock) {
   const manager = new TaskManager<Job>();
   const out = new Outbox(node, { clock, log: (s) => console.warn(s) });
   let work: Body<"/act/work"> | null = null;
+  const send = (items:Body<"/manager/directive">[]) => { for (const item of items) out.push("/manager/directive",item); };
+  const dispatch = () => { if (work) send(manager.directives(work,clock.now())); };
+  node.on("/goal/intent", i=>{send(manager.intent(i));dispatch();});
+  node.on("/act/directive_result", r=>{manager.finishDirective(r.id);dispatch();});
+  node.every(250,dispatch);
   const sample = (at: number) => {
     if (!work) return;
     const changed = manager.transition({ ...work, goal: work.active || !!work.goal && !["used", "dropped"].includes(work.goal.status) }, at);
@@ -20,6 +25,7 @@ export function managerRoutes(node: BusNode, clock: Clock) {
   };
   const offer = (input: Input) => {
     const d = input.decision;
+    if (d.source==="speech" || (d.action && !d.late && d.status==="valid" && saidIn(d.textSent).length)) send(manager.interruptDirectives());
     const gate = work && d.action && d.status === "valid" && !d.late
       ? manager.offer({ ...d, input }, d.source === "speech" || saidIn(d.textSent).length > 0, work) : "take";
     out.push("/manager/order", { input, gate, resumed: false });
@@ -29,12 +35,13 @@ export function managerRoutes(node: BusNode, clock: Clock) {
     work = w;
     const waiting = manager.take(w);
     if (waiting) out.push("/manager/order", { input: waiting.input, gate: "take", resumed: true });
+    dispatch();
     sample(w.at_ms);
   });
   node.on("/brain/decision", offer);
   node.on("/manager/request", (r) => {
     if (r.kind === "speech") offer(r.input);
-    else { manager.cancel(); sample(clock.now()); }
+    else { manager.cancel(); send(manager.interruptDirectives()); sample(clock.now()); }
   });
   return out;
 }

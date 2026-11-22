@@ -8,6 +8,7 @@ export interface Home {
   id: string;
   name: string;
   studioDir: string;
+  singleResident?: string;
   /** floorplan.json·placement.json */
   dataDir: string;
   /** scene.json·assets/ (/twin/에 붙는다) */
@@ -33,6 +34,7 @@ interface RawHome {
   name?: unknown;
   data?: unknown;
   out?: unknown;
+  single_resident?: unknown;
 }
 
 const ID = /^[a-z][a-z0-9_]*$/;
@@ -67,6 +69,7 @@ export function readRegistry(studioDir: string): HomeRegistry {
     const outDir = join(studioDir, e.out);
     homes.push({
       id: e.id, name: typeof e.name === "string" && e.name ? e.name : e.id, studioDir,
+      ...(typeof e.single_resident === "string" && e.single_resident.trim() ? {singleResident:e.single_resident.trim()} : {}),
       dataDir, outDir, scenePath: join(outDir, "scene.json"), viewerDir, libraryDir, catalogDir: catalogDirOf(studioDir, dataDir),
     });
   }

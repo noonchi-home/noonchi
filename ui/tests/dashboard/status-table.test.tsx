@@ -1,13 +1,14 @@
 import { render, screen, within } from "@testing-library/react";
 import { expect, it } from "vitest";
-import { EMPTY_DASH, reduceDash, type DashboardMessage, type DashboardRobotMessage } from "../../src/dashboard/data";
+import { EMPTY_DASH, reduceDash } from "../../src/dashboard/data";
 import { currentStatusRowsOf } from "../../src/dashboard/timeline";
 import type { ServerMessage } from "../../../src/contract/events";
+import type { RobotMessage } from "../../../src/contract/machines";
 import { planAt } from "./fixtures";
 import { MOMENTS } from "../../src/dashboard/debug";
 
-const feed = (...messages: DashboardMessage[]) => messages.reduce((dash, m) => reduceDash(dash, m, 0), EMPTY_DASH);
-const robot = (state: DashboardRobotMessage["state"], at: number): DashboardRobotMessage => ({ type: "robot", state, since_ms: at, step: null });
+const feed = (...messages: ServerMessage[]) => messages.reduce((dash, m) => reduceDash(dash, m, 0), EMPTY_DASH);
+const robot = (state: RobotMessage["state"], at: number): RobotMessage => ({ type: "robot", state, since_ms: at, step: null });
 const person = (name: string, at: number): ServerMessage => ({ type: "person", state: name, name, source: "world", since_ms: at, decision_id: null });
 
 it("한쪽 상태만 도착해도 해당 행을 채우고 같은 상태의 반복은 전이로 세지 않는다", () => {

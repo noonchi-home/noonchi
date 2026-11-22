@@ -22,7 +22,7 @@ describe("VLM 장면 분석", () => {
     expect(SCENE_PROMPT).toContain("not_in_use");
   });
   it("JSON Schema는 엄격 모드(모든 칸 필수, 다른 칸 없음)", () => {
-    expect(SCENE_JSON_SCHEMA).toMatchObject({ type: "object", additionalProperties: false, required: ["scene", "observations", "objects", "summary"] });
+    expect(SCENE_JSON_SCHEMA).toMatchObject({ type: "object", additionalProperties: false, required: ["household", "scene", "observations", "objects", "summary"] });
   });
 
   // 가로 유리컵 실제 판(2026-11-18): 잘라 본 칸의 YOLO가 컵을 못 잡아 found가 비었지만 VLM은 컵을 봤다. VLM이 대상 종류 물건을 상자와 함께 답한다

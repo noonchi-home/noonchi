@@ -83,7 +83,7 @@ export interface Overlay {
 }
 
 /** 트윈 칸 안 iframe 캔버스 자리(트윈 칸 기준 px). */
-function canvasBox(v: AptViewer, frame: HTMLIFrameElement, box: HTMLElement): Rect {
+export function canvasBox(v: AptViewer, frame: HTMLIFrameElement, box: HTMLElement): Rect {
   const f = frame.getBoundingClientRect(), b = box.getBoundingClientRect(), c = v.renderer.domElement.getBoundingClientRect();
   return { left: f.left - b.left + c.left, top: f.top - b.top + c.top, width: c.width, height: c.height };
 }

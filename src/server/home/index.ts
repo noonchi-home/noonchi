@@ -9,8 +9,9 @@ import type { Bus } from "../../bus/index.js";
 import type { BrainLog, ReadyView } from "../../contract/events.js";
 import type { PlanView } from "../../contract/plan.js";
 import type { ControlMode } from "../../contract/setup.js";
+import type { StationMap } from "../../contract/stations.js";
 import type { DeviceHub, DeviceState } from "../../contract/devices.js";
-import type { SignalHub, SignalSource, ThinqLink } from "../../devices/index.js";
+import type { IrConfig, IrPort, SignalHub, SignalSource, ThinqLink } from "../../devices/index.js";
 import type { LayoutEditor, TwinData } from "../../layout/index.js";
 import type { PipelineInject } from "../../observe/index.js";
 import type { StartStore } from "../../phone/index.js";
@@ -22,8 +23,9 @@ import { preparePhone, startPhone } from "./phone.js";
 import { drainNodes, startPipeline, startWorld, startNodes, stopNodes } from "./observe.js";
 import { onReflection, sayTimer, startSay } from "./say.js";
 import { setLink, startDevices } from "./devices.js";
+import { shotSigner } from "../routes/home-shots.js";
 import { HomeCore } from "./core.js";
-import { listHomes } from "../../layout/index.js";
+import { listHomes, validateStations } from "../../layout/index.js";
 import { createApp, type TwinHomeApp } from "../app.js";
 
 export { phoneVideoDir } from "./phone.js";
@@ -42,6 +44,9 @@ export interface HomeHistory {
 }
 
 export interface HomeContext {
+  homeInfrared?: (home: string) => IrConfig | null;
+  irPort?: IrPort;
+  savedStations?: (home: string, defaults: StationMap) => StationMap;
   env: Env;
   log: (line: string) => void;
   runtimeDir: string;
@@ -76,6 +81,9 @@ export interface HomeContext {
 }
 
 export interface HomeRuntime {
+  stationMap(): StationMap | null;
+  checkedStations(raw: unknown): StationMap;
+  setStations(map: StationMap): void;
   twin: TwinData;
   /** 숨은 세계(실제 시뮬레이터). 엔진·화면은 signals로 읽는다. */
   hub: DeviceHub;
@@ -111,6 +119,11 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
     startAgent(core);
     preparePhone(core);
     startPlans(core);
+    if (core.scene && ctx.savedStations) {
+      const defaults = core.scene.stations;
+      const saved = ctx.savedStations(core.twin.home.id, defaults);
+      if (saved !== defaults) core.scene.stations = checkedStations(core, saved);
+    }
     startWorld(core);
     prepareAct(core);
     startSay(core);
@@ -166,6 +179,8 @@ function startApp(core: HomeCore): void {
     brain: observe ? { status: () => ({ ...observe.status(), look: core.looker?.status() ?? null }) } : undefined, world: worldNow ?? undefined,
     home: { id: home.id, name: home.name }, homes: listHomes(twin.dir), layout: layout?.editor, phoneUrls: () => core.phoneUrls, mode: ctx.mode, webDir: ctx.webDir, allowOrigin: ctx.allowOrigin, planToken: ctx.planToken, ready: ctx.ready,
     start: startStore && { get: () => startStore.get(), save: (raw) => startStore.save(raw), preview: (raw) => startStore.preview(raw), clear: () => startStore.clear() },
+    sceneRuntimeDir:ctx.runtimeDir, signShot:shotSigner(ctx.runtimeDir,ctx.env),
+    localizeStatus: () => core.localizer?.status() ?? null,
     phoneSync: () => core.phone?.syncState() ?? null,
     plan: plans, offTrack: () => core.tracker?.offTrack() ?? null, history: history.db, reflect: history.reflect, scene: () => core.scene,
     brainLast: () => [...todayReflection(history.db), ...(core.lastDecision ? [core.lastDecision] : [])], thoughtLast: () => core.thoughts?.last() ?? null, seenLast: () => core.lastSeen, say: () => ({ text: core.said, ...(core.saidSafety ? { safety: true as const } : {}) }),
@@ -183,6 +198,13 @@ function startApp(core: HomeCore): void {
 }
 
 /** 띄운 집: 반성 사건·ThinQ 연결 바꾸기·닫기. */
+function checkedStations(core: HomeCore, raw: unknown): StationMap {
+  if (!core.scene) throw new Error("집 평면도를 먼저 준비해 주세요.");
+  const editor = core.layout?.editor;
+  const scene = editor ? { ...core.scene, objects: editor.objects() } : core.scene;
+  return validateStations(raw, scene, type => editor?.typeInfo(type)?.footprint);
+}
+
 function runtime(core: HomeCore): HomeRuntime {
   const { twin, started, signals, policy, agent, planner, layout, feed, ctx } = core;
   const { log } = ctx;
@@ -191,6 +213,9 @@ function runtime(core: HomeCore): HomeRuntime {
   return {
     twin, hub: started.hub, signals, hubKind: started.kind, transport: started.transport, warnings: started.warnings, policy, agent, layout: layout?.editor,
     start: core.startStore, app: appNow, twinDir: twin.home.outDir, phoneUrls: core.phoneUrls, phonePort: core.phonePort,
+    stationMap: () => core.scene?.stations ?? null,
+    checkedStations: raw => checkedStations(core, raw),
+    setStations(map) { if (core.scene) core.scene.stations = map; },
     onReflection(event) {
       onReflection(core, event);
     },

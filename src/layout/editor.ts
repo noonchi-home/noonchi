@@ -493,7 +493,9 @@ export class LayoutEditor {
     return null;
   }
 
+  geometryRevision = 0;
   private emit(m: LayoutMessage): void {
+    this.geometryRevision++;
     for (const cb of [...this.listeners]) {
       try {
         cb(m);

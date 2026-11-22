@@ -22,6 +22,7 @@ export function loadRetention(env: Record<string, string | undefined>): { photoD
 
 export function sweep(db: HistoryDb, o: { photoDays: number; datasetDays: number; nowMs: number }): { photos: number; dataset: number } {
   const out = { photos: 0, dataset: 0 };
+  db.removeExpiredHouseholdPhotos(o.nowMs - o.photoDays * DAY_MS);
   for (const p of db.listPhotos()) {
     const keep = (p.origin === "dataset" ? o.datasetDays : o.photoDays) * DAY_MS;
     if (o.nowMs - p.atMs < keep) continue;

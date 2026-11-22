@@ -1,5 +1,5 @@
 import type { DecisionRecord } from "../contract/events.js";
-import type { ManagerState } from "../contract/machines.js";
+import type { GoalIntent, HouseholdOffer, ManagerDirective, ManagerState } from "../contract/machines.js";
 import { MachineLane, managerState } from "../machines/index.js";
 
 export interface WorkContext {
@@ -9,6 +9,7 @@ export interface WorkContext {
   handling: string | null;
   docking: boolean;
   requested?: boolean;
+  phoneBusy?: boolean;
 }
 
 type Order = Pick<DecisionRecord, "action" | "source">;
@@ -17,6 +18,48 @@ type Order = Pick<DecisionRecord, "action" | "source">;
 export class TaskManager<T extends Order> {
   private waiting: { order: T; step: string | null } | null = null;
   private readonly lane = new MachineLane<ManagerState>();
+  private readonly jobs = new Map<string,{offer:HouseholdOffer; granted:boolean}>();
+  private readonly finished = new Map<string,number>();
+
+  intent(input:GoalIntent): ManagerDirective[] {
+    if (input.op === "withdraw") return this.removeDirective(input.id);
+    if (!this.finished.has(input.id) && !this.jobs.has(input.id)) this.jobs.set(input.id,{offer:input,granted:false});
+    return [];
+  }
+
+  private removeDirective(id:string): ManagerDirective[] {
+    const job = this.jobs.get(id);
+    if (!job) return [];
+    this.finishDirective(id);
+    return [{op:"revoke",id,rev:job.offer.rev}];
+  }
+
+  finishDirective(id:string) {
+    const job=this.jobs.get(id);
+    if (job) this.finished.set(id,job.offer.until_ms);
+    this.jobs.delete(id);
+  }
+
+  interruptDirectives() { return [...this.jobs.keys()].flatMap(id=>this.removeDirective(id)); }
+
+  directives(ctx:WorkContext, now:number): ManagerDirective[] {
+    const directives:ManagerDirective[]=[];
+    const occupied=new Set<string>();
+    for (const [id,expiry] of this.finished) if (expiry<=now) this.finished.delete(id);
+    for (const [id,job] of this.jobs) {
+      const o=job.offer;
+      const device=o.kind==="tv_on" || o.kind==="tv_off";
+      const slot=device ? "device:"+o.target_id : o.kind;
+      const blocked=ctx.emergency || ctx.requested || this.hasPending() ||
+        (!device && (!!ctx.activeAction || ctx.docking || (slot==="visit" && ctx.phoneBusy)));
+      if (now>=o.until_ms || (blocked && job.granted)) directives.push(...this.removeDirective(id));
+      else if (!blocked && !occupied.has(slot)) {
+        occupied.add(slot);
+        if (!job.granted) { job.granted=true; directives.push({...o,op:"grant"}); }
+      }
+    }
+    return directives;
+  }
 
   offer(order: T, spoken: boolean, ctx: WorkContext, resumed = false) {
     if (order.source === "speech" && (ctx.emergency || (!resumed && ctx.handling && ctx.activeAction !== order.action))) {

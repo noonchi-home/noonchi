@@ -201,6 +201,20 @@ export class Observer {
     }
   }
 
+  /** Select among these places only. This call has no tools or previous conversation. */
+  async chooseStation(places:{id:string;name:string}[],direction:string,visited:string[],signal:AbortSignal):Promise<string|null> {
+    if (!places.length || signal.aborted) return null;
+    const provider=this.o.provider, state=provider.createState();
+    provider.addUserMessage(state,JSON.stringify({places,direction,visited}));
+    this.calls++;
+    const deadline=AbortSignal.any([signal,AbortSignal.timeout(this.cfg.timeoutMs)]);
+    const answer=await provider.step(state,{system:"마지막으로 본 방향과 이미 본 자리를 읽고 다음에 관찰할 후보 id 하나만 답하세요. 정할 수 없으면 null로 답하세요.",
+      tools:[],allowTools:false,signal:deadline,maxOutputTokens:this.cfg.maxOutputTokens});
+    this.count(answer.usage);
+    const id=answer.text.trim();
+    return !deadline.aborted && !answer.calls.length && places.some(p=>p.id===id) ? id : null;
+  }
+
   private async loop(s: ObserveSituation, signal: AbortSignal): Promise<ObserveChoice> {
     const { provider } = this.o;
     const state = provider.createState();

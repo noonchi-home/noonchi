@@ -1147,6 +1147,53 @@ describe("영상 입력 모드: 단계 영상·걷기", () => {
     expect(videos[0]!.element.isConnected).toBe(false);
   });
 
+  it("이미 도착 반경에 가까워도 반응 시간 뒤 걷기를 마친 자리에서 비춘다", async () => {
+    fakeTimers();
+    const s = makeEnded({}, STEPS);
+    await s.startAr();
+    s.ws.push(ALIGNED);
+    const look = [-2, 0.6, -0.4];
+    const initial = lastPose(s.sent).orientation;
+    s.ws.push(command({id:"visit:near",step:"near:go",kind:"go",target:{id:"living_standby",label:"대기 자리",ar:[0,0,-0.58],look},near_m:0.5,speak:false,choices:[]}));
+    await after(1000);
+    closeTo(lastPose(s.sent).orientation, initial);
+    await after(1500);
+    const pose = lastPose(s.sent), aim = lookAt(pose.position,look)!;
+    closeTo(pose.orientation,yawPitchQuat(aim.yaw,aim.pitchDeg));
+  });
+
+  it("관찰 자리 가기(대상에 비출 곳 look)는 명령이 떠 있는 동안 도착 반경에 닿으면 그 자리에서 비출 곳을 바라본다. 「그만」·연결 끊김으로 명령이 지워지면 돌지 않는다", async () => {
+    fakeTimers();
+    // 맞는 단계 영상이 없는 관찰 자리 가기: 반응 시간 뒤 초당 0.8m로 0.6m 앞까지 걷는다
+    const SPOT = { id: "living_standby", label: "거실 대기 자리", ar: [0, 0, -1.2], look: [-1.5, 0.6, -0.6] };
+    const goSpot = command({ id: "visit:1", step: "visit:1:go", kind: "go", text: "거실 대기 자리로 이동해 소파 시청 자리를 비춰 주세요.", target: SPOT, near_m: 0.5, speak: false, choices: [] });
+    const arrived = makeEnded({}, STEPS);
+    await arrived.startAr();
+    arrived.ws.push(ALIGNED);
+    arrived.ws.push(goSpot);
+    await after(1500 + 1000);
+    const stop = lastPose(arrived.sent).position;
+    // near_m 0.5 안까지 걸었고, 명령이 지워지기 전에 비출 곳을 본다(서버는 그쪽을 비춰야 도착으로 본다)
+    expect(Math.hypot(stop[0] - SPOT.ar[0], stop[2] - SPOT.ar[2])).toBeLessThanOrEqual(0.5);
+    const look = lookAt(stop, SPOT.look)!;
+    closeTo(lastPose(arrived.sent).orientation, yawPitchQuat(look.yaw, look.pitchDeg));
+    // 같은 명령이 안내만 바뀌어 다시 와도 그대로 본다
+    arrived.ws.push(goSpot);
+    await after(200);
+    closeTo(lastPose(arrived.sent).position, stop);
+    closeTo(lastPose(arrived.sent).orientation, yawPitchQuat(look.yaw, look.pitchDeg));
+    // 도착 전에 「그만」으로 지워지면 비출 곳으로 돌지 않고 걷던 쪽 그대로다
+    const early = makeEnded({}, STEPS);
+    await early.startAr();
+    early.ws.push(ALIGNED);
+    early.ws.push(goSpot);
+    await after(1500 + 100);
+    const walking = lastPose(early.sent).orientation;
+    early.ws.push({ type: "command_clear" });
+    await after(1500);
+    closeTo(lastPose(early.sent).orientation, walking);
+  });
+
   it("go 단계 영상으로 바꾸면 자세가 초당 0.8m로 대상 쪽으로 걸어 대상 0.6m 앞([0, 1.4, −0.9])에서 멈춘다. 높이·pitch는 그대로, 엔진·화면 프레임 머리도 새 자리", async () => {
     fakeTimers();
     const { ws, sent, videos, startAr } = makeEnded({}, STEPS);
@@ -1616,6 +1663,18 @@ describe("영상 입력 모드: 단계 영상·걷기", () => {
     expect(urls).toEqual(["/phone/videos/cup-empty.mp4", "/phone/videos/go-table.mp4"]);
   });
 
+  it("waits for a usable guide before opening the go clip and consumes it only once",async()=>{
+    fakeTimers();
+    const {ws,urls,startAr}=makeEnded({},STEPS);
+    await startAr();ws.push(ALIGNED);ws.push(goTable({guide:null}));
+    await after(2600);
+    expect(urls).toEqual(["/phone/videos/cup-empty.mp4"]);
+    const guide=(revision:number)=>({revision,near_m:0.32,remaining:[{kind:"stand",room:"kitchen",ar:TABLE.ar}]});
+    ws.push(goTable({guide:guide(1)}));await after(2600);
+    ws.push(goTable({guide:guide(2),speak:false}));await after(2600);
+    expect(urls).toEqual(["/phone/videos/cup-empty.mp4","/phone/videos/go-table.mp4"]);
+  });
+
   it("바꾼 뒤 영상 시각은 앞 영상 시각에서 이어 세고, record.clips에 바꾼 시각·이름을 남기고, 끝난 영상 뒤에도 ended를 풀고 프레임을 다시 보낸다", async () => {
     fakeTimers();
     const info = vi.spyOn(console, "info").mockImplementation(() => {});
@@ -1721,6 +1780,21 @@ describe("영상 입력 모드: 단계 영상·걷기", () => {
   describe("자세 흉내는 단계 영상과 따로: 맞는 칸이 없으면 go만 걷고, 그 밖은 화면이 돌지 않으므로 자세도 그대로 둔다", () => {
     const NO_STEPS = "?clip=cup-empty.mp4&step=pick:cup:pick-cup.mp4";
     const SPOT = { id: "find_cup", label: "식탁", ar: [0.1, 0.8, -1.4] };
+    it("follows guide updates, holding immediately on loss without consuming another clip",async()=>{
+      fakeTimers();
+      const {ws,sent,urls,startAr}=make({},NO_STEPS);
+      await startAr();ws.push(ALIGNED);
+      const guide=(revision:number,ar:number[])=>({revision,near_m:0.32,remaining:[{kind:"stand",room:"k",ar}]});
+      const update=(g:unknown)=>ws.push(command({kind:"go",id:"walk",step:"one",target:SPOT,guide:g,speak:false}));
+      update(guide(1,[1,0,0]));await after(3600);
+      expect(lastPose(sent).position[0]).toBeCloseTo(1);
+      update(guide(2,[2,0,0]));await after(400);update(null);
+      const held=lastPose(sent).position[0];await after(2500);
+      expect(lastPose(sent).position[0]).toBeCloseTo(held,1);
+      update(guide(3,[2,0,0]));await after(2300);
+      expect(lastPose(sent).position[0]).toBeCloseTo(2);
+      expect(urls).toHaveLength(1);
+    });
     const flatTo = (p: number[], t: number[]) => Math.hypot(p[0]! - t[0]!, p[2]! - t[2]!);
     const aimSpot = (over: Record<string, unknown> = {}) =>
       command({ id: "find:1", step: "find:1:aim:2", text: "식탁 위를 비춰 주세요", vision: "식탁까지 0.8m", choices: [], kind: "do", target: SPOT, speak: true, ...over });

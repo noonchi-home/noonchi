@@ -31,12 +31,12 @@
 // objects.ts 감지 합치기·물건 움직임·들고 감 보호, people.ts 사람 자리·방·관절·쓰러짐 의심, facts.ts VLM 사실, closer.ts 가까이 보기·지킴·옮김 표시,
 // devices.ts 가전 설비·카메라로 본 가전·가전 상태. 다른 도메인은 src/world/index.ts로 가져온다.
 import type { EyePose } from "../../contract/events.js";
-import type { VlmMissing, WorldChange, WorldEye, WorldFixture, WorldObject, WorldPerson, WorldView, YoloMissing } from "../../contract/world.js";
+import type { VlmMissing, WorldChange, WorldEye, WorldFixture, WorldObject, WorldPerson, WorldSurfaceSeen, WorldView, YoloMissing } from "../../contract/world.js";
 import type { Detection, FrameMeta, Pose, SceneObservation } from "../../contract/observe.js";
 import { headWithin } from "../../shared/cut.js";
 import type { DeviceState, SightEvidence, VisionResult } from "../../contract/devices.js";
 import { CHANGE_TEXT, HEARD_MAX } from "../labels.js";
-import type { PlaneSurface, RestSpot } from "../place.js";
+import { inView, type PlaneSurface, type RestSpot } from "../place.js";
 import type { FallConfig } from "../fall.js";
 import { relatedDeviceIds } from "../relations.js";
 import { cameraKindOf } from "../../devices/kinds.js";
@@ -88,6 +88,10 @@ function sizeView(xs: readonly { height: number; width: number }[], at: [number,
 
 export class WorldState {
   private readonly core: WorldCore;
+  private householdPhoto: WorldView["household_photo"];
+  private sceneAt = -Infinity;
+  /** 본 트윈 면(면 id → 가장 새로 본 사진). */
+  private readonly seenSurfaces = new Map<string, WorldSurfaceSeen>();
   private eye: WorldEye | null = null;
   private vlmMissing = 0;
   private yoloMissing = 0;
@@ -117,7 +121,10 @@ export class WorldState {
 
   /** 전체 사진의 VLM 답(facts.ts). */
   /** 장면 VLM 답: 물건 목록(sceneobjects.ts, VLM 무조건 우선)을 먼저 넣어 답 번호를 물건 id에 잇고, 사실을 넣는다(facts.ts). look: 그 사진의 카메라·크기. */
-  applyScene(frameId: string, capturedAtMs: number, scene: SceneObservation, ids: Map<string, string>, look?: SceneLook, fromMs = capturedAtMs): WorldChange[] {
+  /** answeredMs: 이 답을 넣는 때(집 상태 노드 시계). 집 사진에 answered_ms로 싣는다. */
+  applyScene(frameId: string, capturedAtMs: number, scene: SceneObservation, ids: Map<string, string>, look?: SceneLook, fromMs = capturedAtMs, answeredMs?: number): WorldChange[] {
+    this.noteHousehold(frameId, capturedAtMs, scene, look, false, answeredMs, ids);
+    this.noteSurfaces(capturedAtMs, look);
     const linked = this.core.scene.link(frameId, capturedAtMs, scene, ids, look);
     this.core.placeDups();
     for (const [k, v] of ids) { const o = this.core.objects.get(v); if (o?.status === "gone" && o.followed) ids.set(k, o.followed.id); }
@@ -232,12 +239,61 @@ export class WorldState {
     return true;
   }
 
+  /** 전체 사진 VLM 답: 그 사진(지금 자세)에 윗면 가운데가 든 트윈 면을 적는다. 눈과 다른 방 면은 벽 뒤일 수 있어 적지 않는다. */
+  private noteSurfaces(at: number, look?: SceneLook) {
+    if (!look?.fresh) return;
+    const eyeRoom = this.core.o.roomAt([look.view.origin[0], look.view.origin[2]])?.id ?? null;
+    for (const s of this.core.o.surfaces()) {
+      const room = this.core.o.roomAt(s.center)?.id ?? null;
+      if (room !== eyeRoom || !inView(look.view, [s.center[0], s.top, s.center[1]])) continue;
+      if ((this.seenSurfaces.get(s.id)?.seen_ms ?? -Infinity) < at) this.seenSurfaces.set(s.id, { id: s.id, label: s.label, room, center: s.center, seen_ms: at });
+    }
+  }
+
+  private noteHousehold(id: string, at: number, scene?: SceneObservation, look?: SceneLook, capped = false, answeredMs?: number, ids?: Map<string,string>) {
+    const answered = answeredMs === undefined ? {} : { answered_ms: answeredMs };
+    const h = scene?.household;
+    const old = this.householdPhoto;
+    if (at <= this.sceneAt) {
+      // A late interruption can disprove continuous vacancy without replacing the latest capture.
+      if (old && old.id !== id && (old.proof?.person_count === 0 || old.cap_from_ms !== undefined)) {
+        this.householdPhoto = {id:old.id, at_ms:old.at_ms, serial:old.serial + 1, proof:null, ...answered};
+      }
+      return;
+    }
+    this.sceneAt = at;
+    if (!h && !old) return;
+    const photo: NonNullable<WorldView["household_photo"]> = {id, at_ms:at, serial:(old?.serial ?? 0)+1, proof:null, ...answered};
+    // Carry the previous capture across one capacity skip, even if a STATE subscriber misses that update.
+    if (capped && old?.proof && old.id !== id) photo.cap_from_ms = old.at_ms;
+    this.householdPhoto = photo;
+    if (!h || !look?.fresh || !look.person_ids || old?.id === id) return;
+    const match = h.people.length === 1 && look.person_ids.length === 1 && h.people[0]!.id === look.person_ids[0] ? h.people[0] : null;
+    if (old?.proof === null && old.cap_from_ms !== undefined) photo.cap_from_ms = old.cap_from_ms;
+    const det = match && look.dets?.find(d => d.id === match.id);
+    const position = det && this.core.people.feet(look.view, det.box, look);
+    const states = scene!.observations.filter(o=>o.object_id===match?.id).map(o=>o.state);
+    const postures = new Set(states.filter(s => s === "sitting" || s === "standing" || s === "lying"));
+    const seated = postures.size === 1 && !states.includes("not_visible") ? postures.has("sitting") : null;
+    const fixtures = new Set<string>();
+    if (look.localized_position && ids) {
+      for (const [det,id] of ids) {
+        const fix=this.core.fixtures.get(id);
+        const states=scene!.observations.filter(o=>o.object_id===det).map(o=>o.state);
+        if(fix && states.length && !states.includes("not_visible")) fixtures.add(fix.cls);
+      }
+    }
+    photo.proof = {...(look.localized_position ? {localized_position:look.localized_position, localized_fixtures:[...fixtures]} : {}), camera:look.view, seats:h.seats, dining_food:h.dining_food, person_count:Math.max(h.people.length, look.person_ids.length),
+      person: position && match ? {position, room:this.core.o.roomAt(position)?.id ?? null, seated, attention:match.attention} : null};
+  }
+
   /** 분석 없음 프레임: 셈을 늘리고 변화 하나. 등장·사라짐 셈은 그대로다. VLM 답이 없으면 그 프레임의 가전 맞춤도 버린다(값이 아니다). */
-  applyMissing(frameId: string, capturedAtMs: number, m: { yolo?: YoloMissing; vlm?: VlmMissing }): WorldChange[] {
+  applyMissing(frameId: string, capturedAtMs: number, m: { yolo?: YoloMissing; vlm?: VlmMissing }, answeredMs?: number): WorldChange[] {
     this.core.start(capturedAtMs);
     if (m.yolo) this.yoloMissing++;
     if (m.vlm) {
       this.vlmMissing++;
+      this.noteHousehold(frameId, capturedAtMs, undefined, undefined, m.vlm === "cap", answeredMs);
       this.core.sight.dropLinks(frameId);
     }
     if (m.yolo) return [{ kind: "yolo_missing", at_ms: capturedAtMs, subject: frameId, meaningful: false, text: CHANGE_TEXT.yoloMissing[m.yolo] }];
@@ -269,6 +325,16 @@ export class WorldState {
       : null;
   }
 
+  /** 지금 집 사진의 serial(없으면 null). 집 상태 노드가 새 사진을 넣었는지 볼 때 쓴다(보기 전체를 만들지 않고). */
+  householdSerial(): number | null {
+    return this.householdPhoto?.serial ?? null;
+  }
+
+  /** 지금 집 사진(없으면 null). 집 상태 노드가 새 사진을 /world/household_photo로 낼 때 쓴다(보기의 household_photo와 같은 값). */
+  householdNow(): NonNullable<WorldView["household_photo"]> | null {
+    return this.householdPhoto ? structuredClone(this.householdPhoto) : null;
+  }
+
   view(nowMs: number): WorldView {
     const core = this.core;
     const devices = core.o.devices();
@@ -298,6 +364,9 @@ export class WorldState {
     const sightings = core.sightingsAt(nowMs);
     return {
       at_ms: nowMs, objects, ...(sightings.length ? { sightings } : {}), person, fixtures,
+      ...(this.householdPhoto ? {household_photo:this.householdPhoto} : {}),
+      ...(this.seenSurfaces.size ? { surfaces_seen: [...this.seenSurfaces.values()].map((s) => ({ ...s })) } : {}),
+      ...(core.people.trail.length ? {person_trail:core.people.trail} : {}),
       devices: core.sight.deviceViews(nowMs),
       eye: this.eye, frame_ms: core.frameAt, vlm_missing: this.vlmMissing, yolo_missing: this.yoloMissing,
     };

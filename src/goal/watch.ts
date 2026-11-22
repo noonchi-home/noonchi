@@ -29,7 +29,10 @@ import type { PlanAhead } from "../agent/index.js";
 import type { PamMemory } from "../brain/index.js";
 import type { Placed } from "../act/tasks.js";
 
+import type { MealEvidence } from "./triggers.js";
+
 export interface GoalPorts {
+  meal?(): MealEvidence | null | undefined; // null: home has no meal station; undefined: waiting for its first snapshot
   world(): WorldView;
   now(): number;
   stopped(): boolean;
@@ -65,9 +68,14 @@ function standIn(cls: string, spot: { surface: string; label: string; position: 
   };
 }
 
+type PreparedGoal = { out: PlanResult | Promise<PlanResult>; seenSince:number; leftAt:number; goal:string; meal?: {object:string; surface:string} };
 interface Goal {
   view: PendingGoal;
   pick: GoalPick;
+  version: number;
+  watchRev: number | null;
+  decisionId: string | null;
+  ambiguousResident: boolean;
   /** 지금 따라가는 대상 물건 id(옮김 표시로 바뀐다). 모르면 null: 사람이 쓰는 컵이 아직 World State 물건이 아닐 때(VLM이 손에 든 컵을 물건으로 잘 안 답한다, 2026-11-18 g1)
    *  세우고, 그 종류 컵이 보이면(가장 최근에 본 치우지 않은 것) 그 컵으로 정한다. */
   objectId: string | null;
@@ -117,16 +125,30 @@ export class GoalWatch {
       const pick = goalAhead({ memory: habit.memory, kind: habit.kind, state, tasks, cls: h.cls });
       const objectId = h.id ?? targetOf({ target: h.cls as ObjClass }, world, this.o.placed())?.id ?? null;
       if (!pick) continue;
+      const evidence = this.o.meal ? this.o.meal() : null;
+      const cup = world.objects.find(x => x.id === objectId);
+      let meal: PendingGoal["meal"];
+      if (evidence !== null && pick.action === "컵 치우기") {
+        const activity = p.facts.activity;
+        if (!evidence || evidence.count !== 1 || p.count !== 1 || !evidence.zone || !evidence.dining.includes(evidence.zone) ||
+          !activity || !["eating","drinking"].includes(activity.value) || activity.at_ms < (p.since_ms ?? 0) ||
+          !cup || cup.cls !== "cup" || (!h.id && world.objects.filter(x => x.cls === "cup" && x.status === "present" && !putAway(x,this.o.placed())).length !== 1)) continue;
+        const surface = cup.surface && evidence.surfaces.includes(cup.surface) ? cup.surface :
+          cup.facts.place?.value === "in_hand" && evidence.surfaces.length === 1 ? evidence.surfaces[0] : null;
+        if (!surface) continue;
+        meal = {zone:evidence.zone, surface, activity:activity.value};
+      }
       const id = `goal-${++this.n}`;
       // 묻기 자리를 바꾼 배운 컵 치우기(seed와 같은 트리거)도 사용자가 정한 짧은 꼴
       const learned = edgeLearned(pick.state, { on: pick.on, action: pick.action }) && !seedTrigger(pick.state, pick.on, pick.when);
       const will = TASK_SAY[pick.action]?.will;
       const text = will ? GOAL_TEXT.armed(ruleIf({ trigger: pick.when ? `${pick.on} ${pick.when}` : pick.on, action: pick.action, learned }), will) : null;
       this.goal = {
-        pick, objectId, presence: p.since_ms, plan: null, planObject: null, surface: null, job: null,
+        pick, version:habit.version, watchRev:null, decisionId:null, ambiguousResident:false, objectId, presence: p.since_ms,
+        plan: null, planObject: null, surface: meal?.surface ?? null, job: null,
         view: {
           id, action: pick.action, state: pick.state, trigger: pick.on, object: objectId, cls: h.cls, status: "armed", prep: "waiting", reason: null, text,
-          armed_ms: this.o.now(), ready_ms: null, gone_ms: null, fired_ms: null, plan: null,
+          ...(meal ? {meal} : {}), armed_ms: this.o.now(), ready_ms: null, gone_ms: null, fired_ms: null, plan: null,
         },
       };
       this.publish();
@@ -196,7 +218,7 @@ export class GoalWatch {
     if (g.objectId) {
       const id = followedId(world, g.objectId);
       const o = world.objects.find((x) => x.id === id);
-      if (o && o.status !== "gone") return o;
+      if (g.view.meal || (o && o.status !== "gone")) return o;
       return this.onSurface(g, world, g.surface ?? o?.surface ?? null) ?? o;
     }
     return this.onSurface(g, world, g.surface) ?? targetOf({ target: g.view.cls as ObjClass }, world, this.o.placed()) ?? undefined;
@@ -263,6 +285,7 @@ export class GoalWatch {
     if (run && run !== "planned") return this.drop("replaced");
     if (now - v.armed_ms > (this.o.goalArmMs ?? GOAL_DEFAULTS.armMs)) return this.drop("expired");
     const o = this.objectOf(g, world);
+    if (v.meal) return this.watchMeal(g,world,o,now);
     // 정한 물건이 사라져 그 면의 같은 종류 물건으로 이어 가면 그 물건을 따라간다
     if (g.objectId && o && o.status !== "gone" && o.id !== followedId(world, g.objectId)) {
       g.objectId = o.id;
@@ -300,13 +323,73 @@ export class GoalWatch {
    *  목표를 세운 화살표의 출발 상태가 아니고 도착(to, '*'면 다른 상태 아무것)이면 목표 행동. 화살표에 when이 있으면 서버가 그 조건을 볼 수 없어 null.
    *  상태는 PAM 답 그대로이고 목표 화살표 하나만 본다(다른 화살표를 고르지 않는다). PAM이 다른 화살표 번호를 냈으면(행동 없는 화살표도) 그 답을 따른다(Codex b5da6c36 P2). 그 밖은 null.
    *  판단(src/brain/decide.ts goalTrigger)이 판단 기록을 내기 전에 물어 판단 기록·실행 추적이 같은 행동을 받는다. */
+  private watchMeal(g: Goal, world: WorldView, cup: WorldObject | undefined, now: number): void {
+    const v = g.view, meal = v.meal!;
+    if (v.check_until_ms !== undefined && now >= v.check_until_ms) return this.drop("expired");
+    if (!cup || cup.status === "gone") return this.drop("took");
+    const evidence = this.o.meal?.(), person = world.person;
+    if (person.count > 1 || (evidence?.count ?? 0) > 1) g.ambiguousResident = true;
+    if (this.o.habit?.()?.version !== g.version) return this.drop("replaced");
+    if (cup.cls !== v.cls || putAway(cup,this.o.placed())) return this.drop("moved");
+    const held = cup.carried || cup.facts.place?.value === "in_hand";
+    const outside = !!(evidence?.outsideZones || (evidence?.zone && evidence.zone !== meal.zone));
+    const found = person.visible && person.count === 1 && evidence?.count === 1 && (outside || evidence.watching);
+    const left = !person.visible || outside;
+    if (held && (left || v.checking_ms !== undefined)) return this.drop("took");
+    if (!held && cup.surface !== meal.surface) return this.drop("moved");
+    if (v.object !== cup.id) this.set(g,{object:cup.id});
+    if (!evidence) { g.watchRev = null; return; }
+    if (v.status === "armed") {
+      if (!left || held || cup.facts.place?.certainty !== "confirmed") return;
+      this.set(g,{status:"checking", gone_ms:now, checking_ms:now, check_until_ms:now+300_000, departure_rev:evidence.rev});
+      this.o.thought?.(GOAL_LOG.checking,g.view.id);
+    }
+    if (g.view.status === "fired" && (!found || g.ambiguousResident)) return this.drop("replaced");
+    if (g.view.status !== "checking" || g.ambiguousResident) { g.watchRev = null; return; }
+    const act = person.facts.activity;
+    if (person.visible && evidence.count === 1 && evidence.zone === meal.zone && act?.value === meal.activity &&
+      act.at_ms >= g.view.checking_ms!) return this.drop("back");
+    if (!found) g.watchRev = null;
+    else if (g.watchRev === null) {
+      g.watchRev = evidence.rev;
+      this.o.nudge?.();
+    }
+  }
+
+  protects(id: string | null): boolean {
+    const v = this.goal?.view;
+    return !!v?.meal && v.status === "checking" && (!id || id === v.object);
+  }
+
   triggerOf(d: DecisionRecord): string | null {
     const g = this.goal;
     const v = g?.view;
-    if (!g || !v || d.action || d.status !== "valid" || !d.fsm || d.fsm.next_index !== -1 || d.fsm.from !== null || g.pick.when !== null) return null;
+    if (!g || !v || d.status !== "valid" || !d.fsm || g.pick.when !== null) return null;
+    const unselected = !d.action && d.fsm.next_index === -1 && d.fsm.from === null;
+    const selected = d.action === v.action && d.fsm.from === g.pick.state && d.fsm.next_index === g.pick.index;
+    // PAM has already checked this transition. It can confirm the new activity
+    // without assigning a competing robot action, including after an away interval.
+    const activityEdge = !d.action && d.fsm.action === null && d.fsm.next_index >= 0 &&
+      (d.fsm.from === "away" || d.fsm.from === g.pick.state) &&
+      (d.fsm.to === d.fsm.state || d.fsm.to === "*");
+    if (!unselected && !(v.meal && (selected || activityEdge))) return null;
+    if (v.meal) {
+      this.watch(g);
+      if (this.goal !== g || g.view.status !== "checking" || g.ambiguousResident || g.watchRev === null || d.request_rev == null ||
+        d.request_rev < Math.max(g.watchRev,g.view.departure_rev!) || d.atMs < g.view.checking_ms! || d.late || d.source === "speech" ||
+        !d.world.person_visible || d.memoryVersion !== g.version || !d.fsm.state || ["away","unknown",g.pick.state].includes(d.fsm.state)) return null;
+      g.decisionId = d.id;
+      this.set(g,{status:"fired", confirmed_ms:this.o.now(), fired_ms:this.o.now()});
+      return v.action;
+    }
     const state = d.fsm.state;
     if (state === g.pick.state || (g.pick.to !== "*" && state !== g.pick.to)) return null;
     return this.afterLeave(d, v) ? v.action : null;
+  }
+
+  authorized(d: DecisionRecord): boolean {
+    const g = this.goal;
+    return !!g?.view.meal && this.afterLeave(d,g.view);
   }
 
   holds(d: DecisionRecord): boolean {
@@ -326,6 +409,7 @@ export class GoalWatch {
    *  목표가 컵을 기다리다 떠남을 늦게 내도(fired_ms) 그 앞에 보낸 판단을 받는다(2026-11-18 glass d1: 컵 확정 0.01초 앞에 보낸 판단을 기록만 해 1.6초 늦었다).
    *  사람이 떠난 사진을 찍은 뒤라도 집 상태에 들어오기 전에 부른 판단은 관찰에 사람이 보여 받지 않는다. */
   private afterLeave(d: DecisionRecord, v: PendingGoal): boolean {
+    if (v.meal) return v.status === "fired" && d.id === this.goal?.decisionId;
     return v.status === "fired" && v.gone_ms !== null && d.atMs >= v.gone_ms && !d.world.person_visible;
   }
 
@@ -337,11 +421,12 @@ export class GoalWatch {
    *  - 둘 다 없으면(미리 만들기 실패·아직) stale로 버리고 null. null이면 부르는 쪽이 계획 모드를 부른다. 쓰면 목표는 used로 끝난다.
    *  준비한 계획을 버리고 계획 모드로 넘어가면 까닭 글(다시 검사·미리 만들기 오류 등)을 목표 error와 서버 로그에 남긴다.
    *  seenSince: 실행 전 검사가 대상을 다시 본 것으로 볼 기준(떠나기 직전 GOAL_DEFAULTS.leaveSeenMs 앞), leftAt: 사람이 떠난 때(집기 전에 그 뒤 다시 봤는지 본다). */
-  take(d: DecisionRecord, signal: AbortSignal, fallback: () => PlanResult | Promise<PlanResult>): { out: PlanResult | Promise<PlanResult>; seenSince: number; leftAt: number; goal: string } | null {
+  take(d: DecisionRecord, signal: AbortSignal, fallback: () => PlanResult | Promise<PlanResult>): PreparedGoal | null {
     const g = this.goal;
     const reuse = this.o.reuse;
     const v = g?.view;
     if (!g || !v || !reuse || d.action !== v.action || v.gone_ms === null || !this.afterLeave(d, v)) return null;
+    if (v.meal) return this.takeMeal(g,d,signal);
     const leftAt = v.gone_ms;
     const seenSince = leftAt - GOAL_DEFAULTS.leaveSeenMs;
     const surface = g.surface;
@@ -404,6 +489,43 @@ export class GoalWatch {
   }
 
   /** 목표를 버린다(지금 길로 돌아간다). 없으면 아무것도 하지 않는다. error: 준비한 계획을 버리고 계획 모드로 넘어가는 까닭 글(take). */
+  private takeMeal(g: Goal, d: DecisionRecord, signal: AbortSignal): PreparedGoal {
+    const v = g.view, surface = v.meal!.surface;
+    const current = () => {
+      if (signal.aborted || this.goal !== g) return null;
+      this.watch(g);
+      if (this.goal !== g) return null;
+      const cup = this.objectOf(g,this.o.world());
+      return cup?.surface === surface && !cup.carried && cup.facts.place?.value !== "in_hand" ? cup : null;
+    };
+    const failed: PlanResult = {ok:false,error:GOAL_LOG.error.surface};
+    const build = async (): Promise<PlanResult> => {
+      const pending = g.job;
+      if (pending) await pending.done;
+      let cup = current();
+      if (!cup) return failed;
+      const rename = g.planObject ? {[g.planObject]:cup.id} : undefined;
+      let checked = g.plan ? this.o.reuse!(d,g.plan,rename) : null;
+      if (!checked?.ok) {
+        const answer = await this.o.planner(d,signal,{trigger:g.pick.on,on:g.pick.on,object:cup.id});
+        if (!answer.ok) { if (this.goal === g) this.drop("stale",answer.error); return answer; }
+        cup = current();
+        if (!cup) return failed;
+        checked = this.o.reuse!(d,answer.plan);
+      }
+      if (!checked.ok) { this.drop("stale",checked.error); return checked; }
+      const ids = planObjectsOf(checked.plan.view,this.o.world(),"cup",true);
+      const first = checked.plan.steps[0];
+      if (!ids.length || ids.some(id=>id!==cup.id) || (first?.kind==="go" && first.target!==surface)) {
+        this.drop("moved"); return failed;
+      }
+      this.end(g,"used");
+      return checked;
+    };
+    return {out:build(), goal:v.id, seenSince:v.armed_ms-GOAL_DEFAULTS.leaveSeenMs, leftAt:v.confirmed_ms!,
+      meal:{object:v.object!,surface}};
+  }
+
   drop(reason: GoalDrop, error?: string): void {
     if (this.goal) this.end(this.goal, "dropped", reason, error);
   }
@@ -423,7 +545,7 @@ export class GoalWatch {
   /** 지금 목표에서 뗀다: 그 등장에서는 다시 세우지 않는다. 이미 뗐으면 아무것도 하지 않는다. */
   private leave(g: Goal): void {
     if (this.goal !== g) return;
-    this.spent = g.presence;
+    this.spent = g.view.meal && this.o.world().person.visible ? this.o.world().person.since_ms : g.presence;
     this.goal = null;
   }
 

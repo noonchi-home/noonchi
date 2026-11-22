@@ -34,6 +34,8 @@ export interface SayInput {
   plan: PlanView | null; command: PlannedCommandMessage | null; world: WorldView | null; nowMs: number; look?: { place: string; atMs: number } | null;
   told?: { atMs: number } | null; quiet?: string | null; reflected?: { atMs: number; learned: number; active: number } | null; offWait?: string | null;
   offTold?: { device: string; atMs: number } | null; service?: { text: string; atMs: number } | null;
+  /** 마지막 도움 기록 글과 그 시각(src/act/help-record.ts, 20초 동안 말한다). */
+  help?: { text: string; atMs: number } | null;
 }
 
 /** 말풍선 말과, 그 말이 안전 알림(쓰러짐 의심·다시 켜짐·꺼짐 기다림·끄기 안내)인가. 대시보드 메시지 상자는 안전 알림이 유효한 동안 한 줄을 늘 그 알림에 준다. */
@@ -52,8 +54,10 @@ export function sayOf(i: SayInput): { text: string; safety: boolean } {
 export const sayLine = (i: SayInput): string => sayOf(i).text;
 
 /** 안전 알림·가까이 보기 다음 차례의 말. */
-function restLine({ plan, command, world, nowMs, told = null, quiet = null, reflected = null, service = null }: SayInput): string {
+function restLine({ plan, command, world, nowMs, told = null, quiet = null, reflected = null, service = null, help = null }: SayInput): string {
   if (service && nowMs - service.atMs <= SAY_DONE_MS) return service.text;
+  // 가져다준 일을 마친 뒤 20초: 도움 기록 한 줄(새 계획이 열리면 그 계획 말이 먼저다)
+  if (help && nowMs - help.atMs <= SAY_DONE_MS && !(plan && OPEN.has(plan.status))) return help.text;
   if (plan && OPEN.has(plan.status)) {
     if (told && nowMs - told.atMs <= SAY_TOLD_MS) return SAY_TEXT.retold;
     if (quiet) return SAY_TEXT.quiet(quiet);

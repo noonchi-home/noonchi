@@ -134,6 +134,7 @@ export const GOAL_TEXT = {
 /** 미리 세운 목표 기록 줄(기록 DB goal, 영상 판정 시각표 「목표」 줄): 세움·미리 만들기·사람 떠남·씀·버림과 그 까닭. */
 export const GOAL_LOG = {
   armed: (action: string) => `세움 · ${action}`,
+  checking: "사용자 상태 확인 중", confirmed:"다른 활동 확인",
   planning: "계획 미리 만드는 중", ready: "계획 준비됨", failed: "계획 못 만듦", fired: "사람 떠남 · 판단 부름", used: "준비한 계획으로 시작",
   dropped: (why: string) => `버림 · ${why}`,
   /** 까닭 글이 있는 미리 만들기 실패와, 준비한 계획을 버리고 계획 모드로 넘어감. */
@@ -236,7 +237,7 @@ export const AGAIN_TEXT = { ask: (label: string) => `${josa(label, "을/를")} �
 /** 비전 상태 줄에 쓰는 평면도 물건 짧은 이름(낱말 표에 없는 종류). 낱말 표 종류(식탁 등)는 그 글을 쓰고(placeShort), 둘 다 없으면 배치 이름을 쓴다. */
 export const PLACE_SHORT: Record<string, string> = {
   sink_counter: "싱크대", utility_sink: "싱크대", induction_counter: "인덕션", kitchen_cabinet: "수납장", counter: "조리대", washer: "세탁기", dryer: "건조기",
-  fridge: "냉장고", kimchi_fridge: "김치냉장고", dishwasher: "식기세척기", sofa: "소파", desk: "책상", coffee_table: "탁자",
+  fridge: "냉장고", kimchi_fridge: "김치냉장고", dishwasher: "식기세척기", sofa: "소파", desk: "책상", desk_small: "책상", coffee_table: "탁자",
   bed_queen: "침대", bed_single: "침대", stand_ac: "에어컨", wall_ac: "에어컨",
 };
 
@@ -273,7 +274,7 @@ export const EXEC_TEXT = {
   safetyWait: "안전 안내가 끝나면 부탁을 이어 갈게요.",
   requestWait: "먼저 부탁하신 일을 하고 있어요.",
   /** 충전 자리 돌아가기(src/act/robot/dock.ts): 계획이 끝난 뒤 사용자 위치 확인·충전 자리로 가는 동안 받은 행동 판단. */
-  docking: "충전 자리로 가는 중이라 새 일을 미룸",
+  docking: "복귀 중이라 새 일을 미룸",
   /** 미리 세운 목표(src/goal/watch.ts)와 같은 행동을 사람이 떠나기 전에 고른 판단: 목표가 맡는다(사람이 떠나면 판단을 다시 부른다). */
   goalWait: "다 쓰고 떠나면 할 일로 두었어요",
   beforeLeave: "사람이 떠나기 전 판단이라 쓰지 않음",
@@ -289,6 +290,10 @@ export const DOCK_TEXT = {
   userUnknown: "사용자가 어디 계신지 몰라요",
   going: "충전 자리로 갈게요",
   docked: "충전 자리에서 지켜볼게요",
+  /** look: 도착해서 비출 곳(그 자리가 보는 구역 이름, 을/를까지). 없으면 가기만. */
+  stationCommand: (toward: string, look: string | null = null) => (look ? `${toward} 가서 ${look} 비춰 주세요` : `${toward} 가 주세요`),
+  stationGoing: (toward: string) => `${toward} 갈게요`,
+  standing: (place: string) => `${place}에서 기다릴게요`,
   gaveUp: "충전 자리로 가지 못했어요",
 } as const;
 

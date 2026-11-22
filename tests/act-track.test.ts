@@ -6,7 +6,9 @@ import { testTracker, type TrackerFixture } from "./helpers/tracker-ports.js";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { walkingMap } from "../src/layout/walk-guide.js";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { HistoryDb } from "../src/brain/history/db.js";
 import type { ActionChoice } from "../src/act/prompts.js";
 import { DONE_NOTICE_MS, type ExecutionTracker, TRACK_DEFAULTS, type ContentsLook, type Stall, type Stray } from "../src/act/track/tracker.js";
 import type { TrackCore } from "../src/act/track/core.js";
@@ -15,7 +17,7 @@ import type { AgentStep } from "../src/agent/planTools.js";
 import type { PlanResult } from "../src/agent/index.js";
 import { checkDecision, checkPlan, type CheckResult } from "../src/act/check.js";
 import { TASKS, clearsAway, putAway, targetOf } from "../src/act/tasks.js";
-import { PlanDraft } from "../src/agent/planTools.js";
+import { PlanDraft, resubmit } from "../src/agent/planTools.js";
 import type { BrainLog, CloserResult, DecisionRecord } from "../src/contract/events.js";
 import type { HeardAt, PlannedCommand, PlannedCommandMessage } from "../src/contract/phone.js";
 import type { WorldChange, WorldObject, WorldView } from "../src/contract/world.js";
@@ -23,7 +25,7 @@ import { PlanHub } from "../src/act/hub.js";
 import { APPROVAL_TEXT, CAUTION_TEXT, CHECK_TEXT, DOCK_TEXT, EXEC_TEXT, CAUTION_LINE, PEEK_TEXT, STEP_COMMAND, STEP_LABEL, TOP_TEXT, USE_THOUGHT, type TellMode } from "../src/act/labels.js";
 import { CONTENTS_HOLD, PEEK } from "../src/act/robot/contents.js";
 import { FIND } from "../src/act/robot/find.js";
-import { DOCK } from "../src/act/robot/dock.js";
+import { DOCK, USER_ROOM_MS } from "../src/act/robot/dock.js";
 import { POSE_FALL } from "../src/world/vocab.js";
 import { PHONE_PROTOCOL } from "../src/phone/protocol.js";
 /** 인덕션 켜기 전 질문(서버 글). */
@@ -33,6 +35,7 @@ import { sha256 } from "../src/observe/ring.js";
 import type { EngineFrame, Detection, CameraView } from "../src/contract/observe.js";
 import { floorPlanFrom } from "../src/layout/route.js";
 import { SMALL_SCENE, smallFloor } from "./helpers/floor.js";
+import { viewLooking } from "./helpers/camera.js";
 import { standing } from "./helpers/poses.js";
 import { cupSteps, fillSteps, microwaveScripts, planCalls, planContext, ramenScripts, ramenSteps, startFakePlanner, testPlanner, type FakePlanner } from "./helpers/planner.js";
 import { describeDevice } from "../src/devices/mapping.js";
@@ -67,6 +70,58 @@ async function toOn(s: ReturnType<typeof setup>, d: DecisionRecord = ramenDecisi
   for (let n = 1; n <= 6; n++) expect(s.t.onAnswer(`plan:${d.id}`, `plan:${d.id}:${n}`, "done"), String(n)).toBe(true);
 }
 
+it("station arrival uses the walk guide, never the last generic eye or the door threshold",()=>{
+  const map=walkingMap(smallFloor(),SMALL_SCENE as unknown as import("../src/contract/layout.js").SceneJson);
+  const result:string[]=[];
+  const s=setup({walking:()=>map,stations:{rev:()=>1,target:id=>({id,label:"서기",position:[5,0,2],look:null}),result:r=>result.push(r.outcome)}});
+  const sample=(x:number)=>{s.clock.t+=200;s.t.onNavigationPose({quality:"usable",observed_ms:s.clock.t,pose_gen:1,position:[x,2]});s.t.tick();};
+  s.t.onEye([5,2]);sample(3.5);sample(3.7);
+  s.t.onDirective({op:"grant",id:"visit:walk",kind:"visit",target_id:"spot",rev:1,goal_id:null,until_ms:30000});
+  expect(s.last()).toMatchObject({guide:{remaining:[{kind:"portal"},{kind:"stand"}]}});
+  sample(4.1);sample(4.2);
+  expect(s.last()).toMatchObject({step:"visit:walk:go",speak:false,guide:{remaining:[{kind:"stand"}]}});
+  expect(result).toEqual([]);
+  sample(4.7);sample(4.8);expect(result).toEqual(["arrived"]);
+});
+
+it("관찰 자리는 맞춘 눈으로만 도착하고 승인 질문이 오면 방문 줄을 거둔다",()=>{
+  const results:string[]=[];
+  let pending=false;
+  // 폰 눈 방향(World State eye yaw_deg, 평면 x축에서 잰 각): 0이면 +x(냉장고 반대쪽), 180이면 냉장고 앞 쪽
+  let yaw=0;
+  const watched=world([cup("present")]);
+  const s=setup({approvalsWaiting:()=>pending,w:()=>({...watched,eye:{position:[4,4],height_m:1.15,yaw_deg:yaw,pitch_deg:-10,room:null,room_label:null,at_ms:10_000}}),
+    stations:{map:()=>({version:1,stations:[{id:"entry",room:"kitchen",name:"입구",position:[4,4],look_at:[2,4],roles:["observe"],surfaces:["fridge1"],rooms:[],observes_zone_ids:[]}],zones:[],surface_fronts:[],kitchen_entry:"entry",meal_watch:null}),rev:()=>7,target:id=>({id,label:"주방 입구",position:[4,0,4],look:{label:"냉장고 앞",position:[2,0.6,4]}}),result:r=>results.push(r.outcome)}});
+  const d={op:"grant",id:"visit:1",kind:"visit",target_id:"entry",rev:3,goal_id:null,until_ms:20000} as const;
+  s.t.onEye([0,0]); s.t.onDirective(d);
+  expect(s.phone.at(-1)).toMatchObject({type:"command",text:"주방 입구로 이동해 냉장고 앞을 비춰 주세요.",choices:[],target:{position:[4,0,4],look:[2,0.6,4]}});
+  expect(s.t.openCommand()).toMatchObject({planId:d.id,kind:"command",choices:[]});
+  pending=true; s.t.tick();
+  expect(s.phone.at(-1)).toMatchObject({type:"command_clear",id:d.id});
+  pending=false; s.t.onEye([4,4]); s.t.onDirective(d);
+  expect(results).toEqual(["cancelled"]);
+  // 이미 반경 안이어도 비출 곳(냉장고 앞)을 보지 않으면 도착이 아니다: 「…을 비춰 주세요」를 띄우고 기다린다
+  s.t.onDirective({...d,id:"visit:2"});
+  expect(results).toEqual(["cancelled"]);
+  expect(s.phone.at(-1)).toMatchObject({type:"command",id:"visit:2",text:"주방 입구로 이동해 냉장고 앞을 비춰 주세요."});
+  yaw=180; s.t.tick();
+  expect(results).toEqual(["cancelled"]);
+  watched.devices=[{...cooktop([]),kind:"fridge",id:"fridge1"}];
+  watched.household_photo = arrivalPhoto(10_000,[4,1,4],[2,0.6,4]);
+  s.t.tick(); expect(results).toEqual(["cancelled"]);
+  watched.fixtures=[{id:"refrigerator_kitchen",cls:"refrigerator",room:"kitchen",room_label:"주방",device:"fridge1",
+    first_seen_ms:9000,last_seen_ms:10_100,answered_ms:9000,facts:{open:{value:"closed",at_ms:9000,since_ms:9000,certainty:"confirmed"}}}];
+  s.t.tick(); expect(results).toEqual(["cancelled"]);
+  watched.fixtures[0]!.answered_ms=10_000;
+  watched.fixtures[0]!.facts.open!.at_ms=10_000;
+  watched.household_photo=arrivalPhoto(10_000,[4,1,4],[4,5,4]);
+  s.t.tick(); expect(results).toEqual(["cancelled"]);
+  watched.household_photo=arrivalPhoto(10_000,[4,1,4],[2,0.6,4]); s.t.tick();
+  expect(results.at(-1)).toBe("arrived");
+});
+function arrivalPhoto(at: number, origin: [number, number, number], look: [number, number, number]): NonNullable<WorldView["household_photo"]> {
+  return { id:"arrival", serial:1, at_ms:at, proof:{ camera:viewLooking(origin,look), person_count:0, person:null, seats:"clear", dining_food:"unknown" } };
+}
 let llm: FakePlanner;
 beforeAll(async () => { llm = await startFakePlanner(); });
 afterAll(async () => { await llm.close(); });
@@ -151,7 +206,20 @@ function setup(over: Partial<TrackerFixture> & { w?: () => WorldView; check?: ()
 // 2026-11-20 사용자 「아직도 컵안을 확인해달라는 내용이 없네」, 고른 답: 컵 안 확인은 「늘 확인」, 음료가 남았으면 「버려도 될지 묻기」
 describe("컵 치우기: 집기 전에 늘 컵 안을 위에서 본다", () => {
   /** 위에서 보기를 하는 집(계획 맥락 topLook): 계획 검사가 컵 안 보기 단계를 넣는다. 위에서 본 사진 쌍(topReady)과 위에서 보기(lookContents)는 시험이 정한다. */
-  function topSetup() {
+  it("계획을 만드는 동안 배운 답이 적용되지 않게 되면 첫 명령 전에 위에서 보기를 복원한다", async () => {
+    const w = world([cup("present")]);
+    const ctx = {...planContext({decision,world:w,floor:smallFloor()}),topLook:true as const};
+    const s = setup({
+      planner: (d,signal) => testPlanner(llm).plan({...ctx,decision:d,discardLeftover:true},signal),
+      discardLeftover: () => false,
+      reuse: (d,plan) => resubmit(plan,{...ctx,decision:d}),
+    });
+    await s.decide(decision);
+    expect(s.t.onAnswer(s.last().id,s.last().step,"done")).toBe(true);
+    expect(s.last().text).toContain("위에서");
+  });
+
+  function topSetup(preference?: {read():boolean; remember(allow:boolean):void}) {
     let w = world([cup("present")]);
     let latestPairStart = -Infinity;
     const looks: ContentsLook[] = [];
@@ -159,7 +227,8 @@ describe("컵 치우기: 집기 전에 늘 컵 안을 위에서 본다", () => {
     const planner = testPlanner(llm);
     const s = setup({
       w: () => w,
-      planner: (d, signal) => planner.plan({ ...planContext({ decision: d, world: w, floor: smallFloor() }), topLook: true }, signal),
+      rememberLeftover: preference?.remember,
+      planner: (d, signal) => planner.plan({ ...planContext({ decision: d, world: w, floor: smallFloor() }), topLook: true, discardLeftover:preference?.read() }, signal),
       topReady: (_id, since) => latestPairStart >= since, lookContents: (h) => { looks.push(h); return true; }, guardObject: (id, on) => { guards.push([id, on]); },
     });
     /** 컵 안 값(확인됨)을 지금 시계로 둔다. null이면 모름. */
@@ -252,6 +321,22 @@ describe("컵 치우기: 집기 전에 늘 컵 안을 위에서 본다", () => {
     expect(s.plans.current()).toMatchObject({ status: "running" });
     expect(s.heard("치워 주세요")).toMatchObject({ id: "clear" });
     expect(s.last()).toMatchObject({ step: "plan:pam-1:3", text: "컵을 들어 주세요" });
+  });
+
+  it.each([["치워 주세요",true],["그대로 둬요",false]] as const)("남은 음료에 대한 말 답 %s를 다음 계획에 쓴다", async (speech,allow) => {
+    const db=HistoryDb.open(":memory:");
+    try {
+      const read=()=>db.cupAnswers.allowDiscard("home","resident");
+      const s=topSetup({read,remember:value=>db.cupAnswers.remember("home","resident",value)});
+      await s.toTop();
+      s.seeTop("has_contents");
+      db.cupAnswers.remember("home","resident",!allow);
+      expect(s.heard(speech)?.id).toBe(allow ? "clear" : "keep");
+      expect(read()).toBe(allow);
+      const next=topSetup({read,remember:()=>{}});
+      await next.toTop();
+      expect(next.last().text).toBe(allow ? "컵을 들어 주세요" : PEEK_TEXT.above("컵"));
+    } finally {db.close();}
   });
 
   it("컵 안을 비추는 동안 새로 잰 컵 가운데를 폰에 조용히 보내고 사진을 자주 받는다", async () => {
@@ -1026,7 +1111,7 @@ describe("실행 추적: 그 자리에서 하는 일(do, 채워 주기)", () => 
         expect(s.spoken().at(-1)).toBe("냉장고로 가 주세요");
         expect(s.guards).toEqual([["cup_1", true], ["cup_1", false]]);
         expect(s.commands().every((c) => c.text.endsWith("주세요"))).toBe(true);
-        expect(PHONE_PROTOCOL).toBe(4);
+        expect(PHONE_PROTOCOL).toBe(5);
       });
 
       it("처음부터 0.5m 안이면 go 없이 위에서 비춰 달라고 한다", async () => {
@@ -5122,7 +5207,7 @@ describe("실행 추적: 계획이 끝나면 충전 자리로", () => {
   const withPerson = (w: WorldView, visible: boolean, room: string | null): WorldView => ({ ...w, person: { ...w.person, visible, room: room && "living", room_label: room } });
   function dockSetup(w: () => WorldView, over: Parameters<typeof setup>[0] = {}) {
     const said: string[] = [];
-    const s = setup({ w, dock: () => DOCK_AT, thought: (text) => said.push(text), ...over });
+    const s = setup({ w, offsetMinutes: -120, dock: () => DOCK_AT, thought: (text) => said.push(text), ...over });
     const docks = () => s.commands().filter((c) => c.id.startsWith("dock:"));
     /** 눈을 그 자리로 두고 tick. */
     const at = (x: number, z: number, ms = 500) => { s.clock.t += ms; s.t.onEye([x, z]); s.t.tick(); };
@@ -5160,6 +5245,65 @@ describe("실행 추적: 계획이 끝나면 충전 자리로", () => {
     expect(DOCK.nearM).toBe(1.2);
   });
 
+  it("낮에는 새 위치를 기다려 그 방으로 한 번 가고 맞춘 눈으로만 도착을 확인한다", async () => {
+    // 보이는 사용자의 위치가 5초 넘게 묵었으면 새 위치를 기다린다
+    let seen = -60_000;
+    const w = world([cup("present")]);
+    const station = {id:"living_standby",name:"거실 대기 자리",room:"living",roles:["standby" as const],position:[5,6] as [number,number],look_at:[4,5] as [number,number],rooms:[],surfaces:[],observes_zone_ids:[]};
+    const s = dockSetup(() => ({...w,person:{...w.person,count:1,visible:true,position:[5,6],position_ms:seen,room:"living",room_label:"거실"},
+      person_trail:[{position:[5,6] as [number,number],room:"living",at_ms:seen}]}), {
+      offsetMinutes:540, stations:{map:()=>({version:1,stations:[station],zones:[],surface_fronts:[],kitchen_entry:null,meal_watch:null}),rev:()=>3,
+        target:id=>({id,label:station.name,position:[5,0,6],look:{label:"소파",position:[4,0.6,5]}}),result:()=>{}},
+    });
+    await finishCup(s);
+    s.at(1,1,DOCK.lookMs);
+    expect(s.docks()).toHaveLength(0);
+    seen=s.clock.t;
+    s.at(1,1);
+    expect(s.last()).toMatchObject({target:{id:station.id},choices:[],kind:"go"});
+    expect(s.t.onAnswer("dock:1","dock:1:1","done")).toBe(false);
+    expect(s.t.machineFacts().dock).toBe("room");
+    s.at(5,6);
+    expect(s.t.machineFacts().dock).toBe("room");
+    w.household_photo=arrivalPhoto(s.clock.t,[5,1,6],[4,0.6,5]);
+    s.at(5,6);
+    expect(s.last()).toMatchObject({type:"command_clear",id:"dock:1"});
+    expect(s.t.machineFacts().dock).toBe("standby");
+    s.at(1,1);
+    expect(s.t.machineFacts().dock).toBeNull();
+  });
+
+  it.each([[60_000, true, "living_standby"], [USER_ROOM_MS + 1, true, null], [60_000, false, null]] as const)("낮에 지금 안 보이는 사용자는 혼자 보인 사진의 마지막 발 자리 방(%i ms 전, 혼자 %s)이 5분 안이면 그 방 대기 자리로 간다", async (ago, alone, target) => {
+    const w = world([cup("present")]);
+    const station = {id:"living_standby",name:"거실 대기 자리",room:"living",roles:["standby" as const],position:[5,6] as [number,number],look_at:[4,5] as [number,number],rooms:[],surfaces:[],observes_zone_ids:[]};
+    let now = () => 0;
+    // 둘이 보인 사진은 가장 큰 사람의 발 자리만 남기고 사람 자취(person_trail)를 비운다(src/world/state/people.ts): 그 자리는 누구의 방인지 모른다
+    const s = dockSetup(() => ({...w,person:{...w.person,count:0,visible:false,position:[5,6],position_ms:now()-ago,room:"living",room_label:"거실"},
+      ...(alone ? {person_trail:[{position:[5,6] as [number,number],room:"living",at_ms:now()-ago}]} : {})}), {
+      offsetMinutes:540, stations:{map:()=>({version:1,stations:[station],zones:[],surface_fronts:[],kitchen_entry:null,meal_watch:null}),rev:()=>3,
+        target:id=>({id,label:station.name,position:[5,0,6],look:null}),result:()=>{}},
+    });
+    now = () => s.clock.t;
+    await finishCup(s);
+    s.at(1,1,DOCK.lookMs);
+    expect(s.docks().map((c) => c.target?.id ?? null).at(-1) ?? null).toBe(target);
+  });
+
+  it("둘이 보인 사진 직후 한 사람의 상체만 보이면(발 자리는 둘이 보일 때의 것) 그 방으로 돌아가지 않는다", async () => {
+    const w = world([cup("present")]);
+    const station = {id:"living_standby",name:"거실 대기 자리",room:"living",roles:["standby" as const],position:[5,6] as [number,number],look_at:[4,5] as [number,number],rooms:[],surfaces:[],observes_zone_ids:[]};
+    let now = () => 0;
+    // 지금 한 사람이 보이고 발 자리는 2초 전 것이지만, 그 사진은 둘이 보여 사람 자취가 비었다
+    const s = dockSetup(() => ({...w,person:{...w.person,count:1,visible:true,position:[5,6],position_ms:now()-2000,room:"living",room_label:"거실"},person_trail:[]}), {
+      offsetMinutes:540, stations:{map:()=>({version:1,stations:[station],zones:[],surface_fronts:[],kitchen_entry:null,meal_watch:null}),rev:()=>3,
+        target:id=>({id,label:station.name,position:[5,0,6],look:null}),result:()=>{}},
+    });
+    now = () => s.clock.t;
+    await finishCup(s);
+    s.at(1,1,DOCK.lookMs);
+    expect(s.docks()).toHaveLength(0);
+  });
+
   it("사용자 위치: 보이면 그 방, 안 보이면 마지막으로 본 방, 둘 다 모르면 모른다고 한다. 이미 충전 자리 1.2m 안이면 명령 없이 지켜본다", async () => {
     for (const [visible, room, line] of [[true, "주방·식당", DOCK_TEXT.userHere("주방·식당")], [false, null, DOCK_TEXT.userUnknown]] as const) {
       const w = withPerson(world([cup("present")]), visible, room);
@@ -5186,13 +5330,11 @@ describe("실행 추적: 계획이 끝나면 충전 자리로", () => {
     s.at(10.5, 10.5);
     await s.decide({ ...decision, id: "pam-3", seq: 3, atMs: s.clock.t });
     expect(s.plans.current()).toMatchObject({ id: "plan:pam-3", status: "running" });
-    // 계획을 「그만」으로 닫아도 충전 자리로 간다. 가는 중 「그만」은 그것도 그만둔다
+    // 사용자가 중단한 뒤에는 자동 복귀도 시작하지 않는다.
     expect(s.heard("그만")).toMatchObject({ id: "stop" });
     expect(s.plans.current()).toMatchObject({ id: "plan:pam-3", status: "cancelled" });
     s.at(5, 1, DOCK.lookMs);
-    expect(s.last()).toMatchObject({ id: "dock:2", text: "충전 자리로 가 주세요" });
-    expect(s.heard("그만", { kind: "command", id: "dock:2", step: "dock:2:1", pending: [] })).toMatchObject({ id: "stop" });
-    expect(s.last()).toEqual({ type: "command_clear", id: "dock:2" });
+    expect(s.docks().some(c => c.id === "dock:2")).toBe(false);
     await s.decide({ ...decision, id: "pam-4", seq: 4, atMs: s.clock.t });
     expect(s.plans.current()).toMatchObject({ id: "plan:pam-4", status: "running" });
   });

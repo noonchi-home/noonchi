@@ -38,6 +38,8 @@ export class RobotPhone {
     }
   }
 
+  shows(id:string):boolean { return this.current===id; }
+
   close(): void {
     this.closed = true;
     this.intents.length = 0;
