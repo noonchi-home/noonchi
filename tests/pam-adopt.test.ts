@@ -1,5 +1,5 @@
 // 반성 후보의 채택 검사(src/brain/pam/adopt.ts): 석준 님 ai 저장소 pam/trigger_check.py(origin/main 48d56a1)와 tests/test_trigger_check.py의 경우를 그대로 옮겨 같은 답인지 본다.
-// 시각은 자정부터 초. 채택(c → a) ⇔ k/n ≥ 0.75 이고 단측 이항검정 P(X ≥ k; n, p0) < 0.001, p0 = max(다른 때 비율, 0.01).
+// 시각은 자정부터 초. 채택(c → a) ⇔ k/n ≥ 0.75 이고 단측 이항검정 P(X ≥ k; n, p0) < 0.01(석준 님 원래 0.001, 2026-11-22 사용자 결정), p0 = max(다른 때 비율, 0.01).
 // 로봇 FSM 만들기는 석준 님 predictor_fsm을 사람 상태 FSM 화살표로 옮긴 것이다(통과 후보마다 화살표 하나, 같은 트리거의 묻기 자리를 바꿈).
 import { describe, expect, it } from "vitest";
 import { CUP_FSM_MEMORY, validateMemory, type FsmMemory } from "../src/brain/decision.js";
@@ -47,10 +47,12 @@ describe("채택 검사(석준 님 trigger_check 그대로)", () => {
     const three = checkCandidate([FOLLOWED, FOLLOWED, MISSED]);
     close(three.rate, 2 / 3); expect(three.passed).toBe(false);
   });
-  it("잦은 행동은 일곱째 밤에야 통과", () => {
+  it("잦은 행동은 다섯째 밤에 통과(우연일 확률 0.01 미만, 2026-11-22 사용자 결정: 0.001에서는 일곱째 밤)", () => {
     const week = [1, 2, 3, 4, 5, 6, 7].map((n) => day(["07:00:00"], [...(n === 3 ? [] : ["07:03:00"]), "07:21:00", "07:41:00"]));
-    const n6 = checkCandidate(week.slice(0, 6)), n7 = checkCandidate(week);
-    close(n6.p_value, 0.0016); expect(n6.passed).toBe(false);
+    const n4 = checkCandidate(week.slice(0, 4)), n5 = checkCandidate(week.slice(0, 5)), n6 = checkCandidate(week.slice(0, 6)), n7 = checkCandidate(week);
+    close(n4.p_value, 0.0272); expect(n4.passed).toBe(false);   // 4번 중 3번(75%)이지만 우연일 확률 2.7%
+    close(n5.p_value, 0.00672); expect(n5.passed).toBe(true);
+    close(n6.p_value, 0.0016); expect(n6.passed).toBe(true);
     close(n7.p_value, 0.0003712); expect(n7.passed).toBe(true);
   });
   it("행동 앞 마지막 후보만 공로, 저마다 행동이 따라오면 모두 셈, 본 되풀이는 앞 것을 안 따라온 것으로 끝낸다", () => {

@@ -1,5 +1,5 @@
 // 반성 후보의 채택 검사(석준 님 ai 저장소 pam/trigger_check.py, origin/main 48d56a1 그대로). 모델을 부르지 않는다.
-//   채택(c → a) ⇔ k/n ≥ 0.75 이고 Σ_{i=k..n} C(n,i) p0^i (1-p0)^(n-i) < 0.001,  p0 = max(다른 때 비율, 0.01)
+//   채택(c → a) ⇔ k/n ≥ 0.75 이고 Σ_{i=k..n} C(n,i) p0^i (1-p0)^(n-i) < 0.01,  p0 = max(다른 때 비율, 0.01)
 // 하루마다: 후보 c가 그 출발 상태에서 일어난 때, 행동 a를 한 때, 사람이 안 보인 구간(로봇이 그 행동을 한 구간도 더한다). 시각은 자정부터 초.
 // 후보 뒤 검사 창(기본 5분, 같은 후보가 다시 나오면 거기까지) 안에 행동이 오면 따라온 것이고 행동 앞 마지막 후보만 공로를 받는다. 창이 안 보인 구간에 걸리고
 // 행동이 없으면 못 봄이다. 그 행동을 물은 질문의 답(answered, 이 저장소가 더한 칸)이 창 안에 있으면 안 보였어도 본 것이다(행동이 없으면 따라오지 않은 것).
@@ -13,7 +13,8 @@ import { edgeLearned, validateMemory, type FsmEdge, type FsmMemory, type FsmStat
 export const FOLLOW_SECONDS = 300;
 /** 따라온 비율 하한(석준 님 2026-11-18 전에는 0.8). */
 export const RATE_MIN = 0.75;
-export const ALPHA = 0.001;
+/** 우연일 확률 상한(석준 님 원래 0.001, 2026-11-22 사용자 결정으로 0.01). */
+export const ALPHA = 0.01;
 export const FLOOR = 0.01;
 
 /** 하루치 검사 입력(자정부터 초). unseen에는 사람이 안 보인 구간과 로봇이 그 행동을 한 구간이 함께 든다. answered는 그 행동을 물은 질문에 답한 때(이 계획이 더한 칸). */
