@@ -31,7 +31,7 @@ const TAIL_EDGE = `M0 0L${TAIL.w} ${TAIL.h / 2}L0 ${TAIL.h}`;
  * 모드는 마스코트 머리 위 모드 말풍선(ModeBubble)이 보인다. 크기·자리(layout.ts bubble)는 정해져 있어 글 길이가 바꾸지 않는다.
  * 원래 생각(추론)은 오지 않는다(data.ts talkOf). 트윈·폰 칸 가림판(z-40)보다 위(z-50)에 있다. 보기만 한다: 마우스를 받지 않는다.
  */
-export function TalkBox({ talk, box }: { talk: Talk | null; box: Rect }) {
+export function TalkBox({ talk, box, mascotWidth = 0 }: { talk: Talk | null; box: Rect; mascotWidth?: number }) {
   return (
     <>
     <LiquidGlass
@@ -41,20 +41,21 @@ export function TalkBox({ talk, box }: { talk: Talk | null; box: Rect }) {
       className="pointer-events-none absolute z-50"
       style={{ left: box.left, top: box.top, width: box.width, height: box.height }}
     >
-      <Item size="talk" className="size-full flex-nowrap items-center">
+      <Item size="talk" className="size-full flex-nowrap items-center" style={{ width: Math.max(0, box.width - mascotWidth) }}>
         <ItemContent className="min-w-0">
-          <TalkLines lines={talk?.lines ?? []} />
+          {mascotWidth > 0 && <ItemTitle>최근 메시지</ItemTitle>}
+          <TalkLines lines={talk?.lines ?? []} wrapCurrent={mascotWidth > 0} />
         </ItemContent>
-        <ItemActions data-talk-more aria-hidden="true" className="self-end">{WORDS.more}</ItemActions>
+        {mascotWidth === 0 && <ItemActions data-talk-more aria-hidden="true" className="self-end">{WORDS.more}</ItemActions>}
       </Item>
     </LiquidGlass>
-    <div
+    {mascotWidth === 0 && <div
       data-talk-tail aria-hidden="true" className="pointer-events-none absolute z-50"
       style={{ left: box.left + box.width - 1, top: box.top + box.height * TAIL.at - TAIL.h / 2, width: TAIL.w, height: TAIL.h }}
     >
       <LineDrawSvg tone="talkTail" path={TAIL_FILL} width={TAIL.w} height={TAIL.h} className="absolute left-0 top-0" />
       <LineDrawSvg tone="talkTailEdge" path={TAIL_EDGE} strokeWidth={TALK_TAIL.edge.width} width={TAIL.w} height={TAIL.h} className="absolute left-0 top-0" />
-    </div>
+    </div>}
     </>
   );
 }
@@ -77,7 +78,7 @@ function appended(now: Line[], next: Line[]): Line[] | null {
  * 굴리는 사이에 또 온 줄은 차례를 기다렸다가 하나씩 굴린다(겹치거나 건너뛰지 않음). 끝에 붙지 않은 바뀜(안전 알림이 최신 줄로 남고 그 앞에 끼어듦 등)은
  * 굴리지 않고 바로 바꾸고 가장 새 줄만 떠오르게 한다. 움직임 줄이기면 바로 바꾼다.
  */
-function TalkLines({ lines }: { lines: Line[] }) {
+function TalkLines({ lines, wrapCurrent = false }: { lines: Line[]; wrapCurrent?: boolean }) {
   const reduced = useReducedMotionNow();
   /** 그리는 줄과 지금 움직임: rest 멈춤, roll 한 칸 굴림(맨 앞 줄이 사라질 줄), grow 줄이 세 줄보다 적어 붙이기만, swap 바로 바꿈. */
   const [view, setView] = useState<{ rows: Line[]; phase: "rest" | "roll" | "grow" | "swap" }>({ rows: lines, phase: "rest" });
@@ -145,12 +146,12 @@ function TalkLines({ lines }: { lines: Line[] }) {
   // 줄의 몫: 맨 아래가 가장 새 줄, 그 위 둘은 지난 줄(맨 위가 더 흐리다). 굴리는 동안 맨 앞 줄은 사라질 줄이다
   const n = view.rows.length;
   return (
-    <div className="min-w-0 overflow-hidden" style={{ height: TALK_SHOWN * TALK_ROW_H + (TALK_SHOWN - 1) * TALK_ROW_GAP }}>
+    <div className="min-w-0 overflow-hidden" style={{ height: (TALK_SHOWN + (wrapCurrent ? 1 : 0)) * TALK_ROW_H + (TALK_SHOWN - 1) * TALK_ROW_GAP }}>
       <div ref={listRef} data-talk-lines className="flex h-full min-w-0 flex-col justify-end gap-1">
         {view.rows.map((l, i) => {
           const fromEnd = n - 1 - i;
           if (fromEnd === 0) {
-            return <ItemTitle key={l.id} data-talk-line="new" className="h-6 min-w-0 max-w-full shrink-0"><span className="truncate">{l.text}</span></ItemTitle>;
+            return <ItemTitle key={l.id} data-talk-line="new" className={wrapCurrent ? "min-w-0 max-w-full shrink-0" : "h-6 min-w-0 max-w-full shrink-0"}><span className={wrapCurrent ? "line-clamp-2" : "truncate"} title={l.text}>{l.text}</span></ItemTitle>;
           }
           return (
             <ItemDescription key={l.id} data-talk-line="old" className="h-6 shrink-0 truncate" style={{ opacity: fromEnd >= 2 ? TOP_FADE : 1 }}>

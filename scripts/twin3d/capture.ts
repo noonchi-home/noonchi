@@ -117,6 +117,10 @@ await withHeavy(`capture ${url}`, async (lock) => {
       else throw new Error(`모르는 스크립트 줄: ${step}`);
     }
     if (legacy) await evaluate("window.aptViewer.setPaused(true)");
+    if (process.argv.includes("--joinery-qa")) {
+      const { inspectJoinery } = await import("./joinery-qa.js");
+      measures.joinery = await inspectJoinery(cdp, url, out);
+    }
   } catch (e) {
     errors.push(`중단: ${(e as Error).message}`);
   } finally {

@@ -7,6 +7,12 @@ import { isOpen, type DashData } from "./data";
 import { WORDS } from "./words";
 
 export type TimelineRow = "person" | "robot";
+export interface StatusRow {
+  id: TimelineRow;
+  previous: string | null;
+  current: string | null;
+  since: number | null;
+}
 /** 구간 색: plain 카드 바탕(지켜봄), muted 옅은 바탕(사람 상태·지난 단계), brand 빨강(지금 단계). */
 export type SpanTone = "plain" | "muted" | "brand";
 /** 구간 하나: from 시작(보이는 때보다 앞이면 -Infinity), to 끝(아직이면 null). */
@@ -55,6 +61,71 @@ function robotSpans(plans: PlanView[]): TimeSpan[] {
   }
   if (free !== Number.POSITIVE_INFINITY) watch(free, null);
   return out;
+}
+
+type StatusChange = { text: string; from: number | null };
+
+/** 같은 시각에 서로 다른 전이가 있을 수 있다. 같은 사건을 다시 받으면 첫 수신 위치를 보존한다. */
+function distinctEvents<T>(events: readonly T[], keyOf: (event: T) => string): T[] {
+  const seen = new Set<string>();
+  return events.filter(event => {
+    const key = keyOf(event);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+/** robot가 없는 기록에서만 계획을 쓴다. updatedAt은 판본 순서로만 쓰고 실제 전이 시각은 단계에서 읽는다. */
+function robotChanges(dash: DashData): StatusChange[] {
+  if (dash.robots.length) {
+    const robots = distinctEvents(dash.robots, r => JSON.stringify([r.since_ms, r.state, r.step?.plan_id, r.step?.number, r.step?.label]));
+    return robots.sort((a, b) => a.since_ms - b.since_ms).map(r => ({
+      text: r.state === "run" && r.step ? r.step.label : WORDS.timeline.robot[r.state],
+      from: r.since_ms,
+    }));
+  }
+  const plans = [...dash.plans].sort((a, b) => Date.parse(a.updatedAt) - Date.parse(b.updatedAt)
+    || (a.supersedes === b.id ? 1 : b.supersedes === a.id ? -1 : 0));
+  const latest = plans.at(-1);
+  const changes: StatusChange[] = [];
+  let ended: number | null = null;
+  for (const plan of plans) {
+    for (const step of plan.steps) {
+      if (step.status === "pending" || (step.status === "skipped" && step.started_ms === undefined)) continue;
+      if (ended !== null && step.started_ms !== undefined && ended < step.started_ms) {
+        changes.push({ text: WORDS.timeline.watch, from: ended });
+      }
+      changes.push({ text: step.label, from: step.started_ms ?? null });
+      ended = step.ended_ms ?? null;
+    }
+  }
+  const active = dash.plan && latest && isOpen(latest) && latest.steps.some(s => s.status === "active");
+  if (changes.length && !active) changes.push({ text: WORDS.timeline.watch, from: ended });
+  return changes;
+}
+
+export function currentStatusRowsOf(dash: DashData): StatusRow[] {
+  function row(id: TimelineRow, changes: StatusChange[]): StatusRow {
+    const result: StatusRow = { id, current: null, previous: null, since: null };
+    for (const change of changes) {
+      if (change.text === result.current) continue;
+      result.previous = result.current;
+      result.current = change.text;
+      result.since = change.from;
+    }
+    return result;
+  }
+  const people = distinctEvents(dash.people, p => JSON.stringify([p.at_ms, p.state, p.name])).sort((a, b) => a.at_ms - b.at_ms);
+  const person = personSpans({ ...dash, people });
+  const user = row("person", person);
+  // 이름 없는 상태나 확인 종료 뒤 새 관찰이 없으면 닫힌 구간을 현재로 되풀이하지 않는다.
+  if (person.length && person.at(-1)!.to !== null) {
+    user.previous = user.current;
+    user.current = null;
+    user.since = null;
+  }
+  return [user, row("robot", robotChanges(dash))];
 }
 
 /** 사람이 떠난 때 → 그 뒤 첫 명령: 목표 행동과 같은 계획 가운데 첫 단계가 떠난 뒤 가장 먼저 시작한 것. */

@@ -7,6 +7,7 @@
 import { writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { sayLine } from "../../src/act/say.js";
+import { captionOf } from "../../src/server/home/act.js";
 import { modeNow } from "../../src/act/mode.js";
 import { planIdOf } from "../../src/act/tasks.js";
 import { assemblePlan, type DraftStep } from "../../src/agent/planShape.js";
@@ -223,6 +224,7 @@ function build(): { moments: Moment[]; coach: Moment } {
       { type: "thought", messages: decisionLines(decision).map((text, i) => ({ id: `${decisionId}@${T0 + STEP_MS}:${i}`, text, at_ms: T0 + STEP_MS, decision: decisionId })) },
       { type: "brain", event: observe },
       seen,
+      { type: "phone_command", text: captionOf(command) },
       { type: "say", text: sayLine({ plan: open, command, world, nowMs: now }) },
       // 서버가 정한 지금 행동 모드(src/act/mode.ts): 컵 치우기는 눈치 모드
       { type: "mode", mode: modeNow({ world, offNotices: [], coaching: false, action: decision.action }) },

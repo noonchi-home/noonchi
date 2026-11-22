@@ -30,7 +30,7 @@ import {
   nonDefault, ownMaterials, powerValues, stateText, tickSpins, valueKey, valueLabel, wiringStatus,
 } from "./states.mjs";
 import { cctvPose } from "./cctv.mjs";
-import { cameraHeading, ceilingVisible, collectWalls, cutAction, focusVisible, openingRooms, wallVisibility } from "./walls.mjs";
+import { cameraHeading, ceilingVisible, collectWalls, cutAction, focusVisible, furnitureAction, openingRooms, wallVisibility } from "./walls.mjs";
 import { startLive } from "./live.mjs";
 import { eyeTransform } from "./eye.mjs";
 import { boxSpec, focusExpiry, focusTargets, routeLayout } from "./layout.mjs";
@@ -167,6 +167,7 @@ let sceneRoot = null; // 지금 불러온 'Apartment' 노드(실행 중 더한 �
 let items = new Map(); // id → {entry, node, states, attrs, targets, placeholder, wiring, badge} (상태 있는 것)
 let walls = [];
 let wallOf = new Map(); // 문·창 id → 벽 id
+let doorIds = new Set();
 let stateCtx = createContext();
 const stateStore = new Map(); // id → {attr: value}. 불러오기 방식을 바꿔도 유지한다.
 let mode = "scene";
@@ -175,7 +176,7 @@ let selected = null;
 let token = 0;
 let viewHeight = 10; // 전체 화면(zoom 1)의 정사영 세로 길이
 let home = { target: [0, 0, 0] };
-const view = { wallMode: "full", focus: null, showCeiling: false, isolate: true, badges: true, dirty: true, cctv: false };
+const view = { wallMode: $("walls").value, focus: null, showCeiling: false, isolate: true, badges: true, dirty: true, cctv: false };
 // 폰 기준점 벽 고르기 중이면 대시보드가 준 콜백(startPick). 아래 '폰 기준점' 절과 CCTV가 같이 쓴다
 let pickHandler = null;
 let connects = new Map(); // 문·창 id → 맞닿은 방들(openingRooms)
@@ -287,6 +288,7 @@ function setupStage() {
   const rooms = $("room");
   for (const r of data.plan.rooms) rooms.append(new Option(r.label ?? r.id, r.id));
   wallOf = new Map([...(data.plan.doors ?? []), ...(data.plan.windows ?? [])].map((d) => [d.id, d.wall]));
+  doorIds = new Set((data.plan.doors ?? []).map((d) => d.id));
   connects = openingRooms(data.plan, data.objects);
   resize();
 }
@@ -465,7 +467,8 @@ function updateVisibility() {
     const node = nodes.get(entry.id);
     if (!node) continue;
     const item = items.get(entry.id);
-    const action = cutAction(item ? { ...entry, states: item.states } : entry, upper, cutHeight(), wallOf);
+    const furniture = !view.cctv && view.wallMode !== "full" ? furnitureAction(entry, doorIds) : null;
+    const action = furniture ?? cutAction(item ? { ...entry, states: item.states } : entry, upper, cutHeight(), wallOf);
     const hidden = !ceilingVisible(entry, shown) || action === "hide" || !focusVisible(entry, { ...shown, connects });
     const clipped = action === "clip";
     const prev = objCache.get(entry.id) ?? { hidden: false, clipped: false };

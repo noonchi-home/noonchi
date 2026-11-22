@@ -1,11 +1,17 @@
 // @vitest-environment node
 // 가짜 단계(debug.ts) 주소 설정과 순간 자료.
 import { describe, expect, it } from "vitest";
+import { STEP_COMMAND } from "../../../src/act/labels";
 import { EMPTY_DASH, modeNow, reduceDash, talkOf } from "../../src/dashboard/data";
 import { COACH_MOMENT, debugPhone, debugQuery, FIND_LINE, modeMoment, MOMENTS, talkMoment, WIDE_FRAME, WIDE_TOP, wideMoment, type Moment } from "../../src/dashboard/debug";
 
 /** 순간 메시지를 차례로 넣은 메시지 상자. */
 const talkAt = (m: Moment) => talkOf(m.messages.reduce((s, x, i) => reduceDash(s, x, i), EMPTY_DASH));
+
+it("컵 시연은 현재 단계의 공개 폰 지시만 내보내고 대기 중에는 비운다", () => {
+  const captions = MOMENTS.map((m) => m.messages.flatMap((event) => event.type === "phone_command" && event.text !== null ? [event.text] : []));
+  expect(captions).toEqual([[], [STEP_COMMAND.goTable], [STEP_COMMAND.pickCup], [STEP_COMMAND.goSink], [STEP_COMMAND.placeCup]]);
+});
 
 describe("가짜 단계 가로 눈 그림(&wide=1)", () => {
   it("주소에 wide=1이 있을 때만 가로다", () => {

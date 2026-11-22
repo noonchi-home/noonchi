@@ -15,6 +15,7 @@ import { PreDrawing, useFadeIn } from "./motion";
 import { checkDotLayers, dimLayer, goalRingLayers, lineLayers, roomEdgeLayer, type Layer, type MarkTone } from "./marks";
 import { toScreen, type Px } from "./camera";
 import { mapScene, type Box } from "./scene";
+import { SpatialRelations } from "./SpatialRelations";
 
 /** 밝힌 방 묶음 이름(순서와 상관없음). */
 const roomsKey = (rooms: string[]) => [...rooms].sort().join("+");
@@ -113,7 +114,8 @@ export function MapOverlay({ frame, checks, shapes, roomSets, image, size, cam, 
   const lit = frame.rooms.length ? roomsKey(frame.rooms) : null;
   const litPath = useMemo(() => roomsPath(frame.rooms, shapes), [frame.rooms, shapes]);
   const { planned } = frame;
-  const { points, checks: shownChecks, labels, keep } = mapScene(frame, checks, shapes, size, cam, blocked);
+  const scene = mapScene(frame, checks, shapes, size, cam, blocked);
+  const { points, checks: shownChecks, labels, keep } = scene;
   const screenAt = (p: Px) => toScreen(cam, size, p);
   const markTone = (id: string): MarkTone => {
     const d = devices.get(id);
@@ -174,6 +176,7 @@ export function MapOverlay({ frame, checks, shapes, roomSets, image, size, cam, 
           const p = screenAt(planned.person.px);
           return <div data-person-tag className="absolute -translate-x-1/2 -translate-y-full" style={{ left: p.x, top: p.y }}><Status>{planned.person.text}</Status></div>;
         })()}
+        <SpatialRelations frame={frame} cam={cam} size={size} scene={scene} blocked={blocked} />
         <BubbleLayer checks={shownChecks} devices={devices} objects={objects} points={points} avoid={avoid} keep={keep} />
       </div>
     </div>

@@ -174,4 +174,12 @@ describe("비전 미니맵만(?view=minimap)", () => {
     await mount(true);
     expect(box(pane())).toEqual(["0px", "40px", "1280px", "720px"]);
   });
+
+  it("연결이 끊기면 지난 명령을 바로 지운다", async () => {
+    await mount(true);
+    send([{ type: "phone_command", text: "컵을 들어 주세요" }]);
+    expect(screen.getByText("컵을 들어 주세요")).toBeInTheDocument();
+    act(() => FakeSocket.last!.onclose?.());
+    expect(screen.queryByText("컵을 들어 주세요")).toBeNull();
+  });
 });

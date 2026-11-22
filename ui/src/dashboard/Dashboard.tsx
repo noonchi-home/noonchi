@@ -9,9 +9,9 @@ import { useEvents } from "../lib/use-events";
 import { useHealth } from "../lib/use-health";
 import { TwinStage, useAnchors, type TwinEngine, LiveQueue, attachLive, BAKE_VIEWS, Twin3D, useLayoutBox } from "../twin";
 import { useViewer } from "../lib/twin-viewer";
-import { focusOf, still, watchFocus, wholeOf, wideCamera, type Camera } from "./camera";
+import { activityFocus, still, wholeOf, wideCamera, type Camera } from "./camera";
 import { currentStep, isOpen, modeNow, stepIndex, talkOf } from "./data";
-import { timelineLast, timelineOf } from "./timeline";
+import { currentStatusRowsOf, timelineLast } from "./timeline";
 import { goalOf, type GoalNow } from "./goal";
 import { DashboardScreen } from "./DashboardScreen";
 import { debugPhone, debugQuery, useDebugSteps, type Moment } from "./debug";
@@ -23,6 +23,12 @@ import { MapOverlay } from "./MapOverlay";
 import { CAMERA_MS, useReducedMotionNow } from "./motion";
 import type { PhoneSlot } from "./PhonePane";
 import { useDash } from "./use-dash";
+import type { TwinView } from "./bento-layout";
+import { NarrationPane } from "./NarrationPane";
+import { narrationOf } from "./narration";
+import type { RelationGraphData } from "./relations";
+import { useRelations } from "./use-relations";
+import { usePhoneCommand } from "./use-phone-command";
 
 declare global {
   interface Window { __twin3d?: { engine: TwinEngine | null; ready: boolean } }
@@ -92,13 +98,15 @@ function useHomeData(home: string | null): HomeData | null {
 /**
  * 구운 3D 트윈(TwinStage와 같은 틀): 캔버스와 그 위 표시 판(MapOverlay: 경로·목적지·확인한 것·어둡게 한 방·말풍선).
  * 계획·맞춘 눈은 대시보드 자료(data.ts)의 것이다. 클로이드(맞춘 눈)는 엔진 장면의 보는 방향 원뿔이다(engine.setEye).
- * 지도 카메라는 그 단계에 중요한 것(focusOf)을, 지켜보기는 클로이드가 있는 방과 그 원뿔(watchFocus)을 트윈이 가리지 않는 빈 곳(layout.camPad 안쪽: 칩 줄·미니맵·메시지 상자·시간 줄 카드·마스코트 밖)
- * 가운데에 두고 빈 곳을 채우게 당기며, 작은 눈 움직임(still)에는 그대로 둔다.
+ * 작은 지도는 지금 단계·사람·맞춘 폰 주변을 확대한다. 전체 보기에서는 방 전체의 경계를 맞춘다.
  * 바뀌면 CAMERA_MS 동안 옮긴다(움직임 줄이기면 바로). 종류를 정하기 전(home null)에는 캔버스 없이 틀만.
  * 엔진이 뜨고 버려질 때 onEngine, 첫 그림을 그리면 onReady.
  */
-function BakedStage({ home, layout, plan, eye, goal, checks, devices, onEngine: toLive, onReady: toReady }: {
+function BakedStage({ home, homeData, layout, view, anchors, plan, eye, goal, checks, devices, onEngine: toLive, onReady: toReady }: {
   home: string | null;
+  homeData: HomeData | null;
+  view: TwinView;
+  anchors: RelationGraphData["anchors"];
   layout: PageLayout;
   plan: PlanView | null;
   eye: EyeEvent | null;
@@ -113,7 +121,6 @@ function BakedStage({ home, layout, plan, eye, goal, checks, devices, onEngine: 
   const size = useLayoutBox(box);
   const v = home ? BAKE_VIEWS[home] : undefined;
   const [engine, setEngine] = useState<TwinEngine | null>(null);
-  const homeData = useHomeData(home);
   // 판단·확인 표시는 지금 그 대상이 있는 자리(지금 단계 자리, 손에 든 물건이면 폰 눈, 놓은 면)를 따라간다(checks.ts spotOf)
   const spot = useMemo(() => (homeData ? spotOf({
     plan, world: checks.world, eye: eye && !eye.estimated ? eye : null, scene: (id) => homeData.names.has(id) || devices.has(id),
@@ -123,13 +130,13 @@ function BakedStage({ home, layout, plan, eye, goal, checks, devices, onEngine: 
   // 말풍선·이름표가 비킬 클로이드 자리는 원뿔을 그리는 자리(방 안·벽에서 떨어진 자리)다. 엔진에는 받은 눈을 그대로 넣는다
   const drawn = useMemo(() => (eye && engine && !eye.estimated ? { ...eye, position: engine.stand(eye.position) } : eye), [eye, engine]);
   const frame = useMemo(
-    () => (v && homeData ? twinFrame({ plan, eye: drawn, checks: list, anchor: (id) => engine?.anchor(id) ?? null, home: homeData.index, cam: v, world: checks.world ?? null, goal }) : null),
-    [v, homeData, plan, drawn, list, engine, checks.world, goal],
+    () => (v && homeData ? twinFrame({ plan, eye: drawn, checks: list, anchor: (id) => engine?.anchor(id) ?? null, home: homeData.index, cam: v, world: checks.world ?? null, goal, anchors }) : null),
+    [v, homeData, plan, drawn, list, engine, checks.world, goal, anchors],
   );
   const roomSets = useMemo(() => (frame?.plan && homeData ? roomSetsOf(frame.plan, homeData.index) : []), [frame?.plan, homeData]);
   // 집 전체(모든 방)는 가장 먼 보기다
   const whole = useMemo(() => (homeData ? wholeOf(homeData.index.shapes) : null), [homeData]);
-  const focus = frame && homeData ? focusOf(frame, homeData.index.shapes) ?? watchFocus(frame, homeData.index.shapes) : null;
+  const focus = view !== "overview" && frame && homeData ? activityFocus(frame, homeData.index.shapes) : null;
   // 맞출 곳(계획 단계는 그 단계에 중요한 것, 지켜보기는 클로이드가 있는 방)을 빈 곳 가운데에 두고 빈 곳을 채우게 당긴다
   const want = !v || size.width <= 0 || size.height <= 0 ? null : wideCamera(v, size, focus, layout.camPad, whole);
   const last = useRef<Camera | null>(null);
@@ -189,6 +196,8 @@ export function Dashboard() {
   const [bakedReady, setBakedReady] = useState(false);
   const [screenReady, setScreenReady] = useState(false);
   const homeId = health?.home?.id ?? null;
+  const homeData = useHomeData(homeId);
+  const { command, onMessage: toPhone, onDelay: onPhoneDelay, reset: clearPhone } = usePhoneCommand();
   const live = useRef<ReturnType<typeof attachLive> | null>(null);
   const queue = useRef(new LiveQueue());
   const kindRef = useRef<"three" | "iframe" | null>(null);
@@ -202,16 +211,25 @@ export function Dashboard() {
     if (!debug) {
       toChecks(m);
       toDash(m);
+      toPhone(m);
     }
     if (m.type === "agent" && m.event === "action" && m.action.deviceId) setFocusId(m.action.deviceId);
     if (live.current) live.current.handle(m);
     else if (kindRef.current !== "iframe") queue.current.push(m);
-  }, [apply, toChecks, toDash, homeId, debug]);
-  useEvents(onMessage, setConnected);
+  }, [apply, toChecks, toDash, toPhone, homeId, debug]);
+  const onConnection = useCallback((open: boolean) => {
+    setConnected(open);
+    if (!open && !debug) clearPhone();
+  }, [clearPhone, debug]);
+  useEvents(onMessage, onConnection);
   const onMoment = useCallback((m: Moment) => {
     load(m.messages);
-    for (const message of m.messages) toChecks(message);
-  }, [load, toChecks]);
+    clearPhone();
+    for (const message of m.messages) {
+      toChecks(message);
+      toPhone(message);
+    }
+  }, [load, toChecks, toPhone, clearPhone]);
   const kind = useTwinKind(homeId, health !== null);
   kindRef.current = kind;
   // 트윈이 없는 집은 기다리지 않는다
@@ -240,23 +258,24 @@ export function Dashboard() {
         <MapReady onReady={setViewerReady} />
       </TwinStage>
     )
-    : (layout: PageLayout) => (
-      <BakedStage home={kind === "three" ? homeId : null} layout={layout} plan={dash.plan} eye={dash.eye} goal={goal} checks={checks} devices={devices} onEngine={onEngine} onReady={onBakedReady} />
+    : (layout: PageLayout, view: TwinView) => (
+      <BakedStage home={kind === "three" ? homeId : null} homeData={homeData} layout={layout} view={view} anchors={graph.anchors} plan={dash.plan} eye={dash.eye} goal={goal} checks={checks} devices={devices} onEngine={onEngine} onReady={onBakedReady} />
     );
   const plan = isOpen(dash.plan) ? dash.plan : null;
   // talkOf가 읽는 것 모두: 판단·줄·안전 알림·계획(머리)·행동별 모드
   const talk = useMemo(() => talkOf(dash), [dash.decision, dash.talk, dash.safety]);
   // 시간 줄 카드가 읽는 것: 사람 상태·습관 그림(이름)·목표·최근 계획. 목표(트윈 고리·미리 그린 길)는 목표·계획
-  const timeline = useMemo(() => timelineOf(dash), [dash.people, dash.habit, dash.goal, dash.plans, dash.plan]);
+  const statusRows = useMemo(() => currentStatusRowsOf(dash), [dash.people, dash.robots, dash.habit, dash.goal, dash.plans, dash.plan]);
   // 가짜 단계 화면은 그 순간 자료의 가장 늦은 때 DEBUG_AFTER_MS 뒤를 지금으로 멈춰 그린다(마지막 단계도 보이게)
   const last = debug ? timelineLast(dash) : null;
   const timelineNow = last === null ? undefined : last + DEBUG_AFTER_MS;
+  const graph = useRelations(dash, checks.world ?? null, homeData?.names, online !== false, timelineNow);
   const goal = useMemo(() => goalOf(dash), [dash.goal, dash.plan]);
   const mode = modeNow(dash);
   return (
     <DashboardScreen
       index={stepIndex(plan)} plan={plan} step={currentStep(plan)} robotKnown={dash.eye !== null} connected={online} map={map} mapReady={mapReady}
-      phone={phone} seen={seen} talk={talk} timeline={timeline} timelineNow={timelineNow}
+      phone={phone} command={command} onPhoneDelay={onPhoneDelay} narration={new URLSearchParams(location.search).get("view") === "overview" ? undefined : <NarrationPane lines={narrationOf(dash, command, online)} />} seen={seen} talk={talk} statusRows={statusRows} timelineNow={timelineNow}
       mode={mode} hub={hub} settingsOpen={debug?.settings} onReady={onScreenReady} tzMinutes={health?.tz_minutes ?? null}
     />
   );

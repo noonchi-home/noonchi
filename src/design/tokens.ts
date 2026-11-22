@@ -12,6 +12,7 @@ export const color = {
   "ink-2": "#574f50",
   "ink-3": "#645b5b",
   "ink-4": "#9b918e",
+  "bento-surface": "#ffffff",
   "page": "#fffcf8",
   "canvas": "#f8f2ea",
   "surface": "#fffcf8",

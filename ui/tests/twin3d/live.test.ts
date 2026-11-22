@@ -390,3 +390,11 @@ describe("엔진 전 메시지", () => {
     expect(q.drain()).toEqual([state(FRIDGE, { door: "open" })]);
   });
 });
+
+it("배치 사건으로 더한 식탁 의자도 경로 화면에 나오지 않고 다른 의자는 보인다", async () => {
+  const { engine } = fakeEngine();
+  for (const type of ["dining_chair", "armchair"]) {
+    await engine.layout.add({ ...crate, id: type, type });
+    expect(engine.find(type)?.visible).toBe(type === "armchair");
+  }
+});
