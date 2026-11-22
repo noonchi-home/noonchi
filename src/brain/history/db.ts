@@ -7,6 +7,7 @@ import { DatabaseSync } from "node:sqlite";
 import { CupAnswers } from "./cup-answer.js";
 import type { DecisionRow, HistoryKind, HistoryRow } from "../../contract/history.js";
 import type { AssistanceOutcome } from "../../contract/assistance-outcome.js";
+import type { BeerEvent, BeerRule } from "../../contract/beer.js";
 import { interventionChanges, type CurrentIntervention, type HabitContext, type Intervention, type InterventionPreference } from "./intervention.js";
 
 export type { DecisionRow, HistoryKind, HistoryRow } from "../../contract/history.js";
@@ -29,6 +30,8 @@ CREATE TABLE IF NOT EXISTS bus_seen (topic TEXT NOT NULL, grp TEXT NOT NULL, msg
 CREATE TABLE IF NOT EXISTS device_last (id TEXT PRIMARY KEY, twin TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS assistance_seen (home TEXT NOT NULL, boot TEXT NOT NULL, home_epoch TEXT NOT NULL, attempt_id TEXT NOT NULL, PRIMARY KEY (home, boot, home_epoch, attempt_id));
 CREATE INDEX IF NOT EXISTS idx_assistance_outcome_day ON events(day, at_ms) WHERE kind = 'assistance_outcome';
+CREATE INDEX IF NOT EXISTS idx_beer_observation_day ON events(day, at_ms) WHERE kind = 'household' AND json_extract(data, '$.event') = 'beer_observation';
+CREATE TABLE IF NOT EXISTS beer_rules (version INTEGER PRIMARY KEY, rules TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS assistance_nights (day TEXT PRIMARY KEY, robot INTEGER NOT NULL, candidates INTEGER NOT NULL, result TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS intervention_preferences (
   home TEXT NOT NULL, user TEXT NOT NULL, action TEXT NOT NULL, context TEXT NOT NULL,
@@ -177,7 +180,7 @@ export class HistoryDb {
 
   /** 밤 저장 하나(BEGIN IMMEDIATE): 로봇 판본·후보 판본·반성 기록을 함께 쓰고, 어느 하나라도 던지면 모두 되돌린 뒤 다시 던진다.
    *  reflection은 로봇 판본 번호로 반성 기록 줄(시각·글·data)을 만든다. */
-  saveNight(o: { day: string; appliesDay: string; robot: unknown; candidates: unknown; kind?: "list" | "fsm"; pin?: () => void;
+  saveNight(o: { day: string; appliesDay: string; robot: unknown; candidates: unknown; kind?: "list" | "fsm"; pin?: () => void; beerRules?: readonly BeerRule[];
     reflection: (robot: number) => { atMs: number; text: string; data: unknown } }): { robot: number; candidates: number } {
     this.db.exec("BEGIN IMMEDIATE");
     try {
@@ -199,6 +202,7 @@ export class HistoryDb {
       const changes = interventionChanges(rows, preferences, scope => this.interventionAt(scope.home, scope.user, scope, o.day), ms => this.dayOf(ms));
       const insert = this.db.prepare("INSERT INTO intervention_policy (home, user, action, context, applies_day, version, policy) VALUES (?, ?, ?, ?, ?, ?, ?)");
       for (const change of changes) insert.run(change.home, change.user, change.action, change.context, o.appliesDay, robot, change.policy);
+      if (o.beerRules?.length) this.db.prepare("INSERT INTO beer_rules (version, rules) VALUES (?, ?)").run(robot, JSON.stringify(o.beerRules));
       const r = o.reflection(robot);
       this.add("reflection", r.atMs, r.text, { data: r.data });
       this.db.prepare("INSERT INTO assistance_nights (day, robot, candidates, result) VALUES (?, ?, ?, ?)")
@@ -209,6 +213,18 @@ export class HistoryDb {
       this.db.exec("ROLLBACK");
       throw e;
     }
+  }
+
+  beerEvents(firstDay: string, lastDay: string): BeerEvent[] {
+    const rows = this.db.prepare(`SELECT data FROM events
+      WHERE kind = 'household' AND json_extract(data, '$.event') = 'beer_observation' AND day BETWEEN ? AND ?
+      ORDER BY at_ms, id`).all(firstDay, lastDay) as { data: string }[];
+    return rows.map(row => (JSON.parse(row.data) as { observation: BeerEvent }).observation);
+  }
+
+  beerRules(version: number): BeerRule[] {
+    const row = this.db.prepare("SELECT rules FROM beer_rules WHERE version = ?").get(version) as { rules: string } | undefined;
+    return row ? JSON.parse(row.rules) as BeerRule[] : [];
   }
 
   night(day: string): { robot: number; candidates: number; result: unknown } | null {

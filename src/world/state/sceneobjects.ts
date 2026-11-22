@@ -48,6 +48,8 @@ interface Fresh { obj: Obj; at: number; frame: string }
 
 /** 장면 VLM 물건 넣기. */
 export class SceneObjects extends Part {
+  private heldBeerCandidate: Obj | null = null;
+
   /** 장면 VLM 답 하나(원본 프레임 frameId, 촬영 at)의 물건을 넣는다. ids에 VLM 물건 번호와 그 물건이 이어진 감지 번호(det)를 물건 id로 더한다.
    *  look: 그 사진의 카메라·크기·폰 눈·YOLO 감지(카메라가 없으면 undefined). */
   link(frameId: string, at: number, scene: SceneObservation, ids: Map<string, string>, look: SceneLook | undefined): WorldChange[] {
@@ -82,10 +84,17 @@ export class SceneObjects extends Part {
       const placed = lifted || hidden ? null : spot;
       return { v, cls, lifted, hidden, px, edge, spot, placed, obj: null as Obj | null };
     });
+    const beers = items.filter(it => it.cls === "beer_can");
+    const heldBeer = beers.length === 1 && beers[0]!.lifted && !beers[0]!.hidden && !beers[0]!.edge ? beers[0] : null;
+    if (!heldBeer && look?.fresh && this.heldBeerCandidate && at > this.heldBeerCandidate.lastSeen) this.heldBeerCandidate = null;
     // 0차: 든 물건은 실행 추적의 집기 대상이 먼저다(들린 근거: 이 답의 손에 있음). 이을 컵이 모호하면 미룬다(liftTarget null)
     for (const it of items) {
       if (!it.lifted) continue;
-      it.obj = core.focusTarget(it.cls, null, used, true) ?? this.liftTarget(it.cls, eye, used);
+      it.obj = core.focusTarget(it.cls, null, used, true) ?? this.liftTarget(it.cls, eye, used, at);
+      // A fridge may hide a can until it is in hand. Two fresh, separate captures can establish a can without assigning it a surface.
+      if (!it.obj && it === heldBeer && eye && look?.fresh) {
+        it.obj = this.confirmHeldBeer(at, frameId, eye, used);
+      }
       if (it.obj) used.add(it.obj.id);
     }
     // 1차: 자리로 잇기(core.matchAt, VLM_MATCH_M 안)를 가까운 짝부터 한다. 같은 답의 먼 상자가 시야 안 물건을 먼저 가져가 가까운 상자가 새 id가 되지 않게(가로 키 큰 컵 v1)
@@ -104,6 +113,9 @@ export class SceneObjects extends Part {
       let obj = it.obj;
       // 손에 있던 물건이 다른 자리 PUT_DOWN_M 안에 다시 보였다(내려놓음)
       if (!obj && spot?.position && !lifted) obj = core.putDown(cls, spot.position, used);
+      if (!obj && cls === "beer_can" && beers.length === 1 && placed?.position && placed.surface && look?.fresh) {
+        obj = this.beerPutDown(at, used, placed.position, placed.surface, placed.part);
+      }
       // 실행 추적이 지금 집기·내려놓기 하는 대상(들린 컵, 바짝 댄 잔: 그 사진에서 대상 자리가 상자 안에 비침, 목적지에 놓인 컵)
       const sees = look && px ? (p: V3) => {
         const q = pixelOf(look.view, p, { width: look.width, height: look.height });
@@ -112,7 +124,7 @@ export class SceneObjects extends Part {
       if (!obj) obj = core.focusTarget(cls, spot?.position ?? null, used, false, sees, eye);
       // 그 사진 시야 안에 아직 이 답에서 쓰지 않은 같은 무리 확인 물건이 하나뿐이면 그것이다(거리 제한 없음, 둘 이상이면 모호해 미룬다). VLM 상자 투영은 많이 흔들려
       // 같은 컵이 새 id가 됐다(가로 유리컵 r10·키 큰 컵 r4·머그 r7 재생). 새 물건은 시야 안 확인 물건보다 VLM이 더 많이 답할 때만 만든다
-      if (!obj && !lifted && look) obj = this.inViewKin(cls, used, look.view);
+      if (!obj && !lifted && look && cls !== "beer_can") obj = this.inViewKin(cls, used, look.view);
       // 맞추기 전(카메라를 본 적 없음): 자리를 모르니 같은 무리 물건을 처음 본 순서로 잇는다. 손에 든 물건은 같은 종류만(냉장고에서 꺼낸 병이 식탁 컵이 되지 않게)
       if (!obj && !look) obj = this.blindKin(cls, used, lifted);
       // VLM 무조건 우선: YOLO가 못 봤어도 VLM이 본 물건은 있다. 놓인 자리와 그 사진의 폰 눈을 알 때(맞추기 전은 자리 없이) 후보로 만든다.
@@ -222,15 +234,48 @@ export class SceneObjects extends Part {
 
   /** 손에 있음으로 답한 물건이 이을 물건: 손에 있는 같은 무리 확인 물건이 하나면 그것(둘 이상이면 모호), 아니면 그 사진의 폰 눈 REACH_M 안의 확인된 같은 무리 물건이
    *  하나일 때 그것(같은 종류가 있으면 같은 종류 중에서). 모호하면 null(잇기를 미룬다). */
-  private liftTarget(cls: ObjClass, eye: Plan2 | null, used: ReadonlySet<string>): Obj | null {
+  private liftTarget(cls: ObjClass, eye: Plan2 | null, used: ReadonlySet<string>, at: number): Obj | null {
     const kin = [...this.core.objects.values()].filter((x) => x.confirmed && !used.has(x.id) && sameDrinkware(x.cls, cls));
-    const held = kin.filter((x) => x.facts.place?.value === POSE_HOLD.object);
+    const held = cls === "beer_can" ? this.recentHeldBeers(at, used) : kin.filter((x) => x.facts.place?.value === POSE_HOLD.object);
     if (held.length) return held.length === 1 ? held[0]! : null;
     if (!eye) return null;
     const near = kin.filter((x) => x.position && Math.hypot(x.position[0] - eye[0], x.position[2] - eye[1]) <= REACH_M);
     const same = near.filter((x) => x.cls === cls);
     const pool = same.length ? same : near;
     return pool.length === 1 ? pool[0]! : null;
+  }
+
+  private recentHeldBeers(at: number, used: ReadonlySet<string>): Obj[] {
+    return [...this.core.objects.values()].filter(o => o.cls === "beer_can" && o.confirmed && o.status !== "gone"
+      && !used.has(o.id) && at >= o.lastSeen && at - o.lastSeen <= VLM_CANDIDATE_MS
+      && o.facts.place?.value === POSE_HOLD.object);
+  }
+
+  private beerPutDown(at: number, used: ReadonlySet<string>, position: V3, surface: string, part: Obj["part"]): Obj | null {
+    // Continue a put-down across the two captures needed to confirm its new surface.
+    const pending = [...this.core.objects.values()].filter(o => {
+      const vote = o.posVote;
+      return o.cls === "beer_can" && o.heldSeen && o.confirmed && o.status !== "gone" && !used.has(o.id) && vote
+        && o.lastSeen === vote.at && at > vote.at && at - vote.at <= VLM_CANDIDATE_MS
+        && vote.surface === surface && vote.part === part && dist(vote.position, position) <= VLM_MATCH_M;
+    });
+    if (pending.length) return pending.length === 1 ? pending[0]! : null;
+    const held = this.recentHeldBeers(at, used);
+    if (held.length !== 1) return null;
+    const hand = held[0]!.trail.at(-1)?.position;
+    return hand && dist(hand, position) <= REACH_M ? held[0]! : null;
+  }
+
+  private confirmHeldBeer(at: number, frame: string, eye: Plan2, used: ReadonlySet<string>): Obj | null {
+    if (this.recentHeldBeers(at, used).length) return null;
+    const pending = this.heldBeerCandidate;
+    if (pending && at <= pending.lastSeen) return null;
+    if (pending && !pending.confirmed && at - pending.lastSeen <= VLM_CANDIDATE_MS
+      && pending.vlmEye && Math.hypot(eye[0] - pending.vlmEye[0], eye[1] - pending.vlmEye[1]) <= VLM_STILL_M) return pending;
+    const next = this.core.create("beer_can", at, frame);
+    next.vlmEye = eye;
+    this.heldBeerCandidate = next;
+    return next;
   }
 
   /** 장면 VLM 상자 자리로 옮기는가: 자리를 모르는 물건·후보는 옮긴다. 확인된 물건은 VLM_MOVE_M 안 흔들림은 버리고, 그보다 먼 자리는 다른 원본 프레임의 더 새 촬영이

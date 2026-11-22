@@ -7,6 +7,7 @@ export const CLASS_DOC: Record<ClassKey, string | null> = {
   person: "A person has been out of view for 30 minutes and a cup remains on the dining table.",
   cup: "An empty cup remains on the dining table after the person leaves.",
   bottle: "A bottle has been on the floor for ten minutes.",
+  beer_can: "The same beer can remains on the coffee table after the viewer leaves.",
   bowl: "A bowl containing food has been on the table for an hour.",
   fork: "A fork remains on the dining table after a meal.",
   knife: "A knife is on the counter when the person leaves the kitchen.",

@@ -79,6 +79,7 @@ export class HomeCore {
   lessons!: LessonStore;
   thoughts: ThoughtFeed | null = null;
   decider: Decider | null = null;
+  beer?: import("./beer.js").HomeBeer;
   tracker: ExecutionTracker | null = null;
   looker: Looker | null = null;
   /** 실제 폰 대화(말 요청 에이전트) 사용: 처리 중인 말 수와 마지막으로 끝난 시각. 실행 추적이 끼어들지 않게 본다(act.ts talking). */

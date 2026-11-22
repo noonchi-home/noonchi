@@ -6,6 +6,7 @@ import { LEARNED_ACTIONS, TASKS } from "../../act/tasks.js";
 import type { CandidateFsm } from "../../contract/pam.js";
 import type { FsmMemory } from "../decision.js";
 import type { HistoryRow } from "../../contract/history.js";
+export { learnBeerRules, matchesBeerRule } from "./beer-rules.js";
 
 /** 거르기 입력: 반성한 날, 그날 쓴 로봇 FSM, 새 로봇 FSM, 지난 windowDays일 기록(world·device·decision·execution·feedback, 시각 순), 기록 시간대(분). */
 export interface HabitInput {

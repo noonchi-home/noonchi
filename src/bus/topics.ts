@@ -8,6 +8,7 @@ import { CHECK_TEXT } from "../act/labels.js";
 import { ConditionSchema } from "../world/condition-schema.js";
 import type { DecisionRecord } from "../contract/events.js";
 import type { AssistanceOutcome } from "../contract/assistance-outcome.js";
+import type { BeerEvent } from "../contract/beer.js";
 import type { PlanAhead, PlanResult } from "../contract/plan-work.js";
 import type { WorldObject } from "../contract/world.js";
 import type { DeviceState } from "../contract/devices.js";
@@ -338,6 +339,12 @@ const assistanceOutcome = z.strictObject({
   proof: assistanceProof.nullable(),
 }) satisfies z.ZodType<AssistanceOutcome>;
 
+const beerStamp = { home: identity, user: identity, device: identity, originId: identity, atMs: z.number() };
+const beerEvent = z.union([
+  z.strictObject({ ...beerStamp, kind: z.enum(["tv_on", "tv_off"]) }),
+  z.strictObject({ ...beerStamp, kind: z.enum(["beer_taken", "can_put_away"]), object: identity, provenance: z.enum(["resident", "assistance"]) }),
+]) satisfies z.ZodType<BeerEvent>;
+
 export const TOPICS = {
   "/perception/localize": {qos:{kind:"reliable"}, body:photoRequest, key:by("frame_id"), order:null, from:["perception"]},
   "/perception/localized": {qos:{kind:"reliable"}, body:localized, key:by("frame_id"), order:null, from:["localize"]},
@@ -394,6 +401,7 @@ export const TOPICS = {
   "/act/plan": { qos: { kind: "state" }, body: z.strictObject({ plan: wirePlan.nullable() }), key: one, order: "stamp", from: ["act"] },
   "/act/status": { qos: { kind: "state" }, body: actStatus, key: one, order: "stamp", from: ["act"] },
   "/act/log": { qos: { kind: "reliable" }, body: actLog, key: one, order: "stamp", from: ["act"] },
+  "/act/beer_observation": { qos: { kind: "reliable" }, body: beerEvent, key: by("device"), order: null, from: ["act"] },
   "/act/assistance_outcome": { qos: { kind: "reliable" }, body: assistanceOutcome, key: (b: Record<string, unknown>) => {
     const key = b.key as AssistanceOutcome["key"];
     return JSON.stringify([b.home, key.boot, key.homeEpoch, key.attemptId]);
