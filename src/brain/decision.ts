@@ -346,7 +346,7 @@ export const CUP_FSM_MEMORY: FsmMemory = {
   initial_state: "away",
   states: [
     {
-      id: "drinking", description: "사용자가 마시는 중이다.", activity: ["drinking", "eating"],
+      id: "drinking", description: "사용자가 먹거나 마시는 중이다.", activity: ["drinking", "eating"],
       next: [
         // 컵 치우기는 배우는 습관이라 seed에 없다(2026-11-18 사용자 답): 떠날 때는 묻고, 채택 검사를 지난 컵 치우기 후보가 이 화살표를 바꾼다
         { to: "*", on: "사용자가 먹거나 마시기를 끝내고 다른 일로 넘어간다.", action: "사용자에게 물어보기" },
