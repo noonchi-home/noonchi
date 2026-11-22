@@ -39,6 +39,8 @@ export interface FsmStep { state: string; from: string | null; next_index: numbe
 
 /** 후보 하나: 사람 사건(on)과 사람 쪽 조건(when). 상태 id·이 글은 반성이 바꾸지 않는다(검사 결과가 (상태 id, 행동, on, when)에 묶인다). */
 export interface Candidate { on: string; when?: string }
+/** 규칙 맥락(코드가 붙이고 반성 모델은 모른다): 요일 dow(월요일 0 … 일요일 6)와 3시간 간격 시각 칸 slot(0~7, 6=18~21시). 하나 이상 있어야 하고 둘 다 있으면 둘 다 맞아야 한다. src/brain/ctx.ts. */
+export interface Ctx { dow?: number; slot?: number }
 /** (출발 상태, 행동)마다 후보 1~3개와 도착(to: 상태 id 또는 "*"). */
 export interface CandidateRule { to: string; action: string; candidates: Candidate[] }
 /** 후보 FSM 상태: 행동 없는 화살표(next)와 배우는 행동의 후보 규칙(rules). */

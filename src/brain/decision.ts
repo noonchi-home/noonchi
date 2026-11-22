@@ -3,7 +3,8 @@
 // 판단 모델은 무엇을 도울지만 정한다. 언제 부를지는 판단 호출 시점(src/world/trigger.ts)이 정한다. 답 글 읽기는 src/brain/pam/answer.ts.
 // 검사 메시지는 PAM 원문(영어)과 같게 두어 두 쪽 기록을 대조하기 쉽게 한다.
 
-import type { CandidateFsm, Prediction, FsmStep } from "../contract/pam.js";
+import type { CandidateFsm, Ctx, Prediction, FsmStep } from "../contract/pam.js";
+import { ctxOverlap, DOW_COUNT, SLOT_COUNT } from "./ctx.js";
 import { PAM_TEXT_MAX } from "../world/browser.js";
 import { STATES } from "../world/vocab.js";
 import { TASKS, TASK_NAMES } from "../act/tasks.js";
@@ -65,8 +66,9 @@ export const MAX_STATES = 12;
 export const PERSON_ACTIVITIES: readonly string[] = Object.entries(STATES)
   .filter(([k, s]) => s.facet === "activity" && k !== "other" && k !== "unknown").map(([k]) => k);
 
-/** 사람 활동 FSM 화살표: 사람의 일이 바뀜(to, 또는 다른 어느 일로든 "*"), 사람 사건(on), 사람 쪽 조건(when), 로봇 행동(action, 없으면 상태만 넘어감). */
-export interface FsmEdge { to: string; on: string; when?: string; action?: string }
+/** 사람 활동 FSM 화살표: 사람의 일이 바뀜(to, 또는 다른 어느 일로든 "*"), 사람 사건(on), 사람 쪽 조건(when), 로봇 행동(action, 없으면 상태만 넘어감),
+ *  요일·시각 맥락(ctx, 코드가 채택 검사에서 붙인다. 행동이 있는 화살표에만 있다. 맥락이 맞지 않는 때는 낮 판단이 이 화살표를 PAM에 보이지 않는다). */
+export interface FsmEdge { to: string; on: string; when?: string; action?: string; ctx?: Ctx }
 /** 사람 활동 FSM 상태: 사람이 하는 일 하나. activity는 World State 사람 하는 일 값(away만 빈 목록). */
 export interface FsmState { id: string; description: string; activity: string[]; next: FsmEdge[] }
 export interface FsmMemory { initial_state: string; states: FsmState[] }
@@ -85,6 +87,20 @@ function objectWith(value: Json, required: string[], optional: string[], path: s
 
 /** 행동 목록의 행동인가. */
 const isAction = (a: string) => TASK_NAMES.includes(a);
+
+/** 화살표 맥락 칸 검사: dow 0~6, slot 0~7 정수 가운데 하나 이상. */
+function parseCtx(value: Json, path: string): Ctx {
+  const c = objectWith(value, [], ["dow", "slot"], path);
+  const out: Ctx = {};
+  for (const [name, count] of [["dow", DOW_COUNT], ["slot", SLOT_COUNT]] as const) {
+    if (!(name in c)) continue;
+    const v = c[name];
+    if (typeof v !== "number" || !Number.isInteger(v) || v < 0 || v >= count) throw new ContractError(`${path}.${name}: expected a whole number from 0 to ${count - 1}`);
+    out[name] = v;
+  }
+  if (out.dow === undefined && out.slot === undefined) throw new ContractError(`${path}: at least one of dow, slot is required`);
+  return out;
+}
 
 /** 사람 활동 FSM 코드 검사(모양, 정답이 분명한 것). 뜻(상태가 사람이 하는 일인지·조건이 사람 쪽인지·합칠 상태)은 기억 뜻 검사(LLM)가 본다. */
 function validateFsm(value: Json): FsmMemory {
@@ -113,17 +129,22 @@ function validateFsm(value: Json): FsmMemory {
       if (owner.has(v)) throw new ContractError(`${p}.activity[${j}]: activity ${pyRepr(v)} is in two states`);
       owner.set(v, id);
     });
-    const keys = new Set<string>();
+    // (사건, 조건)마다 이미 본 맥락: 맥락 없는 화살표는 하나까지, 맥락 있는 화살표끼리는 겹치지 않아야 한다.
+    // 맥락 없는 화살표와 맥락 있는 화살표는 함께 둔다(맥락이 맞는 때는 맥락 있는 쪽이 이긴다. 예: 배우기 전의 묻기 + 토요일에만 배운 행동).
+    const seen = new Map<string, (Ctx | null)[]>();
     array(s.next, `${p}.next`).forEach((e, j) => {
       const ep = `${p}.next[${j}]`;
-      const edge = objectWith(e, ["to", "on"], ["when", "action"], ep);
+      const edge = objectWith(e, ["to", "on"], ["when", "action", "ctx"], ep);
       const to = text(edge.to, `${ep}.to`);
       const on = text(edge.on, `${ep}.on`);
       const when = "when" in edge ? text(edge.when, `${ep}.when`) : null;
+      const ctx = "ctx" in edge ? parseCtx(edge.ctx, `${ep}.ctx`) : null;
       const key = JSON.stringify([on, when]);
-      if (keys.has(key)) throw new ContractError(`${ep}: duplicate transition (on, when) in state ${pyRepr(id)}`);
-      keys.add(key);
+      const before = seen.get(key) ?? [];
+      if (before.some((c) => (c === null && ctx === null) || (c !== null && ctx !== null && ctxOverlap(c, ctx)))) throw new ContractError(`${ep}: duplicate transition (on, when) in state ${pyRepr(id)}`);
+      seen.set(key, [...before, ctx]);
       const action = "action" in edge ? text(edge.action, `${ep}.action`) : null;
+      if (ctx !== null && action === null) throw new ContractError(`${ep}.ctx: a context needs an action`);
       if (action !== null && !isAction(action)) throw new ContractError(`${ep}.action: ${pyRepr(action)} is not an action in the task list (no action means no transition)`);
       if (to === ANY_STATE && action === null) throw new ContractError(`${ep}.to: '*' needs an action`);
       if (to !== ANY_STATE) destinations.push([`${ep}.to`, to]);

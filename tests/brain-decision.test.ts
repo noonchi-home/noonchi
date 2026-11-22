@@ -145,6 +145,45 @@ describe("사람 활동 FSM 코드 검사", () => {
   });
 });
 
+// 2026-11-22 사용자 결정: 규칙에 요일·시각 맥락을 붙인다(맥락 없음 → 하나 → 둘). 맥락은 코드가 붙이고 반성 모델은 모른다. dow 월요일=0…일요일=6, slot 3시간 칸 0~7(0=0~3시, 6=18~21시).
+describe("화살표 맥락(ctx) 칸", () => {
+  const base = () => structuredClone(CUP_FSM_MEMORY) as FsmMemory;
+  const drink = (m: FsmMemory) => m.states.find((s) => s.id === "drinking")!;
+  const edge = (m: FsmMemory, ctx?: unknown) => ({ ...drink(m).next[0]!, action: "컵 치우기", ...(ctx === undefined ? {} : { ctx }) }) as FsmMemory["states"][number]["next"][number];
+  it("맥락이 있는 행동 화살표를 받는다: 요일만, 시각 칸만, 둘 다. 없는 화살표는 지금과 같다", () => {
+    for (const ctx of [{ dow: 5 }, { slot: 6 }, { dow: 0, slot: 0 }, { dow: 6, slot: 7 }]) {
+      const m = base(); drink(m).next.push(edge(m, ctx));
+      expect(validateMemory(m, "fsm")).toBe(m);
+    }
+    expect(validateMemory(CUP_FSM_MEMORY, "fsm")).toBe(CUP_FSM_MEMORY);
+  });
+  // base()의 drinking.next[0]은 맥락 없는 「묻기」 화살표다. 같은 (사건·조건)에 맥락 있는 행동 화살표를 더해도 된다(맥락이 맞는 때는 맥락 있는 쪽이 이긴다. 5단계)
+  it("같은 (사건·조건)에서 맥락 없는 화살표는 하나까지, 맥락 있는 화살표끼리는 겹치지 않아야 한다", () => {
+    const ok = base(); drink(ok).next.push(edge(ok, { dow: 5 }), edge(ok, { dow: 6 }));          // 토요일·일요일 + 맥락 없는 묻기
+    expect(validateMemory(ok, "fsm")).toBe(ok);
+    const slots = base(); drink(slots).next.push(edge(slots, { slot: 2 }), edge(slots, { slot: 6 }));   // 6~9시·18~21시
+    expect(validateMemory(slots, "fsm")).toBe(slots);
+    const split = base(); drink(split).next.push(edge(split, { dow: 5, slot: 6 }), edge(split, { dow: 5, slot: 7 }), edge(split, { dow: 6, slot: 6 }));
+    expect(validateMemory(split, "fsm")).toBe(split);
+    const same = base(); drink(same).next.push(edge(same, { dow: 5 }), edge(same, { dow: 5 }));
+    expect(() => validateMemory(same, "fsm")).toThrow(/duplicate transition/);
+    const cross = base(); drink(cross).next.push(edge(cross, { dow: 5 }), edge(cross, { slot: 6 }));   // 토요일 18~21시에 둘 다 맞는다
+    expect(() => validateMemory(cross, "fsm")).toThrow(/duplicate transition/);
+    const loose = base(); drink(loose).next.push(edge(loose));                                  // 맥락 없는 화살표가 둘
+    expect(() => validateMemory(loose, "fsm")).toThrow(/duplicate transition/);
+  });
+  it("맥락 모양: 빈 값, 범위 밖, 정수 아님, 모르는 칸, 객체 아님은 거절한다", () => {
+    for (const bad of [{}, { dow: 7 }, { dow: -1 }, { slot: 8 }, { slot: -1 }, { dow: 1.5 }, { dow: "월" }, { slot: null }, { dow: 1, extra: 1 }, "토요일", [5], null]) {
+      const m = base(); drink(m).next.push(edge(m, bad));
+      expect(() => validateMemory(m, "fsm"), JSON.stringify(bad)).toThrow(/ctx/);
+    }
+  });
+  it("행동 없는 화살표에는 맥락을 못 붙인다", () => {
+    const m = base(); drink(m).next.push({ to: "away", on: "사용자가 잔다.", ctx: { dow: 5 } } as never);
+    expect(() => validateMemory(m, "fsm")).toThrow(/ctx: a context needs an action/);
+  });
+});
+
 // 2026-11-19 사용자 「그래 그렇게 해」(glass pfsm4-2: 마시는 중 물 채우기 화살표를 잘못 일으켜 목표가 버려짐): 물 채우기는 식탁에 앉아 있을 때만. 사람 자세는 사람 쪽 사실이다
 describe("seed 물 채우기 화살표 조건", () => {
   const water = (m: FsmMemory) => m.states.find((st) => st.id === "drinking")!.next.find((e) => e.action === "컵에 물 채워 주기");
