@@ -2,6 +2,7 @@ import type { AssistanceGoal, EvidenceCheck, EvidenceChoice, EvidenceQuestion, E
 import { acceptEvidence, sameAttempt, type Attempt } from "./attempt.js";
 
 export interface EvidencePorts {
+  now?(): number;
   choose(question: EvidenceQuestion, signal: AbortSignal): Promise<EvidenceChoice | null>;
   acquire(choice: EvidenceChoice, signal: AbortSignal): Promise<{ status: EvidenceStatus; ref?: EvidenceRef } | null>;
 }
@@ -72,8 +73,8 @@ export class EvidenceRun {
       const answer = await this.ports.acquire(choice, signal);
       if (!live() || !("target" in choice)) return;
       const ref = answer?.ref;
-      const accepted = ref && acceptEvidence(this.attempt, key, ref, [choice.target], this.clockMs);
-      this.checks.push({ choice, status: ref && !accepted ? "rejected" : answer?.status ?? "unavailable",
+      const accepted = ref && acceptEvidence(this.attempt, key, ref, [choice.target], this.ports.now?.() ?? this.clockMs);
+      this.checks.push({ choice, status: ref && !accepted && answer?.status === "found" ? "rejected" : answer?.status ?? "unavailable",
         ...(accepted ? { ref } : {}) });
     }).catch(() => {}).finally(() => {
       if (this.job?.abort === abort) this.job = null;

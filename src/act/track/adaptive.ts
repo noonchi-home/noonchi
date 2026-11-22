@@ -158,6 +158,7 @@ export class AdaptiveExecution extends Part {
       this.core.steps.finish(r, "failed", EXEC_TEXT.goalSafety, "cancelled");
       return true;
     }
+    if (r.safePlace) return false;
     const policy = this.policy(r.decision);
     if (r.at < 0 && policy === "defer_proactive") {
       this.core.steps.finish(r, "failed", POLICY_DEFER, "cancelled");
@@ -173,6 +174,10 @@ export class AdaptiveExecution extends Part {
       return true;
     }
     if (result.kind === "changed" && a.goal?.kind === "deliver" && w.destination?.room) {
+      if (r.carried.size) {
+        this.core.steps.safePlace(r);
+        return true;
+      }
       if (!r.carried.size && !this.core.touching(r) && this.core.start.replan(r, w.destination.room, i)) return true;
       // Once manipulation was commissioned the existing stage/finish path owns safety.
       if (!r.carried.size && !this.core.touching(r)) {
@@ -186,7 +191,7 @@ export class AdaptiveExecution extends Part {
         return this.wait(r, i, w);
       }
     }
-    const requires = a.goal && (a.goal.kind === "device" || policy === "verify_first" && r.at < 0 ||
+    const requires = a.goal && (a.goal.kind === "device" || policy === "verify_first" && r.state === "planned" ||
       a.goal.kind === "clear" && step?.kind === "pick" && beforeCommand && !!w.photo);
     if (requires && result.kind === "need_evidence" && r.device !== "running") {
       if (r.device === "sent" || beforeCommand || r.state === "planned") return this.wait(r, i, w);

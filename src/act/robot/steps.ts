@@ -148,6 +148,7 @@ export class Steps extends Part {
 
   /** 지금 단계를 끝내고 다음 단계로. 마지막이었으면 계획 완료. 집기를 마치면 그 물건은 사람이 들고 다니고, 놓기를 마치면 그 물건은 넣은 곳에 치운 것이다. */
   advance(r: Run): void {
+    if (r.safePlace) return this.finish(r, "failed", "물건을 안전하게 내려놓고 도움을 끝냈어요.", "cancelled");
     // 떠나기 직전 사진으로 시작한 목표 실행: 그 대상을 다루는 단계 전에 떠난 뒤 다시 봤는지 본다(없으면 찾기, start.ts held). 붙잡는 동안 지금 단계에 머문다
     const next = r.plan.steps[r.at + 1];
     if (r.meal && next?.kind === "pick" && !r.verify)
@@ -165,12 +166,28 @@ export class Steps extends Part {
     this.activate(r, r.at + 1);
   }
 
+  /** Cancel the old destination immediately. This command never asks the phone to move. */
+  safePlace(r: Run): void {
+    this.clear(r);
+    r.pendingStep = undefined;
+    r.stepEnd?.abort();
+    this.core.adaptive.cancel(r.attempt);
+    const previous = this.core.stepOf(r);
+    if (!previous || !this.core.start.phoneOk()) return this.finish(r, "failed", "들고 있던 물건의 안전한 마무리가 필요해요.", "cancelled");
+    const now = this.clock.now();
+    const step: AgentStep = { ...previous, kind: "place", id: `${r.plan.view.id}:safe-place`, target: null, object: null,
+      command: "들고 있는 물건을 가까운 안정된 면에 내려놓고 완료를 눌러 주세요.", until: null, onTimeout: "fail",
+      look: undefined, device: null, hand: null };
+    Object.assign(r, { safePlace: step, gen: r.gen + 1, watch: null, stepAt: now, deadline: now + 30_000, asking: null, told: null });
+    this.show(r, step);
+  }
+
   /** i번째 단계를 지금 단계로: PlanHub 단계 상태(앞 단계 done, 이 단계 active)를 한 번에 바꾸고 단계 종류대로 시작한다. */
   activate(r: Run, i: number): void {
     const prev = r.plan.steps[r.at];
     const step = r.plan.steps[i]!;
     if (this.core.adaptive.gate(r, i, true)) {
-      if (r.state === "running" && !this.core.planning) {
+      if (r.state === "running" && !this.core.planning && !r.safePlace) {
         r.pendingStep = i;
         this.clear(r);
       }
@@ -277,6 +294,7 @@ export class Steps extends Part {
 
   /** 지금 단계가 됐으면 다음 단계로 넘기고 true. 아니면 사람 단계의 비전 상태가 바뀌었을 때 보낸다(visionMs에 한 번까지). */
   look(r: Run): boolean {
+    if (r.safePlace) return false;
     const step = this.core.stepOf(r);
     if (!step || r.state !== "running" || step.kind === "ask") return false;
     // 지금 단계를 끝냈지만(「완료」·조건) 다음 단계 대상을 떠난 뒤 다시 보지 못해 붙잡혀 있으면(start.ts held, verify.at) World State 변화·tick마다 다시 넘겨 본다:
@@ -436,6 +454,7 @@ export class Steps extends Part {
 
   /** 시간 한도를 넘은 단계: on_timeout이 ask이고 아직 묻지 않았으면 실제 폰에 계속할지 한 번 묻고, 아니면 실패로 닫는다. */
   timeout(r: Run, step: AgentStep): void {
+    if (r.safePlace) return this.finish(r, "failed", "물건을 내려놓았는지 확인하지 못했어요.", "cancelled");
     if (step.onTimeout === "ask" && !r.again) {
       r.again = true;
       r.helped = true;
@@ -447,6 +466,7 @@ export class Steps extends Part {
   /** 끝나는 조건이 있는 집기·놓기 단계가 stallMs 넘게(단계 시작 뒤, 받은 부름 뒤) 안 끝나면 관찰 모드를 부른다. 단계마다 stallMax번까지.
    *  받은 것만 먼저 세고, 그 부름의 settle(false)는 셈을 돌려준다(같은 계획·단계 세대일 때만, 한 번). */
   stall(r: Run, step: AgentStep, now: number): void {
+    if (r.safePlace) return;
     if (!this.o.observe.stalled || (step.kind !== "pick" && step.kind !== "place" && step.kind !== "do") || !step.until || !r.sent || r.asking || !r.stepEnd) return;
     if (r.looks >= this.cfg.stallMax || now - r.stepAt < this.cfg.stallMs || now - r.lookAt < this.cfg.stallMs) return;
     const gen = r.gen;

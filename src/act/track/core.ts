@@ -38,6 +38,7 @@ import type { AdaptiveExecution } from "./adaptive.js";
 export interface Run {
   attempt: Attempt;
   pendingStep?: number;
+  safePlace?: AgentStep;
   plan: AgentPlan; decision: DecisionRecord; state: ExecState; since: number;
   at: number; stepAt: number; spokeAt: number; visionAt: number; sent: PlannedCommand | null;
   asking: Asking | null; askAt: number; watch: ConditionWatch | null; others: Map<string, Set<string>>; alias: Map<string, string>; carried: Set<string>;
@@ -174,7 +175,7 @@ export class TrackCore {
   }
 
   stepOf(r: Run): AgentStep | undefined {
-    return r.plan.steps[r.at];
+    return r.safePlace ?? r.plan.steps[r.at];
   }
 
   /** 손대는 단계인가: 진행 중 계획의 집기·내려놓기 단계이거나 집은 물건을 들고 가는 중(2026-11-18 wide-mug q3). 이때 보이는 사람은 폰을 든 사람일 수 있다. */

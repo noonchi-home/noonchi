@@ -262,6 +262,7 @@ export function startAct(core: HomeCore): (event: BrainLog) => void {
       readDevice: id => deviceEvidence(signals, id),
       cropVisible: id => !!core.looker?.evidenceSpot(id),
       evidence: {
+        now,
         choose: (question, signal) => core.looker?.chooseEvidence(question, signal) ?? Promise.resolve(null),
         acquire: async (choice, signal) => {
           if (!("target" in choice) || signal.aborted) return null;

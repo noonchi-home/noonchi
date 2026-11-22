@@ -84,7 +84,7 @@ function cameraWorld(room: string, count: number, t: number, surface: string | n
       proof: { camera: cameraAt([5, 1], [6, 2]), seats: "clear", person_count: count, dining_food: "unknown",
         person: { position: [6, 2], room, seated: false, attention: "elsewhere" } } } };
 }
-function movement(start: WorldView, planner: TrackerFixture["planner"]) {
+function movement(start: WorldView, planner: TrackerFixture["planner"], ports: Partial<NonNullable<TrackerFixture["assistance"]>> = {}) {
   const clock = new VirtualClock(1000), commands = vi.fn(), ended = vi.fn();
   const floor = () => floorPlanFrom({ ...SMALL_SCENE, objects: [...SMALL_SCENE.objects,
     { id: "hall_table", room: "hall", type: "dining_table", plan: { position: [2, 2] } }] });
@@ -93,7 +93,7 @@ function movement(start: WorldView, planner: TrackerFixture["planner"]) {
   const tracker = testTracker({
     plans: new PlanHub(floor(), () => {}, () => ""), approvals, check: () => ({ ok: true }), planner, world: () => w,
     clock, toPhone: commands, floor, emit: vi.fn(),
-    assistance: { boot: "b", homeEpoch: "h#1", home: "h", resident: v => v.person.count === 1 ? "member" : null, ended },
+    assistance: { boot: "b", homeEpoch: "h#1", home: "h", resident: v => v.person.count === 1 ? "member" : null, ended, ...ports },
   });
   return { tracker, commands, ended, photo: (next: WorldView) => { clock.set(next.at_ms); w = next; tracker.onWorld(); } };
 }
@@ -107,6 +107,35 @@ it("does not fail the active pickup when the selected cup appears in hand", () =
   r.photo(cameraWorld("kitchen", 1, 1200, null, true));
   expect(r.tracker.current()?.state).toBe("running");
   expect(r.ended).not.toHaveBeenCalled();
+});
+
+it("withdraws the old destination and asks to put the held object down safely", () => {
+  const r = movement(cameraWorld("kitchen", 1, 1000, "sink_1"), current => ({
+    ok: true, plan: plan(current, [step("pick", "pick", "sink_1", "cup_1"), step("go-old", "go", "table_1"), step("place-old", "place", "table_1", "cup_1")]),
+  }));
+  r.tracker.onDecision({ ...decision, action: "물 한 잔 가져다주기" });
+  r.photo(cameraWorld("hall", 1, 1200, null, true));
+  expect(r.tracker.onAnswer("plan:d", "pick", "done")).toBe(true);
+  const handoff = r.tracker.openCommand();
+  expect(handoff?.stepId).toMatch(/:safe-place$/);
+  expect(r.commands.mock.calls.some(([m]) => m.step === "go-old" || m.step === "place-old")).toBe(false);
+  expect(r.tracker.onAnswer("plan:d", handoff!.stepId, "done")).toBe(true);
+  expect(r.ended.mock.calls[0]?.[1]).toBe("cancelled");
+});
+
+it("verify_first holds the first delivery command until the bound recipient is actually observed", async () => {
+  const r = movement(cameraWorld("kitchen", 0, 1000, "sink_1"), current => ({
+    ok: true, plan: plan(current, [step("go", "go", "table_1"), step("place", "place", "table_1", "cup_1")]),
+  }), {
+    resident: () => "member", interventionFor: () => "verify_first",
+    evidence: { choose: async () => ({ tool: "wait_for_new_photo" }), acquire: async () => null },
+  });
+  r.tracker.onDecision({ ...decision, action: "물 한 잔 가져다주기" });
+  expect(r.tracker.openCommand()).toBeNull();
+  expect(r.commands).not.toHaveBeenCalled();
+  r.photo(cameraWorld("kitchen", 1, 1300, "sink_1"));
+  r.tracker.tick();
+  expect(r.tracker.openCommand()?.stepId).toBe("go");
 });
 
 it("does not attribute the same cup held by an unidentified person to the recipient", () => {
