@@ -12,6 +12,7 @@ Scene VLM responses supply objects and their attributes. Two matching scene obse
 | `person` | 사람 | Person | 0 person | 0.5 | Posture, Location, Holding, Activity, Momentary action | A person has been out of view for 30 minutes and a cup remains on the dining table. |
 | `cup` | 컵 | Object | 40 wine glass, 41 cup | 0.4 | Location, Contents, Body, Use, Momentary action | An empty cup remains on the dining table after the person leaves. |
 | `bottle` | 병 | Object | 39 bottle | 0.4 | Location, Contents, Body, Use, Momentary action | A bottle has been on the floor for ten minutes. |
+| `beer_can` | 맥주 캔 | Object | — (VLM only) | 0.4 | Location, Contents, Body, Use, Momentary action | The same beer can remains on the coffee table after the viewer leaves. |
 | `bowl` | 그릇 | Object | 45 bowl | 0.4 | Location, Contents, Body, Use, Momentary action | A bowl containing food has been on the table for an hour. |
 | `fork` | 포크 | Object | 42 fork | 0.45 | Location, Use | A fork remains on the dining table after a meal. |
 | `knife` | 칼 | Object | 43 knife | 0.45 | Location, Use | A knife is on the counter when the person leaves the kitchen. |
