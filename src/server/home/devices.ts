@@ -13,7 +13,8 @@ export async function startDevices(core: HomeCore, homeId: string | undefined): 
   for (const w of twin.warnings) log(`[경고] ${w}`);
 
   const ir = ctx.homeInfrared?.(twin.home.id);
-  const started = await startHub(twin, { env, log, importer: ctx.importer, matter: { log, ...ctx.matter } });
+  const started = await startHub(twin, { env, log, importer: ctx.importer, matter: { log, ...ctx.matter },
+    memoryNow: ctx.clock ? () => new Date(core.nowMs()) : undefined });
   const signals = new SignalHub(started.hub, ctx.sources(twin.home.id, twin.devices.map((d) => d.id)));
   if (ir) {
     try { signals.setInfrared(ir, ctx.irPort ?? openIrPort); }

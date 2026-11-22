@@ -114,7 +114,8 @@ export class Looker {
       ? { id, position: object.position, label: OBJECT_NAME[object.cls] ?? object.cls } : null;
   }
 
-  async chooseEvidence(question: EvidenceQuestion, signal: AbortSignal): Promise<EvidenceChoice | null> {
+  /** An unavailable observer returns no job. A started job may still return no valid choice. */
+  chooseEvidence(question: EvidenceQuestion, signal: AbortSignal): Promise<EvidenceChoice | null> | null {
     const observer = this.o.observer;
     if (this.stopped || this.job || signal.aborted || !observer.chooseEvidence || !this.allow(this.clock.now())) return null;
     return this.withEvidenceJob("observer", signal, shared => observer.chooseEvidence!(question, shared));
