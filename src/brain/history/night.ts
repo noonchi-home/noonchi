@@ -167,7 +167,7 @@ export async function runNight(db: HistoryDb, pam: PamClient, day: string, o: Ni
     db.add("reflection", at, text, { data: { day, ok, version, applies_day: appliesDay, ...found, ...used } });
     o.emit?.({ type: "reflection", at_ms: at, day, ok, version, applies_day: appliesDay, text, ...found, ...used } as BrainLog);
   };
-  if (!db.list({ day, kinds: [...DAY_KINDS], limit: 1 }).length) {
+  if (!db.hasInterventionPreference(day) && !db.list({ day, kinds: [...DAY_KINDS, "assistance_outcome"], limit: 1 }).length) {
     done(false, REFLECT_TEXT.failed(REFLECT_TEXT.empty), null, null);
     return fail(REFLECT_TEXT.empty, { empty: true });
   }
@@ -192,11 +192,16 @@ export async function runNight(db: HistoryDb, pam: PamClient, day: string, o: Ni
       const summary = daySummary(db, day, { maxBytes, caps: MAX_REFLECT_TEXT });
       const memory = await pam.reflect({ day, memory: cur.memory, memory_kind: "list", observation_text: summary.observation_text || REFLECT_TEXT.noObservation, action_summary: summary.action_summary || REFLECT_TEXT.noAction, feedback }, "list", call);
       if (o.signal?.aborted) return cancelled();
-      memoryForDay(db, day);
       let appliesDay = nextDay(day);
       while (db.pinnedMemory(appliesDay) !== null) appliesDay = nextDay(appliesDay);
-      const version = db.saveMemory({ kind: "list", memory, day, appliesDay, source: "reflection" });
-      done(true, REFLECT_TEXT.done(version, appliesDay), version, appliesDay, { learned: [], active: [], dropped: [] });
+      const found = { learned: [], active: [], dropped: [] };
+      const at = now();
+      const used = usage ? { usage } : {};
+      const { robot: version } = db.saveNight({
+        day, appliesDay, kind: "list", robot: memory, candidates: null, pin: () => memoryForDay(db, day),
+        reflection: version => ({ atMs: at, text: REFLECT_TEXT.done(version, appliesDay), data: { day, ok: true, version, applies_day: appliesDay, ...found, ...used } }),
+      });
+      o.emit?.({ type: "reflection", at_ms: at, day, ok: true, version, applies_day: appliesDay, text: REFLECT_TEXT.done(version, appliesDay), ...found, ...used });
       return { ok: true, version, appliesDay, learned: [], active: [], dropped: [], passed: [], checks: [] };
     }
     const today = cur.memory as FsmMemory;
@@ -365,14 +370,13 @@ export async function runNight(db: HistoryDb, pam: PamClient, day: string, o: Ni
     // 저장 바로 전에도 끊겼는지 본다(끊긴 반성은 날 고정·새 판본·성공 기록을 남기지 않는다)
     if (o.signal?.aborted) return cancelled();
     // 6) 저장: 끝난 반성만 그날 판본을 고정하고(판본이 없으면 seed를 저장), 로봇·후보 판본과 반성 기록을 한 트랜잭션으로
-    memoryForDay(db, day);
     let appliesDay = nextDay(day);
     while (db.pinnedMemory(appliesDay) !== null) appliesDay = nextDay(appliesDay);
     const at = now();
     const found = { learned, active, dropped, rejected: null, ...(checks.length ? { checks } : {}) };
     const used = usage ? { usage } : {};
     const saved = db.saveNight({
-      day, appliesDay, robot: memory, candidates,
+      day, appliesDay, robot: memory, candidates, pin: () => memoryForDay(db, day),
       reflection: (version) => {
         const text = REFLECT_TEXT.done(version, appliesDay) + (learned.length ? ` · ${REFLECT_TEXT.learned(learned.length)}` : "");
         return { atMs: at, text, data: { day, ok: true, version, applies_day: appliesDay, ...found, ...used } };

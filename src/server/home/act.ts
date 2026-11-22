@@ -1,7 +1,10 @@
 // 집 실행 묶음의 판단·검사·실행 잇기(src/act·src/brain 판단 호출): 클로이드 계획(PlanHub), 실행 설정·수업 기록, 생각 메시지·판단 호출(PAM)·실행 추적, 보기 담당(관찰 모드).
 // 판단 → 계획(에이전트 계획 모드) → 실행 전 검사 → 실행 추적이 실제 폰에 명령을 낸다. 생각 메시지는 판단 기록 뒤에 따로 만들어 대시보드로 보내고 기록 DB(thought)에 남긴다.
 import { viewerAt } from "../../goal/index.js";
-import { ExecutionTracker, LessonStore, Looker, PlanHub, emitRobotCommand, checkDecision, checkPlan, deviceRunner, lessonsPath, loadActConfig, pamTasks } from "../../act/index.js";
+import { ExecutionTracker, LessonStore, Looker, PlanHub, bindAssistanceAnswers, publishAssistanceOutcome, emitRobotCommand, checkDecision, checkPlan, deviceRunner, lessonsPath, loadActConfig, pamTasks } from "../../act/index.js";
+import { HomeAssistance, assistanceResident } from "./assistance.js";
+import { assistanceContext } from "../../contract/assistance-outcome.js";
+import type { Intervention } from "../../brain/index.js";
 import { CALL_ACTION, lookTargets, taskOf, type TaskSpec } from "../../act/tasks.js";
 import { callDestination, callPlaces, withChosenStation, deviceViews, placesOf, resubmit, type PlaceInfo, type PlanAhead, type PlanContext } from "../../agent/index.js";
 import { Decider, PamClient, PersonLane, dailyMemory, routineAllows, habitView, lastStoredThoughts, memoryForDay, pamSettings, thoughtFeed, type FsmMemory } from "../../brain/index.js";
@@ -93,6 +96,7 @@ export function startPlans(core: HomeCore): void {
   const places = (): PlaceInfo[] => placesOf(floorPlan, placeNames);
   // 대시보드 말풍선 카드(src/act/say.ts): 계획 방송·실제 폰 명령·World State 바뀜·판단 타이머 뒤에 다시 보고, 글이 바뀔 때만 보낸다
   const plans = new PlanHub(floorPlan, (m) => {
+    if (m.type === "plan" && m.plan) core.assistance?.onPlan(m.plan);
     if (core.out.act && m.type === "plan") {
       core.out.act.push("/act/phone_changes", { plan: m.plan });
       core.out.act.push("/act/plan", { plan: m.plan });
@@ -163,6 +167,7 @@ export function startAct(core: HomeCore): (event: BrainLog) => void {
     // 행동 중 기다리기·기기 단계 동안은 PAM을 부르지 않는다(실행 추적이 조건을 본다)
     hold: () => core.brainStatus?.hold ?? false,
     keepHeard: () => core.keepHeard,
+    interventionFor: (d, w) => interventionFor(d, w),
     edgeAllowed: (edge, atMs) => routineAllows(core.routines(), edge, atMs, history.db.offsetMinutes),
     // 판단 → 시간 줄 사람 줄 → 계획 → 실행 전 검사 → 실행 추적(src/act/)
     onDecision: (d) => {
@@ -201,6 +206,21 @@ export function startAct(core: HomeCore): (event: BrainLog) => void {
     const people = Math.max(world.person.count, world.household_photo?.proof?.person_count ?? 0);
     return people > 1 ? null : home.singleResident ?? answers.demoResident(home.id, people);
   };
+  const observedResident = (w: WorldView) => assistanceResident(w, resident(w), now(), core.act.staleMs);
+  const policyResident = (w: WorldView) => observedResident(w)
+    ?? (!w.person.visible && w.person.count === 0 && w.household_photo?.proof?.person_count === 0 ? home.singleResident ?? null : null);
+  const interventionFor = (d: Pick<DecisionRecord, "action" | "source"> & { fsm?: { from: string | null } | null }, w: WorldView): Intervention =>
+    d.source === "speech" || !d.action ? "default"
+      : history.db.policyFor(home.id, policyResident(w), { action: d.action, context: assistanceContext(d, w) }, history.db.dayOf(now()));
+  core.resumeProactive = (text, originId) => {
+    const action = /^(?:앞으로|다음부터) 먼저 (.+) 해 ?주세요[.!]?$/.exec(text.trim())?.[1];
+    if (!action || !taskOf(action)) return false;
+    const world = view();
+    const user = observedResident(world);
+    const state = decide.habit()?.state ?? null;
+    const context = assistanceContext({ fsm: { from: state } }, world);
+    return !!user && !!context && history.db.recordInterventionPreference({ home: home.id, user, action, context, atMs: now(), originId });
+  };
   const discardLeftover = (world: WorldView) => answers.allowDiscard(home.id, resident(world));
   const planCtx = (d: DecisionRecord, task: TaskSpec, world: WorldView, ahead?: PlanAhead): PlanContext => ({
     decision: d, task, world, floor: plans.floor(), places: core.places(), names: placeNames, rooms: twin.rooms, devices: deviceViews(signals), nowIso: new Date(now()).toISOString(),
@@ -214,6 +234,7 @@ export function startAct(core: HomeCore): (event: BrainLog) => void {
   core.makePlan = async ({ decision, ahead }, signal) => {
     const task = taskOf(decision.action);
     if (!task) return { ok: false, error: "행동 목록에 없는 행동" };
+    if (interventionFor(decision, brainView()) === "defer_proactive") return { ok: false, error: "이번에는 먼저 돕지 않아요." };
     const ctx = planCtx(decision, task, brainView(), ahead);
     // 부름인데 사용자 방을 모르면 사용자 찾기와 같은 자리 고르기(관찰 모드)로 목적지를 정한다
     if (ctx.call && !ctx.call.target && core.looker) {
@@ -237,7 +258,30 @@ export function startAct(core: HomeCore): (event: BrainLog) => void {
     return walkMap;
   };
   const stationFloor = floorLookup(core.plan.rooms);
+  // Replace the PlanHub bridge with the tracker terminal hook once both worktrees are integrated.
+  const outcomeBridge = new HomeAssistance({
+    home: home.id, epoch: core.epoch, world: view, now,
+    resident: observedResident,
+    publish: outcome => { if (core.out.act) publishAssistanceOutcome(core.out.act, outcome); },
+  });
+  core.assistance = outcomeBridge;
+  const events = {
+    emit,
+    log: ctx.log,
+    thought: (text: string, decisionId: string) => feed.note(text, decisionId),
+    help: (record: import("../../contract/history.js").HelpRecord) => {
+      history.db.add("help", record.at_ms, record.text, { subject: record.action, data: record });
+      core.helpSaid = { text: record.text, atMs: Date.now() };
+      core.speak();
+    },
+  };
+  bindAssistanceAnswers(events, answer => outcomeBridge.answer(answer));
+  const adaptive = {
+    boot: core.epoch.boot, homeEpoch: core.epoch.home, home: home.id, resident: observedResident, interventionFor,
+    ended: outcomeBridge.ended.bind(outcomeBridge),
+  };
   core.tracker = new ExecutionTracker({
+    assistance: adaptive,
     cupAnswers: {
       discardLeftover: () => discardLeftover(view()),
       rememberLeftover: allow => {
@@ -282,10 +326,15 @@ export function startAct(core: HomeCore): (event: BrainLog) => void {
     planner: (d, signal, ahead) => core.brainPlans!.plan(d, signal, ahead),
     // 처음 하는 일 묻기: 시험이 켜 볼 때만 넘긴다(기본 src/agent/approval.ts ASK_FIRST_TIME 끔)
     askFirst: ctx.askFirst,
-    check: (d, p, seenSince) => checkPlan({
-      decision: d, tasks: d.tasks ?? pamTasks(core.mode(), false), plan: p, world: view(), nowMs: now(), staleMs: core.act.staleMs, mode: ctx.mode?.() ?? "test", deviceSteps: deviceSteps(p),
-      placed: core.tracker?.placed(), ...(seenSince !== undefined ? { seenSince } : {}),
-    }),
+    check: (d, p, seenSince) => {
+      const world = view();
+      // The tracker owns the final command guard after integration. This keeps deferred plans out of approvals on the standalone branch.
+      if (interventionFor(d, world) === "defer_proactive") return { ok: false, reason: "unknown_task", text: "이번에는 먼저 돕지 않아요." };
+      return checkPlan({
+        decision: d, tasks: d.tasks ?? pamTasks(core.mode(), false), plan: p, world, nowMs: now(), staleMs: core.act.staleMs, mode: ctx.mode?.() ?? "test", deviceSteps: deviceSteps(p),
+        placed: core.tracker?.placed(), ...(seenSince !== undefined ? { seenSince } : {}),
+      });
+    },
     lessons,
     staleMs: core.act.staleMs,
     state: {
@@ -330,7 +379,13 @@ export function startAct(core: HomeCore): (event: BrainLog) => void {
       onRefused: (planId) => decide.onRefused(planId),
       // 미리 세운 목표(src/goal/watch.ts): PAM이 쓰는 습관 기억(마지막 판단 때 판본)과 마지막으로 맞은 상태로 목표를 세우고, 미리 만든 계획은 PAM 판단으로 다시 검사해 쓴다.
       // 목표는 /brain/goal_changes·/brain/goal과 대시보드로 보내고, 사람이 떠나면 판단을 다음 타이머(250ms)에 바로 부른다
-      habit: () => decide.habit(),
+      habit: () => {
+        const h = decide.habit();
+        if (!h || !("states" in h.memory)) return h;
+        const w = view();
+        return { ...h, allows: (state: string, edge: { action?: string }) =>
+          interventionFor({ action: edge.action ?? null, fsm: { from: state } }, w) !== "defer_proactive" };
+      },
       nudge: () => core.out.goal?.push("/brain/nudge", { rev: core.goalMirror!.rev() ?? 0 }),
       // 지금 모드의 행동 목록(쓰는 중 지킴·내용물 보류가 볼 행동)
       tasks: () => pamTasks(core.mode(), false),
@@ -339,7 +394,9 @@ export function startAct(core: HomeCore): (event: BrainLog) => void {
       meal: () => core.scene?.stations?.meal_watch ? core.goalFacts?.meal : null,
       reuse: (d, plan, rename) => {
         const task = taskOf(d.action);
-        return task ? resubmit(plan, planCtx(d, task, view()), rename) : { ok: false, error: "행동 목록에 없는 행동" };
+        const world = view();
+        if (interventionFor(d, world) === "defer_proactive") return { ok: false, error: "이번에는 먼저 돕지 않아요." };
+        return task ? resubmit(plan, planCtx(d, task, world), rename) : { ok: false, error: "행동 목록에 없는 행동" };
       },
       view: () => core.goalMirror?.view() ?? view(),
       prepare: (d, signal, ahead) => core.goalPlans!.plan(d, signal, ahead),
@@ -378,19 +435,7 @@ export function startAct(core: HomeCore): (event: BrainLog) => void {
       // 코치 계획 중 다른 행동을 본 것 같으면 보기 담당(관찰 모드 계기 off_track)에 알린다
       strayed: (s) => core.looker?.strayed(s) ?? false,
     },
-    events: {
-      emit,
-      // 계획 검사에서 버린 계획의 까닭 등은 서버 로그에도 남긴다
-      log: ctx.log,
-      // 찾기 상태 줄은 생각 말풍선에 모델 없이 바로 올린다
-      thought: (text, decisionId) => feed.note(text, decisionId),
-      // 도움 기록: 기록 DB help 줄(여러 날 모아 습관을 찾는다)과 메시지 상자 20초
-      help: (record) => {
-        history.db.add("help", record.at_ms, record.text, { subject: record.action, data: record });
-        core.helpSaid = { text: record.text, atMs: Date.now() };
-        core.speak();
-      },
-    },
+    events,
     appliances: {
       run: devices,
       // 손으로 켜는 단계가 위험 목록 가전인지(켜기 전에 묻는다)와 묻는 글의 가전 이름

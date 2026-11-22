@@ -69,6 +69,11 @@ function dayMemory(db: HistoryDb, day: string, o: { log?: (line: string) => void
  *  filter: 습관 거르기(기본 keepAll, 기록 줄을 읽지 않는다). windowDays: 따로 넘긴 거르기에 주는 지난 기록 날 수(기본 30, 반성한 날 포함).
  *  dir: 시각 찾기·검사 결과 사본 폴더(runtime/homes/<집>/habit). signal로 끊으면(서버를 끌 때) PAM 요청을 끊고 기록 DB에 아무것도 쓰지 않는다. */
 export async function runReflection(db: HistoryDb, pam: PamClient, day: string, o: NightOptions = {}): Promise<ReflectResult> {
+  const saved = db.night(day);
+  if (saved) {
+    const data = saved.result as { applies_day: string; learned: EdgeLine[]; active: EdgeLine[]; dropped: HabitRuleNote[] };
+    return { ok: true, version: saved.robot, appliesDay: data.applies_day, learned: data.learned, active: data.active, dropped: data.dropped };
+  }
   const r = await runNight(db, pam, day, o);
   if (!r.ok) return { ok: false, error: r.error, ...(r.empty ? { empty: true as const } : {}) };
   return { ok: true, version: r.version, appliesDay: r.appliesDay, learned: r.learned, active: r.active, dropped: r.dropped };

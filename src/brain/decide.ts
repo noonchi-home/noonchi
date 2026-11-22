@@ -3,6 +3,7 @@ import type { BusNode } from "../bus/index.js";
 // 동시 상한을 넘으면 부르지 않는다(Trigger.due가 false). 결과는 기록(decision)과 onDecision으로 넘긴다. 늦게 온 답(받은 가장 큰 번호보다 작은 번호)은 상태를 바꾸지 않고, 행동은 실행 추적이 seq로 버린다.
 // PAM 연결 끊김·연결됨(link)과 주기 판단 멈춤(폰 사진 없음·사람 없음)·다시 시작(trigger)은 바뀔 때 한 번씩 기록한다.
 import type { BrainLog, DecisionRecord, ExecState, PamUsage } from "../contract/events.js";
+import type { Intervention } from "./history/intervention.js";
 import type { WorldChange, WorldView } from "../contract/world.js";
 import { modeOf, planIdOf } from "../act/tasks.js";
 import { checkInput, fsmStep, isoWithOffset, type PamMemory } from "./decision.js";
@@ -56,6 +57,7 @@ export interface DeciderOptions {
   memory: () => { memory: PamMemory; kind: "list" | "fsm"; version: number };
   emit: (log: BrainLog) => void;
   onDecision?: (d: DecisionRecord) => void;
+  interventionFor?: (decision: DecisionRecord, world: WorldView) => Intervention;
   /** 화살표 없는 유효한 답(행동 없음)이 미리 세운 목표의 트리거면 그 목표 행동(실행 추적 goal.ts triggerOf), 아니면 null.
    *  있으면 판단 기록·onDecision에 그 행동(goal 표시)으로 낸다: 기록과 실행이 같은 행동을 본다(밤 채택 검사 robotSpans, Codex b5da6c36 P2). */
   goalTrigger?: (d: DecisionRecord) => string | null;
@@ -216,7 +218,8 @@ export class Decider {
           const prediction = said.length ? { ...p, observation: redactSaid(p.observation, said), reasoning: redactSaid(p.reasoning, said) } : p;
           // PAM 답의 상태·화살표를 그대로 싣는다(거꾸로 찾지 않는다)
           const step = mem.kind === "fsm" && "states" in mem.memory ? fsmStep(mem.memory, p) : null;
-          const action = picked !== null && step && this.o.edgeAllowed && !this.o.edgeAllowed(step, now) ? null : picked;
+          let action = picked !== null && step && this.o.edgeAllowed && !this.o.edgeAllowed(step, now) ? null : picked;
+          if (action && this.deferred({ ...base, status: "valid", prediction, action, fsm: step })) action = null;
           if (step) {
             const stale = this.released !== null && step.from === this.released.from && step.next_index === this.released.next && base.seq <= this.released.seq;
             // 늦은 답 전체를 버린다: 상태·pending을 바꾸지 않고 행동 없이 기록만(실행 추적은 late를 「앞선 판단」으로 남긴다)
@@ -254,10 +257,17 @@ export class Decider {
     this.o.emit({ type: "link", at_ms: this.clock.now(), target: "pam", up, text: up ? LINK_TEXT.up : LINK_TEXT.down });
   }
 
+  private deferred(r: DecisionRecord): boolean {
+    return r.source !== "speech" && this.o.interventionFor?.(r, this.o.world.view(this.clock.now())) === "defer_proactive";
+  }
+
   private finish(r: DecisionRecord): void {
     if (this.stopped) return;
     const action = r.status === "valid" && !r.late && !r.source ? this.o.goalTrigger?.(r) ?? null : null;
-    if (action) r = { ...r, action, goal: true };
+    if (action) {
+      const goal = { ...r, action, goal: true as const };
+      if (!this.deferred(goal)) r = goal;
+    }
     this.emitDecision(r);
     this.o.onDecision?.(r);
   }

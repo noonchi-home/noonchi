@@ -7,6 +7,7 @@ import { DatabaseSync } from "node:sqlite";
 import { CupAnswers } from "./cup-answer.js";
 import type { DecisionRow, HistoryKind, HistoryRow } from "../../contract/history.js";
 import type { AssistanceOutcome } from "../../contract/assistance-outcome.js";
+import { interventionChanges, type CurrentIntervention, type HabitContext, type Intervention, type InterventionPreference } from "./intervention.js";
 
 export type { DecisionRow, HistoryKind, HistoryRow } from "../../contract/history.js";
 
@@ -28,6 +29,16 @@ CREATE TABLE IF NOT EXISTS bus_seen (topic TEXT NOT NULL, grp TEXT NOT NULL, msg
 CREATE TABLE IF NOT EXISTS device_last (id TEXT PRIMARY KEY, twin TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS assistance_seen (home TEXT NOT NULL, boot TEXT NOT NULL, home_epoch TEXT NOT NULL, attempt_id TEXT NOT NULL, PRIMARY KEY (home, boot, home_epoch, attempt_id));
 CREATE INDEX IF NOT EXISTS idx_assistance_outcome_day ON events(day, at_ms) WHERE kind = 'assistance_outcome';
+CREATE TABLE IF NOT EXISTS assistance_nights (day TEXT PRIMARY KEY, robot INTEGER NOT NULL, candidates INTEGER NOT NULL, result TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS intervention_preferences (
+  home TEXT NOT NULL, user TEXT NOT NULL, action TEXT NOT NULL, context TEXT NOT NULL,
+  at_ms INTEGER NOT NULL, origin_id TEXT NOT NULL, PRIMARY KEY (home, user, action, context, origin_id)
+);
+CREATE TABLE IF NOT EXISTS intervention_policy (
+  home TEXT NOT NULL, user TEXT NOT NULL, action TEXT NOT NULL, context TEXT NOT NULL,
+  applies_day TEXT NOT NULL, version INTEGER NOT NULL, policy TEXT NOT NULL,
+  PRIMARY KEY (home, user, action, context, applies_day, version)
+);
 CREATE TABLE IF NOT EXISTS cup_answers (
   home TEXT NOT NULL, resident TEXT NOT NULL, discard_leftover_cup INTEGER NOT NULL CHECK(discard_leftover_cup IN (0,1)),
   single_demo INTEGER NOT NULL DEFAULT 0 CHECK(single_demo IN (0,1)), PRIMARY KEY(home, resident)
@@ -166,19 +177,70 @@ export class HistoryDb {
 
   /** 밤 저장 하나(BEGIN IMMEDIATE): 로봇 판본·후보 판본·반성 기록을 함께 쓰고, 어느 하나라도 던지면 모두 되돌린 뒤 다시 던진다.
    *  reflection은 로봇 판본 번호로 반성 기록 줄(시각·글·data)을 만든다. */
-  saveNight(o: { day: string; appliesDay: string; robot: unknown; candidates: unknown; reflection: (robot: number) => { atMs: number; text: string; data: unknown } }): { robot: number; candidates: number } {
+  saveNight(o: { day: string; appliesDay: string; robot: unknown; candidates: unknown; kind?: "list" | "fsm"; pin?: () => void;
+    reflection: (robot: number) => { atMs: number; text: string; data: unknown } }): { robot: number; candidates: number } {
     this.db.exec("BEGIN IMMEDIATE");
     try {
-      const robot = this.saveMemory({ kind: "fsm", memory: o.robot, day: o.day, appliesDay: o.appliesDay, source: "reflection" });
-      const candidates = this.saveMemory({ kind: "fsm_candidates", memory: o.candidates, day: o.day, appliesDay: o.appliesDay, source: "reflection" });
+      const saved = this.night(o.day);
+      if (saved) {
+        this.db.exec("COMMIT");
+        return { robot: saved.robot, candidates: saved.candidates };
+      }
+      o.pin?.();
+      const robot = this.saveMemory({ kind: o.kind ?? "fsm", memory: o.robot, day: o.day, appliesDay: o.appliesDay, source: "reflection" });
+      const candidates = o.kind === "list" ? 0
+        : this.saveMemory({ kind: "fsm_candidates", memory: o.candidates, day: o.day, appliesDay: o.appliesDay, source: "reflection" });
+      const midnight = Date.parse(`${o.day}T00:00:00Z`) - this.offsetMinutes * 60_000;
+      const firstDay = this.dayOf(midnight - 29 * 86_400_000);
+      const rows = (this.db.prepare(`SELECT id, at_ms, day, kind, subject, text, data FROM events
+        WHERE kind = 'assistance_outcome' AND day BETWEEN ? AND ? ORDER BY at_ms, id`).all(firstDay, o.day) as unknown as RawRow[]).map(parseRow);
+      const preferences = this.db.prepare(`SELECT home, user, action, context, at_ms AS atMs, origin_id AS originId
+        FROM intervention_preferences WHERE at_ms < ? ORDER BY at_ms, origin_id`).all(midnight + 86_400_000) as unknown as InterventionPreference[];
+      const changes = interventionChanges(rows, preferences, scope => this.interventionAt(scope.home, scope.user, scope, o.day), ms => this.dayOf(ms));
+      const insert = this.db.prepare("INSERT INTO intervention_policy (home, user, action, context, applies_day, version, policy) VALUES (?, ?, ?, ?, ?, ?, ?)");
+      for (const change of changes) insert.run(change.home, change.user, change.action, change.context, o.appliesDay, robot, change.policy);
       const r = o.reflection(robot);
       this.add("reflection", r.atMs, r.text, { data: r.data });
+      this.db.prepare("INSERT INTO assistance_nights (day, robot, candidates, result) VALUES (?, ?, ?, ?)")
+        .run(o.day, robot, candidates, JSON.stringify(r.data));
       this.db.exec("COMMIT");
       return { robot, candidates };
     } catch (e) {
       this.db.exec("ROLLBACK");
       throw e;
     }
+  }
+
+  night(day: string): { robot: number; candidates: number; result: unknown } | null {
+    const row = this.db.prepare("SELECT robot, candidates, result FROM assistance_nights WHERE day = ?").get(day) as
+      { robot: number; candidates: number; result: string } | undefined;
+    return row ? { ...row, result: JSON.parse(row.result) as unknown } : null;
+  }
+
+  policyFor(home: string, user: string | null, habit: HabitContext, day: string): Intervention {
+    return this.interventionAt(home, user, habit, day)?.policy ?? "default";
+  }
+
+  private interventionAt(home: string, user: string | null, habit: HabitContext, day: string): CurrentIntervention | null {
+    if (!user || !habit.context) return null;
+    const version = this.pinnedMemory(day) ?? this.memoryFor(day)?.version;
+    if (version === undefined) return null;
+    const row = this.db.prepare(`SELECT policy, applies_day AS appliesDay FROM intervention_policy
+      WHERE home = ? AND user = ? AND action = ? AND context = ? AND applies_day <= ? AND version <= ?
+      ORDER BY applies_day DESC, version DESC LIMIT 1`).get(home, user, habit.action, habit.context, day, version) as CurrentIntervention | undefined;
+    return row ?? null;
+  }
+
+  hasInterventionPreference(day: string): boolean {
+    const start = Date.parse(`${day}T00:00:00Z`) - this.offsetMinutes * 60_000;
+    return !!this.db.prepare("SELECT 1 FROM intervention_preferences WHERE at_ms >= ? AND at_ms < ? LIMIT 1").get(start, start + 86_400_000);
+  }
+
+  recordInterventionPreference(p: InterventionPreference): boolean {
+    if (!p.originId || !Number.isSafeInteger(p.atMs) || this.policyFor(p.home, p.user, p, this.dayOf(p.atMs)) !== "defer_proactive") return false;
+    const row = this.db.prepare(`INSERT INTO intervention_preferences (home, user, action, context, at_ms, origin_id)
+      VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING`).run(p.home, p.user, p.action, p.context, p.atMs, p.originId);
+    return row.changes > 0;
   }
 
   /** 그날까지 기록이 있는 날(차례). kinds가 없으면 모든 종류. */

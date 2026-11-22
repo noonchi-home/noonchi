@@ -111,6 +111,8 @@ export class HomeCore {
   phoneNode: BusNode | null = null;
   machineRecorder: BusNode | null = null;
   readonly machines = new HomeMachines();
+  assistance?: import("./assistance.js").HomeAssistance;
+  resumeProactive?: (text: string, originId: string) => boolean;
   pamHeard = false;
   devicesNode: BusNode | null = null;
   /** 노드가 내는 입력의 차례대로 보내기 줄(실패하면 같은 봉투로 다시, 닫기 전 비운다): 실행 추적(거울 노드)·폰·가전. */

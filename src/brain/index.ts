@@ -6,6 +6,7 @@ export { PersonLane, stateOfWorld } from "./person.js";
 export { type GoalPick, goalAhead } from "./goal.js";
 export { habitView } from "./habit.js";
 export { HISTORY_KINDS, HistoryDb, historyTzMinutes } from "./history/db.js";
+export { policyFor, type HabitContext, type Intervention } from "./history/intervention.js";
 export { FEEDBACK_TEXT, PHOTO_TEXT, REFLECT_TEXT } from "./history/labels.js";
 export { type DeviceNote, attachRecorder, deviceRecorder, recordBrainLog, recordPlan, recordFeedback, topic } from "./history/recorder.js";
 export { type ReflectResult, memoryForDay, loadReflectAt, runReflection, scheduleReflection } from "./history/reflect.js";
