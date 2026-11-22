@@ -1,8 +1,6 @@
 // 실행 추적의 실제 폰 명령 줄과 답(Answers): 지금 띄운 명령·질문(openCommand), 답 단추(onAnswer), 들은 말(onHeard).
 // 떠 있는 끄기 안내의 「완료」는 확인된 꺼짐일 때만 지우고(SafetyTracker.releaseIfOff), 아니면 보이게 해 달라는 부탁으로 바꾼다. 말 「완료」로는 풀지 않는다.
 import type { HeardAt } from "../../contract/phone.js";
-import type { AttemptKey } from "../../contract/assistance.js";
-import type { AssistanceProofKind } from "../../contract/assistance-outcome.js";
 import type { ApprovalAnswer } from "../../agent/index.js";
 import { EXEC_TEXT } from "../labels.js";
 import { ASK_FOLLOW, ASK_FROM, STEP_DONE, STOP, type ActionChoice } from "../prompts.js";
@@ -11,19 +9,6 @@ import { Part, choicesOf } from "./core.js";
 
 /** 들은 말의 결과: 답으로 받음, 말할 때와 다른 명령에 온 답이라 버림(stale), 답이 아님(null). */
 export type HeardResult = { kind: "answer"; choice: ActionChoice } | { kind: "stale" } | null;
-
-export interface BoundAssistanceAnswer {
-  key: AttemptKey;
-  planId: string;
-  stepId: string;
-  kind: Extract<AssistanceProofKind, "explicit_accept" | "explicit_decline">;
-  atMs: number;
-}
-
-const assistanceAnswers = new WeakMap<object, (answer: BoundAssistanceAnswer) => void>();
-export function bindAssistanceAnswers(events: object, receive: (answer: BoundAssistanceAnswer) => void): void {
-  assistanceAnswers.set(events, receive);
-}
 
 /** 폰 명령 줄·답·말. */
 export class Answers extends Part {
@@ -79,9 +64,16 @@ export class Answers extends Part {
       steps.timeout(r, step);
       return false;
     }
-    const reaction = a?.why === "plan" ? (picked.id === "approve" ? "explicit_accept" : "explicit_decline")
-      : a?.why === "leftover" ? (picked.id === "clear" ? "explicit_accept" : "explicit_decline") : null;
-    if (reaction) assistanceAnswers.get(this.o.events)?.({ key: r.attempt.key, planId, stepId, kind: reaction, atMs: now });
+    // The answer must belong to this exact shown question and an identified
+    // current resident. A safety approval or a generic stop is not a preference.
+    if (a?.why === "plan" || a?.why === "leftover") {
+      const user = this.o.assistance?.resident?.(this.o.state.view());
+      if (user && ["approve", "reject", "clear", "keep"].includes(picked.id)) {
+        const kind = picked.id === "reject" || picked.id === "keep" ? "explicit_decline" : "explicit_accept";
+        core.adaptive.response(r, kind, { source: "phone_answer", subjectId: user,
+          originId: `${planId}:${stepId}:${now}`, observedMs: now });
+      }
+    }
     if (a?.why === "plan") approval.approvedPlan(r, picked.id as ApprovalAnswer);
     else if (a?.why === "device") approval.approvedDevice(r, a.token, picked.id as ApprovalAnswer);
     else if (a?.why === "hand") approval.approvedHand(r, picked.id as ApprovalAnswer);
@@ -153,7 +145,8 @@ export class Answers extends Part {
       const picked = matchChoice(text, choicesOf(r, core.stepOf(r)));
       if (!picked) return null;
       if (at?.kind !== "command" || at.id !== r.plan.view.id || at.step !== r.sent.step) return { kind: "stale" };
-      return this.onAnswer(r.plan.view.id, r.sent.step, picked.id) ? { kind: "answer", choice: picked } : { kind: "stale" };
+      this.onAnswer(r.plan.view.id, r.sent.step, picked.id);
+      return { kind: "answer", choice: picked };
     }
     if (matchChoice(text, [STEP_DONE]) && (off || at?.kind === "command")) return { kind: "stale" };
     return null;

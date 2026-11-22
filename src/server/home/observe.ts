@@ -181,7 +181,6 @@ export async function startNodes(core: HomeCore, emit: (event: BrainLog) => void
       });
       node.on("/manager/order", ({ input: b, gate, resumed }, ctx) => afterRev(b.rev, ctx, (rev) => {
         if (!core.closed) {
-          if (gate === "take") core.assistance?.admit(b.decision);
           core.tracker?.onOrder(b.decision, gate, resumed, rev === b.rev ? b.check : undefined);
         }
         const feedback = core.followupFeedback.get(b.decision.id);

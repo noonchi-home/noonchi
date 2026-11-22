@@ -1,9 +1,9 @@
 // 집 실행 묶음의 판단·검사·실행 잇기(src/act·src/brain 판단 호출): 클로이드 계획(PlanHub), 실행 설정·수업 기록, 생각 메시지·판단 호출(PAM)·실행 추적, 보기 담당(관찰 모드).
 // 판단 → 계획(에이전트 계획 모드) → 실행 전 검사 → 실행 추적이 실제 폰에 명령을 낸다. 생각 메시지는 판단 기록 뒤에 따로 만들어 대시보드로 보내고 기록 DB(thought)에 남긴다.
 import { viewerAt } from "../../goal/index.js";
-import { ExecutionTracker, LessonStore, Looker, PlanHub, bindAssistanceAnswers, publishAssistanceOutcome, emitRobotCommand, checkDecision, checkPlan, deviceRunner, lessonsPath, loadActConfig, pamTasks } from "../../act/index.js";
-import { HomeAssistance, assistanceResident } from "./assistance.js";
-import { assistanceContext } from "../../contract/assistance-outcome.js";
+import { ExecutionTracker, LessonStore, Looker, PlanHub, publishAssistanceOutcome, emitRobotCommand, checkDecision, checkPlan, deviceRunner, lessonsPath, loadActConfig, pamTasks } from "../../act/index.js";
+import { assistanceResident } from "./assistance.js";
+import { assistanceContext, assistanceOutcome } from "../../contract/assistance-outcome.js";
 import type { Intervention } from "../../brain/index.js";
 import { CALL_ACTION, lookTargets, taskOf, type TaskSpec } from "../../act/tasks.js";
 import { callDestination, callPlaces, withChosenStation, deviceViews, placesOf, resubmit, type PlaceInfo, type PlanAhead, type PlanContext } from "../../agent/index.js";
@@ -21,6 +21,7 @@ import { Trigger, canRelink, deviceStateKeys, deviceStatus, loadTriggerConfig, t
 import { loadEndpoints } from "../../infer/endpoints.js";
 import { DEVICE_STATES } from "../../world/vocab.js";
 import { type HomeCore } from "./core.js";
+import type { EvidenceRef } from "../../contract/assistance.js";
 
 /** 명령 대상·가까이 볼 자리(이름과 트윈 자리 [x, 높이, y]): 면(식탁·싱크대처럼 윗면이 있는 배치)이면 윗면 가운데(싱크볼이 있으면 윗면 높이의 싱크볼 가운데),
  *  그 밖은 배치 가운데. 배치 가운데는 싱크대면 높이 약 0.45m라, 대상을 겨눈 폰 사진에서 윗면(컵이 놓이는 곳)보다 한참 아래다.
@@ -47,6 +48,16 @@ function liveDevices(v: WorldView, hub: SignalHub): WorldView {
       return { ...d, state, status: deviceStatus(d.kind, s.twin), active: state.some((k) => DEVICE_STATES[k].active) };
     }),
   };
+}
+
+function deviceEvidence(hub: SignalHub, id: string): { attr: string; value: boolean; ref: EvidenceRef } | null {
+  const s = hub.get(id);
+  const value = s?.twin.power;
+  if (!s?.online || s.signal === "none" || (s.vision?.applied && !s.readback) || (value !== "on" && value !== "off")) return null;
+  const observedMs = Date.parse(s.readback?.at ?? s.updatedAt);
+  if (!Number.isFinite(observedMs)) return null;
+  return { attr: "power", value: value === "on", ref: { source: s.readback?.source ?? "hub", subjectId: id,
+    originId: `${s.readback?.deviceId ?? id}@${observedMs}`, observedMs } };
 }
 
 /** 실행 추적이 World State에 넣는 것(보기 지킴·따르기 창)은 /world/input으로 낸다(거울 노드 act, 집 상태 노드가 넣는다). */
@@ -96,7 +107,6 @@ export function startPlans(core: HomeCore): void {
   const places = (): PlaceInfo[] => placesOf(floorPlan, placeNames);
   // 대시보드 말풍선 카드(src/act/say.ts): 계획 방송·실제 폰 명령·World State 바뀜·판단 타이머 뒤에 다시 보고, 글이 바뀔 때만 보낸다
   const plans = new PlanHub(floorPlan, (m) => {
-    if (m.type === "plan" && m.plan) core.assistance?.onPlan(m.plan);
     if (core.out.act && m.type === "plan") {
       core.out.act.push("/act/phone_changes", { plan: m.plan });
       core.out.act.push("/act/plan", { plan: m.plan });
@@ -258,13 +268,6 @@ export function startAct(core: HomeCore): (event: BrainLog) => void {
     return walkMap;
   };
   const stationFloor = floorLookup(core.plan.rooms);
-  // Replace the PlanHub bridge with the tracker terminal hook once both worktrees are integrated.
-  const outcomeBridge = new HomeAssistance({
-    home: home.id, epoch: core.epoch, world: view, now,
-    resident: observedResident,
-    publish: outcome => { if (core.out.act) publishAssistanceOutcome(core.out.act, outcome); },
-  });
-  core.assistance = outcomeBridge;
   const events = {
     emit,
     log: ctx.log,
@@ -275,13 +278,50 @@ export function startAct(core: HomeCore): (event: BrainLog) => void {
       core.speak();
     },
   };
-  bindAssistanceAnswers(events, answer => outcomeBridge.answer(answer));
-  const adaptive = {
-    boot: core.epoch.boot, homeEpoch: core.epoch.home, home: home.id, resident: observedResident, interventionFor,
-    ended: outcomeBridge.ended.bind(outcomeBridge),
-  };
   core.tracker = new ExecutionTracker({
-    assistance: adaptive,
+    assistance: {
+      boot: core.epoch.boot,
+      homeEpoch: core.epoch.home,
+      home: home.id,
+      resident: observedResident,
+      bindResident: policyResident,
+      interventionFor,
+      ended: (attempt, execution, endedMs, proofs) => {
+        if (core.out.act) publishAssistanceOutcome(core.out.act, assistanceOutcome(attempt, execution, endedMs, proofs));
+      },
+      targetDevice: (d, world) => {
+        const kinds = taskOf(d.action)?.allow.devices?.kinds;
+        const candidates = signals.list().filter(s => kinds?.includes(s.kind) && (!world.person.room || s.room === world.person.room));
+        return candidates.length === 1 ? candidates[0]!.id : null;
+      },
+      readDevice: id => deviceEvidence(signals, id),
+      cropVisible: id => !!core.looker?.evidenceSpot(id),
+      evidence: {
+        now,
+        choose: (question, signal) => core.looker?.chooseEvidence(question, signal) ?? Promise.resolve(null),
+        acquire: async (choice, signal) => {
+          if (!("target" in choice) || signal.aborted) return null;
+          const id = choice.target;
+          if (choice.tool === "look_closer") {
+            const ref = await core.looker?.acquireEvidence(id, signal);
+            return ref ? { status: "found", ref } : { status: "unavailable" };
+          }
+          if (choice.tool === "read_device") {
+            const ref = deviceEvidence(signals, id)?.ref;
+            return ref ? { status: now() - ref.observedMs <= 10000 ? "found" : "stale", ref } : { status: "unavailable" };
+          }
+          const w = view();
+          const o = w.objects.find(x => x.id === id);
+          const p = w.household_photo;
+          // Historical observations keep their capture time and do not confirm presence.
+          if (!o?.position) return { status: "unavailable" };
+          if (now() - o.last_seen_ms > 10000) return { status: "stale" };
+          const ref = p && o.last_seen_ms === p.at_ms
+            ? { source: "history", subjectId: id, observedMs: o.last_seen_ms, originId: p.id } : undefined;
+          return { status: "position_known", ref };
+        },
+      },
+    },
     cupAnswers: {
       discardLeftover: () => discardLeftover(view()),
       rememberLeftover: allow => {
@@ -328,8 +368,6 @@ export function startAct(core: HomeCore): (event: BrainLog) => void {
     askFirst: ctx.askFirst,
     check: (d, p, seenSince) => {
       const world = view();
-      // The tracker owns the final command guard after integration. This keeps deferred plans out of approvals on the standalone branch.
-      if (interventionFor(d, world) === "defer_proactive") return { ok: false, reason: "unknown_task", text: "이번에는 먼저 돕지 않아요." };
       return checkPlan({
         decision: d, tasks: d.tasks ?? pamTasks(core.mode(), false), plan: p, world, nowMs: now(), staleMs: core.act.staleMs, mode: ctx.mode?.() ?? "test", deviceSteps: deviceSteps(p),
         placed: core.tracker?.placed(), ...(seenSince !== undefined ? { seenSince } : {}),

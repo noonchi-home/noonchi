@@ -6,6 +6,7 @@
 // 비용은 공급자 응답 사용량(StepResult.usage)을 가격표(src/infer/cost.ts)로 센다. 가격표에 없는 모델이나 사용량이 없는 응답이 있으면 비용은 모름(null)이다.
 // 시험은 같은 OpenAI 공급자를 가짜 서버에 붙인다(tests/helpers/observer.ts).
 import { z } from "zod";
+import type { EvidenceChoice, EvidenceQuestion } from "../contract/assistance.js";
 import type { LookTool, LookTrigger } from "../contract/events.js";
 import type { StepStatus } from "../contract/plan.js";
 import type { WorldView } from "../contract/world.js";
@@ -178,6 +179,33 @@ export class Observer {
       maxRounds: o.maxRounds ?? OBSERVER_DEFAULTS.maxRounds, timeoutMs: o.timeoutMs ?? OBSERVER_DEFAULTS.timeoutMs,
       maxOutputTokens: o.maxOutputTokens ?? OBSERVER_DEFAULTS.maxOutputTokens,
     };
+  }
+
+  /** Select one supported read operation. The caller owns retries and the evidence deadline. */
+  async chooseEvidence(question: EvidenceQuestion, signal: AbortSignal): Promise<EvidenceChoice | null> {
+    signal.throwIfAborted();
+    const { provider } = this.o;
+    const state = provider.createState();
+    provider.addUserMessage(state, JSON.stringify(question));
+    const tools = [...new Set(question.allowed.map(a => a.tool))].map(name => {
+      const targets = question.allowed.flatMap(a => a.tool === name && "target" in a ? [a.target] : []);
+      return { name, title: name, description: name, readOnly: true,
+        schema: targets.length ? z.strictObject({ target: z.enum(targets) }) : z.strictObject({}),
+        run: async () => ({ ok: false, error: "실행 추적이 근거 도구를 실행합니다." }) };
+    });
+    if (!tools.length) return null;
+    this.calls++;
+    const result = await provider.step(state, {
+      system: "확인하지 못한 조건을 위하여 허용된 읽기 도구 하나를 고르세요. 충분한 새 사진이 없으면 기다리세요. 행동 명령은 내리지 마세요.",
+      tools, allowTools: true, requireTool: true, signal, maxOutputTokens: this.cfg.maxOutputTokens,
+    });
+    this.count(result.usage);
+    signal.throwIfAborted();
+    const call = result.calls[0];
+    if (result.calls.length !== 1 || !call) return null;
+    const parsed = tools.find(t => t.name === call.name)?.schema.safeParse(call.args);
+    if (!parsed?.success) return null;
+    return question.allowed.find(a => a.tool === call.name && (!("target" in a) || ("target" in parsed.data && parsed.data.target === a.target))) ?? null;
   }
 
   /** 고른 도구 하나. signal이 끊기면 공급자 요청을 끊고 그 까닭을 던지고, timeoutMs가 지나면 끊고 시간 한도 오류를 던진다. */

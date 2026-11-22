@@ -23,6 +23,7 @@
 // 고를 때마다 look 기록 하나. look_closer 결과는 관찰 흐름이 World State에 넣는다(다음 PAM 판단과 단계 조건이 그것을 본다).
 import type { BrainLog, CloserMiss, CloserResult, CloserVlm, CloserWait, LookResult, LookTool, LookTrigger } from "../contract/events.js";
 import type { Facet, ObjClass, WorldView } from "../contract/world.js";
+import type { EvidenceChoice, EvidenceQuestion, EvidenceRef } from "../contract/assistance.js";
 import { describeError } from "../agent/index.js";
 import type { ObserveChoice, ObserveSituation, Observer, ObserverStatus } from "../agent/index.js";
 import { LOOK_MARGIN, type LookSpot } from "../observe/index.js";
@@ -47,7 +48,7 @@ const WAITS: ReadonlySet<CloserMiss | CloserVlm> = new Set<CloserWait>(["no_fres
 const KEYS_MAX = 50;
 
 export interface LookerOptions {
-  observer: Pick<Observer, "decide" | "status"> & Partial<Pick<Observer,"chooseStation">>;
+  observer: Pick<Observer, "decide" | "status"> & Partial<Pick<Observer,"chooseStation" | "chooseEvidence">>;
   /** 가까이 보기(src/observe/pipeline.ts closer). 감지를 합치기 전에 signal이 끊기면 넣지 않고 aborted, 합친 뒤에 끊기면 ok(vlm aborted),
    *  VLM 답이 왔을 때 사진이 끊겼으면 ok(vlm no_fresh_frames). */
   closer: (spot: LookSpot, signal?: AbortSignal, sinceMs?: number) => Promise<CloserResult>;
@@ -103,6 +104,45 @@ export class Looker {
   constructor(private readonly o: LookerOptions) {
     this.clock = o.clock ?? { now: () => Date.now() };
     this.cfg = { objectGapMs: o.objectGapMs ?? LOOK_DEFAULTS.objectGapMs, gapMs: o.gapMs ?? LOOK_DEFAULTS.gapMs, hourMax: o.hourMax ?? LOOK_DEFAULTS.hourMax };
+  }
+
+  evidenceSpot(id: string): LookSpot | null {
+    const latest = this.o.frame();
+    const object = this.o.world().objects.find(o => o.id === id);
+    return latest?.view && object?.position && this.clock.now() - latest.capturedAtMs <= LOOK_DEFAULTS.frameFreshMs &&
+      inView(latest.view, object.position, 0)
+      ? { id, position: object.position, label: OBJECT_NAME[object.cls] ?? object.cls } : null;
+  }
+
+  async chooseEvidence(question: EvidenceQuestion, signal: AbortSignal): Promise<EvidenceChoice | null> {
+    const observer = this.o.observer;
+    if (this.stopped || this.job || signal.aborted || !observer.chooseEvidence || !this.allow(this.clock.now())) return null;
+    return this.withEvidenceJob("observer", signal, shared => observer.chooseEvidence!(question, shared));
+  }
+
+  async acquireEvidence(id: string, signal: AbortSignal): Promise<EvidenceRef | null> {
+    const spot = this.evidenceSpot(id);
+    if (!spot || this.job || this.stopped || signal.aborted) return null;
+    return this.withEvidenceJob("act", signal, async shared => {
+      const result = await this.o.closer(spot, shared);
+      if (shared.aborted || !result.ok || result.vlm !== "ok" || !result.found.some(f => f.id === id)) return null;
+      return { source: "photo", subjectId: id, observedMs: result.captured_at_ms, originId: result.frame_id.replace(/\.c\d+$/, "") };
+    });
+  }
+
+  private async withEvidenceJob<T>(phase: "observer" | "act", signal: AbortSignal, run: (signal: AbortSignal) => Promise<T>): Promise<T> {
+    const abort = new AbortController();
+    const job: Job = { trigger: "unknown_fact", key: "assistance", goal: "목표 근거 확인", stuckMs: null, spots: [],
+      tools: [], phase, abort, signal: AbortSignal.any([signal, abort.signal]) };
+    this.job = job;
+    const work = Promise.resolve().then(() => run(job.signal));
+    const done = work.then(() => {}, () => {});
+    this.running.add(done);
+    try { return await work; }
+    finally {
+      this.running.delete(done);
+      if (this.job === job) this.job = null;
+    }
   }
 
   /** 멈춘 단계(A). 받았으면 true: 끝날 때 s.settle을 부른다(끊기면 부르지 않는다). */

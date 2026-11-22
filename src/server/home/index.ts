@@ -5,7 +5,7 @@
 // agent.ts 정책·에이전트·외부 연락·계획 모드·관찰 모드·초점, phone.ts 실제 폰, act.ts 계획·판단·실행 추적·보기 담당, observe.ts World State·관찰 흐름·주기 타이머, say.ts 말풍선 카드.
 
 import type { DeviceNote, HistoryDb, ReflectResult } from "../../brain/index.js";
-import type { Bus } from "../../bus/index.js";
+import type { Bus, Clock } from "../../bus/index.js";
 import type { BrainLog, ReadyView } from "../../contract/events.js";
 import type { PlanView } from "../../contract/plan.js";
 import type { ControlMode } from "../../contract/setup.js";
@@ -58,6 +58,7 @@ export interface HomeContext {
   matter?: Record<string, unknown>;
   /** 시험용: 관찰 흐름의 감지기·VLM·시계. */
   brain?: PipelineInject;
+  clock?: Clock;
   /** 시험용: 처음 하는 일 묻기를 켜 본다. 없으면 ASK_FIRST_TIME(끔). */
   askFirst?: boolean;
   /** 폰 포트로 이어진 https 주소 찾기(tailscale serve). */

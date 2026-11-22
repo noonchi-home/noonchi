@@ -10,6 +10,7 @@ export interface Attempt {
   goal: AssistanceGoal | null;
   ended: boolean;
   evidence: EvidenceRef[];
+  replans?: number;
 }
 
 export class AttemptBook {
@@ -88,7 +89,10 @@ export function assess(a: Attempt, w: AssessmentWorld): Assessment {
   if (!g) return result("ready");
   if (g.kind === "device") {
     const d = w.device;
-    if (!d || d.ref.subjectId !== g.deviceId || d.attr !== g.attr || !fresh(d.ref)) return result("need_evidence");
+    // Confirmed readback is a current snapshot. A recent read may predate the
+    // decision, unlike an asynchronous result scoped to this attempt.
+    if (!d || d.ref.subjectId !== g.deviceId || d.attr !== g.attr || d.ref.observedMs > w.now ||
+        !(w.now - d.ref.observedMs <= 10_000)) return result("need_evidence");
     return result(Object.is(d.value, g.value) ? "fulfilled" : "ready", d.ref);
   }
   if (g.kind === "deliver") {
@@ -100,15 +104,15 @@ export function assess(a: Attempt, w: AssessmentWorld): Assessment {
     const place = w.destination;
     if (g.recipientId && place?.recipientId === g.recipientId && place.ref.subjectId === g.recipientId && place.room &&
         g.room && place.room !== g.room && fresh(place.ref)) return result("changed", place.ref);
-    return result("ready");
+    return result(place && fresh(place.ref) ? "ready" : "need_evidence", place?.ref);
   }
   const object = w.objects.find(o => o.id === g.objectId);
   if (!object || object.status !== "present" || object.closer_hold || !w.photo || object.last_seen_ms !== w.photo.at_ms) {
     return result("need_evidence");
   }
   const ref = { source: "photo", originId: w.photo.id, subjectId: object.id, observedMs: object.last_seen_ms };
-  if (!fresh(ref)) return result("need_evidence");
-  if (w.holding.includes(object.id) || object.facts.in_hand?.value === "yes") return result("invalid", ref);
-  if (object.surface === g.to && (!g.basin || object.surface_part === "basin")) return result("fulfilled", ref);
+  if (ref.observedMs > w.now || w.now - ref.observedMs > 10_000) return result("need_evidence");
+  if (w.holding.includes(object.id) || object.facts.place?.value === "in_hand") return result("ready", ref);
+  if (object.surface === g.to && (!g.basin || object.surface_part === "basin") && fresh(ref)) return result("fulfilled", ref);
   return result(object.surface === g.from ? "ready" : "changed", ref);
 }

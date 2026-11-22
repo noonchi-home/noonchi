@@ -8,7 +8,6 @@ export { Looker } from "./look.js";
 export { type Mode, emergencyOf, modeNow, pamTasks } from "./mode.js";
 export { SAY_DONE_MS, sayLine, sayOf } from "./say.js";
 export { ExecutionTracker } from "./track/tracker.js";
-export { bindAssistanceAnswers, type BoundAssistanceAnswer } from "./track/answers.js";
 export { assistanceOutcome, publishAssistanceOutcome } from "./help-record.js";
 export { planIdOf } from "./tasks.js";
 
