@@ -34,6 +34,8 @@ services:
     init: true
     restart: unless-stopped
     environment:
+      # 컨테이너 안에서만 0.0.0.0으로 듣는다. 호스트에는 아래 ports가 127.0.0.1로만 낸다
+      NOONCHI_IN_CONTAINER: "1"
       HOST: 0.0.0.0
       PHONE_HOST: 0.0.0.0
       PORT: "8200"
@@ -43,8 +45,6 @@ services:
       # 영상 모드 영상 폴더: 볼륨 안(기본 공용 폴더 /app/runtime/videos는 이미지 안이라 비어 있다)
       PHONE_VIDEO_DIR: /data/videos
       MATTER_TRANSPORT: local
-      # 컨테이너 안 네트워크 주소(Docker 브리지)는 밖에서 열 수 없다: 폰 주소는 PHONE_URL(과 tailscale serve 주소)만
-      PHONE_LAN_URLS: "0"
       # 에이전트
       AGENT_PROVIDER:
       OPENAI_API_KEY:

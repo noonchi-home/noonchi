@@ -7,6 +7,12 @@ import { createDashboardFlow } from "./dashboard-flow";
 import { connectDashboard } from "./pairing";
 import { startNativeAr } from "./native-twa";
 import { BrandWordmark, wordmarkBackground } from "./BrandWordmark";
+import { ScreenBoundary } from "./screen-boundary";
+import { clientErrorReport, reportClientError } from "./client-error";
+import { createConnectedHub } from "./connected-hub";
+import appConfig from "./app.json";
+
+type DashboardFlow = ReturnType<typeof createDashboardFlow>;
 
 const brand = "#a1143e";
 const mascot = require("./assets/mascot-large.webp");
@@ -30,8 +36,24 @@ function Loading() {
   </SafeAreaView>;
 }
 
-function Portal() {
-  const [flow] = useState(() => createDashboardFlow({ connect: connectDashboard, open: startNativeAr }, activeNow()));
+function ScreenFailed({ onRetry }: { onRetry: () => void }) {
+  return <SafeAreaView style={styles.page}>
+    <StatusBar barStyle="dark-content" />
+    <View style={styles.content}>
+      <Text accessibilityRole="alert" style={styles.title}>화면을 열지 못했어요</Text>
+      <Button title="다시 시도" onPress={onRetry} />
+    </View>
+  </SafeAreaView>;
+}
+
+/** 연결된 허브가 있으면 잡은 화면 오류를 허브 로그로 보낸다. */
+function reportScreenError(flow: DashboardFlow, error: unknown, componentStack: string | null) {
+  const { screen } = flow.view();
+  if (screen.kind !== "dashboard") return;
+  void reportClientError(() => createConnectedHub(screen.url), clientErrorReport(error, componentStack, appConfig.expo.version, Date.now()));
+}
+
+function Portal({ flow }: { flow: DashboardFlow }) {
   const { active, cameraEpoch, screen } = useSyncExternalStore(flow.subscribe, flow.view);
   const [permission, requestPermission, getPermission] = useCameraPermissions({ get: false });
   const [permissionError, setPermissionError] = useState(false);
@@ -114,7 +136,13 @@ function Portal() {
 }
 
 export default function App() {
-  return <SafeAreaProvider><Portal /></SafeAreaProvider>;
+  const [flow] = useState(() => createDashboardFlow({ connect: connectDashboard, open: startNativeAr }, activeNow()));
+  return <SafeAreaProvider>
+    <ScreenBoundary fallback={retry => <ScreenFailed onRetry={retry} />}
+      onError={(error, componentStack) => reportScreenError(flow, error, componentStack)}>
+      <Portal flow={flow} />
+    </ScreenBoundary>
+  </SafeAreaProvider>;
 }
 
 const styles = StyleSheet.create({

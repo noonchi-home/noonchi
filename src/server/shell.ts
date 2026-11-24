@@ -1,14 +1,14 @@
-// 껍데기 서버: 포트를 계속 잡고 /api/setup*만 직접 처리한다. 나머지 HTTP 요청과 /events 업그레이드는 지금 집 앱의
+// 껍데기 서버: 포트를 계속 잡고 /api/setup*와 앱 화면 오류(/api/mobile/client-error)만 직접 처리한다. 나머지 HTTP 요청과 /events 업그레이드는 지금 집 앱의
 // server로 넘긴다(앱 server는 듣지 않고 'request'·'upgrade' 처리기로만 쓴다). 집을 바꾸는 동안(앱 없음) API는 503이다.
 
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { existsSync } from "node:fs";
-import { networkInterfaces } from "node:os";
 import type { Duplex } from "node:stream";
 import { resolve } from "node:path";
 import { DEFAULT_WEB_DIR, HttpError, isLocalOrigin, readJson, type TwinHomeApp } from "./app.js";
 import { listenRetry } from "../shared/net.js";
 import { serveFile } from "../shared/static.js";
+import { CLIENT_ERROR_PATH, clientErrorReceiver } from "./client-error.js";
 
 /** 설정 API(start.ts가 구현). 던지는 HttpError는 그 상태 코드로 나간다. */
 export interface SetupApi {
@@ -34,6 +34,8 @@ export interface ShellOptions {
   allowOrigin?: (origin: string) => boolean;
   mobileUrls?: () => readonly string[];
   log?: (msg: string) => void;
+  /** 앱 오류 보고 분당 횟수를 셀 시계(시험용). */
+  now?: () => number;
 }
 
 export interface Shell {
@@ -43,14 +45,6 @@ export interface Shell {
 }
 
 const BUSY = "집을 바꾸는 중이에요. 잠시 뒤 다시 해 주세요.";
-
-/** The hub's own LAN origins, on the HTTP port it actually bound. */
-export function lanHubOrigins(port: number, host: string): string[] {
-  const interfaces = Object.values(networkInterfaces()).flat();
-  const wildcard = host === "0.0.0.0" || host === "::";
-  return interfaces.flatMap(a => a?.family === "IPv4" && !a.internal && (wildcard || a.address === host)
-    ? [`http://${a.address}:${port}`] : []);
-}
 
 export function mobileHubUrls(origins: readonly string[]): string[] {
   const urls = origins.flatMap(value => {
@@ -69,13 +63,14 @@ export function createShell(opts: ShellOptions): Shell {
   const webDir = resolve(opts.webDir ?? DEFAULT_WEB_DIR);
   const allowOrigin = opts.allowOrigin ?? isLocalOrigin;
   const log = opts.log ?? ((m: string) => console.log(m));
+  const receiveClientError = clientErrorReceiver({ log, now: opts.now });
 
   function sendJson(res: ServerResponse, status: number, body: unknown): void {
     res.writeHead(status, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
     res.end(JSON.stringify(body));
   }
 
-  async function setupRoute(req: IncomingMessage, res: ServerResponse, path: string, search: string): Promise<void> {
+  async function shellRoute(req: IncomingMessage, res: ServerResponse, path: string, search: string): Promise<void> {
     const origin = req.headers.origin;
     if (req.method !== "GET" && origin && !allowOrigin(origin)) {
       sendJson(res, 403, { ok: false, error: "허용되지 않은 출처의 요청입니다." });
@@ -92,6 +87,10 @@ export function createShell(opts: ShellOptions): Shell {
       else if (req.method === "POST" && path === "/api/setup/mode") body = opts.setup.setMode(await readJson(req));
       else if (req.method === "GET" && path === "/api/setup/thinq") body = await opts.setup.thinqDevices(new URLSearchParams(search).get("home") ?? undefined);
       else if (req.method === "POST" && path === "/api/setup/pairs") body = opts.setup.setPairs(await readJson(req));
+      else if (path === CLIENT_ERROR_PATH) {
+        if (req.method !== "POST") throw new HttpError(405, "허용되지 않은 메서드입니다.");
+        body = await receiveClientError(req);
+      }
       else throw new HttpError(404, `없는 API입니다: ${path}`);
       sendJson(res, 200, body);
     } catch (e) {
@@ -105,13 +104,13 @@ export function createShell(opts: ShellOptions): Shell {
 
   const server = createServer((req, res) => {
     const { pathname: path, search } = new URL(req.url ?? "/", "http://localhost");
-    if (path === "/api/setup" || path.startsWith("/api/setup/")) {
+    if (path === "/api/setup" || path.startsWith("/api/setup/") || path === CLIENT_ERROR_PATH) {
       if (req.method === "OPTIONS") {
         res.writeHead(204);
         res.end();
         return;
       }
-      setupRoute(req, res, path, search).catch(() => { if (!res.headersSent) sendJson(res, 500, { ok: false, error: "서버 오류" }); });
+      shellRoute(req, res, path, search).catch(() => { if (!res.headersSent) sendJson(res, 500, { ok: false, error: "서버 오류" }); });
       return;
     }
     if (req.method === "GET" || req.method === "HEAD") {

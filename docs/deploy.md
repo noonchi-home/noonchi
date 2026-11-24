@@ -73,7 +73,7 @@ Each container receives only the variables listed for its service in `deploy/com
 
 - NOONCHI uses `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `VLM_API_KEY`, `PAM_LLM_API_KEY`, `THINQ_TOKEN`, `THINQ_API_KEY` and `PLAN_TOKEN`.
 - The vLLM services use `HF_TOKEN` for downloads. NOONCHI and both model services can use `VLLM_API_KEY` to authenticate inference traffic.
-- Compose sets the internal host and ports, `RUNTIME_DIR=/data`, `PHONE_VIDEO_DIR=/data/videos`, `MATTER_TRANSPORT=local` and `PHONE_LAN_URLS=0`. To change published ports, use `NOONCHI_PORT` (8200) and `NOONCHI_PHONE_PORT` (8210). Shell values take precedence over the selected environment file.
+- Compose sets the internal host and ports, `RUNTIME_DIR=/data`, `PHONE_VIDEO_DIR=/data/videos`, and `MATTER_TRANSPORT=local`. To change published ports, use `NOONCHI_PORT` (8200) and `NOONCHI_PHONE_PORT` (8210). Shell values take precedence over the selected environment file.
 
 ## 4. Start and check the services
 

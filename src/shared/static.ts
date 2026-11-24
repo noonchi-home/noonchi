@@ -16,8 +16,8 @@ export const TYPES: Record<string, string> = {
 
 const typeOf = (file: string) => TYPES[extname(file).toLowerCase()] ?? "application/octet-stream";
 
-/** root 안의 rel 경로(URL 인코딩)를 푼다. 폴더 밖·널 문자·잘못된 인코딩이면 null. */
-function within(root: string, rel: string): string | null {
+/** root 안의 rel 경로(URL 인코딩)를 푼다. 폴더 밖·널 문자·잘못된 인코딩이면 null. root는 상대 경로여도 된다(RUNTIME_DIR=runtime). */
+function within(dir: string, rel: string): string | null {
   let decoded: string;
   try {
     decoded = decodeURIComponent(rel);
@@ -25,6 +25,8 @@ function within(root: string, rel: string): string | null {
     return null;
   }
   if (decoded.includes("\0")) return null;
+  // file이 절대 경로라 root도 절대 경로로 맞춰 비교한다
+  const root = resolve(dir);
   const file = resolve(root, "." + sep + decoded.replace(/^[/\\]+/, ""));
   return file === root || file.startsWith(root.endsWith(sep) ? root : root + sep) ? file : null;
 }

@@ -1,4 +1,4 @@
-// 폰에서 열 주소. 순서: PHONE_URL → tailscale serve가 폰 포트로 잇는 https 주소(AR은 https에서만 된다) → 와이파이 주소.
+// 폰에서 열 주소. 순서: PHONE_URL → tailscale serve가 폰 포트로 잇는 https 주소(AR은 https에서만 된다) → 이 PC(루프백) 주소.
 // tailscale 명령 실행은 주입한다(시험은 가짜 출력, 실제 서버는 main.ts가 runCommand를 넘긴다).
 import { execFile } from "node:child_process";
 
@@ -33,10 +33,16 @@ export function servedPhoneUrls(config: unknown, phonePort: number): string[] {
   return out;
 }
 
-/** PHONE_URL(있으면) → tailscale → 와이파이. 같은 주소는 한 번만. */
-export function orderPhoneUrls(lan: string[], tailscale: string[], envUrl?: string): string[] {
+/** PHONE_URL(있으면) → tailscale → 이 PC(루프백) 주소. 같은 주소는 한 번만. */
+export function orderPhoneUrls(local: string[], tailscale: string[], envUrl?: string): string[] {
   const first = envUrl?.trim() ? [envUrl.trim()] : [];
-  return [...new Set([...first, ...tailscale, ...lan])];
+  return [...new Set([...first, ...tailscale, ...local])];
+}
+
+/** PHONE_URL이 http면 시작 줄에 찍을 경고. 폰 카메라(WebXR)는 HTTPS에서만 열린다. */
+export function phoneUrlWarning(envUrl?: string): string | null {
+  const url = envUrl?.trim();
+  return url && /^http:\/\//i.test(url) ? `폰 카메라는 HTTPS 주소가 필요해요: PHONE_URL=${url}` : null;
 }
 
 /** tailscale serve 설정을 읽어 폰 주소를 찾는다. tailscale이 없거나 실패하면 빈 목록. */
