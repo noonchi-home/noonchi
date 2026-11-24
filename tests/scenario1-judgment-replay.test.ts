@@ -6,6 +6,7 @@ import type { TrackCore } from "../src/act/track/core.js";
 import { floorPlanFrom } from "../src/layout/floor.js";
 import { inView, ndc } from "../src/world/place.js";
 import { yawPitchQuat } from "../ui/src/phone/core/video-math.js";
+import { YOLO_NO_VIEWER_MS } from "../src/goal/tv-watch.js";
 import { judgeScenario1, scenarioRank, type ScenarioEvent } from "../scripts/scenario1-judge.js";
 import { earlyTvEvidence, LiveScenario, standbyTvEvidence } from "../scripts/scenario1-live.js";
 
@@ -244,11 +245,12 @@ describe("시나리오 1 합성(composed) 판단 재생", { timeout: 20_000 }, (
     expect(v.firstMismatch, JSON.stringify(trace)).toBeNull();
     expect(v.passed).toBe(true);
     expect(v.tvConfirmToCupCommandMs).toBeGreaterThanOrEqual(0);
-    // 벽 쪽 복귀 후 떠남 82.05초, 빈 구역 82.5~84.5초 촬영, 마지막 답 86.4초에 도착.
-    expect(v.leftToOffMs).toBe(4350);
-    expect(v.noViewerToOffMs).toBe(3900);
+    // 벽 쪽 복귀 후 떠남 82.05초. YOLO가 시청 자리에서 사용자를 못 본 구간이 82.5초(첫 빈 사진 촬영)부터 이어져 85.0초 프레임에 2.5초를 넘고,
+    // 83.75초 TV 규칙 틱에 끈다(VLM 사진 2초 규칙이면 86.4초)
+    expect(v.leftToOffMs).toBe(2950);
+    expect(v.noViewerToOffMs).toBe(2500);
     expect(v.noViewerToAckMs).toBeGreaterThanOrEqual(v.noViewerToOffMs!);
-    expect(judgeScenario1(trace.map((e) => (e.kind === "left" ? { ...e, at: e.at - 651 } : e))).firstMismatch).toBe(
+    expect(judgeScenario1(trace.map((e) => (e.kind === "tv_off" || e.kind === "tv_off_ack" ? { ...e, at: e.at + 2051 } : e))).firstMismatch).toBe(
       "late:tv_off",
     );
     expect(judgeScenario1(trace.filter((e) => e.kind !== "left")).firstMismatch).toBe("unexpected:empty");
@@ -281,11 +283,16 @@ describe("시나리오 1 합성(composed) 판단 재생", { timeout: 20_000 }, (
     // 빈 사진 한 장의 답이 2초 늦게 와 바로 끈 것: 촬영 시각으로 빈 구간이 2초가 안 된다
     expect(withCycle(cycle.map((e) => (e.kind === "early_vacant" ? { ...e, at: t0 } : e))).firstMismatch).toBe("early_tv:no_vacancy");
     expect(withCycle(cycle.filter((e) => e.kind !== "early_vacant")).firstMismatch).toBe("early_tv:no_vacancy");
-    // 대기 뒤 끄기도 같다: 빈 구간 첫 촬영(empty)과 끄기를 정한 빈 촬영(vacant)이 2초 넘게 떨어져야 한다
+    // 대기 뒤 끄기도 같다: 빈 구간 첫 근거(empty)와 끄기를 정한 근거(vacant)가 그 근거의 기준(YOLO 프레임 2.5초, VLM 사진 2초) 넘게 떨어져야 한다
     const vacant = trace.find((e) => e.kind === "vacant")!,
       empty = trace.find((e) => e.kind === "empty")!;
-    expect(vacant.at - empty.at).toBeGreaterThanOrEqual(2000);
-    expect(judgeScenario1(trace.map((e) => (e.kind === "vacant" ? { ...e, at: empty.at + 1999 } : e))).firstMismatch).toBe("no_vacancy:tv_off");
+    expect(vacant.by).toBe("yolo");
+    expect(vacant.at - empty.at).toBeGreaterThanOrEqual(YOLO_NO_VIEWER_MS);
+    expect(judgeScenario1(trace.map((e) => (e.kind === "vacant" ? { ...e, at: empty.at + YOLO_NO_VIEWER_MS - 1 } : e))).firstMismatch).toBe("no_vacancy:tv_off");
+    // VLM 사진 근거면 기준은 2초다
+    const photoBased = (gap: number) => trace.map((e) => (e.kind === "empty" ? { ...e, by: undefined } : e.kind === "vacant" ? { ...e, by: undefined, at: empty.at + gap } : e));
+    expect(judgeScenario1(photoBased(1999)).firstMismatch).toBe("no_vacancy:tv_off");
+    expect(judgeScenario1(photoBased(2000)).firstMismatch).toBeNull();
     expect(judgeScenario1(trace.filter((e) => e.kind !== "vacant")).firstMismatch).toBe("unexpected:tv_off");
     expect(withCycle(cycle.filter((e) => e.kind !== "early_viewer")).firstMismatch).toBe("early_tv:no_viewer");
     expect(
@@ -370,6 +377,15 @@ describe("시나리오 1 합성(composed) 판단 재생", { timeout: 20_000 }, (
     const trace = await replayScenario("back");
     expect(trace.map((e) => e.kind)).toEqual(expect.arrayContaining(["ready", "checking", "back"]));
     expect(trace.filter((e) => ["pick", "table_go", "find_cup"].includes(e.kind))).toEqual([]);
+  });
+  // 2026-11-25 control 결정: TV 시청자 없음은 VLM 사진 2초 규칙 말고도 World State의 못 본 구간(시청 자리가 화면 안, YOLO가 2.5초 이어 못 봄)을 받는다.
+  // 2.5초는 잠깐 일어섰다 돌아옴(화면 밖 2초 안팎)을 끄지 않게 정했다
+  it("시청 자리가 화면 안인데 YOLO가 시청자를 2.5초 이어 못 보면 VLM 사진 2초를 기다리지 않고 떠난 뒤 3초 안에 TV를 끈다", async () => {
+    const trace = await replayScenario("normal");
+    const left = trace.find((e) => e.kind === "left")!;
+    const off = trace.find((e) => e.kind === "tv_off" && e.at > left.at)!;
+    expect(off).toBeDefined();
+    expect(off.at - left.at).toBeLessThanOrEqual(3000);
   });
   it("시청자가 잠깐 일어섰다가 돌아오면 TV 끄기를 보내지 않는다", async () => {
     const trace = await replayScenario("brief");

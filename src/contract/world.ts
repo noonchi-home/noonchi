@@ -83,6 +83,9 @@ export interface WorldPerson {
   facts: Partial<Record<Facet, WorldFact>>;
   /** 사람이 든 마지막 VLM 답의 촬영 시각(없으면 null). */
   answered_ms: number | null;
+  /** 사람이 있던 자리(마지막 발 자리)가 엔진 프레임 화면 안인데 YOLO가 사용자를 이어 못 본 구간: 그 시작 촬영 시각과 그 자리·방.
+   *  보거나 자리가 화면 밖이 되면 없다. 안 보임이 된 뒤에도 이어지는 동안 남는다(TV 규칙이 쓴다, src/goal/triggers.ts yoloVacant). */
+  vacant?: { since_ms: number; position: [number, number]; room: string | null };
 }
 
 /** 자리가 정해진 가전·설비(TV·냉장고·전자레인지·오븐·토스터·싱크대)를 YOLO·VLM으로 본 것. 방마다 종류 하나. */

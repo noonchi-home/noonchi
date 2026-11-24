@@ -7,6 +7,7 @@ import { floorLookup } from "../src/layout/home-plan.js";
 import { floorPlanFrom } from "../src/layout/floor.js";
 import { locateZone } from "../src/layout/stations.js";
 import { GoalTriggers } from "../src/goal/triggers.js";
+import { YOLO_NO_VIEWER_MS } from "../src/goal/tv-watch.js";
 import { judgeScenario1, scenarioRank, type ScenarioEvent } from "./scenario1-judge.js";
 
 type Scene = SceneJson & { stations: StationMap };
@@ -25,14 +26,24 @@ export class LiveScenario {
   /** 마지막으로 읽은 World State의 가전(시청 구역을 지켜볼 TV를 찾는다). */
   private devices: WorldDevice[] = [];
   private lastSink = new Set<string>();
+  /** 읽은 World State에서 본 YOLO 근거: 시청 구역에 있던 사용자를 YOLO_NO_VIEWER_MS 넘게 못 본 구간(TV 규칙 yoloVacant와 같은 사실)의 TV와 시작 촬영 시각. */
+  private yolo: { tv: string; since: number }[] = [];
+  private readonly yoloTriggers: GoalTriggers;
   constructor(scene: Scene) {
     this.map = scene.stations;
     this.floor = floorLookup(scene.plan.rooms ?? []);
     this.sinks = new Set([...floorPlanFrom(scene).objects.values()].filter((p) => p.basin).map((p) => p.id));
+    this.yoloTriggers = new GoalTriggers(locateZone, this.floor, 2000);
   }
   /** 읽은 World State: 가전과 싱크대 안 컵만 본다. 집 사진은 1초마다 읽으면 1초 간격 사진을 건너뛸 수 있어 기록 줄(judge)로만 매긴다. */
   sample(w: WorldView) {
     this.devices = w.devices;
+    const v = w.person?.vacant;
+    if (v) {
+      const f = this.yoloTriggers.evaluateTriggers(w, 0, this.map, w.at_ms);
+      for (const [tv, room] of f.tvRooms ?? [])
+        if (f.yoloVacant?.(room, YOLO_NO_VIEWER_MS) != null && !this.yolo.some((y) => y.tv === tv && y.since === v.since_ms)) this.yolo.push({ tv, since: v.since_ms });
+    }
     const sink = new Set<string>();
     for (const o of w.objects)
       if (
@@ -151,7 +162,13 @@ export class LiveScenario {
       // 대기 자리 도착 전 끔→켬(식탁에서 소파로 걷는 동안)은 판정 함수가 따로 본다. 여기서는 대기 뒤 끄기만 쓴다
       const off = events.find((e) => e.kind === "tv_off" && e.at >= standby.at);
       const tv = off?.id ?? this.photos.at(-1)?.tv;
-      events.push(...standbyTvEvidence(this.photos, tv, standby.at, off?.at ?? null, events.find((e) => e.kind === "tv_off_ack" && e.at >= standby.at)?.at ?? null, events.find(e=>e.kind==="tv_on" && e.at>=standby.at)?.at ?? null));
+      const photo = standbyTvEvidence(this.photos, tv, standby.at, off?.at ?? null, events.find((e) => e.kind === "tv_off_ack" && e.at >= standby.at)?.at ?? null, events.find(e=>e.kind==="tv_on" && e.at>=standby.at)?.at ?? null);
+      // 끄기가 YOLO 근거로 정해졌으면(대기 뒤 시작한 못 본 구간이 끄기 전에 YOLO_NO_VIEWER_MS를 넘김) 빈 구간 근거는 그 YOLO 구간이다
+      const yolo = off && this.yolo.findLast((y) => y.tv === tv && y.since >= standby.at && y.since + YOLO_NO_VIEWER_MS <= off.at);
+      events.push(...(yolo
+        ? [{ kind: "empty", at: yolo.since, id: tv, by: "yolo" } as const, { kind: "vacant", at: yolo.since + YOLO_NO_VIEWER_MS, id: tv, by: "yolo" } as const,
+          ...photo.filter((e) => e.kind !== "empty" && e.kind !== "vacant")]
+        : photo));;
     }
     // Questions may have no target. Check the phone's own record as well as dispatch receipts.
     if (received.some((c) => !["go", "pick", "place"].includes(c.kind ?? "") && !c.step.startsWith("done:")))

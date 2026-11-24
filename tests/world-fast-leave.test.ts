@@ -59,6 +59,20 @@ describe("떠남 → 사람 안 보임", () => {
     expect(w.view(6000).person.visible).toBe(false);
   });
 
+  it("못 본 구간(person.vacant)은 안 보임이 된 뒤에도 자리가 화면 안이고 못 보는 동안 이어지고, 자리가 화면 밖이거나 다시 보면 없다(TV 규칙이 읽는다)", () => {
+    const w = ws();
+    seen(w, 0, 3000);
+    expect(w.view(3000).person.vacant).toBeUndefined();
+    goneAt(w, 3100, 4500);
+    expect(w.view(4500).person.vacant).toMatchObject({ since_ms: 3100, room: "living" });
+    w.applyDetections(frame(4600, AWAY_VIEW), []);
+    expect(w.view(4600).person.vacant).toBeUndefined();
+    w.applyDetections(frame(4700), []);
+    expect(w.view(4700).person.vacant).toMatchObject({ since_ms: 4700 });
+    w.applyDetections(frame(4800), [PERSON]);
+    expect(w.view(4800).person.vacant).toBeUndefined();
+  });
+
   it("그 자리가 화면 밖이면(폰이 반대쪽을 봄) 지금처럼 4초를 기다린다", () => {
     const w = ws();
     seen(w, 0, 3000);
@@ -90,6 +104,7 @@ describe("떠남 → 사람 안 보임", () => {
     for (let t = 3800; t <= 4800; t += 100) {
       w.applyDetections(frame(t), []);
       expect(w.view(t).person.visible).toBe(true);
+      expect(w.view(t).person.vacant).toBeUndefined();
     }
   });
 

@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { Outbox, BusNode, type Body, type Envelope, type TopicName } from "../../src/bus/index.js";
 import { Bag, replay } from "../../src/record/index.js";
 import { GoalTriggers, type TriggerFacts } from "../../src/goal/triggers.js";
-import { NO_VIEWER_MS, viewerAt } from "../../src/goal/tv-watch.js";
+import { NO_VIEWER_MS, YOLO_NO_VIEWER_MS, viewerAt } from "../../src/goal/tv-watch.js";
 import { startGoalNode } from "../../src/goal/start.js";
 import { managerRoutes } from "../../src/manage/node.js";
 import { PlanHub } from "../../src/act/hub.js";
@@ -204,6 +204,25 @@ function makeBag(bag: Bag, variant: Variant): {
   for (let t = 0; t < REPLAY_MS; t += WORLD_TICK_MS) source.push({ at: t, kind: "tick", source: "world node 250 ms republish" });
   let left: number | null = null;
   const photos: Photo[] = [];
+  // YOLO 프레임(100ms마다, 지연 없음): 줄이 말하는 사람이 그 촬영 시각부터 다음 줄까지 그 자리에 있거나 없다.
+  // 떠남 줄(left)은 자리를 뜬 때라 아직 화면 안을 걷는다: 화면에서 사라진 때는 그 뒤 첫 빈 사진의 촬영 시각으로 둔다
+  // 집 상태 노드는 사람이 있던 자리(발 자리)가 화면 안인데 사용자를 못 본 구간을 World State 사람의 vacant로 낸다(src/world/state/objects.ts)
+  const presence = source.filter((r) => ["tv", "table", "fridge", "away"].includes(r.kind)).sort((a, b) => a.at - b.at)
+    .map((r) => ({ at: r.at, there: r.kind !== "away" && r.value !== "empty" }));
+  const vacantSince = (t: number): number | null => {
+    let since: number | null = null;
+    for (const e of presence) {
+      if (e.at > t) break;
+      since = e.there ? null : since ?? e.at;
+    }
+    return since;
+  };
+  const yoloVacancy = (t: number) => {
+    const since = vacantSince(t), p = world.person.position;
+    if (since === null || !p) return undefined;
+    const phone = phoneAt(stops, t);
+    return inView(cameraAt(phone.position, phone.look), [p[0], 0.9, p[1]]) ? { since_ms: base + since, position: p, room: world.person.room } : undefined;
+  };
   // 집 상태는 도착 차례로 쌓는다: 늦게 온 VLM 답은 그 사이 사건 뒤에 들어간다(사진 시각은 촬영 시각 그대로)
   const arrival = (r: Line) => r.at + (r.lag ?? 0);
   for (const r of source.sort((a, b) => arrival(a) - arrival(b) || a.at - b.at)) {
@@ -249,6 +268,7 @@ function makeBag(bag: Bag, variant: Variant): {
       world.eye = eyeOf(r.at);
       world.at_ms = at;
       world.frame_ms = at;
+      world.person = { ...world.person, vacant: yoloVacancy(r.at) };
       publishState(at);
       continue;
     }
@@ -703,6 +723,8 @@ export async function replayScenario(
           const action = tracker.goalTrigger(d);
           return action ? { ...d, action, goal: true } : d;
         };
+        // 빈 구간 근거를 넣은 촬영·프레임 시각: 돌아옴은 그 뒤에 찍힌 앉아 보는 사진이어야 한다(YOLO 근거면 늦게 온 앞 사진이 아직 앉아 봄이다)
+        let emptyAt = Infinity;
         let firstEmpty = false,
           emptySince: number | null = null;
         const tick = () => {
@@ -748,10 +770,18 @@ export async function replayScenario(
           // 그 구간이 NO_VIEWER_MS 이어진 촬영(vacant)을 촬영 시각 자리에 넣는다
           const zone = seenZone.evaluateTriggers(view, next, map, clock.now());
           const shot = view.household_photo?.at_ms;
-          const atShot = (kind: ScenarioEvent["kind"], t: number) => {
+          const atShot = (kind: ScenarioEvent["kind"], t: number, by?: "yolo") => {
             const i = trace.findIndex((x) => x.at > t - base);
-            trace.splice(i < 0 ? trace.length : i, 0, { kind, at: t - base, id: tvId });
+            trace.splice(i < 0 ? trace.length : i, 0, { kind, at: t - base, id: tvId, ...(by ? { by } : {}) });
           };
+          // YOLO 근거(TV 규칙과 같은 사실 yoloVacant): 시청 자리에 있던 사용자를 못 본 구간의 시작(empty)과 YOLO_NO_VIEWER_MS를 넘긴 엔진 프레임(vacant)
+          const yolo = zone.yoloVacant?.("living", YOLO_NO_VIEWER_MS) ?? null;
+          if (!firstEmpty && yolo !== null && view.person.vacant && trace.some((e) => e.kind === "watch")) {
+            atShot("empty", view.person.vacant.since_ms, "yolo");
+            atShot("vacant", yolo, "yolo");
+            firstEmpty = true;
+            emptyAt = yolo;
+          }
           const vacancy = zone.read({ kind: "noViewer", room: "living", ms: 0 });
           if (vacancy.value !== true) emptySince = null;
           else if (emptySince === null && shot !== undefined) emptySince = shot;
@@ -760,8 +790,9 @@ export async function replayScenario(
             atShot("empty", emptySince);
             atShot("vacant", shot);
             firstEmpty = true;
+            emptyAt = shot;
           }
-          if (firstEmpty && zone.read({ kind: "postureAttention", target: tvId, posture: "seated" }).value === true && !trace.some((e) => e.kind === "viewer_returned"))
+          if (firstEmpty && shot !== undefined && shot > emptyAt && zone.read({ kind: "postureAttention", target: tvId, posture: "seated" }).value === true && !trace.some((e) => e.kind === "viewer_returned"))
             add("viewer_returned");
           if (view.objects[0]?.surface_part === "basin" && !trace.some((e) => e.kind === "in_sink"))
             add("in_sink", view.objects[0].id);

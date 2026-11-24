@@ -60,11 +60,12 @@ export class Detections extends Part {
     if (seen.has(PERSON)) core.fastBlocked = false;
     // 떠남 빠르게: 사람이 있던 자리가 화면 안인데 YOLO가 FAST_GONE_MS 이어 못 보면 사라짐 확정(4초)을 기다리지 않는다.
     // 자리가 화면 밖이거나 모르면 셈을 지우고 확정 규칙(confirmer)에 맡긴다. VLM 답이 그 뒤 사람을 보면 되돌린다(WorldState.revertGone)
-    if (seen.has(PERSON) || !core.person.visible || core.fastBlocked || !core.people.spotInView(frame)) core.vacantFrom = null;
-    else if (at - (core.vacantFrom ??= at) >= FAST_GONE_MS && !events.some((e) => e.key === PERSON)) {
+    // 못 본 구간(vacantFrom)은 안 보임이 된 뒤에도 자리가 화면 안이고 못 보는 동안 이어진다(TV 규칙이 WorldPerson.vacant로 읽는다)
+    if (seen.has(PERSON) || !core.people.spotInView(frame)) core.vacantFrom = null;
+    else core.vacantFrom ??= at;
+    if (core.vacantFrom !== null && core.person.visible && !core.fastBlocked && at - core.vacantFrom >= FAST_GONE_MS && !events.some((e) => e.key === PERSON)) {
       core.fastGone = { at, since: core.person.since_ms, count: core.person.count, facts: core.person.facts };
       core.confirmer.forget(PERSON);
-      core.vacantFrom = null;
       events.push({ key: PERSON, kind: "gone", atMs: at });
     }
     const changes: WorldChange[] = [];

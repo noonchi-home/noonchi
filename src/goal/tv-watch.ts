@@ -8,10 +8,15 @@ export const NO_VIEWER_MS = 2000;
 /** 시청 구역을 본 사진의 촬영 시각부터 이만큼은 지켜보는 것으로 둔다: 1초 간격 사진 한 장이 처리 한도로 빠져(다음 촬영 2초 뒤)
  *  그 답이 2초 늦게 와도 2초 간격으로 돌아가지 않게. 같은 사진을 다시 평가해도 늘지 않는다. */
 export const WATCH_HOLD_MS = 4000;
-/** seen: 시청 구역이 지금 유효한 사진에 보인다(빈 자리 판단이 unknown이 아니다). */
-export interface ViewerEvidence { empty:boolean; watch:boolean; photo:number|null; seen:boolean }
+/** 시청 구역에 있던 사용자를 YOLO가 이만큼 이어 못 보면(그 자리가 화면 안) VLM 사진을 기다리지 않고 비었다고 본다(2026-11-25 control 결정:
+ *  잘못 끄기 0이 먼저라, 잠깐 일어섰다 돌아옴(화면 밖 2초 안팎)은 끄지 않는 길이. 떠남 → 끄기는 5초 안에 든다). */
+export const YOLO_NO_VIEWER_MS = 2500;
+/** seen: 시청 구역이 지금 유효한 사진에 보인다(빈 자리 판단이 unknown이 아니다). by yolo: 빈 자리 근거가 YOLO 프레임(photo는 그 엔진 프레임 시각). */
+export interface ViewerEvidence { empty:boolean; watch:boolean; photo:number|null; seen:boolean; by?:"yolo" }
 export function viewerAt(facts:TriggerFacts | null,id:string,now:number):ViewerEvidence {
   const room=facts?.tvRooms?.get(id);
+  const yolo=room ? facts?.yoloVacant?.(room,YOLO_NO_VIEWER_MS) ?? null : null;
+  if (yolo !== null) return {empty:true,watch:false,photo:yolo,seen:true,by:"yolo"};
   if (!room || facts?.photoValidUntil == null || now > facts.photoValidUntil) return {empty:false,watch:false,photo:null,seen:false};
   const empty=facts.read({kind:"noViewer",room,ms:NO_VIEWER_MS});
   const watch=facts.read({kind:"postureAttention",posture:"seated",target:id});
