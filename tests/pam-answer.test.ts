@@ -114,6 +114,16 @@ describe("사람 상태 FSM 판단 답", () => {
       { state: "~eating", from: null, next_index: -1 },           // 기억 상태(drinking)가 가진 하는 일 값(상태 id는 아님)
     ]) expect(parsePrediction(ok(bad), tasks, fsm(CUP_FSM_MEMORY, "away")).status).toBe("invalid");
   });
+  // 2026-11-25 예시 녹화: 관찰 기록은 하는 일을 한국어 이름표(사람 쉬거나 자는 중)로 써서, 모델이 그 글로 「~쉬거나_자는_중」을 내 판단이 실패했다
+  it("임시 상태를 관찰 기록의 이름표로 내면(~쉬거나_자는_중, 띄어쓰기도) 그 하는 일 값(~resting)으로 읽는다", () => {
+    for (const said of ["~쉬거나_자는_중", "~쉬거나 자는 중"]) {
+      expect(parsePrediction(ok({ state: said, from: null, next_index: -1 }), tasks, fsm(LEARNED_FSM_MEMORY, "drinking"))).toMatchObject({ status: "valid", prediction: { state: "~resting", from: null, next_index: -1 } });
+    }
+    // 실제 답 모양: 마시는 중에서 "*" 화살표로 떠남
+    expect(parsePrediction(ok({ state: "~쉬거나_자는_중", from: "drinking", next_index: 0 }), tasks, fsm(LEARNED_FSM_MEMORY, "drinking"))).toMatchObject({ status: "valid", selected_action: "컵 치우기", prediction: { state: "~resting" } });
+    // 기억 상태가 가진 하는 일의 이름표(~eating과 같음)와 모르는 이름표는 그대로 틀린 답이다
+    for (const bad of ["~먹는_중", "~날아다니는_중"]) expect(parsePrediction(ok({ state: bad, from: null, next_index: -1 }), tasks, fsm(CUP_FSM_MEMORY, "away")).status).toBe("invalid");
+  });
   // 2026-11-19 tall pfsm5: 모델이 아는 상태 앞에 ~를 붙여 「~drinking」으로 답해 판단이 실패했다
   it("기억에 있는 상태 id에 ~를 붙여 오면(~drinking) 그 상태로 읽는다. 화살표 검사도 그 상태로 한다", () => {
     expect(parsePrediction(ok({ state: "~drinking", from: null, next_index: -1 }), tasks, fsm(CUP_FSM_MEMORY, "away"))).toMatchObject({ status: "valid", prediction: { state: "drinking", from: null, next_index: -1 } });
