@@ -1,10 +1,20 @@
 # NOONCHI server and phone reference
 
-Start with [Getting Started](../README.md#getting-started). Open the dashboard at `http://127.0.0.1:8200`. On the first run, complete `/setup/` to select a home, configure its devices and set the phone's starting pose. The phone requires a secure context for WebXR. For the GPU and Tailscale setup, see the [deployment guide](deploy.md).
+Start with [Getting Started](../README.md#getting-started). Open the dashboard locally at `http://127.0.0.1:8200`. For a physical phone, use the dashboard's reachable HTTPS address. Scan the `/mobile/` QR inside the [NOONCHI Android app](../apps/android/README.md) to pair with the hub, including before a home is registered. Opening the same URL in a compatible phone browser opens the web portal.
+
+For the demonstration, search for Hanyang Mokryeon in Gunpo, confirm the 180B floor plan, and open the twin prepared in Twin Studio. During the scan, match each reference view, capture a photo, and confirm it. Saved views can be resumed, reviewed, or retaken on the phone. In the native app use **집 관리** and **설정**. The web equivalents are `/mobile/` and `/mobile/settings/`. Settings cover the home, devices and supported ThinQ pairings, test or live appliance mode, starting pose, and stations. Android lists layout corrections and can save or reset them. The web settings also provide the layout editor. See the [deployment guide](deploy.md) for the HTTPS setup.
 
 ## Components and state
 
-The phone provides camera frames, pose and voice input. The server projects observations into a home layout, combines them with appliance signals, and supplies timestamped text to PAM. Execution validates a task against the current home before sending step instructions. The dashboard displays the plan and its progress. See the [World State vocabulary](world-vocabulary.md), [PAM interface](pam-interface.md), [plan contract](plan-contract.md), [device and layout interfaces](plan.md) and [3D twin guide](twin3d.md).
+The phone provides camera frames, pose and voice input. The server projects observations into a home layout, combines them with appliance signals, and supplies timestamped text to PAM. Execution validates a task against the current home before sending step instructions. See the [World State vocabulary](world-vocabulary.md), [PAM interface](pam-interface.md), [plan contract](plan-contract.md), [device and layout interfaces](plan.md) and [3D twin guide](twin3d.md).
+
+### Dashboard and Agent Trace
+
+The four default panels are Vision, Digital Twin, Action Conditions, and Agent Trace. The live preview can align detection masks with display frames by capture time. The twin shows the current step and route. **집 전체** switches to the full-home view at `/?view=overview`.
+
+Action Conditions uses the active plan and public evidence for the same attempt and target. The three lines show a confirmed fact when available, the check in progress, and the next step supplied by the plan. Confirmation requires a result for the active task. Ending the plan or changing the connection clears the old conditions.
+
+The Agent Trace shows `KIND`, `NAME`, `INPUT`, `OUTPUT`, and `LATENCY`. The feed groups rows by `activity_id` and applies revisions to the existing row ID. Related model calls expand under their active tool when the same activity has a recorded `cause_id`. The group summarizes an explicit end or stop after about two seconds. Earlier updates cannot reopen it. Missing timings remain blank or pending. Public rows use fixed labels and scoped evidence references. See the [Trace contract](../src/contract/trace.ts).
 
 `TWIN_STUDIO_DIR` selects a local twin asset tree (default `twin/`). `HOME_ID` overrides the default home in `homes.json`. `RUNTIME_DIR` contains the SQLite history database and per-home settings. One server or setup operation may hold its exclusive lock at a time. Stop the process using a runtime directory before resetting that directory. Back up the runtime volume before replacing it.
 
@@ -39,7 +49,7 @@ Routes are implemented under [src/server/routes](../src/server/routes) and [src/
 |---|---|
 | `GET /api/health` | Server status, selected home, phone URLs and component readiness. |
 | `GET /api/homes`, `GET /api/scene`, `GET /api/layout` | Available homes, active scene and layout edits. Save or reset edits with `POST /api/layout/save` or `POST /api/layout/reset`. |
-| `GET /api/setup`, `POST /api/setup/home`, `POST /api/setup/devices`, `POST /api/setup/done` | Read setup progress, choose a home and its devices, then finish setup. `POST /api/setup/mode` selects device operation mode. |
+| `GET /api/setup`, `POST /api/setup/home`, `POST /api/setup/devices`, `POST /api/setup/done` | Read setup progress and `mobile_urls`, choose a home and its devices, then finish setup. `android_twa` reports the selected camera origin when available. `POST /api/setup/mode` selects device operation mode. |
 | `GET /api/setup/thinq`, `POST /api/setup/pairs` | List available ThinQ appliances and save their pairings. |
 | `GET /api/rooms`, `GET /api/devices`, `GET /api/devices/:id` | Inspect room and device IDs, capabilities and current state. Filter the list by `room` or `kind`. |
 | `POST /api/devices/:id/command`, `POST /api/devices/:id/twin`, `POST /api/sensors/:id` | Request a device action, submit a twin attribute or update a sensor. Controllable attributes go through command policy. |
@@ -50,7 +60,7 @@ Routes are implemented under [src/server/routes](../src/server/routes) and [src/
 | `POST /api/reflection/run` | Request reflection on recorded experience. |
 | `GET /api/phone/start-pose`, `POST /api/phone/start-pose` | Read or set the phone's starting pose. Other controls are `POST /api/phone/start-pose/preview`, `POST /api/phone/start-pose/clear` and `GET /api/phone/sync`. |
 | `GET /api/plan`, `POST /api/plan`, `POST /api/plan/:id/steps/:stepId` | Read, publish and advance a plan. See the [plan contract](plan-contract.md) for write authorization and revisions. |
-| `/events` (WebSocket) | Sends an initial home snapshot, then changes to devices, plans, observations, approvals, goals, robot activity and dashboard messages. See [event types](../src/contract/events.ts). |
+| `/events` (WebSocket) | Sends an initial home snapshot and then changes to devices, plans, observations, approvals, goals, robot activity, and dashboard messages. `hello.trace_epoch` scopes the public `trace` snapshot and subsequent revisions. See [event types](../src/contract/events.ts). |
 
 ### External contact service
 
@@ -72,7 +82,9 @@ Example contacts file and two request bodies (fictional contacts):
 
 ## Phone alignment and video mode
 
-Use an HTTPS phone URL, start AR, and align the camera with the saved home position. Camera poses and capture timestamps tie observations to the digital twin. Keep the intended appliance in view when a step asks for visual confirmation. A suspected fall or a risky appliance can take priority over an ordinary instruction.
+On the HTTPS web phone home, tap **클로이드 켜기** to start WebXR in the page. In the installed Android app, the same button opens `/phone/` through Chrome TWA. On `/phone/`, tap **카메라 켜기** and grant the required permissions. At the saved starting position, face the saved direction and tap **여기서 시작**. Camera poses and capture timestamps tie observations to the digital twin. Keep the intended appliance in view when a step asks for visual confirmation. A suspected fall or a risky appliance can take priority over an ordinary instruction.
+
+The phone uses the browser's speech recognition and synthesis when available. Spoken replies are scoped to the question or step visible when the person starts speaking. Explicit new instructions and reminders can speak in Korean. A duplicate delivery or a restored command on reconnect keeps the text without speaking it again. The phone pauses listening while it speaks and keeps the relevant answer buttons available.
 
 For prerecorded input, open `/phone/?clip=<file>`. The phone server serves supported clips from `PHONE_VIDEO_DIR`. Configure the home's starting pose before playback. Optional `fov`, `pitch` and `h` describe the camera. Step clips are repeatable (kinds: go, pick, place, do). Matching clips are consumed in the order listed. When a step clip ends, its last frame is held. When the initial clip ends, its last frame is also held. This keeps camera input available for pending checks. Video mode uses the same plan and completion rules as the physical phone.
 
@@ -92,7 +104,8 @@ For a physical controller on the local network, run the Matter bridge with netwo
 
 ## Troubleshooting
 
-- **Phone cannot start AR.** Check the HTTPS certificate, the selected phone URL and browser camera permissions. Use the same tailnet as the dashboard.
+- **Phone cannot start AR.** Open the hub HTTPS URL in Android Chrome on a device that supports WebXR AR. Check the browser's camera permission for the hub and close any AR session in another tab. If the camera opens but the phone cannot connect, check the WebSocket upgrade for `/mobile/phone-events` and use the same tailnet as the dashboard. The AR settings show microphone guidance when voice input is off or blocked.
+- **Android camera launch is blocked.** Check the `android_twa` URLs and package in `GET /api/setup`. Fetch `assetlinks_url` on the exact `/phone/` origin and port and verify the installed APK's public certificate fingerprint. The TWA uses `/phone/events` on the camera origin. Confirm the address bar is absent and WebXR starts on the physical phone. [TWA deployment](deploy.md#android-camera-twa)
 - **A model is unavailable.** Check `/api/health`, endpoint URLs and credentials. In GPU mode check the model IDs returned by each endpoint.
 - **Device state does not change.** Check the selected home, device ID, supported commands and pending approvals. For a paired appliance, inspect ThinQ readback before retrying.
 - **Runtime is locked.** Stop the server or setup process holding the same runtime directory before restarting or running a fresh demo.

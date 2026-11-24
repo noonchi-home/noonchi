@@ -1,0 +1,88 @@
+<?xml version='1.0' encoding='utf-8'?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1080" viewBox="0 0 1920 1080" role="img" aria-labelledby="figure-title figure-description" lang="en" font-family="'Segoe UI',Arial,sans-serif">
+  <title id="figure-title">The Android app and the NOONCHI server</title>
+  <desc id="figure-description">The native app pairs with the hub using the dashboard QR. Turning on CLOiD opens WebXR in Chrome on the same phone. Images and pose go to the server. Checked steps return to the phone. The server controls appliances and reports progress to the dashboard. Reference photos can be uploaded to S3, and structured events are recorded in SQLite.</desc>
+  <defs>
+    <marker id="arrow-wire" viewBox="0 0 12 12" markerWidth="14" markerHeight="14" markerUnits="userSpaceOnUse" refX="10" refY="6" orient="auto-start-reverse">
+      <path d="M2 2 L10 6 L2 10" fill="none" stroke="#526778" stroke-width="1.9" stroke-linejoin="round" stroke-linecap="round" />
+    </marker>
+    <marker id="arrow-accent" viewBox="0 0 12 12" markerWidth="14" markerHeight="14" markerUnits="userSpaceOnUse" refX="10" refY="6" orient="auto-start-reverse">
+      <path d="M2 2 L10 6 L2 10" fill="none" stroke="#a50034" stroke-width="1.9" stroke-linejoin="round" stroke-linecap="round" />
+    </marker>
+  </defs>
+  <rect x="0" y="0" width="1920" height="1080" rx="0" fill="white" stroke="none" stroke-width="1.8" />
+  <text x="64" y="93" font-size="53" font-weight="700" fill="#192633" text-anchor="start">The Android app and the NOONCHI server</text>
+  <text x="67" y="145" font-size="25" font-weight="400" fill="#425565" text-anchor="start">The phone sends the scene. The server selects the next action, guides the person or sends a command to an appliance.</text>
+  <svg id="official-wordmark" x="1642" y="55" width="214" height="38" viewBox="21 184 2130 374" aria-hidden="true">
+    <path d="       M 33.5 261.5 C 33.5 220 57.5 197.2 94.9 197.2 H 115.1 C 134.2 197.2 151 207.6 163.5 226.7 L 248.2 356.4 C 251.5 361.5 256 359.1 256 351.8 V 244.1 C 256 214.8 273.9 198.2 302.8 198.2 H 327 C 351.5 198.2 366.9 211.3 366.9 236.3 V 488.9 C 366.9 520.6 343.3 543.5 310 543.5 H 286.8 C 262.9 543.5 239.9 526.7 230.2 512 L 148.9 389.1 C 144.3 382.2 141.9 387.1 141.9 391.3 V 499 C 141.9 527.5 122.2 543.4 95.8 543.4 H 74.7 C 48.4 543.4 33.5 527.5 33.5 501.3 V 261.5 Z       M 378.2 375.3 C 378.2 256.8 433.1 195.5 549.2 195.5 C 650.3 195.5 711.8 227.8 711.8 368.8 C 711.8 516.6 647.7 546.3 534 546.3 C 434 546.3 378.2 491.5 378.2 375.3 Z M 518.2 377.8 C 518.2 314.2 545.2 259.9 601.2 259.9 C 652.4 259.9 672.7 316.8 672.7 371.8 C 672.7 428.7 650.2 488.2 598.3 488.2 C 547.1 488.2 518.2 439.2 518.2 377.8 Z       M 720.2 375.3 C 720.2 256.8 775.1 195.5 891.2 195.5 C 992.3 195.5 1053.8 227.8 1053.8 368.8 C 1053.8 516.6 989.7 546.3 876 546.3 C 776 546.3 720.2 491.5 720.2 375.3 Z M 860.2 377.8 C 860.2 314.2 887.2 259.9 943.2 259.9 C 994.4 259.9 1014.7 316.8 1014.7 371.8 C 1014.7 428.7 992.2 488.2 940.3 488.2 C 889.1 488.2 860.2 439.2 860.2 377.8 Z       M 1061.5 261.5 C 1061.5 220 1085.5 197.2 1122.9 197.2 H 1143.1 C 1162.2 197.2 1179 207.6 1191.5 226.7 L 1276.2 356.4 C 1279.5 361.5 1284 359.1 1284 351.8 V 244.1 C 1284 214.8 1301.9 198.2 1330.8 198.2 H 1355 C 1379.5 198.2 1394.9 211.3 1394.9 236.3 V 488.9 C 1394.9 520.6 1371.3 543.5 1338 543.5 H 1314.8 C 1290.9 543.5 1267.9 526.7 1258.2 512 L 1176.9 389.1 C 1172.3 382.2 1169.9 387.1 1169.9 391.3 V 499 C 1169.9 527.5 1150.2 543.4 1123.8 543.4 H 1102.7 C 1076.4 543.4 1061.5 527.5 1061.5 501.3 V 261.5 Z       M 1402.5 375.1 C 1402.5 281.1 1460.5 198.2 1571.5 198.2 C 1615.2 198.2 1631.2 200.3 1666.8 213.1 C 1667.1 213.2 1677.3 219.3 1677.3 221.8 V 288.2 C 1677.3 290.2 1675.2 291 1673.7 291 H 1586 C 1541.8 291 1513 324.8 1513 373.4 C 1513 424.6 1546.9 455 1593.8 455 H 1672.8 C 1675.6 455 1677.2 456.4 1677.2 457.5 V 518.3 C 1677.2 520.3 1673.8 524.4 1669.9 525.9 C 1639.2 538.2 1611.2 544.9 1568 544.9 C 1446.8 544.9 1402.5 458.9 1402.5 375.1 Z       M 1696.6 242.9 C 1696.6 215.5 1715.1 198.3 1742.3 198.3 H 1764.8 C 1792.1 198.3 1806.7 212.8 1806.7 238.6 V 298.9 C 1806.7 312.2 1815.5 320.2 1829 320.2 H 1876 C 1890.9 320.2 1894.9 313.5 1894.9 299.2 V 245.6 C 1894.9 219.7 1919.8 198.3 1944.7 198.3 H 1966.7 C 1992.5 198.3 2007.3 214.7 2007.3 239.8 V 497.4 C 2007.3 524.8 1989.5 543.5 1960.9 543.5 H 1938.5 C 1914.1 543.5 1896.5 530.6 1896.5 504.4 V 433.1 C 1896.5 421.3 1888.7 416.8 1876 416.8 H 1823.4 C 1808.4 416.8 1806.4 424.7 1806.4 436.8 V 500.7 C 1806.4 527.6 1787.9 543.5 1760.4 543.5 H 1736.8 C 1712.8 543.5 1696.6 529.6 1696.6 504 V 242.9 Z       M 2028.3 241.6 C 2028.3 213.7 2045.1 198.2 2071.5 198.2 H 2099.2 C 2125.5 198.2 2139.1 210.6 2139.1 237.2 V 504.7 C 2139.1 531.8 2125.2 543.5 2099.4 543.5 H 2066.9 C 2039.2 543.5 2028.3 529.1 2028.3 503.6 V 241.6 Z   " fill="#a50034" fill-rule="evenodd" />
+  </svg>
+  <path d="M1698 226 V195 H316 V226" fill="none" stroke="#425565" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrow-wire)" stroke-dasharray="6 7" id="dashboard-qr" />
+  <rect x="737" y="175" width="541" height="40" rx="0" fill="white" stroke="none" stroke-width="1.8" />
+  <text x="1007" y="202" font-size="20" font-weight="600" fill="#425565" text-anchor="middle">Scan the dashboard QR in the app  ·  HTTPS /mobile/</text>
+  <rect x="64" y="233" width="498" height="602" rx="18" fill="#f7f9fa" stroke="#d9e1e6" stroke-width="1.8" id="phone" />
+  <rect x="808" y="233" width="620" height="602" rx="18" fill="#f7f9fa" stroke="#d9e1e6" stroke-width="1.8" id="hub" />
+  <text x="88" y="283" font-size="32" font-weight="700" fill="#192633" text-anchor="start" data-region="phone">Android phone</text>
+  <text x="832" y="283" font-size="32" font-weight="700" fill="#192633" text-anchor="start" data-region="hub">Judgment server</text>
+  <text x="1403" y="281" font-size="20" font-weight="500" fill="#425565" text-anchor="end" data-region="hub">Node.js · TypeScript</text>
+  <rect x="86" y="311" width="453" height="174" rx="13" fill="white" stroke="#d9e1e6" stroke-width="1.8" id="native" />
+  <text x="108" y="344" font-size="16" font-weight="700" fill="#a50034" text-anchor="start" data-region="native">EXPO · REACT NATIVE</text>
+  <text x="108" y="386" font-size="31" font-weight="700" fill="#192633" text-anchor="start" data-region="native">Home setup</text>
+  <text x="108" y="426" font-size="22" font-weight="400" fill="#192633" text-anchor="start" data-region="native">Address and floor plan → twin preview</text>
+  <text x="108" y="458" font-size="21" font-weight="400" fill="#425565" text-anchor="start" data-region="native">Reference photos, start position and devices</text>
+  <path d="M122 496 V582" fill="none" stroke="#a50034" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrow-accent)" id="launch-twa" />
+  <text x="149" y="533" font-size="23" font-weight="700" fill="#a50034" text-anchor="start" data-region="phone">Turn on CLOiD</text>
+  <text x="149" y="564" font-size="18" font-weight="400" fill="#425565" text-anchor="start" data-region="phone">Chrome verifies the app and the AR origin</text>
+  <rect x="86" y="595" width="453" height="214" rx="13" fill="white" stroke="#d9e1e6" stroke-width="1.8" id="ar" />
+  <text x="108" y="629" font-size="16" font-weight="700" fill="#a50034" text-anchor="start" data-region="ar">CHROME TWA · WEBXR   /phone/</text>
+  <text x="108" y="672" font-size="31" font-weight="700" fill="#192633" text-anchor="start" data-region="ar">Landscape AR camera</text>
+  <text x="108" y="712" font-size="22" font-weight="400" fill="#192633" text-anchor="start" data-region="ar">Camera frames and phone pose</text>
+  <text x="108" y="747" font-size="21" font-weight="400" fill="#192633" text-anchor="start" data-region="ar">Direction arrow and Korean voice guidance</text>
+  <text x="108" y="782" font-size="21" font-weight="400" fill="#425565" text-anchor="start" data-region="ar">Spoken or tapped replies to the active step</text>
+  <rect x="832" y="311" width="572" height="114" rx="13" fill="white" stroke="#d9e1e6" stroke-width="1.8" id="api" />
+  <text x="856" y="357" font-size="29" font-weight="700" fill="#192633" text-anchor="start" data-region="api">Home setup API</text>
+  <text x="856" y="397" font-size="21" font-weight="400" fill="#425565" text-anchor="start" data-region="api">Home, start position, devices and the AR launch URL</text>
+  <rect x="832" y="456" width="572" height="193" rx="13" fill="white" stroke="#d9e1e6" stroke-width="1.8" id="core" />
+  <text x="856" y="501" font-size="28" font-weight="700" fill="#192633" text-anchor="start" data-region="core">Perception and action selection</text>
+  <text x="856" y="539" font-size="21" font-weight="400" fill="#192633" text-anchor="start" data-region="core">VLM scene → World State (people, objects, devices)</text>
+  <text x="856" y="574" font-size="21" font-weight="400" fill="#192633" text-anchor="start" data-region="core">PAM + habit FSM → goals, plans → checks, execution</text>
+  <path d="M856 594 H1379" fill="none" stroke="#d9e1e6" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" />
+  <text x="856" y="628" font-size="20" font-weight="600" fill="#425565" text-anchor="start" data-region="core">Internal bus  ·  MemoryBus by default / Redis optional</text>
+  <path d="M1118 653 V677" fill="none" stroke="#526778" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" marker-start="url(#arrow-wire)" marker-end="url(#arrow-wire)" id="core-gateway" />
+  <rect x="832" y="681" width="572" height="128" rx="13" fill="white" stroke="#d9e1e6" stroke-width="1.8" id="gateway" />
+  <text x="856" y="724" font-size="28" font-weight="700" fill="#192633" text-anchor="start" data-region="gateway">Phone gateway</text>
+  <text x="856" y="760" font-size="21" font-weight="400" fill="#192633" text-anchor="start" data-region="gateway">AR coordinates ↔ twin coordinates</text>
+  <text x="856" y="791" font-size="19" font-weight="400" fill="#425565" text-anchor="start" data-region="gateway">Hands frames directly to perception in the same process</text>
+  <path d="M544 386 H827" fill="none" stroke="#526778" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" marker-start="url(#arrow-wire)" marker-end="url(#arrow-wire)" id="hub-setup" />
+  <text x="684" y="370" font-size="20" font-weight="700" fill="#425565" text-anchor="middle">HTTPS  /api/setup</text>
+  <text x="684" y="417" font-size="20" font-weight="400" fill="#425565" text-anchor="middle">Read and save settings</text>
+  <text x="684" y="636" font-size="20" font-weight="700" fill="#425565" text-anchor="middle">WSS  /phone/events</text>
+  <text x="684" y="681" font-size="20" font-weight="500" fill="#425565" text-anchor="middle">Frames, pose, step replies</text>
+  <path d="M544 697 H827" fill="none" stroke="#526778" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrow-wire)" id="uplink" />
+  <text x="684" y="750" font-size="20" font-weight="600" fill="#a50034" text-anchor="middle">Step, destination, route</text>
+  <path d="M827 768 H544" fill="none" stroke="#a50034" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrow-accent)" id="downlink" />
+  <rect x="1544" y="233" width="312" height="194" rx="13" fill="white" stroke="#d9e1e6" stroke-width="1.8" id="dashboard" />
+  <text x="1566" y="267" font-size="16" font-weight="700" fill="#425565" text-anchor="start" data-region="dashboard">REACT · THREE.JS</text>
+  <text x="1566" y="308" font-size="30" font-weight="700" fill="#192633" text-anchor="start" data-region="dashboard">Dashboard</text>
+  <text x="1566" y="347" font-size="20" font-weight="400" fill="#192633" text-anchor="start" data-region="dashboard">3D twin and Agent Trace</text>
+  <text x="1566" y="379" font-size="19" font-weight="400" fill="#192633" text-anchor="start" data-region="dashboard">YOLO26 overlay and minimap</text>
+  <text x="1566" y="407" font-size="18" font-weight="400" fill="#425565" text-anchor="start" data-region="dashboard">/events + display video feed</text>
+  <path d="M1409 481 H1475 V337 H1539" fill="none" stroke="#526778" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#arrow-wire)" id="dashboard-stream" />
+  <rect x="1544" y="460" width="312" height="149" rx="13" fill="white" stroke="#d9e1e6" stroke-width="1.8" id="models" />
+  <text x="1566" y="509" font-size="28" font-weight="700" fill="#192633" text-anchor="start" data-region="models">Model services</text>
+  <text x="1566" y="548" font-size="21" font-weight="400" fill="#192633" text-anchor="start" data-region="models">Scene and PAM inference</text>
+  <text x="1566" y="580" font-size="20" font-weight="400" fill="#425565" text-anchor="start" data-region="models">OpenAI API or vLLM</text>
+  <path d="M1409 552 H1539" fill="none" stroke="#526778" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" marker-start="url(#arrow-wire)" marker-end="url(#arrow-wire)" id="inference" />
+  <rect x="1544" y="657" width="312" height="152" rx="13" fill="white" stroke="#d9e1e6" stroke-width="1.8" id="devices" />
+  <text x="1566" y="708" font-size="28" font-weight="700" fill="#192633" text-anchor="start" data-region="devices">Appliance adapters</text>
+  <text x="1566" y="748" font-size="20" font-weight="400" fill="#192633" text-anchor="start" data-region="devices">Matter · LG ThinQ · IR</text>
+  <text x="1566" y="780" font-size="19" font-weight="400" fill="#425565" text-anchor="start" data-region="devices">Commands and device state</text>
+  <path d="M1409 615 H1491 V737 H1539" fill="none" stroke="#526778" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" marker-start="url(#arrow-wire)" marker-end="url(#arrow-wire)" id="appliances" />
+  <rect x="64" y="874" width="835" height="155" rx="14" fill="#fcf7f9" stroke="#e8d9df" stroke-width="1.8" id="reference" />
+  <text x="89" y="918" font-size="26" font-weight="700" fill="#a50034" text-anchor="start" data-region="reference">Home scan · reference photos</text>
+  <text x="89" y="967" font-size="23" font-weight="500" fill="#192633" text-anchor="start" data-region="reference">Android app → reference photos and scene labels in S3</text>
+  <text x="89" y="1002" font-size="19" font-weight="400" fill="#425565" text-anchor="start" data-region="reference">Hub issues signed upload URLs. With storage unconfigured, the phone keeps the photo.</text>
+  <rect x="923" y="874" width="933" height="155" rx="14" fill="#f7f9fa" stroke="#d9e1e6" stroke-width="1.8" id="history" />
+  <text x="949" y="918" font-size="26" font-weight="700" fill="#192633" text-anchor="start" data-region="history">Action history and habit learning</text>
+  <text x="949" y="967" font-size="23" font-weight="500" fill="#192633" text-anchor="start" data-region="history">Server → SQLite observation and action history → nightly reflection and adoption</text>
+  <text x="949" y="1002" font-size="19" font-weight="400" fill="#425565" text-anchor="start" data-region="history">Adopted habits feed the next day’s PAM decisions.</text>
+</svg>

@@ -60,10 +60,12 @@ Even with the same objects and appliances, the right action depends on the resid
 
 ![NOONCHI System Architecture](docs/architecture/architecture.svg)
 
-Detailed view of the noonchi server and design notes (Korean): [docs/architecture](docs/architecture/architecture-notes.md)
+The November 21 architecture notes explain the two C4 diagrams and their November 20 code baseline. [Architecture diagram notes](docs/architecture/architecture-notes.md)
+
+The November 24 guides follow Android pairing, camera startup, and a checked instruction from the hub to the phone and back. [Android app architecture](docs/architecture/android-app-system.md) · [WebXR step round trip](docs/architecture/webxr-roundtrip.md)
 
 ```text
-Real phone (camera photos · position · voice) — WebXR and Web Speech API
+Real phone (Expo setup · Chrome WebXR camera · Web Speech API)
   │  Tailscale (HTTPS · WSS)
   ▼
 Observation: YOLO26 (ONNX Runtime) · VLM (OpenAI API or Qwen3-VL on vLLM)
@@ -77,14 +79,14 @@ Goal · manager: plan prepared ahead, task order (Redis or in-memory messaging)
 Execution · checks: step commands to the real phone, appliances (Matter via matter.js · LG ThinQ API · USB infrared TV hub)
   │
   ├─▶ Record DB (SQLite) ─▶ nightly reflection · adoption test ─▶ next day's FSM
-  └─▶ Dashboard (3D twin rendered with React and three.js)
+  └─▶ Dashboard (live vision · three.js twin · action conditions · Agent Trace)
 ```
 
 | Component | What it does |
 |---|---|
-| Real phone (CLOiD's eyes) | Sends camera photos and its position, and shows and reads out the step commands from the server to the person |
+| Real phone (CLOiD's eyes) | The Android app pairs with the hub by QR and manages home setup. The WebXR session sends camera frames and its position, shows and reads server instructions, and accepts spoken or tapped answers. |
 | noonchi server (CLOiD's brain) | Sees with YOLO and the VLM, merges the home state in World State, decides with PAM, and runs and checks the plan |
-| Dashboard | Shows how CLOiD sees and decides, on top of the 3D twin |
+| Dashboard | Displays live vision, the digital twin, action conditions, and the automatically grouped public Agent Trace. |
 | Person (CLOiD's hands and feet) | Moves as the phone commands |
 
 The server's decision, goal, manager, and execution nodes exchange messages over Redis when `REDIS_URL` is set, or over an in-memory bus otherwise. The table lists the main domains in `src/`.
@@ -126,10 +128,13 @@ The phone guides the person to the table to show the inside of the cup. Once two
 
 Once a day, the day's records are grouped into activity chunks, and PAM reflection proposes a candidate FSM. Each candidate passes a code check (shape) and an LLM check (meaning), then the adoption test. If the person did that task within 300 s after the candidate's trigger at least 75% of the time, with a one-sided binomial test p < 0.001, the candidate is adopted into the next day's FSM. Before the cup-clearing habit is learned, CLOiD asks whether to clear the cup. Learning that habit lets it clear a confirmed empty cup without asking. Risky appliance commands still require approval.
 
+The server records execution and the person's response separately. It can distinguish verified help, a person doing the task themselves, and an unknown response. Nightly reflection uses attributable responses to update the next day's proactive policy. That policy is checked during judgment, automatic goal selection, and before a command is sent. Direct requests and safety steps use their own execution rules. [Assistance outcome contract](src/contract/assistance-outcome.ts)
+
 ### G. Screens People See
 
-- **Real phone:** the mascot and the current command at the top; the vision status line and a "Done" button at the bottom. Commands are read aloud, and questions can be answered by voice.
-- **Dashboard:** the 3D twin fills the screen, with the vision minimap, the message box, and the person and robot timeline on top. The live camera view matches detection masks to frames by capture time when timestamps are available. A plan shows as a numbered route on the twin, and a goal as a red ring on the object and a faded route drawn ahead. There is no input box.
+- The **Android app** scans the dashboard's HTTPS `/mobile/` QR, verifies the hub, and opens native Home, House Management, and Settings. Register a supported home, confirm the prepared floor plan, and save or review its reference photos. Configure appliances, the starting pose, and observation stations on the phone. [Android guide](apps/android/README.md)
+- The **camera** opens at the hub's configured HTTPS `/phone/` address in a Chrome Trusted Web Activity (TWA) after Digital Asset Links verification. Tap the camera control on the page to start WebXR. The hub's HTTPS `/mobile/` web portal can also start WebXR directly. With a supported browser and permissions, the phone reads new instructions in Korean and accepts spoken answers or requests. A reconnect restores the current instruction silently. Available answer buttons remain on the phone.
+- On the **dashboard**, Vision and Digital Twin sit above Action Conditions and Agent Trace. The conditions distinguish confirmed evidence, the current check, and the next step in the active plan. The trace groups public records by activity and expands related tool calls automatically. [Server and phone reference](docs/reference.md#dashboard-and-agent-trace)
 
 ---
 
@@ -153,6 +158,8 @@ Once a day, the day's records are grouped into activity chunks, and PAM reflecti
 
 **Metrics.** Over-intervention (actions or questions that should not happen), misses, overconfidence (confirmed but wrong facts), correct unknowns (answering unknown when not visible), observation latency (photo → decision), and decision latency.
 
+**Current verification.** Local replay and automated tests cover QR pairing, setup, command delivery, speech deduplication, and trace grouping with test inputs. They are separate from the video results above. Verify camera and microphone permissions, Chrome's address-bar-free TWA, WebXR tracking and alignment, and audible speech on the actual Android phone, signed APK, and HTTPS origins used for a demonstration.
+
 ---
 
 ## V. Comparison with Prior Work
@@ -174,6 +181,7 @@ For wiring, remote learning, and light sensor calibration, see the [infrared TV 
 - It does not move a real robot. The phone stands in for the eyes and a person for the hands and feet, and travel time is not part of the decision.
 - It handles one home and one person. Conflicting habits between several people are out of scope.
 - The models are not trained; only the memory changes.
+- The installable app and camera flow target Android with a compatible Chrome and WebXR device. The native home setup uses supported hub floor plans and prepared twins. The phone can review captured reference photos. Live alignment uses the configured starting pose and the runtime alignment path.
 
 **Future work.**
 
@@ -200,7 +208,8 @@ For wiring, remote learning, and light sensor calibration, see the [infrared TV 
 .
 ├── README.md
 ├── src/          # server (Node.js 22, domains in the III-A table)
-├── ui/           # dashboard · setup · phone pages (React)
+├── ui/           # dashboard · mobile portal · setup · WebXR phone pages (React)
+├── apps/android/ # native Expo app and Chrome TWA bridge
 ├── twin/         # home assets and 3D twin
 ├── models/       # YOLO26 ONNX
 ├── scripts/      # checks, video tests, demo setup
@@ -235,5 +244,7 @@ npm --prefix ui install
 cp .env.example .env   # OPENAI_API_KEY
 npm start              # http://127.0.0.1:8200
 ```
+
+The local dashboard is available at `http://127.0.0.1:8200`. For a physical phone, expose the hub on an HTTPS origin the phone can reach. Scan the dashboard's connection QR inside the installed Android app or open the same `/mobile/` URL in the browser. Configure the AR origin and the APK's public signing certificate before trying TWA. [Android guide](apps/android/README.md) · [Server and phone reference](docs/reference.md)
 
 GPU server deployment: `docker compose --env-file .env -f deploy/compose.yaml --profile gpu up -d --build` ([deployment guide](docs/deploy.md))
