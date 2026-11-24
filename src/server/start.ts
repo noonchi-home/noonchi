@@ -27,8 +27,6 @@ import { resolveTwinStudioDir, type TwinData } from "../layout/index.js";
 import { listHomes } from "../layout/index.js";
 import { androidTwaStatements, androidTwaTarget } from "../phone/index.js";
 import { acquireServerLock, restoreNeeded } from "./lock.js";
-import { KINDS } from "../devices/kinds.js";
-import { checkKinds } from "../devices/index.js";
 import { SetupError, SetupStore, effectiveSources, parsePairs, parseSources } from "./setup/store.js";
 import { repoPath } from "../shared/paths.js";
 import { PAIRABLE_KINDS, fitsKind, loadIrConfig, openIrPort, type IrConfig, type IrPort } from "../devices/index.js";
@@ -39,7 +37,7 @@ import type { HubKind, MatterTransport, StartHubOptions } from "./hubFactory.js"
 import { startHome, type HomeContext, type HomeRuntime } from "./home/index.js";
 import { makeReady } from "./ready.js";
 import { createShell, mobileHubUrls } from "./shell.js";
-import { lanBindingError } from "./loopback.js";
+import { preflight } from "./preflight.js";
 
 type Env = Record<string, string | undefined>;
 
@@ -134,12 +132,9 @@ export interface RunningServer {
 export async function startServer(opts: StartServerOptions = {}): Promise<RunningServer> {
   const env = opts.env ?? process.env;
   const log = opts.log ?? ((line: string) => console.log(line));
-  const lanBinding = lanBindingError(env);
-  if (lanBinding) throw new Error(lanBinding);
+  // 들을 주소·가전 종류 등록부(src/server/preflight.ts). 서버 입구(boot.ts)는 이 묶음을 불러오기 전에 같은 검사를 먼저 한다
+  preflight(env);
   const androidTwaConfigured = !!androidTwaStatements(env.ANDROID_TWA_SHA256_FINGERPRINTS);
-  // 가전 종류 등록부가 틀린 조합이면(승인·ThinQ 어댑터·손 조작) 까닭과 함께 시작을 막는다
-  const kindProblems = checkKinds(KINDS);
-  if (kindProblems.length) throw new Error(`가전 종류 등록부가 틀렸어요(src/devices/kinds.ts): ${kindProblems.join(" / ")}`);
   const runtimeDir = env.RUNTIME_DIR?.trim() || DEFAULT_RUNTIME_DIR;
   const store = new SetupStore({ runtimeDir, persist: opts.persistSetup ?? false, log });
   let mode: ControlMode = store.mode();

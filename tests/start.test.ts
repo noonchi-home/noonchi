@@ -96,8 +96,10 @@ describe("startHub", () => {
 
   it("서버를 띄우는 정적 import 길에 matter.js가 없다: Matter 허브는 고를 때만 devices 입구의 지연 로더(loadMatterHub)로 읽는다", () => {
     const root = join(import.meta.dirname, "..");
-    const seen = new Set<string>(["src/server/main.ts"]);
-    const queue = ["src/server/main.ts"];
+    // 입구(main.ts → boot.ts)는 시작 검사 뒤 서버 묶음(start.ts)을 동적으로 불러온다: 두 곳에서 정적 길을 따라간다
+    const starts = ["src/server/main.ts", "src/server/start.ts"];
+    const seen = new Set<string>(starts);
+    const queue = [...starts];
     const exists = (p: string) => existsSync(join(root, p));
     while (queue.length) {
       const f = queue.shift()!;
