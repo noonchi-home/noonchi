@@ -3,7 +3,7 @@
 import { viewerAt } from "../../goal/index.js";
 import { ExecutionTracker, LessonStore, Looker, PlanHub, publishAssistanceOutcome, emitRobotCommand, checkDecision, checkPlan, deviceRunner, lessonsPath, loadActConfig, pamTasks } from "../../act/index.js";
 import { assistanceResident, proactiveIntent } from "./assistance.js";
-import { assistanceContext, assistanceOutcome } from "../../contract/assistance-outcome.js";
+import { assistanceContext, assistanceOutcome } from "../../shared/assistance-outcome.js";
 import type { Intervention } from "../../brain/index.js";
 import { CALL_ACTION, lookTargets, taskOf, type TaskSpec } from "../../act/tasks.js";
 import { callDestination, callPlaces, withChosenStation, deviceViews, placesOf, resubmit, type PlaceInfo, type PlanAhead, type PlanContext } from "../../agent/index.js";

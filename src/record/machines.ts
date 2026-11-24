@@ -3,7 +3,7 @@ import type { HistoryDb } from "../brain/index.js";
 import type { ManagerState, RobotState, SafetyState } from "../contract/machines.js";
 import type { PendingGoal } from "../contract/goal.js";
 import type { Body, Envelope, TopicName } from "../bus/index.js";
-import { assistanceOutcome } from "../contract/assistance-outcome.js";
+import { assistanceOutcome } from "../shared/assistance-outcome.js";
 
 /** 목표 전환 한 줄: 바로 앞 상태(같은 목표)와 견줘 무엇이 바뀌었는지(세움·미리 만들기·사람 떠남·씀·버림). */
 function goalLine(prev: PendingGoal | null, g: PendingGoal): string {

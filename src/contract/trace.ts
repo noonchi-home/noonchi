@@ -3,7 +3,6 @@ import type { DeviceStateKey } from "./world.js";
 
 export type TraceKind = "AGENT" | "OBSERVATION" | "LLM" | "TOOL" | "EXECUTION" | "GUARDRAIL";
 export type TraceState = "pending" | "done" | "failed" | "cancelled";
-export const TRACE_KEPT = 240;
 
 /** IDs of the production messages that led to a public row. Free-form model and user text have no field here. */
 export interface TraceRefs {

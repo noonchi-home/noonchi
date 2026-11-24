@@ -4,7 +4,7 @@ import type { WorldView } from "../contract/world.js";
 import type { BusNode, Outbox } from "../bus/index.js";
 import type { AssistanceOutcome } from "../contract/assistance-outcome.js";
 
-export { assistanceOutcome } from "../contract/assistance-outcome.js";
+export { assistanceOutcome } from "../shared/assistance-outcome.js";
 
 export function publishAssistanceOutcome(act: BusNode | Outbox, outcome: AssistanceOutcome): void {
   if ("push" in act) act.push("/act/assistance_outcome", outcome);

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useEffectEvent, useRef, useState } from "react";
 import { LoaderCircle } from "lucide-react";
-import { MOKRYEON_TWIN_PREVIEW, waitForTwinPreview } from "../../../src/contract/mobile-home";
+import { MOKRYEON_TWIN_PREVIEW, waitForTwinPreview } from "../../../src/shared/mobile-home";
 import { PhoneHomePeek, PhoneLaunchHero, PhonePortalHeader, PhonePortalNav, type PhonePortalTab } from "../components/phone-portal-chrome";
 import { Button } from "../components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";

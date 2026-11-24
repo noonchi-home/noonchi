@@ -1,7 +1,7 @@
 import { api } from "../lib/api";
 import type { HealthView } from "../../../src/contract/events";
 import type { SetupView } from "../../../src/contract/setup";
-import { MOKRYEON_FLOOR_PLAN_PATH } from "../../../src/contract/home-floor-plan";
+import { MOKRYEON_FLOOR_PLAN_PATH } from "../../../src/shared/home-floor-plan";
 
 export const house = {
   id: "mokryeon_180b",

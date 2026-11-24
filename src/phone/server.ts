@@ -17,7 +17,7 @@ import { networkInterfaces } from "node:os";
 import { join, resolve } from "node:path";
 import type { Duplex } from "node:stream";
 import { WebSocket, WebSocketServer } from "ws";
-import { MOBILE_PHONE_EVENTS } from "../contract/mobile-phone.js";
+import { MOBILE_PHONE_EVENTS } from "../shared/mobile-phone.js";
 import type { FocusTarget } from "../contract/events.js";
 import type { ApprovalAnswer, HeardAt, PhoneCommand, PhonePending, PhoneTalkReply, PlannedCommand, PlannedCommandMessage } from "../contract/phone.js";
 import { PHONE_PROTOCOL } from "./protocol.js";

@@ -157,7 +157,7 @@
       },
       {
         "old": "- action: a NATURAL LANGUAGE description of how the robot should help, written in\nthe canonical form `Pick up <object> and place it <location>.` Valid `<location>`\nvalues are exactly one of: `next to the person`, `in the designated storage area`, `\nin the trash can`.",
-        "new": "- action: exactly one of these task names, copied character for character: 컵 치우기, 사용자에게 물어보기, 세탁물 건조기로 옮기기, 에어컨 켜기, 컵에 물 채워 주기, 컵에 콜라 따라 주기, 라면 끓이기 알려 주기, 전자레인지로 데우기 알려 주기, 부름에 응하기, 물 한 잔 가져다주기. Write state descriptions and triggers in Korean.\n- Coaching tasks (라면 끓이기 알려 주기, 전자레인지로 데우기 알려 주기) fire only when the person asks how to do it or says they are stuck. Never add, move, rewrite or remove rules for them.",
+        "new": "- action: exactly one of these task names, copied character for character: 컵 치우기, 사용자에게 물어보기, 세탁물 건조기로 옮기기, 에어컨 켜기, 컵에 물 채워 주기, 컵에 콜라 따라 주기, 라면 끓이기 알려 주기, 전자레인지로 데우기 알려 주기, 부름에 응하기, 물 한 잔 가져다주기, 맥주 가져다주기, 맥주 캔 치우기. Write state descriptions and triggers in Korean.\n- Coaching tasks (라면 끓이기 알려 주기, 전자레인지로 데우기 알려 주기) fire only when the person asks how to do it or says they are stuck. Never add, move, rewrite or remove rules for them.\n- Leave beer rules to the household TV and camera evidence learner.",
         "reason": "행동 형식을 우리 행동 이름 목록으로 바꾸고, 코치 행동 규칙은 반성이 손대지 않게 한다.",
         "occurrences": 1
       },
@@ -240,7 +240,7 @@
         "occurrences": 1
       }
     ],
-    "adapted_template_sha256": "805ef17a2a734f6b57c02d2e4bb558b1c9578fd12a068094c2d26fb1b248b483"
+    "adapted_template_sha256": "19579371e454ed94c75607bfb83f71d7e488bf81bf9ff814dc8b27b8f52349a4"
   },
   "reflector_list_update": {
     "applied": [
@@ -252,7 +252,7 @@
       },
       {
         "old": "- action: a NATURAL LANGUAGE description of how the robot should help, written in\nthe canonical form `Pick up <object> and place it <location>.` Valid `<location>`\nvalues are exactly one of: `next to the person`, `in the designated storage area`, `\nin the trash can`.",
-        "new": "- action: exactly one of these task names, copied character for character: 컵 치우기, 사용자에게 물어보기, 세탁물 건조기로 옮기기, 에어컨 켜기, 컵에 물 채워 주기, 컵에 콜라 따라 주기, 라면 끓이기 알려 주기, 전자레인지로 데우기 알려 주기, 부름에 응하기, 물 한 잔 가져다주기. Write state descriptions and triggers in Korean.\n- Coaching tasks (라면 끓이기 알려 주기, 전자레인지로 데우기 알려 주기) fire only when the person asks how to do it or says they are stuck. Never add, move, rewrite or remove rules for them.",
+        "new": "- action: exactly one of these task names, copied character for character: 컵 치우기, 사용자에게 물어보기, 세탁물 건조기로 옮기기, 에어컨 켜기, 컵에 물 채워 주기, 컵에 콜라 따라 주기, 라면 끓이기 알려 주기, 전자레인지로 데우기 알려 주기, 부름에 응하기, 물 한 잔 가져다주기, 맥주 가져다주기, 맥주 캔 치우기. Write state descriptions and triggers in Korean.\n- Coaching tasks (라면 끓이기 알려 주기, 전자레인지로 데우기 알려 주기) fire only when the person asks how to do it or says they are stuck. Never add, move, rewrite or remove rules for them.\n- Leave beer rules to the household TV and camera evidence learner.",
         "reason": "행동 형식을 우리 행동 이름 목록으로 바꾸고, 코치 행동 규칙은 반성이 손대지 않게 한다.",
         "occurrences": 1
       },
@@ -293,6 +293,6 @@
         "occurrences": 1
       }
     ],
-    "adapted_template_sha256": "088831ac09885a240daa7581ccb40a2d2acbb150aade97ef82aec96bc188925b"
+    "adapted_template_sha256": "a2199a73781c7d73b2643beeaa6ad1f4f3c76c3629cfb7852d52ebfacf246308"
   }
 }

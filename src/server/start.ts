@@ -8,7 +8,7 @@ import type { Agent, Policy } from "../agent/index.js";
 import { openBus, type Bus, type Clock } from "../bus/index.js";
 import { agentEndpoint } from "../agent/index.js";
 import type { BrainLog } from "../contract/events.js";
-import { MOKRYEON_HOME } from "../contract/mobile-home.js";
+import { MOKRYEON_HOME } from "../shared/mobile-home.js";
 import type { PlanView } from "../contract/plan.js";
 import type { ControlMode, SetupView, ThinqDeviceView } from "../contract/setup.js";
 import type { SignalHub } from "../devices/index.js";

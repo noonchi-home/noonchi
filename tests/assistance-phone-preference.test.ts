@@ -3,7 +3,7 @@ import { expect, it } from "vitest";
 import { WATER_ACTION } from "../src/act/tasks.js";
 import { CUP_FSM_MEMORY } from "../src/brain/decision.js";
 import { HistoryDb } from "../src/brain/index.js";
-import { assistanceOutcome } from "../src/contract/assistance-outcome.js";
+import { assistanceOutcome } from "../src/shared/assistance-outcome.js";
 import { at } from "./fixtures/assistance/evenings.js";
 import { residentStudio, seeResident } from "./fixtures/assistance/resident.js";
 import { assistanceReplay } from "./helpers/assistance-replay.js";

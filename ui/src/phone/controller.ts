@@ -23,7 +23,7 @@
 // 「여기서 시작」은 저절로 열지 않고(영상 AR이 고정 시작 자세를 스스로 보냄), 서버 맞춤이 없으면 영상 AR이 시작 자세를 다시 보낸다(syncStatus).
 // 받은 명령은 그 영상 시각으로 기록하고(window.__noonchiVideo), 영상 AR에 넘겨 맞는 단계 영상(?step=)으로 바꾸고 go 단계면 자세를 걷게 한다.
 import type { HeardAt, PhoneCommand, PhoneCommandClear, TalkGrade } from "../../../src/contract/phone.ts";
-import { MOBILE_PHONE_EVENTS } from "../../../src/contract/mobile-phone.ts";
+import { MOBILE_PHONE_EVENTS } from "../../../src/shared/mobile-phone.ts";
 import { createAr, type ArHooks, type PhoneAr } from "./core/ar.js";
 import { createVideoAr, logVideoAt, logVideoCommand, videoParams, type VideoArDeps } from "./core/video-ar.js";
 import { createLink, phoneSocketUrl } from "./core/link.js";
@@ -232,8 +232,6 @@ export function createPhoneController(deps: ControllerDeps): PhoneController {
       }
       draw.start();
       set((v) => ({ ...v, ar: true, cameraOff: false }));
-      if (!video) void keepLandscape();
-      listener?.start();
     },
     onEnd: () => {
       releaseLandscape();
@@ -270,7 +268,14 @@ export function createPhoneController(deps: ControllerDeps): PhoneController {
   // 영상 모드: 카메라 입력. 같은 형(PhoneAr)의 영상 AR. 표시 영상(H.264)은 없고 화면·엔진 JPEG만 보낸다
   const ar: PhoneAr & { videoTime?(): number; syncStatus?(sync: SyncWire | undefined): void; command?(cmd: PhoneCommand): void; commandClear?(id?: string): void } = video // 영상 모드: 카메라 입력
     ? createVideoAr({ link, params, hooks, deps: { ...video, ...deps.arDeps } as VideoArDeps })
-    : createAr({ link, params, hooks, deps: deps.arDeps });
+    : createAr({ link, params, hooks: {
+      ...hooks,
+      onStart() {
+        hooks.onStart();
+        void keepLandscape();
+        listener?.start();
+      },
+    }, deps: deps.arDeps });
 
   async function keepLandscape() {
     const turn = ++rotation;

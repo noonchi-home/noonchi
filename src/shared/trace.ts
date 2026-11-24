@@ -1,5 +1,7 @@
 import type { TraceEvent, TraceOutput, TracePort, TraceRefs, TraceTarget } from "../contract/trace.js";
 
+export const TRACE_KEPT = 240;
+
 /** Observe an existing call without changing its result or performing an extra call. */
 export async function measuredTrace<T>(
   trace: TracePort | undefined, event: TraceEvent, refs: TraceRefs, signal: AbortSignal | undefined,

@@ -5,7 +5,8 @@ import type { RobotMessage } from "../../../src/contract/machines.ts";
 import type { PendingGoal } from "../../../src/contract/goal.ts";
 import type { HabitFsm } from "../../../src/contract/habit.ts";
 import type { PlanStep, PlanView } from "../../../src/contract/plan.ts";
-import { TRACE_KEPT, type TraceRow } from "../../../src/contract/trace.ts";
+import type { TraceRow } from "../../../src/contract/trace.ts";
+import { TRACE_KEPT } from "../../../src/shared/trace.ts";
 import { WORDS } from "./words";
 
 type Decision = Extract<BrainLog, { type: "decision" }>;

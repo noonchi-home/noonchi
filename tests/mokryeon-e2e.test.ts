@@ -16,6 +16,7 @@ import type { Detection } from "../src/contract/observe.js";
 import { startFakePamLlm, type FakePamLlm, pamLlmEnv } from "./helpers/pam.js";
 import { CUP_SCRIPTS, plannerRespond } from "./helpers/planner.js";
 import { heardAtOf, openPhone, openWebSocket } from "./helpers/ws.js";
+import { expectedSpeechId } from "./helpers/phone-speech.js";
 import { alignOnServer } from "./helpers/align.js";
 import { useLearnedMemory } from "./helpers/memory.js";
 import { topLook } from "./helpers/top-look.js";
@@ -142,6 +143,7 @@ describe("한양목련 처음부터 끝까지", () => {
     expect(asked).toEqual({
       type: "command", id: expect.stringMatching(/^plan:pam-\d+$/), step: `${planId}:approve`, text: "컵 치우기를 할까요?", vision: null,
       choices: [{ id: "approve", label: "승인" }, { id: "reject", label: "거절" }], target: null, speak: true, grade: "question",
+      speech_id: expectedSpeechId("mokryeon_180b#1", 1),
     });
     const waiting = dash.filter((m) => m.type === "plan" && m.plan?.id === planId).at(-1)!.plan;
     expect(waiting.status).toBe("planned");

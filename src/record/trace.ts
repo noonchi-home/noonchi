@@ -1,5 +1,6 @@
 import type { EvidenceRef } from "../contract/assistance.js";
-import { TRACE_KEPT, type TraceEvent, type TraceKind, type TraceMessage, type TraceOutput, type TracePort, type TraceRefs, type TraceRow, type TraceState, type TraceTarget } from "../contract/trace.js";
+import type { TraceEvent, TraceKind, TraceMessage, TraceOutput, TracePort, TraceRefs, TraceRow, TraceState, TraceTarget } from "../contract/trace.js";
+import { TRACE_KEPT } from "../shared/trace.js";
 
 const LABELS = {
   goal: ["AGENT", "목표 준비", "확인된 습관 · 대상"],

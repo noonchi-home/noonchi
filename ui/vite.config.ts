@@ -4,7 +4,7 @@ import { realpathSync } from "node:fs";
 import react from "@vitejs/plugin-react";
 import tailwind from "@tailwindcss/vite";
 import { defineConfig } from "vite";
-import { MOBILE_PHONE_EVENTS } from "../src/contract/mobile-phone.ts";
+import { MOBILE_PHONE_EVENTS } from "../src/shared/mobile-phone.ts";
 
 // 개발 중에는 twin-home 서버(기본 8200)로 붙는다. iframe 뷰어도 같은 출처가 되어야 aptViewer를 읽을 수 있다.
 const SERVER = process.env.TWIN_HOME_URL ?? "http://127.0.0.1:8200";

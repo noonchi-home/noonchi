@@ -1,5 +1,6 @@
 import type { EvidenceRef } from "../../contract/assistance.js";
-import { assistanceContext, type AssistanceAttempt, type AssistanceExecution, type AssistanceReactionProof } from "../../contract/assistance-outcome.js";
+import type { AssistanceAttempt, AssistanceExecution, AssistanceReactionProof } from "../../contract/assistance-outcome.js";
+import { assistanceContext } from "../../shared/assistance-outcome.js";
 import type { DecisionRecord } from "../../contract/events.js";
 import type { AgentStep } from "../../contract/plan-work.js";
 import { EXEC_TEXT } from "../labels.js";

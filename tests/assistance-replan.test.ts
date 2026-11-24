@@ -3,7 +3,7 @@ import { PlanHub } from "../src/act/index.js";
 import { EXEC_TEXT } from "../src/act/labels.js";
 import { HistoryDb } from "../src/brain/index.js";
 import type { EvidenceRef } from "../src/contract/assistance.js";
-import { assistanceOutcome } from "../src/contract/assistance-outcome.js";
+import { assistanceOutcome } from "../src/shared/assistance-outcome.js";
 import type { DecisionRecord } from "../src/contract/events.js";
 import type { WorldObject, WorldView } from "../src/contract/world.js";
 import type { AgentPlan, AgentStep } from "../src/contract/plan-work.js";

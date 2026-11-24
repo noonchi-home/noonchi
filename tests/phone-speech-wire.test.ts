@@ -2,7 +2,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import WebSocket from "ws";
 import { emitRobotCommand } from "../src/act/robot/phone.js";
 import { BusNode, MemoryBus, Outbox, realClock } from "../src/bus/index.js";
-import type { PlannedCommand } from "../src/contract/phone.js";
+import type { PhoneCommand, PlannedCommand } from "../src/contract/phone.js";
 import { phoneCommandRoutes } from "../src/phone/node.js";
 import { createPhoneServer } from "../src/phone/server.js";
 
@@ -44,8 +44,17 @@ it("reads each announced phone instruction in Korean and restores the current st
     server.command(message);
   });
   const sockets: WebSocket[] = [];
+  const wireCommands: PhoneCommand[] = [];
   class PhoneSocket extends WebSocket {
-    constructor(url: string) { super(url); sockets.push(this); }
+    constructor(url: string) {
+      super(url);
+      sockets.push(this);
+      this.on("message", (data, binary) => {
+        if (binary) return;
+        const message = JSON.parse(String(data));
+        if (message.type === "command") wireCommands.push(message as PhoneCommand);
+      });
+    }
   }
   let phone: PhoneClient | undefined;
   const text = "싱크대로 가 주세요";
@@ -54,6 +63,7 @@ it("reads each announced phone instruction in Korean and restores the current st
   };
   const firstLine = { text, lang: "ko-KR" };
   const poll = { timeout: 4_000 };
+  const speechId = (revision: number) => ({ boot: epoch.boot, homeEpoch: epoch.home, publisher: act.inst, revision });
   try {
     await act.prepare();
     await bridge.prepare();
@@ -71,10 +81,17 @@ it("reads each announced phone instruction in Korean and restores the current st
     expect(played).toEqual([firstLine]);
     const duplicate = lastDeliveredCommand();
     if (!duplicate?.speech_id) throw new Error("The phone bridge did not attach the publication identity.");
+    expect(duplicate).toEqual({ ...base, speech_id: speechId(1) });
+    expect(wireCommands).toEqual([{ ...base, speech_id: speechId(1) }]);
     expect(out.push("/act/phone_changes", { cmd: base, revision: duplicate.speech_id.revision })).toBe(true);
     server.command(duplicate);
     publish({ ...base, vision: "싱크대까지 1m", speak: false });
     await expect.poll(() => phone?.view().command?.vision, poll).toBe("싱크대까지 1m");
+    expect(wireCommands.filter((m) => m.speak)).toEqual([
+      { ...base, speech_id: speechId(1) },
+      { ...base, speech_id: speechId(1) },
+    ]);
+    expect(wireCommands.at(-1)).toEqual({ ...base, vision: "싱크대까지 1m", speak: false, speech_id: speechId(2) });
     expect(played).toEqual([firstLine]);
 
     sockets[0]!.terminate();
@@ -83,13 +100,17 @@ it("reads each announced phone instruction in Korean and restores the current st
     publish({ ...base, vision: "싱크대까지 80cm" });
     await expect.poll(() => sockets.length, poll).toBe(2);
     await expect.poll(() => phone?.view().command?.vision, poll).toBe("싱크대까지 80cm");
+    expect(lastDeliveredCommand()).toEqual({ ...base, vision: "싱크대까지 80cm", speech_id: speechId(3) });
+    expect(wireCommands.at(-1)).toEqual({ ...base, vision: "싱크대까지 80cm", speak: false, speech_id: speechId(3) });
     expect(played).toEqual([firstLine]);
 
     publish(base);
     await expect.poll(() => played, poll).toEqual([firstLine, firstLine]);
+    expect(wireCommands.at(-1)).toEqual({ ...base, speech_id: speechId(4) });
     const final = "컵을 싱크대에 놓아 주세요";
     publish({ ...base, step: "plan:1:2", text: final });
     await expect.poll(() => played, poll).toEqual([firstLine, firstLine, { text: final, lang: "ko-KR" }]);
+    expect(wireCommands.at(-1)).toEqual({ ...base, step: "plan:1:2", text: final, speech_id: speechId(5) });
   } finally {
     phone?.close();
     await Promise.all([server.close(), bridge.stop(), act.stop()]).finally(() => bus.close());

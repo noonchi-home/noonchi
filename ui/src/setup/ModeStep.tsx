@@ -1,7 +1,7 @@
 import { FlaskConical, Info, PlugZap, TriangleAlert } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ControlMode, SetupView, ThinqDevicesView } from "../../../src/contract/setup.ts";
-import { MOKRYEON_HOME, thinqListPath } from "../../../src/contract/mobile-home.ts";
+import { MOKRYEON_HOME, thinqListPath } from "../../../src/shared/mobile-home.ts";
 import { Alert, AlertTitle } from "../components/ui/alert";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader,

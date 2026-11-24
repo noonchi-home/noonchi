@@ -1,6 +1,6 @@
 // deploy/Dockerfile 화면 빌드 단계(FROM … AS ui)가 ui 빌드(tsc --noEmit + vite build)가 ui/ 밖에서 읽는 경로를 모두 복사하는지 본다.
 // 이 PC에는 저장소 전체가 있어 화면 빌드가 늘 통과하므로, 빠진 COPY는 이미지를 빌드해야 드러난다(2026-11-09 twin/ 두 번).
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
@@ -10,26 +10,35 @@ const UI = join(ROOT, "ui");
 const read = (p: string) => readFileSync(join(ROOT, p), "utf8");
 const posix = (p: string) => p.split(sep).join("/");
 
-/** ui 빌드가 ui/ 밖에서 읽는 저장소 경로: vite 별칭, tsconfig include, ui 파일의 상대 import. */
+/** ui 빌드가 ui/ 밖에서 읽는 저장소 경로: Vite 별칭과 tsconfig에 포함된 파일에서 시작한다. */
 function uiOutsideReads(): string[] {
   const out = new Set<string>();
-  const add = (abs: string) => {
+  const visited = new Set<string>();
+  function outsideUi(abs: string): boolean {
     const r = posix(relative(ROOT, abs));
-    if (r !== "ui" && !r.startsWith("ui/") && !r.startsWith("..")) out.add(r);
-  };
-  for (const m of read("ui/vite.config.ts").matchAll(/page\("(\.\.\/[^"]+)"\)/g)) add(resolve(UI, m[1]!));
-  for (const inc of (JSON.parse(read("ui/tsconfig.json")) as { include: string[] }).include) if (inc.startsWith("../")) add(resolve(UI, inc));
-  const walk = (d: string) => {
-    for (const n of readdirSync(d)) {
-      if (n === "node_modules" || n === "dist") continue;
-      const p = join(d, n);
-      if (statSync(p).isDirectory()) walk(p);
-      else if (/\.(tsx?|m?js)$/.test(n)) {
-        for (const m of readFileSync(p, "utf8").matchAll(/(?:from|import)\s*\(?\s*["'](\.{1,2}\/[^"']+)["']/g)) add(resolve(dirname(p), m[1]!));
+    if (r === "ui" || r.startsWith("ui/")) return false;
+    if (!r.startsWith("..")) out.add(r);
+    return true;
+  }
+  function walk(path: string) {
+    if (outsideUi(path) || visited.has(path) || !existsSync(path)) return;
+    visited.add(path);
+    if (statSync(path).isDirectory()) {
+      for (const name of readdirSync(path)) {
+        if (name !== "node_modules" && name !== "dist") walk(join(path, name));
+      }
+    } else if (/\.(tsx?|m?js)$/.test(path)) {
+      for (const match of readFileSync(path, "utf8").matchAll(/(?:from|import)\s*\(?\s*["'](\.{1,2}\/[^"']+)["']/g)) {
+        const dep = resolve(dirname(path), match[1]!);
+        if (outsideUi(dep)) continue;
+        walk(dep);
+        if (!existsSync(dep)) for (const extension of [".ts", ".tsx", ".js"]) walk(dep.replace(/\.js$/, "") + extension);
       }
     }
-  };
-  walk(UI);
+  }
+  for (const match of read("ui/vite.config.ts").matchAll(/page\("(\.\.\/[^"]+)"\)/g)) outsideUi(resolve(UI, match[1]!));
+  // ui/runtime의 로컬 QA 파일은 이 입력 목록에 없다. ui/tests는 tsc가 검사하므로 그대로 따라간다.
+  for (const input of (JSON.parse(read("ui/tsconfig.json")) as { include: string[] }).include) walk(resolve(UI, input));
   return [...out].sort();
 }
 
