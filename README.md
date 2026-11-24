@@ -1,4 +1,4 @@
-# A Proactive Agentic Home for CLOiD Combining Active Observation and Behavior Prediction
+# Proactive Home Robot System with Procedural Assistance Memory-based RL
 
 LG electronics · Software Engineering 26-2
 
@@ -13,9 +13,11 @@ LG electronics · Software Engineering 26-2
 
 ## Overview
 
-NOONCHI is a prototype of the decision-making part (the brain) of CLOiD, LG's home robot. Without being told, it notices moments in daily life when the resident could use help, checks what it doesn't know yet, and then plans and carries out the action that fits the resident.
+NOONCHI is a proactive home robot system: a prototype of the decision-making part (the brain) of CLOiD, LG's home robot. Without being told, it notices moments in daily life when the resident could use help, checks what it doesn't know yet, and then plans and carries out the action that fits the resident.
 
-**Keywords:** active observation, behavior prediction, person-state FSM, digital twin, proactive agent
+It learns two things. Procedural Assistance Memory (PAM) keeps the resident's routine as an FSM and learns **what** to help with. Reinforcement learning (RL) uses that FSM as its environment model and learns **when** to help.
+
+**Keywords:** proactive home robot, Procedural Assistance Memory (PAM), reinforcement learning, person-state FSM, intervention timing, digital twin
 
 ---
 
@@ -35,6 +37,7 @@ Even with the same objects and appliances, the right action depends on the resid
 - **Does it plan for the situation?** It combines the actions it can take into a plan, even in situations it has not seen before.
 - **Does it check what it doesn't know?** It confirms what the decision needs and cuts unnecessary questions and interventions.
 - **Does it act as the resident wants?** It follows the resident's current intent and allowed range, and reuses information it already confirmed while it still holds.
+- **Does it pick the right moment?** It learns from the resident's reactions whether to wait, look again, ask, or act.
 
 ### C. Goals
 
@@ -42,7 +45,7 @@ Even with the same objects and appliances, the right action depends on the resid
 2. **State:** World State merges objects, people, appliances, and the phone's position into one picture.
 3. **Behavior prediction:** PAM identifies the person's current activity and the transition in the FSM. The server reads the task attached to that transition.
 4. **Execution:** the phone shows one instruction at a time. Each step advances on its own evidence, such as a visual check, the phone's position, an appliance signal, or the resident's answer.
-5. **Learning:** every night, the day's records teach habits that the next day's decisions use.
+5. **Learning:** every night, the day's records teach habits (PAM reflection) and intervention timing (RL) that the next day's decisions use.
 
 ---
 
@@ -79,6 +82,7 @@ Goal · manager: plan prepared ahead, task order (Redis or in-memory messaging)
 Execution · checks: step commands to the real phone, appliances (Matter via matter.js · LG ThinQ API · USB infrared TV hub)
   │
   ├─▶ Record DB (SQLite) ─▶ nightly reflection · adoption test ─▶ next day's FSM
+  │                      └▶ FSM as environment model ─▶ simulator · Q-learning ─▶ next day's timing policy
   └─▶ Dashboard (live vision · three.js twin · action conditions · Agent Trace)
 ```
 
@@ -95,7 +99,7 @@ The server's decision, goal, manager, and execution nodes exchange messages over
 |---|---|
 | `observe` | Reads objects and what the person is doing from photos |
 | `world` | Merges the current home state into one |
-| `brain` | Follows the person's state and learns habits |
+| `brain` | Follows the person's state, learns habits and intervention timing |
 | `goal` | Prepares tasks ahead of time |
 | `manage` | Picks what to do first |
 | `act` | Guides the person step by step on the phone and checks each step |
@@ -124,11 +128,22 @@ Once CLOiD has learned to clear the cup, the goal node can request a plan while 
 
 The phone guides the person to the table to show the inside of the cup. Once two clear overhead views confirm it is empty, the phone asks the person to pick up the cup, go to the sink, and put the cup in the sink, one instruction at a time. If a drink remains, CLOiD asks whether to discard it. If the contents stay unknown, it stops the plan. A suspected fall immediately puts the system in the emergency state. When a plan turns on a risky appliance, tracking continues until there is evidence it is off.
 
-### F. Habit Learning: Nightly Reflection and the Adoption Test
+### F. Learning: Nightly Reflection, the Adoption Test, and Timing RL
 
 Once a day, the day's records are grouped into activity chunks, and PAM reflection proposes a candidate FSM. Each candidate passes a code check (shape) and an LLM check (meaning), then the adoption test. If the person did that task within 300 s after the candidate's trigger at least 75% of the time, with a one-sided binomial test p < 0.001, the candidate is adopted into the next day's FSM. Before the cup-clearing habit is learned, CLOiD asks whether to clear the cup. Learning that habit lets it clear a confirmed empty cup without asking. Risky appliance commands still require approval.
 
-The server records execution and the person's response separately. It can distinguish verified help, a person doing the task themselves, and an unknown response. Nightly reflection uses attributable responses to update the next day's proactive policy. That policy is checked during judgment, automatic goal selection, and before a command is sent. Direct requests and safety steps use their own execution rules. [Assistance outcome contract](src/contract/assistance-outcome.ts)
+The server records execution and the person's response separately. It can distinguish verified help, a declined offer, a person doing the task themselves, and an unknown response. [Assistance outcome contract](src/contract/assistance-outcome.ts)
+
+**PAM-based RL.** The habit FSM says what to help with. When to help is a reinforcement learning problem built on the same FSM.
+
+- **Environment model:** the PAM FSM plus, for each transition, its probability, how long it takes, and how the person reacted to each robot action.
+- **State:** time since the person left, whether and where the person is seen, what is in the cup, time of day, and how many checks were already made.
+- **Actions:** wait, look at the table again, find the person, ask, act.
+- **Reward:** the person's reaction. Accepted help scores up. A declined offer, clearing something the person comes back for, and help the person had to do themselves score down. Questions and extra checks carry a small cost.
+- **Training:** every night, a simulator built from the environment model runs tabular Q-learning. The new policy replaces yesterday's only if it scores higher in the same simulated episodes without more wrong clears.
+- **Use:** during the day the policy is fixed. While checking after the person leaves, the goal node picks the allowed action with the highest value.
+
+Safety and permission stay rules that the policy cannot change: the 5-minute limit on checking, no clearing while the person holds or uses the object, turning the TV off within 5 s of everyone leaving, and approval for risky appliances. Direct requests use their own execution rules.
 
 ### G. Screens People See
 
@@ -158,13 +173,15 @@ The server records execution and the person's response separately. It can distin
 
 **Metrics.** Over-intervention (actions or questions that should not happen), misses, overconfidence (confirmed but wrong facts), correct unknowns (answering unknown when not visible), observation latency (photo → decision), and decision latency.
 
+**PAM-based RL.** The intervention-timing policy has no measured results yet. It will be compared with the fixed rule (find the person, confirm another activity, then clear) on over-intervention and misses.
+
 **Current verification.** Local replay and automated tests cover QR pairing, setup, command delivery, speech deduplication, and trace grouping with test inputs. They are separate from the video results above. Verify camera and microphone permissions, Chrome's address-bar-free TWA, WebXR tracking and alignment, and audible speech on the actual Android phone, signed APK, and HTTPS origins used for a demonstration.
 
 ---
 
 ## V. Comparison with Prior Work
 
-**PAM.** Lee et al.'s Procedural Assistance Memory keeps a person's routine as FSM memory and revises it with end-of-day reflection. We port the paper's prompts as they are, but feed World State observation text instead of photos, define states as what the person is doing, and use only habits that pass the adoption test.
+**PAM.** Lee et al.'s Procedural Assistance Memory keeps a person's routine as FSM memory and revises it with end-of-day reflection. We port the paper's prompts as they are, but feed World State observation text instead of photos, define states as what the person is doing, and use only habits that pass the adoption test. PAM learns which task follows which activity. It does not learn when to step in. We add reinforcement learning on top: the FSM memory becomes the environment model, and a Q-learning policy trained in it chooses the moment (model-based RL in the style of Dyna).
 
 **Smart home routines.** Today's smart home routines run the same action when conditions the user set are met. NOONCHI uses the person's current activity and learned transitions to prepare a possible next task. It waits while the person is using the object and checks that the task still fits before acting.
 
@@ -180,12 +197,13 @@ For wiring, remote learning, and light sensor calibration, see the [infrared TV 
 
 - It does not move a real robot. The phone stands in for the eyes and a person for the hands and feet, and travel time is not part of the decision.
 - It handles one home and one person. Conflicting habits between several people are out of scope.
-- The models are not trained; only the memory changes.
+- The vision and language models are not trained; only the FSM memory and the timing policy change.
+- The timing policy is a table over a small hand-chosen state, trained in a simulator built from one home's records.
 - The installable app and camera flow target Android with a compatible Chrome and WebXR device. The native home setup uses supported hub floor plans and prepared twins. The phone can review captured reference photos. Live alignment uses the configured starting pose and the runtime alignment path.
 
 **Future work.**
 
-- Predict and compare the results of acting and waiting with a twin simulator
+- Extend timing RL from cup clearing to water delivery and the weekend TV routine
 - Extend to scenarios such as induction safety and coming home after being away
 - Train a model separately on reviewed experience and compare it with the fixed model
 
@@ -195,7 +213,7 @@ For wiring, remote learning, and light sensor calibration, see the [infrared TV 
 
 | Name | Responsibilities |
 |---|---|
-| Jeong-O Heo | **Scrum Master & Systems Integration** — Built the NOONCHI server and connected the phone’s AR camera, the 3D home model, and the live dashboard. |
+| Jeong-O Heo | **Agent Runtime & Systems Integration** — Designed the node-and-topic message bus and World State, and built the NOONCHI server's goal, manager, and execution layers. Connected the Android app and AR camera, the 3D home twin, appliance control, and the live dashboard, and built the scenario replay tests. |
 | Seokjun Park | **Decision Models & Habit Learning** — Developed PAM’s decision and reflection logic, designed the statistical test for adopting habits, ran experiments on daily routines, and documented the system architecture. |
 | Junhyeong Kim | **Model Research & Evaluation** — Contributed to the PAM implementation and turned household video scenarios into timestamped model inputs for testing. |
 | Jihun Shin | **Security Architecture & Privacy** — Designed controls for handling camera frames and built monitoring tools to detect images saved during inference. |
@@ -223,6 +241,8 @@ For wiring, remote learning, and light sensor calibration, see the [infrared TV 
 ## Sources
 
 - D. Lee, M. Park et al., *An Agentic Framework for Proactive Robots with Procedural Assistance Memory*, arXiv:2610.21211.
+- C. J. C. H. Watkins and P. Dayan, *Q-learning*, Machine Learning 8, 1992.
+- R. S. Sutton, *Dyna, an Integrated Architecture for Learning, Planning, and Reacting*, ACM SIGART Bulletin 2(4), 1991.
 - Ultralytics, *YOLO26*.
 - Qwen Team, *Qwen3-VL*, *Qwen3.5*.
 - W3C, *WebXR Device API*, *WebXR Raw Camera Access*.
