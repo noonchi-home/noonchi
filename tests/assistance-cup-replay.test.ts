@@ -216,7 +216,7 @@ it("clears delivery before pickup when the resident resolves it and records the 
 
 // 요구사항 ④(실행 중 다시 확인): 컵 치우기의 「식탁으로 가 주세요」를 보낸 뒤 사용자가 돌아와 그 컵을 들면 들기 명령으로 넘어가지 않는다
 async function returnsAndHolds(replay: Replay) {
-  replay.server.history.cupAnswers.remember(HOME, "resident", true);
+  await replay.server.historyWriter.rememberCup(HOME, "resident", true);
   await decision(replay, "clear-back", CLEAR);
   const old = replay.phoneCommands().at(-1);
   if (old?.type !== "command") throw new Error("Expected the issued navigation step");
