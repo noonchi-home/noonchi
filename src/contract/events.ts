@@ -242,7 +242,7 @@ export interface HealthView {
   /** 폰 서버(클로이드의 눈)가 떠 있는가. */
   eye: boolean;
   home: { id: string; name: string } | null;
-  /** 폰에서 열 주소들(와이파이·VPN 어댑터마다 하나). */
+  /** 폰에서 열 주소들: PHONE_URL, tailscale serve HTTPS, 이 PC(루프백) 주소 순. */
   phone_urls: string[];
   /** 이 허브 주소에서 현재 집의 폰 연결을 열 수 있는가. */
   portal_camera?: boolean;

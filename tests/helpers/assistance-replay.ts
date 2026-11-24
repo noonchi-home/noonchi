@@ -63,7 +63,7 @@ export async function assistanceReplay(options: {
   globalThis.fetch = model.fetch;
   const server = await drive(clock, startServer({
     env: { RUNTIME_DIR: runtimeDir, TWIN_STUDIO_DIR: options.studioDir ?? resolve("twin"), HOME_ID: options.home, HOST: "127.0.0.1", PORT: "0",
-      HUB: "memory", PHONE_HOST: "127.0.0.1", PHONE_PORT: "0", PHONE_LAN_URLS: "0", BRAIN: "1", REFLECT_AT: options.reflectAt ?? "off",
+      HUB: "memory", PHONE_HOST: "127.0.0.1", PHONE_PORT: "0", BRAIN: "1", REFLECT_AT: options.reflectAt ?? "off",
       PAM_TRIGGER: "periodic", PAM_PERIOD_MS: "1000", STALE_MS: "10000",
       OPENAI_API_KEY: "replay-fixture", OPENAI_BASE_URL: model.base, VLM_BASE_URL: model.base,
       PAM_LLM_BASE_URL: model.base, VLM_API_KEY: "replay-fixture" },

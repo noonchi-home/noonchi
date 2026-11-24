@@ -67,3 +67,9 @@ export async function fetchRetry(
     }
   }
 }
+
+/** 이 PC 안에서만 닿는 주소인가: 127.0.0.0/8, localhost, ::1. 0.0.0.0·::(모든 주소)와 네트워크 주소는 아니다. */
+export function isLoopbackHost(host: string): boolean {
+  const h = host.trim().toLowerCase().replace(/^\[(.*)\]$/, "$1");
+  return h === "localhost" || h === "::1" || /^127(\.\d{1,3}){3}$/.test(h);
+}

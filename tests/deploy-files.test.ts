@@ -51,6 +51,13 @@ describe("배포 파일", () => {
     expect(run).toContain("ORT_DISABLE_TELEMETRY=1");
   });
 
+  it("Dockerfile: 실행 이미지는 컨테이너 표시를 달아 0.0.0.0에서 듣는다(밖에는 compose가 127.0.0.1로만 낸다)", () => {
+    const d = read("deploy/Dockerfile");
+    const run = d.slice(d.lastIndexOf("FROM "));
+    expect(run).toMatch(/ENV [^\n]*NOONCHI_IN_CONTAINER=1/);
+    expect(run).toContain("HOST=0.0.0.0 PHONE_HOST=0.0.0.0");
+  });
+
   it("compose: 포트는 127.0.0.1만, gpu 프로필 vLLM 두 개(태그 고정·내건 이름·GPU 몫·캐시·차례로 뜸), 볼륨·env_file·상태 검사", () => {
     const c = parse(read("deploy/compose.yaml"), { merge: true }) as { services: Record<string, any>; volumes: Record<string, unknown> };
     for (const [name, s] of Object.entries(c.services)) {
@@ -87,8 +94,9 @@ describe("배포 파일", () => {
     const env = Object.keys(c.services.noonchi.environment ?? {});
     for (const k of ["INFERENCE_MODE", "PAM_LLM_BASE_URL", "PAM_LLM_MODEL", "PAM_LLM_API_KEY", "PAM_LLM_TIMEOUT_S", "PAM_MAX_MODEL_LEN", "VLLM_API_KEY", "OPENAI_API_KEY"]) expect(env, k).toContain(k);
     for (const k of ["PAM_URL", "PAM_LLM_PROVIDER", "OPENROUTER_API_KEY"]) expect(env, k).not.toContain(k);
-    // 컨테이너 안 네트워크 주소(Docker 브리지)는 밖에서 열 수 없으니 폰 주소에 넣지 않는다
-    expect(c.services.noonchi.environment.PHONE_LAN_URLS).toBe("0");
+    // 와이파이 직접 연결 갈래는 없다: 폰 주소는 PHONE_URL·tailscale serve 주소뿐이다
+    expect(env.filter((k) => k.includes("_LAN_"))).toEqual([]);
+    expect(c.services.noonchi.environment.NOONCHI_IN_CONTAINER).toBe("1");
     // 이름만 적은 칸은 .env에 있을 때만 넘긴다. ${X:-}로 두면 비어 있어도 늘 넘긴다
     for (const v of Object.values(c.services.noonchi.environment ?? {})) expect(String(v)).not.toContain("${");
     const fake = c.services["fake-openai"];
