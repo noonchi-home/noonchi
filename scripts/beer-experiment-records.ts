@@ -2,6 +2,7 @@
 // 21일(월요일부터 3주). 날마다 저녁 창(18:59~20:32)만 있고 19시에 TV를 켜서 20시 30분에 끈다. 토요일에는 19시 2분 30초에 일어나 냉장고에서 맥주 캔을 꺼내 와 마시고(TV 켠 지 3분 안),
 // TV를 끈 뒤 캔을 싱크대에 놓는다(사용자가 직접). 첫 두 토요일은 낮 14시~14시 30분에도 TV를 보지만 맥주는 마시지 않는다(시각 맥락이 붙게 하는 반례).
 // 줄 모양: 사람 보임·사람 TV 보는 중·거실 TV 켜짐 · 카메라로 봄(src/world/labels.ts CHANGE_TEXT), VLM: 영어 한 문장(15초마다, 표현은 셋을 돌려 쓴다). 판단 기록(decision)에는 사람 상태(fsm.state)를 싣는다.
+// (2026-11-24) 저녁 창은 TV를 끈 뒤 6분(20:36)까지 사람이 부엌에 보이는 것으로 끝난다.
 // 무작위가 없다: 같은 옵션이면 같은 기록이다. 이 파일은 가짜 AI 답(fakeBeerHandlers)도 함께 둔다(실제 AI를 부르기 전 시운전과 시험이 쓴다).
 import type { HistoryDb } from "../src/brain/history/db.js";
 import { candidateFsmOf } from "../src/brain/pam/adopt.js";
@@ -81,11 +82,10 @@ function session(w: ReturnType<typeof writer>, day: string, i: number, start: st
   if (beer) {
     w.vlm(day, hms(e + 30), "A person carries the beer can to the kitchen sink.");
     w.vlm(day, hms(e + 60), "A person puts the beer can into the sink.");
-    w.vlm(day, hms(e + 80), "A person walks out of the living room.");
-  } else {
-    w.vlm(day, hms(e + 30), "A person walks out of the living room.");
   }
-  w.add("detection", day, hms(e + 120), "사람 안 보임");
+  // TV를 끈 뒤 6분 동안은 사람이 부엌에 보인다(2026-11-24): 따라 하기 창(5분)이 «안 보인 구간»에 걸리면 «모름»으로 빠져 평일의 «안 함»이 횟수에 안 들어간다
+  for (let t = e + (beer ? 90 : 30); t < e + 360; t += 30) w.vlm(day, hms(t), "A person stands in the kitchen.");
+  w.add("detection", day, hms(e + 360), "사람 안 보임");
 }
 
 /** 기록 DB에 21일(기본) 간추린 기록을 쓴다. 쓴 날과 줄 수를 돌려준다. */
