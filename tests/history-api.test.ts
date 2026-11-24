@@ -3,7 +3,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { memoryForDay } from "../src/brain/history/reflect.js";
+import { HistoryDb } from "../src/brain/history/db.js";
 import { CUP_FSM_MEMORY } from "../src/brain/decision.js";
 import { LEARNED_FSM_MEMORY } from "../scripts/learned-memory.js";
 import { fetchRetry } from "../src/shared/net.js";
@@ -25,7 +25,8 @@ const world = { objects: [], person_visible: true, vlm_missing: 0, yolo_missing:
 
 async function start() {
   srv = await startServer({ env: { HUB: "memory", PORT: "0", RUNTIME_DIR: mkdtempSync(join(tmpdir(), "rt-")) }, log: () => {} });
-  const db = srv.history;
+  // 서버 메인 연결은 읽기 전용이라 기록 작업 스레드 창구로 넣는다
+  const db = srv.historyWriter;
   db.add("detection", t(8, 0), "사람 보임");
   for (const [i, action] of [[1, "대기"], [2, "컵 치우기"]] as const) {
     db.add("pam_text", t(8, i), `보낸 텍스트 ${i}`, { subject: `pam-${i}` });
@@ -34,6 +35,7 @@ async function start() {
   db.add("pam_text", t(8, 3), "다시 켠 뒤 같은 번호", { subject: "pam-1" });
   db.add("decision", t(8, 3), "판단 실패: PAM 연결 실패", { subject: "pam-1", data: { seq: 1, status: "failed", prediction: null, memory_version: 1, world } });
   db.add("feedback", t(8, 4), "다 마신 뒤에만 치워 줘");
+  await db.flush();
 }
 
 describe("기록 API", () => {
@@ -83,17 +85,21 @@ describe("기록 API", () => {
 
 describe("기억 상태 API(GET /api/memory/day/:day)", () => {
   it("판단 전에는 pinned null, 첫 판단(그날 기억 고정) 뒤에는 그 판본이다. 이 API를 불러도 고정되지 않는다", async () => {
-    srv = await startServer({ env: { HUB: "memory", PORT: "0", RUNTIME_DIR: mkdtempSync(join(tmpdir(), "rt-")) }, log: () => {} });
+    const runtime = mkdtempSync(join(tmpdir(), "rt-"));
+    srv = await startServer({ env: { HUB: "memory", PORT: "0", RUNTIME_DIR: runtime }, log: () => {} });
     const db = srv.history;
     const today = db.dayOf(Date.now());
     expect((await get(`/api/memory/day/${today}`)).json).toEqual({ ok: true, day: today, pinned: null, uses: null, latest: null });
     expect(db.pinnedMemory(today)).toBeNull();
-    memoryForDay(db, today); // 그날 첫 판단이 부르는 것
+    await srv.historyWriter.dayMemory(today); // 그날 첫 판단이 부르는 것(기록 작업 스레드가 고정한다)
     // uses.memory: 그날 쓰는 기억 JSON(영상 판정이 시작 전에 배운 화살표를 본다)
     expect((await get(`/api/memory/day/${today}`)).json).toEqual({ ok: true, day: today, pinned: 1, uses: { version: 1, source: "seed", appliesDay: null, day: null, memory: CUP_FSM_MEMORY }, latest: 1 });
     // 다음 날부터 쓰는 반성 판본: 내일은 아직 고정 전이지만 쓸 판본은 그것이다(부르기만 해서는 고정하지 않는다)
     const tomorrow = new Date(Date.parse(`${today}T00:00:00Z`) + 86_400_000).toISOString().slice(0, 10);
-    const v2 = db.saveMemory({ kind: "fsm", memory: LEARNED_FSM_MEMORY, day: today, appliesDay: tomorrow, source: "reflection" });
+    // 밤 반성이 저장한 판본(시험이 따로 연 쓰기 연결로 넣는다)
+    const writable = HistoryDb.open(join(runtime, "noonchi.db"));
+    const v2 = writable.saveMemory({ kind: "fsm", memory: LEARNED_FSM_MEMORY, day: today, appliesDay: tomorrow, source: "reflection" });
+    writable.close();
     expect((await get(`/api/memory/day/${tomorrow}`)).json).toEqual({ ok: true, day: tomorrow, pinned: null, uses: { version: v2, source: "reflection", appliesDay: tomorrow, day: today, memory: LEARNED_FSM_MEMORY }, latest: v2 });
     expect(db.pinnedMemory(tomorrow)).toBeNull();
     expect((await get(`/api/memory/day/${today}`)).json).toMatchObject({ pinned: 1, uses: { version: 1 }, latest: v2 });

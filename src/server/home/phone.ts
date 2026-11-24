@@ -40,8 +40,7 @@ export function preparePhone(core: HomeCore): void {
       photoDir: env.PHONE_PHOTO_DIR?.trim() || join(runtimeDir, "photos"), broadcast: (m) => core.app?.broadcast(m),
       // 사진 찍기 사진은 보관 기간이 지나면 지운다(src/brain/history/retention.ts)
       onSaved: (p) => {
-        history.db.addPhoto({ ...p, origin: "photo" });
-        history.db.add("photo", p.atMs, PHOTO_TEXT.saved, { subject: p.id });
+        history.write.photo(p, PHOTO_TEXT.saved).catch((e: Error) => ctx.log(`[경고] 사진 기록을 쓰지 못했어요: ${e.message}`));
       },
     })
     : undefined;
@@ -112,11 +111,13 @@ function heardSpeech(core: HomeCore, text: string): void {
 }
 
 /** 버튼과 말의 답은 실행 노드가 지금 명령과 다시 대조한다. 승인 토큰은 폰 세션 밖으로 보내지 않는다. */
-export function applyPhoneProgress(core: HomeCore, b: Body<"/phone/progress">): Body<"/act/progress_result"> {
+export function applyPhoneProgress(core: HomeCore, b: Body<"/phone/progress">): Body<"/act/progress_result"> | Promise<Body<"/act/progress_result">> {
   const req = b.req;
   const tracker = core.tracker;
   if (core.closed || !tracker) return { req, status: "stale" };
   const preferenceReply = b.kind === "voice" ? core.resumeProactive?.(b.text, req) : null;
+  // 선호를 기록한 답은 기록 DB 커밋 뒤에 답한다
+  if (preferenceReply instanceof Promise) return preferenceReply.then((reply) => ({ req, status: "answer" as const, reply }));
   if (preferenceReply) return { req, status: "answer", reply: preferenceReply };
   const open = tracker.openCommand();
   const at = b.kind === "voice" && b.at ? { ...b.at, pending: [] } : undefined;
@@ -210,7 +211,8 @@ export async function startPhone(core: HomeCore): Promise<void> {
       const open = tracker?.openCommand();
       const stale = () => {
         heardSpeech(core, text);
-        history.db.add("execution", core.nowMs(), EXEC_TEXT.staleAnswer, { subject: open?.planId ?? (at?.kind === "command" ? at.id : PHONE_SESSION) });
+        history.write.add("execution", core.nowMs(), EXEC_TEXT.staleAnswer, { subject: open?.planId ?? (at?.kind === "command" ? at.id : PHONE_SESSION) })
+          .catch((e: Error) => log(`[경고] 늦은 답 기록을 쓰지 못했어요: ${e.message}`));
         return { handled: true, reply: "" };
       };
       // 말로 한 승인·거절: 말할 때 보인 승인 대기 token이 하나이고 지금도 대기일 때 그 하나에만 답한다.

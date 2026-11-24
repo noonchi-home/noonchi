@@ -109,7 +109,7 @@ async function decision(replay: Replay, id: string, action: string) {
 it("waits for the same cup after occlusion instead of picking the other cup on the table", async () => {
   const replay = await start();
   try {
-    replay.server.history.cupAnswers.remember(HOME, "resident", true);
+    await replay.server.historyWriter.rememberCup(HOME, "resident", true);
     await decision(replay, "clear-cup", CLEAR);
     const initial = replay.phoneCommands().length;
     const hidden = await photo(replay, "target-occluded", "hidden");
@@ -141,7 +141,7 @@ it("terminates the issued Trace step at actual fall detection and ignores an old
     expect(predicate()).toBe(true);
   };
   try {
-    replay.server.history.cupAnswers.remember(HOME, "resident", true);
+    await replay.server.historyWriter.rememberCup(HOME, "resident", true);
     await decision(replay, "clear-before-fall", CLEAR);
     const sent = replay.phoneCommands().at(-1)!;
     if (sent.type !== "command") throw new Error("No active guide to interrupt");
