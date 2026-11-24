@@ -16,7 +16,7 @@ test("a fresh launch accepts one QR and opens AR only after an explicit press on
   const check = pending<string>();
   const scans: string[] = [];
   const urls: string[] = [];
-  const flow = createDashboardFlow({
+  const flow = createDashboardFlow({ minLaunchMs: 0,
     connect: (raw) => { scans.push(raw); return check.done; },
     open: async (url) => { urls.push(url); },
   });
@@ -41,7 +41,7 @@ test("a fresh launch accepts one QR and opens AR only after an explicit press on
 
 test("returning from the trusted AR browser keeps the QR camera off until disconnect", async () => {
   const urls: string[] = [];
-  const flow = createDashboardFlow({ connect: async () => portal, open: async (url) => { urls.push(url); } });
+  const flow = createDashboardFlow({ minLaunchMs: 0, connect: async () => portal, open: async (url) => { urls.push(url); } });
   flow.finishLaunch();
   const oldCamera = flow.view().cameraEpoch;
   await flow.scan(qr, oldCamera);
@@ -63,7 +63,7 @@ test("backgrounding aborts validation and a late answer cannot open the AR brows
   const check = pending<string>();
   let signal: AbortSignal | undefined;
   const urls: string[] = [];
-  const flow = createDashboardFlow({
+  const flow = createDashboardFlow({ minLaunchMs: 0,
     connect: (_, options) => { signal = options?.signal; return check.done; },
     open: async (url) => { urls.push(url); },
   });
@@ -82,7 +82,7 @@ test("backgrounding aborts validation and a late answer cannot open the AR brows
 
 test("validation failures and camera failures require a fresh scan without leaving the app", async () => {
   let attempts = 0;
-  const flow = createDashboardFlow({
+  const flow = createDashboardFlow({ minLaunchMs: 0,
     connect: async () => { attempts++; throw new Error("대시보드 QR을 찍어 주세요."); },
     open: async () => assert.fail("unverified URL opened"),
   });
@@ -104,7 +104,7 @@ test("validation failures and camera failures require a fresh scan without leavi
 test("a TWA error preserves the connected home and prevents overlapping opens", async () => {
   const launch = pending<void>();
   let attempts = 0;
-  const flow = createDashboardFlow({
+  const flow = createDashboardFlow({ minLaunchMs: 0,
     connect: async () => portal,
     open: async () => { if (++attempts === 1) await launch.done; },
   });
@@ -125,7 +125,7 @@ test("a TWA error preserves the connected home and prevents overlapping opens", 
 test("backgrounding a pending AR launch cancels it and keeps the hub available", async () => {
   const launch = pending<void>();
   let signal: AbortSignal | undefined;
-  const flow = createDashboardFlow({ connect: async () => portal, open: async (_, options) => {
+  const flow = createDashboardFlow({ minLaunchMs: 0, connect: async () => portal, open: async (_, options) => {
     signal = options.signal;
     await launch.done;
   } });
@@ -139,4 +139,50 @@ test("backgrounding a pending AR launch cancels it and keeps the hub available",
   await opening;
   flow.setActive(true);
   assert.deepEqual(flow.view().screen, { kind: "dashboard", url: portal, opening: false });
+});
+
+// 가짜 시계: advance(ms)가 그 사이에 닿은 타이머를 차례로 부른다
+function fakeClock() {
+  let now = 0;
+  let timers: { at: number; fn: () => void }[] = [];
+  return {
+    now: () => now,
+    setTimeout(fn: () => void, ms: number) { const timer = { at: now + ms, fn }; timers.push(timer); return timer; },
+    clearTimeout(timer: unknown) { timers = timers.filter((t) => t !== timer); },
+    advance(ms: number) {
+      const end = now + ms;
+      for (;;) {
+        const due = timers.filter((t) => t.at <= end).sort((a, b) => a.at - b.at)[0];
+        if (!due) break;
+        timers = timers.filter((t) => t !== due);
+        now = due.at;
+        due.fn();
+      }
+      now = end;
+    },
+  };
+}
+
+test("the launch screen stays for at least 2,000 ms even when the app is ready at 300 ms", () => {
+  const clock = fakeClock();
+  const flow = createDashboardFlow({ connect: async () => portal, open: async () => {}, clock });
+  clock.advance(300);
+  flow.finishLaunch();
+  flow.finishLaunch();
+  assert.equal(flow.view().screen.kind, "launch");
+  clock.advance(1_699);
+  assert.equal(flow.view().screen.kind, "launch");
+  clock.advance(1);
+  assert.equal(flow.view().screen.kind, "scan");
+});
+
+test("when the app is ready at 3,000 ms the launch screen leaves at 3,000 ms", () => {
+  const clock = fakeClock();
+  const flow = createDashboardFlow({ connect: async () => portal, open: async () => {}, clock });
+  clock.advance(3_000);
+  // 준비되기 전에는 2,000ms가 지나도 로딩 화면이다
+  assert.equal(flow.view().screen.kind, "launch");
+  flow.finishLaunch();
+  assert.equal(flow.view().screen.kind, "scan");
+  assert.equal(clock.now(), 3_000);
 });

@@ -26,3 +26,11 @@ test("the native mark shares one accessible, tinted, high-density artwork in the
   assert(png.readUInt32BE(16) >= 920);
   assert.equal(png[25], 6, "The source PNG must carry an alpha channel for native tinting");
 });
+
+test("the native splash uses the same red as the loading screen behind the wordmark", () => {
+  const background = /wordmarkBackground\s*=\s*"(#[0-9A-Fa-f]{6})"/.exec(read("BrandWordmark.tsx"))?.[1];
+  assert.equal(background, "#A50034");
+  const plugins = JSON.parse(read("app.json")).expo.plugins as [string, Record<string, unknown>][];
+  const splash = plugins.find(([name]) => name === "expo-splash-screen")?.[1];
+  assert.equal(String(splash?.backgroundColor).toUpperCase(), background);
+});

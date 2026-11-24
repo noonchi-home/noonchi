@@ -16,7 +16,7 @@
     },
     "plugins": [
       ["expo-camera", { "recordAudioAndroid": false, "barcodeScannerEnabled": true }],
-      ["expo-splash-screen", { "backgroundColor": "#a1143e", "image": "./assets/splash-icon.png", "imageWidth": 72 }]
+      ["expo-splash-screen", { "backgroundColor": "#A50034", "image": "./assets/splash-icon.png", "imageWidth": 72 }]
     ]
   }
 }
