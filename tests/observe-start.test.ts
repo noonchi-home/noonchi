@@ -88,7 +88,7 @@ describe("startServer(BRAIN=1) + 관찰 흐름", () => {
         }
       };
       await wait(() => seen.predict > 0, "판단 요청");
-      srv.history.add("detection", Date.now(), "사람 보임");
+      await srv.historyWriter.add("detection", Date.now(), "사람 보임");
       const day = srv.history.dayOf(Date.now());
       const running = fetchRetry(`${srv.url}/api/reflection/run`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ day }) }).catch(() => null);
       await wait(() => seen.reflect > 0, "반성 요청");

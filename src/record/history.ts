@@ -1,6 +1,7 @@
 // history.ts — 기록 노드가 기록 DB(noonchi.db)에 쓰는 토픽과 줄(+ 녹화). 반성(DAY_KINDS·HABIT_KINDS)이 읽는 종류는 모두 RELIABLE에서 온다.
 // 메시지 하나의 기록 줄과 처리표(bus_seen, msgId)는 한 트랜잭션이다(db.once): 다시 온 메시지는 쓰지 않는다. 가전 지난 값(device_last)도 같은 트랜잭션이다.
 // 녹화는 같은 메시지를 다시 남기지 않는다. 다 쓰면 콜백이 끝나 실행기가 ack한다(실패하면 던져 다시 받는다).
+// 서버는 historyRoutesVia로 같은 쓰기 표를 기록 작업 스레드에서 돌리고, 커밋이 끝난 뒤에 ack한다.
 // 녹화하는 SENSOR(record: true)는 커서(mode "all")로 다 읽는다. 사진 토픽과 /bus/dead는 녹화하지 않는다.
 import type { BrainLog, DecisionRecord, FeedbackLog } from "../contract/events.js";
 import type { PlanView } from "../contract/plan.js";
@@ -10,6 +11,8 @@ import { TOPICS, msgId, type BusNode, type Envelope, type TopicName } from "../b
 import { HEARD_MARK, redactHeard } from "../world/labels.js";
 import { machineWrites } from "./machines.js";
 import type { Bag } from "./bag.js";
+import type { HistoryWriter } from "./writer.js";
+import { MEMO_FIELD, newRecordMemo, type RecordMemo } from "./machines.js";
 
 type Write = (b: Record<string, unknown>, stamp: number, header: Envelope<TopicName>["header"]) => void;
 /** 프레임마다 생기는 분석 없음은 관찰 기록(observe)으로 남으므로 world_change로 다시 쓰지 않는다(관찰 흐름과 같다). */
@@ -39,11 +42,15 @@ function forBag(e: Envelope<TopicName>, keep: boolean): Envelope<TopicName> {
   return e;
 }
 
-export function historyRoutes(node: BusNode, db: HistoryDb, o: { bag?: Bag; now: () => number; keepHeard?: boolean; machinesOnly?: boolean }): void {
+/** 기록 노드 쓰기 표의 설정: keepHeard(들은 말 원문을 남김), machinesOnly(서버 기록 노드: 상태 기계·판단·실행 기록만). */
+export interface RecordOptions { keepHeard: boolean; machinesOnly: boolean }
+
+/** 토픽마다 기록 DB에 쓰는 것(기록 노드가 db.once 트랜잭션 안에서 부른다). 서버는 기록 작업 스레드(src/record/writer.ts)에서 같은 표를 쓴다. */
+export function recordWrites(db: HistoryDb, o: { now: () => number; keepHeard?: boolean; machinesOnly?: boolean; memo?: RecordMemo }): Partial<Record<TopicName, Write>> {
   const keep = o.keepHeard ?? false;
   const device = deviceRecorder(db, o.now);
   const logs = (list: unknown) => { for (const l of (list ?? []) as BrainLog[]) recordBrainLog(db, l); };
-  const machines = machineWrites(db);
+  const machines = machineWrites(db, o.memo);
   const history: Partial<Record<TopicName, Write>> = o.machinesOnly ? { ...machines } : {
     ...machines,
     "/perception/analysis": (b) => logs(b.logs),
@@ -62,16 +69,52 @@ export function historyRoutes(node: BusNode, db: HistoryDb, o: { bag?: Bag; now:
     else if (b.type === "feedback") recordFeedback(db, b as unknown as FeedbackLog);
     else recordBrainLog(db, b as unknown as BrainLog);
   };
-  const recorded = (t: TopicName) => {
-    const s = TOPICS[t] as { qos: { kind: string; record?: boolean }; photo?: string };
-    return t !== "/bus/dead" && !s.photo && (s.qos.kind !== "sensor" || !!s.qos.record);
-  };
+  return history;
+}
+
+const recorded = (t: TopicName) => {
+  const s = TOPICS[t] as { qos: { kind: string; record?: boolean }; photo?: string };
+  return t !== "/bus/dead" && !s.photo && (s.qos.kind !== "sensor" || !!s.qos.record);
+};
+const readMode = (topic: TopicName) => (TOPICS[topic].qos.kind === "sensor" ? { mode: "all" as const } : {});
+
+/** 같은 스레드 기록(시험·재생·오프라인 도구): 콜백 안에서 그 연결에 쓰고 녹화한다. */
+export function historyRoutes(node: BusNode, db: HistoryDb, o: { bag?: Bag; now: () => number; keepHeard?: boolean; machinesOnly?: boolean }): void {
+  const keep = o.keepHeard ?? false;
+  const history = recordWrites(db, o);
   const topics = new Set<TopicName>([...(Object.keys(history) as TopicName[]), ...(o.bag ? (Object.keys(TOPICS) as TopicName[]).filter(recorded) : [])]);
   for (const topic of topics) {
     const write = history[topic];
     node.on(topic, (b, { e }) => {
       if (write) db.once({ topic, group: "recorder", key: e.key, msg: msgId(e.header), boot: e.header.boot }, () => write(b as Record<string, unknown>, e.header.stamp, e.header));
       if (o.bag && recorded(topic)) o.bag.write(forBag(e, keep), o.now());
-    }, TOPICS[topic].qos.kind === "sensor" ? { mode: "all" } : {});
+    }, readMode(topic));
   }
 }
+
+let sessions = 0;
+/** 서버 기록 노드: 쓰기를 기록 작업 스레드(writer.record)로 보내고 ack는 커밋이 끝난 뒤로 미룬다(ctx.defer). 쓰기가 실패하면 ack하지 않아 버스가 다시 준다.
+ *  미루는 동안 노드는 다음 메시지를 받으므로 여러 토픽의 메시지가 한 커밋에 묶인다. 녹화는 하지 않는다.
+ *  중복 막기 상태(RecordMemo)는 이 노드가 들고, 일마다 그 토픽의 칸을 실어 보내 커밋된 뒤 돌아온 값으로 바꾼다. */
+export function historyRoutesVia(node: BusNode, writer: Pick<HistoryWriter, "record">, o: { now: () => number; keepHeard?: boolean; machinesOnly?: boolean; log?: (line: string) => void }): void {
+  const session = `${node.name}:${node.inst}:${++sessions}`;
+  const opts: RecordOptions = { keepHeard: o.keepHeard ?? false, machinesOnly: o.machinesOnly ?? false };
+  const topics = Object.keys(recordWrites(nullDb, { ...opts, now: () => 0 })) as TopicName[];
+  const memo = newRecordMemo();
+  for (const topic of topics) {
+    const field = MEMO_FIELD[topic];
+    node.on(topic, (_b, { e, defer }) => {
+      const settle = defer();
+      writer.record({ ...opts, session, e, now: o.now(), ...(field ? { memo: memo[field] } : {}) }).then((r) => {
+        if (field) (memo as unknown as Record<string, unknown>)[field] = r.memo;
+        settle(true);
+      }, (err: Error) => {
+        o.log?.(`[recorder] ${topic} 기록 실패: ${err.message}`);
+        settle(false);
+      });
+    }, readMode(topic));
+  }
+}
+
+/** 쓰기 표의 토픽 목록만 볼 때 넘기는 빈 연결(표를 만들 때는 DB를 부르지 않는다). */
+const nullDb = {} as HistoryDb;

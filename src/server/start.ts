@@ -4,6 +4,7 @@
 
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
+import type { Worker } from "node:worker_threads";
 import type { Agent, Policy } from "../agent/index.js";
 import { openBus, type Bus, type Clock } from "../bus/index.js";
 import { agentEndpoint } from "../agent/index.js";
@@ -14,10 +15,11 @@ import type { ControlMode, SetupView, ThinqDeviceView } from "../contract/setup.
 import type { SignalHub } from "../devices/index.js";
 import { HistoryDb, historyTzMinutes } from "../brain/index.js";
 import { REFLECT_TEXT } from "../brain/index.js";
-import { attachRecorder, topic, type DeviceNote } from "../brain/index.js";
-import { loadReflectAt, runReflection, NightReflection, type ReflectResult } from "../brain/index.js";
-import { loadRetention, sweep } from "../brain/index.js";
-import { PamClient, pamSettings } from "../brain/index.js";
+import { topic, type DeviceNote } from "../brain/index.js";
+import { loadReflectAt, reflectInThread, NightReflection, type ReflectResult } from "../brain/index.js";
+import { loadRetention } from "../brain/index.js";
+import { ThreadWriter, type HistoryWriter } from "../record/index.js";
+import { pamSettings } from "../brain/index.js";
 import type { DeviceHub, DeviceState } from "../contract/devices.js";
 import { loadEndpoints } from "../infer/endpoints.js";
 import type { LayoutEditor } from "../layout/index.js";
@@ -96,6 +98,8 @@ export interface StartServerOptions {
   servedHubUrls?: (hubPort: number) => Promise<string[]>;
   /** 대시보드·설정 화면 폴더. 기본은 React 빌드(ui/dist). */
   webDir?: string;
+  /** 시험용: 기록 작업 스레드를 띄울 때마다 받는다(끝내 보는 시험). */
+  onHistoryWorker?: (w: Worker) => void;
   /** 시험용: 노드 통로 열기(기본 openBus: REDIS_URL이면 RedisBus, 아니면 MemoryBus). */
   openBus?: (env: Env, o: { boot: string; log?: (s: string) => void; onLost: (err: Error) => void }) => Promise<Bus>;
   /** 통로를 잃었을 때(Redis가 다시 켜짐) 서버를 닫은 뒤 부르는 끝내기(기본 process.exit). */
@@ -129,6 +133,8 @@ export interface RunningServer {
   readonly mode: ControlMode;
   /** 기록 DB(RUNTIME_DIR/noonchi.db). 집을 바꿔도 같다. */
   readonly history: HistoryDb;
+  /** 기록 DB 쓰기 함수 묶음(HistoryWriter, 기록 작업 스레드가 쓴다). history는 읽기 전용 연결이라 쓰기는 모두 이리로 간다. */
+  readonly historyWriter: HistoryWriter;
   /** 다른 집으로 바꾼다(POST /api/setup/home과 같음). */
   switchHome(id: string): Promise<void>;
   /** 지금 집의 노드를 닫지 않고 비운다(닫기와 같은 차례: 발행 줄 → 집 상태 → 거울). 기한(ms) 안에 다 비우면 true. 시간으로 기다리지 않는다. */
@@ -161,7 +167,8 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
   // 추론 모드(openai|vllm)와 모델 주소, PAM LLM 전송 값. 틀린 설정이면 잠금·DB를 열기 전에 시작을 막는다
   const endpoints = loadEndpoints(env);
   for (const w of endpoints.warnings) log(w);
-  const pamConfig = pamSettings(env);
+  // PAM 설정은 반성 작업 스레드가 같은 env로 다시 읽는다. 여기서는 틀렸는지만 본다
+  pamSettings(env);
   const reflectAt = loadReflectAt(env);
   const retention = loadRetention(env);
   // 이 런타임 폴더를 쓰는 서버라는 표시(RUNTIME_DIR/server.lock.db의 SQLite 배타 잠금, src/server/lock.ts). DB를 열기 전에 잡는다:
@@ -174,17 +181,33 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
     throw new Error(unfinished);
   }
   // 기록 DB(RUNTIME_DIR/noonchi.db)와 기록기. 집 묶음이 가전·관찰·판단·계획을 넘기고, 운영 모드는 여기서 넘긴다. 시작이 실패하면 닫는다
+  // 쓰기는 기록 작업 스레드 하나가 쓰기 연결로 하고(src/record/thread-writer.ts: 메인 스레드는 FULL 커밋의 fsync를 기다리지 않는다),
+  // 메인 스레드는 읽기 전용 연결만 연다(빠뜨린 쓰기 경로는 SQLite 오류로 바로 드러난다). 표는 서버가 돌기 전에 여기서 한 번 만든다.
+  // 작업 스레드는 모듈을 불러오는 데 2초쯤 걸려 집을 여는 동안 띄워 두고, 듣기 전에 준비를 기다린다(그사이 쓰기는 모아 두었다가 보낸다)
+  const dbPath = join(runtimeDir, "noonchi.db");
+  const tz = historyTzMinutes(env);
   let db: HistoryDb;
   try {
-    db = HistoryDb.open(join(runtimeDir, "noonchi.db"), historyTzMinutes(env));
+    HistoryDb.create(dbPath);
+    db = HistoryDb.open(dbPath, tz, { readOnly: true });
   } catch (e) {
     lock.release();
     throw e;
   }
+  const writer = ThreadWriter.start(dbPath, { offsetMinutes: tz, log, onWorker: opts.onHistoryWorker });
+  const write = writer.api();
+  const writeFailed = (e: Error) => log(`[경고] 기록 DB에 쓰지 못했어요: ${e.message}`);
   const feed = { device: topic<[DeviceState, DeviceNote?]>(), brain: topic<[BrainLog]>(), plan: topic<[PlanView]>(), mode: topic<[ControlMode]>() };
-  const stopRecorder = attachRecorder(db, { onDevice: feed.device.on, onBrain: feed.brain.on, onPlan: feed.plan.on, onMode: feed.mode.on });
-  const closeDb = () => {
-    stopRecorder();
+  const stopFeeds = [
+    feed.device.on((s, note) => { write.device(s, note, Date.now()).catch(writeFailed); }),
+    feed.brain.on((l) => { write.brainLog(l).catch(writeFailed); }),
+    feed.plan.on((p) => { write.plan(p, Date.now()).catch(writeFailed); }),
+    feed.mode.on((m) => { write.mode(m, Date.now()).catch(writeFailed); }),
+  ];
+  /** 남은 쓰기를 커밋하고 작업 스레드·읽기 연결을 닫는다. */
+  const closeDb = async () => {
+    for (const off of stopFeeds) off();
+    await writer.close();
     db.close();
   };
   // 노드 통로(src/bus): 기동마다 새 boot로 하나 열고 집을 바꿔도 같은 통로를 쓴다. 집을 열 때마다 집 세대(<집 id>#<연 횟수>)가 새로 붙는다.
@@ -202,24 +225,27 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
       },
     });
   } catch (e) {
-    closeDb();
+    await closeDb();
     lock.release();
     throw e;
   }
   let opened = 0;
-  // 반성: 한 번에 하나. 결과는 지금 집의 대시보드 판단 기록으로 보낸다(기록 DB에는 runReflection이 적는다).
+  // 반성: 한 번에 하나. 반성 작업 스레드(src/brain/history/night-host.ts reflectInThread)가 읽기·덩어리·검사·LLM 요청 만들기를 하고,
+  // 저장은 기록 작업 스레드로 보낸다. 결과는 지금 집의 대시보드 판단 기록으로 보낸다.
   // 서버를 끌 때는 진행 중인 반성의 PAM 요청을 끊고 끝날 때까지 기다린 뒤 DB를 닫는다
-  const pam = new PamClient({ settings: pamConfig });
   const closing = new AbortController();
   let reflecting: Promise<ReflectResult> | null = null;
   const reflect = async (day: string, life?: AbortSignal): Promise<ReflectResult> => {
     if (reflecting) throw new HttpError(409, REFLECT_TEXT.running);
     // 반성 사건은 지금 집의 대시보드로 보내고 집 묶음에도 넘긴다(말풍선 카드가 배운 습관을 말한다)
-    const job = runReflection(db, pam, day, {
-      signal: life ? AbortSignal.any([life, closing.signal]) : closing.signal, log,
-      now: opts.clock ? () => opts.clock!.now() : undefined,
+    const job = reflectInThread({
+      path: dbPath, offsetMinutes: tz, day, env: { ...env },
       // 시각 찾기·검사 결과 사본: runtime/homes/<집>/habit
       ...(current ? { dir: join(runtimeDir, "homes", current.twin.home.id, "habit") } : {}),
+    }, {
+      signal: life ? AbortSignal.any([life, closing.signal]) : closing.signal, log,
+      store: { add: (kind, atMs, text, o) => write.add(kind, atMs, text, o), saveNight: (a) => write.saveNight(a) },
+      now: opts.clock ? () => opts.clock!.now() : () => Date.now(),
       emit: (event) => {
         current?.app.broadcast({ type: "brain", event });
         if (event.type === "reflection") current?.onReflection(event);
@@ -258,8 +284,8 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
       return mode === "live" ? ir : null;
     },
     savedStations: (homeId, defaults) => store.stations(homeId, defaults),
-    sources: (homeId, ids) => store.sources(homeId, ids), mode: () => mode, allowOrigin, planToken: env.PLAN_TOKEN?.trim() || undefined, ready: makeReady({ endpoints, agent: agentEndpoint(env), db }),
-    history: { db, device: feed.device.emit, brain: feed.brain.emit, plan: feed.plan.emit, reflect },
+    sources: (homeId, ids) => store.sources(homeId, ids), mode: () => mode, allowOrigin, planToken: env.PLAN_TOKEN?.trim() || undefined, ready: makeReady({ endpoints, agent: agentEndpoint(env), db, writable: () => write.writable() }),
+    history: { db, write, device: feed.device.emit, brain: feed.brain.emit, plan: feed.plan.emit, reflect },
     bus, epochOf: (homeId) => ({ boot, home: `${homeId}#${++opened}` }),
   };
   const studioDir = resolveTwinStudioDir(env.TWIN_STUDIO_DIR);
@@ -330,7 +356,16 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
     }
   } catch (e) {
     await bus.close().catch(() => {});
-    closeDb();
+    await closeDb();
+    lock.release();
+    throw e;
+  }
+  try {
+    await writer.ready();
+  } catch (e) {
+    await rt.close().catch(() => {});
+    await bus.close().catch(() => {});
+    await closeDb();
     lock.release();
     throw e;
   }
@@ -549,7 +584,7 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
   } catch (e) {
     await rt.close().catch(() => {});
     await bus.close().catch(() => {});
-    closeDb();
+    await closeDb();
     lock.release();
     throw e;
   }
@@ -569,16 +604,16 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
   }
 
   // 보관 기간: 시작 때와 1시간마다 지난 사진 찍기 사진·시험 자료를 지운다
-  const clean = () => {
+  const clean = async () => {
     try {
-      const n = sweep(db, { ...retention, nowMs: Date.now() });
+      const n = await write.sweep({ ...retention, nowMs: Date.now() });
       if (n.photos || n.dataset) log(`보관 기간이 지난 사진을 지웠어요: 사진 찍기 ${n.photos}장, 시험 자료 ${n.dataset}장`);
     } catch (e) {
       log(`[경고] 지난 사진을 지우지 못했어요: ${(e as Error).message}`);
     }
   };
-  clean();
-  const cleaner = setInterval(clean, 3_600_000);
+  await clean();
+  const cleaner = setInterval(() => void clean(), 3_600_000);
   cleaner.unref?.();
   const night = reflectAt ? new NightReflection({ bus, boot, at: reflectAt, offsetMinutes: db.offsetMinutes, clock: opts.clock, run: reflect }) : null;
   await night?.start();
@@ -601,6 +636,7 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
     setup: store,
     get mode() { return mode; },
     history: db,
+    historyWriter: write,
     switchHome: async (id) => {
       await switchHome(id);
       store.setHome(id);
@@ -619,7 +655,7 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
       await reflecting?.catch(() => {});
       await shell.close();
       await bus.close().catch(() => {});
-      closeDb();
+      await closeDb();
       lock.release();
     },
   };

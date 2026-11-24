@@ -18,7 +18,8 @@ import { adoptKey, adoptedFsm, candidateFsmOf, checkCandidate, type CheckDay, ty
 import { learnBeerRules, withBeerRules } from "./beer-rules.js";
 import { clock, type Chunk, type Marks } from "../pam/marks.js";
 import { headWithin } from "../../shared/cut.js";
-import type { HistoryDb } from "./db.js";
+import type { HistoryDb, HistoryKind } from "./db.js";
+import type { BeerRule } from "../../contract/beer.js";
 import { edgeKey, learnedEdges, settingsGuard, type EdgeLine, type HabitFilter, type HabitRuleNote } from "./habits.js";
 import { NIGHT_TEXT, REFLECT_TEXT } from "./labels.js";
 import { findRoutines, withRoutines } from "./routines.js";
@@ -143,8 +144,35 @@ const markKey = (state: string, text: string) => JSON.stringify([state, text]);
 /** 사본이 읽은 그날 기록 줄의 표시(줄 수와 줄 전체의 sha256). 다르면 그날 기록이 바뀐 것이라 사본을 버리고 다시 묻는다. */
 const recordMark = (lines: readonly { line: string }[]) => `${lines.length}:${createHash("sha256").update(lines.map((l) => l.line).join("\n")).digest("hex")}`;
 
+/** 밤 저장 한 번에 넘기는 값(함수 없이: 서버는 기록 작업 스레드에서 저장한다). 반성 기록 줄 글·data의 version은 저장한 로봇 판본 번호다. */
+export interface NightSave {
+  day: string; appliesDay: string; kind?: "list"; robot: unknown; candidates: unknown; beerRules?: readonly BeerRule[];
+  atMs: number; learnedCount: number; found: Record<string, unknown>; used: Record<string, unknown>;
+}
+
+/** 반성 성공 글: 판본·적용일(+ 배운 화살표 수). */
+const doneText = (version: number, appliesDay: string, learned: number) => REFLECT_TEXT.done(version, appliesDay) + (learned ? ` · ${REFLECT_TEXT.learned(learned)}` : "");
+
+/** 밤 저장 한 트랜잭션(HistoryDb.saveNight): 그날 판본 고정(판본이 없으면 seed 저장)·로봇·후보 판본·반성 기록. */
+export function nightSave(db: HistoryDb, a: NightSave): { robot: number; candidates: number } {
+  return db.saveNight({
+    day: a.day, appliesDay: a.appliesDay, ...(a.kind ? { kind: a.kind } : {}), robot: a.robot, candidates: a.candidates,
+    ...(a.beerRules ? { beerRules: a.beerRules } : {}), pin: () => memoryForDay(db, a.day),
+    reflection: (version) => ({ atMs: a.atMs, text: doneText(version, a.appliesDay, a.learnedCount), data: { day: a.day, ok: true, version, applies_day: a.appliesDay, ...a.found, ...a.used } }),
+  });
+}
+
+/** 밤 흐름이 기록 DB에 쓰는 곳. 기본은 그 연결에 바로 쓴다(서버는 기록 작업 스레드로 쓰기를 보내는 HistoryWriter를 넘긴다). */
+export interface NightStore {
+  add(kind: HistoryKind, atMs: number, text: string, o: { subject?: string; data?: unknown }): unknown;
+  saveNight(a: NightSave): { robot: number; candidates: number } | Promise<{ robot: number; candidates: number }>;
+}
+
 export interface NightOptions {
-  now?: () => number; emit?: (l: BrainLog) => void; filter?: HabitFilter; windowDays?: number; signal?: AbortSignal;
+  /** 기록 시각(기본 Date.now). 반성 작업 스레드는 메인 시계를 메시지로 물어 Promise로 받는다. */
+  now?: () => number | Promise<number>; emit?: (l: BrainLog) => void; filter?: HabitFilter; windowDays?: number; signal?: AbortSignal;
+  /** 쓰는 곳(기본: db에 바로). */
+  store?: NightStore;
   /** 시각 찾기·검사 결과 사본 폴더(runtime/homes/<집>/habit). 없으면 사본을 쓰지 않는다. */
   dir?: string;
   /** 파일 쓰기(기본 writeFileSync, 시험이 실패를 넣는다). */
@@ -161,15 +189,16 @@ export async function runNight(db: HistoryDb, pam: PamClient, day: string, o: Ni
   const now = o.now ?? (() => Date.now());
   const write = o.writeFile ?? ((path: string, text: string) => writeFileSync(path, text));
   let usage: PamUsage | undefined;
+  const store: NightStore = o.store ?? { add: (kind, atMs, text, x) => db.add(kind, atMs, text, x), saveNight: (a) => nightSave(db, a) };
   const fail = (error: string, extra: { empty?: true } = {}): NightResult => ({ ok: false, error, ...extra, passed: [], checks: [] });
-  const done = (ok: boolean, text: string, version: number | null, appliesDay: string | null, found?: Record<string, unknown>) => {
-    const at = now();
+  const done = async (ok: boolean, text: string, version: number | null, appliesDay: string | null, found?: Record<string, unknown>) => {
+    const at = await now();
     const used = usage ? { usage } : {};
-    db.add("reflection", at, text, { data: { day, ok, version, applies_day: appliesDay, ...found, ...used } });
+    await store.add("reflection", at, text, { data: { day, ok, version, applies_day: appliesDay, ...found, ...used } });
     o.emit?.({ type: "reflection", at_ms: at, day, ok, version, applies_day: appliesDay, text, ...found, ...used } as BrainLog);
   };
   if (!db.hasInterventionPreference(day) && !db.beerEvents(day, day).length && !db.list({ day, kinds: [...DAY_KINDS, "assistance_outcome"], limit: 1 }).length) {
-    done(false, REFLECT_TEXT.failed(REFLECT_TEXT.empty), null, null);
+    await done(false, REFLECT_TEXT.failed(REFLECT_TEXT.empty), null, null);
     return fail(REFLECT_TEXT.empty, { empty: true });
   }
   const cancelled = () => fail(REFLECT_TEXT.cancelled);
@@ -196,12 +225,9 @@ export async function runNight(db: HistoryDb, pam: PamClient, day: string, o: Ni
       let appliesDay = nextDay(day);
       while (db.pinnedMemory(appliesDay) !== null) appliesDay = nextDay(appliesDay);
       const found = { learned: [], active: [], dropped: [] };
-      const at = now();
+      const at = await now();
       const used = usage ? { usage } : {};
-      const { robot: version } = db.saveNight({
-        day, appliesDay, kind: "list", robot: memory, candidates: null, pin: () => memoryForDay(db, day),
-        reflection: version => ({ atMs: at, text: REFLECT_TEXT.done(version, appliesDay), data: { day, ok: true, version, applies_day: appliesDay, ...found, ...used } }),
-      });
+      const { robot: version } = await store.saveNight({ day, appliesDay, kind: "list", robot: memory, candidates: null, atMs: at, learnedCount: 0, found, used });
       o.emit?.({ type: "reflection", at_ms: at, day, ok: true, version, applies_day: appliesDay, text: REFLECT_TEXT.done(version, appliesDay), ...found, ...used });
       return { ok: true, version, appliesDay, learned: [], active: [], dropped: [], passed: [], checks: [] };
     }
@@ -279,7 +305,7 @@ export async function runNight(db: HistoryDb, pam: PamClient, day: string, o: Ni
     if (got.why !== null) got = await attempt([feedback, REFLECT_TEXT.retry(headWithin(got.why, RETRY_WHY_MAX))].filter(Boolean).join("\n"));
     if (o.signal?.aborted) return cancelled();
     if (got.candidates === null) {
-      done(false, REFLECT_TEXT.rejected(got.why!), null, null, { rejected: got.why });
+      await done(false, REFLECT_TEXT.rejected(got.why!), null, null, { rejected: got.why });
       return fail(got.why!);
     }
     const candidates = got.candidates;
@@ -375,17 +401,11 @@ export async function runNight(db: HistoryDb, pam: PamClient, day: string, o: Ni
     // 6) 저장: 끝난 반성만 그날 판본을 고정하고(판본이 없으면 seed를 저장), 로봇·후보 판본과 반성 기록을 한 트랜잭션으로
     let appliesDay = nextDay(day);
     while (db.pinnedMemory(appliesDay) !== null) appliesDay = nextDay(appliesDay);
-    const at = now();
+    const at = await now();
     const found = { learned, active, dropped, rejected: null, ...(checks.length ? { checks } : {}), ...(beer.tvOn ? { beer } : {}) };
     const used = usage ? { usage } : {};
-    const saved = db.saveNight({
-      day, appliesDay, robot: memory, candidates, beerRules: beer.rules, pin: () => memoryForDay(db, day),
-      reflection: (version) => {
-        const text = REFLECT_TEXT.done(version, appliesDay) + (learned.length ? ` · ${REFLECT_TEXT.learned(learned.length)}` : "");
-        return { atMs: at, text, data: { day, ok: true, version, applies_day: appliesDay, ...found, ...used } };
-      },
-    });
-    const text = REFLECT_TEXT.done(saved.robot, appliesDay) + (learned.length ? ` · ${REFLECT_TEXT.learned(learned.length)}` : "");
+    const saved = await store.saveNight({ day, appliesDay, robot: memory, candidates, beerRules: beer.rules, atMs: at, learnedCount: learned.length, found, used });
+    const text = doneText(saved.robot, appliesDay, learned.length);
     o.emit?.({ type: "reflection", at_ms: at, day, ok: true, version: saved.robot, applies_day: appliesDay, text, ...found, ...used } as BrainLog);
     // 검사 결과 사본(커밋 뒤, 실패하면 로그 한 줄만: 결과는 반성 기록 data.checks에 있다)
     if (o.dir) {
@@ -396,7 +416,7 @@ export async function runNight(db: HistoryDb, pam: PamClient, day: string, o: Ni
     // 서버를 끄느라 끊었으면 기록하지 않는다(닫히는 DB에 쓰지 않는다)
     if (o.signal?.aborted) return cancelled();
     const error = (e as Error).message;
-    done(false, REFLECT_TEXT.failed(error), null, null);
+    await done(false, REFLECT_TEXT.failed(error), null, null);
     return fail(error);
   }
 }

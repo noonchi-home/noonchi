@@ -69,6 +69,8 @@ export const PATHS_FILE = "src/shared/paths.ts";
 /** 글자 그대로가 아닌 import()·require를 써도 되는 파일과 까닭. 옮기면 새 자리로 고친다. */
 export const DYNAMIC_OK: Record<string, string> = {
   "src/observe/detector-worker.mjs": "Worker 입구: workerData로 받은 감지 스레드 파일(같은 폴더 detector-thread.ts)을 연다",
+  "src/brain/history/night-worker.mjs": "Worker 입구: workerData로 받은 밤 반성 스레드 파일(같은 폴더 night-thread.ts)을 연다",
+  "src/record/writer-worker.mjs": "Worker 입구: workerData로 받은 기록 DB 쓰기 스레드 파일(같은 폴더 writer-thread.ts)을 연다",
 };
 
 export interface Config { deps: Record<string, readonly string[]>; legacy: Record<string, string>; tables: readonly string[]; dynamicOk: readonly string[] }

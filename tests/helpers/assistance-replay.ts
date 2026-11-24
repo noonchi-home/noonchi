@@ -5,6 +5,7 @@ import { inProcessModel } from "./in-process-model.js";
 import { BusNode, MemoryBus, VirtualClock, type Body, type Deliver, type Envelope, type NodeName, type ReadMode, type TopicName } from "../../src/bus/index.js";
 import { settle } from "../../src/record/replay.js";
 import { startServer } from "../../src/server/start.js";
+import { prepareReflectionThread } from "../../src/brain/index.js";
 
 class TraceBus extends MemoryBus {
   readonly sent: Envelope<TopicName>[] = [];
@@ -61,6 +62,8 @@ export async function assistanceReplay(options: {
   const fetcher = globalThis.fetch;
   const startupDiagnostics: string[] = [];
   globalThis.fetch = model.fetch;
+  // 밤 반성을 쓰면 반성 작업 스레드를 미리 띄워 둔다(처음 반성이 모듈을 불러오느라 2초쯤 늦지 않게)
+  if (options.reflectAt && options.reflectAt !== "off") await prepareReflectionThread();
   const server = await drive(clock, startServer({
     env: { RUNTIME_DIR: runtimeDir, TWIN_STUDIO_DIR: options.studioDir ?? resolve("twin"), HOME_ID: options.home, HOST: "127.0.0.1", PORT: "0",
       HUB: "memory", PHONE_HOST: "127.0.0.1", PHONE_PORT: "0", BRAIN: "1", REFLECT_AT: options.reflectAt ?? "off",
@@ -78,7 +81,8 @@ export async function assistanceReplay(options: {
   }));
   const actors = new Map<NodeName, BusNode>();
   let answers = 0;
-  const barrier = () => settle(bus, [...actors.values()]);
+  // 기록 노드의 배달은 기록 작업 스레드가 커밋한 뒤에 끝나므로 장벽은 차례마다 쓰기를 기다린다
+  const barrier = () => settle(bus, [...actors.values()], undefined, () => server.historyWriter.flush());
   const publish = async <T extends TopicName>(actor: NodeName, name: T, body: Body<T>) => {
     let node = actors.get(actor);
     if (!node) {

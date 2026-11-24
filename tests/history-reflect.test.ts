@@ -431,7 +431,7 @@ describe("반성 API", () => {
     const { port } = await listenRetry(hang, 0, "127.0.0.1");
     try {
       running = await startServer({ env: { HUB: "memory", PORT: "0", RUNTIME_DIR: mkdtempSync(join(tmpdir(), "rt-")), PAM_LLM_BASE_URL: `http://127.0.0.1:${port}/v1`, PAM_LLM_API_KEY: "fake-key" }, log: () => {} });
-      running.history.add("detection", Date.UTC(2026, 10, 7, 1), "사람 보임");
+      await running.historyWriter.add("detection", Date.UTC(2026, 10, 7, 1), "사람 보임");
       const pending = post({ day: "2026-11-07" }).catch(() => null);
       const end = Date.now() + 5000;
       while (!got && Date.now() < end) await new Promise((ok) => setTimeout(ok, 20));
@@ -496,7 +496,7 @@ describe("반성 API", () => {
 
   it("POST /api/reflection/run: 그날을 반성하고 결과를 대시보드 판단 기록으로 보낸다", async () => {
     const s = await start();
-    s.history.add("detection", Date.UTC(2026, 10, 7, 1), "사람 보임");
+    await s.historyWriter.add("detection", Date.UTC(2026, 10, 7, 1), "사람 보임");
     const box: Record<string, any>[] = [];
     const dash = await openWebSocket(`${s.url.replace(/^http/, "ws")}/events`, { setup: (ws) => ws.on("message", (d) => box.push(JSON.parse(String(d)))) });
     try {

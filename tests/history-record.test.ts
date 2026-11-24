@@ -29,12 +29,15 @@ describe("서버 기록 연결", () => {
     srv = await startServer({ env: { HUB: "memory", PORT: "0", HOME_ID: "oneroom", RUNTIME_DIR: runtime }, log: () => {} });
     expect(srv.history.list({ kinds: ["device"] })).toEqual([]);
     expect((await post("/api/devices/ac_1/command", { command: { type: "on" } })).status).toBe(200);
+    // 쓰기는 기록 작업 스레드가 커밋한 뒤에 읽힌다
+    await srv.historyWriter.flush();
     const rows = srv.history.list({ kinds: ["device"] });
     expect(rows.length).toBeGreaterThan(0);
     expect(rows.every((r) => r.subject === "ac_1")).toBe(true);
     const label = srv.twin.devices.find((d) => d.id === "ac_1")!.label;
     expect(rows.every((r) => r.text.startsWith(`${label} `))).toBe(true);
     expect((await post("/api/plan", { plan: docPlan() })).status).toBe(200);
+    await srv.historyWriter.flush();
     expect(srv.history.list({ kinds: ["plan"] }).map((r) => [r.subject, r.text])).toEqual([["cup-1", "컵 치우기 진행 중"]]);
     await srv.close();
     srv = undefined;

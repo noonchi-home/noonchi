@@ -48,7 +48,7 @@ export function startAgent(core: HomeCore): void {
   if (contactsWarning) log(`[경고] ${contactsWarning}`);
   const onService = (r: ServiceResult) => {
     const row = serviceRecord(r, keepHeard);
-    history.db.add("service", r.atMs, row.text, { subject: row.subject, data: row.data });
+    history.write.add("service", r.atMs, row.text, { subject: row.subject, data: row.data }).catch((e: Error) => log(`[경고] 외부 연락 기록을 쓰지 못했어요: ${e.message}`));
     const text = serviceSay(r);
     if (text === null) return;
     core.serviceSaid = { text, atMs: Date.now() };
@@ -73,7 +73,7 @@ export function startAgent(core: HomeCore): void {
     provider: traceProvider(core, provider, "planner"),
     onRound: (r) => {
       log(planRoundLine(r));
-      history.db.add("planner", core.nowMs(), planRoundText(r), { subject: r.plan, data: r });
+      history.write.add("planner", core.nowMs(), planRoundText(r), { subject: r.plan, data: r }).catch((e: Error) => log(`[경고] 계획 차례 기록을 쓰지 못했어요: ${e.message}`));
     },
   });
   // 에이전트 관찰 모드(src/agent/observer.ts): 잘 못 볼 때 가까이 보기·사람 부탁·기다리기 중 하나를 고른다. 말 요청·계획 모드와 같은 공급자

@@ -5,6 +5,7 @@
 // agent.ts 정책·에이전트·외부 연락·계획 모드·관찰 모드·초점, phone.ts 실제 폰, act.ts 계획·판단·실행 추적·보기 담당, observe.ts World State·관찰 흐름·주기 타이머, say.ts 말풍선 카드.
 
 import type { DeviceNote, HistoryDb, ReflectResult } from "../../brain/index.js";
+import type { HistoryWriter } from "../../record/index.js";
 import type { Bus, Clock } from "../../bus/index.js";
 import type { BrainLog, ReadyView } from "../../contract/events.js";
 import type { PlanView } from "../../contract/plan.js";
@@ -37,7 +38,10 @@ type Env = Record<string, string | undefined>;
 
 /** 기록 DB와 기록기(src/brain/history/recorder.ts)에 넘기는 곳. 서버(start.ts)가 만들고 집을 바꿔도 같은 것을 쓴다. */
 export interface HomeHistory {
+  /** 읽기 연결(서버에서는 읽기 전용). 쓰기는 write로 한다. */
   db: HistoryDb;
+  /** 기록 DB 쓰기 함수 묶음(HistoryWriter, 서버에서는 기록 작업 스레드가 쓴다). */
+  write: HistoryWriter;
   device(s: DeviceState, note?: DeviceNote): void;
   brain(l: BrainLog): void;
   plan(p: PlanView): void;
@@ -239,7 +243,17 @@ function runtime(core: HomeCore): HomeRuntime {
     setRelay(next) {
       setRelay(core, next);
     },
-    settle: (ms) => (core.closed ? Promise.resolve(true) : drainNodes(core, ms)),
+    // 노드를 비운 뒤, 남은 기한 안에 기록 쓰기가 커밋되기를 기다린다(시험이 settle 뒤 바로 읽는다)
+    settle: async (ms) => {
+      if (core.closed) return true;
+      const end = Date.now() + ms;
+      const drained = await drainNodes(core, ms);
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const late = new Promise<false>((r) => { timer = setTimeout(() => r(false), Math.max(0, end - Date.now())); });
+      const flushed = await Promise.race([ctx.history.write.flush().then(() => true as const), late]);
+      clearTimeout(timer);
+      return drained && flushed;
+    },
     async close() {
       if (core.closed) return;
       core.closed = true;

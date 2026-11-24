@@ -89,11 +89,50 @@ export class HistoryDb {
     this.cupAnswers = new CupAnswers(db);
   }
 
-  static open(path: string, offsetMinutes = 540): HistoryDb {
+  /** readOnly: 서버 메인 스레드의 읽기 연결(쓰기는 기록 작업 스레드만 한다, src/record/thread-writer.ts). 쓰면 SQLite가 오류를 던진다.
+   *  읽기 전용은 표를 만들지 않으므로 쓰기 연결이 먼저 연 파일에만 쓴다. */
+  static open(path: string, offsetMinutes = 540, o: { readOnly?: boolean } = {}): HistoryDb {
+    if (o.readOnly) {
+      const db = new DatabaseSync(path, { readOnly: true });
+      db.exec("PRAGMA busy_timeout = 5000");
+      return new HistoryDb(db, offsetMinutes);
+    }
     if (path !== ":memory:") mkdirSync(dirname(path), { recursive: true });
     const db = new DatabaseSync(path);
     db.exec(`PRAGMA busy_timeout = 5000; PRAGMA journal_mode = WAL; PRAGMA synchronous = FULL; ${SCHEMA}`);
     return new HistoryDb(db, offsetMinutes);
+  }
+
+  /** 파일과 표를 만든다(쓰기 연결을 열었다 바로 닫는다). 서버는 돌기 전에 한 번 부르고, 그 뒤 메인 스레드는 읽기 전용으로만 연다. */
+  static create(path: string): void {
+    HistoryDb.open(path).close();
+  }
+
+  #depth = 0;
+  /** fn을 트랜잭션 하나로 감싼다: 바깥이면 BEGIN IMMEDIATE … COMMIT, 이미 트랜잭션 안이면 SAVEPOINT(기록 작업 스레드가 묶음 안 일마다 나눈다).
+   *  fn이 던지면 그 안에서 쓴 것만 되돌리고 다시 던진다. 바깥 COMMIT이 실패해도 되돌리고 던진다. */
+  tx<T>(fn: () => T): T {
+    const name = `tx${this.#depth}`;
+    const outer = this.#depth === 0;
+    this.db.exec(outer ? "BEGIN IMMEDIATE" : `SAVEPOINT ${name}`);
+    this.#depth++;
+    let value: T;
+    try {
+      value = fn();
+    } catch (e) {
+      this.#depth--;
+      this.db.exec(outer ? "ROLLBACK" : `ROLLBACK TO ${name}; RELEASE ${name}`);
+      throw e;
+    }
+    this.#depth--;
+    try {
+      this.db.exec(outer ? "COMMIT" : `RELEASE ${name}`);
+    } catch (e) {
+      // COMMIT이 실패하면(잠김 등) 트랜잭션이 열린 채 남는다. 이미 닫혔으면 ROLLBACK이 던지니 삼킨다
+      if (outer) try { this.db.exec("ROLLBACK"); } catch { /* 열린 트랜잭션 없음 */ }
+      throw e;
+    }
+    return value;
   }
 
   ok(): boolean {
@@ -144,10 +183,15 @@ export class HistoryDb {
 
   /** 기억 판본을 저장하고 새 번호를 돌려준다(1부터). appliesDay가 없으면(seed) 어느 날에나 쓸 수 있다. synthetic은 합성 기록(scripts/seed-history.ts)이다. */
   saveMemory(m: { kind: MemoryKind; memory: unknown; day: string | null; appliesDay: string | null; source: MemorySource }): number {
-    const next = (this.db.prepare("SELECT COALESCE(MAX(version), 0) + 1 AS v FROM memories").get() as { v: number }).v;
+    const next = this.nextMemoryVersion();
     this.db.prepare("INSERT INTO memories(version, created_ms, day, applies_day, kind, memory, source) VALUES (?, ?, ?, ?, ?, ?, ?)")
       .run(next, Date.now(), m.day, m.appliesDay, m.kind, JSON.stringify(m.memory), m.source);
     return next;
+  }
+
+  /** 다음에 저장할 기억 판본 번호(후보 판본까지 센다). */
+  nextMemoryVersion(): number {
+    return (this.db.prepare("SELECT COALESCE(MAX(version), 0) + 1 AS v FROM memories").get() as { v: number }).v;
   }
 
   /** 그날 쓸 수 있는 실행 기억 판본(applies_day가 없거나 그날 이전) 중 가장 새 것. */
@@ -182,13 +226,9 @@ export class HistoryDb {
    *  reflection은 로봇 판본 번호로 반성 기록 줄(시각·글·data)을 만든다. */
   saveNight(o: { day: string; appliesDay: string; robot: unknown; candidates: unknown; kind?: "list" | "fsm"; pin?: () => void; beerRules?: readonly BeerRule[];
     reflection: (robot: number) => { atMs: number; text: string; data: unknown } }): { robot: number; candidates: number } {
-    this.db.exec("BEGIN IMMEDIATE");
-    try {
+    return this.tx(() => {
       const saved = this.night(o.day);
-      if (saved) {
-        this.db.exec("COMMIT");
-        return { robot: saved.robot, candidates: saved.candidates };
-      }
+      if (saved) return { robot: saved.robot, candidates: saved.candidates };
       o.pin?.();
       const robot = this.saveMemory({ kind: o.kind ?? "fsm", memory: o.robot, day: o.day, appliesDay: o.appliesDay, source: "reflection" });
       const candidates = o.kind === "list" ? 0
@@ -207,12 +247,8 @@ export class HistoryDb {
       this.add("reflection", r.atMs, r.text, { data: r.data });
       this.db.prepare("INSERT INTO assistance_nights (day, robot, candidates, result) VALUES (?, ?, ?, ?)")
         .run(o.day, robot, candidates, JSON.stringify(r.data));
-      this.db.exec("COMMIT");
       return { robot, candidates };
-    } catch (e) {
-      this.db.exec("ROLLBACK");
-      throw e;
-    }
+    });
   }
 
   beerEvents(firstDay: string, lastDay: string): BeerEvent[] {
@@ -328,8 +364,7 @@ export class HistoryDb {
 
   /** 합성 기록(scripts/seed-history.ts)만 지운다: data.synthetic이 참인 줄, source가 synthetic인 기억 판본, 그 판본에 고정한 날·넣은 seed 바뀜 표시. 지운 수를 돌려준다. */
   removeSynthetic(): { events: number; memories: number; pins: number } {
-    this.db.exec("BEGIN IMMEDIATE");
-    try {
+    return this.tx(() => {
       const versions = (this.db.prepare("SELECT version FROM memories WHERE source = 'synthetic'").all() as { version: number }[]).map((r) => String(r.version));
       const pins = versions.length
         ? Number(this.db.prepare(`DELETE FROM meta WHERE key LIKE 'memory_day:%' AND value IN (${versions.map(() => "?").join(",")})`).run(...versions).changes)
@@ -338,12 +373,8 @@ export class HistoryDb {
       if (versions.length) this.db.prepare(`DELETE FROM meta WHERE key LIKE 'seed_patch:%' AND value IN (${versions.map(() => "?").join(",")})`).run(...versions);
       const memories = Number(this.db.prepare("DELETE FROM memories WHERE source = 'synthetic'").run().changes);
       const events = Number(this.db.prepare("DELETE FROM events WHERE json_extract(data, '$.synthetic') = 1").run().changes);
-      this.db.exec("COMMIT");
       return { events, memories, pins };
-    } catch (e) {
-      this.db.exec("ROLLBACK");
-      throw e;
-    }
+    });
   }
 
   /** Called inside the recorder's envelope transaction, before it acknowledges delivery. */
@@ -354,19 +385,14 @@ export class HistoryDb {
       { subject: outcome.key.attemptId, data: outcome });
   }
 
-  /** 메시지 하나를 한 번만 쓴다: 처리표에 넣고 write(같은 연결의 add 등)를 한 트랜잭션으로. 이미 처리했으면 쓰지 않고 false.
+  /** 메시지 하나를 한 번만 쓴다: 처리표에 넣고 write(같은 연결의 add 등)를 한 트랜잭션으로(이미 트랜잭션 안이면 SAVEPOINT). 이미 처리했으면 쓰지 않고 false.
    *  write가 던지면 처리표 줄까지 되돌리고 다시 던진다. */
   once(k: SeenKey, write: () => void): boolean {
-    this.db.exec("BEGIN IMMEDIATE");
-    try {
+    return this.tx(() => {
       const fresh = Number(this.db.prepare("INSERT OR IGNORE INTO bus_seen(topic, grp, msg_key, msg, boot) VALUES (?, ?, ?, ?, ?)").run(k.topic, k.group, k.key, k.msg, k.boot).changes) > 0;
       if (fresh) write();
-      this.db.exec(fresh ? "COMMIT" : "ROLLBACK");
       return fresh;
-    } catch (err) {
-      this.db.exec("ROLLBACK");
-      throw err;
-    }
+    });
   }
 
   /** 다른 기동의 처리표 줄을 지운다(기록 노드가 시작할 때). */
