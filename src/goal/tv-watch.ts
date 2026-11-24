@@ -9,8 +9,8 @@ export const NO_VIEWER_MS = 2000;
  *  그 답이 2초 늦게 와도 2초 간격으로 돌아가지 않게. 같은 사진을 다시 평가해도 늘지 않는다. */
 export const WATCH_HOLD_MS = 4000;
 /** 시청 구역에 있던 사용자를 YOLO가 이만큼 이어 못 보면(그 자리가 화면 안) VLM 사진을 기다리지 않고 비었다고 본다(2026-11-25 control 결정:
- *  World State 빠른 안 보임 0.5초보다 엄격하게, 잘못 끄면 티가 크다). */
-export const YOLO_NO_VIEWER_MS = 1000;
+ *  잘못 끄기 0이 먼저라, 잠깐 일어섰다 돌아옴(화면 밖 2초 안팎)은 끄지 않는 길이. 떠남 → 끄기는 5초 안에 든다). */
+export const YOLO_NO_VIEWER_MS = 2500;
 /** seen: 시청 구역이 지금 유효한 사진에 보인다(빈 자리 판단이 unknown이 아니다). by yolo: 빈 자리 근거가 YOLO 프레임(photo는 그 엔진 프레임 시각). */
 export interface ViewerEvidence { empty:boolean; watch:boolean; photo:number|null; seen:boolean; by?:"yolo" }
 export function viewerAt(facts:TriggerFacts | null,id:string,now:number):ViewerEvidence {
