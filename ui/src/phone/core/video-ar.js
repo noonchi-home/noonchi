@@ -393,10 +393,11 @@ export function createVideoAr({ link, params, hooks, deps }) {
     // 명령 세대: 새 단계 영상 명령·지우기마다 오른다. 예약 타이머와 재생을 기다리는 바꾸기는 세대가 다르면 버린다
     let cmdGen = 0;
     let lastCmdId = null;
-    let guidedKey=null, guideRevision=null, waypoint=null, walkReady=null;
+    // guideFace: 안내의 다음 자리가 서는 자리(마지막 구간)면 go 대상 AR 자리. 그 구간은 대상을 보며 걷는다(영상 속 사람은 다가가는 물건을 본다)
+    let guidedKey=null, guideRevision=null, waypoint=null, guideFace=null, walkReady=null;
     function followGuide(key, clipMs, generation=cmdGen){
       if(generation!==cmdGen || key!==guidedKey || key!==lastKey || walkReady!==key || !waypoint) return;
-      startWalk(waypoint,0,clipMs);
+      startWalk(waypoint,0,clipMs,guideFace);
     }
     let aboveAim = null;
     // 영상 모드: 자세 흉내. 관찰 자리 가기의 비출 곳(명령 대상 look, AR): 명령이 떠 있는 동안 도착 반경에 닿으면 그쪽을 바라본다(「…을 비춰 주세요」)
@@ -453,14 +454,15 @@ export function createVideoAr({ link, params, hooks, deps }) {
       setPose([position[0] + (dx / left) * stride, position[1], position[2] + (dz / left) * stride], orientation);
     };
     /** target 쪽으로 돌아 서고 stopM(기본 0.6m) 앞까지 걷기 시작한다. 숙인 각은 주소 칸 pitch. 이미 그 안이면 그대로.
-     *  clipMs(단계 영상 조각이 실제로 도는 시간)가 있으면 그 시간에 닿게 걷고(조각과 함께 걷는다), 없으면 초당 WALK_MPS. */
+     *  clipMs(단계 영상 조각이 실제로 도는 시간)가 있으면 그 시간에 닿게 걷고(조각과 함께 걷는다), 없으면 초당 WALK_MPS.
+     *  faceAt이 있으면 걷는 쪽 대신 그 자리 쪽으로 돌아 선다. */
     // 영상 모드: 자세 흉내
-    const startWalk = (target, stopM = WALK_STOP_M, clipMs) => {
+    const startWalk = (target, stopM = WALK_STOP_M, clipMs, faceAt = null) => {
       if (lookAfter?.key === lastKey) lookAfter.faced = false;
       const w = walkGoal(position, target, stopM);
       const dist = w ? Math.hypot(w.goal[0] - position[0], w.goal[2] - position[2]) : 0;
       walk = w && (clipMs > 0 ? { goal: w.goal, mps: dist / (clipMs / 1000), clip: true } : { goal: w.goal, mps: WALK_MPS, clip: false });
-      if (w) setPose(position, yawPitchQuat(w.yaw, pitchDeg));
+      if (w) setPose(position, yawPitchQuat((faceAt && lookAt(position, faceAt)?.yaw) ?? w.yaw, pitchDeg));
     };
     /** 걷기를 멈추고 그 자리에서 target을 바라본다(사람이 폰을 대상에 겨눈다). 바로 위·아래면 자세는 그대로. */
     const face = (target) => {
@@ -710,6 +712,7 @@ export function createVideoAr({ link, params, hooks, deps }) {
         const nextGuide=guided?cmd.guide?.remaining[0]:null;
         if(guided && (fresh || guideRevision!==(cmd.guide?.revision??null))){
           walk=null;guidedKey=key;guideRevision=cmd.guide?.revision??null;waypoint=nextGuide?.ar??null;
+          guideFace=nextGuide?.kind==="stand" && Array.isArray(cmd.target?.ar) ? cmd.target.ar : null;
           if(nextGuide?.kind==="portal" && waypoint){
             const beyond=cmd.guide.remaining[1]?.ar;
             if(beyond){
@@ -718,7 +721,11 @@ export function createVideoAr({ link, params, hooks, deps }) {
             }
           }
           if(!fresh) followGuide(key);
-        } else if(!guided && fresh){if(guidedKey) walk=null;guidedKey=null;waypoint=null;}
+        } else if(!guided && fresh){
+          // 안내 걷기도 조각과 함께 걷는 중(walk.clip)이면 다음 명령에 멈추지 않는다(영상은 계속 다가간다)
+          if(guidedKey && !walk?.clip) walk=null;
+          guidedKey=null;waypoint=null;guideFace=null;
+        }
 
         // 같은 명령이 이어서 다시 오면(비전 상태만 바뀜) 이미 줄에 넣은 것은 그대로 둔다(대상이 그제야 붙었으면 아래에서 넣는다)
         if (!fresh && switched.has(key)) {
@@ -825,8 +832,9 @@ export function createVideoAr({ link, params, hooks, deps }) {
         lookAfter = null;
         cmdGen++;
         lastKey = null;
-        if(guidedKey) walk=null;
-        guidedKey=null;waypoint=null;guideRevision=null;
+        // 조각과 함께 걷는 걸음(walk.clip)은 안내 걷기여도 그대로 둔다
+        if(guidedKey && !walk?.clip) walk=null;
+        guidedKey=null;waypoint=null;guideFace=null;guideRevision=null;
         posedKey = null;
         for (const timer of reactTimers) clearTimeout(timer);
         reactTimers.clear();
