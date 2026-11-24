@@ -8,6 +8,11 @@ import { connectDashboard } from "./pairing";
 import { startNativeAr } from "./native-twa";
 import { BrandWordmark, wordmarkBackground } from "./BrandWordmark";
 import { ScreenBoundary } from "./screen-boundary";
+import { clientErrorReport, reportClientError } from "./client-error";
+import { createConnectedHub } from "./connected-hub";
+import appConfig from "./app.json";
+
+type DashboardFlow = ReturnType<typeof createDashboardFlow>;
 
 const brand = "#a1143e";
 const mascot = require("./assets/mascot-large.webp");
@@ -41,7 +46,14 @@ function ScreenFailed({ onRetry }: { onRetry: () => void }) {
   </SafeAreaView>;
 }
 
-function Portal({ flow }: { flow: ReturnType<typeof createDashboardFlow> }) {
+/** 연결된 허브가 있으면 잡은 화면 오류를 허브 로그로 보낸다. */
+function reportScreenError(flow: DashboardFlow, error: unknown, componentStack: string | null) {
+  const { screen } = flow.view();
+  if (screen.kind !== "dashboard") return;
+  void reportClientError(() => createConnectedHub(screen.url), clientErrorReport(error, componentStack, appConfig.expo.version, Date.now()));
+}
+
+function Portal({ flow }: { flow: DashboardFlow }) {
   const { active, cameraEpoch, screen } = useSyncExternalStore(flow.subscribe, flow.view);
   const [permission, requestPermission, getPermission] = useCameraPermissions({ get: false });
   const [permissionError, setPermissionError] = useState(false);
@@ -126,7 +138,8 @@ function Portal({ flow }: { flow: ReturnType<typeof createDashboardFlow> }) {
 export default function App() {
   const [flow] = useState(() => createDashboardFlow({ connect: connectDashboard, open: startNativeAr }, activeNow()));
   return <SafeAreaProvider>
-    <ScreenBoundary fallback={retry => <ScreenFailed onRetry={retry} />}>
+    <ScreenBoundary fallback={retry => <ScreenFailed onRetry={retry} />}
+      onError={(error, componentStack) => reportScreenError(flow, error, componentStack)}>
       <Portal flow={flow} />
     </ScreenBoundary>
   </SafeAreaProvider>;

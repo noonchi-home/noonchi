@@ -51,6 +51,7 @@ Routes are implemented under [src/server/routes](../src/server/routes) and [src/
 | `GET /api/homes`, `GET /api/scene`, `GET /api/layout` | Available homes, active scene and layout edits. Save or reset edits with `POST /api/layout/save` or `POST /api/layout/reset`. |
 | `GET /api/setup`, `POST /api/setup/home`, `POST /api/setup/devices`, `POST /api/setup/done` | Read setup progress and `mobile_urls`, choose a home and its devices, then finish setup. `android_twa` reports the selected camera origin when available. `POST /api/setup/mode` selects device operation mode. |
 | `GET /api/setup/thinq`, `POST /api/setup/pairs` | List available ThinQ appliances and save their pairings. |
+| `POST /api/mobile/client-error` | The Android app reports a screen it could not draw. The hub writes an `[앱 오류]` line with the stack to its log. Accepts only `message`, `stack`, `component_stack`, `app_version` and `at_ms`, up to 16KB and 10 reports a minute. |
 | `GET /api/rooms`, `GET /api/devices`, `GET /api/devices/:id` | Inspect room and device IDs, capabilities and current state. Filter the list by `room` or `kind`. |
 | `POST /api/devices/:id/command`, `POST /api/devices/:id/twin`, `POST /api/sensors/:id` | Request a device action, submit a twin attribute or update a sensor. Controllable attributes go through command policy. |
 | `POST /api/agent/chat`, `GET /api/agent/pending`, `POST /api/agent/confirm`, `POST /api/agent/cancel` | Start or continue a conversation and resolve its pending approvals. |
@@ -106,6 +107,7 @@ For a physical controller on the local network, run the Matter bridge with netwo
 
 - **Phone cannot start AR.** Open the hub HTTPS URL in Android Chrome on a device that supports WebXR AR. Check the browser's camera permission for the hub and close any AR session in another tab. If the camera opens but the phone cannot connect, check the WebSocket upgrade for `/mobile/phone-events` and use the same tailnet as the dashboard. The AR settings show microphone guidance when voice input is off or blocked.
 - **Android camera launch is blocked.** Check the `android_twa` URLs and package in `GET /api/setup`. Fetch `assetlinks_url` on the exact `/phone/` origin and port and verify the installed APK's public certificate fingerprint. The TWA uses `/phone/events` on the camera origin. Confirm the address bar is absent and WebXR starts on the physical phone. [TWA deployment](deploy.md#android-camera-twa)
+- **The Android app shows 「화면을 열지 못했어요」.** Read the `[앱 오류]` lines in the hub log for the error, stack and screen components, then press 「다시 시도」 in the app. The app reports only while it is connected to a hub.
 - **A model is unavailable.** Check `/api/health`, endpoint URLs and credentials. In GPU mode check the model IDs returned by each endpoint.
 - **Device state does not change.** Check the selected home, device ID, supported commands and pending approvals. For a paired appliance, inspect ThinQ readback before retrying.
 - **Runtime is locked.** Stop the server or setup process holding the same runtime directory before restarting or running a fresh demo.
