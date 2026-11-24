@@ -29,14 +29,14 @@ export interface DeviceState {
   readonly updatedAt: string;
   /** "none"이면 신호 없는 기기라 상태를 모른다(twin·matter가 비어 있음, src/devices/hub/signals.ts). */
   readonly signal?: "none";
-  /** 실제 가전(ThinQ)에서 읽은 값이면 그 출처·ThinQ 기기 id·읽은 시각(src/devices/thinq/link.ts). */
+  /** 실제 가전에서 읽은 값이면 그 출처(ThinQ·TV 중계)·출처 쪽 기기 id·읽은 시각(src/devices/thinq/link.ts, src/devices/relay/link.ts). */
   readonly readback?: Readback;
   /** 카메라(World State)가 본 상태(src/devices/hub/signals.ts observe). */
   readonly vision?: VisionSeen;
 }
 
 export interface Readback {
-  source: "thinq";
+  source: "thinq" | "relay";
   deviceId: string;
   at: string;
 }
@@ -81,10 +81,10 @@ export interface CommandResult {
   state?: DeviceState;
   error?: string;
   needsConfirmation?: { token: string; reason: string };
-  /** ThinQ로 보낸 명령의 결과. done: 다시 읽어 같음, unverified: 받았지만 확인 안 됨(ok: true), failed: 거부, not_sent: 보내지 않음. */
+  /** 실제 가전(ThinQ·TV 중계)으로 보낸 명령의 결과. done: 다시 읽어 같음, unverified: 받았지만 확인 안 됨(ok: true), failed: 거부, not_sent: 보내지 않음. */
   outcome?: "done" | "unverified" | "failed" | "not_sent";
-  /** ThinQ 실행 기록(실행 id·경로·ThinQ 기기 id). */
-  execution?: { id: string; route: "thinq"; target: string };
+  /** 실제 가전 실행 기록(실행 id·경로·출처 쪽 기기 id). */
+  execution?: { id: string; route: "thinq" | "relay"; target: string };
 }
 
 /** Correlated hub readback for one TV in the current home boot. */

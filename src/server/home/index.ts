@@ -11,7 +11,7 @@ import type { PlanView } from "../../contract/plan.js";
 import type { ControlMode } from "../../contract/setup.js";
 import type { StationMap } from "../../contract/stations.js";
 import type { DeviceHub, DeviceState } from "../../contract/devices.js";
-import type { IrConfig, IrPort, SignalHub, SignalSource, ThinqLink } from "../../devices/index.js";
+import type { IrConfig, IrPort, RelayLink, SignalHub, SignalSource, ThinqLink } from "../../devices/index.js";
 import type { LayoutEditor, TwinData } from "../../layout/index.js";
 import type { PipelineInject } from "../../observe/index.js";
 import type { StartStore } from "../../phone/index.js";
@@ -23,7 +23,7 @@ import { homeSafety } from "./machines.js";
 import { preparePhone, startPhone } from "./phone.js";
 import { drainNodes, startPipeline, startWorld, startNodes, stopNodes } from "./observe.js";
 import { onReflection, sayTimer, startSay } from "./say.js";
-import { setLink, startDevices } from "./devices.js";
+import { setLink, setRelay, startDevices } from "./devices.js";
 import { shotSigner } from "../routes/home-shots.js";
 import { HomeCore } from "./core.js";
 import { listHomes, validateStations } from "../../layout/index.js";
@@ -46,7 +46,8 @@ export interface HomeHistory {
 }
 
 export interface HomeContext {
-  homeInfrared?: (home: string) => IrConfig | null;
+  /** 이 집의 직접 적외선 TV 설정(실제 모드일 때). devices로 TV 중계 TV가 이 집에 있는지 본다. */
+  homeInfrared?: (home: string, devices: readonly { id: string; kind: string }[]) => IrConfig | null;
   irPort?: IrPort;
   savedStations?: (home: string, defaults: StationMap) => StationMap;
   env: Env;
@@ -106,6 +107,8 @@ export interface HomeRuntime {
   phonePort?: number;
   /** ThinQ 연결을 바꾼다(실제 모드). 이전 연결은 멈추고, 새 연결은 붙인 뒤 읽기를 시작한다. null이면 뗀다. */
   setLink(link: ThinqLink | null): void;
+  /** TV 중계 연결을 바꾼다(실제 모드, TV_RELAY_*). 이전 연결은 멈추고, 새 연결은 붙인 뒤 읽기를 시작한다. null이면 뗀다. */
+  setRelay(link: RelayLink | null): void;
   /** 반성 사건(src/server/start.ts가 넘긴다): 말풍선 카드가 20초 동안 배운 습관을 말한다. */
   onReflection(event: Extract<BrainLog, { type: "reflection" }>): void;
   /** 닫지 않고 비운다(닫기와 같은 차례: 발행 줄 → 집 상태 → 거울). 기한(ms) 안에 다 비우면 true. */
@@ -233,6 +236,9 @@ function runtime(core: HomeCore): HomeRuntime {
     setLink(next) {
       setLink(core, next);
     },
+    setRelay(next) {
+      setRelay(core, next);
+    },
     settle: (ms) => (core.closed ? Promise.resolve(true) : drainNodes(core, ms)),
     async close() {
       if (core.closed) return;
@@ -245,7 +251,7 @@ function runtime(core: HomeCore): HomeRuntime {
         ["외부 연락", () => agent.close()], ["초점", core.unsubFocus], ["관찰 흐름", () => { core.thoughts?.close(); core.unsubWorld(); return core.pipeline?.close(); }],
         // 노드: 새 일을 만드는 쪽(인식) → 집 상태 → 거울·폰·가전 차례(그 뒤 변화가 대시보드로 가지 않는다)
         ["노드", () => stopNodes(core)], ["눈 화면", () => feed?.close()],
-        ["폰 서버", () => phoneNow?.close()], ["추적", () => core.trace?.close()], ["앱", () => appNow.close()], ["배치", () => layout?.editor.close()], ["ThinQ", () => core.link?.stop()],
+        ["폰 서버", () => phoneNow?.close()], ["추적", () => core.trace?.close()], ["앱", () => appNow.close()], ["배치", () => layout?.editor.close()], ["ThinQ", () => core.link?.stop()], ["TV 중계", () => core.relay?.stop()],
         ["기록", core.unsubHistory], ["허브", () => signals.stop()],
       ];
       for (const [name, step] of steps) {

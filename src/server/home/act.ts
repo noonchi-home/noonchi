@@ -214,7 +214,7 @@ export function startAct(core: HomeCore): (event: BrainLog) => void {
   });
   // 실행 전 검사(src/act/check.ts): 시험 모드에서는 짝지은 실제 가전 단계를 막는다
   const deviceSteps = (p: PlanView) => p.steps.flatMap((s) => (s.target?.deviceId
-    ? [{ deviceId: s.target.deviceId, paired: signals.sources()[s.target.deviceId]?.kind === "thinq" }] : []));
+    ? [{ deviceId: s.target.deviceId, paired: ["thinq", "relay"].includes(signals.sources()[s.target.deviceId]?.kind ?? "") }] : []));
   // 기기 단계(src/act/devices.ts): 말 요청과 같은 기기 도구·정책(위험 목록은 승인 토큰). 보내기 바로 앞에서 그 계획 단계가 아직인지 본다
   const devices = deviceRunner(signals, policy, twin.rooms);
   // 명령 대상 자리는 배치(면이면 윗면 가운데, 싱크볼이 있으면 싱크볼)에서
