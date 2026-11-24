@@ -225,11 +225,15 @@ async function returnsAndHolds(replay: Replay) {
   await photo(replay, "back-held-1", "held");
   await photo(replay, "back-held-2", "held");
   expect(worldOf(replay).person.holding).toEqual([CUP]);
+  const arrivedMs = replay.clock.now();
   await replay.publish("phone", "/phone/progress", { kind: "button", req: "arrive", plan_id: old.id, step: old.step,
     choice: "done", expires_ms: replay.clock.now() + 2500 });
   for (let i = 0; i < 20 && !replay.output("/act/assistance_outcome").length; i++) await photo(replay, "still-held-" + i, "held");
   const executions = replay.output("/act/log").flatMap(m => m.body.type === "execution" && m.body.plan_id === old.id ? [m.body] : []);
-  return { old, later: replay.phoneCommands().slice(initial), executions, outcomes: replay.output("/act/assistance_outcome").map(m => m.body.execution) };
+  const stoppedMs = replay.output("/act/assistance_outcome").at(0)?.header.stamp;
+  return { old, later: replay.phoneCommands().slice(initial), executions, outcomes: replay.output("/act/assistance_outcome").map(m => m.body.execution),
+    /** 도착 버튼(들기 첫 명령 차례) → 실행 결과까지(ms). */
+    stopMs: stoppedMs === undefined ? null : stoppedMs - arrivedMs };
 }
 
 it("컵 치우기 실행 중(식탁으로 가는 중) 사용자가 돌아와 그 컵을 들면 들기 명령을 보내지 않고 가는 명령을 거둔 뒤 계획을 멈춘다", async () => {
@@ -239,6 +243,21 @@ it("컵 치우기 실행 중(식탁으로 가는 중) 사용자가 돌아와 그
     expect(r.later).toEqual([{ type: "command_clear", id: r.old.id }]);
     expect(r.outcomes).toEqual(["cancelled"]);
     expect(r.executions.at(-1)).toMatchObject({ state: "failed" });
+    expect(replay.network).toEqual([]);
+  } finally { await replay.close(); }
+}, 60_000);
+
+it("컵 치우기 실행 중 사용자가 그 컵을 든 것이 확인되면 근거 찾기 한도를 기다리지 않고 「쓰는 중」 까닭으로 멈춘다", async () => {
+  const replay = await start();
+  try {
+    const r = await returnsAndHolds(replay);
+    expect(r.later).toEqual([{ type: "command_clear", id: r.old.id }]);
+    expect(r.outcomes).toEqual(["cancelled"]);
+    expect(r.executions.at(-1)).toMatchObject({ state: "failed", text: "사람이 그 물건을 쓰는 중이라 멈췄어요." });
+    // 도착(들기 차례) 때 손에 있음은 한 번 본 상태(inferred)라 근거 찾기로 간다. 다음 사진(2.4초 뒤)에서 confirmed가 되면
+    // 그때 멈춘다: 근거 찾기 한도를 다 쓰지 않는다(고치기 전 이 재생에서 5.1초)
+    expect(r.stopMs).not.toBeNull();
+    expect(r.stopMs!).toBeLessThan(3000);
     expect(replay.network).toEqual([]);
   } finally { await replay.close(); }
 }, 60_000);

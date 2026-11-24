@@ -173,7 +173,12 @@ export class AdaptiveExecution extends Part {
     }
     if (beforeCommand && step?.kind === "pick" && a.goal?.kind === "clear") {
       const object = w.objects.find(o => a.goal?.kind === "clear" && o.id === a.goal.objectId);
-      if (result.kind === "changed" || object?.facts.place?.value === "in_hand" || (object && w.holding.includes(object.id))) {
+      // 지금 사진에 보이는 대상이 사람 손에 있음(confirmed)이면 근거는 이미 있다: 근거 찾기 없이 그 까닭으로 닫는다
+      if (result.kind === "ready" && object?.facts.place?.value === "in_hand" && object.facts.place.certainty === "confirmed") {
+        this.core.steps.finish(r, "failed", EXEC_TEXT.inHandStop, "cancelled");
+        return true;
+      }
+      if (result.kind === "changed" ||object?.facts.place?.value === "in_hand" || (object && w.holding.includes(object.id))) {
         return this.wait(r, i, w);
       }
     }

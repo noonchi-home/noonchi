@@ -269,6 +269,8 @@ export const EXEC_TEXT = {
   /** 쓰는 중 지킴(src/manage/use.ts): 사람이 계획 대상을 쓰는 중이라 첫 명령을 미룸, holdMs 넘게 이어져 닫음. */
   inUse: "사람이 쓰는 중이라 기다려요",
   inUseLong: "사람이 쓰는 중이라 실행하지 않아요",
+  /** 실행 중 손대기 전(src/act/track/adaptive.ts): 사람이 대상 물건을 든 것이 지금 사진으로 확인돼 계획을 닫음. */
+  inHandStop: "사람이 그 물건을 쓰는 중이라 멈췄어요.",
   /** 손대는 단계(집기·내려놓기·들고 가기) 중 받은 다른 행동 판단: 계획을 바꾸지 않는다(src/act/robot/start.ts). */
   handling: "물건을 다루는 중이라 새 판단을 미룸",
   safetyWait: "안전 안내가 끝나면 부탁을 이어 갈게요.",
