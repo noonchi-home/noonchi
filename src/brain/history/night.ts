@@ -169,7 +169,8 @@ export interface NightStore {
 }
 
 export interface NightOptions {
-  now?: () => number; emit?: (l: BrainLog) => void; filter?: HabitFilter; windowDays?: number; signal?: AbortSignal;
+  /** 기록 시각(기본 Date.now). 반성 작업 스레드는 메인 시계를 메시지로 물어 Promise로 받는다. */
+  now?: () => number | Promise<number>; emit?: (l: BrainLog) => void; filter?: HabitFilter; windowDays?: number; signal?: AbortSignal;
   /** 쓰는 곳(기본: db에 바로). */
   store?: NightStore;
   /** 시각 찾기·검사 결과 사본 폴더(runtime/homes/<집>/habit). 없으면 사본을 쓰지 않는다. */
@@ -191,7 +192,7 @@ export async function runNight(db: HistoryDb, pam: PamClient, day: string, o: Ni
   const store: NightStore = o.store ?? { add: (kind, atMs, text, x) => db.add(kind, atMs, text, x), saveNight: (a) => nightSave(db, a) };
   const fail = (error: string, extra: { empty?: true } = {}): NightResult => ({ ok: false, error, ...extra, passed: [], checks: [] });
   const done = async (ok: boolean, text: string, version: number | null, appliesDay: string | null, found?: Record<string, unknown>) => {
-    const at = now();
+    const at = await now();
     const used = usage ? { usage } : {};
     await store.add("reflection", at, text, { data: { day, ok, version, applies_day: appliesDay, ...found, ...used } });
     o.emit?.({ type: "reflection", at_ms: at, day, ok, version, applies_day: appliesDay, text, ...found, ...used } as BrainLog);
@@ -224,7 +225,7 @@ export async function runNight(db: HistoryDb, pam: PamClient, day: string, o: Ni
       let appliesDay = nextDay(day);
       while (db.pinnedMemory(appliesDay) !== null) appliesDay = nextDay(appliesDay);
       const found = { learned: [], active: [], dropped: [] };
-      const at = now();
+      const at = await now();
       const used = usage ? { usage } : {};
       const { robot: version } = await store.saveNight({ day, appliesDay, kind: "list", robot: memory, candidates: null, atMs: at, learnedCount: 0, found, used });
       o.emit?.({ type: "reflection", at_ms: at, day, ok: true, version, applies_day: appliesDay, text: REFLECT_TEXT.done(version, appliesDay), ...found, ...used });
@@ -400,7 +401,7 @@ export async function runNight(db: HistoryDb, pam: PamClient, day: string, o: Ni
     // 6) 저장: 끝난 반성만 그날 판본을 고정하고(판본이 없으면 seed를 저장), 로봇·후보 판본과 반성 기록을 한 트랜잭션으로
     let appliesDay = nextDay(day);
     while (db.pinnedMemory(appliesDay) !== null) appliesDay = nextDay(appliesDay);
-    const at = now();
+    const at = await now();
     const found = { learned, active, dropped, rejected: null, ...(checks.length ? { checks } : {}), ...(beer.tvOn ? { beer } : {}) };
     const used = usage ? { usage } : {};
     const saved = await store.saveNight({ day, appliesDay, robot: memory, candidates, beerRules: beer.rules, atMs: at, learnedCount: learned.length, found, used });

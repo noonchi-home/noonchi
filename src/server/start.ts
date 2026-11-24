@@ -15,10 +15,10 @@ import type { SignalHub } from "../devices/index.js";
 import { HistoryDb, historyTzMinutes } from "../brain/index.js";
 import { REFLECT_TEXT } from "../brain/index.js";
 import { topic, type DeviceNote } from "../brain/index.js";
-import { loadReflectAt, runReflection, NightReflection, type ReflectResult } from "../brain/index.js";
+import { loadReflectAt, reflectInThread, NightReflection, type ReflectResult } from "../brain/index.js";
 import { loadRetention } from "../brain/index.js";
 import { ThreadWriter, type HistoryWriter } from "../record/index.js";
-import { PamClient, pamSettings } from "../brain/index.js";
+import { pamSettings } from "../brain/index.js";
 import type { DeviceHub, DeviceState } from "../contract/devices.js";
 import { loadEndpoints } from "../infer/endpoints.js";
 import type { LayoutEditor } from "../layout/index.js";
@@ -154,7 +154,8 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
   // 추론 모드(openai|vllm)와 모델 주소, PAM LLM 전송 값. 틀린 설정이면 잠금·DB를 열기 전에 시작을 막는다
   const endpoints = loadEndpoints(env);
   for (const w of endpoints.warnings) log(w);
-  const pamConfig = pamSettings(env);
+  // PAM 설정은 반성 작업 스레드가 같은 env로 다시 읽는다. 여기서는 틀렸는지만 본다
+  pamSettings(env);
   const reflectAt = loadReflectAt(env);
   const retention = loadRetention(env);
   // 이 런타임 폴더를 쓰는 서버라는 표시(RUNTIME_DIR/server.lock.db의 SQLite 배타 잠금, src/server/lock.ts). DB를 열기 전에 잡는다:
@@ -216,20 +217,22 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
     throw e;
   }
   let opened = 0;
-  // 반성: 한 번에 하나. 결과는 지금 집의 대시보드 판단 기록으로 보낸다(기록 DB에는 runReflection이 적는다).
+  // 반성: 한 번에 하나. 반성 작업 스레드(src/brain/history/night-host.ts reflectInThread)가 읽기·덩어리·검사·LLM 요청 만들기를 하고,
+  // 저장은 기록 작업 스레드로 보낸다. 결과는 지금 집의 대시보드 판단 기록으로 보낸다.
   // 서버를 끌 때는 진행 중인 반성의 PAM 요청을 끊고 끝날 때까지 기다린 뒤 DB를 닫는다
-  const pam = new PamClient({ settings: pamConfig });
   const closing = new AbortController();
   let reflecting: Promise<ReflectResult> | null = null;
   const reflect = async (day: string, life?: AbortSignal): Promise<ReflectResult> => {
     if (reflecting) throw new HttpError(409, REFLECT_TEXT.running);
     // 반성 사건은 지금 집의 대시보드로 보내고 집 묶음에도 넘긴다(말풍선 카드가 배운 습관을 말한다)
-    const job = runReflection(db, pam, day, {
-      signal: life ? AbortSignal.any([life, closing.signal]) : closing.signal, log,
-      store: { add: (kind, atMs, text, o) => write.add(kind, atMs, text, o), saveNight: (a) => write.saveNight(a) },
-      now: opts.clock ? () => opts.clock!.now() : undefined,
+    const job = reflectInThread({
+      path: dbPath, offsetMinutes: tz, day, env: { ...env },
       // 시각 찾기·검사 결과 사본: runtime/homes/<집>/habit
       ...(current ? { dir: join(runtimeDir, "homes", current.twin.home.id, "habit") } : {}),
+    }, {
+      signal: life ? AbortSignal.any([life, closing.signal]) : closing.signal, log,
+      store: { add: (kind, atMs, text, o) => write.add(kind, atMs, text, o), saveNight: (a) => write.saveNight(a) },
+      now: opts.clock ? () => opts.clock!.now() : () => Date.now(),
       emit: (event) => {
         current?.app.broadcast({ type: "brain", event });
         if (event.type === "reflection") current?.onReflection(event);
