@@ -213,6 +213,9 @@ describe("한양목련 처음부터 끝까지", () => {
     const memory = JSON.parse(readFileSync(join(runtimeDir, "homes", "mokryeon_180b", "approvals.json"), "utf8")) as Record<string, unknown>;
     expect(memory).toEqual({ always: { "task:컵 치우기": expect.any(String) } });
     cupPlace = "on_table";
+    // 다음 방문 전에 컵이 다시 식탁 위로 보인다: 앞 계획 끝에 VLM이 「싱크대 안」으로 본 컵을 VLM이 다시 「식탁 위」로 볼 때까지 기다린다.
+    // 떠남은 0.5초(FAST_GONE_MS)라 떠남 화살표가 사람이 떠난 바로 뒤에 나간다. 그때 컵 자리가 아직 「싱크대 안」이면 계획 전 검사가 막는다(src/act/check.ts checkDecision in_sink)
+    await pump(() => !!dash.filter((m) => m.type === "world").at(-1)?.world.objects.some((o: Msg) => o.cls === "cup" && o.facts.place?.value === "on_table"));
     await visitThenLeave();
     await pump(() => spoken().some((m) => m.id !== planId && m.text === "식탁으로 가 주세요"));
     // 앞 계획의 완료 문장(done:)과 충전 자리 명령(dock:)은 다음 계획 명령이 아니다
