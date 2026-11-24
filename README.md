@@ -63,7 +63,7 @@ Even with the same objects and appliances, the right action depends on the resid
 
 ![NOONCHI System Architecture](docs/architecture/architecture.svg)
 
-The November 21 architecture notes explain the two C4 diagrams and their November 20 code baseline. [Architecture diagram notes](docs/architecture/architecture-notes.md)
+The November 25 architecture notes explain the two C4 diagrams of the target architecture and list where the current code still differs. [Architecture diagram notes](docs/architecture/architecture-notes.md)
 
 The November 24 guides follow Android pairing, camera startup, and a checked instruction from the hub to the phone and back. [Android app architecture](docs/architecture/android-app-system.md) · [WebXR step round trip](docs/architecture/webxr-roundtrip.md)
 
