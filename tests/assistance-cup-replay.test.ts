@@ -56,6 +56,22 @@ async function photo(replay: Replay, id: string, mode: "table" | "hidden" | "amb
   return { id, captured, arrived };
 }
 
+/** 판단 전 보기(src/act/look.ts B)의 가까이 보기 한 번: 식탁 위 그 컵을 잘라 본 장(YOLO 감지 d1)과 그 장의 VLM 답(v1 = d1, 식탁 위).
+ *  World State는 이 촬영부터 CLOSER_HOLD_MS 동안 그 컵을 지킨다(closer_hold). */
+async function closerLook(replay: Replay, id: string) {
+  const captured = replay.clock.now() + 2000;
+  await replay.advance(captured + 400);
+  const [x, y, w, h] = cylinderBox(WIDE, [7.65, .75, 2.7], .05, .13);
+  const look = id + ".c1";
+  await replay.publish("perception", "/perception/scene", { kind: "closer_merge", look, from: id,
+    passes: [{ frameId: id, capturedAtMs: captured, view: WIDE, ...LOOK_SIZE, dets: [{ ...det("cup", .95, [x, y, w, h]), edge: false }] }] });
+  await replay.publish("perception", "/perception/scene", { kind: "closer_scene", look, frame_id: id, observed_ms: captured,
+    scene: { scene: "dining", summary: "", observations: [{ object_id: "v1", state: "on_table" }],
+      objects: [{ id: "v1", cls: "cup", det: "d1", box: { x: x / LOOK_SIZE.width, y: y / LOOK_SIZE.height, w: w / LOOK_SIZE.width, h: h / LOOK_SIZE.height } }] },
+    at: { view: WIDE, ...LOOK_SIZE, crop: [0, 0, LOOK_SIZE.width, LOOK_SIZE.height] } });
+  return { captured };
+}
+
 async function start() {
   const studio = residentStudio();
   mkdirSync(join(studio.studioDir, HOME));
@@ -210,6 +226,29 @@ it("clears delivery before pickup when the resident resolves it and records the 
         source: "resident_action", subjectId: CUP, observedMs: proof.captured, originId: proof.id,
       } } });
     expect(replay.server.history.list({ kinds: ["assistance_outcome"] }).map(row => row.data)).toEqual(outcomes);
+    expect(replay.network).toEqual([]);
+  } finally { await replay.close(); }
+}, 20_000);
+
+// 판단 전 가까이 보기가 건 지킴(closer_hold, 30초)이 남아 있어도 지금 사진에 식탁 위로 보이는 컵이면 들기 차례에서 근거 찾기 없이 들기 명령을 낸다
+it("판단 전 가까이 보기로 지킴 중인 컵이 지금 사진에 식탁 위로 보이면 들기 명령이 나간다", async () => {
+  const replay = await start();
+  try {
+    await replay.server.historyWriter.rememberCup(HOME, "resident", true);
+    await photo(replay, "before-look-1");
+    await photo(replay, "before-look-2");
+    const look = await closerLook(replay, "pre-judgment-look");
+    expect(worldOf(replay).objects.find(o => o.id === CUP)).toMatchObject({ closer_hold: true, surface: TABLE, last_seen_ms: look.captured });
+    await decision(replay, "clear-held", CLEAR);
+    const initial = replay.phoneCommands().length;
+    const seen = await photo(replay, "cup-on-table");
+    expect(worldOf(replay).objects.find(o => o.id === CUP)).toMatchObject({ closer_hold: true, surface: TABLE, last_seen_ms: seen.captured });
+    await replay.answer("done");
+    await replay.advance(replay.clock.now() + 500);
+    const next = replay.phoneCommands().slice(initial).filter(c => c.type === "command");
+    expect(next).toHaveLength(1);
+    expect(next[0]).toMatchObject({ id: "plan:clear-held", target: { id: CUP } });
+    expect(replay.output("/act/assistance_outcome")).toEqual([]);
     expect(replay.network).toEqual([]);
   } finally { await replay.close(); }
 }, 20_000);
