@@ -58,7 +58,9 @@ function FloorOutline({ viewer, frame, box, points, polygon }: CanvasProps & { p
   </div>;
 }
 
-export function StationsEditor({ home, viewer, frame, box }: { home: string } & CanvasProps) {
+export function StationsEditor({ home, viewer, frame, box, phone = false, onSaved }: {
+  home: string; phone?: boolean; onSaved?: () => void;
+} & CanvasProps) {
   const [map, setMap] = useState<StationMap | null>(null);
   const [saved, setSaved] = useState<StationMap | null>(null);
   const [scene, setScene] = useState<Scene | null>(null);
@@ -100,7 +102,7 @@ export function StationsEditor({ home, viewer, frame, box }: { home: string } & 
   }
   function add(p: Pos) {
     if (!map || !room) return;
-    const key = crypto.randomUUID();
+    const key = crypto.randomUUID?.() ?? Array.from(crypto.getRandomValues(new Uint8Array(16)), n => n.toString(16).padStart(2, "0")).join("");
     if (kind === "station") {
       setMap({...map,stations:[...map.stations,{id:key,name:"새 관찰 자리",room,roles:["observe"],position:p,look_at:p,rooms:[room],surfaces:[],observes_zone_ids:[]}]});
       setId(key); setPick("look_at");
@@ -130,14 +132,15 @@ export function StationsEditor({ home, viewer, frame, box }: { home: string } & 
     if (!map || saving) return;
     setSaving(true); setPick(null);
     const r = await call<SetupStationsView>(url,{home,map},"PUT");
-    if (isOk(r) && r.json.home === home) { setSaved(r.json.map); setMap(r.json.map); setStatus("저장했어요."); }
+    if (isOk(r) && r.json.home === home) { setSaved(r.json.map); setMap(r.json.map); setStatus("저장했어요."); onSaved?.(); }
     else setStatus(failText(r,"저장하지 못했어요."));
     setSaving(false);
   }
   const p = s ?? f;
   const observing = map?.stations.filter(v=>v.roles.includes("observe")) ?? [];
   return <>{(z || p) && <FloorOutline viewer={viewer} frame={frame} box={box} points={z?.polygon ?? [p!.position,p!.look_at]} polygon={Boolean(z)}/>}
-    <Card role="region" aria-label="자리·구역 편집" className="relative flex flex-col gap-2 p-3 lg:absolute lg:right-3 lg:bottom-16 lg:top-24 lg:w-72 lg:overflow-y-auto">
+    <Card role="region" aria-label="자리·구역 편집"
+      className={`relative flex flex-col gap-2 p-3 ${phone ? "" : "lg:absolute lg:right-3 lg:bottom-16 lg:top-24 lg:w-72 lg:overflow-y-auto"}`}>
     {status && <Status>{status}</Status>}
     {map && <fieldset disabled={saving} className="flex flex-col gap-2">
       <Label>방<SelectNative value={room} onChange={e=>{setRoom(e.target.value);setId("");setPick(null);}}>{rooms.map(v=><option key={v.id} value={v.id}>{v.name}</option>)}</SelectNative></Label>

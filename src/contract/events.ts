@@ -244,6 +244,8 @@ export interface HealthView {
   home: { id: string; name: string } | null;
   /** 폰에서 열 주소들(와이파이·VPN 어댑터마다 하나). */
   phone_urls: string[];
+  /** 이 허브 주소에서 현재 집의 폰 연결을 열 수 있는가. */
+  portal_camera?: boolean;
   /** 기록 시간대(분, HISTORY_TZ_MINUTES). 대시보드 날짜·시간 칩이 이 시간대로 쓴다. 기록 DB가 없으면 없다. */
   tz_minutes?: number;
   brain: boolean;
@@ -313,7 +315,8 @@ export interface PersonMessage { type: "person"; state: string; name: string; si
 
 /** /events로 화면이 받는 메시지 전체. 서버의 send·broadcast와 같은 모양이다(src/server/app.ts·home/, src/observe/pipeline.ts, src/phone/feed.ts). */
 export type ServerMessage =
-  | { type: "hello"; devices: number; provider: string | null; hub: string; home: string | null }
+  | { type: "hello"; devices: number; provider: string | null; hub: string; home: string | null; trace_epoch?: string }
+  | import("./trace.js").TraceMessage
   | { type: "state"; state: DeviceState }
   | ({ type: "agent" } & AgentEvent)
   /** replay: 접속 때 다시 보낸 마지막 판단(새 관찰이 아님). 확인 목록은 건너뛴다. */

@@ -18,7 +18,7 @@ export interface WorldMirror {
 export async function startWorldMirror(o: {
   bus: Bus; epoch: { boot: string; home: string }; name: NodeName; clock?: Clock; log?: (s: string) => void;
   routes?: (node: BusNode, afterRev: AfterRev) => void;
-  onChanges?: (changes: WorldChange[], view: WorldView) => void | Promise<void>;
+  onChanges?: (changes: WorldChange[], view: WorldView, rev: number) => void | Promise<void>;
   onView?: (view: WorldView) => void | Promise<void>;
   /** 같은 rev에서 집 사진(household_photo serial)만 바뀐 상태: 변화 없는 VLM 답도 새 증거다(목표 노드의 TV 규칙). rev가 바뀐 상태는 onView만 부른다. */
   onPhoto?: (view: WorldView) => void | Promise<void>;
@@ -33,7 +33,7 @@ export async function startWorldMirror(o: {
     else waiting.add({ rev, run, settle: ctx.defer() });
   };
   node.withState("/world/changes", "/world/state",
-    (c, s) => o.onChanges?.(c.changes, s.view),
+    (c, s) => o.onChanges?.(c.changes, s.view, c.rev),
     async (s) => {
       latest = s;
       for (const job of waiting) {

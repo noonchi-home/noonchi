@@ -25,21 +25,24 @@ const words = (el: Element) => (el.getAttribute("class") ?? "").split(/\s+/);
 const AR_SHOTS = SHOT_NAMES.filter((n) => SHOTS[n].view.ar);
 
 describe("처음 화면", () => {
-  it("마스코트·제목·AR 지원 줄·시작 위치 안내 하나·AR 시작. 덮개는 숨어 있다", async () => {
+  it("마스코트·제목·AR 지원 줄·시작 위치 안내 하나·카메라 켜기. 덮개는 숨어 있다", async () => {
     const { act, overlay, container } = show(SHOTS.intro.view);
     expect(overlay.hidden).toBe(true);
     const mascot = container.querySelector('img[src="/brand/mascot@1x.webp"]')!;
     expect(words(mascot)).toContain("landscape:hidden");
     expect(screen.getByRole("heading", { name: "클로이드의 눈" })).toBeInTheDocument();
-    expect(screen.getByText("준비됐어요. 시작 위치에서 AR을 시작하세요.")).toHaveAttribute("data-support", "ready");
-    expect(screen.getAllByRole("listitem").map((li) => li.textContent)).toEqual(["거실·복도 테이블 앞에 서서 거실·복도 TV수납장 쪽을 보고 여기서 시작을 눌러요"]);
-    await userEvent.click(screen.getByRole("button", { name: "AR 시작" }));
+    expect(screen.getByText("준비됐어요. 시작 위치에서 카메라를 켜 주세요.")).toHaveAttribute("data-support", "ready");
+    expect(screen.getAllByRole("listitem").map((li) => li.textContent)).toEqual(["카메라를 켠 뒤 거실·복도 테이블 앞에 서서 거실·복도 TV수납장 쪽을 보고 여기서 시작을 눌러요"]);
+    expect(act.startAr).not.toHaveBeenCalled();
+    const camera = screen.getByRole("button", { name: "카메라 켜기" });
+    expect(camera).toHaveAttribute("data-phone-action", "start-camera");
+    await userEvent.click(camera);
     expect(act.startAr).toHaveBeenCalledOnce();
   });
 
   it("시작 위치를 아직 정하지 않은 집이면 설정 화면에서 정하라고 안내한다", () => {
     show(SHOTS["intro-nostart"].view);
-    expect(screen.getByText("준비됐어요. AR을 시작하세요.")).toHaveAttribute("data-support", "ready");
+    expect(screen.getByText("준비됐어요. 카메라를 켜 주세요.")).toHaveAttribute("data-support", "ready");
     expect(screen.getAllByRole("listitem").map((li) => li.textContent)).toEqual(["먼저 설정 화면에서 시작 위치를 정해 주세요"]);
   });
 
@@ -79,7 +82,7 @@ describe("처음 화면", () => {
   ] as [Support, string, boolean][])("%o: 까닭을 보이고, 시작 실패만 다시 누를 수 있다", (support, text, disabled) => {
     show({ ...SHOTS.intro.view, support });
     expect(screen.getByText(text)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "AR 시작" }).hasAttribute("disabled")).toBe(disabled);
+    expect(screen.getByRole("button", { name: "카메라 켜기" }).hasAttribute("disabled")).toBe(disabled);
   });
 });
 

@@ -325,7 +325,7 @@ export function createVideoAr({ link, params, hooks, deps }) {
     if (run) return Promise.resolve();
     // 재생을 기다리는 동안 또 누르면 같은 시작을 기다린다
     if (opening) return opening.done;
-    // 영상 모드: 카메라 입력. 실제 AR(immersive-ar)은 그 자체로 전체 화면이라, 영상으로 그 화면을 흉내 낼 때도 「AR 시작」을 누른 순간
+    // 영상 모드: 카메라 입력. 실제 AR(immersive-ar)은 그 자체로 전체 화면이라, 영상으로 그 화면을 흉내 낼 때도 「카메라 켜기」를 누른 순간
     // 전체 화면을 요청한다(사용자 제스처 안이어야 한다). 실제 모드(ar.js)는 DOM 오버레이와 겹쳐 요청하지 않는다. 방향은 고정하지 않는다
     fullscreen.enter(overlay?.ownerDocument ?? document);
     const wait = { video: null, cancelled: false, done: null };

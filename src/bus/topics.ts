@@ -176,6 +176,7 @@ const phoneCommand = z.strictObject({ revision: rev.optional(), cmd: z.discrimin
   z.strictObject({ type: z.literal("command_clear"), id: id.optional() }),
   z.strictObject({ type: z.literal("command"), id, step: id, text: z.string(), vision: z.string().nullable(),
     choices: z.array(z.strictObject({ id, label: z.string() })), speak: z.boolean(),
+    speech_id: z.strictObject({ boot: z.string().min(1), homeEpoch: z.string().min(1), publisher: z.string().min(1), revision: rev }).optional(),
     target: z.strictObject({ id, label: z.string(), position: z.tuple([at, at, at]), look: z.tuple([at, at, at]).optional() }).nullable(),
     guide: walkGuide.nullable().optional(), kind: z.enum(["go", "pick", "place", "do"]).optional(), near_m: z.number().positive().optional(),
     view: z.literal("above").optional(), grade: z.enum(["question", "safety"]).optional() }),
@@ -223,7 +224,7 @@ const precheck = z.discriminatedUnion("ok", [
     text: id, object: id.optional(), carried: z.literal(true).optional() }),
 ]);
 const checkedDecision = z.strictObject({ decision: decisionRecord, rev, check: precheck, assist: z.enum(["noonchi", "coach"]), at_ms: at });
-const planAhead = z.strictObject({ trigger: z.string(), on: maybeText, object: id,
+const planAhead = z.strictObject({ trigger: z.string(), on: maybeText, object: id, goal_id: id.optional(),
   stand: z.custom<WorldObject>((v) => isObj(v) && typeof v.id === "string" && typeof v.cls === "string" && isObj(v.facts)).optional() });
 const agentStep = z.strictObject({
   id, kind: z.enum(["go","pick","place","do","device","ask","say","wait"]), label: id, target: maybeText, object: maybeText, command: maybeText,

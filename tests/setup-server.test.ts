@@ -5,7 +5,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { request, type IncomingMessage } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import type WebSocket from "ws";
 import { MemoryHub } from "../src/devices/hub/memory.js";
 import { fetchRetry } from "../src/shared/net.js";
@@ -14,6 +14,12 @@ import { HOME_SCRIPT, startFakeLlm, type FakeLlm } from "./helpers/llm.js";
 import { openPhone, openWebSocket } from "./helpers/ws.js";
 import { readVideo } from "./helpers/video.js";
 import { encodeFramePacket } from "../src/phone/packet.js";
+import { findServedPhoneUrls } from "../src/phone/index.js";
+import { connectDashboard } from "../apps/android/pairing.js";
+import { activeHome, confirmConnectedHouse, connectedHouse, createConnectedHub, prepareConnectedHouse } from "../apps/android/connected-hub.js";
+import { readReferenceScenes, saveReferencePhoto } from "../apps/android/connected-scan.js";
+import type { SetupView } from "../src/contract/setup.js";
+import { mobileHubUrl } from "../ui/src/lib/mobile-hub-url.js";
 
 type Msg = Record<string, any>;
 let llm: FakeLlm;
@@ -38,8 +44,11 @@ const runtime = () => {
 const web = () => {
   const dir = runtime();
   mkdirSync(join(dir, "setup"));
+  mkdirSync(join(dir, "mobile", "settings"), { recursive: true });
   writeFileSync(join(dir, "index.html"), "<title>대시보드</title>");
   writeFileSync(join(dir, "setup", "index.html"), "<title>설정</title>");
+  writeFileSync(join(dir, "mobile", "index.html"), "<title>폰 홈</title>");
+  writeFileSync(join(dir, "mobile", "settings", "index.html"), "<title>폰 설정</title>");
   return dir;
 };
 const env = (runtimeDir: string, extra: Record<string, string> = {}) => ({
@@ -81,6 +90,79 @@ async function events() {
 }
 
 describe("설정 흐름 서버", () => {
+  it("pairs the HTTPS dashboard QR with the running hub before registration without writing setup", async () => {
+    const hubOrigin = "https://noonchi.petal.ts.net";
+    srv = await startServer({
+      env: env(runtime(), { BRAIN: "0", REFLECT_AT: "off" }), webDir: web(), persistSetup: true, log: () => {},
+      servedHubUrls: async () => [hubOrigin],
+    });
+    const before = (await get("/api/setup")).json;
+    expect(before).toMatchObject({ ok: true, done: false, mobile_urls: [hubOrigin + "/mobile/"] });
+    const dashboardHttp = "http://192.168.0.53:8200";
+    const scanned = mobileHubUrl(dashboardHttp, before.mobile_urls);
+    expect(scanned).toBe(hubOrigin + "/mobile/");
+
+    const send = fetch;
+    // Represent the HTTPS listener's local forwarding without changing the real setup response body.
+    const edge = vi.spyOn(globalThis, "fetch").mockImplementation(async (url, options) => {
+      expect(url).toBe(hubOrigin + "/api/setup");
+      const upstream = await send(srv!.url + "/api/setup", options);
+      return Object.defineProperty(upstream, "url", { value: String(url) });
+    });
+    try {
+      await expect(connectDashboard(scanned)).resolves.toBe(scanned);
+      expect(edge).toHaveBeenCalledTimes(1);
+      expect(edge).toHaveBeenCalledWith(hubOrigin + "/api/setup", expect.objectContaining({ method: "GET" }));
+    } finally {
+      edge.mockRestore();
+    }
+    expect((await get("/api/setup")).json).toEqual(before);
+    const entry = await send(srv.url + new URL(scanned).pathname);
+    expect(entry.status).toBe(200);
+    expect(await entry.text()).toContain("<title>폰 홈</title>");
+  });
+
+  it("uses the real hub for native registration, settings and the reference-photo catalogue", async () => {
+    const hubOrigin = "https://noonchi.petal.ts.net";
+    const dir = runtime();
+    const scenes = join(dir, "homes", connectedHouse.id, "scenes");
+    mkdirSync(scenes, { recursive: true });
+    writeFileSync(join(scenes, "manifest.json"), JSON.stringify([{
+      id: "table_C", file: "table_C.png", width: 1920, height: 1080, spot_name: "식탁 앞", view: "C",
+    }]));
+    srv = await startServer({
+      env: env(dir, { BRAIN: "0", REFLECT_AT: "off" }), webDir: web(), persistSetup: true, log: () => {},
+      servedHubUrls: async () => [hubOrigin],
+    });
+    const before = (await get("/api/setup")).json;
+    const url = mobileHubUrl("http://192.168.0.53:8200", before.mobile_urls);
+    const hub = createConnectedHub(url, async (address, options) => {
+      const upstream = new URL(String(address));
+      expect(upstream.origin).toBe(hubOrigin);
+      const response = await fetch(srv!.url + upstream.pathname, options);
+      return Object.defineProperty(response, "url", { value: upstream.href });
+    });
+    let registered: string | null = null;
+    const initial = await hub.get<SetupView>("/api/setup");
+    expect(activeHome(initial, registered)).toBeNull();
+    expect((await prepareConnectedHouse(hub, initial)).home?.id).toBe(connectedHouse.id);
+    expect(registered).toBeNull();
+    const current = await confirmConnectedHouse(hub, async id => { registered = id; });
+    expect(activeHome(current, registered)?.id).toBe(connectedHouse.id);
+    const device = current.devices[0]!;
+    await hub.write<SetupView>("/api/setup/devices", { home: connectedHouse.id, sources: { [device.id]: "none" } });
+    const fresh = await hub.get<SetupView>("/api/setup");
+    expect(fresh.devices.find(row => row.id === device.id)?.source).toEqual({ kind: "none" });
+    expect(srv.signals.get(device.id)?.signal).toBe("none");
+    const home = connectedHouse.id;
+    const catalogue = readReferenceScenes(hub, home, await hub.get(`/api/homes/${home}/scenes`));
+    expect(catalogue.map(scene => scene.image)).toEqual([hubOrigin + `/home-scenes/${home}/table_C.png`]);
+    const photo = { uri: "file:///camera-cache.jpg", width: 1920, height: 1080, capturedAt: "2026-11-23T10:00:00Z" };
+    const keep = vi.fn(async () => ({ uri: "file:///reference.jpg", where: "phone" as const }));
+    await expect(saveReferencePhoto(hub, home, catalogue[0]!, photo, { bytes: vi.fn(), keep })).resolves.toMatchObject({ where: "phone" });
+    expect(keep).toHaveBeenCalledWith(home, "table_C", photo, "phone");
+  }, 15000);
+
   it("opens the home TV port only after live confirmation, without ThinQ, and closes it on mode or home change", async () => {
     const dir = runtime(), home = "mokryeon_180b";
     const folder = join(dir, "homes", home);
@@ -356,16 +438,60 @@ describe("설정 흐름 서버", () => {
     expect(srv.signals.get(id)!.signal).toBe("none");
   });
 
-  it("설정을 안 끝냈으면 /는 /setup/으로 보내고, 끝내면 대시보드를 내준다", async () => {
-    srv = await startServer({ env: env(runtime()), log: () => {}, persistSetup: true, webDir: web() });
+  it("설정 전에도 대시보드와 폰 입구를 내주고 북마크 설정 주소를 이어 준다", async () => {
+    srv = await startServer({ env: env(runtime(), {
+      ALLOWED_ORIGINS: "https://hub.test.ts.net,https://hub.test.ts.net:8443",
+      HUB_URL: "https://hub.test.ts.net",
+      PHONE_URL: "https://hub.test.ts.net:8443/phone/",
+    }), log: () => {}, persistSetup: true, webDir: web() });
     const first = await fetchRetry(`${srv.url}/`, { redirect: "manual" });
-    expect(first.status).toBe(302);
-    expect(first.headers.get("location")).toBe("/setup/");
-    const setup = await fetchRetry(`${srv.url}/setup/`);
-    expect(await setup.text()).toContain("설정");
-    expect((await post("/api/setup/done", { home: "oneroom" })).status).toBe(200);
+    expect(first.status).toBe(200);
+    expect(await first.text()).toContain("대시보드");
+    expect(await (await fetchRetry(srv.url + "/mobile/")).text()).toContain("폰 홈");
+    const setup = await fetchRetry(srv.url + "/setup/?from=bookmark", { redirect: "manual" });
+    expect(setup.headers.get("location")).toBe("/mobile/settings/?from=bookmark");
+    expect(await (await fetchRetry(srv.url + "/mobile/settings/")).text()).toContain("폰 설정");
+    expect((await get("/api/setup")).json).toMatchObject({ done: false, mobile_urls: ["https://hub.test.ts.net/mobile/"] });
+    expect((await post("/api/setup/done", { home: "oneroom" }, { origin: "https://hub.test.ts.net" })).status).toBe(200);
+    expect((await post("/api/setup/done", { home: "oneroom" }, { origin: "https://untrusted.test" })).status).toBe(403);
     const after = await fetchRetry(`${srv.url}/`, { redirect: "manual" });
     expect(after.status).toBe(200);
     expect(await after.text()).toContain("대시보드");
+  });
+
+  it("trusts only a discovered address mapped to the hub listener when a local QR is scanned", async () => {
+    const actualHub = "https://actual-hub.test.ts.net";
+    const unrelated = "https://admin.test";
+    const ar = "https://actual-hub.test.ts.net:8443";
+    let checkedPort: number | undefined;
+    srv = await startServer({
+      env: env(runtime(), { ALLOWED_ORIGINS: `${unrelated},${ar}`, PHONE_URL: ar + "/phone/" }),
+      webDir: web(), log: () => {}, servedHubUrls: async (port) => {
+        checkedPort = port;
+        const web = { Web: {
+          "actual-hub.test.ts.net:443": { Handlers: { "/": { Proxy: `http://127.0.0.1:${port}` } } },
+          "actual-hub.test.ts.net:8443": { Handlers: { "/": { Proxy: "http://localhost:8210" } } },
+          "admin.test:443": { Handlers: { "/": { Proxy: "http://127.0.0.1:7777" } } },
+        } };
+        return (await findServedPhoneUrls(port, async () => JSON.stringify(web))).map(url => new URL(url).origin);
+      },
+    });
+    expect(checkedPort).toEqual(srv.port);
+    const setup = (await get("/api/setup")).json;
+    expect(setup.mobile_urls).toEqual([actualHub + "/mobile/"]);
+    const id = setup.devices[0].id as string;
+    expect((await post("/api/setup/devices", { home: "oneroom", sources: { [id]: "none" } }, { origin: actualHub })).status).toBe(200);
+    expect((await get("/api/setup")).json.devices[0].source).toEqual({ kind: "none" });
+    expect((await post("/api/setup/devices", { home: "oneroom", sources: {} }, { origin: unrelated })).status).toBe(200);
+    expect((await post("/api/setup/devices", { home: "oneroom", sources: {} }, { origin: "https://other.test" })).status).toBe(403);
+  });
+
+  it("does not pick a management origin or the AR server as the mobile hub fallback", async () => {
+    srv = await startServer({
+      env: env(runtime(), { ALLOWED_ORIGINS: "https://admin.test,https://hub.test.ts.net:8443",
+        HUB_URL: "https://hub.test.ts.net:8443", PHONE_URL: "https://hub.test.ts.net:8443/phone/" }),
+      log: () => {}, webDir: web(),
+    });
+    expect((await get("/api/setup")).json.mobile_urls).toEqual([]);
   });
 });

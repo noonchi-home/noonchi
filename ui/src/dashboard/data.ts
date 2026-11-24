@@ -5,12 +5,15 @@ import type { RobotMessage } from "../../../src/contract/machines.ts";
 import type { PendingGoal } from "../../../src/contract/goal.ts";
 import type { HabitFsm } from "../../../src/contract/habit.ts";
 import type { PlanStep, PlanView } from "../../../src/contract/plan.ts";
+import { TRACE_KEPT, type TraceRow } from "../../../src/contract/trace.ts";
 import { WORDS } from "./words";
 
 type Decision = Extract<BrainLog, { type: "decision" }>;
 type Reflection = Extract<BrainLog, { type: "reflection" }>;
 
 export interface DashData {
+  traceEpoch: string | null;
+  trace: TraceRow[];
   plan: PlanView | null;
   /** 맞춘 폰 눈(추정은 넣지 않는다). */
   eye: EyeEvent | null;
@@ -50,6 +53,7 @@ const ROBOTS_KEPT = 64;
 const PLANS_KEPT = 4;
 
 export const EMPTY_DASH: DashData = {
+  traceEpoch: null, trace: [],
   plan: null, eye: null, decision: null, thoughts: [], reflection: null, say: null, mode: null, says: 0, safety: null, talk: [], goal: null, habit: null, people: [], robots: [], personFed: false, plans: [],
 };
 
@@ -114,7 +118,23 @@ function reflectionThoughts(r: Reflection): ThoughtMessage[] {
 export function reduceDash(s: DashData, m: ServerMessage, now: number): DashData {
   switch (m.type) {
     case "hello":
-      return EMPTY_DASH;
+      return { ...EMPTY_DASH, traceEpoch: m.trace_epoch ?? null };
+    case "trace": {
+      if (m.epoch !== s.traceEpoch) return s;
+      const rows = new Map(s.trace.map(row => [row.id, row]));
+      let changed = false;
+      for (const row of m.rows) {
+        const old = rows.get(row.id);
+        if (old && (old.rev >= row.rev || (old.state !== "pending" && row.state === "pending"))) continue;
+        if (old?.state === "pending" && row.state !== "pending") rows.delete(row.id);
+        rows.set(row.id, row);
+        changed = true;
+      }
+      if (!changed) return s;
+      const stored = [...rows.values()];
+      const omit = new Set(stored.filter(row => row.state !== "pending" && !row.retained).slice(0, Math.max(0, rows.size - TRACE_KEPT)).map(row => row.id));
+      return { ...s, trace: stored.filter(row => !omit.has(row.id)).slice(-TRACE_KEPT) };
+    }
     case "plan": {
       const p = m.plan;
       // 같은 계획은 지금 것과 같거나 작은 번호를 버린다(계획 계약)

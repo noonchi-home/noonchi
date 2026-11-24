@@ -9,7 +9,7 @@ import { cn } from "../lib/utils";
  * 실제 폰 화면(ui/src/phone PhoneScreen, lead는 설정 단추)과 대시보드 비전 미니맵만 보기(ui/src/dashboard MinimapView)가 같은 부품·배치·글로 쓴다.
  * 자리(fixed 등)는 놓는 쪽이 className으로 주거나 이 줄을 자리 잡은 칸 안에 놓는다.
  */
-export function PhoneTopLine({ lead, text, className }: { lead: ReactNode; text: string | null; className?: string }) {
+export function PhoneTopLine({ lead, text, trailing, className }: { lead: ReactNode; text: string | null; trailing?: ReactNode; className?: string }) {
   return (
     <div data-phone-zone="top" className={cn("flex items-start gap-2 px-4 pt-[calc(max(env(safe-area-inset-top),28px)+8px)]", className)}>
       {lead}
@@ -18,6 +18,7 @@ export function PhoneTopLine({ lead, text, className }: { lead: ReactNode; text:
           <p data-phone-text="명령" className="break-keep">{text}</p>
         </LiquidGlass>
       )}
+      {trailing}
     </div>
   );
 }

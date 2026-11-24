@@ -6,7 +6,7 @@
 // 답 단추는 받은 명령의 id·step으로 answer를, 승인 대기 답 단추는 그 토큰과 답(승인·거절)으로 confirm을 보낸다.
 // 말의 답(reply)이 빈 글이면 보이지도 읽지도 않는다. 빈 글이 아니면 소리로 읽고 잠깐 알림 줄에 20초 남긴다(명령 줄은 그대로). 그 밖의 잠깐 알릴 말은 4초.
 // 소리는 차례로 읽는다(sayAloud 줄): 앞 말이 끝난 뒤(끝 알림, 오지 않으면 speakMs) 다음 말을 읽는다. 명령 말에는 그 명령(계획 id·단계 id)을 붙이고,
-// 새 명령·그 명령의 command_clear가 오면 아직 안 읽은 그 명령 말을 버린다. 읽기 바로 앞에는 화면 엄지 자리에 실제로 보이는 대상(handOf, 말의 at과 같은 길)과
+// 새 명령·그 명령의 command_clear가 오면 지난 명령 말과 대기열을 버린다. 읽기 바로 앞에는 화면 엄지 자리에 실제로 보이는 대상(handOf, 말의 at과 같은 길)과
 // 견줘 다르면 건너뛴다(승인 대기 뒤에 숨은 명령은 읽지 않는다). 그렇게 못 읽은 명령 말은 가림(맞추기·승인 대기)이 풀려 그 명령이 보이는 순간 바로 읽는다.
 // reply를 읽은 뒤 보이는 명령·승인 대기가 있고 줄에 그 말이 없으면 한 번 다시 읽는다(승인 대기는 위 줄 「기기: 까닭」). 듣기는 줄이 빌 때까지 멈춘다(읽는 동안 들으면 폰 스피커 소리를 인식이 듣고 그 글이 말로 서버에 간다).
 // 말에는 등급이 있다: 안전(끄기 안내·다시 켜짐 경고)·질문(승인·물음, 승인 대기)은 서버가 붙이고(grade), 그 밖은 명령·일반 reply다.
@@ -23,6 +23,7 @@
 // 「여기서 시작」은 저절로 열지 않고(영상 AR이 고정 시작 자세를 스스로 보냄), 서버 맞춤이 없으면 영상 AR이 시작 자세를 다시 보낸다(syncStatus).
 // 받은 명령은 그 영상 시각으로 기록하고(window.__noonchiVideo), 영상 AR에 넘겨 맞는 단계 영상(?step=)으로 바꾸고 go 단계면 자세를 걷게 한다.
 import type { HeardAt, PhoneCommand, PhoneCommandClear, TalkGrade } from "../../../src/contract/phone.ts";
+import { MOBILE_PHONE_EVENTS } from "../../../src/contract/mobile-phone.ts";
 import { createAr, type ArHooks, type PhoneAr } from "./core/ar.js";
 import { createVideoAr, logVideoAt, logVideoCommand, videoParams, type VideoArDeps } from "./core/video-ar.js";
 import { createLink, phoneSocketUrl } from "./core/link.js";
@@ -47,12 +48,16 @@ const speakMs = (text: string) => 2000 + text.length * 300;
 const TALK_MAX_MS = 15_000;
 /** 소리 줄 때문에 듣기를 멈추는 가장 긴 시간(멈춘 때부터): 기다리는 말이 있으면 그 차례를 남기고 지금 말을 끊고, 다 쓰면 남은 말을 버리고 다시 듣는다. */
 const LISTEN_PAUSE_MAX_MS = 20_000;
+const RECENT_SPOKEN_STEPS = 64;
 /** 말 하나에 잡는 시간. */
 const talkMs = (text: string) => Math.min(speakMs(text), TALK_MAX_MS);
 
 type XrLike = { isSessionSupported(mode: string): Promise<boolean> };
+type PhoneOrientation = { lock?: (orientation: "landscape") => Promise<void>; unlock?: () => void };
 export interface ControllerDeps {
   location: { protocol: string; host: string; search: string };
+  /** 허브 폰 홈. WebXR이 승인된 뒤에만 같은 출처의 폰 연결을 연다. */
+  portal?: boolean;
   /** 시험이 바꾼다. 없으면 브라우저 WebSocket. */
   Socket?: unknown;
   /** undefined면 브라우저 음성 인식, null이면 없음. */
@@ -64,6 +69,7 @@ export interface ControllerDeps {
   secure?: boolean;
   /** 없으면 navigator.xr. null이면 AR 없음. */
   xr?: XrLike | null;
+  orientation?: PhoneOrientation;
   arDeps?: Record<string, unknown>;
 }
 /** canvas 그림: start는 덮개를 열 때 한 번(지난 세션 그림을 지운다), aim은 조준점 켜고 끄기(물건 자리 맞추기), hit(닿음, 어림 바닥)·marks는 XR 프레임마다. */
@@ -74,6 +80,7 @@ export interface PhoneController {
   actions: PhoneActions;
   /** AR 덮개 뿌리(DOM 오버레이)와 canvas 그림을 잇는다. */
   attach(overlay: HTMLElement | null, draw: ControllerDraw): void;
+  stopAr(): void;
   close(): void;
 }
 
@@ -97,14 +104,22 @@ const needMs = (t: Talk) => (whole(t) ? speakMs(t.text) : talkMs(t.text));
 export function createPhoneController(deps: ControllerDeps): PhoneController {
   const params = new URLSearchParams(deps.location.search);
   const video = videoParams(params);
+  const portal = deps.portal === true;
   const speak = deps.speak ?? speakAloud;
   const hush = deps.hush ?? hushAloud;
+  const orientation = deps.orientation ?? (globalThis.screen?.orientation as PhoneOrientation | undefined);
+  let rotation = 0;
+  let askedForLandscape = false;
   // 영상 모드: 듣기 끔. 영상에는 사람 목소리가 없어 마이크로 늘 듣기만 끈다(답은 화면 단추)
   const Recognition = video ? null : deps.Recognition === undefined ? recognition() : deps.Recognition;
   const store = createStore<PhoneView>(initialView());
   const set = (fn: (v: PhoneView) => PhoneView) => store.set(fn);
   let guidedId:string|null=null;
   let overlay: HTMLElement | null = null;
+  let starting = false;
+  let closed = false;
+  let resetOnOpen = false;
+  let stoppedWhileStarting = false;
   let draw: ControllerDraw = { start: () => {}, aim: () => {}, hit: () => {}, marks: () => {} };
   let noteTimer: ReturnType<typeof setTimeout> | undefined;
   let talkTimer: ReturnType<typeof setTimeout> | undefined;
@@ -112,6 +127,8 @@ export function createPhoneController(deps: ControllerDeps): PhoneController {
   /** 소리 줄: 읽을 글과 화면 대상의 말이면 그 대상. talking: 지금 읽는 말. */
   let talkQueue: Talk[] = [];
   let talking: Talk | null = null;
+  const announced = new Map<string, number>();
+  let speechScope: string | null = null;
   /** 지금 말의 제 끝(needMs), 이번 듣기 멈춤의 끝(LISTEN_PAUSE_MAX_MS), 지금 말 끊기. */
   let talkEnd = 0;
   let pauseEnd = 0;
@@ -166,9 +183,17 @@ export function createPhoneController(deps: ControllerDeps): PhoneController {
 
   const link = createLink({
     // 영상 모드: 카메라 입력. 소켓 주소에 트는 영상 이름을 붙여 서버가 영상 연결로 안다(붙잡은 장면 표시를 받는다)
-    url: phoneSocketUrl(deps.location, video ? video.clip : null), onMessage, Socket: deps.Socket, now: undefined,
-    onOpen: () => set((v) => ({ ...v, connected: true })),
+    url: phoneSocketUrl(deps.location, video ? video.clip : null, portal ? MOBILE_PHONE_EVENTS : undefined),
+    onMessage, Socket: deps.Socket, autoConnect: !portal,
+    onOpen: () => {
+      if (resetOnOpen && ar.state.epoch) {
+        resetOnOpen = false;
+        link.send({ type: "reset", epoch: ar.state.epoch });
+      }
+      set((v) => ({ ...v, connected: true }));
+    },
     onClose: () => {
+      clearSpeech();
       if(guidedId){
         ar.setFocus([],0);ar.commandClear?.(guidedId);draw.marks([]);
         set(v=>({...v,command:v.command?{...v.command,vision:"연결을 확인해 주세요."}:null}));
@@ -201,12 +226,26 @@ export function createPhoneController(deps: ControllerDeps): PhoneController {
   }
   const hooks: ArHooks = {
     onStart: () => {
+      if (portal) {
+        resetOnOpen = true;
+        link.start();
+      }
       draw.start();
       set((v) => ({ ...v, ar: true, cameraOff: false }));
+      if (!video) void keepLandscape();
       listener?.start();
     },
     onEnd: () => {
+      releaseLandscape();
       listener?.stop();
+      if (portal) {
+        link.suspend();
+        clearPortalActivity();
+        set(() => ({ ...initialView(), support: { kind: "ready" } }));
+        return;
+      }
+      clearSpeech();
+      announced.clear();
       set((v) => ({ ...v, ar: false, setup: null, settingsOpen: false, limited: false, hit: false, hitEstimated: false }));
     },
     onHit: (hit, estimated) => {
@@ -233,6 +272,72 @@ export function createPhoneController(deps: ControllerDeps): PhoneController {
     ? createVideoAr({ link, params, hooks, deps: { ...video, ...deps.arDeps } as VideoArDeps })
     : createAr({ link, params, hooks, deps: deps.arDeps });
 
+  async function keepLandscape() {
+    const turn = ++rotation;
+    try {
+      if (!orientation?.lock) throw new Error("Screen orientation lock unavailable");
+      askedForLandscape = true;
+      await orientation.lock("landscape");
+      if (turn !== rotation && !askedForLandscape) orientation.unlock?.();
+    } catch {
+      if (turn === rotation && window.matchMedia?.("(orientation: portrait)").matches) {
+        showNote("폰을 가로로 돌려 주세요.");
+      }
+    }
+  }
+
+  function releaseLandscape() {
+    rotation++;
+    if (!askedForLandscape) return;
+    askedForLandscape = false;
+    try { orientation?.unlock?.(); } catch { /* The browser already ended the camera. */ }
+  }
+
+  function clearPortalActivity() {
+    resetOnOpen = false;
+    guidedId = heardAt = owed = shownBefore = lastGrade = null;
+    shownWasSafety = false;
+    clearSpeech();
+    announced.clear();
+    speechScope = null;
+    clearTimeout(noteTimer);
+    ar.setFocus([], 0);
+  }
+
+  function stopTalking() {
+    talkTurn++;
+    clearTimeout(talkTimer);
+    const wasTalking = talking !== null;
+    talking = null;
+    if (wasTalking) hush();
+  }
+
+  function clearSpeech() {
+    owed = heardAt = null;
+    talkQueue = [];
+    stopTalking();
+    listener?.resume();
+  }
+
+  function endOldCommand(keep: (target: Extract<TalkTarget, { kind: "command" }>) => boolean) {
+    const target = talking?.target;
+    if (target?.kind !== "command" || keep(target)) return;
+    stopTalking();
+    playNext();
+  }
+
+  function firstAnnouncement(command: PhoneCommand) {
+    if (!command.speak) return false;
+    const version = command.speech_id?.revision ?? 0;
+    // An older hub may introduce a new safety sentence without changing the step ID.
+    const key = JSON.stringify(version ? [command.id, command.step] : [command.id, command.step, command.text]);
+    if (version <= (announced.get(key) ?? -1)) return false;
+    announced.delete(key);
+    announced.set(key, version);
+    if (announced.size > RECENT_SPOKEN_STEPS) announced.delete(announced.keys().next().value!);
+    return true;
+  }
+
   function showNote(text: string, ms = NOTE_MS) {
     set((v) => ({ ...v, note: text }));
     clearTimeout(noteTimer);
@@ -244,6 +349,7 @@ export function createPhoneController(deps: ControllerDeps): PhoneController {
     talkQueue.push({ text, target, grade });
     if (talking) return armTalk();
     pauseEnd = Date.now() + LISTEN_PAUSE_MAX_MS;
+    heardAt = null;
     listener?.pause();
     playNext();
   }
@@ -318,6 +424,15 @@ export function createPhoneController(deps: ControllerDeps): PhoneController {
       if (!store.get().command) ar.setFocus(msg.targets, msg.ttl_ms);
     } else if (msg.type === "command") {
       const m = msg as PhoneCommand;
+      if (m.speech_id) {
+        const { boot, homeEpoch, publisher } = m.speech_id;
+        const scope = JSON.stringify([boot, homeEpoch, publisher]);
+        if (scope !== speechScope) {
+          if (speechScope !== null) clearSpeech();
+          announced.clear();
+          speechScope = scope;
+        }
+      }
       const target: TalkTarget = { kind: "command", id: m.id, step: m.step };
       // 아직 안 읽은 다른 명령 말은 버린다(같은 명령의 비전 상태만 바뀐 것은 그대로)
       talkQueue = talkQueue.filter((t) => t.target?.kind !== "command" || (t.target.id === m.id && t.target.step === m.step));
@@ -332,10 +447,11 @@ export function createPhoneController(deps: ControllerDeps): PhoneController {
       ar.setFocus(focus ? [focus] : [], COMMAND_FOCUS_MS);
       if (ar.videoTime) logVideoCommand(ar.videoTime(), m);
       ar.command?.(m);
-      if (m.speak) {
+      if (firstAnnouncement(m)) {
         owed = { text: m.text, target, grade: lastGrade.grade };
         sayAloud(m.text, target, lastGrade.grade);
       }
+      endOldCommand(prior => sameTarget(prior, target));
     } else if (msg.type === "command_clear") {
       const m = msg as PhoneCommandClear;
       ar.commandClear?.(m.id);
@@ -343,10 +459,12 @@ export function createPhoneController(deps: ControllerDeps): PhoneController {
       talkQueue = talkQueue.filter((t) => t.target?.kind !== "command" || (m.id !== undefined && t.target.id !== m.id));
       if (owed?.target?.kind === "command" && (m.id === undefined || owed.target.id === m.id)) owed = null;
       armTalk();
-      if (m.id !== undefined && m.id !== store.get().command?.id) return;
-      guidedId=null;
-      set((v) => ({ ...v, command: null }));
-      ar.setFocus([], 0);
+      if (m.id === undefined || m.id === store.get().command?.id) {
+        guidedId=null;
+        set((v) => ({ ...v, command: null }));
+        ar.setFocus([], 0);
+      }
+      endOldCommand(prior => m.id !== undefined && prior.id !== m.id);
     }
   }
 
@@ -363,9 +481,19 @@ export function createPhoneController(deps: ControllerDeps): PhoneController {
   const actions: PhoneActions = {
     startAr() {
       // 사용자 동작 안에서 바로 requestSession까지 간다(await 없이)
+      if (closed || starting || store.get().ar) return;
       const failed = (message: string) => set((v) => ({ ...v, support: { kind: "failed", message } }));
       if (!overlay) return failed("페이지를 새로 고쳐 주세요");
-      ar.start(overlay).catch((error: Error) => failed(error.message));
+      starting = true;
+      stoppedWhileStarting = false;
+      const result = ar.start(overlay);
+      if (portal) set((v) => ({ ...v, support: { kind: "starting" } }));
+      void result.catch((error: Error) => {
+        if (!closed && !stoppedWhileStarting) failed(error.message);
+      }).finally(() => {
+        starting = false;
+        if (!closed && store.get().support.kind === "starting") set((v) => ({ ...v, support: { kind: "ready" } }));
+      });
     },
     startPlace: () => set((v) => ({ ...v, setup: "place", settingsOpen: false })),
     startFromSpot: () => set((v) => ({ ...v, setup: "start", settingsOpen: false })),
@@ -395,8 +523,8 @@ export function createPhoneController(deps: ControllerDeps): PhoneController {
     if (video) return set((v) => ({ ...v, support: { kind: "ready" } }));
     if (!(deps.secure ?? window.isSecureContext)) return set((v) => ({ ...v, support: { kind: "insecure" } }));
     const xr = "xr" in deps ? deps.xr : (navigator as Navigator & { xr?: XrLike }).xr;
-    const ok = xr ? await xr.isSessionSupported("immersive-ar").catch(() => false) : false;
-    set((v) => ({ ...v, support: { kind: ok ? "ready" : "no-ar" } }));
+    const ok = typeof xr?.isSessionSupported === "function" && await xr.isSessionSupported("immersive-ar").catch(() => false);
+    if (!closed && !starting && !store.get().ar) set((v) => ({ ...v, support: { kind: ok ? "ready" : "no-ar" } }));
   }
   void checkSupport();
 
@@ -408,10 +536,24 @@ export function createPhoneController(deps: ControllerDeps): PhoneController {
       overlay = root;
       draw = d;
     },
+    stopAr() {
+      stoppedWhileStarting = true;
+      releaseLandscape();
+      if (portal) {
+        link.suspend();
+        listener?.stop();
+      }
+      ar.stop();
+    },
     close() {
+      if (closed) return;
+      closed = true;
+      releaseLandscape();
       link.close();
       ar.stop();
       listener?.stop();
+      if (portal) clearPortalActivity();
+      else clearSpeech();
       clearTimeout(noteTimer);
       clearTimeout(talkTimer);
     },

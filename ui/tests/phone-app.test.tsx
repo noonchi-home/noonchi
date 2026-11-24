@@ -89,7 +89,7 @@ function arApp() {
   act(() => FakeSocket.last.open());
   const overlay = r.container.querySelector<HTMLElement>("[data-phone-overlay]")!;
   const start = async () => {
-    await userEvent.click(await screen.findByRole("button", { name: "AR 시작" }));
+    await userEvent.click(await screen.findByRole("button", { name: "카메라 켜기" }));
     await vi.waitFor(() => expect(overlay.hidden).toBe(false));
     await vi.waitFor(() => expect(session.looping()).toBe(true));
   };

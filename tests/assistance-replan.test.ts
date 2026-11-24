@@ -9,6 +9,7 @@ import type { WorldObject, WorldView } from "../src/contract/world.js";
 import type { AgentPlan, AgentStep } from "../src/contract/plan-work.js";
 import { VirtualClock } from "../src/bus/clock.js";
 import { floorPlanFrom } from "../src/layout/index.js";
+import { HomeTrace } from "../src/server/home/trace.js";
 import { SMALL_SCENE } from "./helpers/floor.js";
 import { testTracker, type TrackerFixture } from "./helpers/tracker-ports.js";
 import { cameraAt } from "./helpers/home-realism.js";
@@ -23,7 +24,7 @@ const decision: DecisionRecord = {
   memoryVersion: 1, world: { objects: [], person_visible: false, vlm_missing: 0, yolo_missing: 0 },
 };
 
-function rig(ports: Partial<NonNullable<TrackerFixture["assistance"]>> = {}) {
+function rig(ports: Partial<NonNullable<TrackerFixture["assistance"]>> = {}, trace?: HomeTrace) {
   const clock = new VirtualClock(1000);
   const toPhone = vi.fn(), emit = vi.fn(), run = vi.fn();
   const planner = vi.fn(() => ({ ok: false as const, error: "no_plan" }));
@@ -31,11 +32,25 @@ function rig(ports: Partial<NonNullable<TrackerFixture["assistance"]>> = {}) {
   const floor = () => floorPlanFrom(SMALL_SCENE);
   const tracker = testTracker({
     plans: new PlanHub(floor(), () => {}, () => ""), approvals: { memory: () => ({ always: {} }), answer: () => {} }, check: () => ({ ok: true }), planner,
-    world: () => world, clock, toPhone, floor, emit, devices: { run, confirm: vi.fn(), cancel: vi.fn() },
+    world: () => world, clock, toPhone, floor, emit, trace, devices: { run, confirm: vi.fn(), cancel: vi.fn() },
     assistance: { boot: "b", homeEpoch: "h#1", home: "h", targetDevice: () => "ac", ended, ...ports },
   });
   return { tracker, clock, toPhone, emit, run, planner, ended };
 }
+
+it("publishes a failed activity once before any command, attached to its registered decision", async () => {
+  const trace = new HomeTrace("b:h#1", () => 1000, () => {});
+  const r = rig({ ended: (attempt, result, ms) => trace.ended(attempt, result, ms) }, trace);
+  const selected = trace.event("action", { decision_id: decision.id }, "selected", undefined, { action: decision.action! })!;
+  r.tracker.onDecision(decision);
+  await r.tracker.idle();
+  r.tracker.stop();
+  expect(r.toPhone).not.toHaveBeenCalled();
+  expect(trace.snapshot().rows.filter(row => row.kind === "EXECUTION")).toEqual([
+    expect.objectContaining({ activity_id: selected.activity_id, name: "활동 종료", output: "활동 실패", state: "failed",
+      refs: expect.objectContaining({ decision_id: decision.id }) }),
+  ]);
+});
 
 it("uses a recent hardware read from before the attempt without calling a model or issuing a command", async () => {
   const ref: EvidenceRef = { source: "hub", subjectId: "ac", originId: "device-read:19", observedMs: 900 };
@@ -87,7 +102,7 @@ function cameraWorld(room: string, count: number, t: number, surface: string | n
       proof: { camera: cameraAt([5, 1], [6, 2]), seats: "clear", person_count: count, dining_food: "unknown",
         person: { position: [6, 2], room, seated: false, attention: "elsewhere" } } } };
 }
-function movement(start: WorldView, planner: TrackerFixture["planner"], ports: Partial<NonNullable<TrackerFixture["assistance"]>> = {}) {
+function movement(start: WorldView, planner: TrackerFixture["planner"], ports: Partial<NonNullable<TrackerFixture["assistance"]>> = {}, trace?: HomeTrace) {
   const clock = new VirtualClock(1000), commands = vi.fn(), ended = vi.fn(), emit = vi.fn();
   const floor = () => floorPlanFrom({ ...SMALL_SCENE, objects: [...SMALL_SCENE.objects,
     { id: "hall_table", room: "hall", type: "dining_table", plan: { position: [2, 2] } }] });
@@ -95,7 +110,7 @@ function movement(start: WorldView, planner: TrackerFixture["planner"], ports: P
   let w = start;
   const tracker = testTracker({
     plans: new PlanHub(floor(), () => {}, () => ""), approvals, check: () => ({ ok: true }), planner, world: () => w,
-    clock, toPhone: commands, floor, emit,
+    clock, toPhone: commands, floor, emit, trace,
     assistance: { boot: "b", homeEpoch: "h#1", home: "h", resident: v => v.person.count === 1 ? "member" : null, ended, ...ports },
   });
   return { tracker, commands, ended, emit, photo: (next: WorldView) => { clock.set(next.at_ms); w = next; tracker.onWorld(); } };
@@ -105,12 +120,15 @@ it("records a single cancelled outcome when closer evidence invalidates a plan s
   const db = HistoryDb.open(":memory:");
   try {
     const d = { ...decision, action: "컵에 물 채워 주기" };
+    const trace = new HomeTrace("b:h#1", () => 1000, () => {});
+    const selected = trace.event("action", { decision_id: d.id }, "selected")!;
     let resolvePlan!: (result: Awaited<ReturnType<TrackerFixture["planner"]>>) => void;
     const pending = new Promise<Awaited<ReturnType<TrackerFixture["planner"]>>>(resolve => { resolvePlan = resolve; });
     const record = vi.fn<NonNullable<NonNullable<TrackerFixture["assistance"]>["ended"]>>((attempt, execution, ms, proofs) => {
       db.recordAssistanceOutcome(assistanceOutcome(attempt, execution, ms, proofs));
+      trace.ended(attempt, execution, ms);
     });
-    const r = movement(cameraWorld("kitchen", 1, 1000, "table_1"), () => pending, { ended: record });
+    const r = movement(cameraWorld("kitchen", 1, 1000, "table_1"), () => pending, { ended: record }, trace);
     r.tracker.onDecision(d);
     const changed = cameraWorld("kitchen", 1, 1200, "table_1");
     changed.objects[0]!.closer_rev = { contents: 1 };
@@ -123,6 +141,11 @@ it("records a single cancelled outcome when closer evidence invalidates a plan s
     expect(r.emit.mock.calls.map(([message]) => message.text)).toContain(EXEC_TEXT.closerNewer);
     expect(r.commands.mock.calls.filter(([m]) => m.type === "command")).toHaveLength(0);
     expect(record).toHaveBeenCalledTimes(1);
+    const rows = trace.snapshot().rows;
+    const guard = rows.find(row => row.kind === "GUARDRAIL")!;
+    expect(rows.filter(row => row.kind === "EXECUTION")).toEqual([
+      expect.objectContaining({ activity_id: selected.activity_id, name: "활동 종료", output: "활동 취소", state: "cancelled", cause_id: guard.id }),
+    ]);
     expect(db.list({ kinds: ["assistance_outcome"] }).map(row => row.data)).toEqual([
       expect.objectContaining({ execution: "cancelled", reaction: "unknown", proof: null, key: { boot: "b", homeEpoch: "h#1", attemptId: d.id, gen: 0 } }),
     ]);

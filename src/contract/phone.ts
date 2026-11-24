@@ -33,6 +33,9 @@ export interface WalkGuide<P> {
 export type TwinWalkGuide = WalkGuide<{position:[number,number,number]}>;
 export type NavigationPose = {observed_ms:number; pose_gen:number; quality:"usable"|"unavailable"; position:[number,number]|null; error_m?:number};
 
+/** 발행 번호는 같은 기동·집 세대·발행 노드 안에서만 유효하다. */
+export type PhoneSpeechId = { boot: string; homeEpoch: string; publisher: string; revision: number };
+
 export interface PhoneCommand {
   guide?: WalkGuide<{ar:[number,number,number]}> | null;
   type: "command";
@@ -49,6 +52,8 @@ export interface PhoneCommand {
   target: PhoneTarget | null;
   /** true면 text를 소리로 읽는다: 새 명령, 한 단계가 오래 걸려 다시 읽을 때. 비전 상태·대상만 바뀌면 false. */
   speak: boolean;
+  /** 폰 구독부가 기존 발행 번호와 버스 머리로 만든다. 구형 명령에는 없다. */
+  speech_id?: PhoneSpeechId;
   /** 사람 단계 명령의 단계 종류. 질문·승인·알림에는 없다. 영상 모드가 단계 영상을 고를 때 쓴다. */
   kind?: PhoneStepKind;
   /** go 명령이 끝나는 폰-대상 수평 거리(m, 가까이 가서 보기의 「컵 가까이 가 주세요」). 영상 모드는 그 안까지 걷는다. 없으면 보통 go. */

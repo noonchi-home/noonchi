@@ -1,0 +1,32 @@
+{
+  "name": "noonchi-android",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "main": "index.ts",
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "scripts": {
+    "start": "expo start --go",
+    "test": "node --experimental-transform-types --disable-warning=ExperimentalWarning --test dashboard-flow.test.ts twa.test.ts wordmark.test.ts home-start.test.ts mascot-resolution.test.ts",
+    "typecheck": "tsc --noEmit",
+    "export:android": "expo export --platform android",
+    "prebuild:android": "expo prebuild --platform android --no-install"
+  },
+  "dependencies": {
+    "expo": "~58.0.26",
+    "expo-camera": "~58.0.14",
+    "expo-file-system": "~58.0.14",
+    "expo-image-manipulator": "~58.0.16",
+    "expo-splash-screen": "~58.0.14",
+    "react": "19.3.0",
+    "react-native": "0.88.1",
+    "react-native-safe-area-context": "~5.11.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.0",
+    "@types/react": "~19.3.0",
+    "typescript": "~6.0.3"
+  }
+}

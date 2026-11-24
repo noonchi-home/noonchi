@@ -1,7 +1,7 @@
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import type { ServerMessage } from "../../../src/contract/events.ts";
 import { MeerkatFace, PhoneTopLine } from "../components/phone-top-line";
-import { hubOf } from "../lib/hub";
+import { useMobileUrl } from "../lib/hub";
 import { useEvents } from "../lib/use-events";
 import { useHealth } from "../lib/use-health";
 import { useBoxSize, type BoxSize } from "./fit";
@@ -48,8 +48,8 @@ export function MinimapView() {
     if (!open) reset();
   }, [reset]);
   useEvents(onMessage, onConnection);
-  const hub = useMemo(() => hubOf(health, connected), [health, connected]);
-  const phone: PhoneSlot = !health ? { kind: "none" } : health.eye ? { kind: "live", url: hub.phoneUrl } : { kind: "qr", url: hub.phoneUrl };
+  const mobileUrl = useMobileUrl(hellos);
+  const phone: PhoneSlot = health?.eye ? { kind: "live", url: mobileUrl } : health || mobileUrl ? { kind: "qr", url: mobileUrl } : { kind: "none" };
   const ready = useFontsLoaded("Noto Sans KR Variable", JSON.stringify([WORDS, "0123456789"]));
   const box = minimapBox(view);
   return (

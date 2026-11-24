@@ -26,7 +26,11 @@ export async function startDevices(core: HomeCore, homeId: string | undefined): 
   const specOf = new Map(twin.devices.map((d) => [d.id, d]));
   const { history } = ctx;
   for (const s of signals.states()) history.device(s, { initial: true, label: specOf.get(s.id)?.label, kind: specOf.get(s.id)?.kind });
-  const unsubHistory = signals.subscribe((s) => history.device(s, { label: specOf.get(s.id)?.label, kind: specOf.get(s.id)?.kind }));
+  const unsubHistory = signals.subscribe((s) => {
+    const spec = specOf.get(s.id);
+    history.device(s, { label: spec?.label, kind: spec?.kind });
+    core.trace?.device(s, spec?.kind);
+  });
   core.twin = twin;
   core.started = started;
   core.signals = signals;

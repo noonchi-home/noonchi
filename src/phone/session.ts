@@ -324,7 +324,7 @@ export class PhoneSession {
         ? { error: "폰 위치를 맞추는 중이에요. 방을 천천히 둘러본 뒤 다시 말해 주세요." }
         : { error: "폰을 트윈에 맞추기 전이에요. 폰에서 시작 위치에 서서 「여기서 시작」을 해 주세요." };
     }
-    if (!this.last) return { error: "폰 AR이 켜져 있지 않아요. 폰에서 AR 시작을 눌러 주세요." };
+    if (!this.last) return { error: "폰 AR이 켜져 있지 않아요. 폰에서 ‘카메라 켜기’를 눌러 주세요." };
     if (this.now().getTime() - this.last.at > HERE_MAX_AGE_MS) return { error: "폰 AR 자세가 15초 넘게 오지 않았어요. 폰 화면을 켜고 다시 말해 주세요." };
     if (!this.last.hit) return { error: "폰 조준점이 바닥에 닿지 않았어요. 물건 아래 바닥을 가리키고 다시 말해 주세요." };
     return { position: this.last.hit, from: this.last.eye };

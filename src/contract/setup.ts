@@ -7,9 +7,17 @@ export interface SetupStationsView {
   home: string;
   map: StationMap;
 }
+
+export interface AndroidTwaView {
+  phone_url: string;
+  assetlinks_url: string;
+  package_name: string;
+  /** The server has public fingerprints configured. Chrome verifies the installed APK separately. */
+  statements_configured: boolean;
+}
 import type { DeviceKind } from "../devices/kinds.js";
 
-/** test: 시험 모드(트윈에서만, ThinQ를 부르지 않음, 기본). live: 실제 모드(짝지은 기기는 ThinQ로 실제 가전). */
+/** test: 테스트 모드(트윈에서만 동작, 기본). live: 운영 모드(짝지은 실제 가전을 다룸). */
 export type ControlMode = "test" | "live";
 
 
@@ -51,6 +59,7 @@ export interface SetupView {
   devices_saved: boolean;
   /** 4단계: start는 시작 위치를 쓸 수 있다(집 scene.json이 있음), layout은 배치 보정을 쓸 수 있다. */
   position: { start: boolean; layout: boolean; phone_urls: string[] };
+  android_twa?: AndroidTwaView | null;
   mode: ControlMode;
   /** ready: ThinQ 토큰이 있어 실제 모드로 바꿀 수 있다. */
   thinq: { ready: boolean };
@@ -63,5 +72,7 @@ export interface SetupView {
 /** GET /api/setup/thinq. */
 export interface ThinqDevicesView {
   ok: true;
+  /** 집을 명시한 조회의 현재 집. */
+  home?: string;
   devices: ThinqDeviceView[];
 }

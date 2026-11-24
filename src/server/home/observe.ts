@@ -124,7 +124,8 @@ export async function startNodes(core: HomeCore, emit: (event: BrainLog) => void
       node.on("/perception/frame_seen", () => core.decider?.onFrame());
       node.every(250, () => { if (!core.closed && core.pipeline && core.brainMirror?.view()) core.decider?.tick(); });
     },
-    onChanges: (changes, view) => {
+    onChanges: (changes, view, rev) => {
+      core.trace?.changes(changes, rev);
       if (changes.some((c) => c.kind.startsWith("person"))) core.person?.onWorld(view, core.nowMs());
       core.decider?.onChanges(changes);
     },
@@ -189,7 +190,7 @@ export async function startNodes(core: HomeCore, emit: (event: BrainLog) => void
           core.followupFeedback.delete(b.decision.id);
         }
       }));
-      core.looks = new LookClient(core.out.act, clock);
+      core.looks = new LookClient(core.out.act, clock, core.trace);
       core.looks.routes(node);
       progressRoutes(node, (p) => applyPhoneProgress(core, p), () => core.nowMs());
       node.on("/phone/pose", p=>{ if(!core.closed) core.tracker?.onNavigationReading(p); });
@@ -317,7 +318,7 @@ export async function startPipeline(core: HomeCore, emit: (event: BrainLog) => v
       return !!dining && !!core.view()?.objects.some(o=>o.cls==="cup" && o.status==="present" && o.surface && dining.surfaces.includes(o.surface));
     },
     localize:core.localizer ? (f,h)=>core.localizer!.request(f,h) : undefined,
-    env, log, world: perception.port, inject: ctx.brain, emit,
+    env, log, world: perception.port, inject: ctx.brain, emit, trace: core.trace,
     // 물체 모양은 /perception/detections로(폰 노드가 대시보드로만 보낸다)
     onSeen: (e) => perception.seen(e),
     // 주기 판단(기본 5초)은 엔진 프레임이 오는 동안만 부른다

@@ -5,7 +5,7 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 import type { HealthView } from "../../../src/contract/events.ts";
-import { hubOf } from "../../src/lib/hub";
+import { hubOf, mobileHubUrl } from "../../src/lib/hub";
 import { pageLayout } from "../../src/dashboard/layout";
 import { Mascot } from "../../src/dashboard/Mascot";
 import { MASCOT } from "../../src/lib/mascot-image";
@@ -23,7 +23,8 @@ const HEALTH: HealthView = {
     db: true,
   },
 };
-const HUB = hubOf(HEALTH, true);
+const mobileUrls = ["https://hub.example.ts.net/mobile/", "http://192.168.0.21:8201/mobile/"];
+const HUB = hubOf(HEALTH, true, mobileHubUrl("http://localhost:8201", mobileUrls));
 
 const FIELDS = "input, textarea, select, form, [contenteditable], [role=textbox], [role=searchbox], [role=combobox]";
 const mascotButton = () => within(screen.getByRole("region", { name: "마스코트" })).getByRole("button", { name: "설정 열기" });
@@ -38,7 +39,7 @@ describe("허브 상태(hubOf)", () => {
   it("/api/health 값에서 설정 창에 보일 것만 고른다: 폰 주소는 https·집 공유기 대역을 먼저", () => {
     expect(HUB).toEqual({
       connected: true, mode: "test", hub: "matter · network", agent: "openai · gpt-5.5", home: "한양목련 180B",
-      phoneUrl: "https://192.168.0.21:8443/phone/", setupHref: "/setup/",
+      phoneUrl: "https://hub.example.ts.net/mobile/",
     });
   });
 
@@ -53,7 +54,23 @@ describe("허브 상태(hubOf)", () => {
   });
 
   it("health를 아직 못 받았으면 빈 값과 시험 모드다", () => {
-    expect(hubOf(null, null)).toEqual({ connected: false, mode: "test", hub: "", agent: "", home: "", phoneUrl: "", setupHref: "/setup/" });
+    expect(hubOf(null, null)).toEqual({ connected: false, mode: "test", hub: "", agent: "", home: "", phoneUrl: "" });
+  });
+
+  it.each([
+    ["https://actual.example.net", "https://actual.example.net/mobile/"],
+    ["https://actual.example.net:9443", "https://actual.example.net:9443/mobile/"],
+    ["http://192.168.0.23:8201", "https://hub.example.ts.net/mobile/"],
+    ["http://127.0.0.1:8201", "https://hub.example.ts.net/mobile/"],
+  ])("targets the hub for %s before health arrives", (origin, expected) => {
+    expect(mobileHubUrl(origin, mobileUrls)).toBe(expected);
+  });
+  it("withholds app QR on HTTP without an advertised HTTPS hub and ignores AR URLs", () => {
+    expect(mobileHubUrl("http://localhost:5173", [
+      "https://hub.example.ts.net:8443/phone/", "http://192.168.0.21:8201/mobile/",
+    ])).toBe("");
+    expect(mobileHubUrl("http://192.168.0.23:8201", ["http://192.168.0.21:8201/mobile/"])).toBe("");
+    expect(mobileHubUrl("http://localhost:8201")).toBe("");
   });
 });
 
@@ -158,8 +175,9 @@ describe("대시보드 설정 창", () => {
     expect(d).toHaveTextContent("matter · network");
     expect(d).toHaveTextContent("openai · gpt-5.5");
     expect(d).toHaveTextContent("한양목련 180B");
-    expect(d).toHaveTextContent("https://192.168.0.21:8443/phone/");
-    expect(within(d).getByRole("link", { name: "집 다시 설정하기" })).toHaveAttribute("href", "/setup/");
+    expect(d).toHaveTextContent("https://hub.example.ts.net/mobile/");
+    expect(d).toHaveTextContent("NOONCHI 앱으로 스캔해 서버에 연결하세요");
+    expect(d.querySelector('a[href="/setup/"], a[href="/mobile/settings/"]')).toBeNull();
     expect(within(d).getByRole("img", { name: "폰 연결 QR" })).toBeInTheDocument();
     expect(d.querySelectorAll(FIELDS)).toHaveLength(0);
     expect(container.querySelectorAll(FIELDS)).toHaveLength(0);
@@ -181,8 +199,8 @@ describe("대시보드 설정 창", () => {
     await user.click(mascotButton());
     const d = dialog()!;
     expect(within(d).queryByRole("img", { name: "폰 연결 QR" })).toBeNull();
-    expect(d).not.toHaveTextContent("폰 카메라로 찍으세요");
-    expect(within(d).getByRole("link", { name: "집 다시 설정하기" })).toHaveAttribute("href", "/setup/");
+    expect(d).toHaveTextContent("앱에 연결할 HTTPS 주소가 없어요.");
+    expect(d.querySelector('a[href="/setup/"], a[href="/mobile/settings/"]')).toBeNull();
   });
 
   it("닫으면(Esc·닫기 단추) 초점이 마스코트 단추로 돌아온다", async () => {

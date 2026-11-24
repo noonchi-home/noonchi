@@ -17,7 +17,7 @@ import { DashboardScreen } from "./DashboardScreen";
 import { debugPhone, debugQuery, useDebugSteps, type Moment } from "./debug";
 import { roomSetsOf, twinFrame } from "./frame";
 import { homeIndexOf, type HomeIndex } from "./home";
-import { hubOf } from "../lib/hub";
+import { hubOf, useMobileUrl } from "../lib/hub";
 import type { PageLayout } from "./layout";
 import { MapOverlay } from "./MapOverlay";
 import { CAMERA_MS, useReducedMotionNow } from "./motion";
@@ -184,6 +184,11 @@ function BakedStage({ home, homeData, layout, view, anchors, plan, eye, goal, ch
  */
 export function Dashboard() {
   const debug = useMemo(() => debugQuery(location.search), []);
+  const query = new URLSearchParams(location.search);
+  const overview = query.get("view") === "overview";
+  const scene = debug === null && !overview;
+  query.set("view", "overview");
+  const overviewHref = `${location.pathname}?${query}${location.hash}`;
   const { devices, apply } = useDevices();
   // 서버에 다시 붙을 때(hello)마다 health를 다시 받는다: 서버를 다른 설정(기록 시간대 등)으로 다시 띄웠을 수 있다
   const [hellos, setHellos] = useState(0);
@@ -191,6 +196,7 @@ export function Dashboard() {
   const { checks, onMessage: toChecks } = useChecks();
   const { dash, seen, onMessage: toDash, load } = useDash({ hold: debug !== null });
   const [connected, setConnected] = useState<boolean | null>(null);
+  const [awaitingHello, setAwaitingHello] = useState(false);
   const [focusId, setFocusId] = useState<string | null>(null);
   const [viewerReady, setViewerReady] = useState(false);
   const [bakedReady, setBakedReady] = useState(false);
@@ -206,7 +212,10 @@ export function Dashboard() {
       location.reload(); // 설정에서 집을 바꿨다
       return;
     }
-    if (m.type === "hello") setHellos((n) => n + 1);
+    if (m.type === "hello") {
+      setHellos((n) => n + 1);
+      setAwaitingHello(false);
+    }
     apply(m);
     if (!debug) {
       toChecks(m);
@@ -219,7 +228,10 @@ export function Dashboard() {
   }, [apply, toChecks, toDash, toPhone, homeId, debug]);
   const onConnection = useCallback((open: boolean) => {
     setConnected(open);
-    if (!open && !debug) clearPhone();
+    if (!open && !debug) {
+      setAwaitingHello(true);
+      clearPhone();
+    }
   }, [clearPhone, debug]);
   useEvents(onMessage, onConnection);
   const onMoment = useCallback((m: Moment) => {
@@ -248,9 +260,10 @@ export function Dashboard() {
   const onBakedReady = useCallback(() => setBakedReady(true), []);
   const onScreenReady = useCallback(() => setScreenReady(true), []);
   const online = debug ? !debug.offline : connected;
-  const hub = useMemo(() => hubOf(health, online), [health, online]);
+  const mobileUrl = useMobileUrl(hellos);
+  const hub = useMemo(() => hubOf(health, online, mobileUrl), [health, online, mobileUrl]);
   const phone: PhoneSlot = debug && moment ? debugPhone(debug, moment, hub.phoneUrl)
-    : !health ? { kind: "none" } : health.eye ? { kind: "live", url: hub.phoneUrl } : { kind: "qr", url: hub.phoneUrl };
+    : health?.eye ? { kind: "live", url: hub.phoneUrl } : health || hub.phoneUrl ? { kind: "qr", url: hub.phoneUrl } : { kind: "none" };
   const map = kind === "iframe"
     ? (
       <TwinStage>
@@ -261,7 +274,7 @@ export function Dashboard() {
     : (layout: PageLayout, view: TwinView) => (
       <BakedStage home={kind === "three" ? homeId : null} homeData={homeData} layout={layout} view={view} anchors={graph.anchors} plan={dash.plan} eye={dash.eye} goal={goal} checks={checks} devices={devices} onEngine={onEngine} onReady={onBakedReady} />
     );
-  const plan = isOpen(dash.plan) ? dash.plan : null;
+  const plan = isOpen(dash.plan) && (!scene || !awaitingHello) ? dash.plan : null;
   // talkOf가 읽는 것 모두: 판단·줄·안전 알림·계획(머리)·행동별 모드
   const talk = useMemo(() => talkOf(dash), [dash.decision, dash.talk, dash.safety]);
   // 시간 줄 카드가 읽는 것: 사람 상태·습관 그림(이름)·목표·최근 계획. 목표(트윈 고리·미리 그린 길)는 목표·계획
@@ -275,7 +288,8 @@ export function Dashboard() {
   return (
     <DashboardScreen
       index={stepIndex(plan)} plan={plan} step={currentStep(plan)} robotKnown={dash.eye !== null} connected={online} map={map} mapReady={mapReady}
-      phone={phone} command={command} onPhoneDelay={onPhoneDelay} narration={new URLSearchParams(location.search).get("view") === "overview" ? undefined : <NarrationPane lines={narrationOf(dash, command, online)} />} seen={seen} talk={talk} statusRows={statusRows} timelineNow={timelineNow}
+      view={scene ? "scene" : "overview"} overviewHref={overviewHref}
+      phone={phone} command={command} onPhoneDelay={onPhoneDelay} narration={debug && !overview ? <NarrationPane lines={narrationOf(dash, command, online)} /> : undefined} trace={dash.trace} seen={seen} talk={talk} statusRows={statusRows} timelineNow={timelineNow}
       mode={mode} hub={hub} settingsOpen={debug?.settings} onReady={onScreenReady} tzMinutes={health?.tz_minutes ?? null}
     />
   );

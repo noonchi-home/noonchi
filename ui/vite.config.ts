@@ -4,6 +4,7 @@ import { realpathSync } from "node:fs";
 import react from "@vitejs/plugin-react";
 import tailwind from "@tailwindcss/vite";
 import { defineConfig } from "vite";
+import { MOBILE_PHONE_EVENTS } from "../src/contract/mobile-phone.ts";
 
 // 개발 중에는 twin-home 서버(기본 8200)로 붙는다. iframe 뷰어도 같은 출처가 되어야 aptViewer를 읽을 수 있다.
 const SERVER = process.env.TWIN_HOME_URL ?? "http://127.0.0.1:8200";
@@ -15,12 +16,17 @@ export default defineConfig({
   plugins: [react(), tailwind()],
   // @viewer: 저장소 안 트윈 뷰어 모듈(twin/apartment/viewer). 대시보드 트윈이 벽 보기·상태 규칙을 그대로 import한다.
   resolve: { alias: { "@": page("src"), "@viewer": page("../twin/apartment/viewer") } },
-  build: { outDir: "dist", emptyOutDir: true, rollupOptions: { input: { main: page("index.html"), setup: page("setup/index.html"), phone: page("phone/index.html"), ...shots } } },
+  build: { outDir: "dist", emptyOutDir: true, rollupOptions: { input: {
+    main: page("index.html"), setup: page("setup/index.html"), phone: page("phone/index.html"),
+    mobile: page("mobile/index.html"), mobileSettings: page("mobile/settings/index.html"), ...shots,
+  } } },
   server: {
     host: "127.0.0.1", port: 5173, strictPort: true,
     // 공유 node_modules를 연결한 worktree에서도 Vite가 한글 글꼴의 실제 파일을 읽는다.
     fs: { allow: [page(".."), realpathSync(page("./node_modules/@fontsource-variable/noto-sans-kr/files"))] },
-    proxy: { "/api": SERVER, "/twin": SERVER, "/events": { target: SERVER.replace(/^http/, "ws"), ws: true } },
+    proxy: { "/api": SERVER, "/twin": SERVER, "/home-scenes": SERVER,
+      "/events": { target: SERVER.replace(/^http/, "ws"), ws: true },
+      [MOBILE_PHONE_EVENTS]: { target: SERVER.replace(/^http/, "ws"), ws: true } },
   },
   test: { environment: "jsdom", include: ["tests/**/*.test.{ts,tsx}"], setupFiles: ["tests/setup.ts"] },
 });

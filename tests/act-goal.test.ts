@@ -30,6 +30,7 @@ import { cupSteps, fillSteps, idsFrom, planCalls, planContext, planTurn, startFa
 import { SMALL_SCENE } from "./helpers/floor.js";
 import { floorPlanFrom } from "../src/layout/route.js";
 import type { FloorPlan } from "../src/layout/floor.js";
+import { HomeTrace } from "../src/server/home/trace.js";
 
 let llm: FakePlanner;
 beforeAll(async () => { llm = await startFakePlanner(); });
@@ -58,7 +59,7 @@ const pam = (id: string, seq: number, atMs: number, action: string | null = "컵
 /** 실행 추적 + 미리 세운 목표. person(who)로 사람을 바꾸고(나타나면 since_ms, 사라지면 그때가 since_ms), setObjects로 물건을 바꾼다.
  *  tick은 시계를 ms 움직이고, 있는 물건을 지금 본 것으로 고친 뒤 tracker.tick을 부른다. gone은 World State 사람 사라짐 변화처럼 onWorld를 부른다.
  *  승인 기억은 비어 있다(처음 하는 일): 목표로 시작한 실행은 묻지 않는다. */
-function goalSetup(o: { over?: Partial<TrackerFixture>; state?: string | null; memory?: FsmMemory; objects?: WorldObject[]; where?: [number, number]; floor?: FloorPlan } = {}) {
+function goalSetup(o: { over?: Partial<TrackerFixture>; state?: string | null; memory?: FsmMemory; objects?: WorldObject[]; where?: [number, number]; floor?: FloorPlan; trace?: HomeTrace } = {}) {
   const clock = { t: 10_000, now() { return this.t; } };
   let who: Who = null;
   let since = 0;
@@ -82,7 +83,7 @@ function goalSetup(o: { over?: Partial<TrackerFixture>; state?: string | null; m
   const logs: BrainLog[] = [];
   const phone: PlannedCommandMessage[] = [];
   let nudged = 0;
-  const plans = new PlanHub(o.floor ?? smallFloor(), () => {}, () => "t");
+  const plans = new PlanHub(o.floor ?? smallFloor(), m => { if (m.type === "plan" && m.plan) o.trace?.plan(m.plan); }, () => "t");
   const planner = testPlanner(llm);
   const submittedCups: (string | undefined)[] = [];
   const approvals = new ApprovalStore(join(mkdtempSync(join(tmpdir(), "goal-")), "homes", "h", "approvals.json"), () => "t");
@@ -97,8 +98,14 @@ function goalSetup(o: { over?: Partial<TrackerFixture>; state?: string | null; m
     reuse: (d, plan, rename) => resubmit(plan, ctx(d), rename),
     // 목표는 배운 화살표에서만 선다: 기본은 배운 뒤 기억(배우기 전 seed는 「배우기 전(seed) 기억이면…」 시험이 본다)
     habit: () => ({ memory: o.memory ?? LEARNED_FSM_MEMORY, kind: "fsm", state: o.state === undefined ? "drinking" : o.state, version: 1 }),
-    onGoal: (g) => goals.push(g), nudge: () => { nudged++; }, thought: (text) => thoughts.push(text),
-    toPhone: (m) => phone.push(m), emit: (l) => logs.push(l), ...o.over,
+    trace: o.trace,
+    onGoal: (g) => { goals.push(g); o.trace?.goal(g); }, nudge: () => { nudged++; }, thought: (text) => thoughts.push(text),
+    toPhone: (m) => {
+      phone.push(m);
+      const step = m.type === "command" ? plans.current()?.steps.find(s => s.id === m.step) : undefined;
+      if (m.type === "command" && step) o.trace?.command(m, step);
+    },
+    emit: (l) => logs.push(l), ...o.over,
   });
   let eye: [number, number] = [3, 1];
   /** 참이면 tick이 있는 물건을 지금 본 것으로 고치지 않는다(VLM 사진에 안 잡힘). */
@@ -357,6 +364,30 @@ describe("미리 세운 목표: 사람이 떠나면 PAM 확인 뒤 바로 시작
     expect(s.commands().some((c) => c.text === APPROVAL_TEXT.ask("컵 치우기"))).toBe(false);
     expect(s.goals.at(-1)).toMatchObject({ status: "used", reason: null });
     expect(s.t.goal()).toBeNull();
+  });
+
+  it("keeps the prepared goal through 300 unrelated model calls, then connects the real take to its first phone step", async () => {
+    const trace = new HomeTrace("b:h#1", () => 10_000, () => {});
+    const s = await ready({ trace, over: { assistance: { boot: "b", homeEpoch: "h#1", ended: (attempt, state, ms) => trace.ended(attempt, state, ms) } } });
+    const prepared = trace.snapshot().rows.find(row => row.name === "목표 준비")!;
+    expect(prepared).toBeDefined();
+    for (let n = 0; n < 300; n++) {
+      trace.finish(trace.start("vlm"), "done", "model_answer");
+    }
+    expect(trace.snapshot().rows.find(row => row.id === prepared.id)).toMatchObject({ retained: true, state: "done" });
+    s.tick();
+    s.gone();
+    s.tick();
+    await s.decide(pam("pam-2", 2, s.clock.t));
+    const command = s.commands()[0]!;
+    expect(command).toMatchObject({ id: "plan:pam-2", kind: "go" });
+    expect(trace.snapshot().rows).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: prepared.id, retained: true, activity_id: prepared.activity_id }),
+      expect.objectContaining({ kind: "EXECUTION", refs: expect.objectContaining({ plan_id: command.id, goal_id: prepared.refs.goal_id }),
+        activity_id: prepared.activity_id, state: "pending" }),
+    ]));
+    s.t.stop();
+    expect(trace.snapshot().rows.find(row => row.id === prepared.id)?.retained).toBeUndefined();
   });
 
   it("시작한 계획의 첫 단계는 첫 명령을 보낸 시각(started_ms)을 싣는다(대시보드 시간 줄 반응 간격)", async () => {

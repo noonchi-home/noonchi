@@ -24,6 +24,7 @@
 import type { BrainLog, CloserMiss, CloserResult, CloserVlm, CloserWait, LookResult, LookTool, LookTrigger } from "../contract/events.js";
 import type { Facet, ObjClass, WorldView } from "../contract/world.js";
 import type { EvidenceChoice, EvidenceQuestion, EvidenceRef } from "../contract/assistance.js";
+import type { TraceRefs } from "../contract/trace.js";
 import { describeError } from "../agent/index.js";
 import type { ObserveChoice, ObserveSituation, Observer, ObserverStatus } from "../agent/index.js";
 import { LOOK_MARGIN, type LookSpot } from "../observe/index.js";
@@ -51,11 +52,12 @@ export interface LookerOptions {
   observer: Pick<Observer, "decide" | "status"> & Partial<Pick<Observer,"chooseStation" | "chooseEvidence">>;
   /** 가까이 보기(src/observe/pipeline.ts closer). 감지를 합치기 전에 signal이 끊기면 넣지 않고 aborted, 합친 뒤에 끊기면 ok(vlm aborted),
    *  VLM 답이 왔을 때 사진이 끊겼으면 ok(vlm no_fresh_frames). */
-  closer: (spot: LookSpot, signal?: AbortSignal, sinceMs?: number) => Promise<CloserResult>;
+  closer: (spot: LookSpot, signal?: AbortSignal, sinceMs?: number, refs?: TraceRefs) => Promise<CloserResult>;
   /** 판단 전 보기 B가 잘라 보기를 마쳤다(자원 사정으로 못 본 것은 빼고): 그 물건 id. 실행 추적이 계획 밖으로 가까이 가서 볼지 본다(src/act/robot/contents.ts). */
   looked?: (objectId: string) => void;
   /** 위에서 보기(src/observe/pipeline.ts topLook): sinceMs 뒤 찍힌 컵 안을 내려다본 사진 쌍. 없으면 위에서 보기 부탁은 done만 한다. */
-  topLook?: (spot: LookSpot, sinceMs: number, signal?: AbortSignal) => Promise<CloserResult>;
+  topLook?: (spot: LookSpot, sinceMs: number, signal?: AbortSignal, refs?: TraceRefs) => Promise<CloserResult>;
+  traceContext?: <T>(refs: TraceRefs, run: () => Promise<T>) => Promise<T>;
   /** 고리 가장 새 프레임(src/observe/pipeline.ts latest). */
   frame: () => LatestFrame | null;
   world: () => WorldView;
@@ -87,6 +89,11 @@ interface Job {
 }
 type JobSpec = Omit<Job, "abort" | "signal" | "phase">;
 type Earlier = ObserveSituation["earlier"][number];
+const traceRefs = (job: Job): TraceRefs => ({
+  ...(job.planId ? { plan_id: job.planId } : {}),
+  ...(job.stepId ? { step_id: job.stepId } : {}),
+  ...(job.spots.length === 1 ? { object_id: job.spots[0]!.id } : {}),
+});
 
 export class Looker {
   private job: Job | null = null;
@@ -222,7 +229,7 @@ export class Looker {
   /** 위에서 보고 look 기록 하나(첫 장 VLM 전에 끊기면 기록 없음). 넣지 않은 장의 까닭을 덧붙인다. */
   private async topOnly(job: Job, spot: LookSpot, sinceMs: number, topLook: NonNullable<LookerOptions["topLook"]>): Promise<CloserResult | null> {
     this.o.onLook?.(spot);
-    const r = await topLook(spot, sinceMs, job.signal).catch((): CloserResult => ({ ok: false, why: "error" }));
+    const r = await topLook(spot, sinceMs, job.signal, traceRefs(job)).catch((): CloserResult => ({ ok: false, why: "error" }));
     if (this.stopped || (!r.ok && r.why === "aborted")) return null;
     this.count.looks++;
     const drops = r.ok ? (r.top ?? []).flatMap((t) => (t.why ? [LOOK_TEXT.topDrop[t.why]] : [])) : [];
@@ -236,7 +243,7 @@ export class Looker {
   /** 가까이 본 결과(끊겼거나 멈췄으면 null). */
   private async closerOnly(job: Job, spot: LookSpot, sinceMs?: number): Promise<CloserResult | null> {
     this.o.onLook?.(spot);
-    const r = await this.o.closer(spot, job.signal, sinceMs).catch((): CloserResult => ({ ok: false, why: "error" }));
+    const r = await this.o.closer(spot, job.signal, sinceMs, traceRefs(job)).catch((): CloserResult => ({ ok: false, why: "error" }));
     if (this.stopped || (!r.ok && r.why === "aborted")) return null;
     this.count.looks++;
     const detail = r.ok ? r.found.map((f) => `${f.id ?? f.cls} ${f.score} ${f.facts.join(" ")}`.trim()).join(", ") : "";
@@ -366,7 +373,8 @@ export class Looker {
     };
     let choice: ObserveChoice;
     try {
-      choice = await this.o.observer.decide(situation, job.signal);
+      const decide = () => this.o.observer.decide(situation, job.signal);
+      choice = await (this.o.traceContext ? this.o.traceContext(traceRefs(job), decide) : decide());
     } catch (e) {
       if (job.signal.aborted || this.stopped) return;
       choice = { tool: "wait", reason: headWithin(LOOK_TEXT.failed(describeError(e)), 200), invalid: "error" };
@@ -387,7 +395,7 @@ export class Looker {
     if (choice.tool === "look_closer" && spot) {
       const at: LookSpot = { id: spot.id, label: spot.label, position: spot.position };
       this.o.onLook?.(at);
-      const r = await this.o.closer(at, job.signal).catch((): CloserResult => ({ ok: false, why: "error" }));
+      const r = await this.o.closer(at, job.signal, undefined, traceRefs(job)).catch((): CloserResult => ({ ok: false, why: "error" }));
       // 감지를 합치기 전에 끊겨 넣지 않았으면(aborted) 기록하지 않는다. 합친 결과가 그 단계를 끝내 신호가 끊긴 것(VLM 답만 못 넣은 vlm aborted 포함)은 기록한다
       if (this.stopped || (!r.ok && r.why === "aborted")) return;
       result = r;

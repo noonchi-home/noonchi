@@ -19,9 +19,9 @@ export function sourcesFrom(view: SetupView): Map<string, SourceKind> {
 const deviceName = (d: SetupDeviceView) => (d.label.includes(d.kindLabel) ? d.label : `${d.label} · ${d.kindLabel}`);
 
 /** 2 가전 선택. 제목(h-devices)은 설정 화면 말풍선이 단다. */
-export function DeviceStep({ view, sources, onSources, onBack, onNext, busy }: {
+export function DeviceStep({ view, sources, onSources, onBack, onNext, busy, phone = false }: {
   view: SetupView; sources: Map<string, SourceKind>; onSources: (next: Map<string, SourceKind>) => void;
-  onBack: () => void; onNext: () => void; busy: boolean;
+  onBack: () => void; onNext: () => void; busy: boolean; phone?: boolean;
 }) {
   const [query, setQuery] = useState("");
   const box = useRef<HTMLInputElement>(null);
@@ -114,8 +114,8 @@ export function DeviceStep({ view, sources, onSources, onBack, onNext, busy }: {
         </div>
       </CardContent>
       <CardFooter className="justify-end gap-2">
-        <Button variant="outline" size="setup" onClick={onBack}>이전</Button>
-        <Button size="setup" disabled={busy} onClick={onNext}>다음</Button>
+        {!phone && <Button variant="outline" size="setup" onClick={onBack}>이전</Button>}
+        <Button size="setup" disabled={busy} onClick={onNext}>{phone ? "저장하고 돌아가기" : "다음"}</Button>
       </CardFooter>
     </section>
   );

@@ -1,0 +1,15 @@
+plugins {
+    id 'com.android.library'
+    id 'expo-module-gradle-plugin'
+}
+
+group = 'app.noonchi.twa'
+version = '1.0.0'
+
+android {
+    namespace 'app.noonchi.twa'
+}
+
+dependencies {
+    implementation 'androidx.browser:browser:1.6.0'
+}

@@ -21,6 +21,7 @@ class FakeSocket {
 }
 
 const PHONE_URL = "http://192.168.0.7:8210/phone/";
+const MOBILE_URL = "https://hub.example.ts.net/mobile/";
 
 /** 구운 3D가 있는 집(한양목련): 대시보드라면 트윈 엔진을 띄우는 집이다. eye는 폰 서버가 켜졌는가. */
 function stubServer(eye: boolean) {
@@ -32,6 +33,7 @@ function stubServer(eye: boolean) {
   };
   vi.stubGlobal("fetch", vi.fn(async (path: string) => (
     path === "/api/health" ? Response.json(health)
+      : path === "/api/setup" ? Response.json({ ok: true, mobile_urls: [MOBILE_URL] })
       : path === "/twin/bake/manifest.json" ? new Response(null, { status: 200 })
         : new Response("{}", { status: 404 }))));
 }

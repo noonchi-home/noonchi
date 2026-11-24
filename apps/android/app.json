@@ -1,0 +1,22 @@
+{
+  "expo": {
+    "name": "NOONCHI",
+    "slug": "noonchi-android",
+    "version": "1.0.0",
+    "platforms": ["android"],
+    "orientation": "default",
+    "scheme": "noonchi",
+    "icon": "./assets/icon.png",
+    "backgroundColor": "#a1143e",
+    "updates": { "enabled": false },
+    "android": {
+      "package": "app.noonchi.android",
+      "versionCode": 1,
+      "blockedPermissions": ["android.permission.RECORD_AUDIO"]
+    },
+    "plugins": [
+      ["expo-camera", { "recordAudioAndroid": false, "barcodeScannerEnabled": true }],
+      ["expo-splash-screen", { "backgroundColor": "#a1143e", "image": "./assets/splash-icon.png", "imageWidth": 72 }]
+    ]
+  }
+}

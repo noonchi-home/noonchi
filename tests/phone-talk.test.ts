@@ -87,7 +87,7 @@ describe("늘 듣기(createListener)", () => {
     vi.advanceTimersByTime(5000);
     expect(FakeRec.all).toHaveLength(1);
     rec.hear("완료");
-    expect(heard).toEqual(["완료"]);
+    expect(heard).toEqual([]);
     l.resume();
     expect(FakeRec.all).toHaveLength(2);
     expect(last().started).toBe(1);
@@ -136,6 +136,16 @@ describe("늘 듣기(createListener)", () => {
 });
 
 describe("소리로 읽기(speak)", () => {
+  it("합성을 생성하거나 시작할 수 없어도 즉시 끝내 듣기로 돌아간다", () => {
+    const done = vi.fn();
+    vi.stubGlobal("speechSynthesis", { cancel: vi.fn(), speak: () => { throw new Error("speaker unavailable"); } });
+    vi.stubGlobal("SpeechSynthesisUtterance", undefined);
+    speak("싱크대로 가 주세요", done);
+    expect(done).toHaveBeenCalledTimes(1);
+    vi.stubGlobal("SpeechSynthesisUtterance", class {});
+    speak("싱크대로 가 주세요", done);
+    expect(done).toHaveBeenCalledTimes(2);
+  });
   it("음성 합성이 없거나 글이 비면 바로 done", () => {
     const done = vi.fn();
     speak("컵을 들어 주세요", done);

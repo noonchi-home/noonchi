@@ -19,6 +19,7 @@ import type { Agent, Policy } from "../../agent/index.js";
 import type { HubKind, MatterTransport, StartHubOptions } from "../hubFactory.js";
 import { captionOf, prepareAct, startAct, startLooker, startPlans } from "./act.js";
 import { startAgent, watchFocus } from "./agent.js";
+import { homeSafety } from "./machines.js";
 import { preparePhone, startPhone } from "./phone.js";
 import { drainNodes, startPipeline, startWorld, startNodes, stopNodes } from "./observe.js";
 import { onReflection, sayTimer, startSay } from "./say.js";
@@ -27,6 +28,7 @@ import { shotSigner } from "../routes/home-shots.js";
 import { HomeCore } from "./core.js";
 import { listHomes, validateStations } from "../../layout/index.js";
 import { createApp, type TwinHomeApp } from "../app.js";
+import { HomeTrace } from "./trace.js";
 
 export { phoneVideoDir } from "./phone.js";
 export { restSource } from "./observe.js";
@@ -116,6 +118,11 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
   const core = new HomeCore(ctx);
   await startDevices(core, homeId);
   core.epoch = ctx.epochOf(core.twin.home.id);
+  core.trace = new HomeTrace(core.epoch.boot + ":" + core.epoch.home, () => core.nowMs(), m => core.app?.broadcast(m));
+  core.trace.objects = () => core.view()?.objects ?? [];
+  core.trace.surfaces = () => core.surfaces();
+  core.trace.currentSafety = () => homeSafety(core);
+  for (const state of core.signals.states()) core.trace.device(state, core.specOf.get(state.id)?.kind, true);
   try {
     startAgent(core);
     preparePhone(core);
@@ -142,6 +149,7 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
   } catch (e) {
     await core.phone?.close().catch(() => {});
     await core.app?.close().catch(() => {});
+    core.trace?.close();
     clearInterval(core.decideTimer);
     core.decider?.stop();
     core.thoughts?.close();
@@ -178,7 +186,8 @@ function startApp(core: HomeCore): void {
   core.app = createApp({
     hub: signals, policy, agent, rooms: twin.rooms, twinDir: home.outDir, viewerDir: home.viewerDir, libraryDir: home.libraryDir, hubKind: core.started.kind, log, eye: feed,
     brain: observe ? { status: () => ({ ...observe.status(), look: core.looker?.status() ?? null }) } : undefined, world: worldNow ?? undefined,
-    home: { id: home.id, name: home.name }, homes: listHomes(twin.dir), layout: layout?.editor, phoneUrls: () => core.phoneUrls, mode: ctx.mode, webDir: ctx.webDir, allowOrigin: ctx.allowOrigin, planToken: ctx.planToken, ready: ctx.ready,
+    home: { id: home.id, name: home.name }, homes: listHomes(twin.dir), layout: layout?.editor, phoneUrls: () => core.phoneUrls,
+    phonePortal: () => core.phone ?? null, mode: ctx.mode, webDir: ctx.webDir, allowOrigin: ctx.allowOrigin, planToken: ctx.planToken, ready: ctx.ready,
     start: startStore && { get: () => startStore.get(), save: (raw) => startStore.save(raw), preview: (raw) => startStore.preview(raw), clear: () => startStore.clear() },
     sceneRuntimeDir:ctx.runtimeDir, signShot:shotSigner(ctx.runtimeDir,ctx.env),
     localizeStatus: () => core.localizer?.status() ?? null,
@@ -194,6 +203,7 @@ function startApp(core: HomeCore): void {
       return state && { type: "robot", ...state };
     },
     phoneCommand: () => captionOf(core.command),
+    traceLast: () => core.trace!.snapshot(),
   });
   core.speak();
 }
@@ -235,7 +245,7 @@ function runtime(core: HomeCore): HomeRuntime {
         ["외부 연락", () => agent.close()], ["초점", core.unsubFocus], ["관찰 흐름", () => { core.thoughts?.close(); core.unsubWorld(); return core.pipeline?.close(); }],
         // 노드: 새 일을 만드는 쪽(인식) → 집 상태 → 거울·폰·가전 차례(그 뒤 변화가 대시보드로 가지 않는다)
         ["노드", () => stopNodes(core)], ["눈 화면", () => feed?.close()],
-        ["폰 서버", () => phoneNow?.close()], ["앱", () => appNow.close()], ["배치", () => layout?.editor.close()], ["ThinQ", () => core.link?.stop()],
+        ["폰 서버", () => phoneNow?.close()], ["추적", () => core.trace?.close()], ["앱", () => appNow.close()], ["배치", () => layout?.editor.close()], ["ThinQ", () => core.link?.stop()],
         ["기록", core.unsubHistory], ["허브", () => signals.stop()],
       ];
       for (const [name, step] of steps) {

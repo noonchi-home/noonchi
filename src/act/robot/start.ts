@@ -142,6 +142,8 @@ export class Starter extends Part {
     if (!pre.ok && !(pre.reason === "no_target" && core.goal.authorized(d))) {
       // 대상이 안 보이면 마지막으로 본 자리로 찾으러 간다(찾을 자리가 없으면 지금처럼 닫는다)
       if ((pre.reason === "no_target" || pre.reason === "in_sink") && core.finder.start(d, pre.text)) return;
+      const output = pre.reason === "no_target" ? "guard_target" : pre.reason === "in_sink" ? "guard_placed" : "guard_plan";
+      this.o.trace?.event("guard", { decision_id: d.id, object_id: pre.object }, output);
       core.emit(planIdOf(d.id), "decided");
       core.emit(planIdOf(d.id), "failed", pre.text);
       // 분명한 까닭이면 판단이 그 화살표를 기다리지 않게 알린다(15초 동안 같은 막음을 되풀이하지 않게). 싱크대 안이어도 찾을 후보 자리가 남았으면
@@ -174,7 +176,10 @@ export class Starter extends Part {
       const plan = () => this.o.planner(d, job.abort.signal);
       // 사람이 떠난 목표와 같은 행동이면 미리 만든 계획을 이 판단으로 다시 검사해 쓴다(계획 모드를 다시 부르지 않는다, goal.ts take)
       const ready = core.goal.take(d, job.abort.signal, plan);
-      if (ready) job.prepared = { goal: ready.goal, seenSince: ready.seenSince, leftAt: ready.leftAt, meal: ready.meal };
+      if (ready) {
+        job.prepared = { goal: ready.goal, seenSince: ready.seenSince, leftAt: ready.leftAt, meal: ready.meal };
+        this.o.trace?.link({ decision_id: d.id, attempt: attempt.key }, { goal_id: ready.goal });
+      }
       out = ready ? ready.out : plan();
     } catch (e) {
       out = { ok: false, error: (e as Error).message };
@@ -201,6 +206,7 @@ export class Starter extends Part {
     r.useHeld = true;
     if (r.usedAt === null) {
       r.usedAt = now;
+      this.o.trace?.event("guard", { decision_id: r.decision.id, plan_id: r.plan.view.id, attempt: r.attempt.key }, "guard_busy");
       this.core.finder.release(r, true);
       this.core.contents.pause(r);
       this.core.emit(r.plan.view.id, "planned", EXEC_TEXT.inUse);
@@ -306,6 +312,7 @@ export class Starter extends Part {
     core.planning = null;
     const d = job.decision;
     const cancelDraft = (text: string) => {
+      this.traceHold(d, text);
       core.adaptive.finish(job.attempt, "cancelled");
       core.emit(planIdOf(d.id), "failed", text);
     };
@@ -394,6 +401,9 @@ export class Starter extends Part {
     core.contents.dropIdle();
     core.finder.drop(EXEC_TEXT.superseded);
     core.run = run;
+    const traceObject = goal?.kind === "clear" || goal?.kind === "deliver" ? goal.objectId : null;
+    this.o.trace?.link({ plan_id: r.plan.view.id, attempt: job.attempt.key, ...(traceObject ? { object_id: traceObject } : {}) }, { decision_id: d.id });
+    if (replacement) this.o.trace?.event("replan", { plan_id: r.plan.view.id, decision_id: d.id, attempt: job.attempt.key }, "replanned");
     this.o.plans.onDecision(r.plan.view, this.clock.now());
     core.step(run, "planned");
     if (replacement?.skip) {
@@ -415,7 +425,10 @@ export class Starter extends Part {
     }
     // 미리 세운 목표 실행은 첫 명령 전에 안전(쓰러짐 의심·끄기 안내)을 다시 보고, 비상이면 시작하지 않는다
     // (받아 쓰던 미리 만들기를 기다리는 동안은 목표를 떼어 목표의 안전 버림이 보지 않는다, Codex 59447ec P1)
-    if (r.goal !== null && emergencyOf({ world: this.o.state.view(), offNotices: safety.offTrack().notices })) return steps.finish(r, "failed", EXEC_TEXT.goalSafety, "cancelled");
+    if (r.goal !== null && emergencyOf({ world: this.o.state.view(), offNotices: safety.offTrack().notices })) {
+      this.o.trace?.event("guard", { plan_id: r.plan.view.id, attempt: r.attempt.key }, "guard_safety");
+      return steps.finish(r, "failed", EXEC_TEXT.goalSafety, "cancelled");
+    }
     // 사람이 계획 대상을 쓰는 중이면 사람이 사라질 때까지 첫 명령·찾기·가까이 보기를 미룬다(holdMs 넘으면 닫음, src/manage/use.ts)
     if (this.userBusy(r)) return;
     if (this.core.adaptive.gate(r, r.pendingStep ?? 0)) return;
@@ -594,7 +607,14 @@ export class Starter extends Part {
 
   /** 계획을 만들지 않는 판단(대기·실패·같은 행동·늦은 답·잠시 뒤)은 그 판단 줄에 기록만 한다. */
   private note(d: DecisionRecord, text: string): void {
+    this.traceHold(d, text);
     this.core.emit(planIdOf(d.id), "decided", text);
+  }
+
+  private traceHold(d: DecisionRecord, text: string): void {
+    const output = text === EXEC_TEXT.safetyWait ? "guard_safety" : text === EXEC_TEXT.handling ? "guard_busy"
+      : text === EXEC_TEXT.closerNewer || text === EXEC_TEXT.beforeLeave ? "guard_changed" : null;
+    if (output) this.o.trace?.event("guard", { decision_id: d.id }, output);
   }
 }
 

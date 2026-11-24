@@ -34,6 +34,7 @@ export class AdaptiveExecution extends Part {
     const user = (ad.bindResident ?? ad.resident)?.(world) ?? null;
     this.identity.set(a, { home: ad.home ?? ad.homeEpoch, user, action: d.action,
       context: assistanceContext(d, world), request: this.direct(d) ? "direct" : "proactive", startedMs: this.clock.now() });
+    this.o.trace?.link({ attempt: a.key }, { decision_id: d.id });
     return user;
   }
 
@@ -138,6 +139,7 @@ export class AdaptiveExecution extends Part {
     const a = r.attempt;
     const step = r.plan.steps[i];
     if (this.core.start.context().emergency) {
+      this.o.trace?.event("guard", { plan_id: r.plan.view.id, attempt: a.key }, "guard_safety");
       this.core.steps.finish(r, "failed", EXEC_TEXT.goalSafety, "cancelled");
       return true;
     }

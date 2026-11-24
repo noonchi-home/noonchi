@@ -146,6 +146,12 @@ describe("미리 세운 목표(가짜 서버 처음부터 끝까지)", () => {
     expect(spoken().some(m=>m.id?.startsWith("plan:pam"))).toBe(false);
     const tv = srv.signals.list().find(d=>d.kind==="tv")!;
     expect((await srv.hub.command(tv.id,{type:"on"})).ok).toBe(true);
+    const fridge = srv.signals.list().find(d => d.kind === "fridge")!;
+    expect(fridge).toBeDefined();
+    const at = Date.now();
+    srv.signals.observe(fridge.id, { door: "closed" }, at);
+    srv.signals.observe(fridge.id, { door: "open" }, at + 1);
+    srv.signals.observe(fridge.id, { door: "open" }, at + 2);
     camera = [4,1.5,9.8];
     ws.send(JSON.stringify({type:"pose",position:camera,orientation:ORIENTATION,tracking:"ok"}));
     watching = true;
@@ -160,6 +166,18 @@ describe("미리 세운 목표(가짜 서버 처음부터 끝까지)", () => {
     expect(cleanup()[0]!._at - confirmed._at).toBeLessThanOrEqual(1000);
     expect(planned()).toBe(1);
     expect(goals().slice(-2)).toEqual(["fired/ready", "used/ready"]);
+    const trace = [...new Map<string, Msg>(dash.filter(m => m.type === "trace").flatMap(m => m.rows.map((r: Msg) => [r.id, r]))).values()];
+    const cupGoal = trace.find(r => r.name === "목표 준비" && r.refs.object_id === cup.id)!;
+    expect(cupGoal).toMatchObject({ kind: "AGENT", input: expect.stringContaining("컵 치우기") });
+    expect(trace).toEqual(expect.arrayContaining([
+      expect.objectContaining({ activity_id: cupGoal.activity_id, name: "PAM 판단" }),
+      expect.objectContaining({ activity_id: cupGoal.activity_id, name: "실행 계획 작성" }),
+      expect.objectContaining({ activity_id: cupGoal.activity_id, name: "이동 안내", state: "pending" }),
+    ]));
+    const doors = trace.filter(r => r.name === "가전 상태 변화" && r.refs.object_id === fridge.id);
+    expect(doors).toHaveLength(1);
+    expect(doors[0]).toMatchObject({ input: "냉장고" });
+    expect(doors[0]!.activity_id).not.toBe(cupGoal.activity_id);
     expect(JSON.stringify(phone)).not.toContain("할까요");
 
     // 3 계획이 시작되면(목표 씀) 목표의 1초 간격은 끝난다. 그래도 켜진 거실 TV의 시청 구역이 보이면 TV 규칙이 지켜보는 동안이라 1초다(2026-11-21 사용자 결정)

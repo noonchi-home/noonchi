@@ -4,6 +4,7 @@
 export const color = {
   "brand": "#a1143e",
   "brand-strong": "#971238",
+  "brand-portal": "#a50034",
   "brand-bright": "#b92a51",
   "on-brand": "#ffffff",
   "cream": "#f2e4d3",

@@ -5,12 +5,15 @@ import { checkDecision } from "../src/act/index.js";
 import { WATER_ACTION } from "../src/act/tasks.js";
 import type { DecisionRecord } from "../src/contract/events.js";
 import type { SceneObservation } from "../src/contract/observe.js";
+import type { TraceMessage, TraceRow } from "../src/contract/trace.js";
 import { decisionWorld } from "../src/world/index.js";
 import { residentStudio } from "./fixtures/assistance/resident.js";
 import { assistanceReplay } from "./helpers/assistance-replay.js";
-import { cylinderBox, LOOK_SIZE, viewLooking } from "./helpers/camera.js";
+import { cylinderBox, LOOK_SIZE, LOOK_VIEW, viewLooking } from "./helpers/camera.js";
 import { det } from "./helpers/detectors.js";
 import { cupSteps, planCalls, plannerRespond } from "./helpers/planner.js";
+import { poseOf } from "./helpers/poses.js";
+import { openWebSocket } from "./helpers/ws.js";
 
 const HOME = "apartment";
 const CUP = "cup_1";
@@ -124,6 +127,56 @@ it("waits for the same cup after occlusion instead of picking the other cup on t
     expect(next[0]).toMatchObject({ id: "plan:clear-cup", target: { id: CUP } });
     expect(replay.network).toEqual([]);
   } finally { await replay.close(); }
+}, 20_000);
+
+it("terminates the issued Trace step at actual fall detection and ignores an old phone answer", async () => {
+  const replay = await start();
+  const rows = new Map<string, TraceRow>();
+  const ws = await openWebSocket(replay.server.url.replace(/^http/, "ws") + "/events", { setup: socket => socket.on("message", raw => {
+    const msg: TraceMessage = JSON.parse(String(raw));
+    if (msg.type === "trace") for (const row of msg.rows) rows.set(row.id, row);
+  }) });
+  const waitFor = async (predicate: () => boolean) => {
+    for (let i = 0; i < 50 && !predicate(); i++) await new Promise(resolve => setTimeout(resolve, 10));
+    expect(predicate()).toBe(true);
+  };
+  try {
+    replay.server.history.cupAnswers.remember(HOME, "resident", true);
+    await decision(replay, "clear-before-fall", CLEAR);
+    const sent = replay.phoneCommands().at(-1)!;
+    if (sent.type !== "command") throw new Error("No active guide to interrupt");
+    await waitFor(() => [...rows.values()].some(r => r.refs.step_id === sent.step && r.state === "pending"));
+    const command = [...rows.values()].find(r => r.refs.step_id === sent.step && r.state === "pending")!;
+    const standing = poseOf({ 5: [220, 100, .9], 6: [260, 100, .9], 11: [225, 200, .9], 12: [255, 200, .9], 13: [225, 280, .9], 14: [255, 280, .9] }, [200, 70, 80, 250]);
+    const lying = poseOf({ 5: [140, 250, .9], 6: [140, 280, .9], 11: [240, 255, .9], 12: [240, 285, .9], 13: [320, 258, .9], 14: [320, 288, .9] }, [120, 230, 220, 80]);
+    const person = det("person", .9, [40, 60, 400, 290]);
+    for (let i = 0; i <= 15; i++) {
+      const ms = replay.clock.now() + 300;
+      await replay.advance(ms);
+      await replay.publish("perception", "/perception/scene", { kind: "frame", frame: {
+        id: "fall-" + i, capturedAtMs: ms, latestAtMs: ms, ...LOOK_SIZE, eye: null, view: LOOK_VIEW,
+      }, dets: [person], poses: [i < 3 ? standing : lying] });
+    }
+    await replay.advance(replay.clock.now() + 500);
+    expect(worldOf(replay).person.facts.posture?.value).toBe("fall_suspected");
+    await waitFor(() => rows.get(command.id)?.state === "cancelled");
+    const stopped = rows.get(command.id)!;
+    const guard = rows.get(stopped.cause_id!)!;
+    expect(guard).toMatchObject({ kind: "GUARDRAIL", activity_id: command.activity_id, output: "안전 조치 우선" });
+    expect(rows.get(guard.cause_id!)).toMatchObject({ kind: "GUARDRAIL", output: "쓰러짐 의심" });
+    const results = () => [...rows.values()].filter(row => row.activity_id === command.activity_id && row.name === "활동 종료");
+    await waitFor(() => results().length > 0);
+    const outcome = results()[0]!;
+    expect(outcome).toMatchObject({ state: "cancelled", output: "활동 취소", cause_id: stopped.id });
+    await replay.publish("phone", "/phone/progress", { req: "old-phone", expires_ms: replay.clock.now() + 2500,
+      kind: "button", plan_id: sent.id, step: sent.step, choice: "done" });
+    expect(rows.get(command.id)).toEqual(stopped);
+    expect(results()).toEqual([outcome]);
+    expect(replay.network).toEqual([]);
+  } finally {
+    ws.close();
+    await replay.close();
+  }
 }, 20_000);
 
 it("clears delivery before pickup when the resident resolves it and records the original confirming frame", async () => {

@@ -22,6 +22,8 @@ import { hasPrice } from "../infer/cost.js";
 import { vlmTimeoutMs } from "../infer/endpoints.js";
 import { createInference } from "../infer/inference.js";
 import type { VlmClient } from "../infer/vlm.js";
+import type { TraceOutput, TracePort } from "../contract/trace.js";
+import { measuredTrace } from "../shared/trace.js";
 import type { FrameHeader, EyeEvent } from "../phone/index.js";
 import { OBJECT_NAME, YOLO_TEXT } from "../world/labels.js";
 import { boxShape, cupInside, inView, pixelOf, topBox, topPairOf, topView } from "../world/index.js";
@@ -140,6 +142,7 @@ const mean = (xs: number[]) => (xs.length ? Math.round(xs.reduce((a, b) => a + b
 const yoloText =(dets: Detection[]) => (dets.length ? dets.map((d) => `${OBJECT_NAME[d.label] ?? d.label} ${d.score.toFixed(2)}`).join(" · ") : YOLO_TEXT.none);
 
 export interface PipelineOptions {
+  trace?: TracePort;
   config: ObserveConfig;
   /** null이면 감지기 없이 VLM만(모델 파일이 없을 때). */
   detector: Detector | null;
@@ -236,6 +239,7 @@ export class ObservationPipeline {
   /** 가까이 보기 VLM 답을 가격표에 없는 모델이 냈다(그 비용은 모름). */
   private closerUnpriced = false;
   private readonly closerVlm: VlmClient;
+  private readonly traceRequests = new WeakMap<EngineFrame, string>();
 
   constructor(private readonly o: PipelineOptions) {
     this.clock = o.clock ?? { now: () => Date.now() };
@@ -278,12 +282,14 @@ export class ObservationPipeline {
   private async analyzeWindow(f: EngineFrame, d: SceneDetection[], signal: AbortSignal, count: number) {
     const frames = this.ring.window(f, count, count * vlmStepMs(this.o.config));
     this.spanOf.set(f.id, frames[0]?.capturedAtMs ?? f.capturedAtMs);
-    const [result] = await Promise.all([analyzeScene(this.o.vlm, frames, d, signal), this.photoChecks.get(f)]);
+    const [result] = await Promise.all([measuredTrace(this.o.trace, "vlm", {}, signal,
+      () => analyzeScene(this.o.vlm, frames, d, signal), sceneTrace), this.photoChecks.get(f)]);
     return result;
   }
 
   private async analyzeCloser(f: EngineFrame, d: SceneDetection[], signal: AbortSignal) {
-    const r = await analyzeScene(this.closerVlm, [f], d, signal, this.topIds.has(f.id) ? TOP_NOTE : CLOSER_NOTE);
+    const r = await measuredTrace(this.o.trace, "closer_vlm", { request_id: this.traceRequests.get(f) }, signal,
+      () => analyzeScene(this.closerVlm, [f], d, signal, this.topIds.has(f.id) ? TOP_NOTE : CLOSER_NOTE), sceneTrace);
     if (!hasPrice(r.model)) this.closerUnpriced = true;
     return r;
   }
@@ -480,7 +486,7 @@ export class ObservationPipeline {
    *  VLM 답이 왔을 때 입력이 끊겼으면(VLM을 기다리는 사이 폰 끊김) 답을 넣지 않고 ok, vlm no_fresh_frames로 돌려준다. 쓴 장의 나이는 보지 않는다.
    *  3장이 안 된 새 물건 후보는 그 답이 그 감지에 사실을 하나 이상 답하고 가림은 답하지 않을 때 만들고 그 사실을 넣는다. VLM 답이 없거나 넣지 않으면 만들지 않는다.
    *  결과의 frame_id·captured_at_ms·crop·found는 그 장 기준이고 frames는 잘라 본 장 수다. */
-  async closer(spot: LookSpot, signal?: AbortSignal, sinceMs?: number): Promise<CloserResult> {
+  async closer(spot: LookSpot, signal?: AbortSignal, sinceMs?: number, request?: string): Promise<CloserResult> {
     if (this.closed) return this.closerMiss("closed");
     if (signal?.aborted) return this.closerMiss("aborted");
     const detector = this.o.detector;
@@ -490,7 +496,7 @@ export class ObservationPipeline {
     if (!frames.ok) return this.closerMiss(frames.why);
     this.closing = true;
     try {
-      return await this.look(spot, frames.picked, detector, signal);
+      return await this.look(spot, frames.picked, detector, signal, request);
     } finally {
       this.closing = false;
     }
@@ -527,7 +533,7 @@ export class ObservationPipeline {
     return this.closerFrames(position, sinceMs).ok;
   }
 
-  private async look(spot: LookSpot, picked: readonly EngineFrame[], detector: Detector, signal: AbortSignal | undefined): Promise<CloserResult> {
+  private async look(spot: LookSpot, picked: readonly EngineFrame[], detector: Detector, signal: AbortSignal | undefined, request?: string): Promise<CloserResult> {
     const passes: { frame: EngineFrame; view: CameraView; crop: Box; jpeg: Buffer; dets: Detection[] }[] = [];
     try {
       for (const frame of picked) {
@@ -567,8 +573,10 @@ export class ObservationPipeline {
     let r: VlmResult | null = null;
     if (!signal?.aborted) {
       // VLM은 잘라 키운 사진 한 장이고 감지 상자는 그 사진 픽셀이다
+      const frame = { ...last.frame, id, jpeg: last.jpeg, sha256: sha256(last.jpeg), crop: last.crop };
+      if (request) this.traceRequests.set(frame, request);
       const answer = this.pool.submitCloser(
-        { ...last.frame, id, jpeg: last.jpeg, sha256: sha256(last.jpeg), crop: last.crop },
+        frame,
         last.dets.map((d, i) => ({ id: `d${i + 1}`, class: d.label, box: d.box, score: d.score })),
         signal,
       );
@@ -645,7 +653,7 @@ export class ObservationPipeline {
    *  옮겨졌으면(moved) 그 뒤 장은 보지 않는다. 감지는 대상 확인에만 쓰고 물건 합치기에는 넣지 않는다.
    *  쌍이 없거나 가장 새 장이 closerStaleMs보다 낡았으면 no_fresh_frames, 감지기가 없으면 no_detector, 가까이 보기가 돌거나 자리가 없으면 vlm_busy,
    *  첫 장 VLM 전에 끊기면 aborted. 결과의 found는 그 컵 하나(facts는 넣은 값들), top은 장마다 넣었는지와 그 까닭이다. */
-  async topLook(spot: LookSpot, sinceMs: number, signal?: AbortSignal): Promise<CloserResult> {
+  async topLook(spot: LookSpot, sinceMs: number, signal?: AbortSignal, request?: string): Promise<CloserResult> {
     if (this.closed) return this.closerMiss("closed");
     if (signal?.aborted) return this.closerMiss("aborted");
     const detector = this.o.detector;
@@ -655,13 +663,13 @@ export class ObservationPipeline {
     if (!found || this.clock.now() - found.pair[1].frame.capturedAtMs > closerStaleMs(vlmStepMs(this.o.config))) return this.closerMiss("no_fresh_frames");
     this.closing = true;
     try {
-      return await this.lookTop(found.obj, found.center, found.pair, detector, signal);
+      return await this.lookTop(found.obj, found.center, found.pair, detector, signal, request);
     } finally {
       this.closing = false;
     }
   }
 
-  private async lookTop(start: WorldObject, at: [number, number, number], pair: [TopShot, TopShot], detector: Detector, signal: AbortSignal | undefined): Promise<CloserResult> {
+  private async lookTop(start: WorldObject, at: [number, number, number], pair: [TopShot, TopShot], detector: Detector, signal: AbortSignal | undefined, request?: string): Promise<CloserResult> {
     const top: TopFrame[] = [];
     const kept: string[] = [];
     let last: { id: string; at: number; crop: Box } | null = null;
@@ -689,7 +697,9 @@ export class ObservationPipeline {
       this.topIds.add(id);
       // 위에서 비출 때는 컵이 사진 전체를 채울 수 있다. 감지기는 잘라 보되 내용물을 읽는 모델은 테두리와 수면을 함께 본다.
       const photo: Box = [0, 0, frame.width, frame.height];
-      const answer = this.pool.submitCloser({ ...frame, id, crop: photo }, [{ id: "d1", class: start.cls, box: frameBox, score: 1 }], signal);
+      const cropFrame = { ...frame, id, crop: photo };
+      if (request) this.traceRequests.set(cropFrame, request);
+      const answer = this.pool.submitCloser(cropFrame, [{ id: "d1", class: start.cls, box: frameBox, score: 1 }], signal);
       const r: VlmResult = answer ? await answer : { frameId: id, capturedAtMs: frame.capturedAtMs, scene: null, missing: "cap", costUsd: 0 };
       this.topIds.delete(id);
       this.closerCount.costUsd += r.costUsd;
@@ -786,6 +796,7 @@ async function createDetector(env: Env, log: (line: string) => void): Promise<De
 
 /** 환경 변수로 관찰 흐름을 만든다. VLM은 추론 모드가 고른 OpenAI 호환 주소(src/infer)이고, 가까이 보기는 같은 주소에 VLM_CLOSER_MODEL 모델로 보낸다. */
 export async function createPipeline(o: {
+  trace?: TracePort;
   needsHouseholdPhoto?: () => boolean;
   localize?: (frame:EngineFrame, header:FrameHeader)=>Promise<import("../contract/observe.js").PhotoFix>;
   env: Env; world: WorldPort; emit: (log: BrainLog) => void;
@@ -806,8 +817,15 @@ export async function createPipeline(o: {
   if (o.dataset) o.log("[경고] 시험 자료 모으기가 켜져 있습니다. 엔진 프레임을 디스크에 씁니다.");
   for (const w of config.warnings ?? []) o.log(w);
   return new ObservationPipeline({
-    config, detector, vlm, closerVlm, world: o.world, emit: o.emit, onFrame: o.onFrame, onView: o.onView, onSeen: o.onSeen, dataset: o.dataset, onDetected: o.onDetected, localize:o.localize, needsHouseholdPhoto:o.needsHouseholdPhoto, vlmFast: o.vlmFast, clock: o.inject?.clock,
+    config, detector, vlm, closerVlm, world: o.world, emit: o.emit, onFrame: o.onFrame, onView: o.onView, onSeen: o.onSeen, dataset: o.dataset, onDetected: o.onDetected, localize:o.localize, needsHouseholdPhoto:o.needsHouseholdPhoto, vlmFast: o.vlmFast, clock: o.inject?.clock, trace: o.trace,
   });
+}
+
+function sceneTrace({ scene }: Awaited<ReturnType<typeof analyzeScene>>): TraceOutput | null {
+  if (!scene) return null;
+  const people = scene.household?.people.length || scene.objects?.some(object => object.cls === "person");
+  const objects = scene.objects?.some(object => object.cls !== "person") || scene.observations.length;
+  return people ? objects ? "scene_people_objects" : "scene_people" : objects ? "scene_objects" : "scene_no_target";
 }
 
 /** VLM 물건을 같은 사진 YOLO 감지에 잇는 상자 겹침(IoU) 하한. */

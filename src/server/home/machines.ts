@@ -4,6 +4,10 @@ import { MachineLane, safetyState } from "../../machines/index.js";
 import { POSE_FALL } from "../../world/vocab.js";
 import type { HomeCore } from "./core.js";
 
+export function homeSafety(core: HomeCore): SafetyState {
+  return safetyState(core.view()?.person.facts.posture?.value === POSE_FALL, core.tracker?.offTrack() ?? { hot: [], notices: [] });
+}
+
 /** 집이 바뀌면 새 시간 줄을 시작한다. 명령 전송이나 계획 변경은 이곳을 거치지 않는다. */
 export class HomeMachines {
   private lastWork = "";
@@ -23,9 +27,10 @@ export class HomeMachines {
       core.app?.broadcast({ type: "robot", ...robot });
     }
     const plan = core.plans.current();
-    const current = safetyState(core.view()?.person.facts.posture?.value === POSE_FALL, tracker.offTrack());
+    const current = homeSafety(core);
     const safe = this.safety.change(current, now);
     if (safe) {
+      core.trace?.safety(safe);
       out.push("/safety/state", safe);
       out.push("/safety/changes", safe);
     }

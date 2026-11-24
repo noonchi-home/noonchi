@@ -5,8 +5,8 @@ import type { LayoutMessage } from "../../src/contract/layout.ts";
 import { Dashboard } from "../src/dashboard/Dashboard";
 import { TwinEngine } from "../src/twin/3d/engine";
 
-/** /api/health는 집 id, /twin/bake/manifest.json은 manifest 상태로 답한다. 나머지는 404. */
-function stubHealth(home: string, manifest: number, eye = false) {
+/** 대시보드가 읽는 집 상태, 구운 트윈, 앱 연결 주소를 돌려준다. */
+function stubHealth(home: string, manifest: number, eye = false, mobileUrls?: readonly string[]) {
   const health: HealthView = {
     ok: true, devices: 0, hub: "memory", transport: null, provider: "openai", model: "m", twin: true, eye,
     home: { id: home, name: "우리 집" }, phone_urls: [], brain: false, mode: "test",
@@ -16,6 +16,7 @@ function stubHealth(home: string, manifest: number, eye = false) {
   vi.stubGlobal("fetch", vi.fn(async (path: string) => {
     if (path === "/api/health") return Response.json(health);
     if (path === "/twin/bake/manifest.json") return new Response(null, { status: manifest });
+    if (path === "/api/setup" && mobileUrls) return Response.json({ ok: true, mobile_urls: mobileUrls });
     return new Response("{}", { status: 404 });
   }));
 }
@@ -24,7 +25,7 @@ beforeEach(() => { vi.stubGlobal("fetch", vi.fn(async () => new Response("{}", {
 afterEach(() => { vi.unstubAllGlobals(); history.replaceState(null, "", "/"); });
 
 describe("대시보드 뼈대", () => {
-  it("트윈 칸·대시보드 폰 칸(「폰 카메라」)·마스코트가 한 화면(main)에 있다", () => {
+  it("기본 대시보드의 네 칸과 설정 입구가 한 화면(main)에 있다", () => {
     const { container } = render(<Dashboard />);
     const main = container.querySelector("main")!;
     const twin = container.querySelector<HTMLElement>('section[aria-label="트윈"]')!;
@@ -32,8 +33,10 @@ describe("대시보드 뼈대", () => {
     expect(twin).not.toBeNull();
     expect(phone).not.toBeNull();
     expect(main.contains(twin) && main.contains(phone)).toBe(true);
-    // 폰 카메라(미니맵)는 트윈 판 밖에서 트윈 위에 얹힌다
-    expect(phone.parentElement).toBe(main);
+    expect(within(screen.getByRole("group", { name: "Vision" })).getByRole("region", { name: "폰 카메라" })).toBe(phone);
+    expect(within(screen.getByRole("group", { name: "Digital Twin" })).getByRole("region", { name: "트윈" })).toBe(twin);
+    expect(screen.getByRole("group", { name: "Action Conditions" })).toBeInTheDocument();
+    expect(screen.getByRole("group", { name: "Agent Trace" })).toBeInTheDocument();
     expect(twin.contains(phone)).toBe(false);
     expect(main).toHaveAttribute("data-step", "0");
     const mascot = screen.getByRole("region", { name: "마스코트" });
@@ -92,17 +95,26 @@ describe("대시보드 뼈대", () => {
     expect(phone.textContent).toBe("");
   });
 
-  it("폰 주소가 없으면 대시보드 폰 칸에 지금 상태 한 줄: 폰 서버가 꺼졌으면 「폰 서버가 꺼져 있어요.」, 켜졌으면 「폰에서 AR을 시작하세요.」", async () => {
-    stubHealth("h", 404);
-    const off = render(<Dashboard />);
-    const phone = () => off.container.querySelector<HTMLElement>('section[aria-label="폰 카메라"]')!;
-    await waitFor(() => expect(phone()).toHaveTextContent("폰 서버가 꺼져 있어요."));
-    off.unmount();
-    stubHealth("h", 404, true);
-    const on = render(<Dashboard />);
-    const live = on.container.querySelector<HTMLElement>('section[aria-label="폰 카메라"]')!;
-    await waitFor(() => expect(live).toHaveTextContent("폰에서 AR을 시작하세요."));
-    expect(live).not.toHaveTextContent("폰 서버가 꺼져 있어요.");
+  it.each([
+    { eye: false, text: "앱에 연결할 HTTPS 주소가 없어요.", other: "폰에서 AR을 시작하세요." },
+    { eye: true, text: "폰에서 AR을 시작하세요.", other: "앱에 연결할 HTTPS 주소가 없어요." },
+  ])("앱 연결 주소가 없고 eye=$eye이면 ‘$text’ 안내를 표시한다", async ({ eye, text, other }) => {
+    stubHealth("h", 404, eye, []);
+    render(<Dashboard />);
+    const phone = within(screen.getByRole("region", { name: "폰 카메라" }));
+    expect(await phone.findByText(text)).toBeInTheDocument();
+    expect(phone.queryByText(other)).toBeNull();
+    expect(phone.queryByRole("img", { name: "폰 연결 QR" })).toBeNull();
+  });
+
+  it("eye=false여도 HTTPS 허브의 /mobile/ 주소로 앱 연결 QR을 표시한다", async () => {
+    const hub = "https://hub.example.test:8444/mobile/";
+    stubHealth("h", 404, false, [hub]);
+    render(<Dashboard />);
+    const phone = within(screen.getByRole("region", { name: "폰 카메라" }));
+    expect(await phone.findByRole("img", { name: "폰 연결 QR" })).toBeInTheDocument();
+    expect(phone.getByText(hub)).toBeInTheDocument();
+    expect(phone.getByText("NOONCHI 앱으로 스캔해 서버에 연결하세요")).toBeInTheDocument();
   });
 });
 

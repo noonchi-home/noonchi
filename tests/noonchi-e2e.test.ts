@@ -67,6 +67,12 @@ describe("NOONCHI 처음부터 끝까지", () => {
     const first = said("식탁으로 가 주세요")!;
     expect(first).toMatchObject({ type: "command", id: expect.stringMatching(/^plan:pam-\d+$/), step: `${first.id}:1`, text: "식탁으로 가 주세요", choices: [{ id: "done", label: "완료" }], target: { id: "table_1" }, speak: true, kind: "go" });
     const planId = first.id as string;
+    const traceRows = () => [...new Map(dash.filter(m => m.type === "trace").flatMap(m => m.rows.map((r: Msg) => [r.id, r] as const))).values()] as Msg[];
+    await pump(() => traceRows().some(r => r.refs.plan_id === planId && r.refs.step_id === first.step));
+    const firstTrace = traceRows().find(r => r.refs.plan_id === planId && r.refs.step_id === first.step)!;
+    expect(firstTrace).toMatchObject({ kind: "EXECUTION", name: "이동 안내", input: expect.stringContaining("식탁"), state: "pending", ended_ms: null });
+    ws.send(JSON.stringify({ type: "answer", id: planId, step: "other-step", choice: "done" }));
+    expect(traceRows().find(r => r.id === firstTrace.id)?.state).toBe("pending");
     // 메시지 상자 문장은 모델 없이 판단 기록의 사실(맞은 규칙 left_cup + 컵 치우기)로 만든다
     const shown = () => dash.filter((m) => m.type === "thought").flatMap((m) => m.messages as { id: string; text: string; decision: string }[]);
     await pump(() => shown().some((m) => m.text === RULE_LINE));
@@ -97,6 +103,21 @@ describe("NOONCHI 처음부터 끝까지", () => {
     scene.cupPlace = "in_sink";
     await pump(() => phone.some((m) => m.type === "command_clear" && m.id === planId));
     await pump(async () => (await history("execution")).rows.some((r) => r.subject === planId && r.text === "완료"));
+    await pump(() => traceRows().some(r => r.name === "활동 종료" && r.refs.plan_id === planId));
+    const traced = traceRows().filter(row => row.activity_id === firstTrace.activity_id);
+    expect(traced).toEqual(expect.arrayContaining([
+      expect.objectContaining({ kind: "AGENT", output: "컵 치우기" }),
+      expect.objectContaining({ kind: "LLM", name: "PAM 판단", state: "done" }),
+      expect.objectContaining({ kind: "TOOL", input: expect.stringContaining("컵 1"), output: "빈 컵 확인" }),
+      expect.objectContaining({ name: "배치 안내", input: expect.stringContaining("싱크대"), output: "배치 확인", state: "done" }),
+    ]));
+    expect(traced.find(row => row.id === firstTrace.id)).toMatchObject({ state: "done", rev: 2, ended_ms: expect.any(Number) });
+    const placement = traced.find(row => row.name === "배치 안내")!;
+    expect(traced.filter(row => row.name === "활동 종료")).toEqual([
+      expect.objectContaining({ state: "done", output: "활동 완료", cause_id: placement.id,
+        refs: expect.objectContaining({ plan_id: planId, attempt: firstTrace.refs.attempt }) }),
+    ]);
+    expect(JSON.stringify(traced)).not.toMatch(/자리를 비워 컵을 치운다|다 했어|image_url/);
     // 다음 판단(사람이 다시 와서 먹다 떠남 → 컵 치우기)은 싱크대 안 컵을 대상으로 삼지 않고 실행 전 검사에서 멈춘다
     scene.personAct = "eating";
     await drinkThenLeave(people, dash, pump);
@@ -178,6 +199,14 @@ describe("NOONCHI 처음부터 끝까지", () => {
     sockets.push(await openWebSocket(`${srv.url.replace(/^http/, "ws")}/events`, { setup: inbox(late) }));
     for (const end = Date.now() + 3000; !late.some((m) => m.type === "say") && Date.now() < end; ) await new Promise((r) => setTimeout(r, 20));
     const from = late.findIndex((m) => m.type === "world");
+    const replayed = late.find(m => m.type === "trace")!.rows as Msg[];
+    const placementIndex = replayed.findIndex(r => r.id === placement.id);
+    const preparedIndex = replayed.findIndex(r => r.activity_id === firstTrace.activity_id && r.output === "준비 시작");
+    expect(preparedIndex).toBeGreaterThanOrEqual(0);
+    expect(placementIndex).toBeGreaterThan(preparedIndex);
+    expect(late.find(m => m.type === "trace")).toMatchObject({ epoch: late[0]!.trace_epoch, rows: expect.arrayContaining([
+      expect.objectContaining({ id: firstTrace.id, state: "done", rev: 2 }),
+    ]) });
     expect(late.slice(from, late.findIndex((m) => m.type === "say") + 1).map((m) => (m.type === "brain" ? `brain:${m.event.type}` : m.type))).toEqual(["world", "brain:decision", "thought", "seen", "say"]);
     expect(late.find((m) => m.type === "thought")).toEqual({ type: "thought", replay: true, messages: shown().slice(-5) });
     expect(late.find((m) => m.type === "seen")).toMatchObject({
@@ -273,6 +302,11 @@ describe("NOONCHI 처음부터 끝까지", () => {
     const next = phone.find(nextPlan)!;
     expect(next).toMatchObject({ step: `${next.id}:1`, text: "식탁으로 가 주세요" });
     expect(actTarget(next.id)).toMatchObject({ objectId: "cup_2" });
+    const traces = dash.filter(m => m.type === "trace").flatMap(m => m.rows as Msg[]);
+    const row = (id: string) => traces.find(trace => trace.kind === "EXECUTION" && trace.refs.plan_id === id);
+    expect(row(planId)).toMatchObject({ refs: { object_id: "cup_1" } });
+    expect(row(next.id)).toMatchObject({ refs: { object_id: "cup_2" } });
+    expect(row(next.id)?.activity_id).not.toBe(row(planId)?.activity_id);
     const inputs = fake.requests.filter((r) => r.method === "POST" && r.path.endsWith("/responses")).map((r) => String(r.body?.input?.[0]?.content ?? ""));
     expect(inputs.at(-1)).toContain("- 물건 cup_1 컵 · present · 이미 치움 · ");
     expect(inputs.at(-1)).not.toContain("- 물건 cup_2 컵 · present · 이미 치움");

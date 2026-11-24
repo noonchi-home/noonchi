@@ -30,6 +30,7 @@ class FakeSocket {
 }
 
 const PHONE_URL = "http://192.168.0.7:8210/phone/";
+const MOBILE_URL = "https://hub.example.ts.net/mobile/";
 const device = (id: string, label: string, kind: DeviceView["kind"], twin: Record<string, unknown>): DeviceView => ({
   id, label, room: "living", roomLabel: "거실", twinType: "t", kind, matterDeviceType: "x", capabilities: [], sensors: [], twinAttrs: {},
   state: { id, online: true, twin, matter: {}, updatedAt: "t" },
@@ -45,7 +46,8 @@ function stubServer(eye: boolean, twin = true) {
       agent: { provider: "openai", base_url: "", model: "", key: false, reachable: false }, db: false },
   };
   vi.stubGlobal("fetch", vi.fn(async (path: string) => (
-    path === "/api/health" ? Response.json(health) : path === "/api/devices" ? Response.json(DEVICES) : new Response("{}", { status: 404 }))));
+    path === "/api/health" ? Response.json(health) : path === "/api/devices" ? Response.json(DEVICES)
+      : path === "/api/setup" ? Response.json({ ok: true, done: false, mobile_urls: [MOBILE_URL] }) : new Response("{}", { status: 404 }))));
   return health;
 }
 
@@ -104,15 +106,60 @@ describe("대시보드 자료 연결", () => {
     history.replaceState(null, "", "/");
   });
 
-  it("벤토 상태표는 새 단계가 오면 사용자와 클로이드의 현재 칸을 같은 표에서 갱신한다", async () => {
+  it("미설정 허브는 health보다 먼저 폰 홈 QR을 보여 준다", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (path: string) => (
+      path === "/api/setup" ? Response.json({ ok: true, done: false, mobile_urls: [MOBILE_URL] }) : new Response("{}", { status: 503 })
+    )));
+    render(<Dashboard />);
+    expect(await screen.findByRole("img", { name: "폰 연결 QR" })).toBeInTheDocument();
+    expect(phonePane()).toHaveTextContent(MOBILE_URL);
+    expect(phonePane()).toHaveTextContent("NOONCHI 앱으로 스캔해 서버에 연결하세요");
+  });
+
+  it("기본 대시보드는 실제 계획과 Trace를 같은 네 칸에 받아 집을 다시 열면 이전 사실을 지운다", async () => {
     await mount(false);
     send(moment(1));
-    const table = screen.getByRole("table");
-    expect(table).toHaveTextContent("식탁으로 가기");
+    const action = screen.getByRole("group", { name: "Action Conditions" });
+    expect(action).toHaveTextContent("식탁으로 가기");
     send(moment(2));
-    expect(screen.getByRole("table")).toBe(table);
-    expect(screen.getByRole("row", { name: /클로이드/ })).toHaveTextContent("컵 집기");
-    expect(screen.getByRole("row", { name: /사용자/ })).toHaveTextContent("자리에 없음");
+    expect(screen.getByRole("group", { name: "Action Conditions" })).toBe(action);
+    expect(action).toHaveTextContent("컵 집기");
+
+    const active = [...moment(2)].reverse().find(m => m.type === "plan");
+    expect(active?.type).toBe("plan");
+    if (active?.type !== "plan" || !active.plan) throw new Error("컵 집기 계획이 있어야 한다");
+    const step = active.plan.steps.find(p => p.status === "active")!;
+    const objectId = step.target?.objectId ?? "cup";
+    const refs = { plan_id: active.plan.id, object_id: objectId };
+    const rows = [
+      { id: "house:a", activity_id: "house:work", rev: 1, kind: "TOOL", name: "컵 안 확인", input: "컵 · 식탁",
+        output: "빈 컵 확인", started_ms: 100, ended_ms: 200, state: "done",
+        refs: { ...refs, evidence: { source: "photo", subjectId: objectId, observedMs: 150, originId: "frame" } } },
+      { id: "house:b", activity_id: "house:work", rev: 1, kind: "EXECUTION", name: "집기 안내", input: "컵 · 식탁",
+        output: "시연자 수행 대기", started_ms: 250, ended_ms: null, state: "pending", refs: { ...refs, step_id: step.id } },
+    ] as const;
+    const hello = { type: "hello", devices: 0, provider: null, hub: "memory", home: "h", trace_epoch: "house" } as const;
+    send([hello, active, { type: "trace", epoch: "house", rows: [...rows] }]);
+    expect(action).toHaveTextContent("컵 안이 비었어요");
+    expect(action).toHaveTextContent("컵을 든 모습");
+    expect(screen.getByRole("group", { name: "Agent Trace" })).toHaveTextContent("시연자 수행 대기");
+    expect(screen.getByRole("link", { name: "집 전체" })).toHaveAttribute("href", "/?view=overview");
+
+    vi.useFakeTimers();
+    try {
+      const socket = FakeSocket.last!;
+      act(() => socket.onclose?.());
+      expect(action).not.toHaveTextContent(/컵 안이 비었어요|컵을 든 모습/);
+      act(() => vi.advanceTimersByTime(2000));
+      expect(FakeSocket.last).not.toBe(socket);
+      act(() => FakeSocket.last!.onopen?.());
+      expect(action).not.toHaveTextContent(/컵 안이 비었어요|컵을 든 모습/);
+    } finally {
+      vi.useRealTimers();
+    }
+    send([{ ...hello, trace_epoch: "house:reopened" }, { type: "trace", epoch: "house", rows: [...rows] }]);
+    expect(action).not.toHaveTextContent(/컵 안이 비었어요|컵을 든 모습/);
+    expect(screen.getByRole("group", { name: "Agent Trace" })).not.toHaveTextContent("시연자 수행 대기");
   });
 
   it("집 전체 보기에서도 상태표와 현재 단계가 유지된다", async () => {
@@ -349,6 +396,8 @@ describe("가짜 단계(?debug=steps)", () => {
     expect(screen.getByText("연결 끊김 · 다시 연결 중")).toBeInTheDocument();
     b.unmount();
     open("&step=0&settings=1");
-    expect(await screen.findByRole("dialog")).toHaveTextContent("집 다시 설정하기");
+    const settings = await screen.findByRole("dialog");
+    expect(await within(settings).findByRole("img", { name: "폰 연결 QR" })).toBeInTheDocument();
+    expect(settings).toHaveTextContent(MOBILE_URL);
   });
 });

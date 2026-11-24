@@ -1105,7 +1105,7 @@ describe("녹화는 대시보드 한 화면만, 트윈이 다 뜬 뒤 시작", (
     expect(frameGapLine([5])).toBeNull();
   });
 
-  it("녹화 차례: 폰 페이지를 불러온 뒤 대시보드를 열고 트윈이 다 뜬 것을 본 다음 녹화를 시작하고, 그 뒤에 「AR 시작」을 누른다", () => {
+  it("녹화 차례: 폰 페이지를 불러온 뒤 대시보드를 열고 트윈이 다 뜬 것을 본 다음 녹화를 시작하고, 그 뒤에 「카메라 켜기」를 누른다", () => {
     const src = readFileSync(new URL("../scripts/video-check.ts", import.meta.url), "utf8");
     const at = (needle: string) => {
       const k = src.indexOf(needle);

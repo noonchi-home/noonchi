@@ -2,6 +2,8 @@
 // server로 넘긴다(앱 server는 듣지 않고 'request'·'upgrade' 처리기로만 쓴다). 집을 바꾸는 동안(앱 없음) API는 503이다.
 
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
+import { existsSync } from "node:fs";
+import { networkInterfaces } from "node:os";
 import type { Duplex } from "node:stream";
 import { resolve } from "node:path";
 import { DEFAULT_WEB_DIR, HttpError, isLocalOrigin, readJson, type TwinHomeApp } from "./app.js";
@@ -13,15 +15,13 @@ export interface SetupApi {
   stations(): object;
   setStations(body: Record<string, unknown>): object;
   view(): object;
-  /** 설정을 끝냈는지. 안 끝냈으면 /는 /setup/으로 보낸다. */
-  done(): boolean;
   chooseHome(body: Record<string, unknown>): Promise<object>;
   setSources(body: Record<string, unknown>): object;
   finish(body: Record<string, unknown>): object;
   /** 운영 모드(test·live). live는 confirm: true와 ThinQ 토큰이 있어야 한다. */
   setMode(body: Record<string, unknown>): object;
   /** 실제 모드에서만 ThinQ 기기 목록. */
-  thinqDevices(): Promise<object>;
+  thinqDevices(home?: string): Promise<object>;
   /** 에어컨·냉장고 ↔ ThinQ 기기 짝. */
   setPairs(body: Record<string, unknown>): object;
 }
@@ -32,6 +32,7 @@ export interface ShellOptions {
   current: () => TwinHomeApp | null;
   webDir?: string;
   allowOrigin?: (origin: string) => boolean;
+  mobileUrls?: () => readonly string[];
   log?: (msg: string) => void;
 }
 
@@ -43,6 +44,27 @@ export interface Shell {
 
 const BUSY = "집을 바꾸는 중이에요. 잠시 뒤 다시 해 주세요.";
 
+/** The hub's own LAN origins, on the HTTP port it actually bound. */
+export function lanHubOrigins(port: number, host: string): string[] {
+  const interfaces = Object.values(networkInterfaces()).flat();
+  const wildcard = host === "0.0.0.0" || host === "::";
+  return interfaces.flatMap(a => a?.family === "IPv4" && !a.internal && (wildcard || a.address === host)
+    ? [`http://${a.address}:${port}`] : []);
+}
+
+export function mobileHubUrls(origins: readonly string[]): string[] {
+  const urls = origins.flatMap(value => {
+    try {
+      const url = new URL(value);
+      if (!["https:", "http:"].includes(url.protocol) || url.username || url.password ||
+        !["/", "/mobile/"].includes(url.pathname) ||
+        /^(?:localhost\.?|127\..*|0\.0\.0\.0|\[::1\]|\[::\])$/i.test(url.hostname)) return [];
+      return [new URL("/mobile/", url.origin).href];
+    } catch { return []; }
+  });
+  return [...new Set(urls)];
+}
+
 export function createShell(opts: ShellOptions): Shell {
   const webDir = resolve(opts.webDir ?? DEFAULT_WEB_DIR);
   const allowOrigin = opts.allowOrigin ?? isLocalOrigin;
@@ -53,7 +75,7 @@ export function createShell(opts: ShellOptions): Shell {
     res.end(JSON.stringify(body));
   }
 
-  async function setupRoute(req: IncomingMessage, res: ServerResponse, path: string): Promise<void> {
+  async function setupRoute(req: IncomingMessage, res: ServerResponse, path: string, search: string): Promise<void> {
     const origin = req.headers.origin;
     if (req.method !== "GET" && origin && !allowOrigin(origin)) {
       sendJson(res, 403, { ok: false, error: "허용되지 않은 출처의 요청입니다." });
@@ -61,14 +83,14 @@ export function createShell(opts: ShellOptions): Shell {
     }
     try {
       let body: object;
-      if (req.method === "GET" && path === "/api/setup") body = opts.setup.view();
+      if (req.method === "GET" && path === "/api/setup") body = { ...opts.setup.view(), mobile_urls: opts.mobileUrls?.() ?? [] };
       else if (req.method === "GET" && path === "/api/setup/stations") body = opts.setup.stations();
       else if (req.method === "PUT" && path === "/api/setup/stations") body = opts.setup.setStations(await readJson(req));
       else if (req.method === "POST" && path === "/api/setup/home") body = await opts.setup.chooseHome(await readJson(req));
       else if (req.method === "POST" && path === "/api/setup/devices") body = opts.setup.setSources(await readJson(req));
       else if (req.method === "POST" && path === "/api/setup/done") body = opts.setup.finish(await readJson(req));
       else if (req.method === "POST" && path === "/api/setup/mode") body = opts.setup.setMode(await readJson(req));
-      else if (req.method === "GET" && path === "/api/setup/thinq") body = await opts.setup.thinqDevices();
+      else if (req.method === "GET" && path === "/api/setup/thinq") body = await opts.setup.thinqDevices(new URLSearchParams(search).get("home") ?? undefined);
       else if (req.method === "POST" && path === "/api/setup/pairs") body = opts.setup.setPairs(await readJson(req));
       else throw new HttpError(404, `없는 API입니다: ${path}`);
       sendJson(res, 200, body);
@@ -82,21 +104,25 @@ export function createShell(opts: ShellOptions): Shell {
   }
 
   const server = createServer((req, res) => {
-    const path = new URL(req.url ?? "/", "http://localhost").pathname;
+    const { pathname: path, search } = new URL(req.url ?? "/", "http://localhost");
     if (path === "/api/setup" || path.startsWith("/api/setup/")) {
       if (req.method === "OPTIONS") {
         res.writeHead(204);
         res.end();
         return;
       }
-      setupRoute(req, res, path).catch(() => { if (!res.headersSent) sendJson(res, 500, { ok: false, error: "서버 오류" }); });
+      setupRoute(req, res, path, search).catch(() => { if (!res.headersSent) sendJson(res, 500, { ok: false, error: "서버 오류" }); });
       return;
     }
-    // 설정을 안 끝냈으면 대시보드 대신 설정 화면부터
-    if ((req.method === "GET" || req.method === "HEAD") && path === "/" && !opts.setup.done()) {
-      res.writeHead(302, { location: "/setup/", "cache-control": "no-store" });
-      res.end();
-      return;
+    if (req.method === "GET" || req.method === "HEAD") {
+      const target = path === "/setup" || path === "/setup/" || path === "/setup/index.html" ? "/mobile/settings/"
+        : path === "/mobile" || path === "/mobile/settings" ? path + "/" : null;
+      // A legacy build can still serve its old settings entry until the new bundle is built.
+      if (target && existsSync(resolve(webDir, "." + target, "index.html"))) {
+        res.writeHead(302, { location: target + search, "cache-control": "no-store" });
+        res.end();
+        return;
+      }
     }
     const app = opts.current();
     if (app) {

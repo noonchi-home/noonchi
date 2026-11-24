@@ -11,14 +11,18 @@ import { startServer } from "./start.js";
 async function main(): Promise<void> {
   dotenv.config({ quiet: true });
   // tailscale serve로 폰 포트를 https로 열어 두었으면 그 주소를 폰 주소 앞에 둔다(없거나 실패하면 와이파이 주소만)
-  const srv = await startServer({ env: process.env, persistSetup: true, servedPhoneUrls: (port) => findServedPhoneUrls(port, runCommand) });
+  const srv = await startServer({
+    env: process.env, persistSetup: true, servedPhoneUrls: (port) => findServedPhoneUrls(port, runCommand),
+    servedHubUrls: async port => (await findServedPhoneUrls(port, runCommand)).map(url => new URL(url).origin),
+  });
   // 서버 줄을 찍자마자 온 SIGTERM도 받도록 줄을 찍기 전에 건다
   installShutdown(process, () => srv.close(), { log: console.log });
   const { url, hubKind, transport, agent } = srv;
   const provider = agent.provider;
 
   console.log(`twin-home 서버: ${url}  (허브 ${hubKind}${transport ? `/${transport}` : ""}, 에이전트 ${provider.name}${provider.model ? `/${provider.model}` : ""})`);
-  console.log(`  웹 화면   ${url}/  (설정을 안 끝냈으면 ${url}/setup/ 으로 가요)`);
+  console.log(`  웹 화면   ${url}/`);
+  console.log(`  폰 홈     ${url}/mobile/`);
   console.log(`  WS 이벤트 ${url.replace(/^http/, "ws")}/events`);
   console.log(`  3D 트윈   ${existsSync(srv.twinDir) ? `${url}/twin/` : `(아직 없음: ${srv.twinDir})`}`);
   for (const phoneUrl of srv.phoneUrls) {

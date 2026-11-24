@@ -4,6 +4,9 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import WebSocket from "ws";
+import { BusNode, MemoryBus } from "../src/bus/index.js";
+import { emitRobotCommand } from "../src/act/robot/phone.js";
+import { phoneCommandRoutes } from "../src/phone/node.js";
 import type { PlannedCommand } from "../src/contract/phone.js";
 import { EyeFeed } from "../src/phone/feed.js";
 import { encodeFramePacket } from "../src/phone/packet.js";
@@ -666,6 +669,30 @@ describe("폰 대화·승인·초점", () => {
     for (const end = Date.now() + 2000; box.length < n && Date.now() < end; ) await new Promise((r) => setTimeout(r, 20));
     return { ws, box };
   }
+
+  it("실제 발행 번호가 폰까지 이어지며 동일 발행 재전달은 빠지고 재안내만 새 번호를 받는다", async () => {
+    const { phone, phoneBase } = await talkSetup();
+    const bus = new MemoryBus(), epoch = { boot: "speech", home: "test" };
+    const act = new BusNode({ name: "act", bus, epoch }), bridge = new BusNode({ name: "phone", bus, epoch });
+    phoneCommandRoutes(bridge, message => phone.command(message));
+    try {
+      await act.prepare(); await bridge.prepare(); act.start(); bridge.start();
+      const first = await connect(phoneBase, 2);
+      const command: PlannedCommand = { type: "command", id: "p", step: "go", kind: "go", text: "싱크대로 가 주세요",
+        vision: null, choices: [], target: null, speak: true };
+      const got = next(first.ws, m => m.type === "command");
+      await emitRobotCommand(act, command);
+      const identity = { boot: epoch.boot, homeEpoch: epoch.home, publisher: act.inst };
+      expect(await got).toMatchObject({ text: command.text, speak: true, speech_id: { ...identity, revision: 1 } });
+      // A reliable consumer may see the same publication again. Preserving the publisher's revision makes it the same instruction.
+      await act.publish("/act/phone_changes", { cmd: command, revision: 1 });
+      await emitRobotCommand(act, { ...command, speak: false, vision: "싱크대까지 1m" });
+      await emitRobotCommand(act, command);
+      await expect.poll(() => first.box.filter(m => m.type === "command").map(m => [m.speech_id?.revision, m.speak]))
+        .toEqual([[1, true], [2, false], [3, true]]);
+      expect((await connect(phoneBase, 2)).box[1]).toMatchObject({ text: command.text, speech_id: { ...identity, revision: 3 }, speak: false });
+    } finally { await bridge.stop(); await act.stop(); await bus.close(); }
+  });
 
   it("command: 실제 폰 모두에 보내고 지금 명령으로 둔다. 새로 붙은 폰은 상태 다음에 지금 명령을 읽지 않게 받고, 그 명령을 지우면 command_clear", async () => {
     const { phone, phoneBase } = await talkSetup();

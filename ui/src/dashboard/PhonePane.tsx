@@ -23,7 +23,7 @@ const QR_MIN = 96;
 
 /**
  * 폰 연결 QR과 그 오른쪽 할 일 한 줄·주소(Item). 가로 칸이라 옆으로 나란히 둔다. 폰 영상이 없을 때 영상 칸 자리에 보인다.
- * 주소가 없으면 지금 상태 한 줄(Item sm): 폰 서버가 꺼졌으면 「폰 서버가 꺼져 있어요.」, 켜졌으면(live) 「폰에서 AR을 시작하세요.」.
+ * 주소가 없으면 앱 연결용 HTTPS 안내를 표시한다. 실행 중인 영상이 첫 장을 기다릴 때는 폰에서 AR 시작을 안내한다.
  */
 function ConnectQr({ url, live, slot }: { url: string; live: boolean; slot: { width: number; height: number } }) {
   if (!url) {
@@ -31,7 +31,7 @@ function ConnectQr({ url, live, slot }: { url: string; live: boolean; slot: { wi
       <div className="flex size-full items-center justify-center p-6">
         <Item size="sm" className="w-auto min-w-0">
           <ItemContent className="min-w-0">
-            <ItemTitle>{live ? WORDS.startAr : WORDS.phoneOff}</ItemTitle>
+            <ItemTitle>{live ? WORDS.startAr : WORDS.appQrUnavailable}</ItemTitle>
           </ItemContent>
         </Item>
       </div>
@@ -43,7 +43,7 @@ function ConnectQr({ url, live, slot }: { url: string; live: boolean; slot: { wi
       <QRCode value={url} size={size} variant="squares" aria-label="폰 연결 QR" className="shrink-0" />
       <Item size="sm" className="w-auto min-w-0 shrink">
         <ItemContent className="min-w-0">
-          <ItemTitle>폰 카메라로 찍으세요</ItemTitle>
+          <ItemTitle>{WORDS.connectApp}</ItemTitle>
           <ItemDescription className="break-all">{url}</ItemDescription>
         </ItemContent>
       </Item>

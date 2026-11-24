@@ -24,7 +24,8 @@ export const WORDS = {
   oldHabit: "전에 배운 습관이에요",
   offline: "연결 끊김 · 다시 연결 중",
   noRobot: "클로이드 위치 모름",
-  phoneOff: "폰 서버가 꺼져 있어요.",
+  connectApp: "NOONCHI 앱으로 스캔해 서버에 연결하세요",
+  appQrUnavailable: "앱에 연결할 HTTPS 주소가 없어요.",
   startAr: "폰에서 AR을 시작하세요.",
 } as const;
 

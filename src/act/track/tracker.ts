@@ -110,6 +110,7 @@ export interface DeviceRunner {
 export interface SpeechRequest { task: string; heard: string; atMs: number; afterSeq: number; via?: "answer" }
 
 export interface TrackerOptions {
+  trace?: import("../../contract/trace.js").TracePort;
   assistance?: {
     boot: string;
     homeEpoch: string;

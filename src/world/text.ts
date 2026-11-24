@@ -22,7 +22,7 @@ export function timeText(ms: number, offsetMinutes: number): string {
 }
 
 /** 시각 순으로 줄을 쓰고, 이어진 같은 글은 「처음~마지막 글 N번」 한 줄로 묶는다. */
-export function collapseLines(lines: TimedLine[], offsetMinutes: number): string[] {
+export function collapseLines(lines: TimedLine[], offsetMinutes: number, onGroup?: (group: TimedLine[]) => void): string[] {
   const sorted = [...lines].sort((a, b) => a.atMs - b.atMs);
   const out: string[] = [];
   for (let i = 0; i < sorted.length; ) {
@@ -30,14 +30,15 @@ export function collapseLines(lines: TimedLine[], offsetMinutes: number): string
     while (j + 1 < sorted.length && sorted[j + 1]!.text === sorted[i]!.text) j++;
     const first = clock(sorted[i]!.atMs, offsetMinutes);
     out.push(j === i ? `${first} ${sorted[i]!.text}` : `${first}~${clock(sorted[j]!.atMs, offsetMinutes)} ${sorted[i]!.text} ${j - i + 1}번`);
+    if (onGroup) onGroup(sorted.slice(i, j + 1));
     i = j + 1;
   }
   return out;
 }
 
-export function buildPamText(o: { lines: TimedLine[]; facts: string[]; time?: string | null; eye?: string | null; offsetMinutes: number; maxLines?: number }): string {
+export function buildPamText(o: { lines: TimedLine[]; facts: string[]; time?: string | null; eye?: string | null; offsetMinutes: number; maxLines?: number; onGroup?: (group: TimedLine[]) => void }): string {
   return [
-    ...collapseLines(o.lines, o.offsetMinutes).slice(-(o.maxLines ?? 40)),
+    ...collapseLines(o.lines, o.offsetMinutes, o.onGroup).slice(-(o.maxLines ?? 40)),
     ...o.facts.map((f) => `[지속] ${f}`),
     ...(o.time ? [`[때] ${o.time}`] : []),
     ...(o.eye ? [`[눈] ${o.eye}`] : []),
@@ -66,14 +67,15 @@ const PLACE_WORDS = (Object.keys(STATES) as StateKey[]).filter((k) => STATES[k].
 
 /** World State → PAM 관찰 텍스트: 최근 windowMs(기본 60초)의 변화 줄 + 오래 이어진 사실(물건·가전 설비·사람·가전) + 때 + 눈 위치.
  *  가전은 켜짐·작동 중·열림 같은 상태이거나, 관련 가전(식기세척기·냉장고)이거나, 10분 안에 바뀐 것만 둔다. 카메라로 본 상태면 줄 끝에 마지막으로 본 시각. */
-export function textFromWorld(world: WorldView, recent: readonly WorldChange[], o: { nowMs: number; offsetMinutes: number; windowMs?: number }): string {
+export function textFromWorld(world: WorldView, recent: readonly WorldChange[], o: { nowMs: number; offsetMinutes: number; windowMs?: number; onChanges?: (included: WorldChange[]) => void }): string {
   const since = o.nowMs - (o.windowMs ?? 60_000);
   // 싱크볼 안 물건의 VLM 자리 변화 줄(손에 있음 말고)도 쓰지 않는다(아래 [지속] 줄과 같은 까닭)
   const inBasinIds = new Set(world.objects.filter((x) => x.surface_label !== null && x.surface_part === "basin").map((x) => x.id));
   const placeWord = (c: WorldChange) => PLACE_WORDS.some((w) => c.text.endsWith(` ${w}`));
   const lines = recent
     .filter((c) => c.at_ms >= since && c.at_ms <= o.nowMs && !(c.kind === "state" && inBasinIds.has(c.subject) && placeWord(c)))
-    .map((c) => ({ atMs: c.at_ms, text: c.text }));
+    .map((c) => ({ atMs: c.at_ms, text: c.text, change: c }));
+  const source = new Map<TimedLine, WorldChange>(o.onChanges ? lines.map(line => [line, line.change]) : []);
   const at = (ms: number) => clock(ms, o.offsetMinutes);
   // 물건: 첫 줄은 트윈 면(위치로 정한 것, 없으면 자리 모름)과 처음 본 때·마지막 확인. 사실은 줄마다 그 값이 처음 보인 시각부터 세고,
   // VLM 한 장만 보고 붙인 값(짐작)은 표시한다. 한 장에서 짐작한 「비어 있음」을 물건을 처음 본 때부터 이어진 것처럼 쓰지 않는다(2026-11-16 밤 판정 F·E).
@@ -126,8 +128,16 @@ export function textFromWorld(world: WorldView, recent: readonly WorldChange[], 
   }
   const eye = world.eye ? `${EYE_TEXT} ${world.eye.room_label ?? ROOM_UNKNOWN}` : null;
   const time = timeText(o.nowMs, o.offsetMinutes);
-  return fitText(objects, (keep, maxLines) =>
-    buildPamText({ lines, facts: [...keep.flatMap((x) => x.lines), ...facts], time, eye, offsetMinutes: o.offsetMinutes, maxLines }));
+  let included: TimedLine[] = [];
+  const text = fitText(objects, (keep, maxLines) => {
+    const groups: TimedLine[][] = [];
+    const observation = buildPamText({ lines, facts: [...keep.flatMap((x) => x.lines), ...facts], time, eye, offsetMinutes: o.offsetMinutes, maxLines,
+      onGroup: o.onChanges ? group => groups.push(group) : undefined });
+    included = groups.slice(-maxLines).flat();
+    return observation;
+  });
+  o.onChanges?.(included.map(line => source.get(line)!));
+  return text;
 }
 
 /** 변화 줄 기본 상한(buildPamText maxLines). */

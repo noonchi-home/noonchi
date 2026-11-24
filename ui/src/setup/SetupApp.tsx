@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
 import type { ServerMessage } from "../../../src/contract/events.ts";
 import type { SetupView } from "../../../src/contract/setup.ts";
-import { CircleCheck, TriangleAlert } from "lucide-react";
+import { Armchair, CircleCheck, House, LayoutGrid, MapPin, Plug, SlidersHorizontal, TriangleAlert } from "lucide-react";
+import { NoonchiWordmark, PhonePortalHeader, PhonePortalNav } from "../components/phone-portal-chrome";
 import { Alert, AlertTitle } from "../components/ui/alert";
-import { Avatar, AvatarImage } from "../components/ui/avatar";
-import { CardHeader, CardTitle } from "../components/ui/card";
+import { Button } from "../components/ui/button";
+import { Card, CardHeader, CardTitle } from "../components/ui/card";
+import { ItemActionList } from "../components/ui/item-action-list";
 import { SimpleNavbar } from "../components/ui/header-navbar";
 import { MessageBubble } from "../components/ui/message-bubble";
 import { ScrollReveal } from "../components/ui/scroll-reveal";
@@ -14,9 +16,10 @@ import { shortName } from "../lib/hub";
 import { MASCOT } from "../lib/mascot-image";
 import { DeviceStep, sourcesFrom, type SourceKind } from "./DeviceStep";
 import { HomeStep } from "./HomeStep";
-import { ModeStep } from "./ModeStep";
+import { ModeStep, PhoneApplianceSettings } from "./ModeStep";
 import { PositionStep } from "./PositionStep";
 import { call, failText, isOk } from "./setup-api";
+import "./phone-settings.css";
 
 // 설정 화면(/setup/): 단계 표시와 단계별 화면. 단계는 주소 #home·#devices·#mode·#position으로 남는다.
 // 서버가 판단·검사를 하고(/api/setup*), 여기서는 고른 것을 보내고 결과를 그린다.
@@ -32,6 +35,17 @@ const STEPS = [
   { id: "position", label: "위치 동기화", question: "폰과 트윈의 위치를 맞춰요" },
 ] as const;
 type StepId = (typeof STEPS)[number]["id"];
+const PHONE_ITEMS = [
+  { ...STEPS[0], icon: House },
+  { id: "appliances", label: "가전 연결", question: "가전 연결", icon: Plug },
+  { ...STEPS[2], label: "모드", icon: SlidersHorizontal },
+  { ...STEPS[3], label: "시작 위치", icon: MapPin },
+  { id: "stations", label: "자리·구역 설정", question: "자리·구역 설정", icon: Armchair },
+  { id: "layout", label: "배치 보정", question: "트윈 배치 보정", icon: LayoutGrid },
+  { ...STEPS[1], icon: Plug },
+] as const;
+type Page = StepId | "menu" | "appliances" | "stations" | "layout";
+const PHONE_HOME = "/mobile/";
 type Notice = { text: string; error?: boolean } | null;
 
 // 마스코트 그림(1254×1254)에서 보이는 칸: 가로 x0~x1, 세로 머리 꼭대기 위 8px~LG 표시 아래 20px(cut, 화면 밑선).
@@ -54,14 +68,34 @@ const along = (a: string, b: string, t: number, r: number) => `calc(${a} * ${1 -
 // 처음 들어올 때 아래에서 올라온다(단계가 바뀌어도 다시 하지 않는다). 움직임 줄이기면 입구의 MotionConfig가 바로 끝낸다.
 const RISE = { hidden: { y: "45%", opacity: 0 }, visible: { y: 0, opacity: 1 } };
 
-const stepOf = (raw: string, view: SetupView | null): StepId => {
-  const s = STEPS.find((x) => x.id === raw)?.id ?? "home";
-  return view?.home ? s : "home";
+const stepOf = (raw: string, view: SetupView | null, phone: boolean): Page => {
+  const step = (phone ? PHONE_ITEMS : STEPS).find(x => x.id === raw)?.id;
+  if (phone && (!step || (step === "stations" && !view?.position.start) || (step === "layout" && !view?.position.layout))) return "menu";
+  return view?.home ? step ?? "home" : "home";
 };
 
+function PhoneSettingsMenu({ view }: { view: SetupView }) {
+  const values: Partial<Record<(typeof PHONE_ITEMS)[number]["id"], string>> = {
+    home: "미설정",
+    appliances: Object.keys(view.pairs).length ? `${Object.keys(view.pairs).length}개 연결` : "미연결",
+    mode: view.mode === "live" ? "운영 모드" : "테스트 모드",
+  };
+  const available = PHONE_ITEMS.filter(({ id }) => (id === "home" ? !view.home : !!view.home)
+    && id !== "devices"
+    && (id !== "stations" || view.position.start)
+    && (id !== "layout" || view.position.layout));
+  return <div className="grid gap-3">
+    {view.home && <p className="px-2">{shortName(view.home.name)}</p>}
+    <ItemActionList label="설정 항목" items={available.map(({ id, label, icon }) => ({
+      href: `#${id}`, title: label, icon, value: values[id],
+    }))} />
+  </div>;
+}
+
 export function SetupApp({ navigate = (url: string) => location.assign(url) }: { navigate?: (url: string) => void }) {
+  const phone = /^\/mobile\/settings\/?$/.test(location.pathname);
   const [view, setView] = useState<SetupView | null>(null);
-  const [step, setStep] = useState<StepId>("home");
+  const [step, setStep] = useState<Page>(phone ? "menu" : "home");
   const [notice, setNotice] = useState<Notice>(null);
   const [picked, setPicked] = useState<string | null>(null);
   const [sources, setSources] = useState<Map<string, SourceKind>>(new Map());
@@ -77,10 +111,16 @@ export function SetupApp({ navigate = (url: string) => location.assign(url) }: {
   }, []);
 
   const go = useCallback((raw: string, v = viewRef.current) => {
-    const s = stepOf(raw, v);
+    const url = new URL(location.href);
+    const requestedHome = phone ? url.searchParams.get("positionHome") : null;
+    const wrongHome = raw === "position" && requestedHome && v && (v.switching || v.home?.id !== requestedHome);
+    const s = wrongHome ? "menu" : stepOf(raw, v, phone);
+    if (wrongHome) setNotice({ text: "허브에 열린 집이 바뀌었어요. 집을 확인해 주세요.", error: true });
     setStep(s);
-    if (location.hash !== `#${s}`) history.replaceState(null, "", `#${s}`);
-  }, []);
+    const hash = s === "menu" ? "" : `#${s}`;
+    if (requestedHome && s !== "position") url.searchParams.delete("positionHome");
+    if (location.hash !== hash || location.search !== url.search) history.replaceState(null, "", url.pathname + url.search + hash);
+  }, [phone]);
 
   const load = useCallback(async () => {
     const r = await call<SetupView>("/api/setup");
@@ -96,7 +136,7 @@ export function SetupApp({ navigate = (url: string) => location.assign(url) }: {
 
   useEffect(() => {
     let live = true;
-    void load().then((v) => { if (live && v) go(location.hash.slice(1) || "home", v); });
+    void load().then((v) => { if (live && v) go(location.hash.slice(1), v); });
     const onHash = () => go(location.hash.slice(1));
     window.addEventListener("hashchange", onHash);
     return () => { live = false; window.removeEventListener("hashchange", onHash); };
@@ -108,9 +148,10 @@ export function SetupApp({ navigate = (url: string) => location.assign(url) }: {
     if (m.type === "hello" && !switching.current && v?.home && m.home && m.home !== v.home.id) {
       setNotice({ text: "다른 화면에서 집을 바꿨어요. 처음 단계부터 다시 볼게요.", error: true });
       setPicked(null);
-      void load().then((nv) => nv && go("home", nv));
+      if (phone) go("menu", v);
+      void load().then((nv) => nv && go(phone ? "menu" : "home", nv));
     } else if (m.type === "agent" && m.event === "reply") setLayoutTick((t) => t + 1);
-  }, [load, go]);
+  }, [load, go, phone]);
   useEvents(onMessage);
 
   const chooseHome = async () => {
@@ -130,7 +171,8 @@ export function SetupApp({ navigate = (url: string) => location.assign(url) }: {
     }
     show(r.json);
     setNotice(changing && r.json.home ? { text: `${shortName(r.json.home.name)}(으)로 바꿨어요.` } : null);
-    go("devices", r.json);
+    if (phone) navigate(PHONE_HOME);
+    else go("devices", r.json);
   };
 
   const saveDevices = async () => {
@@ -145,28 +187,80 @@ export function SetupApp({ navigate = (url: string) => location.assign(url) }: {
     }
     show(r.json);
     setNotice(null);
-    go("mode", r.json);
+    if (phone) navigate(PHONE_HOME);
+    else go("mode", r.json);
   };
 
   const finish = async () => {
     const v = viewRef.current;
     if (!v?.home) return;
+    if (phone && v.done) { navigate(PHONE_HOME); return; }
+    setBusy(true);
     const r = await call<SetupView>("/api/setup/done", { home: v.home.id });
+    setBusy(false);
     if (!isOk(r)) {
       setNotice({ text: failText(r, "끝내지 못했어요."), error: true });
       return;
     }
-    navigate("/");
+    navigate(phone ? PHONE_HOME : "/");
   };
 
   const at = STEPS.findIndex((s) => s.id === step);
   const ready = step === "home" || step === "devices" ? Boolean(view) : Boolean(view?.home);
   // 1~3단계는 큰 글(사용자 2026-11-09 「1,2,3 번은 글씨 키워도되겠다」), 4단계는 부품 원래 크기
   const big = step !== "position";
+  const saved = () => navigate(PHONE_HOME);
+  const positionFromHome = phone && step === "position" && new URLSearchParams(location.search).has("positionHome");
+  const detail = (phone ? PHONE_ITEMS : STEPS).find(item => item.id === step);
+  const title = detail?.question;
+  const contents = <>
+    {view && ready && title && (
+      <CardHeader><CardTitle id={step === "stations" || step === "layout" ? "h-position" : `h-${step}`} size={big && !phone ? "lg" : "default"}>{title}</CardTitle></CardHeader>
+    )}
+    {notice && (
+      <Alert role="status" aria-live="polite" variant={notice.error ? "error" : "success"} size={big && !phone ? "setup" : "default"} className="mx-6 mb-4 w-auto">
+        {notice.error ? <TriangleAlert aria-hidden="true" /> : <CircleCheck aria-hidden="true" />}
+        <AlertTitle>{notice.text}</AlertTitle>
+      </Alert>
+    )}
+    {view && step === "home" && <HomeStep view={view} picked={picked} onPick={setPicked} onNext={chooseHome} busy={busy} phone={phone} />}
+    {view && step === "devices" && (
+      <DeviceStep view={view} sources={sources} onSources={setSources} onBack={() => go(phone ? "menu" : "home")} onNext={saveDevices} busy={busy} phone={phone} />
+    )}
+    {view?.home && step === "mode" && (
+      <ModeStep key={view.home.id} view={view} onView={show} onBack={() => go(phone ? "menu" : "devices")}
+        onNext={phone ? saved : () => go("position")} phone={phone}
+        onNotice={(text, error) => setNotice(text ? { text, error } : null)} />
+    )}
+    {phone && view?.home && step === "appliances" && (
+      <PhoneApplianceSettings key={view.home.id} view={view} onView={show} onNext={saved}
+        onNotice={(text, error) => setNotice(text ? { text, error } : null)} />
+    )}
+    {view?.home && (step === "position" || step === "stations" || step === "layout") && (
+      <PositionStep key={`${view.home.id}:${step}`} view={view} onBack={() => go(phone ? "menu" : "mode")}
+        section={step} phone={phone} busy={busy} onSaved={phone ? saved : undefined} onDone={finish} layoutTick={layoutTick}
+        onCleared={positionFromHome ? saved : undefined}
+        onNotice={(text, error) => setNotice({ text, error })} />
+    )}
+  </>;
+
+  if (phone) return (
+    <div className="phone-portal-page phone-settings-page">
+      <PhonePortalHeader label={step === "menu" ? "설정" : undefined} />
+      <main aria-label={detail?.label ?? "설정"} className="mx-auto w-full max-w-2xl px-3 py-4">
+        {step !== "menu" && (
+          <Button className="mb-3" variant="ghost" onClick={() => { setNotice(null); go("menu"); }}>설정 목록</Button>
+        )}
+        {(step !== "menu" || notice) && <Card className="min-w-0">{contents}</Card>}
+        {view && step === "menu" && <PhoneSettingsMenu view={view} />}
+      </main>
+      <PhonePortalNav active="settings" />
+    </div>
+  );
   return (
     <div className="flex min-h-full flex-col lg:h-full lg:overflow-hidden">
       <header>
-        <SimpleNavbar title="NOONCHI" label="설정" logo={<Avatar shape="logo" className="size-[34px]"><AvatarImage src="/brand/face-128.png" alt="" /></Avatar>}>
+        <SimpleNavbar title={<NoonchiWordmark />} label="설정">
           <Stepper value={at + 1} onValueChange={(v) => go(STEPS[v - 1]!.id)} role="list" aria-label="설정 단계" className="data-[orientation=horizontal]:w-[min(640px,60vw)] max-sm:data-[orientation=horizontal]:w-40">
             {STEPS.map((s, i) => (
               <StepperItem key={s.id} step={i + 1} role="listitem" aria-current={i === at ? "step" : undefined} className="not-last:flex-1">
@@ -197,31 +291,7 @@ export function SetupApp({ navigate = (url: string) => location.assign(url) }: {
           style={{ "--bubble-left": BUBBLE_LEFT } as CSSProperties}
         >
           <MessageBubble className="flex min-h-0 w-full max-w-full flex-1 flex-col overflow-auto">
-            {view && ready && (
-              <CardHeader><CardTitle id={`h-${step}`} size={big ? "lg" : "default"}>{STEPS[at]!.question}</CardTitle></CardHeader>
-            )}
-            {notice && (
-              <Alert role="status" aria-live="polite" variant={notice.error ? "error" : "success"} size={big ? "setup" : "default"} className="mx-6 mb-4 w-auto">
-                {notice.error ? <TriangleAlert aria-hidden="true" /> : <CircleCheck aria-hidden="true" />}
-                <AlertTitle>{notice.text}</AlertTitle>
-              </Alert>
-            )}
-            {view && step === "home" && <HomeStep view={view} picked={picked} onPick={setPicked} onNext={chooseHome} busy={busy} />}
-            {view && step === "devices" && (
-              <DeviceStep view={view} sources={sources} onSources={setSources} onBack={() => go("home")} onNext={saveDevices} busy={busy} />
-            )}
-            {view?.home && step === "mode" && (
-              <ModeStep
-                view={view} onView={show} onBack={() => go("devices")} onNext={() => go("position")}
-                onNotice={(text, error) => setNotice(text ? { text, error } : null)}
-              />
-            )}
-            {view?.home && step === "position" && (
-              <PositionStep
-                view={view} onBack={() => go("mode")} onDone={finish} layoutTick={layoutTick}
-                onNotice={(text, error) => setNotice({ text, error })}
-              />
-            )}
+            {contents}
           </MessageBubble>
         </div>
         <div aria-hidden="true" className="pointer-events-none relative h-14 shrink-0 lg:static lg:h-auto">

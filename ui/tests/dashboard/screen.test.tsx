@@ -635,16 +635,16 @@ describe("대시보드 폰 카메라(대시보드 폰 칸)", () => {
     const row = qr.parentElement!;
     expect(cls(row, "flex")).toBe(true);
     expect(cls(row, "flex-col")).toBe(false);
-    expect(slot).toHaveTextContent("폰 카메라로 찍으세요");
+    expect(slot).toHaveTextContent("NOONCHI 앱으로 스캔해 서버에 연결하세요");
     expect(slot).toHaveTextContent(PHONE_URL);
   });
 
-  it("폰 서버가 꺼져 있고(qr) 폰 주소가 없으면 QR 대신 영상 칸에 「폰 서버가 꺼져 있어요.」 한 줄(Item sm)만 보인다", () => {
+  it("앱에 연결할 HTTPS 주소가 없으면 QR 대신 영상 칸에 안내 한 줄(Item sm)만 보인다", () => {
     draw(screenAt(3, { phone: { kind: "qr", url: "" } }));
     expect(qrOf()).toBeNull();
     const slot = slotOf(phonePane());
-    expect(slot.textContent).toBe("폰 서버가 꺼져 있어요.");
-    expect(within(slot).getByText("폰 서버가 꺼져 있어요.").closest("[data-slot=item]")).toHaveAttribute("data-size", "sm");
+    expect(slot.textContent).toBe("앱에 연결할 HTTPS 주소가 없어요.");
+    expect(within(slot).getByText("앱에 연결할 HTTPS 주소가 없어요.").closest("[data-slot=item]")).toHaveAttribute("data-size", "sm");
   });
 
   it("폰 서버는 켜졌는데(live) 폰 주소가 없으면 첫 장 전에 「폰에서 AR을 시작하세요.」 한 줄을 보이고, 첫 장이 오면 없앤다", () => {
@@ -653,7 +653,7 @@ describe("대시보드 폰 카메라(대시보드 폰 칸)", () => {
     expect(qrOf()).toBeNull();
     expect(slot).toHaveTextContent("폰에서 AR을 시작하세요.");
     expect(within(slot).getByText("폰에서 AR을 시작하세요.").closest("[data-slot=item]")).toHaveAttribute("data-size", "sm");
-    expect(slot).not.toHaveTextContent("폰 서버가 꺼져 있어요.");
+    expect(slot).not.toHaveTextContent("앱에 연결할 HTTPS 주소가 없어요.");
     fireEvent.load(slot.querySelector<HTMLImageElement>("img")!);
     expect(slot).not.toHaveTextContent("폰에서 AR을 시작하세요.");
     expect(slot.querySelector("canvas[data-masks]")).not.toBeNull();

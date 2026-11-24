@@ -49,12 +49,16 @@ describe("설정 1단계: 집 고르기", () => {
     for (const t of within(list).getAllByText(/집 고르기|가전 선택|운영 모드|위치 동기화/)) expect(t.className.split(/\s+/)).toContain("max-sm:sr-only");
   });
 
-  it("머리줄은 로고 짝(얼굴 상자 + NOONCHI)과 「설정」", async () => {
+  it("데스크톱 머리줄은 공식 워드마크와 설정 레이블 및 단계 버튼을 표시한다", async () => {
     open();
     await screen.findByRole("heading", { name: "어느 집을 쓸까요?" });
-    expect(screen.getByRole("heading", { name: "NOONCHI" })).toBeInTheDocument();
-    expect(screen.getByText("설정")).toBeInTheDocument();
-    expect(document.querySelector("header [data-shape=logo]")).not.toBeNull();
+    const banner = screen.getByRole("banner");
+    const heading = within(banner).getByRole("heading", { name: "NOONCHI" });
+    const mark = within(heading).getByRole("img", { name: "NOONCHI" });
+    expect(mark).toHaveAttribute("src", "/brand/noonchi-wordmark.svg");
+    expect(Array.from(banner.querySelectorAll("img"))).toEqual([mark]);
+    expect(within(banner).getByText("설정")).toBeVisible();
+    expect(within(within(banner).getByRole("list", { name: "설정 단계" })).getAllByRole("button")).toHaveLength(4);
   });
 
   it("다른 집을 고르고 다음: 집을 바꾸고 2단계로", async () => {

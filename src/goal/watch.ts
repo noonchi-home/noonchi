@@ -189,7 +189,7 @@ export class GoalWatch {
     const abort = new AbortController();
     let out: PlanResult | Promise<PlanResult>;
     try {
-      out = this.o.planner(this.record(g, world, now), abort.signal, { trigger: g.pick.on, on: g.pick.when ?? g.pick.on, object: g.planObject, ...(stand ? { stand } : {}) });
+      out = this.o.planner(this.record(g, world, now), abort.signal, { trigger: g.pick.on, on: g.pick.when ?? g.pick.on, object: g.planObject, goal_id: g.view.id, ...(stand ? { stand } : {}) });
     } catch (e) {
       out = { ok: false, error: (e as Error).message };
     }
@@ -508,7 +508,7 @@ export class GoalWatch {
       const rename = g.planObject ? {[g.planObject]:cup.id} : undefined;
       let checked = g.plan ? this.o.reuse!(d,g.plan,rename) : null;
       if (!checked?.ok) {
-        const answer = await this.o.planner(d,signal,{trigger:g.pick.on,on:g.pick.on,object:cup.id});
+        const answer = await this.o.planner(d,signal,{trigger:g.pick.on,on:g.pick.on,object:cup.id,goal_id:g.view.id});
         if (!answer.ok) { if (this.goal === g) this.drop("stale",answer.error); return answer; }
         cup = current();
         if (!cup) return failed;

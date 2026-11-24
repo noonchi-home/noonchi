@@ -16,6 +16,7 @@ import { FEEDBACK_TEXT, PHOTO_TEXT } from "../../brain/index.js";
 import type { ApprovalAnswer } from "../../contract/phone.js";
 import { eyeHeightOf, floorLookup, homeBounds, readScenePlan } from "../../layout/index.js";
 import { EyeFeed, StartStore, createPhoneServer, describeStart, estimateViewpoint, orderPhoneUrls, readStartPose, startPosePath, twinLandmarks, wallSegments, type StartPose } from "../../phone/index.js";
+import { androidTwaStatements } from "../../phone/index.js";
 import { repoPath } from "../../shared/paths.js";
 import { PHONE_SESSION, TALK_QUIET_MS, type HomeCore } from "./core.js";
 
@@ -163,6 +164,7 @@ export async function startPhone(core: HomeCore): Promise<void> {
   const fallback = estimateViewpoint(JSON.parse(readFileSync(home.scenePath, "utf8").replace(/^﻿/, "")));
   const phone = createPhoneServer({
     eyeHeightM: core.eyeHeightM, feed, log, fallback, floorAt: floorLookup(core.plan.rooms), videoDir: phoneVideoDir(env),
+    androidAssetLinks: androidTwaStatements(env.ANDROID_TWA_SHA256_FINGERPRINTS),
     sync: { landmarks: core.landmarksNow(), walls: wallSegments(core.plan), start: startStore?.get() ?? null },
     onReady: (ready) => { core.out.phone?.push("/phone/link", { ready }); },
     onNavigationPose:p=>{ if(!core.closed) core.out.phone?.push("/phone/pose",p); },

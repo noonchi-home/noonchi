@@ -1,7 +1,7 @@
 // 실제 폰 덮개 배치 검사(layout-check.ts): 화면 사진 페이지(shots.tsx)가 크롬에서 잰 자리로 부른다.
 // 단추는 화면 안(또는 화면 안 스크롤 칸 안)에 있어야 하고, 세로 화면에서 엄지 자리 단추(완료·답·기록)는 엄지가 닿는 아래 1/3 안에 있어야 한다.
 // 위 줄·엄지 자리는 가운데 조준점(28px)과 그 칸 밖 단추를 가리면 안 된다(모달 안 단추는 그 위에 뜨므로 보지 않는다). 위 줄은 상태 표시줄 아래(36px부터).
-// 화면 밖 화살표는 칸과 단추에 겹치지 않아야 한다. 명령·비전 상태 글은 잘리지 않아야 한다. 처음 화면은 AR 시작 단추가 첫 화면 안.
+// 화면 밖 화살표는 칸과 단추에 겹치지 않아야 한다. 명령·비전 상태 글은 잘리지 않아야 한다. 카메라 켜기 단추는 첫 화면 안.
 import { describe, expect, it } from "vitest";
 import { bubbleIssues, clipIssues, introIssues, layoutIssues, modalIssues } from "../src/phone/layout-check";
 
@@ -80,11 +80,11 @@ describe("글 잘림 검사", () => {
 });
 
 describe("처음 화면 배치 검사", () => {
-  it("AR 시작 단추는 스크롤하지 않은 첫 화면 안", () => {
+  it("카메라 켜기 단추는 스크롤하지 않은 첫 화면 안", () => {
     expect(introIssues(PORTRAIT, box(32, 470, 358, 518))).toEqual([]);
-    expect(introIssues({ width: 360, height: 780 }, box(32, 760, 328, 808))).toEqual(["「AR 시작」 단추가 첫 화면 밖이에요(32,760–328,808 / 360×780)"]);
-    expect(introIssues(LANDSCAPE, box(216, 379, 628, 427))).toEqual(["「AR 시작」 단추가 첫 화면 밖이에요(216,379–628,427 / 844×390)"]);
-    expect(introIssues(PORTRAIT, null)).toEqual(["「AR 시작」 단추가 없어요"]);
+    expect(introIssues({ width: 360, height: 780 }, box(32, 760, 328, 808))).toEqual(["「카메라 켜기」 단추가 첫 화면 밖이에요(32,760–328,808 / 360×780)"]);
+    expect(introIssues(LANDSCAPE, box(216, 379, 628, 427))).toEqual(["「카메라 켜기」 단추가 첫 화면 밖이에요(216,379–628,427 / 844×390)"]);
+    expect(introIssues(PORTRAIT, null)).toEqual(["「카메라 켜기」 단추가 없어요"]);
   });
 });
 

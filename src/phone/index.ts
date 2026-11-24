@@ -2,6 +2,7 @@
 // 다른 도메인은 이 입구로만 가져온다.
 export { EyeFeed } from "./feed.js";
 export { orderPhoneUrls, findServedPhoneUrls, runCommand } from "./links.js";
+export { androidTwaStatements, androidTwaTarget } from "./android-twa.js";
 export { type FrameHeader } from "./packet.js";
 export { createPhoneServer, type PhoneServer } from "./server.js";
 export { type EyeEvent, estimateViewpoint } from "./session.js";

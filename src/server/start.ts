@@ -1,6 +1,6 @@
 // 서버 시작(npm start·데모·e2e 테스트 공용): 껍데기 서버(포트·설정 API) + 집 실행 묶음(src/server/home/).
 // 설정 흐름(집 → 가전 → 운영 모드 → 위치 동기화 → 대시보드): 집을 고르면 묶음을 닫고 새 집으로 다시 만든다. 포트는 그대로다.
-// 운영 모드: 시험(기본, ThinQ를 부르지 않음) · 실제(짝지은 에어컨·냉장고는 ThinQ). ThinQ 클라이언트는 실제 모드에서만 만든다.
+// 운영 모드에서만 짝지은 가전을 실제로 다룬다. 목련의 기본 연결은 테스트 모드에서도 가전 목록을 읽을 수 있다.
 
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
@@ -8,6 +8,7 @@ import type { Agent, Policy } from "../agent/index.js";
 import { openBus, type Bus, type Clock } from "../bus/index.js";
 import { agentEndpoint } from "../agent/index.js";
 import type { BrainLog } from "../contract/events.js";
+import { MOKRYEON_HOME } from "../contract/mobile-home.js";
 import type { PlanView } from "../contract/plan.js";
 import type { ControlMode, SetupView, ThinqDeviceView } from "../contract/setup.js";
 import type { SignalHub } from "../devices/index.js";
@@ -24,6 +25,7 @@ import { KIND_LABELS } from "../devices/index.js";
 import type { PipelineInject } from "../observe/index.js";
 import { resolveTwinStudioDir, type TwinData } from "../layout/index.js";
 import { listHomes } from "../layout/index.js";
+import { androidTwaStatements, androidTwaTarget } from "../phone/index.js";
 import { acquireServerLock, restoreNeeded } from "./lock.js";
 import { KINDS } from "../devices/kinds.js";
 import { checkKinds } from "../devices/index.js";
@@ -36,7 +38,7 @@ import { HttpError, originChecker, type TwinHomeApp } from "./app.js";
 import type { HubKind, MatterTransport, StartHubOptions } from "./hubFactory.js";
 import { startHome, type HomeContext, type HomeRuntime } from "./home/index.js";
 import { makeReady } from "./ready.js";
-import { createShell } from "./shell.js";
+import { createShell, lanHubOrigins, mobileHubUrls } from "./shell.js";
 
 type Env = Record<string, string | undefined>;
 
@@ -57,6 +59,7 @@ export interface StartServerOptions {
   clock?: Clock;
   irPort?: IrPort;
   /** 기본 process.env. HUB, MATTER_*, AGENT_PROVIDER, TWIN_STUDIO_DIR, HOME_ID(저장한 집이 없을 때 띄울 집, 기본 집), PORT(0이면 빈 포트), HOST,
+   *  HUB_URL(허브의 공개 주소를 자동으로 찾을 수 없는 곳에서 쓰는 QR 주소),
    *  ALLOWED_ORIGINS(이 PC 말고 대시보드를 여는 출처, 쉼표로 여러 개), PLAN_TOKEN(다른 주소에서 POST /api/plan을 받을 토큰),
    *  추론 모드(openai 기본·vllm)·VLM_BASE_URL·VLM_MODEL·VLM_CLOSER_MODEL·VLM_API_KEY·VLM_EXTRA_BODY·PAM_LLM_*(src/infer/endpoints.ts),
    *  기록 DB는 RUNTIME_DIR/noonchi.db, HISTORY_TZ_MINUTES(기록 날짜의 시간대 분, 기본 540), REFLECT_AT(매일 반성 시각 HH:MM, 기본 23:30, off면 끔),
@@ -83,6 +86,8 @@ export interface StartServerOptions {
   askFirst?: boolean;
   /** 폰 포트로 이어진 https 주소 찾기(main.ts는 tailscale serve 설정을 읽는다). 없으면 찾지 않는다. */
   servedPhoneUrls?: (phonePort: number) => Promise<string[]>;
+  /** HTTPS origins discovered for the hub's own listener. */
+  servedHubUrls?: (hubPort: number) => Promise<string[]>;
   /** 대시보드·설정 화면 폴더. 기본은 React 빌드(ui/dist). */
   webDir?: string;
   /** 시험용: 노드 통로 열기(기본 openBus: REDIS_URL이면 RedisBus, 아니면 MemoryBus). */
@@ -128,6 +133,7 @@ export interface RunningServer {
 export async function startServer(opts: StartServerOptions = {}): Promise<RunningServer> {
   const env = opts.env ?? process.env;
   const log = opts.log ?? ((line: string) => console.log(line));
+  const androidTwaConfigured = !!androidTwaStatements(env.ANDROID_TWA_SHA256_FINGERPRINTS);
   // 가전 종류 등록부가 틀린 조합이면(승인·ThinQ 어댑터·손 조작) 까닭과 함께 시작을 막는다
   const kindProblems = checkKinds(KINDS);
   if (kindProblems.length) throw new Error(`가전 종류 등록부가 틀렸어요(src/devices/kinds.ts): ${kindProblems.join(" / ")}`);
@@ -136,7 +142,9 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
   let mode: ControlMode = store.mode();
   let ir: IrConfig | null = null;
   // 대시보드를 여는 출처: 이 PC + ALLOWED_ORIGINS(tailscale serve 주소). 쓰기 요청과 /events에 쓴다
-  const allowOrigin = originChecker(env.ALLOWED_ORIGINS);
+  const configuredOrigin = originChecker(env.ALLOWED_ORIGINS);
+  const boundOrigins = new Set<string>();
+  const allowOrigin = (origin: string) => configuredOrigin(origin) || boundOrigins.has(origin);
   // 추론 모드(openai|vllm)와 모델 주소, PAM LLM 전송 값. 틀린 설정이면 잠금·DB를 열기 전에 시작을 막는다
   const endpoints = loadEndpoints(env);
   for (const w of endpoints.warnings) log(w);
@@ -211,8 +219,19 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
       reflecting = null;
     }
   };
+  const cameraServeOrigins = new Set<string>();
+  const discoverPhoneUrls = opts.servedPhoneUrls;
   const ctx: HomeContext = {
-    env, log, runtimeDir, importer: opts.importer, matter: opts.matter, brain: opts.brain, clock: opts.clock, askFirst: opts.askFirst, servedPhoneUrls: opts.servedPhoneUrls, webDir: opts.webDir,
+    env, log, runtimeDir, importer: opts.importer, matter: opts.matter, brain: opts.brain, clock: opts.clock, askFirst: opts.askFirst, webDir: opts.webDir,
+    servedPhoneUrls: discoverPhoneUrls ? async (port) => {
+      const addresses = await discoverPhoneUrls(port);
+      cameraServeOrigins.clear();
+      for (const address of addresses) {
+        const url = URL.parse(address);
+        if (url?.protocol === "https:") cameraServeOrigins.add(url.origin);
+      }
+      return addresses;
+    } : undefined,
     irPort: opts.irPort,
     homeInfrared(homeId) {
       ir = loadIrConfig(runtimeDir, homeId);
@@ -231,9 +250,9 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
   const pollMs = msOf(env.THINQ_POLL_MS, DEFAULT_POLL_MS);
   const readbackMs = msListOf(env.THINQ_READBACK_MS, DEFAULT_READBACK_MS);
 
-  // ThinQ 클라이언트는 실제 모드에서 처음 필요할 때 만든다(시험 모드는 만들지 않는다)
+  // 목록을 확인하거나 운영 모드에서 짝을 연결할 때만 ThinQ 클라이언트를 만든다.
   let client: ThinqClient | null = null;
-  let thinqList: ThinqDeviceView[] | null = null;
+  let thinqList: { runtime: HomeRuntime; devices: ThinqDeviceView[] } | null = null;
   const thinqClient = (): ThinqClient => {
     if (client) return client;
     const c = thinqConfig(env);
@@ -361,18 +380,20 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
       home: h ? { id: h.twin.home.id, name: h.twin.home.name } : null, homes: homes(),
       rooms: h?.twin.rooms ?? [], devices: h ? deviceViews(h) : [], devices_saved: h ? store.hasSources(h.twin.home.id) : false,
       position: { start: !!h?.start, layout: !!h?.layout, phone_urls: h?.phoneUrls ?? [] },
+      android_twa: switching ? null : androidTwaTarget(h?.phoneUrls ?? [], androidTwaConfigured),
       mode, ir: { ready: !!ir }, thinq: { ready: thinqConfig(env).ok }, pairs: h ? store.pairs(h.twin.home.id, deviceIds(h), { quiet: true }) : {},
     };
   };
 
+  let hubUrls: string[] = [];
   const shell = createShell({
     current: () => current?.app ?? null,
     webDir: opts.webDir,
     allowOrigin,
+    mobileUrls: () => hubUrls,
     log,
     setup: {
       view,
-      done: () => store.state().done,
       stations() {
         if (!current || switching) throw new HttpError(409, "집을 바꾸는 중이에요.");
         const map = current.stationMap();
@@ -437,15 +458,20 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
         log(`운영 모드: ${want === "live" ? "실제" : "시험"}`);
         return view();
       },
-      async thinqDevices() {
-        if (mode !== "live") throw new HttpError(409, "실제 모드에서만 ThinQ 기기를 불러와요.");
+      async thinqDevices(home) {
+        if (mode !== "live" && home !== MOKRYEON_HOME) throw new HttpError(409, "이 집의 ThinQ 기기는 운영 모드에서 확인할 수 있어요.");
+        if (!current || switching) throw new HttpError(409, "집을 바꾸는 중이에요.");
+        const h = home === undefined ? current : requireHome({ home });
+        let devices: ThinqDeviceView[];
         try {
-          thinqList = (await thinqClient().devices()).map((d) => ({ ...d, kind: PAIRABLE_KINDS.find((k) => fitsKind(k, d.type)) ?? null }));
+          devices = (await thinqClient().devices()).map((d) => ({ ...d, kind: PAIRABLE_KINDS.find((k) => fitsKind(k, d.type)) ?? null }));
         } catch (e) {
-          if (e instanceof ThinqError) throw new HttpError(502, `ThinQ 기기 목록을 받지 못했어요. ${e.message}`);
+          if (e instanceof ThinqError) throw new HttpError(502, "ThinQ 기기 목록을 받지 못했어요.");
           throw e;
         }
-        return { ok: true, devices: thinqList };
+        if (current !== h || switching) throw new HttpError(409, "허브에 열린 집이 바뀌었어요.");
+        thinqList = { runtime: h, devices };
+        return { ok: true, ...(home === undefined ? {} : { home: h.twin.home.id }), devices };
       },
       setPairs(body) {
         const h = requireHome(body);
@@ -458,8 +484,8 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
         }
         // ThinQ 목록을 받았으면 그 목록에 있고 종류가 맞는 기기만
         for (const [id, target] of Object.entries(parsed)) {
-          if (target === null || !thinqList) continue;
-          const t = thinqList.find((d) => d.id === target);
+          if (target === null || thinqList?.runtime !== h) continue;
+          const t = thinqList.devices.find((d) => d.id === target);
           if (!t) throw new HttpError(400, `ThinQ 기기 목록에 없는 기기예요: ${target}`);
           const d = h.twin.devices.find((x) => x.id === id)!;
           if (!fitsKind(d.kind, t.type)) throw new HttpError(400, `${d.label}와 ThinQ ${t.name}는 종류가 달라요.`);
@@ -493,6 +519,23 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
     closeDb();
     lock.release();
     throw e;
+  }
+  // Containers publish the hub through the configured HTTPS origin, not a bridge address.
+  const lan = /^(0|false|off)$/i.test(env.PHONE_LAN_URLS?.trim() ?? "") ? [] : lanHubOrigins(listened.port, host);
+  const isCameraUrl = (url: URL) => cameraServeOrigins.has(url.origin) ||
+    Boolean(url.port && ["8210", "8443", env.PHONE_PORT].includes(url.port));
+  const explicit = mobileHubUrls([env.HUB_URL ?? ""]).filter(url => {
+    const parsed = new URL(url);
+    return configuredOrigin(parsed.origin) && !isCameraUrl(parsed);
+  });
+  for (const origin of lan) boundOrigins.add(origin);
+  hubUrls = [...explicit, ...mobileHubUrls(lan)];
+  if (opts.servedHubUrls) {
+    const served = await opts.servedHubUrls(listened.port).catch(() => []);
+    // Only the HTTPS mapping for this listener is trusted automatically.
+    const discovered = mobileHubUrls(served).filter(url => url.startsWith("https://") && !isCameraUrl(new URL(url)));
+    for (const url of discovered) boundOrigins.add(new URL(url).origin);
+    hubUrls = [...new Set([...discovered, ...hubUrls])];
   }
 
   // 보관 기간: 시작 때와 1시간마다 지난 사진 찍기 사진·시험 자료를 지운다

@@ -12,6 +12,7 @@ import type { SignalHub, ThinqLink } from "../../devices/index.js";
 import type { FloorPlan, HomePlan, PlaceNames, TwinData, loadLayout, loadScene } from "../../layout/index.js";
 import { realClock, type Body, type BusNode, type Clock, type Outbox } from "../../bus/index.js";
 import { HomeMachines } from "./machines.js";
+import type { HomeTrace } from "./trace.js";
 import type { LookClient, ObservationPipeline, PerceptionNode } from "../../observe/index.js";
 import type { WorldView } from "../../contract/world.js";
 import type { EyeFeed, FrameHeader, PhoneServer, StartStore, twinLandmarks } from "../../phone/index.js";
@@ -112,6 +113,7 @@ export class HomeCore {
   phoneNode: BusNode | null = null;
   machineRecorder: BusNode | null = null;
   readonly machines = new HomeMachines();
+  trace: HomeTrace | undefined;
   resumeProactive?: (text: string, originId: string) => string | null;
   captureProactiveRequest?: () => ((action: string) => void) | undefined;
   pamHeard = false;

@@ -3,6 +3,7 @@
 import { describe, expect, it } from "vitest";
 import type { ServerMessage } from "../../../src/contract/events.ts";
 import type { PendingGoal } from "../../../src/contract/goal.ts";
+import type { TraceRow } from "../../../src/contract/trace.ts";
 import { EMPTY_DASH, modeNow, reduceDash, stepIndex, TALK_SHOWN, talkOf } from "../../src/dashboard/data";
 import { currentStatusRowsOf } from "../../src/dashboard/timeline";
 import run from "../../src/dashboard/fake-run.json";
@@ -18,6 +19,41 @@ const said = (decision: string, atMs: number, ...texts: string[]): ServerMessage
 const textsOf = (s: ReturnType<typeof feed>) => talkOf(s)?.lines.map((m: { text: string }) => m.text);
 
 describe("대시보드 자료", () => {
+  it("Trace 재접속과 300회 실시간 갱신 뒤에도 진행 행을 보존하고 이전 판본과 집의 갱신을 걸러낸다", () => {
+    const hello: ServerMessage = { type: "hello", devices: 0, provider: null, hub: "memory", home: "home", trace_epoch: "e1" };
+    const pending: TraceRow = { id: "e1:1", activity_id: "e1:a", rev: 1, kind: "EXECUTION", name: "이동 안내", input: "식탁",
+      output: "시연자 수행 대기", refs: { plan_id: "p1" }, started_ms: 1, ended_ms: null, state: "pending" };
+    const live = (rows: TraceRow[], epoch = "e1"): ServerMessage => ({ type: "trace", epoch, rows });
+    const models = Array.from({ length: 300 }, (_, i) => live([{ ...pending, id: `e1:${i + 2}`, kind: "LLM", ended_ms: 10, state: "done" }]));
+    const during = feed([hello, live([pending]), ...models]);
+    expect(during.trace).toHaveLength(240);
+    expect(during.trace).toContainEqual(pending);
+    const cancelled: TraceRow = { ...pending, rev: 2, ended_ms: 20, output: "중단", state: "cancelled" };
+    const reconnected = feed([hello, live(during.trace), live([cancelled]), live([pending]), live([{ ...pending, rev: 3 }])]);
+    expect(reconnected.trace.filter(r => r.id === pending.id)).toEqual([cancelled]);
+    const changed = reduceDash(reconnected, { ...hello, trace_epoch: "e2" }, 0);
+    expect(reduceDash(changed, live([cancelled]), 0).trace).toEqual([]);
+  });
+
+  it("진행 중 목표의 완료된 시작 근거를 긴 실시간 세션과 재접속에서 보존하고 종료 뒤 정리한다", () => {
+    const hello: ServerMessage = { type: "hello", devices: 0, provider: null, hub: "memory", home: "home", trace_epoch: "e1" };
+    const goal = { id: "e1:1", activity_id: "e1:a", rev: 1, kind: "AGENT", name: "목표 준비", input: "컵 1 · 식탁",
+      output: "준비 시작", refs: { goal_id: "g1" }, started_ms: null, ended_ms: null, state: "done", retained: true } as const;
+    const live = (rows: TraceRow[]): ServerMessage => ({ type: "trace", epoch: "e1", rows });
+    const churn = (start: number) => Array.from({ length: 300 }, (_, i) => live([{
+      ...goal, retained: undefined, id: `model-${start + i}`, activity_id: `other-${i}`, refs: {}, kind: "LLM",
+    }]));
+    const open = feed([hello, live([goal]), ...churn(0)]);
+    expect(open.trace.find(row => row.id === goal.id)).toEqual(goal);
+    const command: TraceRow = { ...goal, retained: undefined, kind: "EXECUTION", name: "이동 안내", state: "pending", id: "e1:cmd",
+      refs: { goal_id: "g1", plan_id: "p1" } };
+    const revived = feed([hello, live(open.trace), live([command])]);
+    expect(revived.trace.filter(row => row.activity_id === goal.activity_id)).toEqual([goal, command]);
+    const released = reduceDash(revived, live([{ ...goal, retained: undefined, rev: 2 }]), 0);
+    expect(released.trace.map(row => row.id)).toEqual(revived.trace.map(row => row.id));
+    expect(feed([hello, live(revived.trace), live([{ ...goal, retained: undefined, rev: 2 }]), ...churn(300)]).trace)
+      .not.toContainEqual(expect.objectContaining({ id: goal.id }));
+  });
   it("사용자 A@10 재전송 뒤 A@30으로 돌아간 전이를 보존하고 늦은 B@20도 사이에 넣는다", () => {
     const a10 = { type: "person", state: "A", name: "읽는 중", since_ms: 10, source: "world", decision_id: null } as const;
     const b20 = { ...a10, state: "B", name: "공부 중", since_ms: 20 };
@@ -100,7 +136,7 @@ describe("대시보드 자료", () => {
     const seen = (run.moments[1]!.messages as ServerMessage[]).find((m) => m.type === "seen")!;
     expect(seen).toMatchObject({ type: "seen", frame: { width: 405, height: 720 }, shapes: [{ label: "cup" }] });
     expect(reduceDash(s, seen, 5)).toBe(s);
-    expect(Object.keys(s).sort()).toEqual(["decision", "eye", "goal", "habit", "mode", "people", "personFed", "plan", "plans", "reflection", "robots", "safety", "say", "says", "talk", "thoughts"]);
+    expect(Object.keys(s).sort()).toEqual(["decision", "eye", "goal", "habit", "mode", "people", "personFed", "plan", "plans", "reflection", "robots", "safety", "say", "says", "talk", "thoughts", "trace", "traceEpoch"]);
   });
   describe("반성 뒤 메시지 상자", () => {
     const NIGHT = { from: "drinking", to: "*", on: "밤에 사용자가 식탁을 떠난다.", when: null as string | null, action: "컵 치우기" };

@@ -15,7 +15,9 @@ import { existsSync, statSync } from "node:fs";
 import { createServer, type IncomingMessage, type Server } from "node:http";
 import { networkInterfaces } from "node:os";
 import { join, resolve } from "node:path";
+import type { Duplex } from "node:stream";
 import { WebSocket, WebSocketServer } from "ws";
+import { MOBILE_PHONE_EVENTS } from "../contract/mobile-phone.js";
 import type { FocusTarget } from "../contract/events.js";
 import type { ApprovalAnswer, HeardAt, PhoneCommand, PhonePending, PhoneTalkReply, PlannedCommand, PlannedCommandMessage } from "../contract/phone.js";
 import { PHONE_PROTOCOL } from "./protocol.js";
@@ -33,6 +35,7 @@ import type { CameraView } from "../contract/observe.js";
 import type { SyncState } from "./sync/aligner.js";
 import type { TwinLandmark } from "./sync/landmarks.js";
 import type { StartPose } from "./sync/start.js";
+import { ANDROID_ASSET_LINKS_PATH, type AndroidAssetLink } from "./android-twa.js";
 
 export type { FocusTarget } from "../contract/events.js";
 
@@ -85,6 +88,7 @@ export interface PhoneServerOptions {
   uiDir?: string;
   /** 영상 모드 영상 폴더(runtime/videos). 있으면 GET /phone/videos/<이름>.mp4·.webm을 Range로 나눠 준다. */
   videoDir?: string;
+  androidAssetLinks?: readonly AndroidAssetLink[];
   log?: (msg: string) => void;
   /** 폰에서 말하거나 쓴 문장(음성 인식 결과). 에이전트 답과 승인 대기를 돌려준다. */
   onSay?: (text: string) => Promise<PhoneReply>;
@@ -134,6 +138,8 @@ export function heardAt(raw: unknown): HeardAt | undefined {
 
 export interface PhoneServer {
   readonly server: Server;
+  /** 허브에서 검사한 같은 출처 연결을 기존 폰 처리기에 잇는다. */
+  upgradePortal(req: IncomingMessage, socket: Duplex, head: Buffer): void;
   /** '여기': 마지막 자세의 조준점(평면도). */
   here(): HerePoint;
   /** 클로이드가 지금 다루는 물건을 폰 화면에 표시하게 보낸다(맞추기 전이면 보내지 않는다). */
@@ -181,6 +187,7 @@ export function lanUrls(port: number, host: string): string[] {
 export function createPhoneServer(opts: PhoneServerOptions): PhoneServer {
   const uiDir = resolve(opts.uiDir ?? DEFAULT_UI_DIR);
   const videoDir = opts.videoDir ? resolve(opts.videoDir) : null;
+  const assetLinks = opts.androidAssetLinks?.length ? JSON.stringify(opts.androidAssetLinks) : null;
   const log = opts.log ?? ((m: string) => console.log(m));
   const session = new PhoneSession({ fallback: opts.fallback, eyeHeightM: opts.eyeHeightM, floorAt: opts.floorAt, sync: opts.sync });
 
@@ -197,6 +204,11 @@ export function createPhoneServer(opts: PhoneServerOptions): PhoneServer {
       return;
     }
     const head = req.method === "HEAD";
+    if (path === ANDROID_ASSET_LINKS_PATH && assetLinks) {
+      res.writeHead(200, { "content-type": "application/json", "cache-control": "no-store" });
+      res.end(head ? undefined : assetLinks);
+      return;
+    }
     // 폴더마다 그 폴더를 뿌리로 내준다(..%2F로 ui/dist의 대시보드·설정 화면에 닿지 않게)
     const file = PHONE_FILES.exec(path);
     // 영상은 같은 출처로 준다(폰 페이지가 영상을 canvas에 그려 보낸다). 이름이 틀리거나 없으면 404
@@ -216,12 +228,18 @@ export function createPhoneServer(opts: PhoneServerOptions): PhoneServer {
   });
 
   const wss = new WebSocketServer({
-    server,
-    path: "/phone/events",
+    noServer: true,
     maxPayload: MAX_PACKET_BYTES,
     verifyClient: ({ origin, req }: { origin?: string; req: IncomingMessage }) => sameHost(origin, req.headers.host),
   });
-  wss.on("error", () => {}); // listen 실패는 listen()의 reject로 전달된다(app.ts와 같은 이유)
+  wss.on("error", () => {});
+  const upgrade = (req: IncomingMessage, socket: Duplex, head: Buffer) =>
+    wss.handleUpgrade(req, socket, head, (ws) => wss.emit("connection", ws, req));
+  const badUpgrade = (socket: Duplex) => socket.end("HTTP/1.1 400 Bad Request\r\nConnection: close\r\nContent-Length: 0\r\n\r\n");
+  server.on("upgrade", (req, socket, head) => {
+    if (req.url?.split("?", 1)[0] === "/phone/events") upgrade(req, socket, head);
+    else badUpgrade(socket);
+  });
 
   const reply = (ws: WebSocket, msg: unknown) => {
     if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(msg));
@@ -457,6 +475,14 @@ export function createPhoneServer(opts: PhoneServerOptions): PhoneServer {
 
   return {
     server,
+    upgradePortal(req, socket, head) {
+      if (req.url !== MOBILE_PHONE_EVENTS) { badUpgrade(socket); return; }
+      if (!req.headers.origin || !sameHost(req.headers.origin, req.headers.host)) {
+        socket.end("HTTP/1.1 403 Forbidden\r\nConnection: close\r\nContent-Length: 0\r\n\r\n");
+        return;
+      }
+      upgrade(req, socket, head);
+    },
     here: () => session.here(),
     sendFocus(targets, ttlMs) {
       if (!session.aligned) return;

@@ -19,8 +19,8 @@
 // 지금 영상 길이 + 60초, 판 전체 --max초. 끄기 안내가 남은 채 끝나면 「끝까지 돌지 않음」에 남긴다.
 // 계획이 끝남(done)이면 폰 명령 줄의 완료 문장(done:<계획 id>, src/act/done-step.ts)이 보인 뒤 DONE_TAIL_MS(2초)까지 더 보고 끝낸다(8초 안에 안 오면 그냥 끝).
 // 미니맵 판 기록(run.json)에 그 완료 문장 영상 시각(doneMs)과 빠르기(rate)를 남긴다: scripts/minimap-cut.ts가 마지막 조각 끝에서 완료 문장 + 2초까지 남긴다.
-// 영상 모드 판정: 헤드리스 크롬 하나(390×844)로 폰 페이지 <phone>/phone/?clip=<clip>을 열고 「AR 시작」을 눌러 영상을 끝까지 튼다.
-// 폰 페이지 자기 자원(<phone>/assets/…)을 못 받았으면 「AR 시작」 전에 페이지를 한 번 다시 읽고 판정 줄 위에 적는다(이 PC는 127.0.0.1 연결이 가끔 실패한다).
+// 영상 모드 판정: 헤드리스 크롬 하나(390×844)로 폰 페이지 <phone>/phone/?clip=<clip>을 열고 「카메라 켜기」를 눌러 영상을 끝까지 튼다.
+// 폰 페이지 자기 자원(<phone>/assets/…)을 못 받았으면 「카메라 켜기」 전에 페이지를 한 번 다시 읽고 판정 줄 위에 적는다(이 PC는 127.0.0.1 연결이 가끔 실패한다).
 // --step(여러 번, 종류 go·pick·place·do, 낱말 a-z·_)은 폰 주소에 step=으로 하나씩 붙는다. 폰 페이지는 종류가 같고 대상 id에 낱말이 든 명령이 오면
 // 그 단계 영상으로 바꿔 튼다(영상 시각은 이어 셈). --step·--approve·--done-on이 있으면 --done-after 기본은 0이다(고른 명령 밖에는 단추를 누르지 않고 비전·폰 위치로 단계가 넘어가는지 본다).
 // 판마다 서버를 새로 띄운다. 앞 판 계획이 끝나지 않았거나 엔진 프레임을 이미 받은 서버(World State가 남음)면 크롬을 띄우기 전에 멈춘다.
@@ -41,7 +41,7 @@
 // 끝에 같은 크롬 새 탭(1280×800)으로 대시보드 <api>/를 열어 8초 뒤 사진을 runtime/videos/<영상>.<시각 또는 fake>.twin.png에 남기고 markdown에 넣는다.
 // 사진을 못 남기면 판정 줄 위에 적기만 한다.
 // --record <폴더>: 폰 페이지를 연 뒤 같은 크롬 새 창(1280×800)으로 대시보드를 판정 내내 띄우고, 트윈이 다 뜬 뒤(waitTwinReady) 대시보드 한 화면
-// (--record-phone이면 폰 탭도)을 CDP screencast로 초당 약 10장 받아 끝(30초 더 보기 포함)까지 녹화한다(scripts/video-record.ts). 「AR 시작」은 그 뒤에 누른다.
+// (--record-phone이면 폰 탭도)을 CDP screencast로 초당 약 10장 받아 끝(30초 더 보기 포함)까지 녹화한다(scripts/video-record.ts). 「카메라 켜기」는 그 뒤에 누른다.
 // 녹화하는 동안 대시보드 그림 간격을 재 적는다. 끝 사진은 그 창으로 바로 찍는다. 크롬을 끈 뒤 ffmpeg로 대시보드(폰도 받았으면 나란히) mp4 하나
 // (H.264, yuv420p, 10fps, 실제 시간 길이)를 <폴더>/<시각표 이름 줄기>.demo.mp4로 만든다. --chrome은 크롬 그리기 방식(기본 headless-gpu)이다.
 // ffmpeg가 없거나 실패하면 <폴더>/<줄기>.frames 프레임 폴더를 남기고 판정 줄 위에 적는다.
@@ -50,7 +50,7 @@
 // minimap 보기는 mp4를 만든 뒤에도 <줄기>.frames 장면 폴더를 두고 판 기록 run.json(녹화 시작 시각·장면·폰 페이지 짝·단계 영상·첫 영상 길이)을 남긴다.
 // 미니맵은 장면을 마스크 지연만큼 늦게 보이므로(ui/src/dashboard/scene-sync.ts) 보인 장면의 촬영 시각 기록(scenes)도 남기고, 완료 문장 2초는 미니맵에 보인 때부터 센다.
 // scripts/minimap-cut.ts가 그것으로 붙잡기를 뺀 이은 영상(<줄기>.minimap.mp4)을 만든다.
-// 영상은 소리 없이 「AR 시작」 누름에서 튼다. launchChrome은 자동 재생 플래그를 받지 않지만 소리 없는 재생은 크롬 기본값으로 된다.
+// 영상은 소리 없이 「카메라 켜기」 누름에서 튼다. launchChrome은 자동 재생 플래그를 받지 않지만 소리 없는 재생은 크롬 기본값으로 된다.
 // 오늘 기억: 영상을 틀기 전에 GET /api/memory/day/<오늘>의 uses.memory를 본다(memoryGate). 마시는 중에서 떠나는 배운 컵 치우기 화살표가 없으면(seed·옛 모양)
 // 크롬을 띄우지 않고 끝 코드 1과 판정 줄(서버를 끄고 demo-setup learned로 넣으라는 글). 있으면 시각표 머리에 「기억 <v>판 · <source>」 한 줄.
 // --fake: 실제 모델 없이 같은 프로세스에서 스스로 시험한다. 본 서버(HUB=memory, 한양목련, 새 RUNTIME_DIR, 영상·단계 영상은 공용 runtime/videos에서 바로 읽음, BRAIN=1, PAM 1초마다)와
@@ -631,9 +631,9 @@ const getJson = async <T>(url: string): Promise<T | null> => fetch(url).then((r)
 
 // 크롬에서 돌리는 식
 
-/** 「AR 시작」 단추를 누를 수 있으면 누른다. */
+/** 「카메라 켜기」 단추를 누를 수 있으면 누른다. */
 const CLICK_START = `(() => {
-  const b = [...document.querySelectorAll("button")].find((x) => x.textContent.trim() === "AR 시작");
+  const b = document.querySelector("button[data-phone-action='start-camera']");
   if (!b || b.disabled) return false;
   b.click();
   return true;
@@ -1032,12 +1032,12 @@ async function main(): Promise<number> {
       await cdp.send("Emulation.setDeviceMetricsOverride", { width: SIZE[0], height: SIZE[1], deviceScaleFactor: 1, mobile: true });
       await cdp.send("Page.navigate", { url });
       console.log(`[video-check] ${url}`);
-      // 폰 문서가 다 뜬 뒤에 녹화·「AR 시작」으로 간다(새 문서가 들어서기 전 screencast는 「Not attached to an active page」로 실패한다)
+      // 폰 문서가 다 뜬 뒤에 녹화·「카메라 켜기」로 간다(새 문서가 들어서기 전 screencast는 「Not attached to an active page」로 실패한다)
       await waitLoaded(cdp, url, { what: "폰 페이지" });
       const read = async () => (await cdp.evaluate(READ, 10_000)) as Seen;
 
       // 시연 녹화: 같은 크롬 새 창(탭은 폰 탭을 가린다)으로 대시보드를 판정 내내 띄우고, 트윈이 다 뜬 뒤 대시보드(--record-phone이면 폰도) 프레임을 받는다.
-      // 「AR 시작」(영상 재생)은 녹화를 시작한 뒤에 누른다
+      // 「카메라 켜기」(영상 재생)는 녹화를 시작한 뒤에 누른다
       if (framesDir) {
         dash = await openWindow(port, shape.size, (msg) => dashErrors.push(msg));
         await openDashboard(dash, api, { view: args.recordView });
@@ -1056,7 +1056,7 @@ async function main(): Promise<number> {
         console.log(`[video-check] 녹화 시작 · ${shape.fps}fps · ${args.recordPhone ? "폰·대시보드" : args.recordView === "minimap" ? "미니맵만" : "대시보드만"} · 크롬 ${args.chrome} · ${framesDir}`);
       }
 
-      // 폰 페이지 자기 자원을 못 받았으면(이 PC는 127.0.0.1 연결이 가끔 실패하고 크롬은 다시 받지 않는다) 「AR 시작」 전에 한 번 다시 읽는다
+      // 폰 페이지 자기 자원을 못 받았으면(이 PC는 127.0.0.1 연결이 가끔 실패하고 크롬은 다시 받지 않는다) 「카메라 켜기」 전에 한 번 다시 읽는다
       const failed = ownAssetFailures(errors, fake?.phone ?? args.phone);
       if (failed.length) {
         recordNotes.push(`자원 받기 실패로 폰 페이지를 한 번 다시 읽음: ${failed.join(", ")}`);
@@ -1066,9 +1066,9 @@ async function main(): Promise<number> {
         await waitLoaded(cdp, url, { what: "폰 페이지" });
       }
 
-      // 「AR 시작」을 누르고 재생이 시작될 때까지(t0)
+      // 「카메라 켜기」를 누르고 재생이 시작될 때까지(t0)
       for (const end = Date.now() + 60_000; !(await cdp.evaluate(CLICK_START, 10_000).catch(() => false)); await sleep(250)) {
-        if (Date.now() > end || stop) throw new Error("60초 안에 「AR 시작」 단추를 누를 수 없음");
+        if (Date.now() > end || stop) throw new Error("60초 안에 「카메라 켜기」 단추를 누를 수 없음");
       }
       let seen = await read();
       for (const end = Date.now() + 30_000; seen.record?.t0 == null; seen = await read()) {

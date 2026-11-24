@@ -5,6 +5,8 @@ import type { BusNode } from "../bus/index.js";
 import type { BrainLog, DecisionRecord, ExecState, PamUsage } from "../contract/events.js";
 import type { Intervention } from "./history/intervention.js";
 import type { WorldChange, WorldView } from "../contract/world.js";
+import type { EvidenceRef } from "../contract/assistance.js";
+import type { TracePort } from "../contract/trace.js";
 import { modeOf, planIdOf } from "../act/tasks.js";
 import { checkInput, fsmStep, isoWithOffset, type PamMemory } from "./decision.js";
 import { PamLinkError, type PamClient } from "./pam/index.js";
@@ -45,6 +47,8 @@ function applyAnswer(node: Pick<BusNode, "post"> | undefined, signal: AbortSigna
 }
 
 export interface DeciderOptions {
+  trace?: TracePort;
+  traceEvidence?: (change: WorldChange) => EvidenceRef | undefined;
   node?: () => Pick<BusNode, "spawn" | "post">;
   pam: PamClient;
   /** 집 상태 보기(거울). */
@@ -189,7 +193,13 @@ export class Decider {
     if (paused === "acting" || !this.o.trigger.due(now, view.person.visible, this.running.size)) return;
     this.o.trigger.called(now);
     const seq = ++this.seq;
-    const textSent = textFromWorld(view, this.recent, { nowMs: now, offsetMinutes: this.o.offsetMinutes });
+    let evidence: EvidenceRef | undefined;
+    const traceEvidence = this.o.traceEvidence;
+    const textSent = textFromWorld(view, this.recent, { nowMs: now, offsetMinutes: this.o.offsetMinutes,
+      onChanges: traceEvidence && (changes => {
+        for (let i = changes.length - 1; i >= 0 && !evidence; i--) evidence = traceEvidence(changes[i]!);
+      }),
+    });
     const finalTime = isoWithOffset(now, this.o.offsetMinutes);
     const tasks = this.o.tasks(saidIn(textSent).length > 0);
     const mem = this.o.memory();
@@ -203,8 +213,18 @@ export class Decider {
     const node = this.o.node?.();
     const query = async (life: AbortSignal) => {
         checkInput({ text: textSent, finalTime, memory: mem.memory, memoryKind: mem.kind, tasks });
-        return this.o.pam.predict({ final_time: finalTime, observation_text: textSent, memory_kind: mem.kind, memory: mem.memory, tasks, last_state: last },
-          { signal: AbortSignal.any([life, this.cancel.signal]), onUsage: (u) => { usage = u; } });
+        const signal = AbortSignal.any([life, this.cancel.signal]);
+        const trace = this.o.trace;
+        const row = signal.aborted ? "" : trace?.start("pam", { decision_id: base.id, evidence });
+        try {
+          const result = await this.o.pam.predict({ final_time: finalTime, observation_text: textSent, memory_kind: mem.kind, memory: mem.memory, tasks, last_state: last },
+            { signal, onUsage: (u) => { usage = u; } });
+          if (row) trace?.finish(row, signal.aborted ? "cancelled" : "done", signal.aborted ? "stopped" : "model_answer");
+          return result;
+        } catch (error) {
+          if (row) trace?.finish(row, signal.aborted ? "cancelled" : "failed", signal.aborted ? "stopped" : "failed");
+          throw error;
+        }
     };
     const job = Promise.resolve().then(() => node ? node.spawn(query) : query(this.cancel.signal))
       .then(
@@ -274,6 +294,17 @@ export class Decider {
 
   private emitDecision(r: DecisionRecord): void {
     if (this.stopped) return;
+    const trace = this.o.trace;
+    if (trace) {
+      const kind = r.action && !r.late && r.status === "valid" ? "action" : "wait";
+      const output = r.late ? "late" : r.status !== "valid" ? "failed" : r.action === "컵 치우기" ? "select_cup" : r.action ? "selected" : "waiting";
+      const target = r.action && kind === "action" ? { action: r.action } : undefined;
+      if (r.source === "speech") trace.event(kind, { decision_id: r.id }, output, undefined, target);
+      else {
+        const row = trace.start(kind, { decision_id: r.id }, r.atMs, target);
+        trace.finish(row, r.late ? "cancelled" : r.status === "valid" ? "done" : "failed", output);
+      }
+    }
     this.o.emit(decisionLog(r, this.clock.now(), this.o.mode?.(r.action) ?? modeOf(r.action), !!this.o.keepHeard?.()));
   }
 

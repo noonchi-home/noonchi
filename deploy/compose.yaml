@@ -71,6 +71,7 @@ services:
       VLM_MAX_INFLIGHT:
       DETECT_QUEUE_MAX:
       PHONE_URL:
+      ANDROID_TWA_SHA256_FINGERPRINTS:
       PHONE_EYE_HEIGHT_M:
       FOCUS:
       # 위치 찾기(기준 사진 지도, 구현명세서 6.15)
@@ -108,6 +109,7 @@ services:
       DATASET_COLLECT:
       DATASET_RETENTION_DAYS:
       ALLOWED_ORIGINS:
+      HUB_URL:
       PLAN_TOKEN:
       # 허브
       HUB:

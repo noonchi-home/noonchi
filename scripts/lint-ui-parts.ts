@@ -22,8 +22,8 @@ export const HEADER_FIX =
 export const PARTS_FIX =
   "화면 코드는 부품을 놓기만 해요. 배경·글자색·테두리·모서리·그림자·링·흐림·글꼴은 ui/src/components/ui의 21st.dev 부품을 쓰세요. 맞는 부품이 없으면 21st.dev에서 받아 그 폴더에 두세요.";
 export const UNUSED_FIX = "화면 입구 어디에서도 쓰지 않는 부품이에요. 파일을 지우세요.";
-/** 화면 입구(ui/index.html·ui/setup·ui/phone·ui/phone/shots가 여는 파일). */
-export const ENTRIES = ["dashboard/main.tsx", "setup/main.tsx", "phone/main.tsx", "phone/shots.tsx"];
+/** 화면 입구(ui/index.html·ui/setup·ui/phone·ui/phone/shots·ui/mobile이 여는 파일). */
+export const ENTRIES = ["dashboard/main.tsx", "setup/main.tsx", "phone/main.tsx", "phone/shots.tsx", "mobile/main.tsx"];
 export const RAW_FIX = "폰 화면의 단추·입력칸은 ui/src/components/ui의 21st.dev 부품(Button·Input)으로 놓아요.";
 /** 날 요소 규칙을 받는 화면: 폰 화면 코드(core 모듈 밖). */
 const PHONE_SCREEN = /(^|\/)ui\/src\/phone\/(?!core\/)/;
