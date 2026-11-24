@@ -2,15 +2,11 @@ import { useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import type { SceneJson, Vec2 } from "../../src/contract/layout";
 import { colors } from "./ConnectedUi";
+import { planFrame, planLines, segments, type Segment } from "./plan-lines";
 
 type Guide = { points: Vec2[]; color?: string; closed?: boolean };
 
 const inset = 16;
-
-function segments(points: Vec2[], closed = false): [Vec2, Vec2][] {
-  return points.slice(1).map((point, index) => [points[index], point] as [Vec2, Vec2])
-    .concat(closed && points.length > 2 ? [[points[points.length - 1], points[0]]] : []);
-}
 
 export function ConnectedPlan({ scene, label = "도면", onPoint, guides = [] }: {
   scene?: SceneJson;
@@ -20,23 +16,15 @@ export function ConnectedPlan({ scene, label = "도면", onPoint, guides = [] }:
 }) {
   const [width, setWidth] = useState(0);
   const height = 230;
-  const rooms = scene?.plan.rooms ?? [];
-  const walls = scene?.plan.walls ?? [];
-  const lines = rooms.flatMap(room => segments(room.polygon ?? [], true))
-    .concat(walls.map(wall => [wall.a, wall.b] as [Vec2, Vec2]));
-  const points = lines.flat();
-  if (!points.length) return <Text style={styles.empty}>표시할 도면이 없습니다.</Text>;
-  const xs = points.map(([x]) => x);
-  const ys = points.map(([, y]) => y);
-  const left = Math.min(...xs);
-  const top = Math.min(...ys);
-  const spanX = Math.max(1, Math.max(...xs) - left);
-  const spanY = Math.max(1, Math.max(...ys) - top);
+  const lines = planLines(scene);
+  const frame = planFrame(lines);
+  if (!frame) return <Text style={styles.empty}>표시할 도면이 없습니다.</Text>;
+  const { left, top, spanX, spanY } = frame;
   const scale = Math.max(0, Math.min((width - inset * 2) / spanX, (height - inset * 2) / spanY));
   const insetX = (width - spanX * scale) / 2;
   const insetY = (height - spanY * scale) / 2;
   const project = ([x, y]: Vec2): Vec2 => [(x - left) * scale + insetX, (y - top) * scale + insetY];
-  const draw = ([a, b]: [Vec2, Vec2], key: string, backgroundColor: string) => {
+  const draw = ([a, b]: Segment, key: string, backgroundColor: string) => {
     const [ax, ay] = project(a);
     const [bx, by] = project(b);
     const distance = Math.hypot(bx - ax, by - ay);

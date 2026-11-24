@@ -79,6 +79,15 @@ describe("옮기기", () => {
     near(e.object("ac_1")!.position, [1, 1.95, 0.1]);
   });
 
+  it("벽걸이는 끝점 없이 외곽선만 있는 고체(기둥) 옆에서도 선 벽에 붙는다", () => {
+    const withColumn = scene();
+    withColumn.plan.walls!.push({ id: "column", kind: "solid", a: null, b: null, thickness: null, polygon: [[1.6, 0.2], [2.4, 0.2], [2.4, 0.6], [1.6, 0.6]] });
+    const e = new LayoutEditor({ homeId: "oneroom", scene: withColumn, catalog: CATALOG, savePath: join(tempDir(), "edits.json"), here: () => ({ position: [2, 0.7] }) });
+    e.move("ac_1", "here");
+    near(e.object("ac_1")!.plan.position, [2, 0.1]);
+    expect(e.object("ac_1")!.plan.facing_deg).toBe(90);
+  });
+
   it("여기: 바닥 물건은 폰 쪽을 보게 놓는다", () => {
     const { e } = editor({ here: () => ({ position: [2, 2], from: [2, 3] }) });
     e.move("fridge_1", "here");
