@@ -1,6 +1,6 @@
 # Deploy NOONCHI on an AWS GPU instance
 
-A single EC2 instance runs NOONCHI and Redis on the CPU. In GPU mode, two vLLM services serve the vision model and the PAM language model. Run the commands below from the root of the NOONCHI checkout.
+A single EC2 instance runs NOONCHI on the CPU. Its nodes exchange messages over an in-process memory bus, so the deployment has no Redis service. In GPU mode, two vLLM services serve the vision model and the PAM language model. Run the commands below from the root of the NOONCHI checkout.
 
 ## 1. Prepare the host
 

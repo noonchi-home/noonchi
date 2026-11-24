@@ -115,7 +115,6 @@ The diagrams show the target. At `d5aeab53`, the code differs in these places.
 | Diagram | Code at `d5aeab53` | Change needed |
 |---|---|---|
 | YOLO26 runs in its own `yolo` container. | YOLO runs inside noonchi on a worker thread (`onnxruntime-node`, models in `models/`). | Move YOLO into its own container and call it from Perception. |
-| Messages go through the in-process Memory Bus. | `deploy/compose.yaml` sets `REDIS_URL: redis://redis:6379` and runs a `redis` container, so RedisBus is used. | Leave `REDIS_URL` empty and remove the `redis` service. |
 | EXAONE 4.5 33B makes decisions and reflects. | `vllm-pam` defaults to `Qwen/Qwen3.5-27B-GPTQ-Int4`. | Set `PAM_LIVE_MODEL` to EXAONE 4.5 33B. |
 | EXAONE plans the steps (Step Plan). | `src/agent/planner.ts` uses the agent provider, which defaults to OpenAI `gpt-5.5`. | Point the planner at the EXAONE server. |
 | Matter controls a physical TV. | `MATTER_TRANSPORT=local` simulates Matter devices inside noonchi. | Switch to a network Matter transport. |
