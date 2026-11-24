@@ -39,7 +39,8 @@ import { HttpError, originChecker, type TwinHomeApp } from "./app.js";
 import type { HubKind, MatterTransport, StartHubOptions } from "./hubFactory.js";
 import { startHome, type HomeContext, type HomeRuntime } from "./home/index.js";
 import { makeReady } from "./ready.js";
-import { createShell, lanHubOrigins, mobileHubUrls } from "./shell.js";
+import { createShell, mobileHubUrls } from "./shell.js";
+import { lanBindingError } from "./loopback.js";
 
 type Env = Record<string, string | undefined>;
 
@@ -59,14 +60,14 @@ export interface StartServerOptions {
   /** Optional scheduler shared by household nodes and the in-memory replay bus. */
   clock?: Clock;
   irPort?: IrPort;
-  /** 기본 process.env. HUB, MATTER_*, AGENT_PROVIDER, TWIN_STUDIO_DIR, HOME_ID(저장한 집이 없을 때 띄울 집, 기본 집), PORT(0이면 빈 포트), HOST,
+  /** 기본 process.env. HUB, MATTER_*, AGENT_PROVIDER, TWIN_STUDIO_DIR, HOME_ID(저장한 집이 없을 때 띄울 집, 기본 집), PORT(0이면 빈 포트), HOST(기본 127.0.0.1, 컨테이너 밖에서는 루프백만),
    *  HUB_URL(허브의 공개 주소를 자동으로 찾을 수 없는 곳에서 쓰는 QR 주소),
    *  ALLOWED_ORIGINS(이 PC 말고 대시보드를 여는 출처, 쉼표로 여러 개), PLAN_TOKEN(다른 주소에서 POST /api/plan을 받을 토큰),
    *  추론 모드(openai 기본·vllm)·VLM_BASE_URL·VLM_MODEL·VLM_CLOSER_MODEL·VLM_API_KEY·VLM_EXTRA_BODY·PAM_LLM_*(src/infer/endpoints.ts),
    *  기록 DB는 RUNTIME_DIR/noonchi.db, HISTORY_TZ_MINUTES(기록 날짜의 시간대 분, 기본 540), REFLECT_AT(매일 반성 시각 HH:MM, 기본 23:30, off면 끔),
    *  PHOTO_RETENTION_DAYS·DATASET_RETENTION_DAYS(사진 찍기 사진·시험 자료 보관 일, 기본 7), DATASET_COLLECT(1이면 엔진 프레임을 시험 자료로 저장),
-   *  PHONE_PORT(있으면 폰 AR 서버), PHONE_HOST(기본 0.0.0.0),
-   *  PHONE_EYE_HEIGHT_M(바닥 hit이 없을 때 폰 높이에서 빼는 눈높이, 기본 1.5), PHONE_URL(폰 주소 맨 앞), PHONE_LAN_URLS(0이면 폰 주소에 이 기계 네트워크 주소를 넣지 않음, compose),
+   *  PHONE_PORT(있으면 폰 AR 서버), PHONE_HOST(기본 127.0.0.1, 컨테이너 밖에서는 루프백만),
+   *  PHONE_EYE_HEIGHT_M(바닥 hit이 없을 때 폰 높이에서 빼는 눈높이, 기본 1.5), PHONE_URL(폰 주소 맨 앞),
    *  FOCUS(1이면 초점 표시를 보낸다, 기본 끔), PHONE_PHOTO_DIR(사진 폴더, 기본 runtime/photos), PHONE_VIDEO_DIR(영상 모드 영상 폴더, 기본 공용 runtime/videos, RUNTIME_DIR와 상관없음), RUNTIME_DIR(배치 수정본·설정의 바탕, 기본 runtime),
    *  BRAIN(1이면 폰 엔진 프레임으로 관찰 흐름을 돌린다. PHONE_PORT 필요, VLM은 추론 모드가 고른 주소),
    *  ENGINE_FRAME_MS·VLM_FRAME_MS·VLM_WINDOW_FRAMES·VLM_MAX_INFLIGHT·DETECT_QUEUE_MAX·BRAIN_YOLO_PATH·BRAIN_POSE_PATH·BRAIN_YOLO_THREADS·BRAIN_YOLO_PROVIDER·BRAIN_POSE_EVERY(src/observe/pipeline.ts),
@@ -136,6 +137,8 @@ export interface RunningServer {
 export async function startServer(opts: StartServerOptions = {}): Promise<RunningServer> {
   const env = opts.env ?? process.env;
   const log = opts.log ?? ((line: string) => console.log(line));
+  const lanBinding = lanBindingError(env);
+  if (lanBinding) throw new Error(lanBinding);
   const androidTwaConfigured = !!androidTwaStatements(env.ANDROID_TWA_SHA256_FINGERPRINTS);
   // 가전 종류 등록부가 틀린 조합이면(승인·ThinQ 어댑터·손 조작) 까닭과 함께 시작을 막는다
   const kindProblems = checkKinds(KINDS);
@@ -549,16 +552,13 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
     lock.release();
     throw e;
   }
-  // Containers publish the hub through the configured HTTPS origin, not a bridge address.
-  const lan = /^(0|false|off)$/i.test(env.PHONE_LAN_URLS?.trim() ?? "") ? [] : lanHubOrigins(listened.port, host);
   const isCameraUrl = (url: URL) => cameraServeOrigins.has(url.origin) ||
     Boolean(url.port && ["8210", "8443", env.PHONE_PORT].includes(url.port));
   const explicit = mobileHubUrls([env.HUB_URL ?? ""]).filter(url => {
     const parsed = new URL(url);
     return configuredOrigin(parsed.origin) && !isCameraUrl(parsed);
   });
-  for (const origin of lan) boundOrigins.add(origin);
-  hubUrls = [...explicit, ...mobileHubUrls(lan)];
+  hubUrls = explicit;
   if (opts.servedHubUrls) {
     const served = await opts.servedHubUrls(listened.port).catch(() => []);
     // Only the HTTPS mapping for this listener is trusted automatically.

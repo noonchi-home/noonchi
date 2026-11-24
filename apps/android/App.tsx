@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { ActivityIndicator, Alert, AppState, Image, Linking, Pressable, StatusBar, StyleSheet, Text, View, useWindowDimensions } from "react-native";
 import { CameraView, useCameraPermissions } from "expo-camera";
-import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaProvider, SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import ConnectedHome from "./ConnectedHome";
 import { createDashboardFlow } from "./dashboard-flow";
 import { connectDashboard } from "./pairing";
 import { startNativeAr } from "./native-twa";
 import { BrandWordmark, wordmarkBackground } from "./BrandWordmark";
+import { launchLayout } from "./launch-layout";
 import { ScreenBoundary } from "./screen-boundary";
 import { clientErrorReport, reportClientError } from "./client-error";
 import { createConnectedHub } from "./connected-hub";
@@ -27,13 +28,20 @@ function Button({ title, onPress, disabled = false }: {
   </Pressable>;
 }
 
+// 로딩 화면(시안 2의 B): 마스코트 상체만 화면 아래에 보이고 발·꼬리는 화면 밖으로 잘린다(launch-layout.ts)
 function Loading() {
-  const { width } = useWindowDimensions();
-  return <SafeAreaView style={styles.launch} edges={["top", "left", "right"]}>
+  const window = useWindowDimensions();
+  const insets = useSafeAreaInsets();
+  const [size, setSize] = useState<{ width: number; height: number } | null>(null);
+  const { width, height } = size ?? window;
+  const { wordmark, mascot: body } = launchLayout(width, height, insets.top);
+  return <View style={styles.launch} onLayout={({ nativeEvent: { layout } }) => {
+    if (layout.width !== size?.width || layout.height !== size?.height) setSize({ width: layout.width, height: layout.height });
+  }}>
     <StatusBar barStyle="light-content" />
-    <View style={styles.launchMark}><BrandWordmark width={Math.min(width * 0.59, 270)} /></View>
-    <Image source={mascot} accessible={false} style={styles.mascot} resizeMode="contain" />
-  </SafeAreaView>;
+    <View style={[styles.launchMark, { left: wordmark.left, top: wordmark.top }]}><BrandWordmark width={wordmark.width} /></View>
+    <Image source={mascot} accessible={false} resizeMode="contain" style={[styles.mascot, body]} />
+  </View>;
 }
 
 function ScreenFailed({ onRetry }: { onRetry: () => void }) {
@@ -65,9 +73,10 @@ function Portal({ flow }: { flow: DashboardFlow }) {
   useEffect(() => {
     flow.setActive(activeNow());
     const subscription = AppState.addEventListener("change", (state) => flow.setActive(state === "active"));
-    const launch = setTimeout(flow.finishLaunch, 850);
+    // 앱이 준비됐다: 켜진 지 2초(MIN_LAUNCH_MS)가 안 됐으면 그때까지 로딩 화면을 둔다
+    flow.finishLaunch();
     return () => {
-      clearTimeout(launch);
+      flow.dispose();
       subscription.remove();
       flow.setActive(false);
     };
@@ -146,11 +155,11 @@ export default function App() {
 }
 
 const styles = StyleSheet.create({
-  launch: { flex: 1, backgroundColor: wordmarkBackground, alignItems: "center", paddingTop: 30 },
-  launchMark: { flex: 1, justifyContent: "center", alignItems: "center" },
+  launch: { flex: 1, backgroundColor: wordmarkBackground, overflow: "hidden" },
+  launchMark: { position: "absolute" },
   occupy: { flex: 1 },
   opening: { ...StyleSheet.absoluteFill, alignItems: "center", justifyContent: "center", backgroundColor: "#fbf7f0" },
-  mascot: { width: "72%", maxWidth: 360, height: "66%", alignSelf: "center" },
+  mascot: { position: "absolute" },
   page: { flex: 1, backgroundColor: "#fbf7f0" },
   header: { minHeight: 64, backgroundColor: wordmarkBackground, justifyContent: "center", alignItems: "center" },
   content: { flex: 1, padding: 20, gap: 16 },

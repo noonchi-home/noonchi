@@ -247,12 +247,10 @@ export async function startPhone(core: HomeCore): Promise<void> {
   core.phone = phone;
   layout?.editor.setHere(() => phone.here());
   const wantedPhone = ctx.phonePort ?? Number(env.PHONE_PORT);
-  const listened = await phone.listen(Number.isInteger(wantedPhone) && wantedPhone >= 0 ? wantedPhone : 8210, env.PHONE_HOST?.trim() || "0.0.0.0");
-  // 폰 주소: PHONE_URL → tailscale serve https → 와이파이(대시보드 QR은 맨 앞 주소).
-  // PHONE_LAN_URLS=0(compose)이면 이 기계 네트워크 주소를 넣지 않는다: 컨테이너 안 주소는 밖에서 열 수 없다
+  const listened = await phone.listen(Number.isInteger(wantedPhone) && wantedPhone >= 0 ? wantedPhone : 8210, env.PHONE_HOST?.trim() || "127.0.0.1");
+  // 폰 주소: PHONE_URL → tailscale serve https → 이 PC(루프백) 주소(대시보드 QR은 맨 앞 주소)
   const served = await (ctx.servedPhoneUrls?.(listened.port) ?? Promise.resolve([])).catch(() => []);
-  const lanOff = /^(0|false|off)$/i.test(env.PHONE_LAN_URLS?.trim() ?? "");
-  core.phoneUrls = orderPhoneUrls(lanOff ? [] : listened.urls, served, env.PHONE_URL);
+  core.phoneUrls = orderPhoneUrls(listened.urls, served, env.PHONE_URL);
   core.phonePort = (phone.server.address() as { port: number } | null)?.port;
 }
 

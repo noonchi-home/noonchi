@@ -5,12 +5,33 @@ type Screen =
   | { kind: "dashboard"; url: string; opening: boolean; message?: string };
 
 type DashboardView = { active: boolean; cameraEpoch: number; screen: Screen };
+type Clock = {
+  now: () => number;
+  setTimeout: (fn: () => void, ms: number) => unknown;
+  clearTimeout: (timer: unknown) => void;
+};
 type Dependencies = {
   connect: (raw: string, options?: { signal?: AbortSignal }) => Promise<string>;
   open: (url: string, options: { signal: AbortSignal }) => Promise<void>;
+  clock?: Clock;
+  /** 로딩 화면을 보이는 최소 시간(기본 MIN_LAUNCH_MS). */
+  minLaunchMs?: number;
+};
+
+/** 로딩 화면은 앱이 켜진 뒤 최소 2초 보인다. 준비가 더 걸리면 준비된 때 넘어간다. */
+export const MIN_LAUNCH_MS = 2_000;
+
+const systemClock: Clock = {
+  now: () => Date.now(),
+  setTimeout: (fn, ms) => setTimeout(fn, ms),
+  clearTimeout: (timer) => clearTimeout(timer as ReturnType<typeof setTimeout>),
 };
 
 export function createDashboardFlow(deps: Dependencies, active = true) {
+  const clock = deps.clock ?? systemClock;
+  const launchedAt = clock.now();
+  const minLaunchMs = deps.minLaunchMs ?? MIN_LAUNCH_MS;
+  let launchTimer: unknown;
   let view: DashboardView = { active, cameraEpoch: 0, screen: { kind: "launch" } };
   let operation: AbortController | undefined;
   const listeners = new Set<() => void>();
@@ -30,8 +51,18 @@ export function createDashboardFlow(deps: Dependencies, active = true) {
       listeners.add(listener);
       return () => { listeners.delete(listener); };
     },
+    /** 앱이 준비됐다. 켜진 지 minLaunchMs가 안 됐으면 그때까지 로딩 화면을 둔다. */
     finishLaunch() {
-      if (view.screen.kind === "launch") update({ screen: { kind: "scan" } });
+      if (view.screen.kind !== "launch" || launchTimer !== undefined) return;
+      const leave = () => { if (view.screen.kind === "launch") update({ screen: { kind: "scan" } }); };
+      const wait = launchedAt + minLaunchMs - clock.now();
+      if (wait > 0) launchTimer = clock.setTimeout(leave, wait);
+      else leave();
+    },
+    /** 앱이 닫힐 때 남은 로딩 타이머를 치운다. */
+    dispose() {
+      if (launchTimer !== undefined) clock.clearTimeout(launchTimer);
+      launchTimer = undefined;
     },
     setActive(next: boolean) {
       if (view.active === next) return;

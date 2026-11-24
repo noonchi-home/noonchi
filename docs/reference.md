@@ -22,8 +22,8 @@ The Agent Trace shows `KIND`, `NAME`, `INPUT`, `OUTPUT`, and `LATENCY`. The feed
 
 | Setting | Default | Purpose |
 |---|---|---|
-| `HOST`, `PORT` | `127.0.0.1`, `8200` | Dashboard HTTP server. |
-| `PHONE_HOST`, `PHONE_PORT` | `0.0.0.0`, disabled unless configured | Phone HTTP and WebSocket server. `PHONE_URL` sets the externally reachable URL. |
+| `HOST`, `PORT` | `127.0.0.1`, `8200` | Dashboard HTTP server. Outside a container, only loopback addresses are accepted. |
+| `PHONE_HOST`, `PHONE_PORT` | `127.0.0.1`, disabled unless configured | Phone HTTP and WebSocket server. Outside a container, only loopback addresses are accepted. Phones connect through `tailscale serve` HTTPS. `PHONE_URL` sets that URL. |
 | `ALLOWED_ORIGINS` | Unset | Additional permitted origins. |
 | `REDIS_URL` | Unset | Connect stage nodes through Redis, or use the in-process bus when unset. |
 | `BRAIN` | Enabled in the example configuration | Enables observation and decision-making. |
