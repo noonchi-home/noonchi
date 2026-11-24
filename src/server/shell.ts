@@ -3,7 +3,6 @@
 
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { existsSync } from "node:fs";
-import { networkInterfaces } from "node:os";
 import type { Duplex } from "node:stream";
 import { resolve } from "node:path";
 import { DEFAULT_WEB_DIR, HttpError, isLocalOrigin, readJson, type TwinHomeApp } from "./app.js";
@@ -46,14 +45,6 @@ export interface Shell {
 }
 
 const BUSY = "집을 바꾸는 중이에요. 잠시 뒤 다시 해 주세요.";
-
-/** The hub's own LAN origins, on the HTTP port it actually bound. */
-export function lanHubOrigins(port: number, host: string): string[] {
-  const interfaces = Object.values(networkInterfaces()).flat();
-  const wildcard = host === "0.0.0.0" || host === "::";
-  return interfaces.flatMap(a => a?.family === "IPv4" && !a.internal && (wildcard || a.address === host)
-    ? [`http://${a.address}:${port}`] : []);
-}
 
 export function mobileHubUrls(origins: readonly string[]): string[] {
   const urls = origins.flatMap(value => {

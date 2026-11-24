@@ -1,10 +1,10 @@
-// 폰 AR 페이지와 자세 WebSocket만 여는 작은 서버(SSOT 9.6). 같은 와이파이의 폰이 붙도록 0.0.0.0에 열 수 있다.
+// 폰 AR 페이지와 자세 WebSocket만 여는 작은 서버(SSOT 9.6). 이 PC(루프백)에서만 듣고 폰은 Tailscale serve HTTPS로 들어온다(src/server/loopback.ts).
 // 기기 제어 REST는 여기 없다. 본 서버(127.0.0.1)는 그대로 두고 눈 자세는 onEye로, 폰의 말(say)과 승인 답(승인·거절)은 onSay·onConfirm·onCancel로
 // 넘긴다(그 뒤는 에이전트·승인 정책이 맡는다). 실제 폰에 명령·질문이 떠 있으면 말을 먼저 그 답으로 맞춰 보고(onAnswer),
 // 답 단추(answer)는 onChoice로 넘긴다(src/contract/phone.ts). 명령 대상의 트윈 자리는 맞춘 변환으로 AR 자리로 바꿔 보내고(맞추기 전 null),
 // 맞춤이 바뀌면 지금 명령을 다시 보낸다(speak false). 위치 맞춤 모듈(src/phone/sync)의 상태가 바뀌면 붙은 폰 모두에 상태를 보낸다.
 // 명령의 소리 등급(grade)은 실행 추적이 붙여 온 그대로 보낸다(src/act/talk-grade.ts). 실제 폰은 안전·질문 말을 자르지 않고 끝까지 읽는다.
-// 내부 테스트용이라 같은 와이파이의 누구나 말을 보낼 수 있다.
+// 인증은 없다: 이 PC와 Tailscale serve로 들어온 tailnet 기기만 닿는다.
 // 폰 화면은 React 빌드 ui/dist/phone/이고 빌드 파일은 /assets/다(대시보드와 같은 빌드). 영상 모드 영상은 /phone/videos/다(videoDir, Range).
 // 폰 판본(src/contract/phone-version.ts): 연결마다 hello를 기다린다. 판본이 맞는 hello를 받기 전에는 그 연결에 계획 명령을 보내지 않고 답(answer·say·confirm·cancel)을
 // 받지 않는다(관찰 사진·자세는 받는다). 열린 뒤 2초 안에 hello가 없거나 판본이 다르면 옛 탭으로 두고 새로 고침 안내(명령 id refresh)를 보낸다.
@@ -13,7 +13,6 @@
 
 import { existsSync, statSync } from "node:fs";
 import { createServer, type IncomingMessage, type Server } from "node:http";
-import { networkInterfaces } from "node:os";
 import { join, resolve } from "node:path";
 import type { Duplex } from "node:stream";
 import { WebSocket, WebSocketServer } from "ws";
@@ -22,7 +21,7 @@ import type { FocusTarget } from "../contract/events.js";
 import type { ApprovalAnswer, HeardAt, PhoneCommand, PhonePending, PhoneTalkReply, PlannedCommand, PlannedCommandMessage } from "../contract/phone.js";
 import { PHONE_PROTOCOL } from "./protocol.js";
 import { REFRESH_TEXT } from "../act/labels.js";
-import { listenRetry } from "../shared/net.js";
+import { isLoopbackHost, listenRetry } from "../shared/net.js";
 import { headWithin } from "../shared/cut.js";
 import { serveFile, serveRange } from "../shared/static.js";
 import { captureTime } from "../shared/capture-time.js";
@@ -175,13 +174,11 @@ export function sameHost(origin: string | undefined, host: string | undefined): 
   }
 }
 
-/** 폰에서 열 주소. 0.0.0.0이면 이 PC의 사설 IPv4마다 하나씩. */
-export function lanUrls(port: number, host: string): string[] {
-  if (host !== "0.0.0.0" && host !== "::") return [`http://${host}:${port}/phone/`];
-  return Object.values(networkInterfaces())
-    .flat()
-    .filter((a) => a && a.family === "IPv4" && !a.internal)
-    .map((a) => `http://${a!.address}:${port}/phone/`);
+/** 이 PC에서 여는 폰 주소: 루프백이면 그 주소 하나. 컨테이너의 0.0.0.0·::면 없다(밖에서는 PHONE_URL·tailscale serve 주소로 연다). */
+export function localPhoneUrls(port: number, host: string): string[] {
+  if (!isLoopbackHost(host)) return [];
+  const shown = host.includes(":") && !host.startsWith("[") ? `[${host}]` : host;
+  return [`http://${shown}:${port}/phone/`];
 }
 
 export function createPhoneServer(opts: PhoneServerOptions): PhoneServer {
@@ -524,7 +521,7 @@ export function createPhoneServer(opts: PhoneServerOptions): PhoneServer {
     },
     async listen(port, host) {
       const addr = await listenRetry(server, port, host, { log });
-      return { port: addr.port, urls: lanUrls(addr.port, host) };
+      return { port: addr.port, urls: localPhoneUrls(addr.port, host) };
     },
     async close() {
       // 처리 중인 승인 답(confirm·cancel)의 답을 보내고, 보낸 글이 소켓에 다 넘어갈 때까지(최대 1초) 기다린 뒤 연결을 끊는다.

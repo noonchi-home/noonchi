@@ -1,7 +1,8 @@
 // startServer가 PHONE_PORT를 보고 폰 AR 서버를 함께 띄우는지(HUB=memory로 빠르게).
 
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { connect } from "node:net";
+import { networkInterfaces, tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import type WebSocket from "ws";
@@ -20,6 +21,16 @@ afterEach(async () => {
 });
 
 const baseEnv = () => ({ HUB: "memory", PORT: "0", RUNTIME_DIR: mkdtempSync(join(tmpdir(), "rt-")) });
+
+/** 이 PC의 루프백이 아닌 IPv4(와이파이·이더넷·Tailscale 100.x). */
+const machineAddresses = () => Object.values(networkInterfaces()).flat().flatMap((a) => a && a.family === "IPv4" && !a.internal ? [a.address] : []);
+/** host:port에 TCP로 붙는가. */
+const reachable = (host: string, port: number) => new Promise<boolean>((res) => {
+  const socket = connect({ host, port });
+  socket.setTimeout(5000, () => { socket.destroy(); res(false); });
+  socket.once("connect", () => { socket.destroy(); res(true); });
+  socket.once("error", () => res(false));
+});
 
 function next(ws: WebSocket, pred: (m: Msg) => boolean): Promise<Msg> {
   return new Promise((res, rej) => {
@@ -60,7 +71,7 @@ describe("startServer + 폰 AR", () => {
     phone.close();
   });
 
-  it("tailscale serve 주소를 와이파이 주소보다 앞에, PHONE_URL은 맨 앞에 둔다", async () => {
+  it("tailscale serve 주소를 이 PC 주소보다 앞에, PHONE_URL은 맨 앞에 둔다", async () => {
     const ts = "https://phone-pc.example-net.ts.net/phone/";
     const ports: number[] = [];
     srv = await startServer({
@@ -73,19 +84,22 @@ describe("startServer + 폰 AR", () => {
     expect(((await (await fetchRetry(`${srv.url}/api/health`)).json()) as { phone_urls?: string[] }).phone_urls).toEqual(srv.phoneUrls);
   });
 
-  it("PHONE_LAN_URLS=0(컨테이너)이면 이 기계 네트워크 주소는 빼고 밖에서 열 수 있는 PHONE_URL·tailscale 주소만 둔다", async () => {
+  it("PHONE_HOST가 없으면 폰 서버는 127.0.0.1에서만 듣고, 폰 주소에 이 PC 네트워크 주소를 넣지 않는다", async () => {
     const ts = "https://phone-pc.example-net.ts.net/phone/";
     srv = await startServer({
-      env: { ...baseEnv(), PHONE_PORT: "0", PHONE_HOST: "127.0.0.1", PHONE_LAN_URLS: "0", PHONE_URL: "https://my.example/phone/" }, log: () => {},
+      env: { ...baseEnv(), PHONE_PORT: "0", PHONE_URL: "https://my.example/phone/" }, log: () => {},
       servedPhoneUrls: async () => [ts],
     });
-    expect(srv.phoneUrls).toEqual(["https://my.example/phone/", ts]);
-    expect(((await (await fetchRetry(`${srv.url}/api/health`)).json()) as { phone_urls?: string[] }).phone_urls).toEqual(["https://my.example/phone/", ts]);
-    await srv.close();
-    srv = await startServer({ env: { ...baseEnv(), PHONE_PORT: "0", PHONE_HOST: "127.0.0.1", PHONE_LAN_URLS: "off" }, log: () => {} });
-    expect(srv.phoneUrls).toEqual([]);
-    expect(((await (await fetchRetry(`${srv.url}/api/health`)).json()) as { eye?: boolean; phone_urls?: string[] })).toMatchObject({ eye: true, phone_urls: [] });
-  });
+    expect(srv.phoneUrls.slice(0, 2)).toEqual(["https://my.example/phone/", ts]);
+    expect(srv.phoneUrls.slice(2)).toEqual([expect.stringMatching(/^http:\/\/127\.0\.0\.1:\d+\/phone\/$/)]);
+    const port = Number(new URL(srv.phoneUrls[2]!).port);
+    expect(await reachable("127.0.0.1", port)).toBe(true);
+    for (const address of machineAddresses()) {
+      expect(srv.phoneUrls.join(" "), address).not.toContain(address);
+      expect(await reachable(address, port), address).toBe(false);
+    }
+    expect(((await (await fetchRetry(`${srv.url}/api/health`)).json()) as { phone_urls?: string[] }).phone_urls).toEqual(srv.phoneUrls);
+  }, 30_000);
 
   it("PHONE_PORT가 없으면 폰 서버를 띄우지 않는다", async () => {
     srv = await startServer({ env: baseEnv(), log: () => {} });
