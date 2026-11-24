@@ -25,7 +25,7 @@ const world = { objects: [], person_visible: true, vlm_missing: 0, yolo_missing:
 
 async function start() {
   srv = await startServer({ env: { HUB: "memory", PORT: "0", RUNTIME_DIR: mkdtempSync(join(tmpdir(), "rt-")) }, log: () => {} });
-  // 서버 메인 연결은 읽기 전용이라 기록 작업 스레드 창구로 넣는다
+  // 서버 메인 연결은 읽기 전용이라 HistoryWriter(기록 작업 스레드)로 넣는다
   const db = srv.historyWriter;
   db.add("detection", t(8, 0), "사람 보임");
   for (const [i, action] of [[1, "대기"], [2, "컵 치우기"]] as const) {

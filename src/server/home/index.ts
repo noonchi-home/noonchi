@@ -40,7 +40,7 @@ type Env = Record<string, string | undefined>;
 export interface HomeHistory {
   /** 읽기 연결(서버에서는 읽기 전용). 쓰기는 write로 한다. */
   db: HistoryDb;
-  /** 기록 DB 쓰기 창구(서버는 기록 작업 스레드). */
+  /** 기록 DB 쓰기 함수 묶음(HistoryWriter, 서버에서는 기록 작업 스레드가 쓴다). */
   write: HistoryWriter;
   device(s: DeviceState, note?: DeviceNote): void;
   brain(l: BrainLog): void;

@@ -1,9 +1,9 @@
-// thread-writer.ts — 서버의 기록 DB 쓰기 창구: noonchi.db 쓰기를 작업 스레드(writer-thread.ts)로 보낸다.
+// thread-writer.ts — ThreadWriter: 서버의 noonchi.db 쓰기 요청을 모아 작업 스레드(writer-thread.ts)로 보내고 커밋 결과를 받는 객체.
 // 메인 스레드는 FULL 커밋(fsync)을 기다리지 않는다. 한 차례(이벤트 루프 한 바퀴)에 부른 쓰기를 모아 한 번에 보내고(최대 maxBatch건),
 // 작업 스레드는 그 묶음과 커밋하는 동안 쌓인 묶음을 한 트랜잭션으로 쓴 뒤 일마다 결과를 돌려준다(Promise는 커밋 뒤에 풀린다).
 // 작업 스레드는 프로세스에 하나다: 모듈을 불러오는 데 2초쯤 걸려, 한 프로세스가 서버를 여러 번 띄우면(시험) 띄워 둔 스레드에 연결만 새로 연다.
 // 작업 스레드가 죽으면 기다리던 쓰기를 모두 실패로 돌리고(기록 노드는 ack하지 않아 버스가 다시 준다) 다시 띄워 연결을 다시 연다.
-// 창구마다 연속 maxDeaths번(기본 3) 죽으면 다시 열지 않고 writable()이 false다(/api/health db). 커밋이 한 번 되면 센 수를 지운다.
+// ThreadWriter마다 연속 maxDeaths번(기본 3) 죽으면 다시 열지 않고 writable()이 false다(/api/health db). 커밋이 한 번 되면 센 수를 지운다.
 import { Worker } from "node:worker_threads";
 import { writerOps, type HistoryWriter, type WriteArgs, type WriteOp, type WriteResult, type WriterStats } from "./writer.js";
 import type { WriterIn, WriterOut, WriterRequest, WriterResult } from "./writer-thread.js";
@@ -19,15 +19,15 @@ export interface ThreadWriterOptions {
   windowMs?: number;
   /** 연속으로 죽으면 다시 열지 않는 수(기본 3). */
   maxDeaths?: number;
-  /** 시험: 이 창구가 붙어 있는 동안 새로 띄운 작업 스레드. */
+  /** 시험: 이 ThreadWriter가 작업 스레드에 연결을 둔 동안 새로 띄운 작업 스레드. */
   onWorker?: (w: Worker) => void;
 }
 
 type Pending = { resolve: (v: unknown) => void; reject: (e: Error) => void };
 const DEAD = "기록 DB 작업 스레드가 끝나 쓰지 못했어요";
-const CLOSED = "기록 DB 쓰기 창구를 닫았어요";
+const CLOSED = "기록 DB 쓰기를 닫았어요";
 
-/** 프로세스에 하나인 작업 스레드: 창구(연결)마다 메시지를 나눠 준다. 붙은 창구가 없으면 프로세스 끝을 막지 않는다(unref). */
+/** 프로세스에 하나인 작업 스레드: ThreadWriter(DB 연결 id)마다 메시지를 나눠 준다. 연결을 둔 ThreadWriter가 없으면 프로세스 끝을 막지 않는다(unref). */
 const thread = new (class SharedThread {
   #worker: Worker | null = null;
   #ready = false;
@@ -75,7 +75,7 @@ const thread = new (class SharedThread {
       this.#worker = null;
       this.#ready = false;
       this.#outbox.length = 0;
-      // 기다리던 쓰기는 창구마다 실패로 돌리고, 아직 쓰는 창구가 있으면 다시 띄워 연결을 다시 연다
+      // 기다리던 쓰기는 ThreadWriter마다 실패로 돌리고, 아직 쓰는 ThreadWriter가 있으면 다시 띄워 연결을 다시 연다
       for (const c of [...this.#clients.values()]) c.died(code);
       if ([...this.#clients.values()].some((c) => c.wantsThread())) this.#spawn();
     });
@@ -87,7 +87,7 @@ export class ThreadWriter {
   readonly #path: string;
   readonly #o: Required<Pick<ThreadWriterOptions, "maxBatch" | "windowMs" | "maxDeaths">> & ThreadWriterOptions;
   readonly #id: number;
-  /** 작업 스레드에 이 창구의 쓰기 연결이 열려 있다. */
+  /** 작업 스레드에 이 ThreadWriter의 쓰기 연결이 열려 있다. */
   #opened = false;
   /** 처음 연결을 열면 풀린다(못 열면 거절). */
   readonly #first: Promise<void>;
@@ -131,7 +131,7 @@ export class ThreadWriter {
   /** 처음 연결을 열 때까지 기다린다. 못 열었으면 던진다. */
   ready(): Promise<void> { return this.#first; }
 
-  /** 창구(일 이름마다 함수 + flush·stats·writable·close). */
+  /** HistoryWriter(쓰기 일 이름마다 함수 + flush·stats·writable·close)로 내보낸다. */
   api(): HistoryWriter {
     return {
       ...writerOps((op, args) => this.call(op, args)),

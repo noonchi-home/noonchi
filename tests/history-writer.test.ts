@@ -146,7 +146,7 @@ describe("서버 기록 DB 연결", () => {
   let srv: RunningServer | undefined;
   afterEach(async () => { await srv?.close(); srv = undefined; });
 
-  it("메인 스레드 연결은 읽기 전용이라 쓰면 실패하고, 쓰기는 작업 스레드 창구로 한다", async () => {
+  it("메인 스레드 연결은 읽기 전용이라 쓰면 실패하고, 쓰기는 HistoryWriter(기록 작업 스레드)로 한다", async () => {
     srv = await startServer({ env: { HUB: "memory", PORT: "0", HOME_ID: "oneroom", RUNTIME_DIR: mkdtempSync(join(tmpdir(), "rt-")) }, log: () => {} });
     expect(() => srv!.history.add("feedback", 1, "메인에서 씀")).toThrow(/readonly/i);
     expect(() => srv!.history.cupAnswers.remember("oneroom", "r", true)).toThrow(/readonly/i);

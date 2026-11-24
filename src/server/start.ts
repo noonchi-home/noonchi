@@ -124,7 +124,7 @@ export interface RunningServer {
   readonly mode: ControlMode;
   /** 기록 DB(RUNTIME_DIR/noonchi.db). 집을 바꿔도 같다. */
   readonly history: HistoryDb;
-  /** 기록 DB 쓰기 창구(기록 작업 스레드). history는 읽기 전용 연결이라 쓰기는 모두 이리로 간다. */
+  /** 기록 DB 쓰기 함수 묶음(HistoryWriter, 기록 작업 스레드가 쓴다). history는 읽기 전용 연결이라 쓰기는 모두 이리로 간다. */
   readonly historyWriter: HistoryWriter;
   /** 다른 집으로 바꾼다(POST /api/setup/home과 같음). */
   switchHome(id: string): Promise<void>;

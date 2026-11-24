@@ -162,7 +162,7 @@ export function nightSave(db: HistoryDb, a: NightSave): { robot: number; candida
   });
 }
 
-/** 밤 흐름이 기록 DB에 쓰는 곳. 기본은 그 연결에 바로 쓴다(서버는 기록 작업 스레드 창구를 넘긴다). */
+/** 밤 흐름이 기록 DB에 쓰는 곳. 기본은 그 연결에 바로 쓴다(서버는 기록 작업 스레드로 쓰기를 보내는 HistoryWriter를 넘긴다). */
 export interface NightStore {
   add(kind: HistoryKind, atMs: number, text: string, o: { subject?: string; data?: unknown }): unknown;
   saveNight(a: NightSave): { robot: number; candidates: number } | Promise<{ robot: number; candidates: number }>;

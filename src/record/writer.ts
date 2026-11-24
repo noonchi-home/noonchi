@@ -1,6 +1,6 @@
-// writer.ts — 기록 DB(noonchi.db) 쓰기 일 표(WRITE_OPS)와 그 일을 부르는 쓰기 창구(HistoryWriter).
-// 서버는 작업 스레드 창구(writer-thread.ts ThreadWriter)를 쓴다: 쓰기 연결을 작업 스레드 혼자 갖고 메인 스레드는 읽기 전용 연결만 쓴다.
-// 시험·오프라인 도구는 같은 스레드 창구(directWriter)를 쓴다: 같은 일 표를 부르는 즉시 그 연결에서 돈다.
+// writer.ts — 기록 DB(noonchi.db) 쓰기 일 표(WRITE_OPS)와 HistoryWriter(일 이름마다, 그 일을 쓰기 연결에서 돌리고 커밋 뒤 결과를 주는 함수 묶음).
+// 서버는 ThreadWriter(thread-writer.ts)가 만든 HistoryWriter를 쓴다: 쓰기 연결을 작업 스레드 혼자 갖고 메인 스레드는 읽기 전용 연결만 쓴다.
+// 시험·오프라인 도구는 directWriter가 만든 HistoryWriter를 쓴다: 같은 일 표를 부르는 즉시 그 연결에서 돈다.
 // 일마다 넘기는 값은 구조 복제(structured clone)가 되는 값이어야 한다(함수를 넘기지 않는다).
 import {
   MODE_TEXT, datasetWriter, deviceRecorder, findRoutines, memoryForDay, nightSave, readDayMemory, recordBrainLog, recordPlan, routineEdge, sweep,
@@ -107,7 +107,7 @@ export type WriteResult<K extends WriteOp> = ReturnType<WriteOps[K]>;
 /** 커밋 수(synchronous = FULL이라 커밋마다 WAL fsync 한 번)·묶음 수·일 수. */
 export interface WriterStats { commits: number; batches: number; jobs: number }
 
-/** 기록 DB 쓰기 창구: 일 표의 일마다 같은 이름의 함수(커밋이 끝나면 풀리는 Promise). */
+/** 기록 DB 쓰기 함수 묶음: 일 표의 일마다 같은 이름의 함수(커밋이 끝나면 풀리는 Promise). */
 export type HistoryWriter = { [K in WriteOp]: (...args: WriteArgs<K>) => Promise<WriteResult<K>> } & {
   /** 지금까지 보낸 쓰기가 모두 커밋(또는 실패)될 때까지 기다린다. */
   flush(): Promise<void>;
@@ -118,7 +118,7 @@ export type HistoryWriter = { [K in WriteOp]: (...args: WriteArgs<K>) => Promise
   close(): Promise<void>;
 };
 
-/** 일 이름마다 call(op, args)를 부르는 창구 함수들. */
+/** 일 이름마다 call(op, args)를 부르는 함수들. */
 export function writerOps(call: <K extends WriteOp>(op: K, args: WriteArgs<K>) => Promise<WriteResult<K>>): { [K in WriteOp]: (...args: WriteArgs<K>) => Promise<WriteResult<K>> } {
   return Object.fromEntries((Object.keys(WRITE_OPS) as WriteOp[]).map((op) => [op, (...args: never[]) => call(op, args as never)])) as never;
 }
@@ -130,13 +130,13 @@ export function runOp<K extends WriteOp>(ctx: WriteCtx, op: K, args: WriteArgs<K
   return ctx.db.tx(() => fn(ctx, ...args));
 }
 
-/** 같은 스레드 창구(시험·오프라인 도구): 부르는 즉시 그 연결에서 쓰고 결과를 Promise로 준다. */
+/** 같은 스레드에서 쓰는 HistoryWriter(시험·오프라인 도구): 부르는 즉시 그 연결에서 쓰고 결과를 Promise로 준다. */
 export function directWriter(db: HistoryDb): HistoryWriter {
   const ctx: WriteCtx = { db, sessions: new Map() };
   const stats: WriterStats = { commits: 0, batches: 0, jobs: 0 };
   let closed = false;
   const call = <K extends WriteOp>(op: K, args: WriteArgs<K>): Promise<WriteResult<K>> => {
-    if (closed) return Promise.reject(new Error("기록 DB 쓰기 창구를 닫았어요"));
+    if (closed) return Promise.reject(new Error("기록 DB 쓰기를 닫았어요"));
     try {
       const value = runOp(ctx, op, args);
       stats.jobs++;
