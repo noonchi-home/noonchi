@@ -263,3 +263,39 @@ it("ignores a replacement planner that answers after stop", async () => {
   expect(r.commands).toHaveBeenCalledTimes(count);
   expect(r.ended).toHaveBeenCalledTimes(1);
 });
+
+// 요구사항 ④(이미 됐으면 끝냄): 사람이 직접 켜 가전이 이미 목표 상태면 사용자에게 보이는 실행 기록이 「이미 원하는 상태」로 끝난다
+it("가전이 이미 목표 상태(사람이 직접 켬)면 계획·명령 없이 실행 기록을 「기기가 이미 원하는 상태예요.」로 끝낸다", async () => {
+  const ref: EvidenceRef = { source: "hub", subjectId: "ac", originId: "device-read:950", observedMs: 950 };
+  const r = rig({ readDevice: () => ({ attr: "power", value: true, ref }) });
+  r.tracker.onDecision(decision);
+  await r.tracker.idle();
+  expect(r.emit).toHaveBeenCalledWith(expect.objectContaining({ type: "execution", plan_id: "plan:d", state: "done", text: "기기가 이미 원하는 상태예요." }));
+  expect(r.planner).not.toHaveBeenCalled();
+  expect(r.toPhone).not.toHaveBeenCalled();
+});
+
+// 요구사항 ④(근거가 없으면 멈춤은 정해진 조건에서만): 먼저 확인하기(verify_first)로 정해진 일에서 받을 사람을 다시 보지 못하고 근거 찾기가 멈추면
+// 「지금 상태를 확인할 수 없어 멈췄어요」로 끝낸다. 같은 상황이라도 그 조건이 없는 보통 정책이면 그 글 없이 첫 명령을 낸다
+it("verify_first에서 받을 사람을 다시 보지 못하고 근거 찾기가 멈추면 명령 없이 「지금 상태를 확인할 수 없어 멈췄어요」로 끝내고, 보통 정책이면 바로 첫 명령을 낸다", async () => {
+  const d = { ...decision, action: "물 한 잔 가져다주기" };
+  const planner = (current: DecisionRecord) => ({ ok: true as const, plan: plan(current, [step("go", "go", "table_1"), step("place", "place", "table_1", "cup_1")]) });
+  const need = "지금 상태를 확인할 수 없어 멈췄어요.";
+  const held = movement(cameraWorld("kitchen", 0, 1000, "sink_1"), planner, {
+    resident: () => "member", interventionFor: () => "verify_first",
+    evidence: { choose: async () => ({ tool: "stop" }), acquire: async () => null },
+  });
+  held.tracker.onDecision(d);
+  await held.tracker.idle();
+  await new Promise(resolve => setTimeout(resolve, 0));
+  held.tracker.tick();
+  expect(held.commands).not.toHaveBeenCalled();
+  expect(held.emit).toHaveBeenCalledWith(expect.objectContaining({ type: "execution", plan_id: "plan:d", state: "failed", text: need }));
+  expect(held.ended).toHaveBeenCalledExactlyOnceWith(expect.anything(), "cancelled", expect.any(Number), []);
+
+  const plain = movement(cameraWorld("kitchen", 0, 1000, "sink_1"), planner, { resident: () => "member" });
+  plain.tracker.onDecision(d);
+  await plain.tracker.idle();
+  expect(plain.tracker.openCommand()?.stepId).toBe("go");
+  expect(plain.emit).not.toHaveBeenCalledWith(expect.objectContaining({ text: need }));
+});

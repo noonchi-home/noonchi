@@ -115,6 +115,11 @@ export class WorldState {
 
   /** poses: 이 프레임의 관절(YOLO26-pose). 없으면(관절 모델이 없거나 사람이 없어 돌리지 않음) 자세·손에 듦을 보지 않는다.
    *  이미 넣은 가장 새 전체 사진보다 옛 촬영(감지 대기열에서 늦게 나온 프레임)은 넣지 않고 변화·감지 번호 없이 돌려준다(objects.ts). */
+  /** 로봇 실행 단계 중인가(폰에 명령이 떠 있다, 집 상태 노드가 /act/phone_changes로 정한다): 그동안 아래 가장자리에 닿고 얼굴 관절이 없는 사람 상자를 사용자로 세지 않는다. */
+  robotActing(on: boolean): void {
+    this.core.acting = on;
+  }
+
   applyDetections(frame: FrameMeta, dets: Detection[], poses?: Pose[]): { changes: WorldChange[]; ids: Map<string, string> } {
     return this.core.merge.applyDetections(frame, dets, poses);
   }
@@ -136,7 +141,8 @@ export class WorldState {
    *  되돌린 뒤에는 YOLO가 그 사람을 다시 볼 때까지 빠른 떠남을 쓰지 않는다(사라짐 확정 규칙만). */
   private revertGone(at: number, scene: SceneObservation, look?: SceneLook): WorldChange[] {
     const c = this.core, g = c.fastGone;
-    if (!g || c.person.visible || at < g.at || !look?.fresh || !scene.household?.people.length) return [];
+    // 로봇 실행 단계 중(acting)에는 VLM이 폰을 든 시연자를 사람으로 답할 수 있어 되돌리지 않는다
+    if (!g || c.person.visible || c.acting || at < g.at || !look?.fresh || !scene.household?.people.length) return [];
     c.fastGone = null;
     c.fastBlocked = true;
     c.person.visible = true;

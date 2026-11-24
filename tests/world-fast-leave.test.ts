@@ -8,6 +8,7 @@ import type { SceneObservation } from "../src/contract/observe.js";
 import { WorldState } from "../src/world/state/world.js";
 import { AWAY_VIEW, LOOK_SIZE, LOOK_VIEW, engineFrame } from "./helpers/camera.js";
 import { det } from "./helpers/detectors.js";
+import { poseOf } from "./helpers/poses.js";
 
 const ws = () => new WorldState({ surfaces: () => [], floorAt: () => 0, roomAt: () => ({ id: "living", label: "거실" }), devices: () => [] });
 /** 발이 화면 안인 사람(아랫변 350 < 360 × 0.98): 발 자리로 사람 자리를 안다. */
@@ -42,6 +43,22 @@ describe("떠남 → 사람 안 보임", () => {
     expect(w.view(3600).person).toMatchObject({ visible: false, count: 0, since_ms: 3600 });
   });
 
+  it("사용자가 떠난 뒤 시연자 손 상자(관절에 손목만)만 남아도 자리가 화면 안이면 0.5초 뒤 안 보임이다(사용자로 세는 사람만 본다)", () => {
+    const w = ws();
+    const face = poseOf({ 0: [210, 40, 0.9], 5: [180, 80, 0.9], 6: [240, 80, 0.9] }, PERSON.box);
+    const HAND = det("person", 0.9, [0, 270, 100, 90], 0);
+    const hand = poseOf({ 9: [50, 300, 0.9] }, HAND.box);
+    for (let t = 0, i = 0; t <= 3000; t += 100, i++) w.applyDetections(frame(t), [PERSON], i % 3 === 0 ? [face] : undefined);
+    expect(w.view(3000).person.visible).toBe(true);
+    let gone: number | null = null;
+    for (let t = 3100, i = 0; t <= 6000; t += 100, i++) {
+      w.applyDetections(frame(t), [HAND], i % 3 === 0 ? [hand] : undefined);
+      if (gone === null && !w.view(t).person.visible) gone = t;
+    }
+    expect(gone).toBe(3600);
+    expect(w.view(6000).person.visible).toBe(false);
+  });
+
   it("그 자리가 화면 밖이면(폰이 반대쪽을 봄) 지금처럼 4초를 기다린다", () => {
     const w = ws();
     seen(w, 0, 3000);
@@ -74,6 +91,15 @@ describe("떠남 → 사람 안 보임", () => {
       w.applyDetections(frame(t), []);
       expect(w.view(t).person.visible).toBe(true);
     }
+  });
+
+  it("로봇 실행 단계 중에는 VLM 답에 사람이 있어도 되돌리지 않는다(폰을 든 시연자일 수 있다)", () => {
+    const w = ws();
+    seen(w, 0, 3000);
+    expect(goneAt(w, 3100, 9000)).toBe(3600);
+    w.robotActing(true);
+    w.applyScene("v3700", 3700, household(1), new Map(), look, 3700, 5300);
+    expect(w.view(5300).person.visible).toBe(false);
   });
 
   it("안 보임이 되기 전에 찍혀 늦게 온 VLM 답이나 사람이 없는 답은 되돌리지 않는다", () => {

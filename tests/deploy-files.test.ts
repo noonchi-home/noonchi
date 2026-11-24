@@ -139,21 +139,20 @@ describe("배포 파일", () => {
     expect(missing, "deploy/compose.yaml noonchi environment에 더하세요").toEqual([]);
   });
 
-  it("compose: redis는 판을 고정한 공식 이미지, 디스크 저장 끔, 볼륨·호스트 포트 없음, noonchi가 REDIS_URL로 붙는다", () => {
+  it("compose: noonchi는 메모리 버스다(REDIS_URL 빈 값). redis 서비스가 없고 아무 서비스도 redis를 기다리지 않는다", () => {
     const c = parse(read("deploy/compose.yaml"), { merge: true }) as { services: Record<string, any> };
-    const r = c.services.redis;
-    expect(r.image).toBe("redis:8.10.2-alpine@sha256:9f8d2d789b9a1d1e3f283f979aa9cbf393373806472e1ccd460e2f9c869b833b");
-    expect(r.command).toEqual(["redis-server", "--appendonly", "no", "--save", "", "--maxmemory", "512mb", "--maxmemory-policy", "noeviction"]);
-    expect(r.volumes).toBeUndefined();
-    expect(r.ports).toBeUndefined();
-    expect(c.services.noonchi.environment.REDIS_URL).toBe("redis://redis:6379");
-    expect(c.services.noonchi.depends_on.redis).toEqual({ condition: "service_healthy" });
+    expect(c.services.redis).toBeUndefined();
+    expect(c.services.noonchi.environment.REDIS_URL ?? "").toBe("");
+    for (const [name, svc] of Object.entries(c.services)) {
+      const deps = Array.isArray(svc.depends_on) ? svc.depends_on : Object.keys(svc.depends_on ?? {});
+      expect(deps, `${name} depends_on`).not.toContain("redis");
+      expect(JSON.stringify(svc.healthcheck ?? null), `${name} healthcheck`).not.toMatch(/redis/i);
+    }
   });
 
-  it("개발용 compose: noonchi-redis가 같은 이미지·같은 디스크 저장 끔으로 127.0.0.1:6379만 연다", () => {
+  it("개발용 compose: noonchi-redis(RedisBus 시험용)가 판을 고정한 공식 이미지·디스크 저장 끔으로 127.0.0.1:6379만 연다", () => {
     const d = parse(read("deploy/compose.dev.yaml")) as { name?: string; services: Record<string, any> };
-    const c = parse(read("deploy/compose.yaml"), { merge: true }) as { services: Record<string, any> };
-    expect(d.services.redis.image).toBe(c.services.redis.image);
+    expect(d.services.redis.image).toBe("redis:8.10.2-alpine@sha256:9f8d2d789b9a1d1e3f283f979aa9cbf393373806472e1ccd460e2f9c869b833b");
     expect(d.services.redis.container_name).toBe("noonchi-redis");
     // 프로젝트 이름이 파일 자리 폴더(deploy)를 따라가지 않게 정해 둔다
     expect(d.name).toBe("noonchi-dev");

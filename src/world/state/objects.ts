@@ -24,15 +24,13 @@ export class Detections extends Part {
     if (view) core.sawCamera = true;
     const ids = new Map<string, string>();
     const seen = new Set<string>();
-    const people: Detection[] = [];
+    const candidates: { tmp: string; d: Detection }[] = [];
     const eyeRoom = frame.eye ? this.o.roomAt([frame.eye.position[0], frame.eye.position[1]]) : null;
     dets.forEach((d, i) => {
       const tmp = `d${i + 1}`;
       if (!core.accepts(d)) return;
       if (d.label === "person") {
-        ids.set(tmp, PERSON);
-        seen.add(PERSON);
-        people.push(d);
+        candidates.push({ tmp, d });
         return;
       }
       if (FIXTURE_CLASSES.has(d.label)) {
@@ -42,7 +40,17 @@ export class Detections extends Part {
         return;
       }
     });
-    if (people.length > 1) core.crowdAt = at;
+    // 사람 감지 가운데 사용자로 세는 것만 사람이다(시연자 손·폰을 든 시연자는 빼고, people.ts users)
+    const users = new Set(core.people.users(frame, candidates.map((c) => c.d), poses));
+    const people: Detection[] = [];
+    for (const c of candidates) {
+      if (!users.has(c.d)) continue;
+      ids.set(c.tmp, PERSON);
+      seen.add(PERSON);
+      people.push(c.d);
+    }
+    // 누구의 VLM 답인지 모르는 때(crowdAt)는 사용자로 세지 않은 상자까지 센다(VLM은 그 손·사람도 본다)
+    if (candidates.length > 1) core.crowdAt = at;
     if (seen.has(PERSON)) {
       core.person.last_seen_ms = at;
       core.person.count = people.length;

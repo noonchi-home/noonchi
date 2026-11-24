@@ -7,7 +7,7 @@ import { assistanceContext, assistanceOutcome } from "../../shared/assistance-ou
 import type { Intervention } from "../../brain/index.js";
 import { CALL_ACTION, lookTargets, taskOf, type TaskSpec } from "../../act/tasks.js";
 import { callDestination, callPlaces, withChosenStation, deviceViews, placesOf, resubmit, type PlaceInfo, type PlanAhead, type PlanContext } from "../../agent/index.js";
-import { Decider, PamClient, PersonLane, dailyMemory, routineAllows, habitView, lastStoredThoughts, memoryForDay, pamSettings, thoughtFeed, type FsmMemory } from "../../brain/index.js";
+import { Decider, PamClient, PersonLane, dailyMemory, routineAllows, habitView, lastStoredThoughts, previewDayMemory, pamSettings, thoughtFeed, type FsmMemory } from "../../brain/index.js";
 import type { BrainLog, DecisionRecord } from "../../contract/events.js";
 import type { PendingGoal } from "../../contract/goal.js";
 import type { HabitFsm } from "../../contract/habit.js";
@@ -22,6 +22,7 @@ import { Trigger, canRelink, deviceStateKeys, deviceStatus, loadTriggerConfig, t
 import { loadEndpoints } from "../../infer/endpoints.js";
 import { DEVICE_STATES } from "../../world/vocab.js";
 import { type HomeCore } from "./core.js";
+import { sendAgain } from "./history-writes.js";
 import { inTraceContext } from "./agent.js";
 import { measuredTrace } from "../../shared/trace.js";
 import type { EvidenceRef } from "../../contract/assistance.js";
@@ -69,7 +70,7 @@ function worldInput(core: HomeCore, i: WorldInput): void {
   core.out.act?.push("/world/input", i);   // 차례대로, 실패하면 같은 봉투로 다시(src/bus/outbox.ts)
 }
 
-/** 판단 호출 시점 설정: 주기 기본은 PAM_LLM_MODEL을 반영한 최종 PAM 모델(loadEndpoints)로 고른다(nano면 1초, src/world/trigger.ts). */
+/** 판단 호출 시점 설정: 주기 기본은 PAM_LLM_MODEL을 반영한 최종 PAM 모델(loadEndpoints)로 고른다(nano·mini면 1초, src/world/trigger.ts). */
 export function triggerConfigOf(env: Record<string, string | undefined>): TriggerConfig {
   return loadTriggerConfig(env, { pamModel: loadEndpoints(env).pam.model });
 }
@@ -172,7 +173,16 @@ export function startAct(core: HomeCore): (event: BrainLog) => void {
   // 기억은 그날 처음 정한 판본(src/brain/history/reflect.ts). 관찰 텍스트 시각은 기록 DB와 같은 시간대
   const pamTimeout = Number(env.PAM_TIMEOUT_MS);
   const brainView = () => core.brainMirror!.view()!;
-  const memory = dailyMemory((day) => memoryForDay(history.db, day, { log: ctx.log }));
+  // 판단은 기억을 동기로 읽는다: 읽기 연결로 그날 판본을 미리 보고, 날 고정·seed 저장은 기록 작업 스레드가 같은 골라내기로 한다.
+  // 작업 스레드가 다른 판본을 고정했으면(그사이 다른 판본이 저장됨) 캐시를 비워 다음 판단이 고정한 판본을 읽는다
+  const memory = dailyMemory((day) => {
+    const seen = previewDayMemory(history.db, day, { log: ctx.log });
+    if (seen.write) {
+      sendAgain(() => history.write.dayMemory(day), () => history.write.writable()).then((version) => { if (version !== seen.memory.version) memory.invalidate(); },
+        (e: Error) => ctx.log(`[경고] 그날 기억 판본을 고정하지 못했어요: ${e.message}`));
+    }
+    return seen.memory;
+  });
   core.invalidateMemory = memory.invalidate;
   const decide = new Decider({
     trace: core.trace,
@@ -266,10 +276,9 @@ export function startAct(core: HomeCore): (event: BrainLog) => void {
     const action = intent.kind === "named" ? intent.action
       : previous && atMs >= previous.at && atMs - previous.at <= followupMs && sameScope(previous.scope, scope) ? previous.action : null;
     if (!action) return "어떤 일을 먼저 도와드리면 될까요?";
-    if (scope && history.db.recordInterventionPreference({ home: home.id, user: scope.user, action, context: scope.context, atMs, originId })) {
-      return "알겠어요. 다음 날부터 같은 상황에서 먼저 도울게요.";
-    }
-    return "지금 설정을 유지할게요.";
+    if (!scope) return "지금 설정을 유지할게요.";
+    return history.write.interventionPreference({ home: home.id, user: scope.user, action, context: scope.context, atMs, originId })
+      .then((saved) => (saved ? "알겠어요. 다음 날부터 같은 상황에서 먼저 도울게요." : "지금 설정을 유지할게요."));
   };
   const discardLeftover = (world: WorldView) => answers.allowDiscard(home.id, resident(world));
   const planCtx = (d: DecisionRecord, task: TaskSpec, world: WorldView, ahead?: PlanAhead): PlanContext => ({
@@ -326,7 +335,8 @@ export function startAct(core: HomeCore): (event: BrainLog) => void {
     log: ctx.log,
     thought: (text: string, decisionId: string) => feed.note(text, decisionId),
     help: (record: import("../../contract/history.js").HelpRecord) => {
-      history.db.add("help", record.at_ms, record.text, { subject: record.action, data: record });
+      sendAgain(() => history.write.add("help", record.at_ms, record.text, { subject: record.action, data: record }), () => history.write.writable())
+        .then(() => core.routinesChanged(), (e: Error) => ctx.log(`[경고] 도움 기록을 쓰지 못했어요: ${e.message}`));
       core.helpSaid = { text: record.text, atMs: Date.now() };
       core.speak();
     },
@@ -383,7 +393,7 @@ export function startAct(core: HomeCore): (event: BrainLog) => void {
       discardLeftover: () => discardLeftover(view()),
       rememberLeftover: allow => {
         const who = resident(view());
-        if (who) answers.remember(home.id, who, allow);
+        if (who) history.write.rememberCup(home.id, who, allow).catch((e: Error) => ctx.log(`[경고] 컵 답을 쓰지 못했어요: ${e.message}`));
       },
     },
     stations:{

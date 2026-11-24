@@ -168,6 +168,11 @@ export async function startWorldNode(o: { bus: Bus; epoch: { boot: string; home:
     // 첫 상태는 변화로 내지 않는다(지금 시작 가전 상태와 같다). 상태를 억지로 다시 내지 않는다: 시작 때 가전 수십 개가 18KB 상태를 하나씩 내며 줄이 밀린다(250ms 다시 냄이 맡는다)
     return { changes: b.note.initial ? [] : changes };
   }));
+  // 로봇 실행 단계 중(폰에 가기·집기·놓기·하기 명령이 떠 있음)에는 폰을 든 시연자의 손·몸을 사용자로 세지 않는다(src/world/state/people.ts users 규칙 3)
+  node.on("/act/phone_changes", (b) => {
+    if ("cmd" in b) world.robotActing(b.cmd.type === "command" && b.cmd.kind !== undefined);
+    else if ("plan" in b && b.plan === null) world.robotActing(false);
+  });
   node.every(o.tickMs ?? WORLD_TICK_MS, () => emit([...inputs.prune(), ...world.tick(clock.now())], { state: true }));
 
   await node.prepare();

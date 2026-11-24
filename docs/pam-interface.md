@@ -4,7 +4,7 @@
 
 ## Prediction — `PamClient.predict` (`pam-predict/3`)
 
-In periodic mode the server schedules decisions while the phone supplies engine frames. The default interval is one second for nano models and five seconds for other models. `PAM_PERIOD_MS` overrides the interval. Event mode uses meaningful World State changes. The observation text contains the latest events, ongoing facts, local date and time, and the phone's room. The following example uses the actual Korean observation format. `PamClient` adds the contract identifier.
+In periodic mode the server schedules decisions while the phone supplies engine frames. The default interval is one second for nano and mini models and five seconds for other models. `PAM_PERIOD_MS` overrides the interval. Event mode uses meaningful World State changes. The observation text contains the latest events, ongoing facts, local date and time, and the phone's room. The following example uses the actual Korean observation format. `PamClient` adds the contract identifier.
 
 ```json
 {

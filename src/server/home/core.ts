@@ -91,6 +91,8 @@ export class HomeCore {
   surfaces!: () => PlaneSurface[];
   /** 그날 기억에 화살표가 든 도움 습관(observe.ts가 단다). 판단이 습관 화살표를 그 시각 창 안에서만 행동으로 낸다. */
   routines: () => HelpRoutine[] = () => [];
+  /** help 줄을 새로 쓴 뒤 부른다(도움 습관을 기록 작업 스레드에서 다시 읽는다). */
+  routinesChanged = () => {};
   world: WorldState | null = null;
   pipeline: ObservationPipeline | null = null;
   // 노드(src/bus): 집 세대, 인식·집 상태·거울(act)·폰·가전 노드
@@ -116,7 +118,8 @@ export class HomeCore {
   machineRecorder: BusNode | null = null;
   readonly machines = new HomeMachines();
   trace: HomeTrace | undefined;
-  resumeProactive?: (text: string, originId: string) => string | null;
+  /** 선호 기록이 필요한 답은 기록 DB 커밋 뒤에 풀리는 Promise다. */
+  resumeProactive?: (text: string, originId: string) => string | null | Promise<string>;
   captureProactiveRequest?: () => ((action: string) => void) | undefined;
   pamHeard = false;
   devicesNode: BusNode | null = null;

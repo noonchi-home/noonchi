@@ -217,20 +217,21 @@ describe("World State: 프레임 간격과 상관없는 시간 규칙(YOLO 사�
     return { w, out };
   };
 
-  it("같은 장면을 2000ms 간격과 100ms 간격으로 넣으면 같은 촬영 시각에 같은 사건이 난다(등장·사라짐·시야 밖·다시 보임·사람)", () => {
+  // 사람 등장만은 0.6초 이어 봄(2026-11-25 사용자 결정, src/world/state/core.ts PERSON_RETURN_MS)이라 프레임 간격에 따라 다르다: 2초 간격이면 둘째 장, 100ms 간격이면 0.6초 뒤
+  it("같은 장면을 2000ms 간격과 100ms 간격으로 넣으면 같은 촬영 시각에 같은 사건이 난다(등장·사라짐·시야 밖·다시 보임·사람 사라짐). 사람 등장은 0.6초 이어 본 첫 장이다", () => {
     // 컵: 0~8초 보임, 10초부터 16초 전까지 카메라가 반대쪽, 16~20초 다시 보임, 그 뒤 안 보임. 사람: 2~6초 보임
     const scene = (t: number) => {
       const turned = t >= 10_000 && t < 16_000;
       const cupSeen = t <= 8000 || (t >= 16_000 && t <= 20_000);
       return { view: turned ? away : look, dets: [...(cupSeen ? [cup] : []), ...(t >= 2000 && t <= 6000 ? [person] : [])] };
     };
-    const want = [
-      ["appeared", "cup_1", 2000], ["person_appeared", "person", 4000], ["person_gone", "person", 10_000], ["out_of_view", "cup_1", 10_000],
+    const want = (personAt: number) => [
+      ["appeared", "cup_1", 2000], ["person_appeared", "person", personAt], ["person_gone", "person", 10_000], ["out_of_view", "cup_1", 10_000],
       ["back_in_view", "cup_1", 16_000], ["gone", "cup_1", 26_000],
     ];
-    const kinds = (r: ReturnType<typeof run>) => r.out.filter(([k]) => k !== "person_room");
-    expect(kinds(run(2000, 30_000, scene))).toEqual(want);
-    expect(kinds(run(100, 30_000, scene))).toEqual(want);
+    const kinds = (r: ReturnType<typeof run>) => r.out.filter(([k]) => k !== "person_room").sort((a, b) => Number(a[2]) - Number(b[2]));
+    expect(kinds(run(2000, 30_000, scene))).toEqual(want(4000));
+    expect(kinds(run(100, 30_000, scene))).toEqual(want(2600).sort((a, b) => Number(a[2]) - Number(b[2])));
   });
 
   it("YOLO 빠른 프레임이 물건을 놓쳐도 물건은 VLM 사진으로만 정한다: 2초 VLM 사진이 놓치면 다음 VLM 사진(4초)에 확정한다", () => {
@@ -412,9 +413,9 @@ describe("물건 등장 VLM 사진 2장·사라짐 시야 안 VLM 사진 3장(�
     return out;
   };
 
-  it("물건은 VLM 사진 2장(0초·2초)이면 등장이다. 사람은 그대로 2초", () => {
+  it("물건은 VLM 사진 2장(0초·2초)이면 등장이다. 사람은 0.6초 이어 본 첫 장(250ms 간격이면 0.75초)", () => {
     const w = w0();
-    expect(run(w, 0, 3000, () => [onTable, person]).filter((c) => /^(appeared|person_appeared)@/.test(c)).sort()).toEqual(["appeared@2000", "person_appeared@2000"]);
+    expect(run(w, 0, 3000, () => [onTable, person]).filter((c) => /^(appeared|person_appeared)@/.test(c)).sort()).toEqual(["appeared@2000", "person_appeared@750"]);
   });
 
   it("VLM 사진 1장만 본 물건은 등장하지 않고 잊는다. 등장한 물건은 시야 안 VLM 사진 3장(4·6·8초)이 못 보면 사라짐으로 정리된다", () => {
