@@ -126,3 +126,41 @@ export const fakeMark = (v: MarkView) => ({
   actions: v.actions.map((action) => ({ action, times: action === BEER ? timesOf(v.lines, "takes out a beer can") : action === CAN ? timesOf(v.lines, "puts the beer can into the sink") : [] })),
   unseen: [] as { start: string; end: string }[],
 });
+
+// ── 합성 정답 표시(2026-11-24): 실제 AI의 시각 찾기 대신 합성 기록이 아는 사건 시각으로 답한다 ───────────────────────────────────────────────
+
+const lineTime = (l: string) => l.substring(0, 8);
+const timesWith = (lines: string[], ...needles: string[]) => [...new Set(lines.filter((l) => needles.some((n) => l.includes(n))).map(lineTime))].sort();
+/** 후보 문장(Qwen이 쓴 한국어)이 가리키는 합성 사건의 줄 시각. 문장을 키워드로 알아본다: 모르는 문장은 사건 없음이다. */
+export function eventTimes(lines: string[], candidate: string): string[] {
+  if (/냉장고/.test(candidate)) {
+    if (/문|열|꺼내|꺼낸/.test(candidate)) return timesWith(lines, "opens the refrigerator");
+    if (/돌아|복귀/.test(candidate)) return timesWith(lines, "walks back to the sofa");
+    return timesWith(lines, "walks to the refrigerator");
+  }
+  if (/싱크/.test(candidate)) return timesWith(lines, "to the kitchen sink", "into the sink");
+  if (/TV|텔레비전/.test(candidate)) {
+    if (/꺼|끄|끈|종료|끝/.test(candidate)) return timesWith(lines, "| 거실 TV 꺼짐 · 카메라로 봄");
+    if (/켜|켠|본다|보기|시청/.test(candidate)) return timesWith(lines, "| 사람 TV 보는 중");
+    return [];
+  }
+  if (/일어/.test(candidate)) return timesWith(lines, "stands up from the sofa");
+  return [];
+}
+/** 행동을 사람이 직접 한 시각: 맥주는 냉장고로 걸어가기 시작한 줄, 캔은 싱크대로 들고 가기 시작한 줄(실제 AI 표시가 같은 줄을 골랐다). */
+export const actionTimes = (lines: string[], action: string): string[] => action === BEER ? timesWith(lines, "walks to the refrigerator") : action === CAN ? timesWith(lines, "carries the beer can to the kitchen sink") : [];
+/** 사람이 안 보인 구간: 「사람 안 보임」 줄부터 다음 「사람 보임」 줄(없으면 마지막 줄)까지. */
+export function unseenOf(lines: string[]): { start: string; end: string }[] {
+  const out: { start: string; end: string }[] = [];
+  lines.forEach((l, i) => {
+    if (!l.endsWith("| 사람 안 보임")) return;
+    const next = lines.slice(i + 1).find((x) => x.endsWith("| 사람 보임"));
+    out.push({ start: lineTime(l), end: lineTime(next ?? lines.at(-1)!) });
+  });
+  return out;
+}
+export const groundMark = (v: MarkView) => ({
+  candidates: v.candidates.map(([state, candidate]) => ({ state, candidate, times: eventTimes(v.lines, candidate) })),
+  actions: v.actions.map((action) => ({ action, times: actionTimes(v.lines, action) })),
+  unseen: unseenOf(v.lines),
+});

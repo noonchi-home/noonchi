@@ -9,6 +9,7 @@
 // 비용 어림(100만 토큰당): gpt-5.4-mini 기본 요금(공식 모델 페이지, 2026-11-22) 입력 $0.75·캐시 입력 $0.075·출력 $4.50. OpenRouter qwen/qwen3.5-27b는 가장 싼 제공자(Alibaba Cloud Int.)의
 // 공개 가격 입력 $0.195·출력 $1.56(캐시 가격은 찾지 못해 입력과 같게 본다). prompt에 캐시된 토큰이 들어 있다고 본다. 실제 비용은 OpenRouter가 보고하는 값(usage.cost)과 잔액 변화로 다시 확인한다.
 import { appendFileSync, mkdirSync, readFileSync, mkdtempSync } from "node:fs";
+import { request as httpsRequest } from "node:https";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { HistoryDb } from "../src/brain/history/db.js";
@@ -18,8 +19,8 @@ import type { CandidateFsm } from "../src/contract/pam.js";
 import { pamSettings } from "../src/brain/pam/settings.js";
 import type { PamUsage } from "../src/contract/events.js";
 import { checkView } from "./beer-check-view.js";
-import { BEER_CANDIDATES, beerRecords, fakeChunk, fakeMark } from "./beer-experiment-records.js";
-import { pamClientFor, startFakePamLlm } from "../tests/helpers/pam.js";
+import { BEER_CANDIDATES, beerRecords, fakeChunk, fakeMark, groundMark } from "./beer-experiment-records.js";
+import { pamClientFor, pamView, startFakePamLlm, type MarkView } from "../tests/helpers/pam.js";
 
 const text = (m: { content: string | { text?: string }[] }) => (typeof m.content === "string" ? m.content : m.content.map((c) => c.text ?? "").join(""));
 const HANGUL = /[가-힣]/g;
@@ -39,10 +40,48 @@ class ExperimentPamClient extends PamClient {
 /** OpenRouter가 알려 준 제공자·비용(호출마다 모은다). */
 interface OrStats { providers: Map<string, number>; reportedUsd: number; calls: number }
 
+/** 실험 전용(2026-11-24): 노드의 기본 fetch는 답 본문이 300초 동안 한 바이트도 안 오면 끊는다(TypeError). 생각을 켠 호출은 생각이 끝나야 답이 와서 이 한도에 걸린다(10-31 밤 뜻 검사에서 만남).
+ *  그래서 본문 시간 한도가 없는 https 요청으로 보내고 같은 모양의 Response를 돌려준다. 제품 코드는 그대로다. */
+function postOnce(url: string, headers: ConstructorParameters<typeof Headers>[0] | undefined, body: string): Promise<Response> {
+  return new Promise((resolve, reject) => {
+    const h: Record<string, string> = {};
+    new Headers(headers).forEach((v, k) => { h[k] = v; });
+    h["content-length"] = String(Buffer.byteLength(body));
+    const req = httpsRequest(url, { method: "POST", headers: h }, (res) => {
+      const chunks: Buffer[] = [];
+      res.on("data", (c: Buffer) => chunks.push(c));
+      res.on("end", () => resolve(new Response(Buffer.concat(chunks), { status: res.statusCode ?? 0, headers: res.headers as Record<string, string> })));
+      res.on("error", reject);
+    });
+    req.on("error", reject);
+    const hard = setTimeout(() => req.destroy(new Error("호출이 20분을 넘어 끊음")), 1_200_000);
+    req.on("close", () => clearTimeout(hard));
+    req.end(body);
+  });
+}
+
+/** 연결이 끊기면(ECONNRESET 등) 같은 요청을 최대 3번까지 다시 보낸다(11-24 세 번째 시도에서 647초 뒤 끊김을 만남). HTTP 상태 오류는 다시 보내지 않는다. */
+async function postNoBodyTimeout(url: string, headers: ConstructorParameters<typeof Headers>[0] | undefined, body: string): Promise<Response> {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      const res = await postOnce(url, headers, body);
+      // 제공자가 생성 도중 오류를 내면(HTTP 200인데 finish_reason이 error) 같은 요청을 다시 보낸다
+      const j = await res.clone().json().catch(() => null) as { choices?: { finish_reason?: string }[] } | null;
+      if (j?.choices?.[0]?.finish_reason === "error" && attempt < 3) { console.log(`  [제공자 오류(finish_reason=error), 다시 보냄 ${attempt}/2]`); continue; }
+      return res;
+    }
+    catch (e) {
+      if (attempt >= 6) throw e;
+      console.log(`  [연결 끊김, ${attempt * 20}초 뒤 다시 보냄 ${attempt}/5] ${(e as Error).message}`);
+      await new Promise((r) => setTimeout(r, attempt * 20_000));
+    }
+  }
+}
+
 /** OpenRouter(Qwen3.5-27B)로 가는 클라이언트. 노닌치는 주소가 openrouter.ai이면 호출을 막아 두므로(제품 설정 점검용, src/infer/endpoints.ts) 막히지 않는 가짜 주소를 두고,
  *  호출 함수(fetchImpl)가 실제 주소로 바꿔 보낸다(제품 코드는 그대로). vLLM 모드의 Qwen용 생각 켜기·끄기(chat_template_kwargs.enable_thinking)를 OpenRouter 형식(reasoning.enabled)으로 바꾸고,
  *  제공자는 가격 순으로 고르며 사용량·비용 보고(usage.include)를 켠다. */
-function openRouterClient(key: string, stats: OrStats, dumpPath?: string): PamClient {
+function openRouterClient(key: string, stats: OrStats, dumpPath?: string, groundMarks = false): PamClient {
   const settings = pamSettings({ INFERENCE_MODE: "vllm", PAM_LLM_BASE_URL: "http://openrouter-qwen.invalid/v1", PAM_LLM_MODEL: "qwen/qwen3.5-27b", PAM_LLM_API_KEY: key, PAM_LLM_TIMEOUT_S: "900" });
   const fetchImpl: typeof fetch = async (url, init) => {
     const u = new URL(typeof url === "string" ? url : url instanceof URL ? url.href : url.url);
@@ -60,6 +99,12 @@ function openRouterClient(key: string, stats: OrStats, dumpPath?: string): PamCl
     if (check && dumpPath) appendFileSync(dumpPath, `${JSON.stringify({ at: new Date().toISOString(), request: (body.messages as { content: unknown }[]).slice(1) })}
 `);
     const mark = firstText.startsWith("You find when given events happened");
+    // --ground-marks: 시각 찾기는 AI를 부르지 않고 합성 기록이 아는 사건 시각으로 답한다(덩어리·반성·뜻 검사만 실제 AI)
+    if (mark && groundMarks) {
+      console.log("  [호출] 시각 찾기: 합성 정답(AI 안 부름)");
+      const content = JSON.stringify(groundMark(pamView(body as never) as MarkView));
+      return new Response(JSON.stringify({ id: "ground", object: "chat.completion", created: 0, model: "ground-truth", choices: [{ index: 0, message: { role: "assistant", content }, finish_reason: "stop" }], usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 } }), { status: 200, headers: { "content-type": "application/json" } });
+    }
     const thinks = reflect || check || mark;
     const thinking = thinks && kw?.enable_thinking === true;
     const sent = { ...body, ...(thinks ? {} : { temperature: 0 }), reasoning: { enabled: thinking }, provider: { sort: "price" }, usage: { include: true } };
@@ -68,7 +113,7 @@ function openRouterClient(key: string, stats: OrStats, dumpPath?: string): PamCl
     const size = JSON.stringify(sent).length;
     let res: Response;
     try {
-      res = await fetch(`https://openrouter.ai/api/v1${u.pathname.replace(/^\/v1/, "")}`, { ...init, body: JSON.stringify(sent) });
+      res = await postNoBodyTimeout(`https://openrouter.ai/api/v1${u.pathname.replace(/^\/v1/, "")}`, init?.headers, JSON.stringify(sent));
     } catch (e) {
       console.log(`  [호출 실패] 본문 ${size}자, ${think}, ${Math.round((Date.now() - t0) / 1000)}초, ${(e as Error).name}: ${(e as Error).message}`);
       throw e;
@@ -134,7 +179,7 @@ async function main(): Promise<void> {
     const maxUsd = Number(arg("--max-usd") ?? 5);
     // 열쇠는 이 클라이언트 설정에만 들어가고 출력하지 않는다
     const orStats: OrStats = { providers: new Map(), reportedUsd: 0, calls: 0 };
-    const client = viaOpenRouter ? openRouterClient(key, orStats, join(out, "check-inputs.jsonl")) : new ExperimentPamClient({ settings: pamSettings({ INFERENCE_MODE: "openai", OPENAI_API_KEY: key }) });
+    const client = viaOpenRouter ? openRouterClient(key, orStats, join(out, "check-inputs.jsonl"), process.argv.includes("--ground-marks")) : new ExperimentPamClient({ settings: pamSettings({ INFERENCE_MODE: "openai", OPENAI_API_KEY: key }) });
     const price = viaOpenRouter ? QWEN_OPENROUTER : GPT_MINI;
     console.log(`실제 AI 실험 시작: 모델 ${viaOpenRouter ? "qwen/qwen3.5-27b (OpenRouter, 가격 순 제공자)" : pamSettings({ INFERENCE_MODE: "openai", OPENAI_API_KEY: "x" }).model}, ${runDays.length}밤${only ? `(${runDays.join(", ")})` : ""}, 상한 ${maxUsd}, 결과 폴더 ${out}`);
     const total = await runNights(db, client, runDays, join(out, "copies"), { maxUsd, price, log: join(out, "nights.jsonl"), skipDone: true });

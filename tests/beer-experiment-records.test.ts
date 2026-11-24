@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { HistoryDb } from "../src/brain/history/db.js";
 import { dayLines, runNight, type NightResult } from "../src/brain/history/night.js";
-import { BEER, BEER_CANDIDATES, CAN, beerRecords, fakeChunk, fakeMark } from "../scripts/beer-experiment-records.js";
+import { BEER, BEER_CANDIDATES, CAN, beerRecords, fakeChunk, fakeMark, groundMark } from "../scripts/beer-experiment-records.js";
 import { pamClientFor, startFakePamLlm, type FakePamLlm } from "./helpers/pam.js";
 
 let pam: FakePamLlm | undefined;
@@ -45,6 +45,19 @@ describe("간추린 합성 기록 생성기", () => {
     expect(timeOf(sat, "puts the beer can into the sink")).toBe("20:31:00");
     expect(sun.some((l) => l.includes("beer"))).toBe(false);                 // 일요일에는 맥주가 없다
     expect(dayLines(db, "2026-10-12").some((l) => l.line.includes("beer"))).toBe(false);
+  });
+});
+
+describe("합성 정답 표시(groundMark)", () => {
+  it("Qwen이 쓴 문장을 합성 사건 시각으로 알아보고, 사람이 안 보인 구간은 TV를 끈 지 6분 뒤부터다", () => {
+    const db = HistoryDb.open(":memory:");
+    beerRecords(db);
+    const sat = dayLines(db, "2026-10-31").map((l) => l.line), mon = dayLines(db, "2026-10-12").map((l) => l.line);
+    const m = groundMark({ role: "mark", states: [], candidates: [["watching_tv", "TV 가 꺼진다"], ["watching_tv", "사람이 소파에서 일어나 냉장고로 간다"], ["away", "사용자가 돌아와 TV 를 본다."], ["watching_tv", "알 수 없는 문장"]], actions: [BEER, CAN], chunks: [], lines: sat });
+    expect(m.candidates.map((c) => c.times)).toEqual([["20:30:02"], ["19:02:30"], ["19:00:05"], []]);
+    expect(m.actions).toEqual([{ action: BEER, times: ["19:02:30"] }, { action: CAN, times: ["20:30:30"] }]);
+    expect(m.unseen).toEqual([{ start: "20:36:00", end: "20:36:00" }]);
+    expect(groundMark({ role: "mark", states: [], candidates: [], actions: [BEER], chunks: [], lines: mon }).actions[0]!.times).toEqual([]);
   });
 });
 
