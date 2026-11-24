@@ -237,7 +237,17 @@ function runtime(core: HomeCore): HomeRuntime {
     setLink(next) {
       setLink(core, next);
     },
-    settle: (ms) => (core.closed ? Promise.resolve(true) : drainNodes(core, ms)),
+    // 노드를 비운 뒤, 남은 기한 안에 기록 쓰기가 커밋되기를 기다린다(시험이 settle 뒤 바로 읽는다)
+    settle: async (ms) => {
+      if (core.closed) return true;
+      const end = Date.now() + ms;
+      const drained = await drainNodes(core, ms);
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const late = new Promise<false>((r) => { timer = setTimeout(() => r(false), Math.max(0, end - Date.now())); });
+      const flushed = await Promise.race([ctx.history.write.flush().then(() => true as const), late]);
+      clearTimeout(timer);
+      return drained && flushed;
+    },
     async close() {
       if (core.closed) return;
       core.closed = true;

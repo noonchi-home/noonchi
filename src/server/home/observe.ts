@@ -18,6 +18,7 @@ import { floorLookup, roomNamedAt, locateZone, type LayoutEditor } from "../../l
 import { createPipeline, loadObserveConfig, LookClient, lookRoutes, startPerceptionNode, vlmStepMs } from "../../observe/index.js";
 import { WorldState, loadFallConfig, restsFromLayout, startWorldMirror, startWorldNode, surfacesFromLayout, type PlaneSurface, type RestSpot } from "../../world/index.js";
 import { historyRoutesVia } from "../../record/index.js";
+import { routineReader } from "./history-writes.js";
 import { HEARD_MARK } from "../../world/labels.js";
 import type { HomeCore } from "./core.js";
 
@@ -139,26 +140,12 @@ export async function startNodes(core: HomeCore, emit: (event: BrainLog) => void
   // 목표 판단(src/goal/start.ts): 250ms마다와 새 rev가 오면 전부, 같은 rev에 새 집 사진만 오면 끄고 켤 TV가 있을 때 조건 사실과 TV 규칙만
   // 도움 습관(시나리오 2): 지난 30일 help 줄에서 찾은 습관 가운데 그날 기억에 화살표가 든 것만 시각 계기로 쓴다.
   // 읽기는 기록 작업 스레드가 한다(메인 스레드 DB 호출 없음): 집을 열 때 한 번 기다려 읽고, 1분이 지났거나 help 줄을 새로 쓰면 다시 읽어 바꿔 둔다.
-  // 다시 읽는 동안은 지난 목록을 쓴다
-  let routineCache: { at: number; list: HelpRoutine[] } = { at: core.nowMs(), list: await ctx.history.write.routines(core.nowMs()) };
-  let reading = false;
-  let again = false;
-  const reread = () => {
-    if (core.closed) return;
-    if (reading) { again = true; return; }
-    reading = true;
-    again = false;
-    const at = core.nowMs();
-    ctx.history.write.routines(at).then((list) => { routineCache = { at, list }; },
-      (e: Error) => { if (!core.closed) log(`[경고] 도움 습관을 읽지 못했어요: ${e.message}`); })
-      .finally(() => { reading = false; if (again) reread(); });
-  };
-  const routines = (): HelpRoutine[] => {
-    if (core.nowMs() - routineCache.at >= 60_000) reread();
-    return routineCache.list;
-  };
+  // 다시 읽는 동안·읽지 못하면 지난 목록을 쓴다(기록 DB에 못 써도 집은 연다)
+  const reader = routineReader({ read: (at) => ctx.history.write.routines(at), now: () => core.nowMs(), log, closed: () => core.closed });
+  await reader.load();
+  const routines = (): HelpRoutine[] => reader.list();
   core.routines = routines;
-  core.routinesChanged = reread;
+  core.routinesChanged = reader.changed;
   const goal = await startGoalNode({
     bus, epoch, clock, log, triggers, portals: core.floorPlan.portals, routines, offsetMinutes: ctx.history.db.offsetMinutes,
     map: () => core.scene?.stations ?? null,
@@ -249,7 +236,8 @@ export async function startNodes(core: HomeCore, emit: (event: BrainLog) => void
   core.out = { ...core.out, phone: new Outbox(phone, { clock, log }), devices: new Outbox(devices, { clock, log }) };
   const recorder = new BusNode({ name: "recorder", bus, epoch, clock, log });
   core.machineRecorder = recorder;
-  await ctx.history.write.forgetOtherBoots(epoch.boot);
+  // 처리표의 지난 기동 줄 지우기: 못 지워도(기록 DB에 못 씀) 집은 연다
+  await ctx.history.write.forgetOtherBoots(epoch.boot).catch((e: Error) => log(`[경고] 기록 노드 처리표를 비우지 못했어요: ${e.message}`));
   historyRoutesVia(recorder, ctx.history.write, { now: () => clock.now(), machinesOnly: true, keepHeard: core.keepHeard, log });
   await recorder.prepare();
   const deviceOut = core.out.devices!;

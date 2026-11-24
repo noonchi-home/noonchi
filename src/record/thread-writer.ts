@@ -5,8 +5,8 @@
 // 작업 스레드가 죽으면 기다리던 쓰기를 모두 실패로 돌리고(기록 노드는 ack하지 않아 버스가 다시 준다) 다시 띄워 연결을 다시 연다.
 // ThreadWriter마다 연속 maxDeaths번(기본 3) 죽으면 다시 열지 않고 writable()이 false다(/api/health db). 커밋이 한 번 되면 센 수를 지운다.
 import { Worker } from "node:worker_threads";
-import { writerOps, type HistoryWriter, type WriteArgs, type WriteOp, type WriteResult, type WriterStats } from "./writer.js";
-import type { WriterIn, WriterOut, WriterRequest, WriterResult } from "./writer-thread.js";
+import { writerOps, type HistoryWriter, type WriteArgs, type WriteOp, type WriteResult, type WriterResult, type WriterStats } from "./writer.js";
+import type { WriterIn, WriterOut, WriterRequest } from "./writer-thread.js";
 
 export interface ThreadWriterOptions {
   offsetMinutes: number;
@@ -220,7 +220,15 @@ export class ThreadWriter {
   died(code: number): void {
     this.#opened = false;
     this.#onDeath?.();
-    if (this.#dead || this.#closing) return;
+    if (this.#dead) return;
+    if (this.#closing) {
+      // 닫는 중이면 다시 열지 않는다: 남은 쓰기는 실패로 돌리고, 닫기와 처음 열기를 기다리던 곳을 깨운다
+      this.#dead = true;
+      this.#failAll(new Error(CLOSED));
+      this.#firstDone?.reject(new Error(DEAD));
+      this.#awake();
+      return;
+    }
     // 기다리던 쓰기는 실패로 돌린다(기록 노드는 ack하지 않아 버스가 다시 준다)
     this.#failAll(new Error(DEAD));
     this.#deaths++;

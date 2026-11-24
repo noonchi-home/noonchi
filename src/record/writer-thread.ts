@@ -6,21 +6,20 @@
 // 연결 닫기는 {close}로 받는다: 남은 묶음을 커밋하고 연결을 닫은 뒤 {closed}를 보낸다.
 import { parentPort, receiveMessageOnPort } from "node:worker_threads";
 import { HistoryDb } from "../brain/index.js";
-import { runOp, type WriteCtx, type WriteOp } from "./writer.js";
+import { runOp, writeBatch, type WriteCtx, type WriteOp, type WriterResult } from "./writer.js";
 
 export type WriterRequest = { id: number; op: WriteOp; args: unknown[] };
 export type WriterIn =
   | { open: number; path: string; offsetMinutes: number; windowMs: number; maxBatch: number }
   | { db: number; reqs: WriterRequest[] }
   | { db: number; close: true };
-export type WriterResult = { id: number; value?: unknown; error?: string };
 export type WriterOut =
   | { ready: true }
   | { opened: number } | { failed: number; error: string }
   | { db: number; results: WriterResult[]; committed: boolean }
   | { closed: number };
 
-type Conn = { db: HistoryDb; ctx: WriteCtx; total: () => number; batch: WriterRequest[]; windowMs: number; maxBatch: number; timer?: ReturnType<typeof setTimeout>; closing: boolean };
+type Conn = { db: HistoryDb; ctx: WriteCtx; batch: WriterRequest[]; windowMs: number; maxBatch: number; timer?: ReturnType<typeof setTimeout>; closing: boolean };
 
 const port = parentPort!;
 const conns = new Map<number, Conn>();
@@ -31,8 +30,7 @@ function take(m: WriterIn): Conn | undefined {
   if ("open" in m) {
     try {
       const db = HistoryDb.open(m.path, m.offsetMinutes);
-      const changes = db.db.prepare("SELECT total_changes() AS n");
-      conns.set(m.open, { db, ctx: { db, sessions: new Map() }, total: () => Number((changes.get() as { n: number }).n), batch: [], windowMs: m.windowMs, maxBatch: m.maxBatch, closing: false });
+      conns.set(m.open, { db, ctx: { db, sessions: new Map() }, batch: [], windowMs: m.windowMs, maxBatch: m.maxBatch, closing: false });
       port.postMessage({ opened: m.open } satisfies WriterOut);
     } catch (e) {
       port.postMessage({ failed: m.open, error: message(e) } satisfies WriterOut);
@@ -46,26 +44,9 @@ function take(m: WriterIn): Conn | undefined {
   return c;
 }
 
-/** 묶음 하나를 한 트랜잭션으로 쓴다. 바깥 커밋이 실패하면 묶음 전부 실패다. */
+/** 묶음 하나를 한 트랜잭션으로 쓰고(writeBatch) 결과를 보낸다. */
 function write(id: number, c: Conn, jobs: WriterRequest[]): void {
-  const results: WriterResult[] = [];
-  const before = c.total();
-  let committed = false;
-  try {
-    c.db.tx(() => {
-      for (const r of jobs) {
-        try {
-          results.push({ id: r.id, value: runOp(c.ctx, r.op, r.args as never) });
-        } catch (e) {
-          results.push({ id: r.id, error: message(e) });
-        }
-      }
-    });
-    committed = c.total() > before;
-  } catch (e) {
-    results.length = 0;
-    for (const r of jobs) results.push({ id: r.id, error: message(e) });
-  }
+  const { results, committed } = writeBatch(c.db, jobs, (r) => runOp(c.ctx, r.op, r.args as never));
   port.postMessage({ db: id, results, committed } satisfies WriterOut);
 }
 

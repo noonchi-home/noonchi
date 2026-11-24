@@ -2,7 +2,7 @@
 export { Bag } from "./bag.js";
 export { TraceJournal } from "./trace.js";
 export { historyRoutes, historyRoutesVia } from "./history.js";
-export { directWriter, type HistoryWriter, type WriterStats } from "./writer.js";
+export { directWriter, writeBatch, type HistoryWriter, type WriterStats } from "./writer.js";
 export { ThreadWriter } from "./thread-writer.js";
 export { startRecorder } from "./node.js";
 export { REPLAY_INPUTS, replay, settle } from "./replay.js";

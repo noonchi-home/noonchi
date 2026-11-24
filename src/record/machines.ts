@@ -18,23 +18,29 @@ function goalLine(prev: PendingGoal | null, g: PendingGoal): string {
 
 /** 미리 세운 목표 전환을 기록 DB goal 줄로 남기는 것(영상 판정 시각표 「목표」 줄, 반성 입력이 아니다).
  *  data: 상태·미리 만들기·버린 종류(drop)·물건과, 까닭 글이 있으면 reason(실행 기록 「계획이 맞지 않아 버림」의 reason과 같은 칸). */
-export function goalRecorder(db: Pick<HistoryDb, "add">): (g: PendingGoal, atMs: number) => void {
-  let last: PendingGoal | null = null;
+export function goalRecorder(db: Pick<HistoryDb, "add">, memo: Pick<RecordMemo, "goal"> = { goal: null }): (g: PendingGoal, atMs: number) => void {
   return (g, atMs) => {
+    const last = memo.goal;
     const prev = last?.id === g.id ? last : null;
     db.add("goal", atMs, goalLine(prev, g), { subject: g.id, data: { status: g.status, prep: g.prep, drop: g.reason, object: g.object, ...(g.meal ? {surface:g.meal.surface} : {}), ...(g.error ? { reason: g.error } : {}) } });
-    last = g;
+    memo.goal = g;
   };
 }
+
+/** 기록 노드의 중복 막기 상태: 지난 폰 단계(같은 명령·단계는 한 줄만), 지난 목표(목표 전환 글이 앞 상태와 견준다).
+ *  서버는 메인 스레드의 기록 노드(historyRoutesVia)가 들고 일마다 그 토픽의 칸만 실어 보낸다: 기록 작업 스레드가 다시 떠도 이어진다. */
+export interface RecordMemo { phoneStep: string; goal: PendingGoal | null }
+export const newRecordMemo = (): RecordMemo => ({ phoneStep: "", goal: null });
+/** 중복 막기 상태 칸을 쓰는 토픽(토픽마다 RELIABLE이라 한 번에 하나씩 오므로 칸마다 차례가 지켜진다). */
+export const MEMO_FIELD: Partial<Record<TopicName, keyof RecordMemo>> = { "/act/phone_changes": "phoneStep", "/brain/goal_changes": "goal" };
 
 const ROBOT = { idle: "지켜봄", observe: "살펴보는 중", move: "이동 중", run: "실행 중", return: "충전 자리로 가는 중", return_room: "대기 자리로 가는 중", standby: "대기 중", recover: "다시 확인하는 중" } satisfies Record<RobotState["state"], string>;
 const SAFETY = { normal: "평소", suspect: "확인 중", emergency: "안전 알림" } satisfies Record<SafetyState["state"], string>;
 const OWNER = { safety: "안전 확인", request: "말로 부탁한 일", goal: "목표 실행", idle: "지켜봄" } satisfies Record<ManagerState["owner"], string>;
 
 /** 기계 전이는 받았을 때마다 한 줄이다. 예전 목표 사건은 준비 실패의 까닭과 실행 기록 문구도 보존한다. */
-export function machineWrites(db: HistoryDb) {
-  const oldGoal = goalRecorder(db);
-  let phoneStep = "";
+export function machineWrites(db: HistoryDb, memo: RecordMemo = newRecordMemo()) {
+  const oldGoal = goalRecorder(db, memo);
   return {
     "/act/beer_observation": body => {
       const observation = body as Body<"/act/beer_observation">;
@@ -58,8 +64,8 @@ export function machineWrites(db: HistoryDb) {
       const cmd=b.cmd as import("../contract/phone.js").PlannedCommand|undefined;
       if(!cmd || cmd.type!=="command" || !["go","pick","place"].includes(cmd.kind??"") || !cmd.target) return;
       const key=JSON.stringify([cmd.id,cmd.step]);
-      if(key===phoneStep) return;
-      phoneStep=key;
+      if(key===memo.phoneStep) return;
+      memo.phoneStep=key;
       db.add("household",stamp,"폰 단계 전송",{subject:cmd.id,data:{event:"phone",step:cmd.step,kind:cmd.kind,target:cmd.target.id}});
     },
     "/brain/goal_changes": (b, stamp) => oldGoal(b.goal as PendingGoal, stamp),

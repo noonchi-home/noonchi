@@ -4,6 +4,7 @@
 
 import { randomUUID } from "node:crypto";
 import { join } from "node:path";
+import type { Worker } from "node:worker_threads";
 import type { Agent, Policy } from "../agent/index.js";
 import { openBus, type Bus, type Clock } from "../bus/index.js";
 import { agentEndpoint } from "../agent/index.js";
@@ -92,6 +93,8 @@ export interface StartServerOptions {
   servedHubUrls?: (hubPort: number) => Promise<string[]>;
   /** 대시보드·설정 화면 폴더. 기본은 React 빌드(ui/dist). */
   webDir?: string;
+  /** 시험용: 기록 작업 스레드를 띄울 때마다 받는다(끝내 보는 시험). */
+  onHistoryWorker?: (w: Worker) => void;
   /** 시험용: 노드 통로 열기(기본 openBus: REDIS_URL이면 RedisBus, 아니면 MemoryBus). */
   openBus?: (env: Env, o: { boot: string; log?: (s: string) => void; onLost: (err: Error) => void }) => Promise<Bus>;
   /** 통로를 잃었을 때(Redis가 다시 켜짐) 서버를 닫은 뒤 부르는 끝내기(기본 process.exit). */
@@ -181,7 +184,7 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
     lock.release();
     throw e;
   }
-  const writer = ThreadWriter.start(dbPath, { offsetMinutes: tz, log });
+  const writer = ThreadWriter.start(dbPath, { offsetMinutes: tz, log, onWorker: opts.onHistoryWorker });
   const write = writer.api();
   const writeFailed = (e: Error) => log(`[경고] 기록 DB에 쓰지 못했어요: ${e.message}`);
   const feed = { device: topic<[DeviceState, DeviceNote?]>(), brain: topic<[BrainLog]>(), plan: topic<[PlanView]>(), mode: topic<[ControlMode]>() };

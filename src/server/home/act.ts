@@ -22,6 +22,7 @@ import { Trigger, canRelink, deviceStateKeys, deviceStatus, loadTriggerConfig, t
 import { loadEndpoints } from "../../infer/endpoints.js";
 import { DEVICE_STATES } from "../../world/vocab.js";
 import { type HomeCore } from "./core.js";
+import { sendAgain } from "./history-writes.js";
 import { inTraceContext } from "./agent.js";
 import { measuredTrace } from "../../shared/trace.js";
 import type { EvidenceRef } from "../../contract/assistance.js";
@@ -177,7 +178,7 @@ export function startAct(core: HomeCore): (event: BrainLog) => void {
   const memory = dailyMemory((day) => {
     const seen = previewDayMemory(history.db, day, { log: ctx.log });
     if (seen.write) {
-      history.write.dayMemory(day).then((version) => { if (version !== seen.memory.version) memory.invalidate(); },
+      sendAgain(() => history.write.dayMemory(day), () => history.write.writable()).then((version) => { if (version !== seen.memory.version) memory.invalidate(); },
         (e: Error) => ctx.log(`[경고] 그날 기억 판본을 고정하지 못했어요: ${e.message}`));
     }
     return seen.memory;
@@ -334,7 +335,7 @@ export function startAct(core: HomeCore): (event: BrainLog) => void {
     log: ctx.log,
     thought: (text: string, decisionId: string) => feed.note(text, decisionId),
     help: (record: import("../../contract/history.js").HelpRecord) => {
-      history.write.add("help", record.at_ms, record.text, { subject: record.action, data: record })
+      sendAgain(() => history.write.add("help", record.at_ms, record.text, { subject: record.action, data: record }), () => history.write.writable())
         .then(() => core.routinesChanged(), (e: Error) => ctx.log(`[경고] 도움 기록을 쓰지 못했어요: ${e.message}`));
       core.helpSaid = { text: record.text, atMs: Date.now() };
       core.speak();

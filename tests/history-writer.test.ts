@@ -10,7 +10,8 @@ import type { Worker } from "node:worker_threads";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { HistoryDb } from "../src/brain/history/db.js";
 import { BusNode, MemoryBus } from "../src/bus/index.js";
-import { historyRoutesVia, ThreadWriter, type HistoryWriter } from "../src/record/index.js";
+import { CUP_FSM_MEMORY } from "../src/brain/decision.js";
+import { historyRoutesVia, ThreadWriter, writeBatch, type HistoryWriter } from "../src/record/index.js";
 import { startServer, type RunningServer } from "../src/server/start.js";
 
 const cleanup: (() => unknown)[] = [];
@@ -39,10 +40,16 @@ async function recorderOn(writer: HistoryWriter, logs: string[], onLog: (line: s
   const act = new BusNode({ name: "act", bus, epoch, log: () => {} });
   cleanup.push(async () => { await act.stop(); await recorder.stop(); await bus.close(); });
   const send = (i: number) => act.publish("/act/log", { type: "execution", at_ms: 1_000 + i, plan_id: `p-${i}`, state: "running", text: `일 ${i}` });
-  return { bus, recorder, send };
+  /** 폰 단계 명령(같은 명령·단계를 다시 보내면 기록 노드가 줄을 겹쳐 쓰지 않는다). */
+  const step = (id: string, stepId: string) => act.publish("/act/phone_changes", { cmd: { type: "command", id, step: stepId, kind: "go", text: "싱크대로 가 주세요",
+    vision: null, choices: [], speak: true, target: { id: "sink", label: "싱크대", position: [0, 0, 0] } } });
+  return { bus, recorder, send, step };
 }
 
 const rows = (read: HistoryDb) => read.list({ kinds: ["execution"] });
+const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+/** ms 안에 끝나면 그 값, 아니면 "멈춤". */
+const within = <T>(p: Promise<T>, ms: number) => Promise.race([p, sleep(ms).then(() => "멈춤" as const)]);
 
 describe("기록 DB 쓰기 작업 스레드", () => {
   it("커밋이 끝나기 전에는 메시지를 ack하지 않는다", async () => {
@@ -88,8 +95,8 @@ describe("기록 DB 쓰기 작업 스레드", () => {
     const e = { topic: "/act/log" as const, key: "_", header: { stamp: 1, node: "act" as const, inst: "i", seq: 1, boot: "b", home: "h#1" },
       body: { type: "execution" as const, at_ms: 1, plan_id: "p", state: "running" as const, text: "한 번" } };
     const job = { session: "s", e, now: 1, keepHeard: false, machinesOnly: true };
-    expect(await Promise.all([writer.record(job), writer.record(job)])).toEqual([true, false]);
-    expect(await writer.record(job)).toBe(false);
+    expect((await Promise.all([writer.record(job), writer.record(job)])).map((r) => r.fresh)).toEqual([true, false]);
+    expect((await writer.record(job)).fresh).toBe(false);
     expect(rows(read)).toHaveLength(1);
   });
 
@@ -140,6 +147,78 @@ describe("기록 DB 쓰기 작업 스레드", () => {
     await expect(writer.add("execution", 3, "끝난 뒤", {})).rejects.toThrow(/작업 스레드가 끝나/);
     expect(logs.some((l) => l.includes("연속 3번"))).toBe(true);
   }, 30_000);
+});
+
+describe("기록 DB 쓰기 작업 스레드: 리뷰 뒤", () => {
+  it("다시 띄운 작업 스레드가 연결을 열기 전에 닫다가 그 스레드도 죽으면 close가 끝나고 남은 쓰기는 실패로 돌아온다", async () => {
+    const { writer, workers } = await openWriter();
+    await writer.add("execution", 1, "처음", {});
+    const n = workers.length;
+    await workers.at(-1)!.terminate();
+    await vi.waitFor(() => expect(workers.length).toBe(n + 1), { timeout: 5000 });
+    const left = writer.add("execution", 2, "다시 띄우는 동안", {}).then(() => "커밋", (e: Error) => e.message);
+    const closing = writer.close().then(() => "닫음");
+    await workers.at(-1)!.terminate();
+    expect(await within(closing, 8000)).toBe("닫음");
+    expect(await within(left, 1000)).toMatch(/닫았|끝나/);
+  }, 30_000);
+
+  it("처음 연결을 열기 전에 닫다가 작업 스레드가 죽어도 close가 끝난다", async () => {
+    const path = join(mkdtempSync(join(tmpdir(), "writer-")), "noonchi.db");
+    const workers: Worker[] = [];
+    const thread = ThreadWriter.start(path, { offsetMinutes: 540, onWorker: (w) => workers.push(w) });
+    const writer = thread.api();
+    const closing = writer.close().then(() => "닫음");
+    await workers.at(-1)!.terminate();
+    expect(await within(closing, 8000)).toBe("닫음");
+    expect(await within(thread.ready().then(() => "열림", () => "실패"), 1000)).not.toBe("멈춤");
+  }, 30_000);
+
+  it("작업 스레드가 다시 떠도 기록 노드의 중복 막기(같은 폰 단계는 한 줄)가 이어진다", async () => {
+    const { writer, read, workers, logs } = await openWriter();
+    const { step, bus } = await recorderOn(writer, logs);
+    const sent = () => read.list({ kinds: ["household"] }).filter((r) => r.text === "폰 단계 전송");
+    await step("cup", "go");
+    await vi.waitFor(() => expect(sent()).toHaveLength(1), { timeout: 5000 });
+    const n = workers.length;
+    await workers.at(-1)!.terminate();
+    await vi.waitFor(() => expect(workers.length).toBe(n + 1), { timeout: 5000 });
+    await step("cup", "go");
+    await vi.waitFor(() => expect(bus.length("/act/phone_changes")).toBe(0), { timeout: 8000 });
+    await step("cup", "place");
+    await vi.waitFor(() => expect(sent()).toHaveLength(2), { timeout: 8000 });
+    expect(sent().map((r) => (r.data as { step: string }).step)).toEqual(["go", "place"]);
+  }, 30_000);
+
+  it("한 일이 쓰다가 던지면 그 일이 쓴 것만 되돌리고(SAVEPOINT) 같은 묶음의 다른 일은 커밋한다", async () => {
+    const { writer, read } = await openWriter();
+    const before = writer.add("execution", 1, "앞", { subject: "a" });
+    // 밤 저장은 seed 판본·날 고정·로봇 판본을 쓴 뒤 반성 기록 data(BigInt)를 JSON으로 못 바꿔 던진다
+    const bad = writer.saveNight({ day: "2026-10-01", appliesDay: "2026-10-02", kind: "list", robot: CUP_FSM_MEMORY, candidates: null, atMs: 1, learnedCount: 0, found: { big: 1n }, used: {} });
+    const after = writer.add("execution", 2, "뒤", { subject: "b" });
+    await expect(Promise.all([before, after])).resolves.toHaveLength(2);
+    await expect(bad).rejects.toThrow(/BigInt/);
+    expect(rows(read).map((r) => r.subject)).toEqual(["a", "b"]);
+    expect(read.memoryVersions()).toEqual([]);
+    expect(read.pinnedMemory("2026-10-01")).toBeNull();
+  });
+
+  it("바깥 COMMIT이 실패하면 묶음 전부 실패로 돌려주고 아무것도 남기지 않으며, 그 연결로 다음 묶음을 쓴다", () => {
+    const db = HistoryDb.open(join(mkdtempSync(join(tmpdir(), "batch-")), "noonchi.db"));
+    try {
+      // 미룬 외래 키는 문장 때는 통과하고 COMMIT에서 실패한다
+      db.db.exec("PRAGMA foreign_keys = ON; CREATE TABLE parent (id INTEGER PRIMARY KEY); CREATE TABLE child (pid INTEGER REFERENCES parent(id) DEFERRABLE INITIALLY DEFERRED);");
+      const failed = writeBatch(db, [{ id: 1 }, { id: 2 }], (job) => (job.id === 1 ? db.add("execution", 1, "앞", {}) : db.db.exec("INSERT INTO child VALUES (99)")));
+      expect(failed.committed).toBe(false);
+      expect(failed.results.map((r) => [r.id, typeof r.error])).toEqual([[1, "string"], [2, "string"]]);
+      expect(rows(db)).toEqual([]);
+      const next = writeBatch(db, [{ id: 3 }], () => db.add("execution", 2, "뒤", { subject: "b" }));
+      expect(next).toMatchObject({ committed: true, results: [{ id: 3 }] });
+      expect(rows(db).map((r) => r.subject)).toEqual(["b"]);
+    } finally {
+      db.close();
+    }
+  });
 });
 
 describe("서버 기록 DB 연결", () => {

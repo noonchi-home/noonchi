@@ -19,6 +19,7 @@ import { EyeFeed, StartStore, createPhoneServer, describeStart, estimateViewpoin
 import { androidTwaStatements } from "../../phone/index.js";
 import { repoPath } from "../../shared/paths.js";
 import { PHONE_SESSION, TALK_QUIET_MS, type HomeCore } from "./core.js";
+import { photoRecorder } from "./history-writes.js";
 
 /** 영상 모드 영상 공용 폴더(저장소 runtime/videos). 시연 폴더(RUNTIME_DIR=runtime/demo/day1·week)로 띄워도 여기서 읽는다:
  *  영상은 커서 시연 폴더마다 복사하지 않고, 시연 폴더를 지우는 준비 명령(demo-setup --fresh)이 이은 폴더를 따라 지우지 않게 정션도 쓰지 않는다. */
@@ -39,9 +40,8 @@ export function preparePhone(core: HomeCore): void {
     ? new EyeFeed({
       photoDir: env.PHONE_PHOTO_DIR?.trim() || join(runtimeDir, "photos"), broadcast: (m) => core.app?.broadcast(m),
       // 사진 찍기 사진은 보관 기간이 지나면 지운다(src/brain/history/retention.ts)
-      onSaved: (p) => {
-        history.write.photo(p, PHOTO_TEXT.saved).catch((e: Error) => ctx.log(`[경고] 사진 기록을 쓰지 못했어요: ${e.message}`));
-      },
+      // 기록 줄을 쓰지 못하면 사진 파일을 지운다(보관 표에 없으면 보관 기간이 지나도 지워지지 않는다)
+      onSaved: photoRecorder(history.write, PHOTO_TEXT.saved, ctx.log),
     })
     : undefined;
   // 폰 위치 맞추기(src/phone/sync): 시작 위치(설정 4단계에서 자리·방향) + 물건 기준점(엔진 프레임 YOLO) + 벽 모양(hit 벽 점)

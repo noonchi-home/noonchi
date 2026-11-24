@@ -12,6 +12,7 @@ import { HEARD_MARK, redactHeard } from "../world/labels.js";
 import { machineWrites } from "./machines.js";
 import type { Bag } from "./bag.js";
 import type { HistoryWriter } from "./writer.js";
+import { MEMO_FIELD, newRecordMemo, type RecordMemo } from "./machines.js";
 
 type Write = (b: Record<string, unknown>, stamp: number, header: Envelope<TopicName>["header"]) => void;
 /** 프레임마다 생기는 분석 없음은 관찰 기록(observe)으로 남으므로 world_change로 다시 쓰지 않는다(관찰 흐름과 같다). */
@@ -45,11 +46,11 @@ function forBag(e: Envelope<TopicName>, keep: boolean): Envelope<TopicName> {
 export interface RecordOptions { keepHeard: boolean; machinesOnly: boolean }
 
 /** 토픽마다 기록 DB에 쓰는 것(기록 노드가 db.once 트랜잭션 안에서 부른다). 서버는 기록 작업 스레드(src/record/writer.ts)에서 같은 표를 쓴다. */
-export function recordWrites(db: HistoryDb, o: { now: () => number; keepHeard?: boolean; machinesOnly?: boolean }): Partial<Record<TopicName, Write>> {
+export function recordWrites(db: HistoryDb, o: { now: () => number; keepHeard?: boolean; machinesOnly?: boolean; memo?: RecordMemo }): Partial<Record<TopicName, Write>> {
   const keep = o.keepHeard ?? false;
   const device = deviceRecorder(db, o.now);
   const logs = (list: unknown) => { for (const l of (list ?? []) as BrainLog[]) recordBrainLog(db, l); };
-  const machines = machineWrites(db);
+  const machines = machineWrites(db, o.memo);
   const history: Partial<Record<TopicName, Write>> = o.machinesOnly ? { ...machines } : {
     ...machines,
     "/perception/analysis": (b) => logs(b.logs),
@@ -93,15 +94,21 @@ export function historyRoutes(node: BusNode, db: HistoryDb, o: { bag?: Bag; now:
 
 let sessions = 0;
 /** 서버 기록 노드: 쓰기를 기록 작업 스레드(writer.record)로 보내고 ack는 커밋이 끝난 뒤로 미룬다(ctx.defer). 쓰기가 실패하면 ack하지 않아 버스가 다시 준다.
- *  미루는 동안 노드는 다음 메시지를 받으므로 여러 토픽의 메시지가 한 커밋에 묶인다. 녹화는 하지 않는다. */
+ *  미루는 동안 노드는 다음 메시지를 받으므로 여러 토픽의 메시지가 한 커밋에 묶인다. 녹화는 하지 않는다.
+ *  중복 막기 상태(RecordMemo)는 이 노드가 들고, 일마다 그 토픽의 칸을 실어 보내 커밋된 뒤 돌아온 값으로 바꾼다. */
 export function historyRoutesVia(node: BusNode, writer: Pick<HistoryWriter, "record">, o: { now: () => number; keepHeard?: boolean; machinesOnly?: boolean; log?: (line: string) => void }): void {
   const session = `${node.name}:${node.inst}:${++sessions}`;
   const opts: RecordOptions = { keepHeard: o.keepHeard ?? false, machinesOnly: o.machinesOnly ?? false };
   const topics = Object.keys(recordWrites(nullDb, { ...opts, now: () => 0 })) as TopicName[];
+  const memo = newRecordMemo();
   for (const topic of topics) {
+    const field = MEMO_FIELD[topic];
     node.on(topic, (_b, { e, defer }) => {
       const settle = defer();
-      writer.record({ ...opts, session, e, now: o.now() }).then(() => settle(true), (err: Error) => {
+      writer.record({ ...opts, session, e, now: o.now(), ...(field ? { memo: memo[field] } : {}) }).then((r) => {
+        if (field) (memo as unknown as Record<string, unknown>)[field] = r.memo;
+        settle(true);
+      }, (err: Error) => {
         o.log?.(`[recorder] ${topic} 기록 실패: ${err.message}`);
         settle(false);
       });

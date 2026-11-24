@@ -13,30 +13,36 @@ import type { PlanView } from "../contract/plan.js";
 import type { ControlMode } from "../contract/setup.js";
 import { msgId, type Envelope, type TopicName } from "../bus/index.js";
 import { recordWrites, type RecordOptions } from "./history.js";
+import { MEMO_FIELD, newRecordMemo, type RecordMemo } from "./machines.js";
 
-/** 기록 노드가 받은 메시지 하나: 처리표(bus_seen)와 기록 줄을 한 트랜잭션으로 쓴다. session은 기록 노드 하나(같은 기록 노드의 상태를 잇는다). */
-export interface RecordJob extends RecordOptions { session: string; e: Envelope<TopicName>; now: number }
+/** 기록 노드가 받은 메시지 하나: 처리표(bus_seen)와 기록 줄을 한 트랜잭션으로 쓴다. session은 기록 노드 하나(쓰기 표를 다시 만들지 않는다).
+ *  memo는 그 토픽의 중복 막기 상태 칸(MEMO_FIELD, 기록 노드가 들고 있다): 그 값으로 쓰고 쓴 뒤의 값을 돌려준다. */
+export interface RecordJob extends RecordOptions { session: string; e: Envelope<TopicName>; now: number; memo?: unknown }
 
+type Session = { now: number; memo: RecordMemo; writes: ReturnType<typeof recordWrites> };
 /** 일 표가 쓰는 것: 쓰기 연결과 기록 노드마다의 쓰기 표. */
-export interface WriteCtx { db: HistoryDb; sessions: Map<string, { now: number; writes: ReturnType<typeof recordWrites> }> }
+export interface WriteCtx { db: HistoryDb; sessions: Map<string, Session> }
 
 const DAY_MS = 86_400_000;
 
 export const WRITE_OPS = {
-  /** 기록 노드 메시지 하나(src/record/history.ts의 토픽별 쓰기). 이미 처리한 메시지면 쓰지 않고 false. */
-  record(ctx: WriteCtx, job: RecordJob): boolean {
+  /** 기록 노드 메시지 하나(src/record/history.ts의 토픽별 쓰기). fresh: 처음 처리한 메시지(이미 처리했으면 쓰지 않고 false). memo: 쓴 뒤의 그 토픽 칸. */
+  record(ctx: WriteCtx, job: RecordJob): { fresh: boolean; memo?: unknown } {
     let s = ctx.sessions.get(job.session);
     if (!s) {
-      const made: { now: number; writes: ReturnType<typeof recordWrites> } = { now: job.now, writes: {} };
-      made.writes = recordWrites(ctx.db, { now: () => made.now, keepHeard: job.keepHeard, machinesOnly: job.machinesOnly });
+      const made: Session = { now: job.now, memo: newRecordMemo(), writes: {} };
+      made.writes = recordWrites(ctx.db, { now: () => made.now, keepHeard: job.keepHeard, machinesOnly: job.machinesOnly, memo: made.memo });
       ctx.sessions.set(job.session, (s = made));
     }
     s.now = job.now;
+    const field = MEMO_FIELD[job.e.topic];
+    if (field) (s.memo as unknown as Record<string, unknown>)[field] = job.memo ?? newRecordMemo()[field];
     const write = s.writes[job.e.topic];
-    if (!write) return false;
+    if (!write) return { fresh: false };
     const { e } = job;
-    return ctx.db.once({ topic: e.topic, group: "recorder", key: e.key, msg: msgId(e.header), boot: e.header.boot },
+    const fresh = ctx.db.once({ topic: e.topic, group: "recorder", key: e.key, msg: msgId(e.header), boot: e.header.boot },
       () => write(e.body as Record<string, unknown>, e.header.stamp, e.header));
+    return field ? { fresh, memo: s.memo[field] } : { fresh };
   },
   add(ctx: WriteCtx, kind: HistoryKind, atMs: number, text: string, o: { subject?: string; data?: unknown } = {}): void {
     ctx.db.add(kind, atMs, text, o);
@@ -103,6 +109,32 @@ export type WriteOp = keyof WriteOps;
 type Rest<F> = F extends (ctx: WriteCtx, ...args: infer A) => unknown ? A : never;
 export type WriteArgs<K extends WriteOp> = Rest<WriteOps[K]>;
 export type WriteResult<K extends WriteOp> = ReturnType<WriteOps[K]>;
+
+/** 일 하나의 결과(던졌으면 error). */
+export type WriterResult = { id: number; value?: unknown; error?: string };
+
+/** 묶음 하나를 한 트랜잭션(BEGIN IMMEDIATE … COMMIT)으로 쓴다: 일마다 SAVEPOINT라 한 일이 던지면 그 일이 쓴 것만 되돌리고 그 일만 실패다.
+ *  바깥 BEGIN·COMMIT이 실패하면 묶음 전부 실패이고 아무것도 남지 않는다. committed: 커밋해 바뀐 것이 있다(fsync가 났다). */
+export function writeBatch<J extends { id: number }>(db: HistoryDb, jobs: readonly J[], run: (job: J) => unknown): { results: WriterResult[]; committed: boolean } {
+  const total = () => Number((db.db.prepare("SELECT total_changes() AS n").get() as { n: number }).n);
+  const message = (e: unknown) => (e instanceof Error ? e.message : String(e));
+  const results: WriterResult[] = [];
+  const before = total();
+  try {
+    db.tx(() => {
+      for (const job of jobs) {
+        try {
+          results.push({ id: job.id, value: db.tx(() => run(job)) });
+        } catch (e) {
+          results.push({ id: job.id, error: message(e) });
+        }
+      }
+    });
+    return { results, committed: total() > before };
+  } catch (e) {
+    return { results: jobs.map((job) => ({ id: job.id, error: message(e) })), committed: false };
+  }
+}
 
 /** 커밋 수(synchronous = FULL이라 커밋마다 WAL fsync 한 번)·묶음 수·일 수. */
 export interface WriterStats { commits: number; batches: number; jobs: number }
