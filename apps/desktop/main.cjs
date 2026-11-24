@@ -90,7 +90,8 @@ function createMain(electron, hub, appDir) {
     setTip(`서버 시작하는 중 (포트 ${config.port}·${config.phonePort})`);
     const result = await running.start();
     if (!result.ok) {
-      if (result.kind !== "stopped") dialog.showErrorBox(`${TITLE}를 시작하지 못했어요`, result.message);
+      // 종료를 누른 뒤 온 실패는 알리지 않는다
+      if (result.kind !== "stopped" && !quitting) dialog.showErrorBox(`${TITLE}를 시작하지 못했어요`, result.message);
       return quit();
     }
     if (quitting) return;

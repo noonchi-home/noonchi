@@ -49,8 +49,8 @@ function fakeElectron(events) {
   return { electron: { app, BrowserWindow, Tray, Menu: { buildFromTemplate: (t) => t }, dialog, shell: { openExternal: async () => {} } }, windows, trays };
 }
 
-// 가짜 hub: 설정 읽기는 진짜, 시작은 바로 준비, 종료는 release()까지 기다린다
-function fakeHub(events) {
+// 가짜 hub: 설정 읽기는 진짜, 시작은 바로 준비(start를 주면 그 결과), 종료는 release()까지 기다린다
+function fakeHub(events, start = async () => ({ ok: true, url: "http://127.0.0.1:8300/", logPath: "C:/logs/server.log" })) {
   const state = { deps: null, release: null };
   const hub = {
     ...hubLib,
@@ -58,7 +58,7 @@ function fakeHub(events) {
     createHub: (_config, deps) => {
       state.deps = deps;
       return {
-        start: async () => ({ ok: true, url: "http://127.0.0.1:8300/", logPath: "C:/logs/server.log" }),
+        start,
         stop: () => {
           events.push("stop");
           return new Promise((r) => { state.release = r; });
@@ -113,6 +113,23 @@ test("종료하는 중에는 창을 다시 띄우지 않고, 두 번째 실행�
   // 종료 중에 서버가 끝나도 오류 창을 띄우지 않는다
   state.deps.onServerExit("서버가 끝났어요(코드 0)");
   state.release();
+  await settle();
+  assert.equal(events.some((e) => e.startsWith("error")), false);
+  assert.deepEqual(events.filter((e) => e.startsWith("exit")), ["exit 0"]);
+});
+
+test("트레이 「종료」를 누른 뒤 시작 실패가 와도 오류 창을 띄우지 않는다", async () => {
+  const events = [];
+  const { electron, trays } = fakeElectron(events);
+  let finish;
+  const { hub, state } = fakeHub(events, () => new Promise((r) => { finish = r; }));
+  const main = createMain(electron, hub, __dirname);
+  while (!finish) await flush();
+  trays[0].menu.find((item) => item.label === "종료").click();
+  await settle();
+  finish({ ok: false, kind: "tailscale", message: "Tailscale https 8444에 이미 다른 경로가 있어요" });
+  state.release();
+  await main.ready;
   await settle();
   assert.equal(events.some((e) => e.startsWith("error")), false);
   assert.deepEqual(events.filter((e) => e.startsWith("exit")), ["exit 0"]);

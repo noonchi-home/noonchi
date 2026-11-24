@@ -130,13 +130,29 @@ test("허브·폰 서버는 늘 127.0.0.1에만 연다(와이파이 직접 연�
 });
 
 test("상대 경로 nodePath는 시작하지 않고 절대 경로를 넣으라고 알린다", async () => {
-  for (const ok of ["node", "node.exe", "C:/fnm/v22/node.exe"]) assert.equal(hub.configProblem(config({ nodePath: ok })), null, ok);
-  const deps = fakeDeps();
-  const r = await hub.createHub(config({ nodePath: "tools\\node.exe" }), deps).start();
-  assert.equal(r.kind, "config");
-  assert.match(r.message, /nodePath/);
-  assert.match(r.message, /절대 경로/);
-  assert.deepEqual(deps.calls, []);
+  for (const ok of ["node", "node.exe", "C:/fnm/v22/node.exe", "C:\\fnm\\v22\\node.exe"]) assert.equal(hub.configProblem(config({ nodePath: ok })), null, ok);
+  // C:node.exe는 C 드라이브의 「지금 폴더」 기준이라 절대 경로가 아니다
+  for (const bad of ["tools\\node.exe", "./node.exe", "C:node.exe", "c:fnm\\node.exe"]) {
+    const deps = fakeDeps();
+    const r = await hub.createHub(config({ nodePath: bad }), deps).start();
+    assert.equal(r.kind, "config", bad);
+    assert.match(r.message, /nodePath/);
+    assert.match(r.message, /절대 경로/);
+    assert.deepEqual(deps.calls, []);
+  }
+});
+
+test("tailscale.enabled는 true·false만 받는다(\"tailscale\": false는 끔)", async () => {
+  assert.equal(hub.configProblem(config({ tailscale: false })), null);
+  assert.equal(config({ tailscale: false }).tailscale.enabled, false);
+  for (const ok of [true, false]) assert.equal(hub.configProblem(config({ tailscale: { enabled: ok } })), null, String(ok));
+  for (const bad of [{ enabled: "false" }, { enabled: 0 }, { enabled: "true" }, { enabled: null }, "false", 0]) {
+    const deps = fakeDeps();
+    const r = await hub.createHub(config({ tailscale: bad }), deps).start();
+    assert.equal(r.kind, "config", JSON.stringify(bad));
+    assert.match(r.message, /tailscale/);
+    assert.deepEqual(deps.calls, []);
+  }
 });
 
 test("대시보드 빌드(ui/dist/index.html)가 없으면 시작하지 않는다", async () => {
@@ -207,6 +223,62 @@ test("Tailscale: 다른 대상이 있으면 덮어쓰지 않고 그 포트와 �
     assert.deepEqual(openedRoutes(deps.calls), []);
     assert.deepEqual(closed(deps.calls), []);
     assert.equal(deps.calls.some((x) => x[0] === "spawn"), false);
+  }
+});
+
+test("Tailscale: 같은 대상이라도 Funnel이 켜져 있으면 쓰지 않고 멈춘다", async () => {
+  const status = JSON.parse(serveStatus({ 443: "http://127.0.0.1:8310" }));
+  status.AllowFunnel = { "host.tail.ts.net:443": true };
+  const deps = fakeDeps({ status: JSON.stringify(status) });
+  const r = await hub.createHub(config(), deps).start();
+  assert.equal(r.kind, "tailscale");
+  assert.match(r.message, /Funnel이 켜져 있어요: https 443/);
+  assert.deepEqual(openedRoutes(deps.calls), []);
+  assert.deepEqual(closed(deps.calls), []);
+  assert.equal(deps.calls.some((x) => x[0] === "spawn"), false);
+});
+
+test("Tailscale: HTTP로만 연 같은 대상은 HTTPS 경로가 아니라 멈춘다", async () => {
+  const status = JSON.parse(serveStatus({ 8444: "http://127.0.0.1:8300" }));
+  status.TCP = { 8444: { HTTP: true } };
+  const deps = fakeDeps({ status: JSON.stringify(status) });
+  const r = await hub.createHub(config(), deps).start();
+  assert.equal(r.kind, "tailscale");
+  assert.match(r.message, /8444/);
+  assert.deepEqual(openedRoutes(deps.calls), []);
+  assert.equal(deps.calls.some((x) => x[0] === "spawn"), false);
+});
+
+test("Tailscale: 상태가 null·빈 값·빈 객체면 경로 없음으로 보고 연다", async () => {
+  for (const status of ["null", "", "{}", "null\n"]) {
+    const deps = fakeDeps({ status });
+    const h = hub.createHub(config(), deps);
+    assert.equal((await h.start()).ok, true, JSON.stringify(status));
+    await h.stop();
+    assert.deepEqual(openedRoutes(deps.calls), ["--https=8444", "--https=443"]);
+  }
+});
+
+test("종료를 누른 뒤 상태 읽기·충돌 결과가 와도 오류 대신 stopped로 끝난다", async () => {
+  for (const status of [serveStatus({ 8444: "http://127.0.0.1:8200" }), null]) {
+    let release;
+    const gate = new Promise((r) => { release = r; });
+    const deps = fakeDeps({
+      run: async (cmd, args) => {
+        deps.calls.push(["run", cmd, ...args]);
+        if (cmd === "node") return "v22.15.0";
+        if (args[1] === "status") { await gate; if (status === null) throw new Error("tailscale not running"); return status; }
+        return "";
+      },
+    });
+    const h = hub.createHub(config(), deps);
+    const started = h.start();
+    while (!deps.calls.some((x) => x[3] === "status")) await flush();
+    const stopping = h.stop();
+    release();
+    await stopping;
+    assert.equal((await started).kind, "stopped", String(status));
+    assert.deepEqual(openedRoutes(deps.calls), []);
   }
 });
 
@@ -457,12 +529,15 @@ test("시작 중에 종료하면 기다림을 멈추고 실패 창 없이 끝난
 test("경로를 여는 중에 종료하면 연 경로를 닫은 뒤 끝나고 서버를 띄우지 않는다", async () => {
   let release;
   const gate = new Promise((r) => { release = r; });
+  let closesDone = 0;
   const deps = fakeDeps({
     run: async (cmd, args) => {
       deps.calls.push(["run", cmd, ...args]);
       if (cmd === "node") return "v22.15.0";
       if (args[1] === "status") return "{}";
       if (args.includes("--https=8444") && args.includes("--bg")) await gate;
+      // 실제 tailscale.exe처럼 닫기에 시간이 걸린다: stop()이 그 전에 끝나면 앱이 끝나며 닫기가 같이 죽는다
+      if (args.at(-1) === "off") { await new Promise((r) => setTimeout(r, 150)); closesDone += 1; }
       return "";
     },
   });
@@ -470,11 +545,13 @@ test("경로를 여는 중에 종료하면 연 경로를 닫은 뒤 끝나고 �
   const started = h.start();
   while (!openedRoutes(deps.calls).length) await flush();
   let stopDone = false;
-  const stopping = h.stop().then(() => { stopDone = true; });
+  let closesWhenStopped = -1;
+  const stopping = h.stop().then(() => { stopDone = true; closesWhenStopped = closesDone; });
   await flush();
   assert.equal(stopDone, false);
   release();
   await stopping;
+  assert.equal(closesWhenStopped, 1);
   assert.deepEqual(closed(deps.calls), ["--https=8444"]);
   assert.equal((await started).kind, "stopped");
   assert.deepEqual(openedRoutes(deps.calls), ["--https=8444"]);

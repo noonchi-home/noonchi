@@ -13,27 +13,45 @@ const LOCAL_HOSTS = new Set(["127.0.0.1", "localhost", "[::1]"]);
 const int = (v, fallback) => (Number.isInteger(Number(v)) && v !== null && v !== "" && v !== undefined ? Number(v) : fallback);
 const isRecord = (v) => typeof v === "object" && v !== null && !Array.isArray(v);
 
+/** "tailscale" 값 → { 칸, 문제 }. false는 끔, true·없음은 기본값, 객체는 칸별로 합치되 enabled는 true·false만 받는다. */
+function readTailscale(value) {
+  if (value === undefined || value === true) return { ts: { ...TAILSCALE_DEFAULTS }, problem: null };
+  if (value === false) return { ts: { ...TAILSCALE_DEFAULTS, enabled: false }, problem: null };
+  if (!isRecord(value)) return { ts: { ...TAILSCALE_DEFAULTS }, problem: `설정 tailscale은 false나 { "enabled": true, ... }로 넣으세요. 지금: ${JSON.stringify(value)}` };
+  const ts = { ...TAILSCALE_DEFAULTS, ...value };
+  if (typeof ts.enabled !== "boolean") return { ts, problem: `설정 tailscale.enabled는 true나 false로 넣으세요(따옴표 없이). 지금: ${JSON.stringify(value.enabled)}` };
+  return { ts, problem: null };
+}
+
 /** config.json 값 → 기본값을 채우고 경로를 절대 경로로 바꾼 설정. 상대 경로 repoDir는 앱 폴더, runtimeDir·envFile은 repoDir 기준.
- *  "tailscale": false는 끔, true나 객체는 기본값에 칸별로 합친다. */
+ *  잘못된 값은 problems에 모아 시작 전에 막는다(configProblem). */
 function normalizeConfig(raw = {}, appDir) {
   const repoDir = path.resolve(appDir, raw.repoDir || "../..");
-  const ts = raw.tailscale === false ? { ...TAILSCALE_DEFAULTS, enabled: false } : { ...TAILSCALE_DEFAULTS, ...(isRecord(raw.tailscale) ? raw.tailscale : {}) };
+  const { ts, problem } = readTailscale(raw.tailscale);
   return {
     repoDir,
     envFile: raw.envFile ? path.resolve(repoDir, raw.envFile) : null,
     runtimeDir: path.resolve(repoDir, raw.runtimeDir || "runtime/hub"),
     port: int(raw.port, 8200),
     phonePort: int(raw.phonePort, 8210),
-    tailscale: { enabled: ts.enabled !== false, hubHttpsPort: int(ts.hubHttpsPort, 8444), phoneHttpsPort: int(ts.phoneHttpsPort, 443) },
+    tailscale: { enabled: ts.enabled === true, hubHttpsPort: int(ts.hubHttpsPort, 8444), phoneHttpsPort: int(ts.phoneHttpsPort, 443) },
     twaFingerprints: typeof raw.twaFingerprints === "string" && raw.twaFingerprints.trim() ? raw.twaFingerprints.trim() : null,
     nodePath: typeof raw.nodePath === "string" && raw.nodePath.trim() ? raw.nodePath.trim() : "node",
+    problems: problem ? [problem] : [],
   };
 }
 
-/** 시작 전에 막을 설정 문제(없으면 null). nodePath는 PATH에서 찾는 이름(node)이거나 절대 경로여야 한다. */
+/** nodePath: PATH에서 찾는 이름(node, node.exe)이거나 완전한 절대 경로. Windows의 C:node.exe(드라이브의 지금 폴더 기준)·\tools\node.exe(지금 드라이브 기준)는 안 된다. */
+function nodePathOk(p) {
+  if (!/[\\/:]/.test(p)) return true;
+  if (process.platform === "win32") return /^[A-Za-z]:[\\/]/.test(p) || /^[\\/]{2}[^\\/]+[\\/]/.test(p);
+  return path.isAbsolute(p);
+}
+
+/** 시작 전에 막을 설정 문제(없으면 null). */
 function configProblem(config) {
-  const p = config.nodePath;
-  if (/[\\/]/.test(p) && !path.isAbsolute(p)) return `설정 nodePath는 절대 경로로 넣으세요(예: C:\\...\\node.exe). 지금: ${p}`;
+  if (config.problems && config.problems.length) return config.problems[0];
+  if (!nodePathOk(config.nodePath)) return `설정 nodePath는 절대 경로로 넣으세요(예: C:\\...\\node.exe). 지금: ${config.nodePath}`;
   return null;
 }
 
@@ -97,22 +115,41 @@ const tailscaleCloseArgs = (httpsPort) => ["serve", `--https=${httpsPort}`, "off
 
 /** `tailscale serve status --json` → HTTPS 포트마다 { rootProxy(사이트 뿌리 / 하나만 있을 때 그 대상), desc(오류 창에 적을 대상) }. */
 function servedRoutes(statusText) {
-  const status = String(statusText || "").trim() ? JSON.parse(statusText) : {};
+  // 경로가 하나도 없으면 null·빈 출력·{}가 온다
+  const text = String(statusText ?? "").trim();
+  const parsed = text ? JSON.parse(text) : null;
+  const status = isRecord(parsed) ? parsed : {};
+  const portOf = (hostPort) => { const m = /:(\d+)$/.exec(hostPort); return m ? Number(m[1]) : null; };
   const out = new Map();
   const tcp = isRecord(status.TCP) ? status.TCP : {};
   for (const [port, entry] of Object.entries(tcp)) {
-    if (!isRecord(entry)) continue;
-    const desc = Object.entries(entry).filter(([k]) => k !== "HTTPS").map(([k, v]) => `${k} ${v}`).join(", ");
-    out.set(Number(port), { rootProxy: null, desc: desc || "HTTPS" });
+    const e = isRecord(entry) ? entry : {};
+    const desc = Object.entries(e).map(([k, v]) => (v === true ? k : `${k} ${v}`)).join(", ");
+    // HTTPS: true인 것만 HTTPS 경로다(HTTP만 연 serve는 다른 경로)
+    out.set(Number(port), { https: e.HTTPS === true, rootProxy: null, desc: desc || "TCP", funnel: false });
   }
   const web = isRecord(status.Web) ? status.Web : {};
   for (const [hostPort, site] of Object.entries(web)) {
-    const m = /:(\d+)$/.exec(hostPort);
+    const port = portOf(hostPort);
+    if (port === null) continue;
     const handlers = isRecord(site) && isRecord(site.Handlers) ? site.Handlers : {};
-    if (!m) continue;
     const mounts = Object.entries(handlers).map(([mount, h]) => [mount, isRecord(h) ? h.Proxy || h.Path || h.Text || "" : ""]);
-    const root = mounts.length === 1 && mounts[0][0] === "/" ? String(mounts[0][1]) : null;
-    out.set(Number(m[1]), { rootProxy: root, desc: mounts.map(([mount, t]) => (mount === "/" ? t : `${mount} → ${t}`)).join(", ") || "HTTPS" });
+    const prev = out.get(port);
+    const https = !!prev && prev.https;
+    const scheme = https ? "" : prev && prev.desc.includes("HTTP") ? "HTTP " : "";
+    out.set(port, {
+      https,
+      rootProxy: mounts.length === 1 && mounts[0][0] === "/" ? String(mounts[0][1]) : null,
+      desc: scheme + (mounts.map(([mount, t]) => (mount === "/" ? t : `${mount} → ${t}`)).join(", ") || "HTTPS"),
+      funnel: false,
+    });
+  }
+  // AllowFunnel: { "host:443": true }이면 그 경로가 인터넷에 열려 있다
+  const funnel = isRecord(status.AllowFunnel) ? status.AllowFunnel : {};
+  for (const [hostPort, on] of Object.entries(funnel)) {
+    const port = portOf(hostPort);
+    if (port === null || on !== true) continue;
+    out.set(port, { ...(out.get(port) || { https: false, rootProxy: null, desc: "Funnel" }), funnel: true });
   }
   return out;
 }
@@ -187,14 +224,22 @@ function createHub(config, deps) {
   let logPath = null;
   let opening = null;
   let stopping = null;
+  let quitRequested = false;
+  let closing = null;
 
   const fail = (kind, message) => ({ ok: false, kind, message, logPath });
 
-  async function closeRoutes() {
-    while (opened.length) {
-      const port = opened.shift();
-      try { await deps.run("tailscale", tailscaleCloseArgs(port)); } catch { /* 이미 닫혔으면 그대로 둔다 */ }
-    }
+  // 닫기는 하나만 돈다: 먼저 부른 쪽이 opened를 비우며 닫는 동안 뒤에 부른 쪽도 그 닫기가 끝날 때까지 기다린다
+  // (뒤에 부른 쪽이 빈 opened를 보고 바로 끝나면 앱이 끝나며 아직 도는 tailscale.exe가 같이 죽어 경로가 남는다)
+  function closeRoutes() {
+    if (closing) return closing.then(() => (opened.length ? closeRoutes() : undefined));
+    closing = (async () => {
+      while (opened.length) {
+        const port = opened.shift();
+        try { await deps.run("tailscale", tailscaleCloseArgs(port)); } catch { /* 이미 닫혔으면 그대로 둔다 */ }
+      }
+    })().finally(() => { closing = null; });
+    return closing;
   }
 
   // 같은 대상이 이미 있으면 그대로 쓰고(열지도 닫지도 않음), 다른 대상이 있으면 덮어쓰지 않고 멈춘다
@@ -209,7 +254,10 @@ function createHub(config, deps) {
     }
     for (const { httpsPort, target } of wanted) {
       const existing = served.get(httpsPort);
-      if (existing && !(existing.rootProxy && sameTarget(existing.rootProxy, target))) {
+      if (!existing) continue;
+      // 폰·허브 서버는 인증이 없어 인터넷(Funnel)에 열리면 안 된다
+      if (existing.funnel) return fail("tailscale", `Funnel이 켜져 있어요: https ${httpsPort}. Funnel을 끈 뒤 다시 여세요.`);
+      if (!(existing.https && existing.rootProxy && sameTarget(existing.rootProxy, target))) {
         return fail("tailscale", `Tailscale https ${httpsPort}에 이미 다른 경로가 있어요: ${existing.desc}. 그 경로를 끄거나 설정 tailscale 포트를 바꾼 뒤 다시 여세요.`);
       }
     }
@@ -227,7 +275,13 @@ function createHub(config, deps) {
     return null;
   }
 
+  // 앱의 종료(창 닫기·트레이 「종료」). 시작 중이면 start()는 오류 대신 stopped로 끝난다
   function stop() {
+    quitRequested = true;
+    return shutdown();
+  }
+
+  function shutdown() {
     return (stopping ??= (async () => {
       if (opening) await opening;
       if (child && !hasExited) {
@@ -264,6 +318,15 @@ function createHub(config, deps) {
   }
 
   async function start() {
+    const result = await startSteps();
+    if (!result.ok && quitRequested && result.kind !== "stopped") {
+      await closeRoutes();
+      return fail("stopped", "");
+    }
+    return result;
+  }
+
+  async function startSteps() {
     const problem = configProblem(config);
     if (problem) return fail("config", problem);
 
@@ -295,11 +358,11 @@ function createHub(config, deps) {
     for (;;) {
       if (stopping) return fail("stopped", "");
       if (hasExited) {
-        await stop();
+        await shutdown();
         return fail("exited", `서버가 준비 전에 끝났어요(코드 ${exitCode}). 로그: ${logPath}`);
       }
       if (Date.now() >= deadline) {
-        await stop();
+        await shutdown();
         return fail("timeout", `서버가 ${Math.round(t.readyMs / 1000)}초 안에 준비되지 않았어요. 로그: ${logPath}`);
       }
       try {
