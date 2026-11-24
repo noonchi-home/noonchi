@@ -377,6 +377,13 @@ describe("시나리오 1 합성(composed) 판단 재생", { timeout: 20_000 }, (
     expect(standby).toBeDefined();
     expect(trace.filter((e) => e.kind === "tv_off" && e.at > standby.at)).toEqual([]);
   });
+  // 요구사항 ④(이미 됐으면 끝냄): 시청자가 떠나기 직전에 직접 TV를 끄면 가전 상태가 이미 목표와 같으므로 끄기 명령을 내지 않는다
+  it("시청자가 떠나기 직전에 직접 TV를 끄면 TV 끄기 명령을 보내지 않는다", async () => {
+    const trace = await replayScenario("manual");
+    const manual = trace.find((e) => e.kind === "manual_off")!;
+    expect(manual).toBeDefined();
+    expect(trace.filter((e) => e.kind === "tv_off" || e.kind === "tv_off_ack")).toEqual([]);
+  });
   it("직접 끈 TV 앞에 앉아도 자동 켜기를 보내지 않는다", async () => {
     const trace = await replayScenario("manual");
     expect(trace.map((e) => e.kind)).toEqual(expect.arrayContaining(["standby", "manual_off", "viewer_returned"]));
