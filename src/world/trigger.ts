@@ -1,5 +1,5 @@
 // PAM 호출 시점. 기본 periodic: 관찰이 살아 있는 동안(엔진 프레임이 liveMs 안에 옴) periodMs마다 그때 World State로 부른다.
-// 주기 기본은 PAM 모델 이름에 nano가 들면 1초, 아니면 5초다(PAM_PERIOD_MS를 주면 그 값). 동시 상한(기본 1) 때문에 답이 주기보다 늦으면 실제 간격은 답 시간이다.
+// 주기 기본은 PAM 모델 이름에 nano나 mini가 들면 1초, 아니면 5초다(PAM_PERIOD_MS를 주면 그 값). 동시 상한(기본 1) 때문에 답이 주기보다 늦으면 실제 간격은 답 시간이다.
 // 계기와 행동은 PAM의 FSM이 정하므로 의미 있는 변화를 기다리지 않는다. 사람이 떠난 뒤(컵이 남은 때)에도 계속 부른다.
 // 프레임이 오지 않으면(폰 없음) 부르지 않는다. 사람 없음 + 등장·사라짐 없음이 idleStopMs(30분) 이어지면 멈추고, 등장·사라짐이 생기면 다시(출처: docs/provenance.md).
 // event: World State에 의미 있는 변화가 있을 때(최소 간격 minGapMs). 두 모드 모두 나가 있는 판단이 maxInflight(기본 1)면 부르지 않는다.
@@ -20,15 +20,16 @@ const num = (env: Record<string, string | undefined>, key: string, d: number) =>
   return v;
 };
 
-/** periodic 기본 주기(ms): PAM 모델 이름에 nano가 들면 nanoMs, 아니면 defaultMs(2026-11-20 사용자 「NANO면 1초마다 해 그냥」). */
-export const PAM_PERIOD = { nanoMs: 1000, defaultMs: 5000 };
+/** periodic 기본 주기(ms): PAM 모델 이름에 nano나 mini가 들면 smallMs, 아니면 defaultMs
+ *  (2026-11-20 사용자 「NANO면 1초마다 해 그냥」, 2026-11-25 「1번 오케이」: mini도 nano와 첫 글자 지연이 같다). */
+export const PAM_PERIOD = { smallMs: 1000, defaultMs: 5000 };
 
-/** PAM_TRIGGER(periodic 기본·event), PAM_PERIOD_MS(기본: pamModel에 nano가 들면 1000, 아니면 5000), PAM_LIVE_MS(10000), PAM_IDLE_STOP_MS(1800000), PAM_MIN_GAP_MS(3000),
+/** PAM_TRIGGER(periodic 기본·event), PAM_PERIOD_MS(기본: pamModel에 nano나 mini가 들면 1000, 아니면 5000), PAM_LIVE_MS(10000), PAM_IDLE_STOP_MS(1800000), PAM_MIN_GAP_MS(3000),
  *  PAM_MAX_INFLIGHT(1). pamModel은 서버가 넘기는 최종 PAM 모델 이름이다(world는 env의 모델 칸을 읽지 않는다). 틀린 값이면 던진다. */
 export function loadTriggerConfig(env: Record<string, string | undefined>, o: { pamModel?: string } = {}): TriggerConfig {
   const mode = env.PAM_TRIGGER?.trim() || "periodic";
   if (mode !== "event" && mode !== "periodic") throw new Error(`PAM_TRIGGER=${mode}: event 또는 periodic이어야 합니다`);
-  const period = /nano/i.test(o.pamModel ?? "") ? PAM_PERIOD.nanoMs : PAM_PERIOD.defaultMs;
+  const period = /nano|mini/i.test(o.pamModel ?? "") ? PAM_PERIOD.smallMs : PAM_PERIOD.defaultMs;
   return { mode, minGapMs: num(env, "PAM_MIN_GAP_MS", 3000), periodMs: num(env, "PAM_PERIOD_MS", period), idleStopMs: num(env, "PAM_IDLE_STOP_MS", 1_800_000),
     liveMs: num(env, "PAM_LIVE_MS", 10_000), maxInflight: Math.max(1, Math.floor(num(env, "PAM_MAX_INFLIGHT", 1))) };
 }

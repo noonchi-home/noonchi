@@ -100,12 +100,14 @@ describe("호출 시점 설정", () => {
     expect(() => loadTriggerConfig({ PAM_LIVE_MS: "x" })).toThrow(/PAM_LIVE_MS/);
   });
 
-  // 2026-11-20 사용자 「NANO면 1초마다 해 그냥」
-  it("PAM_PERIOD_MS를 따로 주지 않으면 PAM 모델 이름에 nano가 들 때 기본 주기 1초, 아니면 5초다. PAM_PERIOD_MS를 주면 늘 그 값이다", async () => {
+  // 2026-11-20 사용자 「NANO면 1초마다 해 그냥」, 2026-11-25 「1번 오케이」(PAM mini도 1초)
+  it("PAM_PERIOD_MS를 따로 주지 않으면 PAM 모델 이름에 nano나 mini가 들 때 기본 주기 1초, 아니면 5초다. PAM_PERIOD_MS를 주면 늘 그 값이다", async () => {
     const { loadTriggerConfig } = await import("../src/world/trigger.js");
     expect(loadTriggerConfig({}, { pamModel: "gpt-5.4-nano" }).periodMs).toBe(1000);
     expect(loadTriggerConfig({}, { pamModel: "GPT-5.4-NANO-2026-03-17" }).periodMs).toBe(1000);
-    expect(loadTriggerConfig({}, { pamModel: "gpt-5.4-mini" }).periodMs).toBe(5000);
+    expect(loadTriggerConfig({}, { pamModel: "gpt-5.4-mini" }).periodMs).toBe(1000);
+    expect(loadTriggerConfig({}, { pamModel: "GPT-5.4-MINI-2026-03-17" }).periodMs).toBe(1000);
+    expect(loadTriggerConfig({}, { pamModel: "gpt-5.5" }).periodMs).toBe(5000);
     expect(loadTriggerConfig({}, { pamModel: "pam" }).periodMs).toBe(5000);
     expect(loadTriggerConfig({}).periodMs).toBe(5000);
     expect(loadTriggerConfig({ PAM_PERIOD_MS: "3000" }, { pamModel: "gpt-5.4-nano" }).periodMs).toBe(3000);
@@ -115,10 +117,11 @@ describe("호출 시점 설정", () => {
     expect(loadTriggerConfig({}, { pamModel: "gpt-5.4-nano" }).maxInflight).toBe(1);
   });
 
-  it("서버는 PAM_LLM_MODEL을 반영한 최종 PAM 모델(loadEndpoints)로 주기를 고른다: nano면 1초, 기본 openai(mini)·vllm(pam)이면 5초, PAM_PERIOD_MS가 늘 이긴다", async () => {
+  it("서버는 PAM_LLM_MODEL을 반영한 최종 PAM 모델(loadEndpoints)로 주기를 고른다: nano·기본 openai(mini)면 1초, vllm(pam)이면 5초, PAM_PERIOD_MS가 늘 이긴다", async () => {
     const { triggerConfigOf } = await import("../src/server/home/act.js");
     expect(triggerConfigOf({ INFERENCE_MODE: "openai", PAM_LLM_MODEL: "gpt-5.4-nano" }).periodMs).toBe(1000);
-    expect(triggerConfigOf({ INFERENCE_MODE: "openai" }).periodMs).toBe(5000);
+    expect(triggerConfigOf({ INFERENCE_MODE: "openai", PAM_LLM_MODEL: "gpt-5.4-mini" }).periodMs).toBe(1000);
+    expect(triggerConfigOf({ INFERENCE_MODE: "openai" }).periodMs).toBe(1000);
     expect(triggerConfigOf({ INFERENCE_MODE: "vllm" }).periodMs).toBe(5000);
     expect(triggerConfigOf({ INFERENCE_MODE: "openai", PAM_LLM_MODEL: "gpt-5.4-nano", PAM_PERIOD_MS: "4000" }).periodMs).toBe(4000);
   }, 60_000);
