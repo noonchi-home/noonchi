@@ -23,11 +23,30 @@ function readTailscale(value) {
   return { ts, problem: null };
 }
 
+/** 앱이 정해 서버에 넘기는 환경 변수: serverEnv로 덮어쓰지 못한다(serverLaunch가 늘 마지막에 넣는다). */
+const APP_ENV = new Set(["PORT", "HOST", "PHONE_PORT", "PHONE_HOST", "REDIS_URL", "RUNTIME_DIR", "NOONCHI_STDIN_CONTROL"]);
+/** 비밀로 보는 이름: env 파일에만 둔다(config.json은 비밀 없이 둔다). */
+const SECRET_NAME = /(KEY|TOKEN|SECRET|PASSWORD)$/i;
+
+/** serverEnv: 서버 실행 환경에 더할 이름 → 글 값 표. 틀리면 { env: {}, problem }. 오류 글에는 값을 옮기지 않는다. */
+function readServerEnv(value) {
+  if (value === undefined || value === null) return { env: {}, problem: null };
+  if (!isRecord(value)) return { env: {}, problem: `설정 serverEnv는 { "이름": "값" } 표로 넣으세요.` };
+  for (const [name, v] of Object.entries(value)) {
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) return { env: {}, problem: `설정 serverEnv의 이름 ${JSON.stringify(name)}은 영문·숫자·_로 된 환경 변수 이름이어야 해요.` };
+    if (SECRET_NAME.test(name)) return { env: {}, problem: `설정 serverEnv에 ${name}은 넣지 마세요. 비밀은 env 파일에만 둬요.` };
+    if (APP_ENV.has(name)) return { env: {}, problem: `설정 serverEnv의 ${name}은 앱이 정해요. port·phonePort·runtimeDir 칸을 쓰세요.` };
+    if (typeof v !== "string") return { env: {}, problem: `설정 serverEnv의 ${name} 값은 따옴표로 감싼 글로 넣으세요.` };
+  }
+  return { env: { ...value }, problem: null };
+}
+
 /** config.json 값 → 기본값을 채우고 경로를 절대 경로로 바꾼 설정. 상대 경로 repoDir는 앱 폴더, runtimeDir·envFile은 repoDir 기준.
  *  잘못된 값은 problems에 모아 시작 전에 막는다(configProblem). */
 function normalizeConfig(raw = {}, appDir) {
   const repoDir = path.resolve(appDir, raw.repoDir || "../..");
   const { ts, problem } = readTailscale(raw.tailscale);
+  const serverEnv = readServerEnv(raw.serverEnv);
   return {
     repoDir,
     envFile: raw.envFile ? path.resolve(repoDir, raw.envFile) : null,
@@ -37,7 +56,8 @@ function normalizeConfig(raw = {}, appDir) {
     tailscale: { enabled: ts.enabled === true, hubHttpsPort: int(ts.hubHttpsPort, 8444), phoneHttpsPort: int(ts.phoneHttpsPort, 443) },
     twaFingerprints: typeof raw.twaFingerprints === "string" && raw.twaFingerprints.trim() ? raw.twaFingerprints.trim() : null,
     nodePath: typeof raw.nodePath === "string" && raw.nodePath.trim() ? raw.nodePath.trim() : "node",
-    problems: problem ? [problem] : [],
+    serverEnv: serverEnv.env,
+    problems: [problem, serverEnv.problem].filter(Boolean),
   };
 }
 
@@ -84,10 +104,12 @@ function nodeVersionOk(version) {
 }
 
 /** 서버 실행 명령. env 파일은 경로만 --env-file로 넘긴다(앱은 읽지 않는다). 실행기 env가 파일보다 앞선다(Node --env-file 규칙).
+ *  serverEnv(config.json)는 실행기 env에 넣어 env 파일 값보다 앞서고, 앱이 정하는 값(APP_ENV)은 그 위에 다시 넣어 늘 이긴다.
  *  허브·폰 서버는 늘 127.0.0.1에만 연다: 폰은 Tailscale HTTPS로만 붙는다(와이파이 직접 연결 없음). */
 function serverLaunch(config, baseEnv = process.env) {
   const env = { ...baseEnv };
   delete env.ELECTRON_RUN_AS_NODE;
+  Object.assign(env, config.serverEnv || {});
   Object.assign(env, {
     PORT: String(config.port),
     HOST: "127.0.0.1",

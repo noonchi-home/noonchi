@@ -30,11 +30,12 @@ powershell -NoProfile -ExecutionPolicy Bypass -File apps\desktop\make-shortcut.p
 | `port` / `phonePort` | `8200` / `8210` | 허브·폰 서버 포트 |
 | `tailscale` | `{ "enabled": true, "hubHttpsPort": 8444, "phoneHttpsPort": 443 }` | 서버 시작 전에 여는 HTTPS 경로. `false`면 끔. `enabled`는 따옴표 없는 `true`·`false`만 받는다 |
 | `twaFingerprints` | 없음 | 있으면 `ANDROID_TWA_SHA256_FINGERPRINTS`로 넘김 |
+| `serverEnv` | 없음 | 서버 환경 변수 표(`{ "PAM_LLM_MODEL": "gpt-5.4-mini" }`처럼 이름 → 따옴표로 감싼 값). env 파일의 같은 키보다 앞선다. 이름이 `KEY`·`TOKEN`·`SECRET`·`PASSWORD`로 끝나는 비밀과 아래의 앱이 정하는 값은 넣을 수 없다(넣으면 시작 전에 막는다) |
 | `nodePath` | `node` | 서버를 돌릴 node(22.15 이상 23 미만). `node`(PATH에서 찾음) 또는 node.exe 절대 경로(`C:\...\node.exe`, `C:node.exe` 같은 드라이브 상대 경로는 안 됨). 바로가기로 켜면 PATH의 node가 다른 버전일 수 있으니 그때 절대 경로를 넣는다 |
 
 BOM이 붙은 파일도 읽는다.
 
-서버에는 `PORT`, `HOST=127.0.0.1`, `PHONE_PORT`, `PHONE_HOST=127.0.0.1`, `REDIS_URL=`(빈 값 = 메모리 버스), `RUNTIME_DIR`, `NOONCHI_STDIN_CONTROL=1`을 넘긴다. 이 값들이 env 파일의 같은 키보다 앞선다. 허브·폰 서버는 이 PC(127.0.0.1)에서만 열리고, 폰은 Tailscale HTTPS로만 붙는다. 허브·폰 HTTPS 주소는 서버가 `tailscale serve status`로 스스로 찾는다.
+서버에는 `PORT`, `HOST=127.0.0.1`, `PHONE_PORT`, `PHONE_HOST=127.0.0.1`, `REDIS_URL=`(빈 값 = 메모리 버스), `RUNTIME_DIR`, `NOONCHI_STDIN_CONTROL=1`을 넘긴다. 이 값들이 env 파일·`serverEnv`의 같은 키보다 앞선다. 허브·폰 서버는 이 PC(127.0.0.1)에서만 열리고, 폰은 Tailscale HTTPS로만 붙는다. 허브·폰 HTTPS 주소는 서버가 `tailscale serve status`로 스스로 찾는다.
 
 ## 실행
 

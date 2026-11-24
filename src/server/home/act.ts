@@ -69,7 +69,7 @@ function worldInput(core: HomeCore, i: WorldInput): void {
   core.out.act?.push("/world/input", i);   // 차례대로, 실패하면 같은 봉투로 다시(src/bus/outbox.ts)
 }
 
-/** 판단 호출 시점 설정: 주기 기본은 PAM_LLM_MODEL을 반영한 최종 PAM 모델(loadEndpoints)로 고른다(nano면 1초, src/world/trigger.ts). */
+/** 판단 호출 시점 설정: 주기 기본은 PAM_LLM_MODEL을 반영한 최종 PAM 모델(loadEndpoints)로 고른다(nano·mini면 1초, src/world/trigger.ts). */
 export function triggerConfigOf(env: Record<string, string | undefined>): TriggerConfig {
   return loadTriggerConfig(env, { pamModel: loadEndpoints(env).pam.model });
 }

@@ -119,6 +119,47 @@ test("실행 명령: 시스템 node, --env-file, tsx, 저장소 루트. 환경 �
   assert.equal(hub.serverLaunch(config({ nodePath: "C:/fnm/v22/node.exe" }), {}).command, "C:/fnm/v22/node.exe");
 });
 
+test("serverEnv: 넣은 값이 서버 실행 환경에 들어가 env 파일·실행기 환경보다 앞선다", () => {
+  const c = config({ serverEnv: { PAM_LLM_MODEL: "gpt-5.4-mini", PAM_PERIOD_MS: "1000" } });
+  assert.equal(hub.configProblem(c), null);
+  const env = hub.serverLaunch(c, { PAM_LLM_MODEL: "gpt-5.4-nano", PATH: "p" }).env;
+  assert.equal(env.PAM_LLM_MODEL, "gpt-5.4-mini");
+  assert.equal(env.PAM_PERIOD_MS, "1000");
+  assert.equal(env.PATH, "p");
+  // 넣지 않으면 더하는 값이 없다
+  assert.deepEqual(config().serverEnv, {});
+  assert.equal("PAM_PERIOD_MS" in hub.serverLaunch(config(), {}).env, false);
+});
+
+test("serverEnv: 비밀(이름이 KEY·TOKEN·SECRET·PASSWORD로 끝남)은 받지 않는다(env 파일에만)", () => {
+  for (const name of ["OPENAI_API_KEY", "THINQ_TOKEN", "CLIENT_SECRET", "ADMIN_PASSWORD", "openai_api_key"]) {
+    const problem = hub.configProblem(config({ serverEnv: { [name]: "x" } }));
+    assert.match(problem ?? "", new RegExp(`serverEnv.*${name}.*env 파일`), name);
+    assert.equal(problem.includes("\"x\""), false, "값을 오류 글에 옮기지 않는다");
+  }
+  // 끝이 아니면 비밀이 아니다
+  assert.equal(hub.configProblem(config({ serverEnv: { KEYBOARD_LAYOUT: "ko", TOKENIZER: "o200k" } })), null);
+});
+
+test("serverEnv: 앱이 정하는 값(PORT·HOST·PHONE_HOST·PHONE_PORT·REDIS_URL·RUNTIME_DIR·NOONCHI_STDIN_CONTROL)은 덮어쓰지 못한다", () => {
+  for (const name of ["PORT", "HOST", "PHONE_HOST", "PHONE_PORT", "REDIS_URL", "RUNTIME_DIR", "NOONCHI_STDIN_CONTROL"]) {
+    assert.match(hub.configProblem(config({ serverEnv: { [name]: "1" } })) ?? "", new RegExp(`serverEnv.*${name}.*앱이 정`), name);
+  }
+  // 검사를 건너뛰고 넘겨도 앱 값이 이긴다
+  const c = config();
+  c.serverEnv = { PORT: "1", HOST: "0.0.0.0", PHONE_HOST: "0.0.0.0", PHONE_PORT: "2", REDIS_URL: "redis://x", RUNTIME_DIR: "C:/x", NOONCHI_STDIN_CONTROL: "0" };
+  const env = hub.serverLaunch(c, {}).env;
+  assert.deepEqual([env.PORT, env.HOST, env.PHONE_HOST, env.PHONE_PORT, env.REDIS_URL, env.NOONCHI_STDIN_CONTROL], ["8300", "127.0.0.1", "127.0.0.1", "8310", "", "1"]);
+  assert.equal(env.RUNTIME_DIR, path.join(c.repoDir, "runtime", "hub-check"));
+});
+
+test("serverEnv: 표가 아니거나 이름·값 모양이 틀리면 시작 전에 막는다", () => {
+  for (const bad of [["PAM_LLM_MODEL=gpt-5.4-mini"], "PAM_LLM_MODEL=x", { PAM_PERIOD_MS: 1000 }, { PAM_LLM_MODEL: null }, { "BAD NAME": "x" }, { "": "x" }]) {
+    assert.match(hub.configProblem(config({ serverEnv: bad })) ?? "", /serverEnv/, JSON.stringify(bad));
+  }
+  assert.equal(hub.configProblem(config({ serverEnv: {} })), null);
+});
+
 test("허브·폰 서버는 늘 127.0.0.1에만 연다(와이파이 직접 연결 없음)", () => {
   for (const c of [config({ tailscale: { enabled: true } }), config({ tailscale: { enabled: false } }), config({ allowLan: true })]) {
     const env = hub.serverLaunch(c, { PHONE_HOST: "0.0.0.0", HOST: "0.0.0.0" }).env;
