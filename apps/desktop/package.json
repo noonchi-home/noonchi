@@ -1,0 +1,16 @@
+{
+  "name": "noonchi-hub",
+  "version": "1.0.0",
+  "private": true,
+  "description": "NOONCHI 허브 데스크톱 앱: 이 PC의 저장소로 서버와 Tailscale HTTPS 경로를 띄우고 대시보드를 창에 연다",
+  "license": "AGPL-3.0-only",
+  "main": "main.cjs",
+  "scripts": {
+    "start": "electron .",
+    "postinstall": "install-electron",
+    "test": "node --test hub.test.cjs"
+  },
+  "devDependencies": {
+    "electron": "45.2.3"
+  }
+}
