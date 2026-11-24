@@ -1109,6 +1109,25 @@ describe("영상 입력 모드: 단계 영상·걷기", () => {
       closeTo(lastPose(sent).position, [0.84, 1.4, -1.12]);
     });
 
+    // 영상 페이지도 자세를 보내 길 안내(guide)를 받는다. 안내 걷기도 조각과 함께 걷는다: 서버가 도착(1.2m 안)으로 보고 go를 지우고 다음 명령을 보내도
+    // 조각이 도는 동안 멈추면 영상은 다가가는데 자세는 그 자리라 물건 자리가 어긋난다(2026-11-25 wide-glass: 컵이 식탁 밖 바닥·침실 3)
+    it("안내(guide)가 붙은 go 조각의 걷기도 go가 지워지고 다음 명령이 와도 조각이 도는 동안 계속 걸어 조각이 끝날 때 안내 자리에 닿는다", async () => {
+      fakeTimers();
+      const { ws, sent, video, startAr } = make({}, STEPS, { later: { duration: 4 } as never });
+      await startAr();
+      ws.push(ALIGNED);
+      video.end();
+      ws.push(SINK_GO({ guide: { revision: 1, near_m: 0.32, remaining: [{ kind: "stand", room: "kitchen", ar: [0.84, 0, -1.12] }] } }));
+      await after(1500);
+      // 1.4m를 4초에: 2초 뒤 절반
+      await after(2000);
+      expect(Math.hypot(lastPose(sent).position[0], lastPose(sent).position[2])).toBeCloseTo(0.7, 1);
+      ws.push({ type: "command_clear", id: "plan:pam-1" });
+      ws.push(placeSink());
+      await after(2000);
+      closeTo(lastPose(sent).position, [0.84, 1.4, -1.12]);
+    });
+
     it("rate(재생 빠르기, 0.25~2, 기본 1): 첫 영상·단계 영상을 그 빠르기로 틀고, go 걷기는 조각 길이 ÷ 빠르기(0.75면 4초 조각이 5.33초)에 맞춰 닿는다", async () => {
       expect(videoParams(new URLSearchParams("clip=a.mp4"))).toMatchObject({ rate: 1 });
       for (const [raw, r] of [["0.75", 0.75], ["0.1", 0.25], ["3", 2], ["x", 1]] as const) expect(videoParams(new URLSearchParams(`clip=a.mp4&rate=${raw}`))!.rate).toBe(r);

@@ -718,7 +718,11 @@ export function createVideoAr({ link, params, hooks, deps }) {
             }
           }
           if(!fresh) followGuide(key);
-        } else if(!guided && fresh){if(guidedKey) walk=null;guidedKey=null;waypoint=null;}
+        } else if(!guided && fresh){
+          // 안내 걷기도 조각과 함께 걷는 중(walk.clip)이면 다음 명령에 멈추지 않는다(영상은 계속 다가간다)
+          if(guidedKey && !walk?.clip) walk=null;
+          guidedKey=null;waypoint=null;
+        }
 
         // 같은 명령이 이어서 다시 오면(비전 상태만 바뀜) 이미 줄에 넣은 것은 그대로 둔다(대상이 그제야 붙었으면 아래에서 넣는다)
         if (!fresh && switched.has(key)) {
@@ -825,7 +829,8 @@ export function createVideoAr({ link, params, hooks, deps }) {
         lookAfter = null;
         cmdGen++;
         lastKey = null;
-        if(guidedKey) walk=null;
+        // 조각과 함께 걷는 걸음(walk.clip)은 안내 걷기여도 그대로 둔다
+        if(guidedKey && !walk?.clip) walk=null;
         guidedKey=null;waypoint=null;guideRevision=null;
         posedKey = null;
         for (const timer of reactTimers) clearTimeout(timer);
