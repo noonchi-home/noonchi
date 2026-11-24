@@ -6,12 +6,12 @@ import { existsSync } from "node:fs";
 import dotenv from "dotenv";
 import { findServedPhoneUrls, phoneUrlWarning, runCommand } from "../phone/index.js";
 import { installShutdown, installStdinShutdown } from "./shutdown.js";
-import { startServer } from "./start.js";
+import { bootServer } from "./boot.js";
 
 async function main(): Promise<void> {
   dotenv.config({ quiet: true });
   // tailscale serve로 폰 포트를 https로 열어 두었으면 그 주소를 폰 주소 앞에 둔다(없거나 실패하면 이 PC 주소만)
-  const srv = await startServer({
+  const srv = await bootServer({
     env: process.env, persistSetup: true, servedPhoneUrls: (port) => findServedPhoneUrls(port, runCommand),
     servedHubUrls: async port => (await findServedPhoneUrls(port, runCommand)).map(url => new URL(url).origin),
   });
