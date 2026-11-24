@@ -24,14 +24,20 @@ export function installShutdown(proc: ShutdownTarget, close: () => Promise<void>
   return run;
 }
 
-/** NOONCHI_STDIN_CONTROL=1일 때만 표준 입력 줄을 읽는다. `shutdown` 줄, 표준 입력 끝·오류(실행기가 죽음)면 run을 부른다.
- *  값이 없으면 표준 입력을 건드리지 않고 false(Docker, npm start). */
+/** NOONCHI_STDIN_CONTROL=1일 때만 표준 입력 줄을 읽는다. `shutdown` 줄, 표준 입력 끝·오류(실행기가 죽음) 가운데 먼저 온 것에서
+ *  run을 한 번만 부른다. 값이 없으면 표준 입력을 건드리지 않고 false(Docker, npm start). */
 export function installStdinShutdown(input: NodeJS.ReadableStream, run: () => unknown, env: Record<string, string | undefined>): boolean {
   if (env.NOONCHI_STDIN_CONTROL?.trim() !== "1") return false;
+  let called = false;
+  const once = () => {
+    if (called) return;
+    called = true;
+    void run();
+  };
   const lines = createInterface({ input, crlfDelay: Infinity });
-  lines.on("line", (line) => { if (line.trim() === "shutdown") void run(); });
-  lines.on("close", () => void run());
+  lines.on("line", (line) => { if (line.trim() === "shutdown") once(); });
+  lines.on("close", once);
   // readline이 표준 입력 오류를 자기 error로 다시 내보낸다. 받지 않으면 처리 안 된 예외로 정리 없이 죽는다
-  lines.on("error", () => void run());
+  lines.on("error", once);
   return true;
 }

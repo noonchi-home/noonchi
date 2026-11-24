@@ -59,65 +59,69 @@ describe("종료", () => {
 
   describe("표준 입력 종료(NOONCHI_STDIN_CONTROL=1, 데스크톱 앱)", () => {
     const on = { NOONCHI_STDIN_CONTROL: "1" };
+    // run을 직접 부르지 않는다: 표준 입력 처리기가 run을 몇 번 불렀는지만 본다
     const setup = (env: Record<string, string | undefined> = on) => {
-      const proc = fakeProc();
-      const close = vi.fn(async () => {});
       const input = new PassThrough();
-      const run = installShutdown(proc, close);
+      const run = vi.fn();
       const reading = installStdinShutdown(input, run, env);
-      return { proc, close, input, run, reading };
+      return { input, run, reading };
     };
     const settle = () => new Promise((r) => setTimeout(r, 20));
 
-    it("shutdown 줄이면 한 번 닫고 0으로 끝낸다", async () => {
-      const { proc, close, input, run } = setup();
+    it("shutdown 줄이면 run을 한 번 부른다", async () => {
+      const { input, run } = setup();
       input.write("상태\r\nshutdown\r\n");
       await settle();
-      await run();
-      expect(close).toHaveBeenCalledTimes(1);
-      expect(proc.exit).toHaveBeenCalledWith(0);
+      expect(run).toHaveBeenCalledTimes(1);
     });
 
-    it("다른 줄로는 닫지 않는다", async () => {
-      const { close, input } = setup();
+    it("다른 줄로는 부르지 않는다", async () => {
+      const { input, run } = setup();
       input.write("shut\nshutdownx\n");
       await settle();
-      expect(close).not.toHaveBeenCalled();
+      expect(run).not.toHaveBeenCalled();
     });
 
-    it("표준 입력이 끝나면(실행기가 죽음) 한 번 닫는다", async () => {
-      const { proc, close, input, run } = setup();
+    it("표준 입력이 끝나면(실행기가 죽음) run을 한 번 부른다", async () => {
+      const { input, run } = setup();
       input.end();
       await settle();
-      await run();
-      expect(close).toHaveBeenCalledTimes(1);
-      expect(proc.exit).toHaveBeenCalledWith(0);
+      expect(run).toHaveBeenCalledTimes(1);
     });
 
-    it("표준 입력 오류도 끝남으로 보고 한 번 닫는다", async () => {
-      const { close, input, run } = setup();
+    it("표준 입력 오류도 끝남으로 보고 run을 한 번 부른다", async () => {
+      const { input, run } = setup();
       input.destroy(new Error("EPIPE"));
       await settle();
-      await run();
-      expect(close).toHaveBeenCalledTimes(1);
+      expect(run).toHaveBeenCalledTimes(1);
     });
 
-    it("shutdown 줄과 표준 입력 끝이 겹쳐도 한 번만 닫는다", async () => {
-      const { close, input, run } = setup();
+    it("shutdown 줄과 표준 입력 끝이 겹쳐도 run은 한 번이다", async () => {
+      const { input, run } = setup();
       input.end("shutdown\nshutdown\n");
       await settle();
-      await run();
-      expect(close).toHaveBeenCalledTimes(1);
+      expect(run).toHaveBeenCalledTimes(1);
     });
 
     it("환경 변수가 없으면 표준 입력을 읽지 않는다", async () => {
-      const { close, input, reading } = setup({});
+      const { input, run, reading } = setup({});
       expect(reading).toBe(false);
       expect(input.listenerCount("data")).toBe(0);
       expect(input.readableFlowing).toBeNull();
       input.end("shutdown\n");
       await settle();
-      expect(close).not.toHaveBeenCalled();
+      expect(run).not.toHaveBeenCalled();
+    });
+
+    it("installShutdown과 이으면 shutdown 줄 하나로 한 번 닫고 0으로 끝낸다", async () => {
+      const proc = fakeProc();
+      const close = vi.fn(async () => {});
+      const input = new PassThrough();
+      installStdinShutdown(input, installShutdown(proc, close), on);
+      input.end("shutdown\n");
+      await settle();
+      expect(close).toHaveBeenCalledTimes(1);
+      expect(proc.exit).toHaveBeenCalledWith(0);
     });
 
     it("main.ts가 서버 줄 전에 표준 입력 종료를 건다", () => {

@@ -8,7 +8,7 @@
   "scripts": {
     "start": "electron .",
     "postinstall": "install-electron",
-    "test": "node --test hub.test.cjs"
+    "test": "node --test hub.test.cjs main.test.cjs package.test.cjs"
   },
   "devDependencies": {
     "electron": "45.2.3"
