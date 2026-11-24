@@ -417,7 +417,9 @@ export function startAct(core: HomeCore): (event: BrainLog) => void {
       tvAllowed:job=>{
         const fact=viewerAt(core.goalFacts,job.target_id,now());
         const latest=view().household_photo;
-        return !!(latest?.proof && latest.at_ms===fact.photo &&
+        // 근거가 지금 것이어야 한다: VLM 사진이면 가장 새 집 사진, YOLO 프레임이면 지금 World State에도 시청 자리에서 사용자를 못 본 구간이 이어진다
+        const fresh=fact.by==="yolo" ? !!view().person.vacant : !!(latest?.proof && latest.at_ms===fact.photo);
+        return !!(fresh &&
           core.tvWatch?.permits(job,fact,signals.powerStamp(job.target_id),now()));
       },
       result:r=>core.out.act?.push("/act/directive_result",r),

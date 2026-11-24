@@ -382,6 +382,8 @@ export class WorldState {
       position: p.position, position_ms: p.positionAt, room: p.room?.id ?? null, room_label: p.room?.label ?? null, near,
       holding: objects.filter((o) => o.status !== "gone" && o.facts.place?.value === POSE_HOLD.object).map((o) => o.id),
       facts: { ...p.facts }, answered_ms: p.answered,
+      // 되돌린 뒤(fastBlocked)에는 VLM이 사람을 봤으니 못 본 구간을 내지 않는다
+      ...(core.vacantFrom !== null && !core.fastBlocked && p.position ? { vacant: { since_ms: core.vacantFrom, position: p.position, room: p.room?.id ?? null } } : {}),
     };
     const sightings = core.sightingsAt(nowMs);
     return {

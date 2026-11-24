@@ -1,4 +1,4 @@
-import { NO_VIEWER_MS } from "../src/goal/tv-watch.js";
+import { NO_VIEWER_MS, YOLO_NO_VIEWER_MS } from "../src/goal/tv-watch.js";
 
 export interface ScenarioEvent {
   kind:
@@ -38,7 +38,11 @@ export interface ScenarioEvent {
   at: number;
   id?: string;
   command?: string;
+  /** 빈 구간 근거(empty·vacant·early_empty·early_vacant)가 YOLO 프레임이면 yolo(시청 자리가 화면 안인데 사용자를 못 봄, YOLO_NO_VIEWER_MS). 없으면 VLM 사진(NO_VIEWER_MS). */
+  by?: "yolo";
 }
+/** 빈 구간이 끄기에 넉넉한가: VLM 사진은 NO_VIEWER_MS, YOLO 프레임은 YOLO_NO_VIEWER_MS 이어져야 한다. */
+const longEnough = (empty: ScenarioEvent, vacant: ScenarioEvent) => vacant.at - empty.at >= (vacant.by === "yolo" ? YOLO_NO_VIEWER_MS : NO_VIEWER_MS);
 const order = [
   "kitchen",
   "meal_watch",
@@ -90,7 +94,7 @@ function earlyTv(early: readonly ScenarioEvent[], proof: readonly ScenarioEvent[
           p.kind === "early_empty" &&
           p.id === e.id &&
           p.at > since &&
-          proof.some((v) => v.kind === "early_vacant" && v.id === e.id && v.at <= e.at && v.at - p.at >= NO_VIEWER_MS),
+          proof.some((v) => v.kind === "early_vacant" && v.id === e.id && v.at <= e.at && v.by === p.by && longEnough(p, v)),
       )
     )
       return "early_tv:no_vacancy";
@@ -135,7 +139,7 @@ export function judgeScenario1(trace: readonly ScenarioEvent[]) {
     if (e.kind === "place" && (!e.id || e.id !== seen.get("sink_go")?.id)) firstMismatch = "wrong_sink";
     if (e.kind === "tv_off" && seen.get("empty")?.id && e.id !== seen.get("empty")?.id) firstMismatch = "wrong_tv";
     // 빈 사진 한 장의 답이 늦게 와 바로 끈 것은 빈 구간이 아니다: 촬영 시각으로 이어진 빈 구간이 NO_VIEWER_MS 이상이어야 한다
-    if (e.kind === "tv_off" && !firstMismatch && seen.get("vacant")!.at - seen.get("empty")!.at < NO_VIEWER_MS) firstMismatch = "no_vacancy:tv_off";
+    if (e.kind === "tv_off" && !firstMismatch && !longEnough(seen.get("empty")!, seen.get("vacant")!)) firstMismatch = "no_vacancy:tv_off";
     if (e.kind === "tv_on" && e.id !== seen.get("tv_off")?.id) firstMismatch = "wrong_tv";
     if (e.kind === "tv_on_ack" || e.kind === "tv_off_ack") {
       const sent = seen.get(e.kind === "tv_on_ack" ? "tv_on" : "tv_off");

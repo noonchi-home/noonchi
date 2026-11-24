@@ -21,6 +21,8 @@ export interface TriggerFacts {
   meal?: MealEvidence;
   photoValidUntil?: number;
   tvRooms?:ReadonlyMap<string,string>;
+  /** 그 방 TV 시청 구역에 있던 사용자를 YOLO가 ms 넘게 이어 못 봤으면(그 자리가 화면 안, World State person.vacant) 그 근거의 마지막 엔진 프레임 시각, 아니면 null. */
+  yoloVacant?(room:string, ms:number): number | null;
   read(trigger: Trigger): TriggerFact;
   mealSeated: TriggerFact;
   observes(stationId:string,after:number):boolean;
@@ -141,6 +143,12 @@ export class GoalTriggers {
     return {
       photoValidUntil:validUntil,
       tvRooms:new Map([...watches].filter(([,w])=>w.tv).map(([room,w])=>[w.tv,room])),
+      yoloVacant:(room,ms)=>{
+        const v=view.person.vacant, frame=view.frame_ms, watch=watches.get(room);
+        if (!v || frame === null || !map || !watch || v.room !== room || frame - v.since_ms < ms) return null;
+        const zone=this.zoneOf(map,v.room,v.position,EDGE_MARGIN_M);
+        return zone && watch.zones.some(z=>z.id===zone) ? frame : null;
+      },
       ...(station ? {meal:{rev, zone: zone || null, outsideZones: zone === false, watching, count: recent ? proof?.person_count ?? null : null,
         dining:station.observes_zone_ids, surfaces:station.surfaces}} : {}),
       trail:view.person_trail ?? [],
