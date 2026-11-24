@@ -217,8 +217,9 @@ describe("등록부 검증(checkKinds)", () => {
       return { ...real, KINDS: { ...real.KINDS, dishwasher: { ...real.KINDS.dishwasher, confirm: { command: "on", reason: (l: string) => l } } } };
     });
     try {
-      const { startServer } = await import("../src/server/start.js");
-      await expect(startServer({ env: { HUB: "memory", PORT: "0", RUNTIME_DIR: join(ROOT, "runtime", "never-used"), REFLECT_AT: "off" }, log: () => {} }))
+      // 서버 입구(npm start)는 서버 묶음을 불러오기 전에 등록부를 검사한다(src/server/boot.ts)
+      const { bootServer } = await import("../src/server/boot.js");
+      await expect(bootServer({ env: { HUB: "memory", PORT: "0", RUNTIME_DIR: join(ROOT, "runtime", "never-used"), REFLECT_AT: "off" }, log: () => {} }))
         .rejects.toThrow(/가전 종류 등록부.*dishwasher.*confirm on/);
     } finally {
       vi.doUnmock("../src/devices/kinds.js");

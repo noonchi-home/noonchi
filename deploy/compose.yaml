@@ -130,6 +130,14 @@ services:
       THINQ_API_KEY:
       THINQ_BASE_URL:
       THINQ_TIMEOUT_MS:
+      # TV 중계(지훈 님 tvrelay, 빛 센서 없는 적외선 장비): 실제 모드에서 TV_RELAY_DEVICE TV를 중계로 잇는다
+      TV_RELAY_URL:
+      TV_RELAY_TOKEN:
+      TV_RELAY_DEVICE:
+      TV_RELAY_TARGET:
+      TV_RELAY_POLL_MS:
+      TV_RELAY_TIMEOUT_MS:
+      TV_RELAY_COMMAND_TIMEOUT_MS:
       # 외부 연락(전화 에이전트)
       CALL_SERVICE_URL:
       # 노드 통로(같은 EC2 redis 컨테이너)

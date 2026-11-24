@@ -39,7 +39,7 @@ import { historyRoutes } from "../../src/record/history.js";
 import type { PlannedCommand } from "../../src/contract/phone.js";
 import type { ScenarioEvent } from "../../scripts/scenario1-judge.js";
 
-type Variant = "normal" | "back" | "brief" | "manual" | "cadence_wrong" | "lag_missing" | "lag_zero" | "arrive_early";
+type Variant = "normal" | "back" | "brief" | "manual" | "cadence_wrong" | "lag_missing" | "lag_zero" | "arrive_early" | "pam_seated";
 /** at: 촬영(또는 사건) 시각. 사진 줄(fridge·table·away·tv)은 lag가 반드시 있고, VLM 답이 at + lag에 도착한다(집 상태가 그때 바뀐다).
  *  폰 도착 줄(eye)은 depart(그 자리로 걷기 시작한 때)를 싣는다(처음 선 자리는 없음). */
 type Line = { at: number; kind: string; value?: string; frame?: string; response?: object; source: string; lag?: number; depart?: number };
@@ -190,7 +190,8 @@ function makeBag(bag: Bag, variant: Variant): {
   };
   const patch = raw.find((row) => row.kind === "variant" && row.name === variant);
   const source: Line[] = raw.filter(
-    (row) => Number.isFinite(row.at) && row.at < (patch?.replace_from ?? Infinity),
+    // 변형은 replace_from부터(replace_until이 있으면 그 전까지만) 원래 줄을 그 변형 줄로 바꾼다
+    (row) => Number.isFinite(row.at) && !(row.at >= (patch?.replace_from ?? Infinity) && row.at < (patch?.replace_until ?? Infinity)),
   );
   for (const r of patch?.rows ?? []) source.push({ ...r, source: patch.source });
   // 실제 폰은 자세를 100ms마다 보낸다(ui/src/phone/core/ar.js SEND_MS): 서 있으면 그 자리, 걷는 동안은 걷는 자리(phoneAt)
@@ -267,9 +268,10 @@ function makeBag(bag: Bag, variant: Variant): {
         lastState: "drinking",
       });
       if (!parsed.prediction) throw Error(parsed.errors.join(" "));
+      // 한 재생에 PAM 줄이 여럿일 수 있다(변형 pam_seated): 줄 시각으로 판단마다 다른 id·차례 번호
       const d: DecisionRecord = {
-        id: "pam:1",
-        seq: 1,
+        id: `pam:${r.at}`,
+        seq: r.at,
         atMs: at,
         request_rev: rev,
         finalTime: new Date(at).toISOString(),
@@ -349,8 +351,11 @@ function makeBag(bag: Bag, variant: Variant): {
       }
       const was = world.person.visible;
       const observedDrink = facts.some((f) => f.object_id === "d1" && f.state === "drinking");
+      // 식탁 줄 값 resting: 컵을 내려놓고 앉아 쉬는 사람(VLM 「쉬거나 자는 중」, 2026-11-25 예시 녹화)
       const activity = dining
-        ? observedDrink
+        ? r.value === "resting"
+          ? "resting"
+          : observedDrink
           ? "drinking"
           : world.person.facts.activity?.value
         : r.kind === "tv"

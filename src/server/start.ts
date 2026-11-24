@@ -29,24 +29,27 @@ import { resolveTwinStudioDir, type TwinData } from "../layout/index.js";
 import { listHomes } from "../layout/index.js";
 import { androidTwaStatements, androidTwaTarget } from "../phone/index.js";
 import { acquireServerLock, restoreNeeded } from "./lock.js";
-import { KINDS } from "../devices/kinds.js";
-import { checkKinds } from "../devices/index.js";
+import { HOUSEHOLD_KINDS } from "../devices/kinds.js";
 import { SetupError, SetupStore, effectiveSources, parsePairs, parseSources } from "./setup/store.js";
 import { repoPath } from "../shared/paths.js";
 import { PAIRABLE_KINDS, fitsKind, loadIrConfig, openIrPort, type IrConfig, type IrPort } from "../devices/index.js";
 import { ThinqClient, ThinqError, thinqConfig } from "../devices/index.js";
 import { DEFAULT_POLL_MS, DEFAULT_READBACK_MS, ThinqLink } from "../devices/index.js";
+import { DEFAULT_RELAY_POLL_MS, RelayClient, RelayLink, relayConfig } from "../devices/index.js";
 import { HttpError, originChecker, type TwinHomeApp } from "./app.js";
 import type { HubKind, MatterTransport, StartHubOptions } from "./hubFactory.js";
 import { startHome, type HomeContext, type HomeRuntime } from "./home/index.js";
 import { makeReady } from "./ready.js";
 import { createShell, mobileHubUrls } from "./shell.js";
-import { lanBindingError } from "./loopback.js";
+import { preflight } from "./preflight.js";
 
 type Env = Record<string, string | undefined>;
 
 /** 실행 중 만든 파일(사진·배치 수정본·설정) 폴더(커밋하지 않음). RUNTIME_DIR로 바꾼다. */
 const DEFAULT_RUNTIME_DIR = repoPath("runtime/");
+
+/** 같은 TV에 직접 적외선(ir.json)과 TV 중계가 함께 설정됨. 저장한 집에서 나도 다른 집으로 넘어가지 않고 시작을 막는다. */
+class TvSetupConflict extends Error {}
 
 const msOf = (raw: string | undefined, fallback: number) => {
   const n = Number(raw);
@@ -74,7 +77,9 @@ export interface StartServerOptions {
    *  ENGINE_FRAME_MS·VLM_FRAME_MS·VLM_WINDOW_FRAMES·VLM_MAX_INFLIGHT·DETECT_QUEUE_MAX·BRAIN_YOLO_PATH·BRAIN_POSE_PATH·BRAIN_YOLO_THREADS·BRAIN_YOLO_PROVIDER·BRAIN_POSE_EVERY(src/observe/pipeline.ts),
    *  FALL_DROP_MS·FALL_HOLD_MS·FALL_GAP_MS·FALL_TORSO_DEG·FALL_THIGH_DEG·FALL_VIEW_DEG(쓰러짐 의심 시간·각도, src/world/fall.ts),
    *  THINQ_TOKEN(실제 모드), THINQ_REGION·THINQ_COUNTRY·THINQ_CLIENT_ID·THINQ_API_KEY·THINQ_BASE_URL·THINQ_TIMEOUT_MS(src/devices/thinq/client.ts),
-   *  THINQ_POLL_MS(짝지은 기기 읽기 간격, 기본 15000, 0이면 처음 한 번), THINQ_READBACK_MS(명령 뒤 다시 읽기 전 기다림, 기본 1000,2000,4000)을 읽는다. */
+   *  THINQ_POLL_MS(짝지은 기기 읽기 간격, 기본 15000, 0이면 처음 한 번), THINQ_READBACK_MS(명령 뒤 다시 읽기 전 기다림, 기본 1000,2000,4000),
+   *  TV_RELAY_URL·TV_RELAY_TOKEN·TV_RELAY_DEVICE(실제 모드에서 그 TV를 TV 중계로 잇는다)·TV_RELAY_TARGET(중계 쪽 이름, 기본 tv)·
+   *  TV_RELAY_POLL_MS(기본 2000, 0이면 처음 한 번)·TV_RELAY_TIMEOUT_MS·TV_RELAY_COMMAND_TIMEOUT_MS(src/devices/relay/client.ts)를 읽는다. */
   env?: Env;
   log?: (line: string) => void;
   /** true면 설정(고른 집·끝냄·신호 출처)을 RUNTIME_DIR에 저장하고 다음 시작 때 읽는다(npm start). 기본은 메모리에만 두고 「끝냄」으로 시작. */
@@ -140,16 +145,21 @@ export interface RunningServer {
 export async function startServer(opts: StartServerOptions = {}): Promise<RunningServer> {
   const env = opts.env ?? process.env;
   const log = opts.log ?? ((line: string) => console.log(line));
-  const lanBinding = lanBindingError(env);
-  if (lanBinding) throw new Error(lanBinding);
+  // 들을 주소·가전 종류 등록부(src/server/preflight.ts). 서버 입구(boot.ts)는 이 묶음을 불러오기 전에 같은 검사를 먼저 한다
+  preflight(env);
   const androidTwaConfigured = !!androidTwaStatements(env.ANDROID_TWA_SHA256_FINGERPRINTS);
-  // 가전 종류 등록부가 틀린 조합이면(승인·ThinQ 어댑터·손 조작) 까닭과 함께 시작을 막는다
-  const kindProblems = checkKinds(KINDS);
-  if (kindProblems.length) throw new Error(`가전 종류 등록부가 틀렸어요(src/devices/kinds.ts): ${kindProblems.join(" / ")}`);
   const runtimeDir = env.RUNTIME_DIR?.trim() || DEFAULT_RUNTIME_DIR;
   const store = new SetupStore({ runtimeDir, persist: opts.persistSetup ?? false, log });
   let mode: ControlMode = store.mode();
   let ir: IrConfig | null = null;
+  // TV 중계(TV_RELAY_*): 실제 모드에서 그 TV를 중계로 잇는다. 틀리면 잠금·DB를 열기 전에 시작을 막는다(오류 글에 주소·토큰을 넣지 않는다)
+  const relay = relayConfig(env);
+  if (!relay.ok && !relay.off) throw new Error(`TV 중계 설정이 틀렸어요: ${relay.error}`);
+  const relayClient = relay.ok ? new RelayClient(relay.config) : null;
+  const relayPollMs = msOf(env.TV_RELAY_POLL_MS, DEFAULT_RELAY_POLL_MS);
+  /** TV 중계 TV(TV_RELAY_DEVICE)가 이 기기 목록에 TV로 있는가. */
+  const relayTvIn = (devices: readonly { id: string; kind: string }[]) =>
+    relay.ok && devices.some((d) => d.id === relay.config.deviceId && d.kind === HOUSEHOLD_KINDS.viewerPower);
   // 대시보드를 여는 출처: 이 PC + ALLOWED_ORIGINS(tailscale serve 주소). 쓰기 요청과 /events에 쓴다
   const configuredOrigin = originChecker(env.ALLOWED_ORIGINS);
   const boundOrigins = new Set<string>();
@@ -262,10 +272,13 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
       return addresses;
     } : undefined,
     irPort: opts.irPort,
-    homeInfrared(homeId) {
+    homeInfrared(homeId, devices) {
       ir = loadIrConfig(runtimeDir, homeId);
-      if (mode === "live" && !ir && !thinqConfig(env).ok) {
-        log("[경고] 이 집에 적외선 TV 설정과 ThinQ 토큰이 없어 시험 모드로 띄웁니다.");
+      if (ir && relay.ok && ir.device === relay.config.deviceId) {
+        throw new TvSetupConflict(`같은 TV(${ir.device})에 직접 적외선(ir.json)과 TV 중계(TV_RELAY_*)가 둘 다 설정돼 있어요. 빛 센서가 있는 장비면 ir.json, 없으면 TV_RELAY_* 하나만 남기세요.`);
+      }
+      if (mode === "live" && !ir && !relayTvIn(devices) && !thinqConfig(env).ok) {
+        log("[경고] 이 집에 적외선 TV(ir.json·TV 중계)와 ThinQ 토큰이 없어 시험 모드로 띄웁니다.");
         mode = "test";
       }
       return mode === "live" ? ir : null;
@@ -290,15 +303,32 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
     return client;
   };
 
-  /** 지금 모드·짝·저장한 출처를 집 묶음에 적용한다. 실제 모드에서 짝이 있을 때만 ThinQ 연결을 만든다. */
+  /** TV 중계와 짝지을 트윈 TV(TV_RELAY_DEVICE → 중계 쪽 이름). 이 집의 TV가 아니면 비움(경고는 집을 열 때 한 번). */
+  const relayPairs = (h: HomeRuntime, quiet = true): Record<string, string> => {
+    if (!relay.ok) return {};
+    const id = relay.config.deviceId;
+    if (!relayTvIn(h.twin.devices)) {
+      if (!quiet) log(`[경고] TV 중계와 짝지을 TV ${id}가 이 집(${h.twin.home.id})에 없어요 (TV_RELAY_DEVICE)`);
+      return {};
+    }
+    return { [id]: relay.config.target };
+  };
+
+  /** 지금 모드·짝·저장한 출처를 집 묶음에 적용한다. 실제 모드에서 짝이 있을 때만 ThinQ·TV 중계 연결을 만든다. */
   const applyControl = (h: HomeRuntime, quiet = true) => {
     const homeId = h.twin.home.id;
     const ids = h.twin.devices.map((d) => d.id);
     const pairs = store.pairs(homeId, ids, { quiet });
-    h.signals.setSources(effectiveSources(store.sources(homeId, ids, { quiet: true }), pairs, mode));
+    const relayed = relayPairs(h, quiet);
+    const relayNow = mode === "live" ? relayed : {};
+    h.signals.setSources({ ...effectiveSources(store.sources(homeId, ids, { quiet: true }), pairs, mode),
+      ...Object.fromEntries(Object.entries(relayNow).map(([id, target]) => [id, { kind: "relay" as const, deviceId: target }])) });
     h.signals.setInfrared(mode === "live" ? ir : null, opts.irPort ?? openIrPort);
     h.setLink(mode === "live" && thinqConfig(env).ok && Object.keys(pairs).length > 0
       ? new ThinqLink({ client: thinqClient(), world: h.hub, pairs, log, pollMs, readbackMs })
+      : null);
+    h.setRelay(relayClient && Object.keys(relayNow).length > 0
+      ? new RelayLink({ client: relayClient, world: h.hub, pairs: relayNow, log, pollMs: relayPollMs })
       : null);
   };
   const openHome = async (id: string | undefined): Promise<HomeRuntime> => {
@@ -320,7 +350,7 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
     try {
       rt = await openHome(saved ?? fallbackHome);
     } catch (e) {
-      if (!saved) throw e;
+      if (!saved || e instanceof TvSetupConflict) throw e;
       log(`[경고] 저장한 집 ${saved}를 띄우지 못했습니다(${(e as Error).message}). ${fallbackHome ?? "기본 집"}으로 띄웁니다.`);
       rt = await openHome(fallbackHome);
     }
@@ -419,7 +449,7 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
       rooms: h?.twin.rooms ?? [], devices: h ? deviceViews(h) : [], devices_saved: h ? store.hasSources(h.twin.home.id) : false,
       position: { start: !!h?.start, layout: !!h?.layout, phone_urls: h?.phoneUrls ?? [] },
       android_twa: switching ? null : androidTwaTarget(h?.phoneUrls ?? [], androidTwaConfigured),
-      mode, ir: { ready: !!ir }, thinq: { ready: thinqConfig(env).ok }, pairs: h ? store.pairs(h.twin.home.id, deviceIds(h), { quiet: true }) : {},
+      mode, ir: { ready: !!ir || (!!h && Object.keys(relayPairs(h)).length > 0) }, thinq: { ready: thinqConfig(env).ok }, pairs: h ? store.pairs(h.twin.home.id, deviceIds(h), { quiet: true }) : {},
     };
   };
 
@@ -476,7 +506,7 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
         if (want !== "test" && want !== "live") throw new HttpError(400, "mode는 test(시험) 또는 live(실제)여야 합니다.");
         if (want === "live") {
           if (body.confirm !== true) throw new HttpError(400, "실제 모드는 화면에서 한 번 더 확인한 뒤에 바꿀 수 있어요.");
-          if (!ir) thinqClient();
+          if (!ir && !Object.keys(relayPairs(current)).length) thinqClient();
         } else {
           client = null;
           thinqList = null;
