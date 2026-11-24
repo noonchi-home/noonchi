@@ -63,7 +63,7 @@ export function acceptEvidence(a: Attempt, key: AttemptKey, ref: EvidenceRef, su
   return true;
 }
 
-type SeenObject = Pick<WorldObject, "id" | "surface" | "surface_part" | "status" | "last_seen_ms" | "facts" | "closer_hold">;
+type SeenObject = Pick<WorldObject, "id" | "surface" | "surface_part" | "status" | "last_seen_ms" | "facts">;
 
 export interface AssessmentWorld {
   now: number;
@@ -107,7 +107,9 @@ export function assess(a: Attempt, w: AssessmentWorld): Assessment {
     return result(place && fresh(place.ref) ? "ready" : "need_evidence", place?.ref);
   }
   const object = w.objects.find(o => o.id === g.objectId);
-  if (!object || object.status !== "present" || object.closer_hold || !w.photo || object.last_seen_ms !== w.photo.at_ms) {
+  // 지금 사진에서 본 물건만 판정한다. 가까이 보기 지킴(closer_hold)은 사라짐을 세지 않는 표시라 보지 않는다:
+  // 지킴으로만 있는 물건은 last_seen_ms가 지금 사진보다 옛 값이다
+  if (!object || object.status !== "present" || !w.photo || object.last_seen_ms !== w.photo.at_ms) {
     return result("need_evidence");
   }
   const ref = { source: "photo", originId: w.photo.id, subjectId: object.id, observedMs: object.last_seen_ms };
