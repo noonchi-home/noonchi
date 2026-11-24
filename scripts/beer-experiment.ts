@@ -65,9 +65,13 @@ async function postNoBodyTimeout(url: string, headers: ConstructorParameters<typ
   for (let attempt = 1; ; attempt++) {
     try {
       const res = await postOnce(url, headers, body);
+      // 호출이 너무 몰리거나(429) 제공자가 잠깐 막히면(502·503·504) 기다렸다가 다시 보낸다(제공자를 Alibaba로 고정해 다른 제공자로 넘어가지 못한다)
+      if ([429, 502, 503, 504].includes(res.status) && attempt < 6) { console.log(`  [HTTP ${res.status}, ${attempt * 20}초 뒤 다시 보냄 ${attempt}/5]`); await new Promise((r) => setTimeout(r, attempt * 20_000)); continue; }
       // 제공자가 생성 도중 오류를 내면(HTTP 200인데 finish_reason이 error) 같은 요청을 다시 보낸다
       const j = await res.clone().json().catch(() => null) as { choices?: { finish_reason?: string }[] } | null;
       if (j?.choices?.[0]?.finish_reason === "error" && attempt < 3) { console.log(`  [제공자 오류(finish_reason=error), 다시 보냄 ${attempt}/2]`); continue; }
+      // 생각이 길이 제한(16,384 토큰)을 넘어 답이 잘리면(finish_reason=length) 같은 요청을 다시 보낸다(온도 0.3이라 다시 쓰면 달라진다). 제한 자체는 팀 설정 그대로다.
+      if (j?.choices?.[0]?.finish_reason === "length" && attempt < 3) { console.log(`  [답이 길이 제한에서 잘림(finish_reason=length), 다시 보냄 ${attempt}/2]`); continue; }
       return res;
     }
     catch (e) {
@@ -80,7 +84,7 @@ async function postNoBodyTimeout(url: string, headers: ConstructorParameters<typ
 
 /** OpenRouter(Qwen3.5-27B)로 가는 클라이언트. 노닌치는 주소가 openrouter.ai이면 호출을 막아 두므로(제품 설정 점검용, src/infer/endpoints.ts) 막히지 않는 가짜 주소를 두고,
  *  호출 함수(fetchImpl)가 실제 주소로 바꿔 보낸다(제품 코드는 그대로). vLLM 모드의 Qwen용 생각 켜기·끄기(chat_template_kwargs.enable_thinking)를 OpenRouter 형식(reasoning.enabled)으로 바꾸고,
- *  제공자는 가격 순으로 고르며 사용량·비용 보고(usage.include)를 켠다. */
+ *  제공자는 Alibaba로 고정하며(11-24: 가격 순 선택은 Chutes로도 갔고, Chutes가 낀 시도는 길이 잘림 3번·검사 거절 1번으로 실패, Alibaba만 쓴 시도는 AI 품질 실패가 없었다) 사용량·비용 보고(usage.include)를 켠다. */
 function openRouterClient(key: string, stats: OrStats, dumpPath?: string, groundMarks = false): PamClient {
   const settings = pamSettings({ INFERENCE_MODE: "vllm", PAM_LLM_BASE_URL: "http://openrouter-qwen.invalid/v1", PAM_LLM_MODEL: "qwen/qwen3.5-27b", PAM_LLM_API_KEY: key, PAM_LLM_TIMEOUT_S: "900" });
   const fetchImpl: typeof fetch = async (url, init) => {
@@ -107,7 +111,7 @@ function openRouterClient(key: string, stats: OrStats, dumpPath?: string, ground
     }
     const thinks = reflect || check || mark;
     const thinking = thinks && kw?.enable_thinking === true;
-    const sent = { ...body, ...(thinks ? {} : { temperature: 0 }), reasoning: { enabled: thinking }, provider: { sort: "price" }, usage: { include: true } };
+    const sent = { ...body, ...(thinks ? {} : { temperature: 0 }), reasoning: { enabled: thinking }, provider: { order: ["alibaba"], allow_fallbacks: false }, usage: { include: true } };
     const t0 = Date.now();
     const think = `${reflect ? "반성" : check ? "뜻 검사" : mark ? "시각 찾기" : "덩어리"} 생각 ${thinking ? "켬" : "끔"}`;
     const size = JSON.stringify(sent).length;
