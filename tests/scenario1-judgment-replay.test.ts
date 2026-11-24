@@ -354,6 +354,18 @@ describe("시나리오 1 합성(composed) 판단 재생", { timeout: 20_000 }, (
     // 촬영 순간 도착하는 답(lag 0)도 지연 조건을 건너뛴다
     await expect(replayScenario("lag_zero")).rejects.toThrow("lag");
   });
+  // 2026-11-25 예시 녹화: 컵을 내려놓고 앉아 쉬는 사람(VLM 「쉬거나 자는 중」)을 보고 PAM이 마시는 중의 「*」 화살표(컵 치우기)를 이름표 임시 상태로 냈다.
+  // 이름표를 하는 일 값으로 읽게 된 뒤(src/brain/decision.ts tempFromLabel) 그 판단도 받아지므로, 사람이 식탁에 있는 동안 계획·명령이 나가지 않는지 본다
+  it("식탁에 앉아 있는 동안 온 컵 치우기 판단은 떠난 뒤로 미루고, 떠나기 전에는 컵 명령을 내지 않는다", async () => {
+    const trace = await replayScenario("pam_seated");
+    // 사람이 식탁을 떠난 것을 아는 때: 떠난 사진(24300ms)의 VLM 답 도착(지연 1600ms)
+    const leftTable = 24300 + 1600;
+    expect(trace.filter((e) => ["table_go", "pick", "find_cup", "unexpected"].includes(e.kind) && e.at < leftTable)).toEqual([]);
+    // 떠난 뒤에는 정상 판과 같이 확인 → 식탁으로 → 치우기 끝
+    const normal = await replayScenario("normal");
+    const cupFlow = (t: typeof trace) => t.filter((e) => ["checking", "table_go", "pick", "place", "plan_done"].includes(e.kind)).map((e) => [e.kind, e.at]);
+    expect(cupFlow(trace)).toEqual(cupFlow(normal));
+  });
   it("같은 식탁에서 식사를 이어가면 목표를 거두고 컵 명령을 내지 않는다", async () => {
     const trace = await replayScenario("back");
     expect(trace.map((e) => e.kind)).toEqual(expect.arrayContaining(["ready", "checking", "back"]));
