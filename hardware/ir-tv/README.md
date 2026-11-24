@@ -6,7 +6,7 @@ The Arduino sends a learned power key once. A light sensor facing the screen con
 
 Use an Arduino Uno R3, a 38 kHz IR receiver module, a driven IR transmitter module, and an analog light module whose output rises with brightness. Connect transmitter signal to D3, receiver output to D2, and light output to A0. Connect the module grounds to the Uno ground and use each module's rated supply voltage. Use a transmitter module with its own LED driver. Aim the emitter at the TV's IR window and place the receiver where it can hear the original remote. Shade the light sensor from room lighting and place it on a part of the screen that distinguishes on from off.
 
-Install **IRremote 4.4.1** in Arduino IDE, select **Arduino Uno**, and upload [ir_tv.ino](ir_tv/ir_tv.ino). If there is no light sensor, set `HAS_LIGHT_SENSOR` to `false` before uploading. An unconnected analog pin can report arbitrary numbers. The supported remote protocols are NEC (including single-frame NEC2), LG, and LG2. [Arduino-IRremote sending and receiving example](https://github.com/Arduino-IRremote/Arduino-IRremote/blob/v4.4.1/examples/ReceiveAndSend/ReceiveAndSend.ino)
+Install **IRremote 4.4.1** in Arduino IDE, select **Arduino Uno**, and upload [ir_tv.ino](ir_tv/ir_tv.ino). Some Uno-compatible boards carry an **LGT8F328** chip. For those, add the lgt8fx board package (`https://raw.githubusercontent.com/dbuezas/lgt8fx/master/package_lgt8fx_index.json`) and select board **LGT8F328**, Clock Source **Internal 32MHz**, Clock Divider **2**, Upload **57600** and Variant **328P-LQFP32**. Pins and wiring stay the same. If there is no light sensor, set `HAS_LIGHT_SENSOR` to `false` before uploading. An unconnected analog pin can report arbitrary numbers. The supported remote protocols are NEC (including single-frame NEC2), LG, and LG2. [Arduino-IRremote sending and receiving example](https://github.com/Arduino-IRremote/Arduino-IRremote/blob/v4.4.1/examples/ReceiveAndSend/ReceiveAndSend.ino)
 
 ## Calibrate and learn the remote
 
@@ -22,6 +22,16 @@ Install **IRremote 4.4.1** in Arduino IDE, select **Arduino Uno**, and upload [i
 The local file is `<runtime>/homes/<home>/ir.json`. Its `device` and `port` select one TV and USB adapter. The learner preserves existing keys. Keep `offBelow` lower than `onAbove`. Readings between the thresholds reset the hold. At the default `holdMs` of 600, seven 100 ms samples on the same side confirm a change. Confirmation windows run from the request: `confirmOnMs` (default 8000, a screen can take seconds to light up) and `confirmOffMs` (default 4000), each up to 15000. A file saved with the older single `confirmMs` reads it as `confirmOffMs`. A single toggle needs a recent power reading from the light sensor. A dedicated on/off key can be sent even when the current state is unknown.
 
 Without usable light readings, the hub accepts explicit, fresh camera evidence for the linked TV through the existing screen-on/screen-off vocabulary. The screen must be visible for this fallback. Silence, transmission acknowledgement alone, a lost port, or conflicting remote input cannot confirm the automation's command. A timeout clears the uncertain state. No automatic retransmission takes place.
+
+## Without a light sensor: use the TV relay
+
+An IR kit without a light sensor runs through the TV relay (`tvrelay`) on a laptop next to the TV. The relay sends IR through its Arduino and reads power from the TV's Wi-Fi response (LG NetCast port 8080), including power changed with the original remote. The relay code and its Arduino sketch are in the experiment repository: `noonchi-home/experiment`, `jihoon/2026-11-24_lg-tv-infrared-relay/code/tvrelay/`. Pairing, learning and serving are described in that folder's README.
+
+1. Start the relay with a token of at least 16 characters and keep it reachable over Tailscale.
+2. In Noonchi's `.env`, set `TV_RELAY_URL` (an `https` URL or a Tailscale address), `TV_RELAY_TOKEN` (the relay's token) and `TV_RELAY_DEVICE` (the TV's twin ID). Do not create `ir.json` for the same TV. Startup stops when both are set.
+3. Start Noonchi, switch to **실제 모드** and accept the confirmation. Test mode operates the twin.
+
+A relay result of `done` completes the command. `unverified` means the relay sent IR but did not see the TV change, and the plan waits for camera evidence. `failed`, `not_sent` (including a relay that is still busy) and an unreachable relay fail the command. The relay token never appears in logs, API responses or the dashboard.
 
 ## USB lines
 

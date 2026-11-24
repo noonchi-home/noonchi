@@ -1,5 +1,5 @@
 // 집 실행 묶음의 가전 잇기(src/devices): twin 데이터 → 허브(신호 출처로 감쌈) → 가전 변화 기록, ThinQ 연결 바꾸기.
-import { openIrPort, SignalHub, type ThinqLink } from "../../devices/index.js";
+import { openIrPort, SignalHub, type RelayLink, type ThinqLink } from "../../devices/index.js";
 import { loadTwin } from "../../layout/index.js";
 import { startHub } from "../hubFactory.js";
 import type { HomeCore } from "./core.js";
@@ -44,4 +44,12 @@ export function setLink(core: HomeCore, next: ThinqLink | null): void {
   core.link = core.closed ? null : next;
   core.signals.setLink(core.link);
   core.link?.start().catch((e) => core.ctx.log(`[경고] ThinQ 읽기를 시작하지 못했어요: ${(e as Error).message}`));
+}
+
+/** TV 중계 연결을 바꾼다(실제 모드). 이전 연결은 멈추고, 새 연결은 붙인 뒤 읽기를 시작한다. null이거나 닫힌 집이면 뗀다. */
+export function setRelay(core: HomeCore, next: RelayLink | null): void {
+  core.relay?.stop();
+  core.relay = core.closed ? null : next;
+  core.signals.setRelay(core.relay);
+  core.relay?.start().catch((e) => core.ctx.log(`[경고] TV 중계 읽기를 시작하지 못했어요: ${(e as Error).message}`));
 }

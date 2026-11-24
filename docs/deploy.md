@@ -68,10 +68,11 @@ Create the checkout directory with suitable ownership if needed. Supply credenti
 | `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` | The voice and planning agent needs a supported provider key in either mode. OpenAI mode also uses an OpenAI key for vision and PAM. |
 | `HF_TOKEN` | Required only for restricted Hugging Face model downloads. |
 | `THINQ_TOKEN` | Used when connecting to real ThinQ appliances. |
+| `TV_RELAY_URL`, `TV_RELAY_TOKEN`, `TV_RELAY_DEVICE` | Optional TV relay for an IR kit without a light sensor ([TV relay](../hardware/ir-tv/README.md#without-a-light-sensor-use-the-tv-relay)). Use an `https` URL or a Tailscale address. |
 
 Each container receives only the variables listed for its service in `deploy/compose.yaml`. The ownership rules are in `scripts/compose-keys.ts`.
 
-- NOONCHI uses `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `VLM_API_KEY`, `PAM_LLM_API_KEY`, `THINQ_TOKEN`, `THINQ_API_KEY` and `PLAN_TOKEN`.
+- NOONCHI uses `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `VLM_API_KEY`, `PAM_LLM_API_KEY`, `THINQ_TOKEN`, `THINQ_API_KEY`, `TV_RELAY_TOKEN` and `PLAN_TOKEN`.
 - The vLLM services use `HF_TOKEN` for downloads. NOONCHI and both model services can use `VLLM_API_KEY` to authenticate inference traffic.
 - Compose sets the internal host and ports, `RUNTIME_DIR=/data`, `PHONE_VIDEO_DIR=/data/videos`, and `MATTER_TRANSPORT=local`. To change published ports, use `NOONCHI_PORT` (8200) and `NOONCHI_PHONE_PORT` (8210). Shell values take precedence over the selected environment file.
 

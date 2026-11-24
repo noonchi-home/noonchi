@@ -8,6 +8,7 @@ export const KEY_OWNERS: Record<string, readonly string[]> = {
   VLM_API_KEY: ["noonchi"],
   THINQ_TOKEN: ["noonchi"],
   THINQ_API_KEY: ["noonchi"],
+  TV_RELAY_TOKEN: ["noonchi"],
   PLAN_TOKEN: ["noonchi"],
   PAM_LLM_API_KEY: ["noonchi"],
   // vLLM 서버 키: 서버(vllm-*)가 요구하고, noonchi(vllm 모드 VLM·PAM LLM)가 붙인다

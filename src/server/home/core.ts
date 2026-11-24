@@ -8,7 +8,7 @@ import type { BrainLog, SeenEvent } from "../../contract/events.js";
 import type { PendingGoal } from "../../contract/goal.js";
 import type { HabitFsm } from "../../contract/habit.js";
 import type { PlannedCommand } from "../../contract/phone.js";
-import type { SignalHub, ThinqLink } from "../../devices/index.js";
+import type { RelayLink, SignalHub, ThinqLink } from "../../devices/index.js";
 import type { FloorPlan, HomePlan, PlaceNames, TwinData, loadLayout, loadScene } from "../../layout/index.js";
 import { realClock, type Body, type BusNode, type Clock, type Outbox } from "../../bus/index.js";
 import { HomeMachines } from "./machines.js";
@@ -37,6 +37,8 @@ export class HomeCore {
   unsubHistory!: () => void;
   /** ThinQ 연결(실제 모드). 닫힌 집이면 붙이지 않는다. */
   link: ThinqLink | null = null;
+  /** TV 중계 연결(실제 모드, TV_RELAY_*). 닫힌 집이면 붙이지 않는다. */
+  relay: RelayLink | null = null;
   closed = false;
   // 에이전트(agent.ts)
   approvals!: ApprovalStore;

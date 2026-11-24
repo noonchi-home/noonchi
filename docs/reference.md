@@ -37,6 +37,7 @@ The Agent Trace shows `KIND`, `NAME`, `INPUT`, `OUTPUT`, and `LATENCY`. The feed
 | `PHONE_VIDEO_DIR` | Repository `runtime/videos` | Source directory for phone video mode. Compose sets it to `/data/videos`. |
 | `HUB`, `MATTER_TRANSPORT` | `matter`, `network` | Device hub and Matter transport. Compose uses local transport. |
 | `THINQ_TOKEN` | Unset | Credentials for live appliances. Additional ThinQ settings control region, polling and readback. |
+| `TV_RELAY_URL`, `TV_RELAY_TOKEN`, `TV_RELAY_DEVICE` | Unset | In live mode, the TV with ID `TV_RELAY_DEVICE` is controlled and read through the TV relay. The URL must use `https` or a Tailscale address (`100.64.0.0/10`, `*.ts.net`). A partial setting, another `http` address, or an `ir.json` for the same TV stops startup. `TV_RELAY_TARGET`, `TV_RELAY_POLL_MS` (2000), `TV_RELAY_TIMEOUT_MS` (3000) and `TV_RELAY_COMMAND_TIMEOUT_MS` (45000) are optional. [TV relay](../hardware/ir-tv/README.md#without-a-light-sensor-use-the-tv-relay) |
 | `CALL_SERVICE_URL` | Unset | Optional external service for approved contact requests. |
 
 Set `INFERENCE_MODE` to `openai` for hosted inference or `vllm` for local model endpoints. Use `VLM_BASE_URL` and `PAM_LLM_BASE_URL` to override them independently. The voice and planning agent uses the configured OpenAI or Anthropic provider. See the [deployment settings](deploy.md) and the [example configuration](../.env.example) for provider, GPU, Matter and retention settings.
