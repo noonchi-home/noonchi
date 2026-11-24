@@ -47,6 +47,9 @@ type Env = Record<string, string | undefined>;
 /** 실행 중 만든 파일(사진·배치 수정본·설정) 폴더(커밋하지 않음). RUNTIME_DIR로 바꾼다. */
 const DEFAULT_RUNTIME_DIR = repoPath("runtime/");
 
+/** 같은 TV에 직접 적외선(ir.json)과 TV 중계가 함께 설정됨. 저장한 집에서 나도 다른 집으로 넘어가지 않고 시작을 막는다. */
+class TvSetupConflict extends Error {}
+
 const msOf = (raw: string | undefined, fallback: number) => {
   const n = Number(raw);
   return raw?.trim() && Number.isFinite(n) && n >= 0 ? n : fallback;
@@ -152,6 +155,9 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
   if (!relay.ok && !relay.off) throw new Error(`TV 중계 설정이 틀렸어요: ${relay.error}`);
   const relayClient = relay.ok ? new RelayClient(relay.config) : null;
   const relayPollMs = msOf(env.TV_RELAY_POLL_MS, DEFAULT_RELAY_POLL_MS);
+  /** TV 중계 TV(TV_RELAY_DEVICE)가 이 기기 목록에 TV로 있는가. */
+  const relayTvIn = (devices: readonly { id: string; kind: string }[]) =>
+    relay.ok && devices.some((d) => d.id === relay.config.deviceId && d.kind === HOUSEHOLD_KINDS.viewerPower);
   // 대시보드를 여는 출처: 이 PC + ALLOWED_ORIGINS(tailscale serve 주소). 쓰기 요청과 /events에 쓴다
   const configuredOrigin = originChecker(env.ALLOWED_ORIGINS);
   const boundOrigins = new Set<string>();
@@ -244,13 +250,13 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
       return addresses;
     } : undefined,
     irPort: opts.irPort,
-    homeInfrared(homeId) {
+    homeInfrared(homeId, devices) {
       ir = loadIrConfig(runtimeDir, homeId);
       if (ir && relay.ok && ir.device === relay.config.deviceId) {
-        throw new Error(`같은 TV(${ir.device})에 직접 적외선(ir.json)과 TV 중계(TV_RELAY_*)가 둘 다 설정돼 있어요. 빛 센서가 있는 장비면 ir.json, 없으면 TV_RELAY_* 하나만 남기세요.`);
+        throw new TvSetupConflict(`같은 TV(${ir.device})에 직접 적외선(ir.json)과 TV 중계(TV_RELAY_*)가 둘 다 설정돼 있어요. 빛 센서가 있는 장비면 ir.json, 없으면 TV_RELAY_* 하나만 남기세요.`);
       }
-      if (mode === "live" && !ir && !relayClient && !thinqConfig(env).ok) {
-        log("[경고] 이 집에 적외선 TV 설정과 ThinQ 토큰이 없어 시험 모드로 띄웁니다.");
+      if (mode === "live" && !ir && !relayTvIn(devices) && !thinqConfig(env).ok) {
+        log("[경고] 이 집에 적외선 TV(ir.json·TV 중계)와 ThinQ 토큰이 없어 시험 모드로 띄웁니다.");
         mode = "test";
       }
       return mode === "live" ? ir : null;
@@ -279,7 +285,7 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
   const relayPairs = (h: HomeRuntime, quiet = true): Record<string, string> => {
     if (!relay.ok) return {};
     const id = relay.config.deviceId;
-    if (!h.twin.devices.some((d) => d.id === id && d.kind === HOUSEHOLD_KINDS.viewerPower)) {
+    if (!relayTvIn(h.twin.devices)) {
       if (!quiet) log(`[경고] TV 중계와 짝지을 TV ${id}가 이 집(${h.twin.home.id})에 없어요 (TV_RELAY_DEVICE)`);
       return {};
     }
@@ -322,7 +328,7 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
     try {
       rt = await openHome(saved ?? fallbackHome);
     } catch (e) {
-      if (!saved) throw e;
+      if (!saved || e instanceof TvSetupConflict) throw e;
       log(`[경고] 저장한 집 ${saved}를 띄우지 못했습니다(${(e as Error).message}). ${fallbackHome ?? "기본 집"}으로 띄웁니다.`);
       rt = await openHome(fallbackHome);
     }

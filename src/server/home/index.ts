@@ -46,7 +46,8 @@ export interface HomeHistory {
 }
 
 export interface HomeContext {
-  homeInfrared?: (home: string) => IrConfig | null;
+  /** 이 집의 직접 적외선 TV 설정(실제 모드일 때). devices로 TV 중계 TV가 이 집에 있는지 본다. */
+  homeInfrared?: (home: string, devices: readonly { id: string; kind: string }[]) => IrConfig | null;
   irPort?: IrPort;
   savedStations?: (home: string, defaults: StationMap) => StationMap;
   env: Env;

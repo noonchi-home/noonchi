@@ -28,10 +28,10 @@ Without usable light readings, the hub accepts explicit, fresh camera evidence f
 An IR kit without a light sensor runs through the TV relay (`tvrelay`) on a laptop next to the TV. The relay sends IR through its Arduino and reads power from the TV's Wi-Fi response (LG NetCast port 8080), including power changed with the original remote. The relay code and its Arduino sketch are in the experiment repository: `noonchi-home/experiment`, `jihoon/2026-11-24_lg-tv-infrared-relay/code/tvrelay/`. Pairing, learning and serving are described in that folder's README.
 
 1. Start the relay with a token of at least 16 characters and keep it reachable over Tailscale.
-2. In Noonchi's `.env`, set `TV_RELAY_URL` (an `https` URL or a Tailscale address), `TV_RELAY_TOKEN` (the relay's token) and `TV_RELAY_DEVICE` (the TV's twin ID). Do not create `ir.json` for the same TV. Startup stops when both are set.
+2. In Noonchi's `.env`, set `TV_RELAY_URL` (an `https` URL, or `http` with the relay's Tailscale IP), `TV_RELAY_TOKEN` (the relay's token) and `TV_RELAY_DEVICE` (the TV's twin ID). Do not create `ir.json` for the same TV. Startup stops when both are set.
 3. Start Noonchi, switch to **실제 모드** and accept the confirmation. Test mode operates the twin.
 
-A relay result of `done` completes the command. `unverified` means the relay sent IR but did not see the TV change, and the plan waits for camera evidence. `failed`, `not_sent` (including a relay that is still busy) and an unreachable relay fail the command. The relay token never appears in logs, API responses or the dashboard.
+The relay's reading every 2 seconds is the TV's state, including a change made with the original remote. Camera sightings do not override it. A relay result of `done` completes the command. `unverified` means the relay sent IR but has not seen the TV change: a TV rule job counts it as not done, and a plan step finishes only when its end condition becomes true from a later reading. When the relay's answer is lost (timeout or dropped connection), the hub reads the TV again: the requested power counts as `done`, anything else as `unverified`. `failed`, `not_sent` (including a relay that is still busy), a refused connection and an HTTP rejection fail the command. The relay token never appears in logs, API responses or the dashboard.
 
 ## USB lines
 

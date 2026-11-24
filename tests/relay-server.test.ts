@@ -24,7 +24,7 @@ afterEach(async () => {
 
 /** 가짜 tvrelay. leak이면 모든 답의 error에 받은 토큰을 섞어 돌려준다(서버가 옮기지 않아야 한다). */
 async function fakeRelay(opts: { leak?: boolean } = {}) {
-  const state = { power: "on" as "on" | "off", commands: [] as string[], busy: false };
+  const state = { power: "on" as "on" | "off", commands: [] as string[], busy: false, gets: 0 };
   const noise = (auth: string | undefined) => (opts.leak ? { error: `relay saw ${auth}` } : {});
   relay = createServer((req, res) => {
     let raw = "";
@@ -33,6 +33,7 @@ async function fakeRelay(opts: { leak?: boolean } = {}) {
       res.setHeader("content-type", "application/json");
       const auth = req.headers.authorization;
       if (auth !== `Bearer ${TOKEN}`) return res.writeHead(401).end(JSON.stringify({ error: "token" }));
+      if (req.method === "GET" && req.url === "/api/devices/tv") state.gets++;
       if (req.method === "GET" && req.url === "/api/devices/tv") return res.end(JSON.stringify({ power: state.power, online: true, ...noise(auth) }));
       if (req.method === "POST" && req.url === "/api/devices/tv/command") {
         if (state.busy) return res.writeHead(409).end(JSON.stringify({ ok: false, outcome: "not_sent", power: state.power, ...noise(auth) }));
@@ -53,10 +54,17 @@ const runtime = () => {
   return dir;
 };
 
-async function start(extra: Record<string, string>, logs: string[] = [], dir = runtime()) {
-  srv = await startServer({ env: { HUB: "memory", PORT: "0", HOME_ID: "oneroom", RUNTIME_DIR: dir, ...extra }, log: (l) => logs.push(l) });
+async function start(extra: Record<string, string>, logs: string[] = [], dir = runtime(), persistSetup = false) {
+  srv = await startServer({ env: { HUB: "memory", PORT: "0", HOME_ID: "oneroom", RUNTIME_DIR: dir, ...extra }, log: (l) => logs.push(l), persistSetup });
   return srv;
 }
+
+/** npm start처럼 RUNTIME_DIR에 저장한 설정(고른 집·모드)이 있는 폴더. */
+const savedRuntime = (setup: { home: string; mode: "test" | "live" }) => {
+  const dir = runtime();
+  writeFileSync(join(dir, "setup.json"), JSON.stringify({ version: 1, done: true, ...setup }));
+  return dir;
+};
 
 const api = async (path: string, body?: unknown) => {
   const r = await fetchRetry(`${srv!.url}${path}`, body === undefined ? {} : { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
@@ -66,8 +74,8 @@ const json = (r: { text: string }) => JSON.parse(r.text) as Record<string, any>;
 const live = () => api("/api/setup/mode", { mode: "live", confirm: true });
 
 /** 시작하면 안 되는 설정의 오류 글. 그래도 떴으면 닫고 실패로 본다. */
-async function refusal(extra: Record<string, string>, dir = runtime()): Promise<string> {
-  const message = await startServer({ env: { HUB: "memory", PORT: "0", HOME_ID: "oneroom", RUNTIME_DIR: dir, ...extra }, log: () => {} }).then(
+async function refusal(extra: Record<string, string>, dir = runtime(), persistSetup = false): Promise<string> {
+  const message = await startServer({ env: { HUB: "memory", PORT: "0", HOME_ID: "oneroom", RUNTIME_DIR: dir, ...extra }, log: () => {}, persistSetup }).then(
     async (s) => { await s.close(); return null; },
     (e: Error) => e.message,
   );
@@ -121,8 +129,9 @@ describe("서버 시작: TV 중계", () => {
     expect((await live()).status).toBe(400);
   });
 
-  it("주소가 있는데 토큰·기기가 없거나, 와이파이 http 주소면 시작하지 않는다", async () => {
+  it("주소가 있는데 토큰·기기가 없거나, 주소 없이 토큰·기기만 있거나, 와이파이 http 주소면 시작하지 않는다", async () => {
     expect(await refusal({ TV_RELAY_URL: "http://127.0.0.1:9" })).toMatch(/TV_RELAY_TOKEN/);
+    expect(await refusal({ TV_RELAY_TOKEN: TOKEN, TV_RELAY_DEVICE: "tv_1" })).toMatch(/TV_RELAY_URL/);
     expect(await refusal({ TV_RELAY_URL: "http://127.0.0.1:9", TV_RELAY_TOKEN: TOKEN })).toMatch(/TV_RELAY_DEVICE/);
     const lan = await refusal({ TV_RELAY_URL: "http://192.168.0.5:8530", TV_RELAY_TOKEN: TOKEN, TV_RELAY_DEVICE: "tv_1" });
     expect(lan).toMatch(/https.*Tailscale/);
@@ -136,6 +145,40 @@ describe("서버 시작: TV 중계", () => {
     const message = await refusal({ TV_RELAY_URL: "http://127.0.0.1:9", TV_RELAY_TOKEN: TOKEN, TV_RELAY_DEVICE: "tv_1" }, dir);
     expect(message).toMatch(/tv_1.*ir\.json.*TV_RELAY/);
     expect(message).not.toContain(TOKEN);
+  });
+
+  it("저장한 집에서도 같은 TV의 ir.json과 중계가 겹치면 다른 집으로 넘어가지 않고 시작하지 않는다", async () => {
+    const dir = savedRuntime({ home: "oneroom", mode: "test" });
+    mkdirSync(join(dir, "homes", "oneroom"), { recursive: true });
+    writeFileSync(join(dir, "homes", "oneroom", "ir.json"), JSON.stringify({ device: "tv_1", port: "COM7", codes: { toggle: "NEC:0004:08" } }));
+    const message = await refusal({ TV_RELAY_URL: "http://127.0.0.1:9", TV_RELAY_TOKEN: TOKEN, TV_RELAY_DEVICE: "tv_1", HOME_ID: "mokryeon_180b" }, dir, true);
+    expect(message).toMatch(/tv_1.*ir\.json.*TV_RELAY/);
+  });
+
+  it("저장한 실제 모드는 중계 TV가 있는 집이면 그대로, 없는 집이면(ir.json·ThinQ도 없음) 시험 모드로 띄운다", async () => {
+    const fake = await fakeRelay();
+    await start({ TV_RELAY_URL: fake.url, TV_RELAY_TOKEN: TOKEN, TV_RELAY_DEVICE: "tv_1", TV_RELAY_POLL_MS: "0" }, [], savedRuntime({ home: "oneroom", mode: "live" }), true);
+    expect(json(await api("/api/setup"))).toMatchObject({ mode: "live", ir: { ready: true } });
+    expect(srv!.signals.source("tv_1")).toEqual({ kind: "relay", deviceId: "tv" });
+    await srv!.close();
+    srv = undefined;
+    const logs: string[] = [];
+    await start({ TV_RELAY_URL: fake.url, TV_RELAY_TOKEN: TOKEN, TV_RELAY_DEVICE: "tv_living", TV_RELAY_POLL_MS: "0" }, logs, savedRuntime({ home: "oneroom", mode: "live" }), true);
+    expect(json(await api("/api/setup"))).toMatchObject({ mode: "test", ir: { ready: false } });
+    expect(logs.some((l) => l.includes("시험 모드로 띄웁니다"))).toBe(true);
+  });
+
+  it("설정을 다시 저장해도 같은 중계 연결을 그대로 쓴다(새로 만들어 다시 읽지 않는다)", async () => {
+    const fake = await fakeRelay();
+    await start({ TV_RELAY_URL: fake.url, TV_RELAY_TOKEN: TOKEN, TV_RELAY_DEVICE: "tv_1", TV_RELAY_POLL_MS: "0" });
+    await live();
+    await expect.poll(() => srv!.signals.get("tv_1")?.readback?.source).toBe("relay");
+    const gets = fake.state.gets;
+    expect((await api("/api/setup/devices", { home: "oneroom", sources: {} })).status).toBe(200);
+    expect((await api("/api/setup/devices", { home: "oneroom", sources: {} })).status).toBe(200);
+    await new Promise((r) => setTimeout(r, 200));
+    expect(fake.state.gets).toBe(gets);
+    expect(srv!.signals.get("tv_1")?.readback?.source).toBe("relay");
   });
 
   it("TV_RELAY_DEVICE가 집에 없으면 경고하고 짝짓지 않는다", async () => {

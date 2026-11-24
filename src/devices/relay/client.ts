@@ -38,7 +38,8 @@ export interface RelayConfig {
 }
 
 export class RelayError extends Error {
-  constructor(message: string, readonly status: number) {
+  /** unsure: 요청이 중계에 닿았는지 모른다(시간 초과·연결 끊김·알 수 없는 2xx 답). 연결 거부·HTTP 거절은 false(확실히 안 감). */
+  constructor(message: string, readonly status: number, readonly unsure = false) {
     super(message);
     this.name = "RelayError";
   }
@@ -46,7 +47,11 @@ export class RelayError extends Error {
 
 type Env = Record<string, string | undefined>;
 const DEFAULT_TIMEOUT_MS = 3000;
-const DEFAULT_COMMAND_TIMEOUT_MS = 45_000;
+// 중계 켜기 최악 시간: 전용 코드 → 25초 확인 → 토글 → 25초 확인(code/tvrelay/ir.py power_to on_wait). 그보다 길게 기다린다
+const DEFAULT_COMMAND_TIMEOUT_MS = 60_000;
+/** 연결 단계에서 끝난 오류: 요청이 나가지 않았다. */
+const NOT_SENT = new Set(["ECONNREFUSED", "ENOTFOUND", "EAI_AGAIN", "EHOSTUNREACH", "ENETUNREACH", "EADDRNOTAVAIL", "UND_ERR_CONNECT_TIMEOUT"]);
+const SETTINGS = ["TV_RELAY_TOKEN", "TV_RELAY_DEVICE", "TV_RELAY_TARGET", "TV_RELAY_POLL_MS", "TV_RELAY_TIMEOUT_MS", "TV_RELAY_COMMAND_TIMEOUT_MS"] as const;
 const HIDDEN = "[토큰]";
 
 /** Tailscale이 기기에 주는 주소(100.64.0.0/10). */
@@ -55,21 +60,25 @@ function isTailscaleIp(host: string): boolean {
   return !!m && Number(m[1]) >= 64 && Number(m[1]) <= 127 && m.slice(2).every((x) => Number(x) <= 255);
 }
 
-/** 평문(http)으로 보내도 되는 중계 주소: 이 PC(루프백)이거나 Tailscale 안(100.64.0.0/10, *.ts.net). 와이파이 주소는 아니다. */
+/** 평문(http)으로 보내도 되는 중계 주소: 이 PC(루프백)이거나 Tailscale IP(100.64.0.0/10). 이름 주소(*.ts.net 포함)는 https만 받는다. */
 function plainAllowed(hostname: string): boolean {
   const host = hostname.toLowerCase();
-  return isLoopbackHost(host) || isTailscaleIp(host) || /^[a-z0-9-]+(\.[a-z0-9-]+)*\.ts\.net$/.test(host);
+  return isLoopbackHost(host) || isTailscaleIp(host);
 }
 
 /** TV_RELAY_URL이 없으면 { ok: false, off: true }(중계 안 씀). 있는데 틀리면 까닭(서버가 시작하지 않는다). 오류 글에 주소·토큰을 옮기지 않는다. */
 export function relayConfig(env: Env): { ok: true; config: RelayConfig } | { ok: false; off: boolean; error: string } {
   const url = env.TV_RELAY_URL?.trim();
-  if (!url) return { ok: false, off: true, error: "TV_RELAY_URL이 없어요." };
+  if (!url) {
+    const partial = SETTINGS.find((name) => env[name]?.trim());
+    return partial ? { ok: false, off: false, error: `${partial}가 있는데 TV_RELAY_URL이 없어요. 중계를 쓰려면 주소를, 쓰지 않으려면 TV_RELAY_* 값을 모두 비우세요.` }
+      : { ok: false, off: true, error: "TV_RELAY_URL이 없어요." };
+  }
   const parsed = URL.parse(url);
   if (!parsed || (parsed.protocol !== "http:" && parsed.protocol !== "https:")) return { ok: false, off: false, error: "TV_RELAY_URL은 http(s) 주소여야 해요." };
   if (parsed.username || parsed.password) return { ok: false, off: false, error: "TV_RELAY_URL에 아이디·비밀번호를 넣지 마세요. 인증은 TV_RELAY_TOKEN으로 해요." };
   if (parsed.protocol === "http:" && !plainAllowed(parsed.hostname)) {
-    return { ok: false, off: false, error: "TV_RELAY_URL은 https이거나 Tailscale 주소(100.64.0.0/10, *.ts.net)여야 해요. 와이파이 주소로는 보내지 않아요." };
+    return { ok: false, off: false, error: "TV_RELAY_URL은 https이거나 이 PC·Tailscale IP(100.64.0.0/10)의 http여야 해요. 와이파이 주소나 이름 주소는 http로 보내지 않아요." };
   }
   const token = env.TV_RELAY_TOKEN?.trim();
   if (!token) return { ok: false, off: false, error: "TV_RELAY_TOKEN이 없어요(중계와 같은 값)." };
@@ -109,7 +118,7 @@ export class RelayClient {
     const body = await this.request("POST", `/api/devices/${encodeURIComponent(target)}/command`, { type }, this.config.commandTimeoutMs) as Partial<RelayCommandResult>;
     const outcome = body.outcome;
     if (outcome !== "done" && outcome !== "unverified" && outcome !== "failed" && outcome !== "not_sent") {
-      throw new RelayError(`중계 답에 outcome이 없어요: ${this.clip(JSON.stringify(body), 120)}`, 200);
+      throw new RelayError(`중계 답에 outcome이 없어요: ${this.clip(JSON.stringify(body), 120)}`, 200, true);
     }
     const power = body.power === "on" || body.power === "off" || body.power === "unknown" ? body.power : undefined;
     return { ok: !!body.ok, outcome, power, ...(typeof body.error === "string" ? { error: this.clip(body.error, 200) } : {}) };
@@ -140,7 +149,14 @@ export class RelayClient {
       });
       text = await res.text();
     } catch (e) {
-      throw new RelayError(ctrl.signal.aborted ? `중계 응답이 ${timeoutMs}ms 안에 없어요.` : this.clip(`중계에 닿지 않아요: ${(e as Error).message}`, 200), 0);
+      if (ctrl.signal.aborted) throw new RelayError(`중계 응답이 ${timeoutMs}ms 안에 없어요.`, 0, true);
+      const cause = (e as { cause?: { code?: unknown; syscall?: unknown; message?: unknown } }).cause;
+      const code = typeof cause?.code === "string" ? cause.code : (e as { code?: unknown }).code;
+      // fetch가 막는 포트(예: 9)는 연결하기 전에 「bad port」로 끝난다
+      const unsent = cause?.message === "bad port" ||
+        (typeof code === "string" && (NOT_SENT.has(code) || (code === "EFAULT" && cause?.syscall === "connect")));
+      if (unsent) throw new RelayError(this.clip(`중계에 닿지 않아요(${code}).`, 200), 0);
+      throw new RelayError(this.clip(`중계 연결이 끊겼어요: ${(e as Error).message}${typeof code === "string" ? ` (${code})` : ""}`, 200), 0, true);
     } finally {
       clearTimeout(timer);
     }
@@ -148,7 +164,7 @@ export class RelayClient {
     try {
       json = text ? JSON.parse(text) : {};
     } catch {
-      throw new RelayError(`중계 답이 JSON이 아니에요 (HTTP ${res.status})`, res.status);
+      throw new RelayError(`중계 답이 JSON이 아니에요 (HTTP ${res.status})`, res.status, res.ok);
     }
     // 409(앞 명령 처리 중)·400 같은 명령 결과도 본문에 outcome이 있으면 그대로 돌려준다
     if (!res.ok && !(json && typeof json === "object" && "outcome" in json)) {

@@ -12,7 +12,7 @@ export async function startDevices(core: HomeCore, homeId: string | undefined): 
   log(`twin 데이터: 집 ${twin.home.id}(${twin.home.name}) · ${twin.source} (${twin.dir}) · 기기 ${twin.devices.length}개 · 방 ${twin.rooms.length}개`);
   for (const w of twin.warnings) log(`[경고] ${w}`);
 
-  const ir = ctx.homeInfrared?.(twin.home.id);
+  const ir = ctx.homeInfrared?.(twin.home.id, twin.devices);
   const started = await startHub(twin, { env, log, importer: ctx.importer, matter: { log, ...ctx.matter },
     memoryNow: ctx.clock ? () => new Date(core.nowMs()) : undefined });
   const signals = new SignalHub(started.hub, ctx.sources(twin.home.id, twin.devices.map((d) => d.id)));
@@ -46,8 +46,10 @@ export function setLink(core: HomeCore, next: ThinqLink | null): void {
   core.link?.start().catch((e) => core.ctx.log(`[경고] ThinQ 읽기를 시작하지 못했어요: ${(e as Error).message}`));
 }
 
-/** TV 중계 연결을 바꾼다(실제 모드). 이전 연결은 멈추고, 새 연결은 붙인 뒤 읽기를 시작한다. null이거나 닫힌 집이면 뗀다. */
+/** TV 중계 연결을 바꾼다(실제 모드). 이전 연결은 멈추고, 새 연결은 붙인 뒤 읽기를 시작한다. null이거나 닫힌 집이면 뗀다.
+ *  주소·토큰·짝·읽기 간격이 같은 연결이면 그대로 둔다(설정을 다시 저장할 때마다 새로 읽지 않게). */
 export function setRelay(core: HomeCore, next: RelayLink | null): void {
+  if (next && core.relay && !core.closed && core.relay.sameAs(next)) return;
   core.relay?.stop();
   core.relay = core.closed ? null : next;
   core.signals.setRelay(core.relay);

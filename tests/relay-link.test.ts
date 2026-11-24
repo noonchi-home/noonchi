@@ -20,12 +20,14 @@ interface FakeRelay {
   reply: { status: number; body: Record<string, unknown> } | null;
   /** 다음 읽기의 답(없으면 power). */
   stateReply: { status: number; body: unknown } | null;
+  /** 다음 명령: 전원을 바꾸고(switch) 답을 delayMs 늦추거나(delay), 답 없이 연결을 끊는다(drop). */
+  slow: { mode: "delay" | "drop"; switch: boolean; delayMs?: number } | null;
   requests: { method: string; path: string; auth?: string; body?: unknown }[];
   close(): Promise<void>;
 }
 
 async function startFakeRelay(): Promise<FakeRelay> {
-  const fake: Partial<FakeRelay> = { power: "off", reply: null, stateReply: null, requests: [] };
+  const fake: Partial<FakeRelay> = { power: "off", reply: null, stateReply: null, slow: null, requests: [] };
   const read = (req: IncomingMessage) => new Promise<string>((ok) => {
     let s = "";
     req.on("data", (c) => (s += c));
@@ -50,6 +52,13 @@ async function startFakeRelay(): Promise<FakeRelay> {
       return send(200, { power: fake.power, since: "2026-11-23T10:00:00", online: true, ir: true });
     }
     if (req.method === "POST" && req.url === "/api/devices/tv/command") {
+      if (fake.slow) {
+        const slow = fake.slow;
+        fake.slow = null;
+        if (slow.switch) fake.power = body.type;
+        if (slow.mode === "drop") return req.socket.destroy();
+        return void setTimeout(() => { if (!res.destroyed) send(200, { ok: true, outcome: "unverified", power: fake.power }); }, slow.delayMs ?? 1000);
+      }
       if (fake.reply) {
         const r = fake.reply;
         fake.reply = null;
@@ -61,7 +70,7 @@ async function startFakeRelay(): Promise<FakeRelay> {
     send(404, { error: "none" });
   });
   fake.url = `http://127.0.0.1:${(await listenRetry(server, 0, "127.0.0.1")).port}`;
-  fake.close = () => new Promise((ok) => server.close(() => ok()));
+  fake.close = () => new Promise((ok) => { server.closeAllConnections(); server.close(() => ok()); });
   return fake as FakeRelay;
 }
 
@@ -105,16 +114,28 @@ describe("relayConfig", () => {
     expect(c).toMatchObject({ ok: true, config: { baseUrl: "http://100.64.0.2:8530", target: "tv", deviceId: "tv_living" } });
   });
 
-  it("https이거나 루프백·Tailscale(100.64.0.0/10)·*.ts.net 주소만 받는다(와이파이 http는 거절)", () => {
+  it("https이거나, http면 루프백·Tailscale IP(100.64.0.0/10)만 받는다(이름 주소·와이파이 http는 거절)", () => {
     const at = (url: string) => relayConfig({ TV_RELAY_URL: url, TV_RELAY_TOKEN: "t", TV_RELAY_DEVICE: "tv_living" });
-    for (const url of ["https://relay.example.com", "https://192.168.0.5:8530", "http://127.0.0.1:8530", "http://localhost:8530", "http://[::1]:8530",
-      "http://100.64.0.1:8530", "http://100.127.255.254:8530", "http://jihoon-mac.tail1234.ts.net:8530"]) expect(at(url), url).toMatchObject({ ok: true });
+    for (const url of ["https://relay.example.com", "https://jihoon-mac.tail1234.ts.net", "https://192.168.0.5:8530", "http://127.0.0.1:8530", "http://localhost:8530", "http://[::1]:8530",
+      "http://100.64.0.1:8530", "http://100.127.255.254:8530"]) expect(at(url), url).toMatchObject({ ok: true });
     for (const url of ["http://192.168.0.5:8530", "http://10.0.0.5:8530", "http://100.128.0.1:8530", "http://100.63.255.255:8530",
-      "http://relay.example.com:8530", "http://ts.net.example.com:8530"]) {
+      "http://relay.example.com:8530", "http://jihoon-mac.tail1234.ts.net:8530", "http://ts.net.example.com:8530"]) {
       const r = at(url);
       expect(r, url).toMatchObject({ ok: false, off: false });
       expect(!r.ok && r.error, url).toMatch(/https.*Tailscale/);
     }
+  });
+
+  it("주소 없이 토큰·기기 같은 다른 TV_RELAY_* 값만 있으면 쓰지 않는 게 아니라 틀린 설정이다", () => {
+    for (const name of ["TV_RELAY_TOKEN", "TV_RELAY_DEVICE", "TV_RELAY_TARGET", "TV_RELAY_POLL_MS", "TV_RELAY_TIMEOUT_MS", "TV_RELAY_COMMAND_TIMEOUT_MS"]) {
+      expect(relayConfig({ [name]: "x" }), name).toMatchObject({ ok: false, off: false, error: expect.stringContaining("TV_RELAY_URL") });
+    }
+    expect(relayConfig({ TV_RELAY_TOKEN: " ", TV_RELAY_DEVICE: "" })).toMatchObject({ ok: false, off: true });
+  });
+
+  it("명령 한도 기본값은 중계 켜기 최악 시간(전용 코드 25초 + 토글 25초)보다 길다", () => {
+    const c = relayConfig({ TV_RELAY_URL: "http://127.0.0.1:8530", TV_RELAY_TOKEN: "t", TV_RELAY_DEVICE: "tv_living" });
+    expect(c.ok && c.config.commandTimeoutMs).toBeGreaterThanOrEqual(60_000);
   });
 
   it("주소에 아이디·비밀번호를 넣으면 거절하고, 오류 글에 그 값을 옮기지 않는다", () => {
@@ -203,10 +224,51 @@ describe("RelayLink 명령", () => {
     expect(fake.requests.filter((q) => q.method === "POST")).toHaveLength(1);
   });
 
-  it("중계에 닿지 않으면 실패로 돌려준다", async () => {
+  it("중계에 연결조차 못 하면(연결 거부·막힌 포트, 보내지 않음이 확실) 실패로 돌려준다", async () => {
+    const closed = createServer();
+    const port = (await listenRetry(closed, 0, "127.0.0.1")).port;
+    await new Promise<void>((ok) => closed.close(() => ok()));
+    for (const url of [`http://127.0.0.1:${port}`, "http://127.0.0.1:9"]) {
+      const world = new MemoryHub([tv]);
+      link = new RelayLink({ client: new RelayClient(config(url)), world, pairs: { tv_living: "tv" }, pollMs: 0 });
+      expect(await link.command("tv_living", { type: "on" }), url).toMatchObject({ ok: false, outcome: "failed", error: expect.stringContaining("닿지 않") });
+      link.stop();
+    }
+  });
+
+  it("명령 한도를 넘기면(보냈는지 모름) 다시 읽은 값으로 정한다: 목표와 같으면 완료, 아니면 확인 안 됨(ok)", async () => {
+    fake = await startFakeRelay();
     const world = new MemoryHub([tv]);
-    link = new RelayLink({ client: new RelayClient(config("http://127.0.0.1:9")), world, pairs: { tv_living: "tv" }, pollMs: 0 });
-    expect(await link.command("tv_living", { type: "on" })).toMatchObject({ ok: false, outcome: "failed", error: expect.stringContaining("응답이 없어") });
+    link = new RelayLink({ client: new RelayClient(config(fake.url, { TV_RELAY_COMMAND_TIMEOUT_MS: "300" })), world, pairs: { tv_living: "tv" }, pollMs: 0 });
+    await link.start();
+    fake.slow = { mode: "delay", switch: true, delayMs: 1500 };
+    expect(await link.command("tv_living", { type: "on" })).toMatchObject({ ok: true, outcome: "done" });
+    expect(world.get("tv_living")!.matter.onOff).toBe(true);
+    fake.slow = { mode: "delay", switch: false, delayMs: 1500 };
+    const r = await link.command("tv_living", { type: "off" });
+    expect(r).toMatchObject({ ok: true, outcome: "unverified" });
+    expect(r.error).toBeUndefined();
+  });
+
+  it("명령 중에 연결이 끊겨도(보냈는지 모름) 다시 읽은 값으로 정한다", async () => {
+    const { world, link, fake } = await setup();
+    await link.start();
+    fake.slow = { mode: "drop", switch: true };
+    expect(await link.command("tv_living", { type: "on" })).toMatchObject({ ok: true, outcome: "done" });
+    expect(world.get("tv_living")!.matter.onOff).toBe(true);
+    fake.slow = { mode: "drop", switch: false };
+    expect(await link.command("tv_living", { type: "off" })).toMatchObject({ ok: true, outcome: "unverified" });
+  });
+
+  it("중계가 완료(done)를 주고 뒤따르는 읽기가 실패하면 명령 답의 전원으로 상태를 갱신한다", async () => {
+    const { world, link, fake } = await setup();
+    await link.start();
+    const before = link.readback("tv_living")!.at;
+    fake.stateReply = { status: 500, body: { error: "monitor busy" } };
+    expect(await link.command("tv_living", { type: "on" })).toMatchObject({ ok: true, outcome: "done", state: { matter: { onOff: true } } });
+    expect(world.get("tv_living")!.matter.onOff).toBe(true);
+    expect(link.readback("tv_living")).toMatchObject({ source: "relay", deviceId: "tv" });
+    expect(Date.parse(link.readback("tv_living")!.at)).toBeGreaterThanOrEqual(Date.parse(before));
   });
 
   it("토큰이 틀리면(401) 실패이고, 중계가 되돌려 준 토큰은 오류 글·로그 어디에도 없다", async () => {
