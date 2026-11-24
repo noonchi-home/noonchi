@@ -6,7 +6,7 @@ Scan the dashboard's connection QR inside the Android app. The app checks the hu
 
 - Use **집 관리** to find a supported home, confirm its floor plan, and open its prepared twin. Match the reference view, capture a photo, and confirm it. Saved views remain available for review or retake. Hold the phone in landscape to match the reference.
 - Use **설정** to pair supported LG ThinQ appliances, select the input devices and test or live appliance mode, set the starting position and direction, or edit observation stations and their zones. The layout screen lists layout corrections and supports saving or resetting them. Use the web settings for the full layout editor. [Server and phone reference](../../docs/reference.md)
-- Reference photos stay on the phone for review. A hub configured for private S3 storage can supply signed upload URLs for a JPEG and its scene label. If the signing endpoint reports storage unavailable, the app keeps the capture on the phone.
+- The hub must provide a reference scene catalog for the selected home. A 404 from the catalog means the reference views are unavailable. With S3 signing enabled, Android uploads the JPEG and JSON label, then keeps a review copy on the phone. An HTTP 503 from the signing request saves the capture on the phone. A failed upload after signing shows a save error. [Reference photo setup](../../docs/deploy.md#reference-photos-and-optional-s3-uploads)
 
 ## Development
 
@@ -27,7 +27,7 @@ npm start
 
 On the connected home, tap **클로이드 켜기**. The app reads `android_twa` from `/api/setup` and checks that its HTTPS `phone_url` and `assetlinks_url` share the same origin and port. Set `ANDROID_TWA_SHA256_FINGERPRINTS` on the camera service to the public SHA-256 certificate fingerprint of the installed `app.noonchi.android` APK. Chrome must verify `delegate_permission/common.handle_all_urls` for the exact camera origin. The sample deployment uses hub port 443 and AR port 8443. The app follows the URL returned by the hub. [Deployment and checks](../../docs/deploy.md#android-camera-twa) · [Digital Asset Links setup](https://developer.chrome.com/docs/android/trusted-web-activity/integration-guide/)
 
-Use **카메라 켜기** on the opened page to start the immersive WebXR session, grant permissions, and align at the saved starting position. The page reads current commands in Korean and accepts scoped spoken or tapped replies where the browser supports speech. Android Back returns to the app. On the actual phone, check the address-bar-free TWA, rotation, camera and microphone permissions, tracking and audible speech. [WebXR step round trip](../../docs/architecture/webxr-roundtrip.md)
+Use **카메라 켜기** on the opened page and grant camera permission. When immersive WebXR starts, the page requests a landscape lock. If the lock fails while the phone is in portrait, follow the prompt to rotate it. Align at the saved starting position. The page reads current commands in Korean and accepts scoped spoken or tapped replies where the browser supports speech. Android Back returns to the app. On the actual phone, check the address-bar-free TWA, rotation, camera and microphone permissions, tracking and audible speech. [WebXR step round trip](../../docs/architecture/webxr-roundtrip.md)
 
 ## Tests and local APK
 

@@ -20,7 +20,7 @@ sudo tailscale serve --bg --https=8443 http://127.0.0.1:8210
 tailscale serve status
 ```
 
-Open the dashboard on the hub's HTTPS origin. Its connection QR points to `/mobile/` on that origin. Scan it inside the [NOONCHI Android app](../apps/android/README.md) to pair, or open the same URL in a phone browser for the web portal. The setup endpoint supports pairing before a home has been registered. Register the home and complete its reference setup on the phone. In the web portal, tap **클로이드 켜기** to start the camera and **카메라 끄기** to return home.
+Open the dashboard on the hub's HTTPS origin. Its connection QR points to `/mobile/` on that origin. Scan it inside the [NOONCHI Android app](../apps/android/README.md) to pair, or open the same URL in a phone browser for the web portal. The setup endpoint supports pairing before a home has been registered. Register the home on the phone. In the web portal, tap **클로이드 켜기** to start the camera and **카메라 끄기** to return home.
 
 The hub handles `/events` for the dashboard and `/mobile/phone-events` for the mobile web camera. The camera listener handles `/phone/`, `/phone/events`, and video playback. Preserve the matching host and origin and pass WebSocket upgrades on both listeners. The ports above are examples. Keep existing Serve mappings and choose an unused hub HTTPS port when a deployment already reserves 443 for the AR listener. Use Serve within the tailnet and leave Funnel disabled.
 
@@ -30,7 +30,17 @@ The Android app pairs with the dashboard HTTPS `/mobile/` QR. Before launch it r
 
 Set `ANDROID_TWA_SHA256_FINGERPRINTS` to the public SHA-256 certificate fingerprint of the installed `app.noonchi.android` APK. Use 32 colon-separated hex bytes per fingerprint and commas between fingerprints. The camera listener serves `/.well-known/assetlinks.json` directly as JSON. Route that path to the camera listener if a reverse proxy splits paths on a shared origin.
 
-Read `GET /api/setup` at the hub to check `mobile_urls`, `android_twa.package_name`, both camera URLs, and `android_twa.statements_configured`. Fetch `/mobile/` from the hub and `/phone/` and `assetlinks_url` from the configured camera origin. Expect HTTP 200 for all three and an Asset Links statement for the installed package and its public certificate. Then check the signed APK on the actual phone for an address-bar-free TWA, the camera gesture, microphone permission, tracking, and audible speech. A successful HTTP check establishes server configuration.
+Read `GET /api/setup` at the hub to check `mobile_urls`, `android_twa.package_name`, both camera URLs, and `android_twa.statements_configured`. Fetch `/mobile/` from the hub and `/phone/` and `assetlinks_url` from the configured camera origin. Expect HTTP 200 for all three and an Asset Links statement for the installed package and its public certificate. A successful HTTP check establishes server configuration.
+
+On the actual phone, check that **클로이드 켜기** opens the verified TWA without an address bar. Then tap **카메라 켜기** to start immersive WebXR. Once the session starts, the page requests a landscape orientation lock. If the lock fails while the phone is in portrait, the page asks the user to rotate it. Check camera and microphone permissions, tracking, and audible speech on the target phone.
+
+### Reference photos and optional S3 uploads
+
+For each registered home, put `manifest.json` and its reference PNGs in `RUNTIME_DIR/homes/<home>/scenes/`. On the sample Compose deployment, `RUNTIME_DIR` is `/data` in the server container. Check the catalog at `GET /api/homes/<home>/scenes` before capturing a reference photo. A missing catalog returns HTTP 404 and leaves the app without reference views.
+
+To enable private S3 uploads, set `LOCALIZE_BUCKET` and give the server AWS permissions for the target objects. The signer runs `localize/sign_shot.py` using Python with `boto3` installed. Use `LOCALIZE_PYTHON` to select that interpreter if needed. The default Docker runtime image serves the API but requires a custom runtime with the signer script and Python dependencies for S3 signing. [Signing route](../src/server/routes/home-shots.ts)
+
+For a valid scene, `POST /api/homes/<home>/shots` returns separate signed PUT URLs for the JPEG and JSON label. If signing returns HTTP 503, Android keeps the photo on the phone. If either PUT fails after the URLs are issued, Android reports a save error. After both PUTs succeed, Android keeps a local copy for review.
 
 ## 3. Check out the repository and configure services
 
