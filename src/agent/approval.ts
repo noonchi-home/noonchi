@@ -4,7 +4,9 @@
 // 답은 승인·거절 둘(src/act/prompts.ts APPROVE). 승인은 기억해 같은 일은 다음부터 묻지 않고, 거절은 이번만이라 기억하지 않아 다음에 또 묻는다.
 // 위험 목록은 늘 묻고 답 둘 다 이번만이다. 기억은 runtime/homes/<집>/approvals.json(재시작에도 남음). 예전 파일의 never(「하지 마」)는 읽지 않는다.
 // 대시보드에는 승인을 보이지 않는다.
-import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { randomUUID } from "node:crypto";
+import { closeSync, mkdirSync, openSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { platform } from "node:os";
 import { dirname, join } from "node:path";
 
 export type { ApprovalAnswer } from "../contract/phone.js";
@@ -47,11 +49,35 @@ const isStamps = (v: unknown): v is Record<string, string> =>
   !!v && typeof v === "object" && !Array.isArray(v) && Object.values(v).every((x) => typeof x === "string");
 
 function read(path: string): ApprovalMemory {
+  let text: string;
   try {
-    const raw = JSON.parse(readFileSync(path, "utf8").replace(/^﻿/, "")) as { always?: unknown } | null;
+    text = readFileSync(path, "utf8");
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code === "ENOENT") return empty();
+    throw e;
+  }
+  try {
+    const raw = JSON.parse(text.replace(/^﻿/, "")) as { always?: unknown } | null;
     return raw && isStamps(raw.always) ? { always: { ...raw.always } } : empty();
   } catch {
     return empty();
+  }
+}
+
+const WINDOWS_REPLACE_RETRY_MS = [5, 10, 20];
+
+/** Windows에서 파일이 잠깐 열려 있으면 같은 임시 파일로 교체를 다시 시도한다. */
+function replace(src: string, dest: string): void {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      renameSync(src, dest);
+      return;
+    } catch (e) {
+      const delay = WINDOWS_REPLACE_RETRY_MS[attempt];
+      const code = (e as NodeJS.ErrnoException).code;
+      if (delay === undefined || (code !== "EPERM" && code !== "EBUSY") || platform() !== "win32") throw e;
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, delay);
+    }
   }
 }
 
@@ -60,7 +86,7 @@ export class ApprovalStore implements ApprovalBook {
   private mem: ApprovalMemory;
 
   constructor(private readonly path: string, private readonly now: () => string = () => new Date().toISOString()) {
-    this.mem = read(path);
+    try { this.mem = read(path); } catch { this.mem = empty(); }
   }
 
   memory(): ApprovalMemory {
@@ -68,13 +94,26 @@ export class ApprovalStore implements ApprovalBook {
   }
 
   answer(key: ApprovalKey, a: ApprovalAnswer): void {
-    const next = remember(this.mem, key, a, this.now());
-    if (next === this.mem) return;
-    this.mem = next;
+    if (a !== "approve") return;
+    const at = this.now();
+    // 서버와 시연 준비는 같은 런타임 잠금을 쥔다. 같은 파일을 미리 연 다른 객체의 승인도 이어서 읽는다.
+    const current = read(this.path);
+    const next = remember(current, key, a, at);
+    if (next === current) {
+      this.mem = current;
+      return;
+    }
     mkdirSync(dirname(this.path), { recursive: true });
-    const tmp = `${this.path}.${process.pid}.tmp`;
-    writeFileSync(tmp, `${JSON.stringify(next, null, 2)}\n`);
-    renameSync(tmp, this.path);
+    const tmp = `${this.path}.${process.pid}.${randomUUID()}.tmp`;
+    const fd = openSync(tmp, "wx", 0o600);
+    try {
+      try { writeFileSync(fd, `${JSON.stringify(next, null, 2)}\n`); } finally { closeSync(fd); }
+      replace(tmp, this.path);
+    } catch (e) {
+      try { rmSync(tmp, { force: true }); } catch { /* Preserve the original write error. */ }
+      throw e;
+    }
+    this.mem = next;
   }
 }
 
