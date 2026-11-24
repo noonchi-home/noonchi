@@ -7,8 +7,8 @@
 [집 상태] detection 사람 보임
 [집 상태] world 사람 거실·복도에 있음
 [집 상태] detection 컵 cup_1 보임 · 거실·복도 식탁 위
-[집 상태] world 컵 cup_1 비어 있음
 [집 상태] detection 사람 안 보임
+[집 상태] world 컵 cup_1 비어 있음
 [있음] decision 대기 valid
 [있음] execution 대기
 [있음] vlm

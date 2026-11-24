@@ -5,7 +5,7 @@
 import type { Facet, WorldChange, WorldFact, WorldView } from "../../contract/world.js";
 import type { CameraView, Detection, FrameMeta, Pose } from "../../contract/observe.js";
 import { CHANGE_TEXT, OBJECT_NAME } from "../labels.js";
-import { onRest, pixelOf, placeBox, rayDir } from "../place.js";
+import { inView, onRest, pixelOf, placeBox, rayDir } from "../place.js";
 import { KPT_HIGH, mainPerson, type Pt } from "../pose.js";
 import { fallPose, type FallPose } from "../fall.js";
 import { FACT_FRESH_MS, POSE_FALL, POSE_POSTURE, REST_PLACES } from "../vocab.js";
@@ -14,6 +14,8 @@ import { PERSON, Part, type Facts, type Plan2, type V3 } from "./core.js";
 /** 상자 아래가 프레임 높이의 이 비율보다 아래면 발이 잘린 것으로 본다. */
 const FEET_EDGE = 0.98;
 const area = (b: Detection["box"]) => Math.max(0, b[2]) * Math.max(0, b[3]);
+/** 사람이 있던 자리가 화면 안인가를 볼 높이(m, 바닥 위 몸 가운데). */
+const BODY_MID_M = 0.9;
 /** 사용자로 세는 관절: 머리(0 코·1·2 눈·3·4 귀)나 어깨(5·6) 가운데 하나가 KPT_HIGH 이상. 손·팔만 잡힌 상자는 사용자가 아니다. */
 const USER_KPTS = [0, 1, 2, 3, 4, 5, 6] as const;
 const FACE_KPTS = [0, 1, 2, 3, 4] as const;
@@ -96,6 +98,12 @@ export class People extends Part {
     if (frame.fresh_position && people.length === 1 && frame.capturedAtMs > (this.trail.at(-1)?.at_ms ?? -Infinity)) {
       this.trail = [...this.trail.slice(-1), { position, room: this.nextRoom?.id ?? null, at_ms: frame.capturedAtMs }];
     }
+  }
+
+  /** 사람이 있던 자리(마지막 발 자리)의 몸 가운데가 이 프레임 화면 안인가. 자리나 카메라를 모르면 아니다. */
+  spotInView(frame: FrameMeta): boolean {
+    const p = this.core.person.position;
+    return !!(p && frame.view && inView(frame.view, [p[0], this.o.floorAt(p) + BODY_MID_M, p[1]]));
   }
 
   roomChange(at: number): WorldChange {

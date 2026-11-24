@@ -42,7 +42,7 @@ import { relatedDeviceIds } from "../relations.js";
 import { cameraKindOf } from "../../devices/kinds.js";
 import { FRESH_MS, NEAR_M, POSE_HOLD, sameDrinkware } from "../vocab.js";
 import { canRelink } from "../accept.js";
-import { WorldCore, type Plan2, type V3 } from "./core.js";
+import { PERSON, WorldCore, type Plan2, type V3 } from "./core.js";
 import { Detections } from "./objects.js";
 import { People } from "./people.js";
 import { SceneFacts } from "./facts.js";
@@ -130,10 +130,27 @@ export class WorldState {
   applyScene(frameId: string, capturedAtMs: number, scene: SceneObservation, ids: Map<string, string>, look?: SceneLook, fromMs = capturedAtMs, answeredMs?: number): WorldChange[] {
     this.noteHousehold(frameId, capturedAtMs, scene, look, false, answeredMs, ids);
     this.noteSurfaces(capturedAtMs, look);
+    const back = this.revertGone(capturedAtMs, scene, look);
     const linked = this.core.scene.link(frameId, capturedAtMs, scene, ids, look);
     this.core.placeDups();
     for (const [k, v] of ids) { const o = this.core.objects.get(v); if (o?.status === "gone" && o.followed) ids.set(k, o.followed.id); }
-    return [...linked, ...this.core.vlm.applyScene(frameId, capturedAtMs, scene, ids, fromMs)];
+    return [...back, ...linked, ...this.core.vlm.applyScene(frameId, capturedAtMs, scene, ids, fromMs)];
+  }
+
+  /** 빠른 떠남(objects.ts, YOLO만으로 정한 안 보임) 뒤에 찍힌 전체 사진의 VLM 답에 사람이 있으면 그 전 사람 상태로 되돌린다.
+   *  되돌린 뒤에는 YOLO가 그 사람을 다시 볼 때까지 빠른 떠남을 쓰지 않는다(사라짐 확정 규칙만). */
+  private revertGone(at: number, scene: SceneObservation, look?: SceneLook): WorldChange[] {
+    const c = this.core, g = c.fastGone;
+    // 로봇 실행 단계 중(acting)에는 VLM이 폰을 든 시연자를 사람으로 답할 수 있어 되돌리지 않는다
+    if (!g || c.person.visible || c.acting || at < g.at || !look?.fresh || !scene.household?.people.length) return [];
+    c.fastGone = null;
+    c.fastBlocked = true;
+    c.person.visible = true;
+    c.person.since_ms = g.since;
+    c.person.count = g.count;
+    c.person.facts = g.facts;
+    c.confirmer.mark(PERSON);
+    return [{ kind: "person_appeared", at_ms: at, subject: PERSON, meaningful: true, text: CHANGE_TEXT.personAppeared }];
   }
 
   /** 가까이 보기 묶기(closer.ts applyCloser): 넣기는 그 장의 VLM 답(applyCloserScene)이 한다. */
