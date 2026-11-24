@@ -78,7 +78,8 @@ export class Confirmer {
       }
       // 등장은 처음 본 장부터, 사라짐은 마지막으로 본 장부터 잰다
       const next: Streak = s ? { total: s.total + w, agree: s.agree + w, lastAgreeAt: atMs } : { total: now ? 0 : w, agree: now ? 0 : w, lastAgreeAt: atMs };
-      const needMs = (now ? this.appearNeed(key) - 1 : this.need(key)) * this.stepMs;
+      // 장 수가 소수(사람 등장 0.6초 = 1.3장)여도 ms로 반올림해 같은 시각에 인정한다
+      const needMs = Math.round((now ? this.appearNeed(key) - 1 : this.need(key)) * this.stepMs);
       if (next.total < needMs || next.agree * 2 < next.total) {
         this.streak.set(key, next);
         this.lastAt.set(key, atMs);

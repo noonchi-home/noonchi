@@ -385,3 +385,24 @@ describe("집 상태 노드", () => {
   });
 
 });
+
+// 시연자 손 규칙 3(2026-11-25 사용자 결정): 로봇 실행 단계 중에는 아래 가장자리에 닿고 얼굴 관절이 없는 사람 상자를 사용자로 세지 않는다.
+// 실행 단계 중인지는 집 상태 노드가 /act/phone_changes(가기·집기·놓기·하기 명령)로 안다
+describe("집 상태 노드: 로봇 실행 단계 중 사람 세기", () => {
+  it("폰에 가기 명령이 떠 있는 동안은 아래 가장자리에 닿은 사람 상자(얼굴 관절 모름)를 사람으로 세지 않고, 명령을 거두면 센다", async () => {
+    const r = await rig();
+    const low = det("person", [100, 200, 200, 160], 0.9);
+    const appeared = () => changesOf(r.got).filter((c) => c.kind === "person_appeared");
+    await r.act.publish("/act/phone_changes", { cmd: { type: "command", id: "plan:p", step: "plan:p:1", text: "식탁으로 가 주세요", vision: null,
+      choices: [{ id: "done", label: "완료" }], speak: true, target: null, kind: "go" } });
+    await r.flush();
+    for (let t = 1000; t <= 2500; t += 100) await yolo(r, { kind: "frame", frame: meta(`a${t}`, t), dets: [low] });
+    await r.flush();
+    expect(appeared()).toEqual([]);
+    await r.act.publish("/act/phone_changes", { cmd: { type: "command_clear", id: "plan:p" } });
+    await r.flush();
+    for (let t = 2600; t <= 3500; t += 100) await yolo(r, { kind: "frame", frame: meta(`b${t}`, t), dets: [low] });
+    await r.flush();
+    expect(appeared()).toEqual([expect.objectContaining({ at_ms: 3200 })]);
+  });
+});
