@@ -1,6 +1,7 @@
 // 가전 종류 등록부 구조 검사(tests/kinds-registry.test.ts): src/·ui/src/·scripts/의 TypeScript를 TypeScript 프로그램(구문 트리 + 타입 검사기, TypeScript 7 API)으로 읽어
 // src/devices/kinds.ts 밖의 가전 종류별 표를 찾는다. 까닭: 가전 종류별 값은 src/devices/kinds.ts 등록부 칸으로 둔다(새 종류는 등록부 한 줄 + added_devices.json 한 줄).
 // 「종류 이름」은 DeviceKind의 값(등록부 키), 「카메라 설비 이름」은 FixtureClass의 값이다.
+import { availableParallelism } from "node:os";
 import { join, relative, resolve } from "node:path";
 import { API, type Checker, type Project, type Type } from "typescript/unstable/sync";
 import { SyntaxKind, computeLineStarts, type Node, type SourceFile } from "typescript/unstable/ast";
@@ -47,7 +48,17 @@ export interface KindProject {
 
 /** 저장소 TypeScript 프로젝트(뿌리 tsconfig: src·tests·scripts, ui/tsconfig: ui/src)를 연다. */
 export function openKindProject(root: string): KindProject {
-  const api = new API({ cwd: root });
+  // Windows에서는 모듈 경로 조회가 몰려 두 프로젝트를 여는 데 오래 걸린다.
+  // 설정이 없을 때 이 컴파일러 프로세스에만 병렬도 상한을 적용한다.
+  const maxParallelism = 8;
+  const limitParallelism = process.platform === "win32" && availableParallelism() > maxParallelism && process.env.GOMAXPROCS === undefined;
+  let api: API;
+  if (limitParallelism) process.env.GOMAXPROCS = String(maxParallelism);
+  try {
+    api = new API({ cwd: root });
+  } finally {
+    if (limitParallelism) delete process.env.GOMAXPROCS;
+  }
   const snap = api.updateSnapshot({ openProjects: [join(root, "tsconfig.json"), join(root, "ui", "tsconfig.json")] });
   return { root, projects: [...snap.getProjects()], close: () => api.close() };
 }
