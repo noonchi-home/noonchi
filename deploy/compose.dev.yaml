@@ -1,5 +1,5 @@
-# 이 PC 개발·시험용 Redis(노드 통로). 실제 Redis 시험 때만 켠다(저장소 뿌리에서): docker compose -f deploy/compose.dev.yaml up -d redis
-# 시험·개발 서버는 REDIS_URL=redis://127.0.0.1:6379. 이미지·판·디스크 저장 끔은 compose.yaml redis와 같다.
+# 이 PC 개발·시험용 Redis(노드 통로). 배포는 메모리 버스이고, Redis 통로(src/bus/redis.ts)를 시험할 때만 켠다(저장소 뿌리에서): docker compose -f deploy/compose.dev.yaml up -d redis
+# 시험·개발 서버는 REDIS_URL=redis://127.0.0.1:6379. 디스크 저장은 끈다(켜져 있으면 서버가 시작하지 않는다).
 # 프로젝트 이름을 정해 둔다(없으면 파일 자리 폴더 이름 deploy가 된다).
 name: noonchi-dev
 services:
