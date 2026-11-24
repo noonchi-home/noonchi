@@ -9,7 +9,8 @@ import { DatabaseSync } from "node:sqlite";
 import type { Worker } from "node:worker_threads";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { HistoryDb } from "../src/brain/history/db.js";
-import { BusNode, MemoryBus } from "../src/bus/index.js";
+import { BusNode, MemoryBus, VirtualClock, type Deliver, type NodeName, type ReadMode, type TopicName } from "../src/bus/index.js";
+import { settle } from "../src/record/replay.js";
 import { CUP_FSM_MEMORY } from "../src/brain/decision.js";
 import { historyRoutesVia, ThreadWriter, writeBatch, type HistoryWriter } from "../src/record/index.js";
 import { startServer, type RunningServer } from "../src/server/start.js";
@@ -219,6 +220,47 @@ describe("기록 DB 쓰기 작업 스레드: 리뷰 뒤", () => {
       db.close();
     }
   });
+});
+
+/** 재생 도우미(tests/helpers/assistance-replay.ts)처럼 배달 중인 수도 조용함에 넣는 통로. */
+class CountingBus extends MemoryBus {
+  delivering = 0;
+  override async subscribe<N extends TopicName>(topic: N, node: NodeName, deliver: Deliver<N>, o?: { mode?: ReadMode }) {
+    return super.subscribe(topic, node, async (m) => { this.delivering++; try { return await deliver(m); } finally { this.delivering--; } }, o);
+  }
+  override quiet(): boolean { return super.quiet() && this.delivering === 0; }
+}
+
+describe("재생 장벽과 기록 쓰기", () => {
+  it("장벽은 쓰기의 then에서 이어 보낸 쓰기(도움 줄 → 습관 다시 읽기)까지 기다린다", async () => {
+    const { writer } = await openWriter();
+    const clock = new VirtualClock(Date.UTC(2026, 10, 22, 11));
+    const bus = new CountingBus({ clock, warn: () => {} });
+    const epoch = { boot: "b", home: "h#1" };
+    const devices = new BusNode({ name: "devices", bus, epoch, clock, log: () => {} });
+    const act = new BusNode({ name: "act", bus, epoch, clock, log: () => {} });
+    cleanup.push(async () => { await devices.stop(); await act.stop(); await bus.close(); });
+    let step = "없음";
+    let n = 0;
+    // 서버 act.ts의 도움 줄처럼: 도움 줄 쓰기 → then 습관 다시 읽기 → then 목록 바꿈
+    act.on("/device/result", () => {
+      const k = ++n;
+      step = `도움 ${k} 보냄`;
+      void writer.add("help", clock.now(), "도움", { subject: "a" }).then(() => {
+        step = `습관 ${k} 보냄`;
+        return writer.routines(clock.now());
+      }).then(() => { step = `습관 ${k} 끝`; });
+    });
+    for (const x of [devices, act]) await x.prepare();
+    for (const x of [devices, act]) x.start();
+    const after: string[] = [];
+    for (let i = 1; i <= 10; i++) {
+      await devices.publish("/device/result", { command_id: `c-${i}`, status: "done" });
+      await settle(bus, [devices], undefined, () => writer.flush());
+      after.push(step);
+    }
+    expect(after).toEqual(Array.from({ length: 10 }, (_, i) => `습관 ${i + 1} 끝`));
+  }, 30_000);
 });
 
 describe("서버 기록 DB 연결", () => {

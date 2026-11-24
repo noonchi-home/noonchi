@@ -159,8 +159,8 @@ export class ThreadWriter {
     });
   }
 
-  /** 지금까지 부른 쓰기가 모두 끝날(커밋 또는 실패) 때까지 기다린다. */
-  async flush(): Promise<void> {
+  /** 지금까지 부른 쓰기가 모두 끝날(커밋 또는 실패) 때까지 기다린다. 기다린 쓰기 수를 준다. */
+  async flush(): Promise<number> {
     const waiting = [...this.#pending.keys()];
     await Promise.all(waiting.map((id) => new Promise<void>((r) => {
       const p = this.#pending.get(id);
@@ -168,6 +168,7 @@ export class ThreadWriter {
       const { resolve, reject } = p;
       this.#pending.set(id, { resolve: (v) => { resolve(v); r(); }, reject: (e) => { reject(e); r(); } });
     })));
+    return waiting.length;
   }
 
   /** 남은 쓰기를 커밋하고 연결을 닫는다(연결을 여는 중이면 열린 뒤에 커밋한다). */

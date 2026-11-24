@@ -6,10 +6,14 @@ import { appendFileSync, copyFileSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { monitorEventLoopDelay, performance } from "node:perf_hooks";
-import { afterEach, describe, expect, it } from "vitest";
+import type { Worker } from "node:worker_threads";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { CUP_FSM_MEMORY } from "../src/brain/decision.js";
 import { HistoryDb } from "../src/brain/history/db.js";
 import { runReflection } from "../src/brain/history/reflect.js";
+import { REFLECT_TEXT } from "../src/brain/history/labels.js";
+import { nightSave } from "../src/brain/history/night.js";
+import { reflectInThread, type NightHooks } from "../src/brain/history/night-host.js";
 import { candidateFsmOf } from "../src/brain/pam/adopt.js";
 import type { CandidateFsm } from "../src/contract/pam.js";
 import { fetchRetry } from "../src/shared/net.js";
@@ -99,6 +103,67 @@ const reflectOn = async (s: RunningServer) => {
   const r = await fetchRetry(`${s.url}/api/reflection/run`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ day: DAY }) });
   return { status: r.status, json: (await r.json()) as Record<string, unknown> };
 };
+
+/** 작은 하루 기록 파일. */
+function smallDay(): string {
+  const path = join(mkdtempSync(join(tmpdir(), "rt-night-")), "noonchi.db");
+  const db = HistoryDb.open(path);
+  fillDay(db, 200);
+  db.close();
+  return path;
+}
+
+/** 서버 없이 반성 작업 스레드로 반성한다(저장은 시험이 연 쓰기 연결로). */
+async function threadReflect(path: string, hooks: Partial<NightHooks> = {}) {
+  const w = HistoryDb.open(path);
+  try {
+    return await reflectInThread({ path, offsetMinutes: 540, day: DAY, env: { INFERENCE_MODE: "vllm", ...pamLlmEnv(pam!) } }, {
+      store: { add: (k, t, x, o) => w.add(k, t, x, o), saveNight: (a) => nightSave(w, a) }, now: () => Date.now(), ...hooks,
+    });
+  } finally {
+    w.close();
+  }
+}
+
+describe("반성 작업 스레드의 LLM 요청", () => {
+  it("LLM 요청 하나가 EFAULT로 실패해도 반성 스레드가 다시 시도해 그날 반성을 마친다", async () => {
+    pam = await fakePam();
+    let calls = 0;
+    const flaky = (async (url, init) => {
+      if (calls++ === 0) throw new TypeError("fetch failed", { cause: Object.assign(new Error("connect EFAULT 127.0.0.1"), { code: "EFAULT", syscall: "connect" }) });
+      return fetch(url, init);
+    }) as typeof fetch;
+    const r = await threadReflect(smallDay(), { fetch: flaky });
+    expect(r).toMatchObject({ ok: true });
+    expect(calls).toBeGreaterThan(1);
+  }, 60_000);
+
+  it("이미 끊긴 신호로 부르면 취소 결과이고 메인 LLM 요청은 0번이다", async () => {
+    pam = await fakePam();
+    let calls = 0;
+    const counted = ((url, init) => { calls++; return fetch(url, init); }) as typeof fetch;
+    const ac = new AbortController();
+    ac.abort();
+    expect(await threadReflect(smallDay(), { signal: ac.signal, fetch: counted })).toEqual({ ok: false, error: REFLECT_TEXT.cancelled });
+    expect(calls).toBe(0);
+  }, 60_000);
+
+  it("반성 작업 스레드가 죽으면 진행 중인 메인 LLM 요청을 끊고 반성은 실패로 돌아온다", async () => {
+    pam = await fakePam();
+    let seen: AbortSignal | undefined;
+    const workers: Worker[] = [];
+    const hang = ((_url, init) => {
+      seen = init?.signal ?? undefined;
+      return new Promise<Response>((_, reject) => init?.signal?.addEventListener("abort", () => reject(new Error("끊김"))));
+    }) as typeof fetch;
+    const run = threadReflect(smallDay(), { fetch: hang, onWorker: (w) => workers.push(w) });
+    run.catch(() => {});
+    await vi.waitFor(() => expect(seen).toBeDefined(), { timeout: 20_000 });
+    await workers.at(-1)!.terminate();
+    await expect(run).rejects.toThrow(/반성 작업 스레드가 끝났어요/);
+    expect(seen!.aborted).toBe(true);
+  }, 60_000);
+});
 
 describe("밤 반성과 메인 스레드", () => {
   it("큰 하루 기록(12,000줄)을 서버가 반성하는 동안 메인 스레드 최대 막힘이 한도 안이다", async () => {

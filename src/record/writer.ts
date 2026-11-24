@@ -141,8 +141,8 @@ export interface WriterStats { commits: number; batches: number; jobs: number }
 
 /** 기록 DB 쓰기 함수 묶음: 일 표의 일마다 같은 이름의 함수(커밋이 끝나면 풀리는 Promise). */
 export type HistoryWriter = { [K in WriteOp]: (...args: WriteArgs<K>) => Promise<WriteResult<K>> } & {
-  /** 지금까지 보낸 쓰기가 모두 커밋(또는 실패)될 때까지 기다린다. */
-  flush(): Promise<void>;
+  /** 지금까지 보낸 쓰기가 모두 커밋(또는 실패)될 때까지 기다린다. 기다린 쓰기 수를 준다(재생 장벽이 이어 보낸 쓰기를 알아본다). */
+  flush(): Promise<number>;
   stats(): Promise<WriterStats>;
   /** 기록 DB에 쓸 수 있는가(작업 스레드가 연속 3번 죽으면 false). */
   writable(): boolean;
@@ -181,7 +181,7 @@ export function directWriter(db: HistoryDb): HistoryWriter {
   };
   return {
     ...writerOps(call),
-    flush: async () => {},
+    flush: async () => 0,
     stats: async () => ({ ...stats }),
     writable: () => !closed,
     close: async () => { closed = true; },

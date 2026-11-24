@@ -52,26 +52,58 @@ describe("도움 습관 다시 읽기", () => {
 });
 
 describe("사진 줄", () => {
-  it("사진 줄을 쓰지 못하면 저장한 사진과 크기 정보 파일을 지우고, 쓰면 둔다", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "photo-"));
-    const save = (name: string) => {
-      const path = join(dir, `${name}.jpg`);
-      writeFileSync(path, "jpeg");
-      writeFileSync(join(dir, `${name}.json`), "{}");
-      return { id: name, atMs: 1, path };
-    };
+  const dir = mkdtempSync(join(tmpdir(), "photo-"));
+  const save = (name: string) => {
+    const path = join(dir, `${name}.jpg`);
+    writeFileSync(path, "jpeg");
+    writeFileSync(join(dir, `${name}.json`), "{}");
+    return { id: name, atMs: 1, path };
+  };
+
+  it("사진 줄을 두 번 다 쓰지 못하면 저장한 사진과 크기 정보 파일을 지우고, 쓰면 둔다", async () => {
     const logs: string[] = [];
-    const failing = photoRecorder({ photo: async () => { throw new Error("못 씀"); } }, "사진 저장", (l) => logs.push(l));
+    let tries = 0;
+    const failing = photoRecorder({ photo: async () => { tries++; throw new Error("못 씀"); }, writable: () => true }, "사진 저장", (l) => logs.push(l));
     const lost = save("lost");
     failing(lost);
     await vi.waitFor(() => expect(existsSync(lost.path)).toBe(false));
     expect(existsSync(join(dir, "lost.json"))).toBe(false);
+    expect(tries).toBe(2);
     expect(logs).toHaveLength(1);
-    const ok = photoRecorder({ photo: async () => {} }, "사진 저장", () => {});
+    const ok = photoRecorder({ photo: async () => {}, writable: () => true }, "사진 저장", () => {});
     const kept = save("kept");
     ok(kept);
     await flush();
     expect(existsSync(kept.path)).toBe(true);
+  });
+
+  it("작업 스레드가 한 번 다시 떠서 첫 쓰기가 실패해도 한 번 더 보내 사진을 둔다", async () => {
+    let tries = 0;
+    const record = photoRecorder({ photo: async () => { if (tries++ === 0) throw new Error("작업 스레드가 끝남"); }, writable: () => true }, "사진 저장", () => {});
+    const photo = save("again");
+    record(photo);
+    await vi.waitFor(() => expect(tries).toBe(2));
+    await flush();
+    expect(existsSync(photo.path)).toBe(true);
+  });
+
+  it("파일 지우기가 실패해도 처리 안 된 거절 없이 로그만 남긴다", async () => {
+    const unhandled: unknown[] = [];
+    const onUnhandled = (e: unknown) => { unhandled.push(e); };
+    process.on("unhandledRejection", onUnhandled);
+    try {
+      const logs: string[] = [];
+      // 폴더는 rmSync(force)로 지우지 못한다(EISDIR)
+      const folder = mkdtempSync(join(dir, "folder-"));
+      const record = photoRecorder({ photo: async () => { throw new Error("못 씀"); }, writable: () => false }, "사진 저장", (l) => logs.push(l));
+      record({ id: "folder", atMs: 1, path: folder });
+      await vi.waitFor(() => expect(logs.length).toBeGreaterThanOrEqual(1));
+      await new Promise((r) => setTimeout(r, 50));
+      expect(unhandled).toEqual([]);
+      expect(existsSync(folder)).toBe(true);
+    } finally {
+      process.off("unhandledRejection", onUnhandled);
+    }
   });
 });
 

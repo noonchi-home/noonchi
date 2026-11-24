@@ -15,9 +15,9 @@ export interface FetchRequest { url: string; method?: string; headers: [string, 
 export interface FetchReply { status: number; statusText: string; headers: [string, string][]; body: string }
 
 export type NightIn =
-  | { run: number; job: NightJob }
+  | { run: number; job: NightJob; aborted?: true }
   | { abort: number }
-  | { reply: number; value?: unknown; error?: string; name?: string };
+  | { reply: number; value?: unknown; error?: string; name?: string; code?: string; syscall?: string };
 export type NightOut =
   | { ready: true }
   | { call: number; run: number; kind: NightCall; args: unknown[] }
@@ -72,8 +72,9 @@ function proxyFetch(run: number): typeof fetch {
   };
 }
 
-async function run(id: number, job: NightJob): Promise<void> {
+async function run(id: number, job: NightJob, aborted: boolean): Promise<void> {
   const ac = new AbortController();
+  if (aborted) ac.abort(new Error("반성을 끊었어요"));
   runs.set(id, ac);
   let db: HistoryDb | null = null;
   try {
@@ -100,14 +101,19 @@ async function run(id: number, job: NightJob): Promise<void> {
 }
 
 port.on("message", (m: NightIn) => {
-  if ("run" in m) void run(m.run, m.job);
+  if ("run" in m) void run(m.run, m.job, m.aborted === true);
   else if ("abort" in m) runs.get(m.abort)?.abort(new Error("반성을 끊었어요"));
   else {
     const w = waiting.get(m.reply);
     if (!w) return;
     waiting.delete(m.reply);
-    if (m.error !== undefined) w.reject(Object.assign(new Error(m.error), { name: m.name ?? "Error" }));
-    else w.resolve(m.value);
+    if (m.error !== undefined) {
+      // 메인 fetch 오류를 되살린다: fetchRetry는 cause의 code·syscall로 EFAULT를 다시 시도한다
+      const err = m.name === "TypeError" ? new TypeError(m.error) : new Error(m.error);
+      err.name = m.name ?? "Error";
+      if (m.code) Object.assign(err, { cause: { code: m.code, ...(m.syscall ? { syscall: m.syscall } : {}) } });
+      w.reject(err);
+    } else w.resolve(m.value);
   }
 });
 post({ ready: true });

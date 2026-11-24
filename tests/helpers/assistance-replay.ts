@@ -5,6 +5,7 @@ import { inProcessModel } from "./in-process-model.js";
 import { BusNode, MemoryBus, VirtualClock, type Body, type Deliver, type Envelope, type NodeName, type ReadMode, type TopicName } from "../../src/bus/index.js";
 import { settle } from "../../src/record/replay.js";
 import { startServer } from "../../src/server/start.js";
+import { prepareReflectionThread } from "../../src/brain/index.js";
 
 class TraceBus extends MemoryBus {
   readonly sent: Envelope<TopicName>[] = [];
@@ -61,6 +62,8 @@ export async function assistanceReplay(options: {
   const fetcher = globalThis.fetch;
   const startupDiagnostics: string[] = [];
   globalThis.fetch = model.fetch;
+  // 밤 반성을 쓰면 반성 작업 스레드를 미리 띄워 둔다(처음 반성이 모듈을 불러오느라 2초쯤 늦지 않게)
+  if (options.reflectAt && options.reflectAt !== "off") await prepareReflectionThread();
   const server = await drive(clock, startServer({
     env: { RUNTIME_DIR: runtimeDir, TWIN_STUDIO_DIR: options.studioDir ?? resolve("twin"), HOME_ID: options.home, HOST: "127.0.0.1", PORT: "0",
       HUB: "memory", PHONE_HOST: "127.0.0.1", PHONE_PORT: "0", BRAIN: "1", REFLECT_AT: options.reflectAt ?? "off",
