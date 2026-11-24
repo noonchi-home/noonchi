@@ -11,11 +11,14 @@ export const REPLAY_INPUTS: readonly TopicName[] = [
   "/brain/decision", "/brain/plan", "/perception/view", "/perception/detections", "/perception/analysis", "/perception/scene", "/perception/look_result", "/phone/pose", "/phone/heard", "/phone/progress", "/device/changes", "/world/input",
 ];
 
-/** 처리 장벽: 모든 노드의 줄이 비고 통로에 예약된 배달이 없는 상태가 두 번 이어질 때까지 기다린다(이어지는 발행이 몇 단계여도). */
-export async function settle(bus: MemoryBus, nodes: readonly BusNode[], maxRounds = 10_000): Promise<void> {
+/** 처리 장벽: 모든 노드의 줄이 비고 통로에 예약된 배달이 없는 상태가 두 번 이어질 때까지 기다린다(이어지는 발행이 몇 단계여도).
+ *  writes: 차례마다 기다릴 기록 쓰기(서버의 historyWriter.flush). 기록 노드는 기록 작업 스레드가 커밋한 뒤에야 배달을 마치므로,
+ *  기다리지 않으면 커밋이 늦을 때(병렬 시험) 장벽이 그동안 헛돌아 maxRounds를 넘긴다. */
+export async function settle(bus: MemoryBus, nodes: readonly BusNode[], maxRounds = 10_000, writes?: () => Promise<unknown>): Promise<void> {
   for (let calm = 0, round = 0; calm < 2; round++) {
     if (round > maxRounds) throw new Error("재생 장벽: 노드가 멈추지 않아요");
     await Promise.all(nodes.map((n) => n.idle()));
+    if (writes) await writes();
     await new Promise((r) => setImmediate(r));
     calm = bus.quiet() && nodes.every((n) => !n.busy()) ? calm + 1 : 0;
   }

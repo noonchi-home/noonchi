@@ -78,7 +78,8 @@ export async function assistanceReplay(options: {
   }));
   const actors = new Map<NodeName, BusNode>();
   let answers = 0;
-  const barrier = () => settle(bus, [...actors.values()]);
+  // 기록 노드의 배달은 기록 작업 스레드가 커밋한 뒤에 끝나므로 장벽은 차례마다 쓰기를 기다린다
+  const barrier = () => settle(bus, [...actors.values()], undefined, () => server.historyWriter.flush());
   const publish = async <T extends TopicName>(actor: NodeName, name: T, body: Body<T>) => {
     let node = actors.get(actor);
     if (!node) {

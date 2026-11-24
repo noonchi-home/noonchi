@@ -152,6 +152,8 @@ describe("실제 모드로 바꾸기", () => {
     expect((await goLive()).status).toBe(200);
     expect((await goLive()).status).toBe(200);
     expect((await post("/api/setup/mode", { mode: "test" })).status).toBe(200);
+    // 기록은 기록 작업 스레드가 커밋한 뒤에 읽힌다
+    await srv!.historyWriter.flush();
     expect(srv!.history.list({ kinds: ["mode"] }).map((r) => [r.text, r.data])).toEqual([["실제 모드", { mode: "live" }], ["시험 모드", { mode: "test" }]]);
   });
 });
