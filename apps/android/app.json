@@ -7,7 +7,7 @@
     "orientation": "default",
     "scheme": "noonchi",
     "icon": "./assets/icon.png",
-    "backgroundColor": "#a1143e",
+    "backgroundColor": "#A50034",
     "updates": { "enabled": false },
     "android": {
       "package": "app.noonchi.android",

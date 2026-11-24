@@ -27,10 +27,13 @@ test("the native mark shares one accessible, tinted, high-density artwork in the
   assert.equal(png[25], 6, "The source PNG must carry an alpha channel for native tinting");
 });
 
-test("the native splash uses the same red as the loading screen behind the wordmark", () => {
+test("the native splash and the app window use the same red as the loading screen behind the wordmark", () => {
   const background = /wordmarkBackground\s*=\s*"(#[0-9A-Fa-f]{6})"/.exec(read("BrandWordmark.tsx"))?.[1];
   assert.equal(background, "#A50034");
-  const plugins = JSON.parse(read("app.json")).expo.plugins as [string, Record<string, unknown>][];
+  const expo = JSON.parse(read("app.json")).expo;
+  const plugins = expo.plugins as [string, Record<string, unknown>][];
   const splash = plugins.find(([name]) => name === "expo-splash-screen")?.[1];
   assert.equal(String(splash?.backgroundColor).toUpperCase(), background);
+  // 앱 창 배경(prebuild의 activityBackground)이 다르면 스플래시와 로딩 화면 사이에 다른 빨강이 비친다
+  assert.equal(String(expo.backgroundColor).toUpperCase(), background);
 });
