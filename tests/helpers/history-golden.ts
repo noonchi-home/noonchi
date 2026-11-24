@@ -54,16 +54,17 @@ const ended = (r: HistoryRow): boolean => {
 export function reflectionRows(db: HistoryDb): string[] {
   const all = (kinds: HistoryRow["kind"][]) => db.list({ kinds, limit: Number.MAX_SAFE_INTEGER });
   const acted = all(["decision", "execution", "feedback"]);
-  const started = new Set(acted.filter((r) => r.kind === "execution" && r.text === EXEC_TEXT.decided).map((r) => r.subject));
+  // 판단 id는 날마다 다시 1부터라 id만으로는 다른 날 판단과 겹친다: 계획을 시작한 판단은 그 계획 「판단」 줄 앞의 대기 아닌 같은 id 판단(가장 늦은 것) 한 줄이다
+  const decided = acted.filter((r) => r.kind === "execution" && r.text === EXEC_TEXT.decided && r.subject?.startsWith("plan:"));
+  const starterOf = (d: HistoryRow) => acted.filter((r) => r.kind === "decision" && `plan:${r.subject}` === d.subject && r.text !== DECISION_TEXT.wait && r.at_ms <= d.at_ms).at(-1);
+  const starters = new Set(decided.map(starterOf).filter((r): r is HistoryRow => !!r));
   const periodic = (r: HistoryRow) =>
-    (r.kind === "decision" && !started.has(`plan:${r.subject}`)) || (r.kind === "execution" && DECISION_NOTES.has(r.text));
+    (r.kind === "decision" && !starters.has(r)) || (r.kind === "execution" && DECISION_NOTES.has(r.text));
   const doneAnswer = (r: HistoryRow) => r.kind === "feedback" && (r.data as { choice?: string } | null)?.choice === "done";
   // 계획이 진행 중인 구간(시작한 판단 ~ 그 계획의 완료·실패 줄, 끝 줄이 없으면 기록 끝까지): 그 안에서 같은 행동을 고른 주기 판단과
   // 그 메모(같은 행동을 진행 중)는 [있음]에도 넣지 않는다. 계획 전·끝난 뒤의 같은 행동 판단은 남긴다.
-  // 판단 id는 날마다 다시 1부터라 대기 판단이 다른 날 계획 id와 겹칠 수 있다: 시작한 판단은 「판단」 줄 앞의 대기 아닌 같은 id 판단이다
-  const spans = acted.filter((r) => r.kind === "execution" && r.text === EXEC_TEXT.decided && r.subject?.startsWith("plan:")).flatMap((d) => {
-    const id = d.subject!.slice("plan:".length);
-    const starter = acted.filter((r) => r.kind === "decision" && r.subject === id && r.text !== DECISION_TEXT.wait && r.at_ms <= d.at_ms).at(-1);
+  const spans = decided.flatMap((d) => {
+    const starter = starterOf(d);
     if (!starter) return [];
     const end = acted.find((r) => r.kind === "execution" && r.subject === d.subject && r.at_ms >= d.at_ms && ended(r));
     return [{ starter, action: starter.text, from: starter.at_ms, to: end ? end.at_ms : Number.POSITIVE_INFINITY }];

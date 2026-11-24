@@ -62,6 +62,11 @@ describe("기록 DB 같음 시험의 모양", () => {
   it("판단 id가 날마다 다시 1부터라 대기 판단이 다른 날 계획 id와 겹쳐도 대기 판단은 [있음]에 남는다(대기는 계획을 시작하지 않는다)", () => {
     const rows = day([["decision", "대기", "pam-2"], ...plan, ["decision", "대기", "pam-5"]]);
     expect(rows).toContain("[있음] decision 대기 valid");
+    // 다른 날의 대기 판단 pam-2(계획 앞이든 뒤든)는 계획 pam-2와 id만 같다: 차례에 넣지 않는다(합성 주 시험에서 오늘 계획 id가 바뀌면 지난날 줄이 바뀌었다)
+    expect(rows).not.toContain("[판단·실행·답] decision 대기 valid");
+    expect(day([...plan, ["decision", "대기", "pam-2"]])).toEqual(day(plan).concat("[있음] decision 대기 valid"));
+    // 다른 날 같은 id의 다른 행동 판단도 계획을 시작한 판단이 아니다
+    expect(day([["decision", "에어컨 켜기", "pam-2"], ...plan])).toContain("[있음] decision 에어컨 켜기 valid");
   });
 
   it("사람 단계의 「완료」 답은 비전으로도 끝나는 단계라 빼고, 승인·거절처럼 사람만 정하는 답은 남긴다", () => {

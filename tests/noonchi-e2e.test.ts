@@ -46,11 +46,21 @@ afterEach(async (ctx) => {
 
 const inbox = (list: Msg[]) => (ws: WebSocket) => ws.on("message", (d, bin) => { if (!bin) list.push(JSON.parse(String(d)) as Msg); });
 const PERSON = det("person", 0.9, [40, 40, 120, 280]);
-/** 떠남 화살표(컵 치우기)는 직전 상태 drinking에서만 나간다: 사람이 보여 마시는 중(VLM 사실)이고 판단이 그 상태를 본 뒤 사람이 떠난다. */
-async function drinkThenLeave(people: Detection[], dash: Msg[], pump: (until: () => boolean) => Promise<void>): Promise<void> {
+/** 가짜 서버가 받은 장면 VLM 요청 수. */
+const sceneCalls = (vlm: FakeServer) => vlm.requests.filter((r) => (r.body as Msg | undefined)?.response_format?.json_schema?.name === "scene_observation").length;
+/** 떠남 화살표(컵 치우기)는 직전 상태 drinking에서만 나간다: 사람이 보여 마시는 중(VLM 사실)이고 판단이 그 상태를 본 뒤 사람이 떠난다.
+ *  사람은 장면 VLM이 한 장을 본 바로 뒤에 들어온다. VLM은 2초(VLM_FRAME_MS 기본)마다 한 장을 보고 사람 등장 확인은 0.6초(PERSON_RETURN_MS)라,
+ *  들어오는 때를 맞추지 않으면 그 등장의 첫 VLM 답이 등장 확인 전에 오는 판(사실만 넣고 「사람 마시는 중」 줄은 없음, src/world/state/facts.ts applyScene)과
+ *  확인 뒤에 오는 판(줄 있음)이 섞인다. 맞추면 첫 답은 늘 등장 확인 뒤다.
+ *  armed: 미리 세운 목표(Agent Trace 「준비 시작」)가 선 뒤에 떠난다. 목표는 등장 확인 뒤 찍힌 사진의 사실로만 서서(src/act/tasks.ts usingNow)
+ *  첫 drinking 판단보다 늦을 수 있다. 목표가 서지 않는 장면(컵이 이미 싱크대 안)에는 켜지 않는다. */
+async function drinkThenLeave(people: Detection[], dash: Msg[], pump: (until: () => boolean) => Promise<void>, vlm: FakeServer, o: { armed?: boolean } = {}): Promise<void> {
+  const sampled = sceneCalls(vlm);
+  await pump(() => sceneCalls(vlm) > sampled);
   const from = dash.length;
   people.push(PERSON);
-  await pump(() => dash.slice(from).some((m) => m.type === "brain" && m.event.type === "decision" && m.event.fsm?.state === "drinking"));
+  await pump(() => dash.slice(from).some((m) => m.type === "brain" && m.event.type === "decision" && m.event.fsm?.state === "drinking")
+    && (!o.armed || dash.slice(from).some((m) => m.type === "trace" && (m.rows as Msg[]).some((r) => r.output === "준비 시작"))));
   people.splice(0);
 }
 
@@ -62,7 +72,8 @@ describe("NOONCHI 처음부터 끝까지", () => {
     fake = session.fake;
     pam = session.pam;
     closeCup = session.close;
-    await drinkThenLeave(people, dash, pump);
+    // 이 장면은 미리 세운 목표가 준비 시작 → 실행으로 이어지는지 본다(아래 Agent Trace 다시 받기)
+    await drinkThenLeave(people, dash, pump, fake!, { armed: true });
     await pump(() => !!said("식탁으로 가 주세요"));
     const first = said("식탁으로 가 주세요")!;
     expect(first).toMatchObject({ type: "command", id: expect.stringMatching(/^plan:pam-\d+$/), step: `${first.id}:1`, text: "식탁으로 가 주세요", choices: [{ id: "done", label: "완료" }], target: { id: "table_1" }, speak: true, kind: "go" });
@@ -120,13 +131,13 @@ describe("NOONCHI 처음부터 끝까지", () => {
     expect(JSON.stringify(traced)).not.toMatch(/자리를 비워 컵을 치운다|다 했어|image_url/);
     // 다음 판단(사람이 다시 와서 먹다 떠남 → 컵 치우기)은 싱크대 안 컵을 대상으로 삼지 않고 실행 전 검사에서 멈춘다
     scene.personAct = "eating";
-    await drinkThenLeave(people, dash, pump);
+    await drinkThenLeave(people, dash, pump, fake!);
     await pump(async () => (await history("execution")).rows.some((r) => r.subject !== planId && r.text === CHECK_TEXT.in_sink));
     // 그 뒤 VLM이 같은 컵을 「식탁 위」로 봐도(실제 판정에서 싱크대 속 컵에 나온 답) 실행 추적이 넣은 컵이라 다음 판단도 계획 전 검사에서 멈춘다
     scene.cupPlace = "on_table";
     const cupNow = async () => ((await (await fetchRetry(`${srv!.url}/api/world`)).json()) as { world: WorldView }).world.objects.find((o) => o.cls === "cup");
     await pump(async () => { const c = await cupNow(); return c?.surface === "sink_1" && c.facts.place?.value === "on_counter"; });
-    await drinkThenLeave(people, dash, pump);
+    await drinkThenLeave(people, dash, pump, fake!);
     const seen = Math.max(...(await history("execution")).rows.map((r) => r.id));
     await pump(async () => (await history("execution")).rows.some((r) => r.id > seen && r.subject !== planId && r.text === CHECK_TEXT.in_sink));
 
@@ -268,7 +279,7 @@ describe("NOONCHI 처음부터 끝까지", () => {
     const actTarget = (planId: string) => dash.find((m) => m.type === "plan" && m.plan?.id === planId)?.plan.steps.find((s: Msg) => s.kind === "act")?.target;
 
     // 첫 계획(cup_1)의 네 단계를 「완료」로 넘긴다
-    await drinkThenLeave(people, dash, pump);
+    await drinkThenLeave(people, dash, pump, fake!);
     await pump(() => phone.some((m) => m.type === "command" && m.speak && /^plan:pam-\d+:1$/.test(m.step)));
     const planId = phone.find((m) => m.type === "command" && m.speak)!.id as string;
     expect(actTarget(planId)).toMatchObject({ objectId: "cup_1" });
@@ -295,7 +306,7 @@ describe("NOONCHI 처음부터 끝까지", () => {
     }
     await pump(async () => (await history("execution")).rows.some((r) => r.subject === planId && r.text === "완료"));
     // 다음 계획(사람이 다시 마시다 떠남, 같은 행동 다시 계획 간격 15초 뒤): 이미 치운 cup_1이 아니라 cup_2로 첫 명령까지 간다
-    await drinkThenLeave(people, dash, pump);
+    await drinkThenLeave(people, dash, pump, fake!);
     // 앞 계획의 완료 문장(done:)은 다음 계획 명령이 아니다
     const nextPlan = (m: Msg) => m.type === "command" && m.speak && m.id !== planId && !String(m.id).startsWith("done:");
     await pump(() => phone.some(nextPlan), 40_000);
