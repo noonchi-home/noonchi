@@ -1128,6 +1128,25 @@ describe("영상 입력 모드: 단계 영상·걷기", () => {
       closeTo(lastPose(sent).position, [0.84, 1.4, -1.12]);
     });
 
+    // 안내의 마지막 구간(서는 자리)은 대상 옆일 수 있다. 영상 속 사람은 다가가는 물건을 보며 걷는다: 걷는 쪽을 보면 화면 가운데 물건이 옆으로 투영된다
+    // (2026-11-25 wide-glass: 서는 자리 쪽으로 36° 돌아 식탁 위 컵이 x 11.71 바닥·침실 3 경계로 갔다)
+    it("안내(guide)의 마지막 구간(서는 자리)으로 걷는 go 조각은 걷는 쪽이 아니라 go 대상을 바라보며 걸어 서는 자리에 닿는다", async () => {
+      fakeTimers();
+      const { ws, sent, video, startAr } = make({}, STEPS, { later: { duration: 4 } as never });
+      await startAr();
+      ws.push(ALIGNED);
+      video.end();
+      // 대상 식탁은 정면(0, 0.75, −1.5), 서는 자리는 오른쪽 앞(0.6, 0, −1.0)
+      ws.push(goTable({ guide: { revision: 1, near_m: 0.32, remaining: [{ kind: "stand", room: "kitchen", ar: [0.6, 0, -1.0] }] } }));
+      await after(1500);
+      await after(2000);
+      const mid = lastPose(sent);
+      expect(mid.position[0]).toBeGreaterThan(0.1);
+      expect(yawOf(mid.orientation)).toBeCloseTo(0, 2);
+      await after(2000);
+      closeTo(lastPose(sent).position, [0.6, 1.4, -1.0]);
+    });
+
     it("rate(재생 빠르기, 0.25~2, 기본 1): 첫 영상·단계 영상을 그 빠르기로 틀고, go 걷기는 조각 길이 ÷ 빠르기(0.75면 4초 조각이 5.33초)에 맞춰 닿는다", async () => {
       expect(videoParams(new URLSearchParams("clip=a.mp4"))).toMatchObject({ rate: 1 });
       for (const [raw, r] of [["0.75", 0.75], ["0.1", 0.25], ["3", 2], ["x", 1]] as const) expect(videoParams(new URLSearchParams(`clip=a.mp4&rate=${raw}`))!.rate).toBe(r);
