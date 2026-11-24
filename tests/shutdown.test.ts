@@ -1,12 +1,14 @@
 // 종료(src/server/shutdown.ts): SIGTERM·SIGINT를 받으면 서버를 한 번 닫고 끝낸다(docker stop, Ctrl+C).
+// NOONCHI_STDIN_CONTROL=1이면 표준 입력 shutdown 줄·표준 입력 끝으로도 같은 종료를 부른다(데스크톱 앱, Windows는 SIGTERM에 정리 없이 죽는다).
 import { EventEmitter } from "node:events";
 import { spawn } from "node:child_process";
 import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { PassThrough } from "node:stream";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { describe, expect, it, vi } from "vitest";
-import { installShutdown } from "../src/server/shutdown.js";
+import { installShutdown, installStdinShutdown } from "../src/server/shutdown.js";
 
 const fakeProc = () => Object.assign(new EventEmitter(), { exit: vi.fn() });
 const main = fileURLToPath(new URL("../src/server/main.ts", import.meta.url));
@@ -53,6 +55,101 @@ describe("종료", () => {
     const install = src.indexOf("installShutdown(process");
     expect(install).toBeGreaterThan(-1);
     expect(install).toBeLessThan(src.indexOf("서버: ${url}"));
+  });
+
+  describe("표준 입력 종료(NOONCHI_STDIN_CONTROL=1, 데스크톱 앱)", () => {
+    const on = { NOONCHI_STDIN_CONTROL: "1" };
+    // run을 직접 부르지 않는다: 표준 입력 처리기가 run을 몇 번 불렀는지만 본다
+    const setup = (env: Record<string, string | undefined> = on) => {
+      const input = new PassThrough();
+      const run = vi.fn();
+      const reading = installStdinShutdown(input, run, env);
+      return { input, run, reading };
+    };
+    const settle = () => new Promise((r) => setTimeout(r, 20));
+
+    it("shutdown 줄이면 run을 한 번 부른다", async () => {
+      const { input, run } = setup();
+      input.write("상태\r\nshutdown\r\n");
+      await settle();
+      expect(run).toHaveBeenCalledTimes(1);
+    });
+
+    it("다른 줄로는 부르지 않는다", async () => {
+      const { input, run } = setup();
+      input.write("shut\nshutdownx\n");
+      await settle();
+      expect(run).not.toHaveBeenCalled();
+    });
+
+    it("표준 입력이 끝나면(실행기가 죽음) run을 한 번 부른다", async () => {
+      const { input, run } = setup();
+      input.end();
+      await settle();
+      expect(run).toHaveBeenCalledTimes(1);
+    });
+
+    it("표준 입력 오류도 끝남으로 보고 run을 한 번 부른다", async () => {
+      const { input, run } = setup();
+      input.destroy(new Error("EPIPE"));
+      await settle();
+      expect(run).toHaveBeenCalledTimes(1);
+    });
+
+    it("shutdown 줄과 표준 입력 끝이 겹쳐도 run은 한 번이다", async () => {
+      const { input, run } = setup();
+      input.end("shutdown\nshutdown\n");
+      await settle();
+      expect(run).toHaveBeenCalledTimes(1);
+    });
+
+    it("환경 변수가 없으면 표준 입력을 읽지 않는다", async () => {
+      const { input, run, reading } = setup({});
+      expect(reading).toBe(false);
+      expect(input.listenerCount("data")).toBe(0);
+      expect(input.readableFlowing).toBeNull();
+      input.end("shutdown\n");
+      await settle();
+      expect(run).not.toHaveBeenCalled();
+    });
+
+    it("installShutdown과 이으면 shutdown 줄 하나로 한 번 닫고 0으로 끝낸다", async () => {
+      const proc = fakeProc();
+      const close = vi.fn(async () => {});
+      const input = new PassThrough();
+      installStdinShutdown(input, installShutdown(proc, close), on);
+      input.end("shutdown\n");
+      await settle();
+      expect(close).toHaveBeenCalledTimes(1);
+      expect(proc.exit).toHaveBeenCalledWith(0);
+    });
+
+    it("main.ts가 서버 줄 전에 표준 입력 종료를 건다", () => {
+      const src = readFileSync(main, "utf8");
+      const install = src.indexOf("installStdinShutdown(process.stdin");
+      expect(install).toBeGreaterThan(-1);
+      expect(install).toBeLessThan(src.indexOf("서버: ${url}"));
+    });
+
+    // Windows에서도 도는 실제 시험: 데스크톱 앱처럼 표준 입력으로 끈다
+    it.each([
+      ["shutdown 줄을 받으면", (stdin: NodeJS.WritableStream) => stdin.write("shutdown\n")],
+      ["표준 입력이 끝나면", (stdin: NodeJS.WritableStream) => stdin.end()],
+    ])("실제 서버가 %s 「종료하는 중…」을 찍고 0으로 끝난다", async (_name, stop) => {
+      const cwd = mkdtempSync(join(tmpdir(), "cwd-"));
+      const tsx = pathToFileURL(fileURLToPath(new URL("../node_modules/tsx/dist/loader.mjs", import.meta.url))).href;
+      const child = spawn(process.execPath, ["--import", tsx, main], {
+        cwd, env: { ...process.env, PORT: "0", HUB: "memory", RUNTIME_DIR: mkdtempSync(join(tmpdir(), "rt-")), PHONE_PORT: "", REDIS_URL: "", NOONCHI_STDIN_CONTROL: "1" },
+        stdio: ["pipe", "pipe", "pipe"], windowsHide: true,
+      });
+      let out = "";
+      child.stdout!.on("data", (d) => { out += String(d); });
+      await new Promise<void>((ok) => child.stdout!.on("data", () => { if (out.includes("서버:")) ok(); }));
+      stop(child.stdin!);
+      const code = await new Promise<number | null>((ok) => child.on("exit", ok));
+      expect(out).toContain("종료하는 중…");
+      expect(code).toBe(0);
+    }, 60_000);
   });
 
   it.skipIf(process.platform === "win32")("실제 SIGTERM으로 서버가 0으로 끝난다", async () => {

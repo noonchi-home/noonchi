@@ -7,7 +7,7 @@
     "orientation": "default",
     "scheme": "noonchi",
     "icon": "./assets/icon.png",
-    "backgroundColor": "#a1143e",
+    "backgroundColor": "#A50034",
     "updates": { "enabled": false },
     "android": {
       "package": "app.noonchi.android",
@@ -16,7 +16,7 @@
     },
     "plugins": [
       ["expo-camera", { "recordAudioAndroid": false, "barcodeScannerEnabled": true }],
-      ["expo-splash-screen", { "backgroundColor": "#a1143e", "image": "./assets/splash-icon.png", "imageWidth": 72 }]
+      ["expo-splash-screen", { "backgroundColor": "#A50034", "image": "./assets/splash-icon.png", "imageWidth": 72 }]
     ]
   }
 }

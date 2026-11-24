@@ -5,7 +5,7 @@
 import { existsSync } from "node:fs";
 import dotenv from "dotenv";
 import { findServedPhoneUrls, phoneUrlWarning, runCommand } from "../phone/index.js";
-import { installShutdown } from "./shutdown.js";
+import { installShutdown, installStdinShutdown } from "./shutdown.js";
 import { startServer } from "./start.js";
 
 async function main(): Promise<void> {
@@ -15,8 +15,9 @@ async function main(): Promise<void> {
     env: process.env, persistSetup: true, servedPhoneUrls: (port) => findServedPhoneUrls(port, runCommand),
     servedHubUrls: async port => (await findServedPhoneUrls(port, runCommand)).map(url => new URL(url).origin),
   });
-  // 서버 줄을 찍자마자 온 SIGTERM도 받도록 줄을 찍기 전에 건다
-  installShutdown(process, () => srv.close(), { log: console.log });
+  // 서버 줄을 찍자마자 온 SIGTERM·표준 입력 종료도 받도록 줄을 찍기 전에 건다
+  const shutdown = installShutdown(process, () => srv.close(), { log: console.log });
+  installStdinShutdown(process.stdin, shutdown, process.env);
   const { url, hubKind, transport, agent } = srv;
   const provider = agent.provider;
 
