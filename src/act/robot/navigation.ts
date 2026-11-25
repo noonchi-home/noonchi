@@ -77,11 +77,35 @@ export class Navigation {
       }
       this.offPath = !this.crossed && this.path.remaining[0] === first;
     } else if (room !== first.room) {
-      this.path = null;
-      this.crossed = false;
-    } else if (first.kind === "via" && distance(b, [first.position[0], first.position[2]]) < 0.15) {
+      // 경유점으로 가다가 방이 바뀌었다(격자 안내는 문 앞에 경유점이 있다): 남은 길의 첫 문을 그 문 개구부로 건넜으면 그 문 뒤 길로 넘기고,
+      // 문에서 먼 곳(벽)으로 건넜으면 길을 벗어난 것으로 본다. 그 밖(길에 없는 방으로 감)은 길을 버리고 다시 짠다.
+      const at = this.path.remaining.findIndex((p) => p.kind === "portal");
+      const portal = at >= 0 ? this.path.remaining[at] : undefined;
+      const gate = portal?.kind === "portal" ? this.map.gate(portal.id) : undefined;
+      if (portal?.kind === "portal" && gate && room === portal.to_room && this.map.room(a) === portal.from_room &&
+        this.path.remaining.slice(0, at).every((p) => p.kind === "via" && p.room === portal.from_room)) {
+        let lo = a,
+          hi = b;
+        for (let n = 0; n < 12; n++) {
+          const mid: XZ = [(lo[0] + hi[0]) / 2, (lo[1] + hi[1]) / 2];
+          if (this.map.room(mid) === portal.from_room) lo = mid;
+          else hi = mid;
+        }
+        if (distance(hi, gate.point) <= this.map.doorRadius(gate)) {
+          this.path = { ...this.path, remaining: this.path.remaining.slice(at) as TwinWalkGuide["remaining"], revision: ++this.revision };
+          this.crossed = true;
+        } else this.offPath = true;
+      } else {
+        this.path = null;
+        this.crossed = false;
+      }
+    } else if (first.kind === "via") {
+      // 경유점 0.15m 안에 왔거나, 경유점보다 다음 점에 더 가까이 와 있으면(격자 꺾인 점을 조금 질러 감) 다음 점이 곧게 보일 때 넘긴다
       const next = this.path.remaining[1];
-      if (next && this.clearTo(this.map, b, next, first.room)) this.advance();
+      const via: XZ = [first.position[0], first.position[2]];
+      const ahead = next ? ([next.position[0], next.position[2]] as XZ) : null;
+      const passed = ahead !== null && distance(b, ahead) < distance(via, ahead);
+      if (next && (distance(b, via) < 0.15 || passed) && this.clearTo(this.map, b, next, first.room)) this.advance();
     }
   }
   private clearTo(map: WalkingMap, from: XZ, point: TwinWalkGuide["remaining"][number], room: string) {

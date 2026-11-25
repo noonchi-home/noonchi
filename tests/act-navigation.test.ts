@@ -11,7 +11,7 @@ it("never advances through a wall beside a doorway; a new origin needs two fixes
     nav.pose({quality:"usable",position:[x,0.7],observed_ms:t,pose_gen:gen,error_m});
     return nav.read("A",map,[4.3,0.7],0.32,true,t);
   };
-  sample(3.7,100);expect(sample(3.8,350).guide?.remaining[0].kind).toBe("portal");
+  sample(3.7,100);expect(sample(3.8,350).guide?.remaining.some(p=>p.kind==="portal")).toBe(true);
   expect(sample(4.1,650).guide).toBeNull();expect(sample(4.25,950).arrived).toBe(false);
   expect(sample(4.25,1200,2).arrived).toBe(false);
   expect(sample(4.25,1400,2,0.2).guide).toBeNull();
@@ -80,7 +80,9 @@ it("holds on repeated or stale poses, confirms crossing and arrival with distinc
   eye(4.1, 450);
   expect(read(450).arrived).toBe(false);
   eye(4.2, 650);
-  expect(read(650).guide?.remaining[0].kind).toBe("stand");
+  const after = read(650).guide?.remaining;
+  expect(after?.some((p) => p.kind === "portal")).toBe(false);
+  expect(after?.at(-1)?.kind).toBe("stand");
   eye(4.9, 1050);
   expect(read(1050).arrived).toBe(false);
   eye(5, 1250);

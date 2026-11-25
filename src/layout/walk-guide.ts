@@ -2,6 +2,7 @@ import type { SceneJson, SceneObject, Vec2 } from "../contract/layout.js";
 import type { TwinWalkGuide } from "../contract/phone.js";
 import { floorPlanFrom, insidePolygon, sharedOpening, type FloorPlan, type Portal } from "./floor.js";
 import { approach, roomAt, route } from "./route.js";
+import { WALK_STEP, gridRoute, walkGrid } from "./walk-grid.js";
 
 export function edgeDistance(p: Vec2, a: Vec2, b: Vec2) {
   const dx = b[0] - a[0], dz = b[1] - a[1];
@@ -70,7 +71,10 @@ const distance = (a: Vec2, b: Vec2) => Math.hypot(a[0] - b[0], a[1] - b[1]);
 const cell = 0.15;
 
 export function walkingMap(floor: FloorPlan, scene: SceneJson, footprint?: (type: string) => Vec2 | undefined) {
-  const { walkable, furnitureClear, walls } = walkingGeometry(scene, footprint);
+  const geometry = walkingGeometry(scene, footprint);
+  const { walkable, furnitureClear, walls } = geometry;
+  // 방 안 길은 계획 선·트윈 원뿔과 같은 이동 가능 점 격자를 따른다(src/layout/walk-grid.ts): 경유점은 모두 격자 점이다
+  const grid = walkGrid(geometry, WALK_STEP);
   const doors = (scene.plan.doors ?? []) as { id: string; width?: number; wall?: string }[];
   const height = (room: string) => scene.plan.rooms?.find((r) => r.id === room)?.floor_z ?? 0;
   const widths = new Map(doors.map((d) => [d.id, d.width ?? 0]));
@@ -107,8 +111,15 @@ export function walkingMap(floor: FloorPlan, scene: SceneJson, footprint?: (type
     }
     return true;
   }
-  // Search only when the direct indoor segment is blocked. Every shortcut is tested again.
+  /** 방 안 a → b 길의 경유점과 b. 격자 길(그 방 격자 점만, 꺾이는 점만)이다. furniture=false(가구 칸으로 길이 막힌 뒤 벽만 보는 길)는 아래 looseIndoor. */
   function indoor(a: Vec2, b: Vec2, inRoom: string, gates: Portal[], furniture = true): Vec2[] | null {
+    if (!furniture) return looseIndoor(a, b, inRoom, gates);
+    const way = gridRoute(grid, geometry, a, b, { room: inRoom });
+    return way ? way.slice(1) : null;
+  }
+  // 가구를 보지 않는 길(길 없음 처리): 곧은 선이 막혔을 때만 시작점 기준 0.15m 칸을 찾고, 건너뛰기마다 다시 본다.
+  function looseIndoor(a: Vec2, b: Vec2, inRoom: string, gates: Portal[]): Vec2[] | null {
+    const furniture = false;
     const pass = (x: Vec2, y: Vec2) => clear(x, y, inRoom, gates, furniture);
     if (pass(a, b)) return [b];
     if (!pass(a, a) || !pass(b, b)) return null;
