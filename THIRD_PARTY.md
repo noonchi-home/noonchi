@@ -13,6 +13,8 @@
   - 트윈 뷰어(`twin/apartment/viewer/style.css`)는 `ui` 빌드가 내주는 `/fonts/pretendard.css`로 같은 조각을 쓴다.
   - 평면도 `ui/src/mobile/mokryeon-plan.svg`는 글자가 든 정적 SemiBold 조각(`dist/web/static/woff2-dynamic-subset/`)을 data URI로 품는다.
   - 라이선스 글: `ui/public/fonts/OFL-pretendard.txt`.
+- Pretendard SemiBold·Bold(안드로이드 앱): 같은 꾸러미 `dist/public/static`의 `Pretendard-SemiBold.otf`·`Pretendard-Bold.otf`를 고치지 않고 `apps/android/assets/fonts/`에 둔다. 앱 빌드가 `expo-font`로 묶고, Expo Go는 개발 때 같은 파일을 실행 중에 올린다.
+  - 라이선스 글: `apps/android/assets/fonts/OFL-pretendard.txt`. APK에도 `assets/fonts/OFL-pretendard.txt`로 들어간다.
 
 ## 브랜드 그림
 

@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
-import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View, type KeyboardTypeOptions } from "react-native";
+import { ActivityIndicator, Pressable, StyleSheet, View, type KeyboardTypeOptions } from "react-native";
+import { Text, TextInput } from "./AppText";
+import { font } from "./fonts";
 
 export const colors = { brand: "#a1143e", white: "#ffffff", canvas: "#f8f2ea", surface: "#fffcf8", edge: "#e7dbce",
   ink: "#2a2627", muted: "#645b5b", cream: "#f2e4d3", green: "#1b7041", warn: "#835700", error: "#b5350e" };
@@ -97,18 +99,18 @@ export function useResource<T>(read: (signal: AbortSignal) => Promise<T>) {
 
 const styles = StyleSheet.create({
   panel: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.edge, borderRadius: 12, padding: 17, gap: 12, elevation: 1 },
-  heading: { color: colors.ink, fontSize: 24, fontWeight: "700", lineHeight: 30 },
+  heading: { color: colors.ink, fontSize: 24, ...font(700), lineHeight: 30 },
   copy: { color: colors.muted, fontSize: 15, lineHeight: 22 },
   error: { color: colors.error, fontSize: 15, lineHeight: 22 },
   loading: { flexDirection: "row", alignItems: "center", gap: 8 },
   action: { minHeight: 48, backgroundColor: colors.brand, borderRadius: 8, justifyContent: "center", alignItems: "center", paddingVertical: 10, paddingHorizontal: 12 },
-  actionText: { color: colors.white, textAlign: "center", fontWeight: "700", fontSize: 16 },
+  actionText: { color: colors.white, textAlign: "center", ...font(700), fontSize: 16 },
   secondary: { backgroundColor: colors.cream },
   secondaryText: { color: colors.ink },
   dim: { opacity: 0.55 },
   choice: { minHeight: 48, borderBottomWidth: 1, borderColor: colors.edge, flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 10, paddingVertical: 10, paddingHorizontal: 4 },
   chosen: { backgroundColor: colors.cream, borderRadius: 6 },
-  choiceTitle: { flex: 1, color: colors.ink, fontWeight: "600", fontSize: 15 },
+  choiceTitle: { flex: 1, color: colors.ink, ...font(600), fontSize: 15 },
   choiceValue: { flexShrink: 1, color: colors.brand, fontSize: 14 },
   field: { gap: 4 },
   input: { minHeight: 48, borderWidth: 1, borderColor: colors.edge, paddingHorizontal: 12, borderRadius: 8, color: colors.ink, backgroundColor: colors.white, fontSize: 16 },

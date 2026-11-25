@@ -162,7 +162,7 @@ describe("글꼴 라이선스", () => {
   it("Pretendard를 묶은 곳마다 꾸러미 OFL 글이 있고, THIRD_PARTY.md가 그 자리를 적는다", () => {
     const license = text("ui/node_modules/pretendard/dist/LICENSE.txt");
     const third = text("THIRD_PARTY.md");
-    for (const p of ["ui/public/fonts/OFL-pretendard.txt"]) {
+    for (const p of ["ui/public/fonts/OFL-pretendard.txt", "apps/android/assets/fonts/OFL-pretendard.txt"]) {
       expect(text(p), p).toBe(license);
       expect(third, p).toContain(`\`${p}\``);
     }

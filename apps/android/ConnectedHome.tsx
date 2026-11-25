@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AppState, BackHandler, Image, Pressable, ScrollView, StatusBar, StyleSheet, Text, View, useWindowDimensions } from "react-native";
+import { AppState, BackHandler, Image, Pressable, ScrollView, StatusBar, StyleSheet, View, useWindowDimensions } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import type { SetupView } from "../../src/contract/setup";
 import { activeHome, createConnectedHub, readHomeCard, startPositionLabel, type ConnectedHub } from "./connected-hub";
@@ -8,6 +8,8 @@ import { Action, Copy, Failure, Heading, Loading, Panel, colors, useResource } f
 import { ConnectedHouse } from "./ConnectedHouse";
 import { ConnectedSettings } from "./ConnectedSettings";
 import { BrandWordmark, wordmarkBackground } from "./BrandWordmark";
+import { Text } from "./AppText";
+import { font } from "./fonts";
 
 export interface ConnectedHomeProps {
   hubUrl: string;
@@ -208,7 +210,7 @@ const styles = StyleSheet.create({
   homeRows: { borderWidth: 1, borderColor: colors.edge, borderRadius: 8, backgroundColor: colors.canvas, overflow: "hidden" },
   homeRow: { minHeight: 44, paddingHorizontal: 10, paddingVertical: 8, flexDirection: "row", alignItems: "center", gap: 8 },
   rowDivider: { height: StyleSheet.hairlineWidth, backgroundColor: colors.edge },
-  rowTitle: { flex: 1, color: colors.ink, fontSize: 15, fontWeight: "600" },
+  rowTitle: { flex: 1, color: colors.ink, fontSize: 15, ...font(600) },
   rowStatus: { flexDirection: "row", alignItems: "center", gap: 6 },
   rowValue: { color: colors.muted, fontSize: 13 },
   rowArrow: { color: colors.muted, fontSize: 17 },
@@ -218,7 +220,7 @@ const styles = StyleSheet.create({
   mascot: { position: "absolute" },
   nav: { flexDirection: "row", backgroundColor: colors.white, borderTopWidth: 1, borderTopColor: colors.edge, paddingHorizontal: 10, zIndex: 1 },
   tab: { flex: 1, minHeight: 56, alignItems: "center", justifyContent: "center", borderBottomWidth: 2, borderBottomColor: "transparent", gap: 3 },
-  active: { borderBottomColor: colors.brand }, activeText: { color: colors.brand, fontWeight: "700" },
+  active: { borderBottomColor: colors.brand }, activeText: { color: colors.brand, ...font(700) },
   tabGlyph: { fontSize: 22, lineHeight: 24, color: colors.muted },
   tabLabel: { fontSize: 12, color: colors.ink },
 });
