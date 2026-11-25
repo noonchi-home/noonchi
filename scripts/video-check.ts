@@ -884,9 +884,9 @@ export function recordSetup(a: Pick<Args, "recordView" | "recordFps" | "recordPh
   return { size, intervalMs: 1000 / a.recordFps, fps: a.recordFps, height: a.recordPhone ? undefined : size[1], phoneSize: a.recordPhone ? SIZE : undefined };
 }
 
-/** 폰 지원 줄이 세로 영상 알림(video-ar.js LANDSCAPE_ONLY)이면 판정을 끝낼 오류 글, 아니면 null. */
+/** 폰 지원 줄에 세로 영상 알림(video-ar.js LANDSCAPE_ONLY)이 들었으면 판정을 끝낼 오류 글, 아니면 null. 지원 줄은 실패 글 앞에 말을 붙인다(ui/src/phone/state.ts supportText). */
 export function landscapeRefusal(support: string | null, clip: string): string | null {
-  return support === LANDSCAPE_ONLY ? `세로 영상이라 열지 않았어요(${clip}): ${LANDSCAPE_ONLY}` : null;
+  return support?.includes(LANDSCAPE_ONLY) ? `세로 영상이라 열지 않았어요(${clip}): ${LANDSCAPE_ONLY}` : null;
 }
 
 /** 대시보드 탭·창: 크기를 보기 창 크기(모바일 아님, dashSizeOf)로 맞추고 대시보드 <api>/(view minimap이면 <api>/?view=minimap)로 옮긴 뒤 그 문서가 다 불러와질 때까지 기다린다(waitLoaded). */

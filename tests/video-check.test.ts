@@ -14,6 +14,7 @@ import { doneId, isDoneStep } from "../src/act/done-step.js";
 import { CUP_FSM_MEMORY } from "../src/brain/decision.js";
 import { LEARNED_FSM_MEMORY } from "../scripts/learned-memory.js";
 import { HISTORY_KINDS as DB_KINDS } from "../src/brain/history/db.js";
+import { supportText } from "../ui/src/phone/state.js";
 import { FETCH_KINDS, SEND_SAY, hasLearnedClear, memoryGate, clickChoice, clock, costLine, judgeInput, judgeState, landscapeRefusal, markdown, parseArgs, phoneUrl, plannedClicks, sendStartPose, mainPlan, planState, stepPlaces, stepVerdict, timeline, verdict, twinRows, usedServer, roomLabels, ownAssetFailures, videoClock, serverClock, reactionLine, DONE_TAIL_MS, runTimeline, clipEnd, syncWarning, mustStop, openDashboard, recordSetup, waitLoaded, waitTwinReady, frameGapLine, sceneLog, sceneLag, type ClickRule, type Row, type VideoCommand } from "../scripts/video-check.js";
 import { createServer, type Server } from "node:http";
 import { listenRetry } from "../src/shared/net.js";
@@ -1170,8 +1171,10 @@ describe("미니맵만 녹화(--record-view minimap, --record-fps)", () => {
   });
 
   it("폰 지원 줄이 세로 영상 알림이면 영상을 기다리지 않고 오류로 끝낸다(landscapeRefusal). 다른 지원 줄은 그대로 기다린다", () => {
-    expect(landscapeRefusal("가로로 찍은 영상을 골라 주세요.", "work-cup-self-clear-1.mp4")).toBe("세로 영상이라 열지 않았어요(work-cup-self-clear-1.mp4): 가로로 찍은 영상을 골라 주세요.");
-    for (const support of [null, "", "카메라 켜기를 눌러 주세요", "영상을 열지 못했어요"]) expect(landscapeRefusal(support, "wide-mug-leave.mp4")).toBeNull();
+    // 폰 페이지 지원 줄은 실패 글 앞에 「AR을 시작하지 못했어요: 」를 붙인다(2026-11-25 실제 크롬에서 같은 글만 보다 30초를 기다렸다)
+    const shown = supportText({ kind: "failed", message: "가로로 찍은 영상을 골라 주세요." });
+    expect(landscapeRefusal(shown, "work-cup-self-clear-1.mp4")).toBe("세로 영상이라 열지 않았어요(work-cup-self-clear-1.mp4): 가로로 찍은 영상을 골라 주세요.");
+    for (const support of [null, "", supportText({ kind: "ready" }), supportText({ kind: "failed", message: "영상을 열지 못했어요" })]) expect(landscapeRefusal(support, "wide-mug-leave.mp4")).toBeNull();
     const src = readFileSync(new URL("../scripts/video-check.ts", import.meta.url), "utf8");
     expect(src).toMatch(/seen\.record\?\.t0 == null; seen = await read\(\)\) \{\s+const refused = landscapeRefusal\(seen\.support, args\.clip\);\s+if \(refused\) throw new Error\(refused\);/);
   });
