@@ -24,6 +24,17 @@ export interface TraceMark {
   state: TraceState;
 }
 
+/** 트레이스 표시 색(21st.dev Status variant). 트윈 이름표·가전 말풍선 칩과 트레이스 칸의 「트윈에 그림」 점이 같은 색을 쓴다. */
+export type MarkTone = "brand" | "default" | "success" | "error" | "warning";
+
+/** 실행 보류는 warning, 진행 중 brand, 실패 error, 가전 줄이 끝나면 success, 그 밖에 끝·취소는 기본. */
+export function markTone(m: Pick<TraceMark, "kind" | "state">): MarkTone {
+  if (m.kind === "guard") return "warning";
+  if (m.state === "pending") return "brand";
+  if (m.state === "failed") return "error";
+  return m.kind === "device" && m.state === "done" ? "success" : "default";
+}
+
 /** 줄 종류(kind)·이름(name) → 트윈 표시 종류. 없는 줄(행동 선택·대기 판단·PAM 판단·VLM 장면 해석·사용자 상태 변화·안전 상태 등)은 트윈에 그리지 않는다. */
 const MARK_OF: Record<string, TraceMarkKind> = {
   "EXECUTION 이동 안내": "leg",

@@ -4,42 +4,32 @@ import { MINIMAP_ASPECT, pageLayout, WIDE, type PageLayout, type Rect } from "./
 import type { MascotImage } from "../lib/mascot-image";
 import type { BoxSize } from "./fit";
 
-export type TwinView = "space" | "overview";
+/** 기본 라이브 보기 여백·칸 사이(px)와 왼쪽 열 몫(배치 시안 work/dashboard-sketch/layout.html, 2026-11-25 사용자 확인). */
+export const SCENE = { pad: 16, gap: 16, left: 0.55, stackBelow: 720 } as const;
 
-export function sceneLayout(view: BoxSize, mascot: MascotImage, feedAspect: number): PageLayout & { conditions: Rect; trace: Rect } {
-  const aspect = feedAspect || MINIMAP_ASPECT;
-  const base = pageLayout(view, mascot, aspect);
-  const pad = Math.max(base.pad, 14), gap = 16;
+/**
+ * 기본 라이브 보기(세 칸): 왼쪽 열(여백 안 너비에서 칸 사이를 뺀 몫의 55%)에 Vision(16:9 고정) 위·트윈 아래,
+ * 오른쪽에 Agent Trace를 화면 높이 전체로 둔다. 들어온 영상 비율과 상관없이 Vision 칸은 16:9이다(영상은 칸 안에 맞춘다).
+ * 여백 안 너비가 720px 미만이면 Vision → 트윈 → Agent Trace를 세로로 쌓는다. 화면에 설정 단추는 없다(설정 창은 Ctrl+1).
+ */
+export function sceneLayout(view: BoxSize, mascot: MascotImage): PageLayout & { trace: Rect } {
+  const base = pageLayout(view, mascot, MINIMAP_ASPECT);
+  const { pad, gap } = SCENE;
   const width = Math.max(0, view.width - 2 * pad);
-  const stacked = width < 720;
-  const phoneWidth = stacked ? width : Math.round((width - gap) * 0.62);
-  const twinWidth = stacked ? width : width - gap - phoneWidth;
-  const mediaHeight = Math.min(Math.floor(phoneWidth / aspect), Math.max(180, view.height - 2 * pad - gap - 196));
-  const video: Rect = { left: pad, top: pad, width: phoneWidth, height: mediaHeight };
-  const twin: Rect = {
-    left: stacked ? pad : pad + phoneWidth + gap,
-    top: stacked ? pad + mediaHeight + gap : pad,
-    width: twinWidth,
-    height: stacked ? Math.max(240, Math.round(twinWidth * 0.78)) : mediaHeight,
-  };
-  const lower = twin.top + twin.height + gap;
-  const conditionWidth = stacked ? width : Math.round((width - gap) * 0.30);
-  const lowerHeight = Math.max(196, view.height - lower - pad);
-  const conditions = { left: pad, top: lower, width: conditionWidth, height: stacked ? 156 : lowerHeight };
-  const trace = {
-    left: stacked ? pad : pad + conditionWidth + gap,
-    top: stacked ? lower + conditions.height + gap : lower,
-    width: stacked ? width : width - conditionWidth - gap,
-    height: stacked ? 264 : lowerHeight,
-  };
-  const settings = { left: twin.left + twin.width - 52, top: twin.top + 8, width: 44, height: 44 };
-  const scale = settings.width / (mascot.x1 - mascot.x0);
-  const image = mascotImageBox(mascot, scale, 4);
-  const camPad = { left: 16, right: 16, top: 52, bottom: 36 };
+  const stacked = width < SCENE.stackBelow;
+  const left = stacked ? width : Math.round((width - gap) * SCENE.left);
+  const video: Rect = { left: pad, top: pad, width: left, height: Math.round((left * 9) / 16) };
+  const twinTop = video.top + video.height + gap;
+  const twin: Rect = stacked
+    ? { left: pad, top: twinTop, width, height: Math.max(240, Math.round(width * 0.78)) }
+    : { left: pad, top: twinTop, width: left, height: Math.max(0, view.height - pad - twinTop) };
+  const trace: Rect = stacked
+    ? { left: pad, top: twin.top + twin.height + gap, width, height: 480 }
+    : { left: pad + left + gap, top: pad, width: width - left - gap, height: Math.max(0, view.height - 2 * pad) };
+  const camPad = { left: 16, right: 16, top: 16, bottom: 36 };
   const focus = { left: twin.left + camPad.left, top: twin.top + camPad.top,
     width: Math.max(0, twin.width - camPad.left - camPad.right), height: Math.max(0, twin.height - camPad.top - camPad.bottom) };
-  return { ...base, pad, gap, video, twin, conditions, trace, mascot: settings, scale, image,
-    logo: mascotLogoBox(mascot, scale, image), focus, camPad, blocked: [settings], chipsRight: 12 };
+  return { ...base, pad, gap, video, twin, trace, focus, camPad, blocked: [], chipsRight: 12 };
 }
 
 

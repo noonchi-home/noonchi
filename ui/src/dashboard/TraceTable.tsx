@@ -2,7 +2,9 @@ import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useState } from
 import type { TraceRow, TraceState } from "../../../src/contract/trace.ts";
 import { Conversation, ConversationContent } from "../components/ui/conversation";
 import { ScrollToBottom } from "../components/ui/scroll-to-bottom";
+import { Status, StatusIndicator } from "../components/ui/status";
 import { Trace, TraceGroup, TraceStep, type TraceStatus } from "../components/ui/trace-group";
+import type { MarkTone } from "./trace-marks";
 import { traceActivities, type BranchRow, type TraceActivity, type TraceCompletion } from "./trace-tree";
 
 const foldAfterMs = 2000;
@@ -70,7 +72,12 @@ function useSeenActivities(activities: readonly TraceActivity[]) {
   return seen;
 }
 
-function ActivitySteps({ activity, running, live }: { activity: TraceActivity; running: boolean; live: boolean }) {
+/** 줄 이름. 지금 트윈에 그린 줄이면 그 트윈 표시와 같은 색 점(21st.dev Status 점)을 붙인다. */
+function StepLabel({ row, tone }: { row: TraceRow; tone?: MarkTone }) {
+  return tone ? <>{row.name} <Status data-twin-dot variant={tone}><StatusIndicator /></Status></> : row.name;
+}
+
+function ActivitySteps({ activity, running, live, onTwin }: { activity: TraceActivity; running: boolean; live: boolean; onTwin?: ReadonlyMap<string, MarkTone> }) {
   // 모델 줄(depth 1)은 바로 앞 도구 줄 아래에 접어 넣는다.
   const roots: { entry: BranchRow; children: BranchRow[] }[] = [];
   for (const entry of activity.entries) {
@@ -79,20 +86,24 @@ function ActivitySteps({ activity, running, live }: { activity: TraceActivity; r
   }
   return roots.map(({ entry: { row, current, guard }, children }) => (
     <TraceStep key={row.id} data-row={row.id} data-kind={row.kind} data-depth={0} data-current={current && live || undefined}
-      status={stepStatus(row, running)} label={row.name} detail={detailOf(row, guard)} durationMs={span(row)}
+      data-on-twin={onTwin?.has(row.id) || undefined}
+      status={stepStatus(row, running)} label={<StepLabel row={row} tone={onTwin?.get(row.id)} />} detail={detailOf(row, guard)} durationMs={span(row)}
       defaultOpen={children.length ? true : undefined}>
       {children.length ? <Trace density="compact">
         {children.map(({ row: child, current: childCurrent }) =>
           <TraceStep key={child.id} data-row={child.id} data-kind={child.kind} data-depth={1}
-            data-current={childCurrent && live || undefined} status={stepStatus(child, running)}
-            label={child.name} detail={detailOf(child)} durationMs={span(child)} />)}
+            data-current={childCurrent && live || undefined} data-on-twin={onTwin?.has(child.id) || undefined} status={stepStatus(child, running)}
+            label={<StepLabel row={child} tone={onTwin?.get(child.id)} />} detail={detailOf(child)} durationMs={span(child)} />)}
       </Trace> : undefined}
     </TraceStep>
   ));
 }
 
-/** Agent Trace: 옛 활동이 위, 새 활동이 아래. 바닥에 있으면 새 줄을 따라가고, 위로 올리면 멈추고 알약으로 새 활동 수를 알린다. */
-export const TraceTable = memo(function TraceTable({ rows }: { rows: readonly TraceRow[] }) {
+/**
+ * Agent Trace: 옛 활동이 위, 새 활동이 아래. 바닥에 있으면 새 줄을 따라가고, 위로 올리면 멈추고 알약으로 새 활동 수를 알린다.
+ * onTwin: 지금 트윈에 그린 줄(data-on-twin)과 그 표시 색. 그 줄 이름 옆에 같은 색 점을 둔다.
+ */
+export const TraceTable = memo(function TraceTable({ rows, onTwin }: { rows: readonly TraceRow[]; onTwin?: ReadonlyMap<string, MarkTone> }) {
   const activities = useMemo(() => traceActivities(rows), [rows]);
   const seen = useSeenActivities(activities);
   const [opened, setOpened] = useState<ReadonlyMap<string, boolean>>(() => new Map());
@@ -116,7 +127,7 @@ export const TraceTable = memo(function TraceTable({ rows }: { rows: readonly Tr
               status={groupStatus(activity, completion, running)} title={completion?.title ?? activity.title}
               current={now && `${now.name} · ${now.input}`} summary={summary} durationMs={completion?.ms}
               open={opened.get(activity.id) ?? auto} onOpenChange={open => toggle(activity.id, open)}>
-              <ActivitySteps activity={activity} running={running} live={!completion} />
+              <ActivitySteps activity={activity} running={running} live={!completion} onTwin={onTwin} />
             </TraceGroup>;
           })}
           {activities.length === 0 && <li>아직 기록된 활동이 없어요.</li>}

@@ -25,7 +25,7 @@ beforeEach(() => { vi.stubGlobal("fetch", vi.fn(async () => new Response("{}", {
 afterEach(() => { vi.unstubAllGlobals(); history.replaceState(null, "", "/"); });
 
 describe("대시보드 뼈대", () => {
-  it("기본 대시보드의 네 칸과 설정 입구가 한 화면(main)에 있다", () => {
+  it("기본 대시보드의 세 칸이 한 화면(main)에 있고 설정 단추는 없다(설정 창은 Ctrl+1)", () => {
     const { container } = render(<Dashboard />);
     const main = container.querySelector("main")!;
     const twin = container.querySelector<HTMLElement>('section[aria-label="트윈"]')!;
@@ -35,12 +35,12 @@ describe("대시보드 뼈대", () => {
     expect(main.contains(twin) && main.contains(phone)).toBe(true);
     expect(within(screen.getByRole("group", { name: "Vision" })).getByRole("region", { name: "폰 카메라" })).toBe(phone);
     expect(within(screen.getByRole("group", { name: "Digital Twin" })).getByRole("region", { name: "트윈" })).toBe(twin);
-    expect(screen.getByRole("group", { name: "Action Conditions" })).toBeInTheDocument();
+    expect(screen.queryByRole("group", { name: "Action Conditions" })).toBeNull();
     expect(screen.getByRole("group", { name: "Agent Trace" })).toBeInTheDocument();
     expect(twin.contains(phone)).toBe(false);
     expect(main).toHaveAttribute("data-step", "0");
-    const mascot = screen.getByRole("region", { name: "마스코트" });
-    expect(within(mascot).getByRole("button", { name: "설정 열기" })).toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "마스코트" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "설정 열기" })).toBeNull();
   });
 
   it("health 전에는 트윈 칸 지도 자리에 3D 트윈 틀만 있고 iframe·캔버스는 없다", () => {

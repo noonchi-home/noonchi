@@ -116,15 +116,10 @@ describe("대시보드 자료 연결", () => {
     expect(phonePane()).toHaveTextContent("NOONCHI 앱으로 스캔해 서버에 연결하세요");
   });
 
-  it("기본 대시보드는 실제 계획과 Trace를 같은 네 칸에 받아 집을 다시 열면 이전 사실을 지운다", async () => {
+  it("기본 대시보드는 실제 계획과 Trace를 세 칸에 받아 집을 다시 열면 이전 줄을 지운다", async () => {
     await mount(false);
-    send(moment(1));
-    const action = screen.getByRole("group", { name: "Action Conditions" });
-    expect(action).toHaveTextContent("식탁으로 가기");
     send(moment(2));
-    expect(screen.getByRole("group", { name: "Action Conditions" })).toBe(action);
-    expect(action).toHaveTextContent("컵 집기");
-
+    expect([...document.querySelectorAll("fieldset > legend")].map((e) => e.textContent)).toEqual(["Vision", "Digital Twin", "Agent Trace"]);
     const active = [...moment(2)].reverse().find(m => m.type === "plan");
     expect(active?.type).toBe("plan");
     if (active?.type !== "plan" || !active.plan) throw new Error("컵 집기 계획이 있어야 한다");
@@ -132,100 +127,35 @@ describe("대시보드 자료 연결", () => {
     const objectId = step.target?.objectId ?? "cup";
     const refs = { plan_id: active.plan.id, object_id: objectId };
     const rows = [
-      { id: "house:a", activity_id: "house:work", rev: 1, kind: "TOOL", name: "컵 안 확인", input: "컵 · 식탁",
-        output: "빈 컵 확인", started_ms: 100, ended_ms: 200, state: "done",
-        refs: { ...refs, evidence: { source: "photo", subjectId: objectId, observedMs: 150, originId: "frame" } } },
       { id: "house:b", activity_id: "house:work", rev: 1, kind: "EXECUTION", name: "집기 안내", input: "컵 · 식탁",
         output: "시연자 수행 대기", started_ms: 250, ended_ms: null, state: "pending", refs: { ...refs, step_id: step.id } },
     ] as const;
     const hello = { type: "hello", devices: 0, provider: null, hub: "memory", home: "h", trace_epoch: "house" } as const;
     send([hello, active, { type: "trace", epoch: "house", rows: [...rows] }]);
-    expect(action).toHaveTextContent("컵 안이 비었어요");
-    expect(action).toHaveTextContent("컵을 든 모습");
     expect(screen.getByRole("group", { name: "Agent Trace" })).toHaveTextContent("시연자 수행 대기");
-    expect(screen.getByRole("link", { name: "집 전체" })).toHaveAttribute("href", "/?view=overview");
-
-    vi.useFakeTimers();
-    try {
-      const socket = FakeSocket.last!;
-      act(() => socket.onclose?.());
-      expect(action).not.toHaveTextContent(/컵 안이 비었어요|컵을 든 모습/);
-      act(() => vi.advanceTimersByTime(2000));
-      expect(FakeSocket.last).not.toBe(socket);
-      act(() => FakeSocket.last!.onopen?.());
-      expect(action).not.toHaveTextContent(/컵 안이 비었어요|컵을 든 모습/);
-    } finally {
-      vi.useRealTimers();
-    }
+    expect(screen.queryByRole("link", { name: "집 전체" })).toBeNull();
     send([{ ...hello, trace_epoch: "house:reopened" }, { type: "trace", epoch: "house", rows: [...rows] }]);
-    expect(action).not.toHaveTextContent(/컵 안이 비었어요|컵을 든 모습/);
     expect(screen.getByRole("group", { name: "Agent Trace" })).not.toHaveTextContent("시연자 수행 대기");
   });
 
-  it("집 전체 보기에서도 상태표와 현재 단계가 유지된다", async () => {
-    const clock = vi.spyOn(Date, "now").mockReturnValue(lastOf(2) + 1000);
+  // 의견 4(2026-11-25): 「집 전체」 단추와 overview 화면을 없앴다. 옛 주소로 열어도 기본 세 칸 배치다
+  it("?view=overview로 열어도 기본 세 칸 배치이고 「집 전체」 링크·마스코트·메시지 상자가 없다", async () => {
     history.replaceState(null, "", "/?view=overview");
     await mount(false);
     send(moment(2));
-    expect(document.querySelector("[data-progress]")).toBeNull();
-    expect(sayLine()).toHaveTextContent("컵을 들게요.");
-    expect(statusCells("사용자")[0]).toHaveTextContent("자리에 없음");
-    expect(statusCells("클로이드")[0]).toHaveTextContent("컵 집기");
-    clock.mockRestore();
-    expect(screen.getByRole("region", { name: "마스코트" }).querySelector<HTMLElement>("[data-mascot-turn]")!.style.transform).toBe("scaleX(-1)");
+    expect([...document.querySelectorAll("fieldset > legend")].map((e) => e.textContent)).toEqual(["Vision", "Digital Twin", "Agent Trace"]);
+    expect(screen.queryByRole("link", { name: "집 전체" })).toBeNull();
+    expect(screen.queryByRole("region", { name: "마스코트" })).toBeNull();
+    expect(document.querySelector("[data-talk], [data-timeline-card], [data-mode-text]")).toBeNull();
     expect(document.querySelector("main")).toHaveAttribute("data-step", "2");
   });
 
-  it("지켜보기(순간 0)는 사람이 마시는 중이고 목표가 서 있다: 최신 줄은 목표 문장이고 목표 칩은 없다, 마스코트는 늘 왼쪽을 본다", async () => {
-    const clock = vi.spyOn(Date, "now").mockReturnValue(lastOf(2) + 1000);
-    history.replaceState(null, "", "/?view=overview");
+  it("대시보드에서 Ctrl+1을 누르면 설정 창(허브 상태·폰 연결 QR)이 열린다", async () => {
     await mount(false);
-    send(moment(2));
-    send(moment(0));
-    expect(screen.getByRole("region", { name: "마스코트" }).querySelector<HTMLElement>("[data-mascot-turn]")!.style.transform).toBe("scaleX(-1)");
-    expect(sayLine()).toHaveTextContent("컵을 두고 자리를 뜨면 컵을 치울게요");
-    // 순간 0의 판단(seq 1)은 순간 2의 판단(seq 2)보다 늦게 온 옛 판단이라 사람 줄 지금 상태는 그대로다
-    expect(statusCells("사용자")[0]).toHaveTextContent("자리에 없음");
-    expect(talk().querySelector("[data-goal-line], [data-talk-goal]")).toBeNull();
-    expect(screen.getByRole("table")).not.toHaveTextContent("목표");
-    clock.mockRestore();
-  });
-
-  it("판단 없이 반성 사건만 와도 메시지 상자에 그 규칙 두 줄이 쌓인다. 칩은 없다", async () => {
-    history.replaceState(null, "", "/?view=overview");
-    await mount(false);
-    expect(messageTexts()).toEqual([]);
-    const rule = { from: "away", to: "watching_tv", on: "사용자가 소파에 앉아 TV를 보기 시작한다.", when: null, action: "에어컨 켜기" };
-    send([{ type: "brain", replay: true, event: { type: "reflection", at_ms: 5, day: "2026-11-13", ok: true, version: 3, applies_day: "2026-11-14", text: "반성 완료", learned: [rule], active: [rule], dropped: [] } }]);
-    expect(messageTexts()).toEqual(["사용자가 소파에 앉아 TV를 보기 시작한다", "새로 배운 습관이에요"]);
-    expect(document.querySelector("[data-thought], [data-thought-chips]")).toBeNull();
-  });
-
-  it("마스코트 모드 말풍선은 서버 mode 메시지를 따른다: 받기 전과 눈치면 「눈치 모드」, 코치면 「코치 모드」. 코치 행동 판단·계획만으로는 바뀌지 않는다", async () => {
-    history.replaceState(null, "", "/?view=overview");
-    await mount(false);
-    const mode = () => document.querySelector("[data-mode-text]")?.textContent ?? null;
-    await waitFor(() => expect(mode()).toBe("눈치 모드"));
-    send([branchDecision(COACH, 1), { type: "plan", plan: { ...PLAN, revision: 50 } }]);
-    await new Promise((r) => setTimeout(r, 50));
-    expect(mode()).toBe("눈치 모드");
-    send([{ type: "mode", mode: "coach" }]);
-    await waitFor(() => expect(mode()).toBe("코치 모드"));
-    send([{ type: "mode", mode: "noonchi" }]);
-    await waitFor(() => expect(mode()).toBe("눈치 모드"));
-  });
-
-  it("/events thought 메시지와 말이 받은 차례로 쌓이고 최근 세 줄만 보인다. 원래 생각은 보이지 않는다", async () => {
-    history.replaceState(null, "", "/?view=overview");
-    await mount(false);
-    send(moment(2).filter((m) => m.type !== "thought" && m.type !== "say"));
-    expect(messageTexts()).toEqual([]);
-    const msg = (id: string, at: number, text: string) => ({ id, text, at_ms: at, decision: "pam-1" });
-    send([{ type: "thought", messages: [msg("a", 1, "사람이 떠났어요"), msg("b", 2, "컵이 남아 있어요")] }]);
-    expect(messageTexts()).toEqual(["사람이 떠났어요", "컵이 남아 있어요"]);
-    send([{ type: "thought", messages: [msg("c", 3, "치우는 습관이 있어요"), msg("d", 4, "컵을 치울게요")] }]);
-    await waitFor(() => expect(messageTexts()).toEqual(["컵이 남아 있어요", "치우는 습관이 있어요", "컵을 치울게요"]));
-    expect(talk()).not.toHaveTextContent("사람이 자리를 비운 뒤에도 컵이 식탁에 남아 있어요.");
+    expect(screen.queryByRole("dialog")).toBeNull();
+    fireEvent.keyDown(window, { key: "1", code: "Digit1", ctrlKey: true });
+    const dialog = await screen.findByRole("dialog", { name: "설정" });
+    expect(within(dialog).getByRole("list", { name: "허브 상태" })).toBeInTheDocument();
   });
 
   it("다시 연결되면(hello) health를 다시 받아 날짜·시간 칩이 새 서버 기록 시간대를 쓴다(서버를 다른 시간대로 다시 띄운 때)", async () => {

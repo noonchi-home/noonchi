@@ -1,6 +1,5 @@
 import { useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { DeviceView } from "../../../src/contract/events.ts";
-import type { TraceState } from "../../../src/contract/trace.ts";
 import { BubbleLayer } from "./bubbles/BubbleLayer";
 import { deviceSummary } from "./bubbles/summary";
 import type { Check } from "./checks/checks";
@@ -12,13 +11,12 @@ import type { BoxSize } from "./fit";
 import { withTraceChecks, type TwinFrame } from "./frame";
 import { otherRooms, roomsPath, type RoomShape } from "./home";
 import { placeTag } from "./labels";
+import { markTone as traceTone } from "./trace-marks";
 import { PreDrawing, useFadeIn } from "./motion";
 import { checkDotLayers, dimLayer, goalRingLayers, lineLayers, roomEdgeLayer, type Layer, type MarkTone } from "./marks";
 import { toScreen, type Px } from "./camera";
 import { LABEL_BOX, mapScene, type Box } from "./scene";
 
-/** 트레이스 이름표 색(21st.dev Status variant): 진행 중 brand, 끝 기본, 실패 error, 취소 기본. 실행 보류는 warning. */
-const TAG_VARIANT: Record<TraceState, "brand" | "default" | "error"> = { pending: "brand", done: "default", failed: "error", cancelled: "default" };
 
 /** 밝힌 방 묶음 이름(순서와 상관없음). */
 const roomsKey = (rooms: string[]) => [...rooms].sort().join("+");
@@ -189,7 +187,7 @@ export function MapOverlay({ frame, checks, shapes, roomSets, image, size, cam, 
         ))}
         {tags.map(({ m, at }) => (
           <div key={m.rowId} data-trace-mark={m.rowId} data-kind={m.kind} data-state={m.state} className="absolute -translate-x-1/2 -translate-y-1/2" style={{ left: at.x, top: at.y }}>
-            <Status variant={m.kind === "guard" ? "warning" : TAG_VARIANT[m.state]}>{m.text}</Status>
+            <Status variant={traceTone(m)}>{m.text}</Status>
           </div>
         ))}
         <BubbleLayer checks={shownChecks} devices={devices} objects={objects} points={points} avoid={avoid} keep={keep} />
