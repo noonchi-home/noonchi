@@ -6,7 +6,19 @@ import { resolveHome } from "../src/layout/homes.js";
 import { DEFAULT_TWIN_DIR } from "../src/layout/twin-files.js";
 import { loadCatalog } from "../src/layout/catalog.js";
 import { floorPlanFrom } from "../src/layout/floor.js";
-import type { SceneJson } from "../src/contract/layout.js";
+import type { SceneJson, Vec2 } from "../src/contract/layout.js";
+import { WALK_STEP } from "../src/layout/walk-grid.js";
+
+/** 폰 안내 경유점은 모두 이동 가능 점 격자 점이다: 트윈 원점 기준 WALK_STEP 배수 자리, 또는 문 앞 점(문 점과 x나 z가 같고 다른 축은 WALK_STEP 배수). */
+const onStep = (v: number) => Math.abs(v / WALK_STEP - Math.round(v / WALK_STEP)) < 1e-6;
+const onGrid = (scene: SceneJson) => {
+  const doors = ((scene.plan.doors ?? []) as { position: Vec2 }[]).map((d) => d.position);
+  return (p: { kind: string; position: number[] }) => {
+    if (p.kind !== "via") return true;
+    const [x, z] = [p.position[0]!, p.position[2]!];
+    return (onStep(x) && onStep(z)) || doors.some((d) => (Math.abs(x - d[0]) < 1e-9 && onStep(z)) || (Math.abs(z - d[1]) < 1e-9 && onStep(x)));
+  };
+};
 
 export const rooms = [
   {
@@ -41,10 +53,11 @@ describe("walking map", () => {
   it("routes through the opening and ends at the configured floor height", () => {
     const map = walkingMap(floorPlanFrom(fixture), fixture);
     const path = map.plan([1, 2], [7, 2], 0.32, true);
-    expect(path?.remaining).toEqual([
+    expect(path?.remaining.filter((p) => p.kind !== "via")).toEqual([
       { kind: "portal", id: "p", from_room: "A", to_room: "B", position: [4, 0.05, 2] },
       { kind: "stand", room: "B", position: [7, 0.05, 2] },
     ]);
+    expect(path?.remaining.every(onGrid(fixture))).toBe(true);
     expect(map.plan([-1, 0], [7, 2], 0.32, true)).toBeNull();
   });
   it("rebuilds a stale plan leg and rejects a short fallback that would end on the doorway",()=>{
@@ -110,13 +123,35 @@ describe("walking map", () => {
     // Stage 8 also starts here in recordings made with the original table front.
     const from: [number,number] = [9.96,5.15];
     sample(from);
-    expect(sample(from).guide?.remaining.slice(0,2)).toMatchObject([{kind:"via",room:"living"},{kind:"portal",to_room:"kitchen"}]);
-    for (const p of [[9.6,4.6],[9.4,4.1],[9.1,3.6],[8.9,3.206],[8.6,3.206]] as [number,number][]) sample(p);
-    expect(sample([8.45,3.206]).guide?.remaining[0]).toMatchObject({kind:"stand",position:[6.52,0,0.693]});
+    const guide = sample(from).guide!.remaining;
+    // 식탁 모서리(거실 격자 점)를 돌아 주방 트인 곳을 지나 싱크대 앞에 선다
+    expect(guide[0]).toMatchObject({kind:"via",room:"living"});
+    expect(guide.find((p) => p.kind === "portal")).toMatchObject({kind:"portal",to_room:"kitchen"});
+    expect(guide.every(onGrid(scene))).toBe(true);
+    // 안내 점을 따라 걸으면 마지막에는 싱크대 앞 설 자리만 남는다
+    for (const p of guide.slice(0, -1)) { sample([p.position[0], p.position[2]]); sample([p.position[0], p.position[2]]); }
+    expect(sample([6.9, 0.9]).guide?.remaining[0]).toMatchObject({kind:"stand",position:[6.52,0,0.693]});
     expect(map.plan(table.position,sink.position,sink.near_m,true)).not.toBeNull();
     const path = map.plan([9.1, 2.75], sink.position, sink.near_m, true);
     expect(path?.remaining.some((p) => p.kind === "portal")).toBe(true);
     expect(path?.remaining.at(-1)?.position).toEqual([6.52, 0, 0.693]);
+  });
+  it("phone guide waypoints are all walkable grid points (real home routes between standby, watch and furniture front spots)", () => {
+    const home = resolveHome(DEFAULT_TWIN_DIR, "mokryeon_180b");
+    const scene = loadScene(home)!;
+    const catalog = loadCatalog(home.catalogDir);
+    const map = walkingMap(floorPlanFrom(scene), scene, (type) => catalog.get(type)?.footprint);
+    const spots: Vec2[] = [...scene.stations.stations.map((s) => s.position), ...scene.stations.surface_fronts.map((f) => f.position)];
+    let vias = 0;
+    for (const a of spots)
+      for (const b of spots) {
+        if (a === b) continue;
+        const guide = map.plan(a, b, 0.3, true);
+        if (!guide) continue;
+        vias += guide.remaining.filter((p) => p.kind === "via").length;
+        expect(guide.remaining.every(onGrid(scene)), `${a} → ${b}`).toBe(true);
+      }
+    expect(vias).toBeGreaterThan(50);
   });
   describe("real home doors", () => {
     const home = resolveHome(DEFAULT_TWIN_DIR, "mokryeon_180b");
