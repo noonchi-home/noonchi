@@ -1,6 +1,7 @@
 import { useState } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Pressable, StyleSheet, View } from "react-native";
 import type { SceneJson, Vec2 } from "../../src/contract/layout";
+import { Text } from "./AppText";
 import { colors } from "./ConnectedUi";
 import { planFrame, planLines, segments, type Segment } from "./plan-lines";
 

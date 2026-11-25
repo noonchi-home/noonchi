@@ -50,7 +50,7 @@ export function MinimapView() {
   useEvents(onMessage, onConnection);
   const mobileUrl = useMobileUrl(hellos);
   const phone: PhoneSlot = health?.eye ? { kind: "live", url: mobileUrl } : health || mobileUrl ? { kind: "qr", url: mobileUrl } : { kind: "none" };
-  const ready = useFontsLoaded("Noto Sans KR Variable", JSON.stringify([WORDS, "0123456789"]));
+  const ready = useFontsLoaded("Pretendard Variable", JSON.stringify([WORDS, "0123456789"]));
   const box = minimapBox(view);
   return (
     <main ref={main} data-view="minimap" data-ready={ready || undefined} className="relative h-full w-full overflow-hidden">

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
-import { ActivityIndicator, Alert, AppState, Image, Linking, Pressable, StatusBar, StyleSheet, Text, View, useWindowDimensions } from "react-native";
+import { ActivityIndicator, Alert, AppState, Image, Linking, Pressable, StatusBar, StyleSheet, View, useWindowDimensions } from "react-native";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import { SafeAreaProvider, SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import ConnectedHome from "./ConnectedHome";
@@ -7,6 +7,9 @@ import { createDashboardFlow } from "./dashboard-flow";
 import { connectDashboard } from "./pairing";
 import { startNativeAr } from "./native-twa";
 import { BrandWordmark, wordmarkBackground } from "./BrandWordmark";
+import { FontsMissing, Text } from "./AppText";
+import { font } from "./fonts";
+import { useAppFonts } from "./dev-fonts";
 import { launchLayout } from "./launch-layout";
 import { ScreenBoundary } from "./screen-boundary";
 import { clientErrorReport, reportClientError } from "./client-error";
@@ -145,13 +148,15 @@ function Portal({ flow }: { flow: DashboardFlow }) {
 }
 
 export default function App() {
+  const fonts = useAppFonts();
   const [flow] = useState(() => createDashboardFlow({ connect: connectDashboard, open: startNativeAr }, activeNow()));
-  return <SafeAreaProvider>
+  if (fonts === "loading") return null;
+  return <FontsMissing.Provider value={fonts === "missing"}><SafeAreaProvider>
     <ScreenBoundary fallback={retry => <ScreenFailed onRetry={retry} />}
       onError={(error, componentStack) => reportScreenError(flow, error, componentStack)}>
       <Portal flow={flow} />
     </ScreenBoundary>
-  </SafeAreaProvider>;
+  </SafeAreaProvider></FontsMissing.Provider>;
 }
 
 const styles = StyleSheet.create({
@@ -163,13 +168,13 @@ const styles = StyleSheet.create({
   page: { flex: 1, backgroundColor: "#fbf7f0" },
   header: { minHeight: 64, backgroundColor: wordmarkBackground, justifyContent: "center", alignItems: "center" },
   content: { flex: 1, padding: 20, gap: 16 },
-  title: { color: "#211d1d", fontSize: 24, fontWeight: "700" },
+  title: { color: "#211d1d", fontSize: 24, ...font(700) },
   text: { color: "#42403f", fontSize: 16, lineHeight: 23 },
   progress: { flexDirection: "row", alignItems: "center", gap: 10 },
   preview: { flex: 1, maxHeight: 470, minHeight: 160, borderRadius: 16, overflow: "hidden", backgroundColor: "#211d1d",
     alignItems: "center", justifyContent: "center" },
   guide: { width: "65%", aspectRatio: 1, borderRadius: 16, borderWidth: 2, borderColor: "#ffffff" },
   button: { minHeight: 48, justifyContent: "center", alignItems: "center", padding: 12, borderRadius: 10, backgroundColor: brand },
-  buttonText: { color: "#ffffff", fontSize: 17, fontWeight: "600", textAlign: "center" },
+  buttonText: { color: "#ffffff", fontSize: 17, ...font(600), textAlign: "center" },
   dim: { opacity: 0.65 },
 });

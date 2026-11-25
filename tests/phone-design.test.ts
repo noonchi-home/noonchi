@@ -1,4 +1,4 @@
-// 폰 화면 프레임 명령 대상 그림(ui/src/phone/core/marks.js): 색은 src/design/tokens.ts, 워커 글꼴은 ui 빌드가 묶은 Noto Sans KR Variable.
+// 폰 화면 프레임 명령 대상 그림(ui/src/phone/core/marks.js): 색은 src/design/tokens.ts, 워커 글꼴은 ui 빌드가 묶은 Pretendard Variable.
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
@@ -38,7 +38,7 @@ describe("폰 초점 표시(marks.js)", () => {
 
   it("marks.js는 src/design/tokens.ts 값, 워커는 ui 빌드가 묶은 글꼴 목록(font-faces.js)을 쓴다", () => {
     expect(core("marks.js")).toContain('from "../../../../src/design/tokens.ts"');
-    expect(markFont(640)).toMatch(/^bold \d+px "Noto Sans KR Variable"/);
+    expect(markFont(640)).toMatch(/^bold \d+px "Pretendard Variable"/);
     const worker = core("encoder-worker.js");
     expect(worker).toContain('from "./font-faces.js"');
     expect(worker).toContain("new FontFace(");

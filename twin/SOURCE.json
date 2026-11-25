@@ -553,8 +553,9 @@
     },
     {
       "path": "apartment/viewer/style.css",
-      "bytes": 8277,
-      "sha256": "215e10250b633223c71297ac4b76392eb430e5b9ec6955c18e52d982a32e3fcb"
+      "bytes": 8798,
+      "sha256": "b6bc75a605cf55e191651e9f7ae07d111ab67ceec05df66352d6f692251a102a",
+      "patched": "baed4780"
     },
     {
       "path": "apartment/viewer/touch.mjs",

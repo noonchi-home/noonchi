@@ -1,7 +1,7 @@
 import { MotionConfig } from "motion/react";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import "@fontsource-variable/noto-sans-kr";
+import "pretendard/dist/web/variable/pretendardvariable-dynamic-subset.css";
 import "../styles.css";
 import { createPhoneController } from "./controller";
 import { PhoneApp } from "./PhoneApp";

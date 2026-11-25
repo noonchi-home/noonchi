@@ -101,7 +101,7 @@ export function DashboardScreen({ index, plan, step, robotKnown, connected, map,
   const decoded = usePredecode([MASCOT.src]);
   // 지금 화면 글이 쓰는 글꼴 조각을 받는다(처음 나오는 글자가 새 조각을 받으면 글을 다시 그린다)
   const text = JSON.stringify([plan?.goal, plan?.steps.map((s) => s.label), WORDS, "0123456789"]);
-  const fonts = useFontsLoaded("Noto Sans KR Variable", text);
+  const fonts = useFontsLoaded("Pretendard Variable", text);
   const phase = usePreDraw(fonts && decoded && mapReady);
   const ready = phase === "done";
   const report = useRef(onReady);

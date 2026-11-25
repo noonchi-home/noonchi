@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AppState, BackHandler, Image, Pressable, ScrollView, StatusBar, StyleSheet, Text, View, useWindowDimensions } from "react-native";
+import { AppState, BackHandler, Image, Pressable, ScrollView, StatusBar, StyleSheet, View, useWindowDimensions } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import type { SetupView } from "../../src/contract/setup";
 import { activeHome, createConnectedHub, readHomeCard, startPositionLabel, type ConnectedHub } from "./connected-hub";
@@ -8,6 +8,8 @@ import { Action, Copy, Failure, Heading, Loading, Panel, colors, useResource } f
 import { ConnectedHouse } from "./ConnectedHouse";
 import { ConnectedSettings } from "./ConnectedSettings";
 import { BrandWordmark, wordmarkBackground } from "./BrandWordmark";
+import { Text } from "./AppText";
+import { font } from "./fonts";
 
 export interface ConnectedHomeProps {
   hubUrl: string;
@@ -17,7 +19,8 @@ export interface ConnectedHomeProps {
 
 const peek = require("./assets/face-peek.webp");
 const mascot = require("./assets/mascot-large.webp");
-const tabs = [{ id: "home", name: "홈", glyph: "⌂" }, { id: "house", name: "집 관리", glyph: "▤" }, { id: "settings", name: "설정", glyph: "⚙" }] as const;
+// 웹 폰 탭과 같은 lucide 그림(scripts/android-tab-icons.ts). 기호 글자는 Pretendard에 없어 시스템 글꼴 400으로 그려진다.
+const tabs = [{ id: "home", name: "홈", icon: require("./assets/tabs/house.png") }, { id: "house", name: "집 관리", icon: require("./assets/tabs/map.png") }, { id: "settings", name: "설정", icon: require("./assets/tabs/settings.png") }] as const;
 type Tab = (typeof tabs)[number]["id"];
 const homeName = (name: string) => name.replace(/\s*[(（].*$/, "").trim() || name;
 
@@ -146,7 +149,7 @@ function HubTabs({ hubUrl, onStart, onDisconnect }: ConnectedHomeProps) {
     {!building && <View accessibilityRole="tablist" style={[styles.nav, { paddingBottom: inset.bottom }]}>
       {tabs.map(item => <Pressable key={item.id} accessibilityRole="tab" accessibilityLabel={item.name}
         accessibilityState={{ selected: tab === item.id }} onPress={() => move(item.id)} style={[styles.tab, tab === item.id && styles.active]}>
-        <Text accessible={false} importantForAccessibility="no" style={[styles.tabGlyph, tab === item.id && styles.activeText]}>{item.glyph}</Text>
+        <Image source={item.icon} accessible={false} style={[styles.tabIcon, tab === item.id && styles.activeIcon]} />
         <Text accessible={false} style={[styles.tabLabel, tab === item.id && styles.activeText]}>{item.name}</Text>
       </Pressable>)}
     </View>}
@@ -208,7 +211,7 @@ const styles = StyleSheet.create({
   homeRows: { borderWidth: 1, borderColor: colors.edge, borderRadius: 8, backgroundColor: colors.canvas, overflow: "hidden" },
   homeRow: { minHeight: 44, paddingHorizontal: 10, paddingVertical: 8, flexDirection: "row", alignItems: "center", gap: 8 },
   rowDivider: { height: StyleSheet.hairlineWidth, backgroundColor: colors.edge },
-  rowTitle: { flex: 1, color: colors.ink, fontSize: 15, fontWeight: "600" },
+  rowTitle: { flex: 1, color: colors.ink, fontSize: 15, ...font(600) },
   rowStatus: { flexDirection: "row", alignItems: "center", gap: 6 },
   rowValue: { color: colors.muted, fontSize: 13 },
   rowArrow: { color: colors.muted, fontSize: 17 },
@@ -218,7 +221,7 @@ const styles = StyleSheet.create({
   mascot: { position: "absolute" },
   nav: { flexDirection: "row", backgroundColor: colors.white, borderTopWidth: 1, borderTopColor: colors.edge, paddingHorizontal: 10, zIndex: 1 },
   tab: { flex: 1, minHeight: 56, alignItems: "center", justifyContent: "center", borderBottomWidth: 2, borderBottomColor: "transparent", gap: 3 },
-  active: { borderBottomColor: colors.brand }, activeText: { color: colors.brand, fontWeight: "700" },
-  tabGlyph: { fontSize: 22, lineHeight: 24, color: colors.muted },
+  active: { borderBottomColor: colors.brand }, activeText: { color: colors.brand, ...font(700) },
+  tabIcon: { width: 22, height: 22, tintColor: colors.muted }, activeIcon: { tintColor: colors.brand },
   tabLabel: { fontSize: 12, color: colors.ink },
 });

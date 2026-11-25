@@ -16,7 +16,12 @@
     },
     "plugins": [
       ["expo-camera", { "recordAudioAndroid": false, "barcodeScannerEnabled": true }],
-      ["expo-splash-screen", { "backgroundColor": "#A50034", "image": "./assets/splash-icon.png", "imageWidth": 72 }]
+      ["expo-splash-screen", { "backgroundColor": "#A50034", "image": "./assets/splash-icon.png", "imageWidth": 72 }],
+      ["expo-font", { "android": { "fonts": [
+        { "fontFamily": "Pretendard-SemiBold", "fontDefinitions": [{ "path": "./assets/fonts/Pretendard-SemiBold.otf", "weight": 600 }] },
+        { "fontFamily": "Pretendard-Bold", "fontDefinitions": [{ "path": "./assets/fonts/Pretendard-Bold.otf", "weight": 700 }] }
+      ] } }],
+      "./plugins/pretendard.cjs"
     ]
   }
 }

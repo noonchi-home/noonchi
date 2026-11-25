@@ -1,9 +1,9 @@
 // JPEG 인코딩 워커. 크롬의 canvas.toBlob은 메인 스레드가 한가할 때(idle) 인코딩을 시작하는데, WebXR AR 중에는
 // 페이지 화면을 그리지 않아 한가한 틈이 거의 없다. 그래서 화면을 터치해야 프레임이 나가고 끊겨 보였다.
 // 워커의 OffscreenCanvas는 메인 스레드 일정과 따로 돌므로 AR 중에도 바로 인코딩된다.
-// 초점 이름표 글꼴: 워커에는 페이지의 @font-face가 없어서 ui 빌드가 묶은 Noto Sans KR Variable 조각(font-faces.js)을 FontFace로 넣고, 그릴 글자의 조각을 받은 뒤 그린다.
+// 초점 이름표 글꼴: 워커에는 페이지의 @font-face가 없어서 ui 빌드가 묶은 Pretendard Variable 조각(font-faces.js)을 FontFace로 넣고, 그릴 글자의 조각을 받은 뒤 그린다.
 
-import { faces, family } from "./font-faces.js";
+import { faces, family, weight } from "./font-faces.js";
 import { drawMarks, markFont } from "./marks.js";
 
 let canvas = null;
@@ -16,7 +16,7 @@ async function loadFont(marks, width) {
   if (!text || !self.fonts || typeof FontFace !== "function") return;
   if (!fontsAdded) {
     for (const f of faces) {
-      self.fonts.add(new FontFace(family, `url(${f.url}) format("woff2")`, { weight: "100 900", unicodeRange: f.unicodeRange }));
+      self.fonts.add(new FontFace(family, `url(${f.url}) format("woff2")`, { weight, unicodeRange: f.unicodeRange }));
     }
     fontsAdded = true;
   }
