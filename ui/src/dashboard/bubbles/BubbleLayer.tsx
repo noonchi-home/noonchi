@@ -10,6 +10,7 @@ import { cn } from "../../lib/utils";
 import type { ScreenPoint } from "../../twin";
 import { ALIGN_EDGE, placeBubbles, type Box, type Placement, type Rect } from "./place";
 import { deviceSummary, type Tone } from "./summary";
+import { markTone } from "../trace-marks";
 
 /** 번호 동그라미 색(21st.dev Avatar tone). 상태는 색만으로 말하지 않는다: 경고는 TriangleAlert, 모름은 CircleHelp를 번호 옆에 둔다. */
 const ORDER: Record<Tone, "ok" | "off" | "error" | "warn"> = { on: "ok", off: "off", alert: "error", unknown: "warn" };
@@ -29,8 +30,6 @@ const RANK: Record<Tone, number> = { alert: 1, on: 2, off: 2, unknown: 3 };
 
 type Shown = { id: string; title: string; line?: string; tone?: Tone; order?: number };
 
-/** 트레이스 결과 칩 색(21st.dev Status variant): 진행 중 brand, 끝 success, 실패 error, 취소 기본. */
-const TRACE_CHIP: Record<NonNullable<Check["trace"]>["state"], "default" | "success" | "error" | "brand"> = { pending: "brand", done: "success", failed: "error", cancelled: "default" };
 
 function shownOf(c: Check, devices: Map<string, DeviceView>, objects: Map<string, string>): Shown | null {
   if (c.deviceId) {
@@ -60,7 +59,7 @@ function Bubble({ s, verb, trace, p, big, place, measure, onSize }: {
   // 그린 판 크기를 알린다(자리 고르기에 쓴다)
   useLayoutEffect(() => { if (content.current) onSize(s.id, measure(content.current)); });
   // 칩 글: 트레이스 줄이 붙었으면 그 결과, 아니면 확인 verb
-  const chip = trace ? { text: trace.text, variant: TRACE_CHIP[trace.state] } : { text: verb, variant: VERB[verb] };
+  const chip = trace ? { text: trace.text, variant: markTone({ kind: "device", state: trace.state }) } : { text: verb, variant: VERB[verb] };
   return (
     <div
       ref={setBox}

@@ -53,7 +53,8 @@ describe("대시보드", () => {
     expect(container.querySelectorAll(FIELDS)).toHaveLength(0);
     expect(screen.queryByRole("button", { name: /보내기|승인$/ })).toBeNull();
     await within(screen.getByRole("region", { name: "폰 카메라" })).findByRole("img", { name: "폰 연결 QR" });
-    await userEvent.click(within(screen.getByRole("region", { name: "마스코트" })).getByRole("button", { name: "설정 열기" }));
+    // 화면에 설정 단추가 없다: 설정 창은 Ctrl+1로 연다
+    await userEvent.keyboard("{Control>}1{/Control}");
     const dialog = await screen.findByRole("dialog");
     const settings = within(dialog);
     expect(settings.getByText(HUB_URL)).toBeInTheDocument();

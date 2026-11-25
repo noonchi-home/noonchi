@@ -1,7 +1,7 @@
 // 시간 줄 카드 자료(순수 함수): 대시보드 자료(data.ts) → 사람 · 로봇 두 줄의 구간(ms 시각)과 사람이 떠난 때 → 첫 명령 간격.
 // 숫자는 모두 서버 자료에서 온다: 사람 줄은 서버 사람 상태(person 메시지, 받기 전에는 유효한 판단의 습관 FSM 상태와 그 판단 시각, people), 로봇 줄은 실행 전이의 since_ms(이전 기록은 계획 단계의 started_ms·ended_ms),
 // 간격은 목표의 사람이 떠난 때(gone_ms)와 첫 단계 시작. 계획 밖 로봇은 지켜봄이다. 예상 줄(목표 구간·글)은 없다(2026-11-19 사용자 「예상을 없애자」).
-// 그리기(지금이 오른쪽 끝, 초 눈금)는 TimelineCard가 한다.
+// 가짜 단계 화면 상태 표(StatusTable)가 이 자료의 지금 상태를 쓴다.
 import type { PlanView } from "../../../src/contract/plan.ts";
 import { isOpen, type DashData } from "./data";
 import { WORDS } from "./words";
