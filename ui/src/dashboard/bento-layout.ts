@@ -1,6 +1,6 @@
 import tokens from "../../../src/design/tokens.json";
 import { mascotImageBox, mascotLogoBox } from "./bust";
-import { MINIMAP_ASPECT, pageLayout, WIDE, type PageLayout, type Rect } from "./layout";
+import { pageLayout, WIDE, type PageLayout, type Rect } from "./layout";
 import type { MascotImage } from "../lib/mascot-image";
 import type { BoxSize } from "./fit";
 
@@ -13,7 +13,7 @@ export const SCENE = { pad: 16, gap: 16, left: 0.55, stackBelow: 720 } as const;
  * 여백 안 너비가 720px 미만이면 Vision → 트윈 → Agent Trace를 세로로 쌓는다. 화면에 설정 단추는 없다(설정 창은 Ctrl+1).
  */
 export function sceneLayout(view: BoxSize, mascot: MascotImage): PageLayout & { trace: Rect } {
-  const base = pageLayout(view, mascot, MINIMAP_ASPECT);
+  const base = pageLayout(view, mascot);
   const { pad, gap } = SCENE;
   const width = Math.max(0, view.width - 2 * pad);
   const stacked = width < SCENE.stackBelow;
