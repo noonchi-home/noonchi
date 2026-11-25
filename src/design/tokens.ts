@@ -382,12 +382,15 @@ export const scene3d = {
 } as const;
 
 export const font = {
-  "sans": "\"Noto Sans KR Variable\", \"Noto Sans KR\", \"Malgun Gothic\", \"Apple SD Gothic Neo\", system-ui, sans-serif",
-  "mono": "ui-monospace, \"Cascadia Mono\", Consolas, \"D2Coding\", monospace",
-  "canvas": "\"Noto Sans KR Variable\", \"Malgun Gothic\", sans-serif",
+  "sans": "\"Pretendard Variable\", \"Noto Sans KR Variable\", \"Noto Sans KR\", \"Malgun Gothic\", \"Apple SD Gothic Neo\", system-ui, sans-serif",
+  "mono": "\"Pretendard Variable\", ui-monospace, \"Cascadia Mono\", Consolas, \"D2Coding\", monospace",
+  "canvas": "\"Pretendard Variable\", \"Noto Sans KR Variable\", \"Malgun Gothic\", sans-serif",
   "weights": {
-    "regular": 400,
-    "medium": 500,
+    "thin": 600,
+    "extralight": 600,
+    "light": 600,
+    "normal": 600,
+    "medium": 600,
     "semibold": 600,
     "bold": 700,
     "brand": 850

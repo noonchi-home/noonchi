@@ -8,9 +8,11 @@
 
 ## 글꼴
 
-- Noto Sans KR Variable: npm `@fontsource-variable/noto-sans-kr` 5.3.1, SIL Open Font License 1.1.
-  - 대시보드·설정·폰 화면은 `ui`가 꾸러미를 묶어 내준다. 폰 인코딩 워커는 `ui/src/phone/core/font-faces.js` 목록으로 같은 파일을 넣는다. 외부 CDN을 쓰지 않는다.
-  - 라이선스 글: `ui/public/fonts/OFL-noto-sans-kr.txt`.
+- Pretendard Variable: npm `pretendard` 1.3.9(orioncactus/pretendard), SIL Open Font License 1.1. 고치지 않은 꾸러미 파일을 그대로 쓴다.
+  - 대시보드·설정·폰·모바일 화면은 `ui`가 동적 부분집합 CSS(`dist/web/variable/pretendardvariable-dynamic-subset.css`)와 woff2 조각을 묶어 내준다. 폰 인코딩 워커는 `ui/src/phone/core/font-faces.js` 목록으로 같은 파일을 넣는다. 외부 CDN을 쓰지 않는다.
+  - 트윈 뷰어(`twin/apartment/viewer/style.css`)는 `ui` 빌드가 내주는 `/fonts/pretendard.css`로 같은 조각을 쓴다.
+  - 평면도 `ui/src/mobile/mokryeon-plan.svg`는 글자가 든 정적 SemiBold 조각(`dist/web/static/woff2-dynamic-subset/`)을 data URI로 품는다.
+  - 라이선스 글: `ui/public/fonts/OFL-pretendard.txt`.
 
 ## 브랜드 그림
 

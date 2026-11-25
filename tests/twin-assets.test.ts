@@ -156,9 +156,9 @@ describe("저장소 twin/SOURCE.json", () => {
     expect(wrong).toEqual([]);
   });
 
-  it("이 저장소에서 고친 복사본은 뷰어 main.mjs·scene.mjs 둘이다(docs/provenance.md, tests/twin-viewer.test.ts)", () => {
+  it("이 저장소에서 고친 복사본은 뷰어 main.mjs·scene.mjs·style.css 셋이다(docs/provenance.md, tests/twin-viewer.test.ts, tests/design-font.test.ts)", () => {
     expect(src.files.filter((f) => f.patched).map((f) => [f.path, f.patched])).toEqual([
-      ["apartment/viewer/main.mjs", "23a8a2f"], ["apartment/viewer/scene.mjs", "23a8a2f"],
+      ["apartment/viewer/main.mjs", "23a8a2f"], ["apartment/viewer/scene.mjs", "23a8a2f"], ["apartment/viewer/style.css", "feat/pretendard"],
     ]);
   });
 });

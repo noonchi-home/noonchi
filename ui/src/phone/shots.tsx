@@ -5,7 +5,7 @@
 // 처음 화면은 「카메라 켜기」 단추가 첫 화면 밖이면 같은 방법으로 실패한다.
 import { useEffect, useRef } from "react";
 import { createRoot } from "react-dom/client";
-import "@fontsource-variable/noto-sans-kr";
+import "pretendard/dist/web/variable/pretendardvariable-dynamic-subset.css";
 import "../styles.css";
 import { color } from "../../../src/design/tokens.ts";
 import { drawOverlay, fitCanvas, overlayEdges, type Drawn } from "./draw";
