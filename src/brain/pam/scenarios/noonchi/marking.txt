@@ -19,8 +19,9 @@ something finishing or stopping (for example, leaving the table after drinking) 
 once: the first time for something beginning, the last time for something finishing.
 - For each action, first find each moment the person themselves did the task, for
 example the cup going into the sink, or the person turning on the living-room air conditioner by hand. Then go back from that moment, line by line,
-to the first line where they started walking toward the object or device, even if that
-line does not name it. List that line's time. Count only the same object or device the task is about (another room's air conditioner is another device).
+to the first line where they first moved to do the task: reaching for or picking up the
+task's object, or starting to walk toward the object or device, whichever comes first,
+even if that line does not name it. List that line's time. Count only the same object or device the task is about (another room's air conditioner is another device).
 Do not count what the robot did or what the person did because the robot asked them to.
 - List every interval in which the person is not visible, from the first line to the
 last line where they are not visible. If it is still going at the end of the record,

@@ -14,11 +14,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { HistoryDb } from "../src/brain/history/db.js";
 import { runNight, type NightResult } from "../src/brain/history/night.js";
-import { PamClient, type CallOptions, type MemoryVerdict } from "../src/brain/pam/index.js";
-import type { CandidateFsm } from "../src/contract/pam.js";
+import { PamClient } from "../src/brain/pam/index.js";
 import { pamSettings } from "../src/brain/pam/settings.js";
 import type { PamUsage } from "../src/contract/events.js";
-import { checkView } from "./beer-check-view.js";
 import { BEER_CANDIDATES, beerRecords, fakeChunk, fakeMark, groundMark } from "./beer-experiment-records.js";
 import { pamClientFor, pamView, startFakePamLlm, type MarkView } from "../tests/helpers/pam.js";
 
@@ -30,12 +28,6 @@ const GPT_MINI: Price = { in: 0.75, cached: 0.075, out: 4.5 };
 const QWEN_OPENROUTER: Price = { in: 0.195, cached: 0.195, out: 1.56 };
 const usd = (u: { prompt: number; completion: number; cached: number }, p: Price) => ((u.prompt - u.cached) * p.in + u.cached * p.cached + u.completion * p.out) / 1e6;
 
-/** 실험 전용: 뜻 검사 AI에게 보내는 사본만 checkView(scripts/beer-check-view.ts)로 맞춘다. 반성·채택 계산은 원래 기억 그대로다. */
-class ExperimentPamClient extends PamClient {
-  override async checkMemory(memory: CandidateFsm, call: CallOptions = {}): Promise<MemoryVerdict> {
-    return super.checkMemory(checkView(memory), call);
-  }
-}
 
 /** OpenRouter가 알려 준 제공자·비용(호출마다 모은다). */
 interface OrStats { providers: Map<string, number>; reportedUsd: number; calls: number }
@@ -94,7 +86,7 @@ function openRouterClient(key: string, stats: OrStats, dumpPath?: string, ground
     delete body.chat_template_kwargs;
     // 노닌치는 밤의 AI 호출 넷(덩어리·반성·뜻 검사·시각 찾기)을 모두 반성용 설정(생각 켬, 온도 0.3)으로 보낸다. 이 실험에서는 세 호출(반성·뜻 검사·시각 찾기)만 생각을 켜고
     // 구조만 다루는 덩어리 만들기는 생각을 끄고 온도 0으로 보낸다. 시각 찾기도 처음에는 끄고 돌렸다가 맥주 꺼내기를 «캔 치우기»에 잘못 붙였다(2026-11-22, 10-17 하루치: 끄면 틀리고 켜면 둘 다 맞음).
-    // 호출 종류는 시스템 프롬프트 첫 문장으로 가른다. (뜻 검사가 기본 기억을 거절하는 것은 생각 설정 때문이 아니다: ExperimentPamClient 설명 참고)
+    // 호출 종류는 시스템 프롬프트 첫 문장으로 가른다.
     const first = (body.messages as { content: unknown }[] | undefined)?.[0]?.content;
     const firstText = typeof first === "string" ? first : Array.isArray(first) ? first.map((c: { text?: string }) => c.text ?? "").join("") : "";
     const reflect = firstText.startsWith("You are observing a person");
@@ -131,7 +123,7 @@ function openRouterClient(key: string, stats: OrStats, dumpPath?: string, ground
     }).catch(() => {});
     return res;
   };
-  return new ExperimentPamClient({ settings, fetchImpl });
+  return new PamClient({ settings, fetchImpl });
 }
 
 /** 밤을 하나씩 돌린다. emit으로 그 밤의 사용량을 받고, 밤마다 한 줄 요약을 돌려준다. */
@@ -183,7 +175,7 @@ async function main(): Promise<void> {
     const maxUsd = Number(arg("--max-usd") ?? 5);
     // 열쇠는 이 클라이언트 설정에만 들어가고 출력하지 않는다
     const orStats: OrStats = { providers: new Map(), reportedUsd: 0, calls: 0 };
-    const client = viaOpenRouter ? openRouterClient(key, orStats, join(out, "check-inputs.jsonl"), process.argv.includes("--ground-marks")) : new ExperimentPamClient({ settings: pamSettings({ INFERENCE_MODE: "openai", OPENAI_API_KEY: key }) });
+    const client = viaOpenRouter ? openRouterClient(key, orStats, join(out, "check-inputs.jsonl"), process.argv.includes("--ground-marks")) : new PamClient({ settings: pamSettings({ INFERENCE_MODE: "openai", OPENAI_API_KEY: key }) });
     const price = viaOpenRouter ? QWEN_OPENROUTER : GPT_MINI;
     console.log(`실제 AI 실험 시작: 모델 ${viaOpenRouter ? "qwen/qwen3.5-27b (OpenRouter, 가격 순 제공자)" : pamSettings({ INFERENCE_MODE: "openai", OPENAI_API_KEY: "x" }).model}, ${runDays.length}밤${only ? `(${runDays.join(", ")})` : ""}, 상한 ${maxUsd}, 결과 폴더 ${out}`);
     const total = await runNights(db, client, runDays, join(out, "copies"), { maxUsd, price, log: join(out, "nights.jsonl"), skipDone: true });
