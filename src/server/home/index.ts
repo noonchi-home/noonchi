@@ -27,7 +27,7 @@ import { onReflection, sayTimer, startSay } from "./say.js";
 import { setLink, setRelay, startDevices } from "./devices.js";
 import { shotSigner } from "../routes/home-shots.js";
 import { HomeCore } from "./core.js";
-import { listHomes, validateStations } from "../../layout/index.js";
+import { listHomes, validateStations, withFootprints } from "../../layout/index.js";
 import { createApp, type TwinHomeApp } from "../app.js";
 import { HomeTrace } from "./trace.js";
 
@@ -199,7 +199,7 @@ function startApp(core: HomeCore): void {
     sceneRuntimeDir:ctx.runtimeDir, signShot:shotSigner(ctx.runtimeDir,ctx.env),
     localizeStatus: () => core.localizer?.status() ?? null,
     phoneSync: () => core.phone?.syncState() ?? null,
-    plan: plans, offTrack: () => core.tracker?.offTrack() ?? null, history: history.db, reflect: history.reflect, scene: () => core.scene,
+    plan: plans, offTrack: () => core.tracker?.offTrack() ?? null, history: history.db, reflect: history.reflect, scene: () => core.scene && withFootprints(core.scene, (type) => layout?.catalog.get(type)?.footprint),
     brainLast: () => [...todayReflection(history.db), ...(core.lastDecision ? [core.lastDecision] : [])], thoughtLast: () => core.thoughts?.last() ?? null, seenLast: () => core.lastSeen, say: () => ({ text: core.said, ...(core.saidSafety ? { safety: true as const } : {}) }),
     actMode: () => core.mode(),
     goalLast: () => core.goal,

@@ -96,3 +96,15 @@ export function loadScene(home: SceneHome): (SceneJson & { added?: string[]; doc
   const add = ((read(addedFile) as { items?: AddedDevice[] }).items ?? []).filter((d) => !have.has(d.id)).map((d) => addedObject(d, home));
   return docked(add.length ? { ...scene, objects: [...scene.objects, ...add], added: add.map((o) => o.id) } : scene);
 }
+
+/** /api/scene으로 보낼 장면: 바닥 물건에 footprint가 없으면 카탈로그 footprint를 채운다. 브라우저가 서버와 같은 걷기 판정·격자(walkingGeometry·walkGrid)를 만든다. */
+export function withFootprints<T extends SceneJson>(scene: T, footprintOf: (type: string) => Vec2 | undefined): T {
+  return {
+    ...scene,
+    objects: (scene.objects as SceneObject[]).map((o) => {
+      if (o.mount !== "floor" || o.footprint) return o;
+      const footprint = footprintOf(o.type);
+      return footprint ? { ...o, footprint } : o;
+    }),
+  };
+}

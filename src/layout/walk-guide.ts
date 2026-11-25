@@ -58,7 +58,9 @@ export function walkingGeometry(scene: SceneJson, footprintOf?: (type: string)=>
       return false;
     });
   }
-  return {walkable,furnitureClear,rooms,walls,floor};
+  /** 문(벽에 난 개구부): 문 점은 floor.portals의 같은 id 점이다. 걸을 때 이 벽 여유는 문 개구부에서만 뺀다(walkable opening). */
+  const doors = ((scene.plan.doors ?? []) as {id:string; wall?:string; width?:number}[]).map(d=>({id:d.id,wall:d.wall,width:d.width??0}));
+  return {walkable,furnitureClear,rooms,walls,floor,doors};
 }
 export type WalkingMap = ReturnType<typeof walkingMap>;
 type Point = TwinWalkGuide["remaining"][number];

@@ -11,6 +11,6 @@ export { placeName, type PlaceNames } from "./names.js";
 export { detectRooms, resolveRoom } from "./rooms.js";
 export { walkingMap, type WalkingMap } from "./walk-guide.js";
 export { roomAt, floorPlanFrom, roomNamedAt } from "./route.js";
-export { loadScene } from "./scene.js";
+export { loadScene, withFootprints } from "./scene.js";
 export { validateStations, standbyFor, zoneAt, locateZone, LOOK_HEIGHT_M } from "./stations.js";
 export { loadTwin, type TwinData, resolveTwinStudioDir } from "./twin-files.js";
