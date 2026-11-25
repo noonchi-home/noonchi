@@ -31,6 +31,7 @@ import { loadScene } from "../../src/layout/scene.js";
 import { STEP_COMMAND, STEP_LABEL } from "../../src/act/labels.js";
 import { cupPlan } from "../../tests/helpers/cup-plan.js";
 import { floorPlanFrom, roomAt } from "../../src/layout/route.js";
+import { HomeTrace } from "../../src/server/home/trace.js";
 
 export type EyeFrameId = "table-far" | "table-near" | "sink" | "sink-cup";
 export interface Moment { index: number; eye: EyeFrameId; messages: ServerMessage[] }
@@ -47,6 +48,10 @@ const OBSERVATION = "식탁 위에 컵이 있고 사람이 자리를 비웠어�
 const ACTION = "컵 치우기";
 const RAMEN = "라면 끓이기 알려 주기";
 const OUT = fileURLToPath(new URL("../../ui/src/dashboard/fake-run.json", import.meta.url));
+/** Agent Trace 줄 epoch: 순간마다 hello가 이 epoch를 알리고 그 순간 Trace 줄 묶음이 뒤따른다(대시보드는 epoch가 같은 줄만 받는다). */
+const TRACE_EPOCH = "fake-run";
+/** 컵 치우기 단계 명령 종류(서버 실행 추적이 폰에 보내는 command.kind). Trace 줄은 이 종류가 있는 명령만 남긴다(src/server/home/trace.ts command). */
+const COMMAND_KIND: Record<keyof typeof STEP_COMMAND, PlannedCommand["kind"]> = { goTable: "go", pickCup: "pick", goSink: "go", placeCup: "place" };
 
 /** 눈 그림을 잘라 낸 시안 가로 그림(1280×720) 자리: 왼쪽 x0(시안 assets.ts EYE_CROP_X0)과 위 y0. */
 const EYE_CROP_X0: Record<EyeFrameId, number> = { "table-far": 428, "table-near": 383, sink: 437, "sink-cup": 524 };
@@ -221,7 +226,18 @@ function build(): { moments: Moment[]; coach: Moment } {
       yolo: shapes.length ? shapes.map((b) => `컵 ${b.score.toFixed(2)}`).join(" · ") : "감지 없음", vlm: null,
     };
     const seen: SeenEvent = { type: "seen", at_ms: now, frame_id: `fake-${n}`, captured_at_ms: now, frame: FRAME, shapes };
+    // Agent Trace 줄: 서버처럼 지금까지 낸 단계 명령마다 줄을 열고(가기 → 이동 안내, 집기 → 집기 안내, 놓기 → 배치 안내) 끝난 단계는 닫는다.
+    // 트윈은 이동 안내 줄의 계획 이동 구간을 길로 그린다(ui/src/dashboard/trace-marks.ts)
+    const trace = new HomeTrace(TRACE_EPOCH, () => now, () => {});
+    if (open) {
+      open.steps.slice(0, n).forEach((s) => {
+        const k = (Object.keys(STEP_COMMAND) as (keyof typeof STEP_COMMAND)[]).find((x) => STEP_LABEL[x] === s.label);
+        if (k) trace.command({ type: "command", id: open.id, step: s.id, text: STEP_COMMAND[k], vision: null, choices: [], target: null, speak: true, kind: COMMAND_KIND[k] }, { ...s, status: "active" });
+      });
+      trace.plan(open);
+    }
     const messages: ServerMessage[] = [
+      { type: "hello", devices: 0, provider: null, hub: "memory", home: HOME, trace_epoch: TRACE_EPOCH },
       { type: "plan", plan: open },
       { type: "eye", eye: eyeEvent },
       { type: "brain", event: decision },
@@ -238,6 +254,7 @@ function build(): { moments: Moment[]; coach: Moment } {
       ...(n === 0
         ? [{ type: "goal", goal } as ServerMessage, { type: "thought", messages: [{ id: `goal-1@${T0 - 10_000}`, text: goalText, at_ms: T0 - 10_000, decision: "goal-1" }] } as ServerMessage]
         : [{ type: "goal", goal: { ...goal, status: "used", gone_ms: T0, fired_ms: T0 } } as ServerMessage]),
+      trace.snapshot(),
     ];
     return { index: n, eye, messages };
   });
@@ -247,7 +264,8 @@ function build(): { moments: Moment[]; coach: Moment } {
   // 계획 순간에는 앞 지켜보기 판단(마시는 중)이 먼저 와 있다: FSM 카드가 마시는 중 → 컵을 두고 자리를 뜸 전이를 안다
   const watched = moments[0]!.messages.find((x) => x.type === "brain" && x.event.type === "decision")!;
   return {
-    moments: moments.map((m, n) => (n === 0 ? m : { ...m, messages: [watched, ...m.messages.filter((x) => x.type !== "say"), decided, ...said.slice(1, n + 1)] })),
+    // hello(Trace epoch)는 자료를 처음부터 시작하므로 맨 앞에 둔다
+    moments: moments.map((m, n) => (n === 0 ? m : { ...m, messages: [m.messages[0]!, watched, ...m.messages.slice(1).filter((x) => x.type !== "say"), decided, ...said.slice(1, n + 1)] })),
     coach: coachMoment(fp, world),
   };
 }

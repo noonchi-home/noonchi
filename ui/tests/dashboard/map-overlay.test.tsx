@@ -404,14 +404,16 @@ describe("대시보드 구운 트윈 위 표시", () => {
     Object.defineProperty(HTMLElement.prototype, "offsetHeight", height);
   });
 
-  it("?debug=steps면 트윈 위 표시도 그 순간 것이고 서버 계획은 쓰지 않는다: 순간 3은 클로이드 원뿔·주방 묶음, 순간 0은 집 전체. 가짜 단계에는 트레이스 줄이 없어 길·번호·사람 이름표·두뇌 말풍선이 없다", async () => {
+  it("?debug=steps면 트윈 위 표시도 그 순간 것이고 서버 계획은 쓰지 않는다: 순간 3은 클로이드 원뿔·주방 묶음, 순간 0은 집 전체. 계획 순간에는 Agent Trace 이동 안내 줄의 길이 있고, 번호·사람 이름표·두뇌 말풍선은 없다", async () => {
     history.replaceState(null, "", "/?debug=steps&step=3");
     const { container } = render(<Dashboard />);
     await waitFor(() => expect(load).toHaveBeenCalled());
     await waitFor(() => expect(engine.setEye.mock.calls.at(-1)?.[0]).toEqual(moment(3).eye));
     // 표시 판의 클로이드 자리는 엔진이 원뿔을 그리는 자리(stand)로 묻고, 엔진에는 받은 눈을 그대로 넣는다
     expect(engine.stand.mock.calls.at(-1)?.[0]).toEqual(moment(3).eye!.position);
-    expect(container.querySelector("[data-map-plate] [data-line], [data-stop]")).toBeNull();
+    // 이동 안내 줄의 길: 지금 싱크대로 가는 구간(now)과 지난 식탁 구간(done). 계획 번호는 그리지 않는다
+    expect([...container.querySelectorAll<HTMLElement>("[data-map-plate] [data-trace-leg]")].map((e) => e.dataset.line).sort()).toEqual(["done", "now"]);
+    expect(container.querySelector("[data-stop]")).toBeNull();
     // 두뇌 「확인」 말풍선은 트윈에 없다(5-1)
     expect(container.querySelector(`[data-check="${SINK}"], [data-mark="${SINK}"]`)).toBeNull();
     const lit = () => [...container.querySelectorAll<HTMLElement>("[data-map-dim]")].filter((d) => d.style.opacity === "1").map((d) => d.dataset.mapDim);
@@ -426,7 +428,7 @@ describe("대시보드 구운 트윈 위 표시", () => {
     expect(engine.setView.mock.calls.at(-1)).toBe(moved);
     act(() => window.__dash!.step(0));
     await waitFor(() => expect(engine.setEye.mock.calls.at(-1)![0]).toEqual(moment(0).eye));
-    expect(container.querySelector("[data-person-tag], [data-check]")).toBeNull();
+    expect(container.querySelector("[data-person-tag], [data-check], [data-trace-leg]")).toBeNull();
     expect(engine.setEye.mock.calls.at(-1)![0]).toEqual(moment(0).eye);
     expect(container.querySelector("[data-robot]")).toBeNull();
     expect(lit()).toEqual([]);

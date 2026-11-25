@@ -4,6 +4,8 @@ import { describe, expect, it } from "vitest";
 import { STEP_COMMAND } from "../../../src/act/labels";
 import { EMPTY_DASH, modeNow, reduceDash, talkOf } from "../../src/dashboard/data";
 import { COACH_MOMENT, debugPhone, debugQuery, EYE_FRAME, FIND_LINE, modeMoment, MOMENTS, talkMoment, type Moment } from "../../src/dashboard/debug";
+import { twinFrame } from "../../src/dashboard/frame";
+import { anchorOf, CAM, HOME } from "./cup-run";
 
 /** 순간 메시지를 차례로 넣은 메시지 상자. */
 const talkAt = (m: Moment) => talkOf(m.messages.reduce((s, x, i) => reduceDash(s, x, i), EMPTY_DASH));
@@ -38,6 +40,27 @@ describe("가짜 단계 눈 그림은 가로(실제 폰도 영상도 가로만 �
   it("대시보드 폰 칸 그림은 그 순간 가로 눈 그림과 가로 크기다", () => {
     const q = debugQuery("?debug=steps")!;
     expect(debugPhone(q, MOMENTS[2]!, "u")).toEqual({ kind: "image", src: "/debug-eye/eye-table-near.webp", width: 405, height: 228 });
+  });
+});
+
+describe("가짜 단계 Agent Trace와 트윈 길", () => {
+  /** 그 순간 메시지를 차례로 넣은 대시보드 자료로 그린 트윈 한 순간. */
+  const frameOf = (n: number) => {
+    const dash = MOMENTS[n]!.messages.reduce((s, x, i) => reduceDash(s, x, i), EMPTY_DASH);
+    const eye = MOMENTS[n]!.messages.find((x) => x.type === "eye");
+    const world = MOMENTS[n]!.messages.find((x) => x.type === "world");
+    return { dash, frame: twinFrame({ plan: dash.plan, eye: eye?.type === "eye" ? eye.eye : null, checks: [], anchor: anchorOf, home: HOME, cam: CAM,
+      world: world?.type === "world" ? world.world : null, trace: dash.trace, plans: [dash.plan] }) };
+  };
+
+  it("계획 순간마다 그 단계까지의 실행 안내 줄이 Agent Trace에 있고, 지금 이동 단계(1 식탁으로, 3 싱크대로)는 트윈에 길로 그린다", () => {
+    expect(frameOf(0).dash.trace).toEqual([]);
+    for (const [n, steps] of [[1, 1], [2, 2], [3, 3], [4, 4]] as const) expect(frameOf(n).dash.trace.map((r) => r.refs.step_id).sort(), `순간 ${n}`).toEqual(Array.from({ length: steps }, (_, i) => `plan:pam-1:${i + 1}`));
+    for (const [n, stepId] of [[1, "plan:pam-1:1"], [3, "plan:pam-1:3"]] as const) {
+      const leg = frameOf(n).frame.trace.find((m) => m.kind === "leg" && m.state === "pending");
+      expect(leg?.legOf?.stepId, `순간 ${n}`).toBe(stepId);
+      expect(leg!.path!.length, `순간 ${n}`).toBeGreaterThanOrEqual(2);
+    }
   });
 });
 
