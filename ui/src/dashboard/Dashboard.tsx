@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { DeviceView, EyeEvent, ServerMessage } from "../../../src/contract/events.ts";
 import type { PlanView } from "../../../src/contract/plan.ts";
+import type { TraceRow } from "../../../src/contract/trace.ts";
 import { BubbleLayer } from "./bubbles/BubbleLayer";
-import { checkList, dashboardChecks, spotOf, type ChecksState } from "./checks/checks";
+import { checkList, dashboardChecks, type ChecksState } from "./checks/checks";
 import { useChecks } from "./checks/use-checks";
 import { useDevices } from "../lib/use-devices";
 import { useEvents } from "../lib/use-events";
@@ -26,8 +27,6 @@ import { useDash } from "./use-dash";
 import type { TwinView } from "./bento-layout";
 import { NarrationPane } from "./NarrationPane";
 import { narrationOf } from "./narration";
-import type { RelationGraphData } from "./relations";
-import { useRelations } from "./use-relations";
 import { usePhoneCommand } from "./use-phone-command";
 
 declare global {
@@ -102,11 +101,14 @@ function useHomeData(home: string | null): HomeData | null {
  * 바뀌면 CAMERA_MS 동안 옮긴다(움직임 줄이기면 바로). 종류를 정하기 전(home null)에는 캔버스 없이 틀만.
  * 엔진이 뜨고 버려질 때 onEngine, 첫 그림을 그리면 onReady.
  */
-function BakedStage({ home, homeData, layout, view, anchors, plan, eye, goal, checks, devices, onEngine: toLive, onReady: toReady }: {
+function BakedStage({ home, homeData, layout, view, trace, plans, plan, eye, goal, checks, devices, onEngine: toLive, onReady: toReady }: {
   home: string | null;
   homeData: HomeData | null;
   view: TwinView;
-  anchors: RelationGraphData["anchors"];
+  /** 받은 트레이스 줄: 트윈은 가장 최근 활동의 줄을 그 자리에 그린다(trace-marks.ts). */
+  trace: readonly TraceRow[];
+  /** 트레이스 줄의 계획 id로 자리를 찾을 계획(미리 만든 계획·최근 계획). */
+  plans: readonly (PlanView | null | undefined)[];
   layout: PageLayout;
   plan: PlanView | null;
   eye: EyeEvent | null;
@@ -121,17 +123,13 @@ function BakedStage({ home, homeData, layout, view, anchors, plan, eye, goal, ch
   const size = useLayoutBox(box);
   const v = home ? BAKE_VIEWS[home] : undefined;
   const [engine, setEngine] = useState<TwinEngine | null>(null);
-  // 판단·확인 표시는 지금 그 대상이 있는 자리(지금 단계 자리, 손에 든 물건이면 폰 눈, 놓은 면)를 따라간다(checks.ts spotOf)
-  const spot = useMemo(() => (homeData ? spotOf({
-    plan, world: checks.world, eye: eye && !eye.estimated ? eye : null, scene: (id) => homeData.names.has(id) || devices.has(id),
-    targets: checks.targets ?? [], action: checks.action ?? null,
-  }) : null), [homeData, plan, checks.world, checks.targets, checks.action, eye, devices]);
-  const list = useMemo(() => dashboardChecks(checkList(checks, spot)), [checks, spot]);
+  // 트윈 말풍선은 에이전트가 다룬 가전만(두뇌 「지켜봄」·「확인」 말풍선은 그리지 않는다, 2026-11-25 사용자 결정 5-1)
+  const list = useMemo(() => dashboardChecks(checks.turn), [checks.turn]);
   // 말풍선·이름표가 비킬 클로이드 자리는 원뿔을 그리는 자리(방 안·벽에서 떨어진 자리)다. 엔진에는 받은 눈을 그대로 넣는다
   const drawn = useMemo(() => (eye && engine && !eye.estimated ? { ...eye, position: engine.stand(eye.position) } : eye), [eye, engine]);
   const frame = useMemo(
-    () => (v && homeData ? twinFrame({ plan, eye: drawn, checks: list, anchor: (id) => engine?.anchor(id) ?? null, home: homeData.index, cam: v, world: checks.world ?? null, goal, anchors }) : null),
-    [v, homeData, plan, drawn, list, engine, checks.world, goal, anchors],
+    () => (v && homeData ? twinFrame({ plan, eye: drawn, checks: list, anchor: (id) => engine?.anchor(id) ?? null, home: homeData.index, cam: v, world: checks.world ?? null, goal, trace, plans }) : null),
+    [v, homeData, plan, drawn, list, engine, checks.world, goal, trace, plans],
   );
   const roomSets = useMemo(() => (frame?.plan && homeData ? roomSetsOf(frame.plan, homeData.index) : []), [frame?.plan, homeData]);
   // 집 전체(모든 방)는 가장 먼 보기다
@@ -272,7 +270,7 @@ export function Dashboard() {
       </TwinStage>
     )
     : (layout: PageLayout, view: TwinView) => (
-      <BakedStage home={kind === "three" ? homeId : null} homeData={homeData} layout={layout} view={view} anchors={graph.anchors} plan={dash.plan} eye={dash.eye} goal={goal} checks={checks} devices={devices} onEngine={onEngine} onReady={onBakedReady} />
+      <BakedStage home={kind === "three" ? homeId : null} homeData={homeData} layout={layout} view={view} trace={dash.trace} plans={tracePlans} plan={dash.plan} eye={dash.eye} goal={goal} checks={checks} devices={devices} onEngine={onEngine} onReady={onBakedReady} />
     );
   const plan = isOpen(dash.plan) && (!scene || !awaitingHello) ? dash.plan : null;
   // talkOf가 읽는 것 모두: 판단·줄·안전 알림·계획(머리)·행동별 모드
@@ -282,8 +280,9 @@ export function Dashboard() {
   // 가짜 단계 화면은 그 순간 자료의 가장 늦은 때 DEBUG_AFTER_MS 뒤를 지금으로 멈춰 그린다(마지막 단계도 보이게)
   const last = debug ? timelineLast(dash) : null;
   const timelineNow = last === null ? undefined : last + DEBUG_AFTER_MS;
-  const graph = useRelations(dash, checks.world ?? null, homeData?.names, online !== false, timelineNow);
   const goal = useMemo(() => goalOf(dash), [dash.goal, dash.plan]);
+  // 트레이스 줄의 계획 id로 트윈 자리를 찾을 계획: 미리 만든 계획과 최근 계획(열린 계획은 twinFrame이 먼저 본다)
+  const tracePlans = useMemo(() => [goal?.plan, ...dash.plans], [goal?.plan, dash.plans]);
   const mode = modeNow(dash);
   return (
     <DashboardScreen

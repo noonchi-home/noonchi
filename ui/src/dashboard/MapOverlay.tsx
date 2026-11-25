@@ -1,5 +1,6 @@
 import { useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { DeviceView } from "../../../src/contract/events.ts";
+import type { TraceState } from "../../../src/contract/trace.ts";
 import { BubbleLayer } from "./bubbles/BubbleLayer";
 import { deviceSummary } from "./bubbles/summary";
 import type { Check } from "./checks/checks";
@@ -9,13 +10,16 @@ import { Status } from "../components/ui/status";
 import { type TwinEngine, plateTransform, type MapCamera } from "../twin";
 import { edgeFade } from "./checks";
 import type { BoxSize } from "./fit";
-import type { TwinFrame } from "./frame";
+import { withTraceChecks, type TwinFrame } from "./frame";
 import { otherRooms, roomsPath, type RoomShape } from "./home";
+import { placeTag } from "./labels";
 import { PreDrawing, useFadeIn } from "./motion";
 import { checkDotLayers, dimLayer, goalRingLayers, lineLayers, roomEdgeLayer, type Layer, type MarkTone } from "./marks";
 import { toScreen, type Px } from "./camera";
-import { mapScene, type Box } from "./scene";
-import { SpatialRelations } from "./SpatialRelations";
+import { LABEL_BOX, mapScene, type Box } from "./scene";
+
+/** 트레이스 이름표 색(21st.dev Status variant): 진행 중 brand, 끝 기본, 실패 error, 취소 기본. 실행 보류는 warning. */
+const TAG_VARIANT: Record<TraceState, "brand" | "default" | "error"> = { pending: "brand", done: "default", failed: "error", cancelled: "default" };
 
 /** 밝힌 방 묶음 이름(순서와 상관없음). */
 const roomsKey = (rooms: string[]) => [...rooms].sort().join("+");
@@ -31,7 +35,10 @@ export const PRE_FADE = 0.35;
  * 밝히지 않는 방 어둡게 칠한 층, 밝힌 방 테두리, 계획 길(지나온 길 흐림·지금 구간·남은 길), 확인한 것 점을 겹쳐 놓는다.
  * 미리 세운 목표가 선 동안 치울 물건 위에 작은 빨간 고리(세 겹, 글 없음)를 판에 그린다. 목표가 준비되면 미리 만든 계획의 길(남은 길 색)과 단계 번호를 글 없이 흐리게 그리고,
  * 시작(사람이 떠남)이면 진해지며(opacity), 열린 계획이 오면 같은 번호 자리(같은 요소)가 그 계획의 번호로 이어진다.
- * 단계 번호(①②③④, 21st.dev Avatar: 지금 단계 brand, 끝난 단계 흐림, 남은 단계 회색)·지금 단계 이름표·사람 이름표(Status)는 판 밖 상자 px에 둔다(frame.planned, plan-marks.ts).
+ * 단계 번호(①②③④, 21st.dev Avatar: 지금 단계 brand, 끝난 단계 흐림, 남은 단계 회색)는 판 밖 상자 px에 둔다(frame.planned, plan-marks.ts).
+ * 트레이스 표시(frame.trace, trace-marks.ts): 가장 최근 활동의 줄마다 그 자리에 점과 「줄 이름 · 결과」 이름표(Status, 이동 구간은 진행 중일 때만 구간 끝에),
+ * 근접 관찰 진행 중이면 클로이드 원뿔에서 대상까지 선, 가전 줄은 그 가전 말풍선 칩 글. 이름표는 글을 자르지 않고 칸 안으로 옮긴다(labels.ts placeTag).
+ * 사람 이름표·관계 이름표·지금 단계 이름표·두뇌 말풍선은 그리지 않는다(2026-11-25 사용자 결정 5-1).
  * 클로이드(맞춘 눈)는 판에 그리지 않고 엔진 장면의 3D 원뿔이 따른다. frame.robot은 카메라 맞춤·말풍선 비킬 자리에만 쓴다.
  * 판 transform은 엔진이 그림을 그릴 때마다 그 지도 카메라로 바꾼다(React 상태를 거치지 않아 3D 그림과 같은 그림에 움직인다).
  * 어둡게 한 층은 계획의 밝힌 방 묶음(roomSets)마다 미리 만들고 지금 묶음만 opacity 1이다: 밝힌 방이 바뀌어도 새 모양을 그리지 않는다.
@@ -114,9 +121,22 @@ export function MapOverlay({ frame, checks, shapes, roomSets, image, size, cam, 
   const lit = frame.rooms.length ? roomsKey(frame.rooms) : null;
   const litPath = useMemo(() => roomsPath(frame.rooms, shapes), [frame.rooms, shapes]);
   const { planned } = frame;
-  const scene = mapScene(frame, checks, shapes, size, cam, blocked);
+  // 트레이스 가전 표시는 그 가전 말풍선의 칩 글이다
+  const bubbleChecks = useMemo(() => withTraceChecks(checks, frame.trace), [checks, frame.trace]);
+  const scene = mapScene(frame, bubbleChecks, shapes, size, cam, blocked);
   const { points, checks: shownChecks, labels, keep } = scene;
   const screenAt = (p: Px) => toScreen(cam, size, p);
+  // 트레이스 이름표: 가전 말풍선이 아닌 표시마다 「줄 이름 · 결과」(이동 구간은 진행 중일 때만). 칸 안에 끝까지 보이게 둔다
+  // 가린 자리·클로이드 원뿔·단계 번호·방 이름표와 겹치지 않게 비킨다
+  const around = (p: { x: number; y: number }, w: number, h: number): Box => ({ x0: p.x - w / 2, y0: p.y - h / 2, x1: p.x + w / 2, y1: p.y + h / 2 });
+  const taken: Box[] = [
+    ...blocked, ...keep.map((r) => ({ x0: r.left, y0: r.top, x1: r.right, y1: r.bottom })),
+    ...planned.stops.map((s) => around(screenAt(s.px), 28, 28)), ...labels.map((l) => around(l.at, LABEL_BOX.w, LABEL_BOX.h)),
+  ];
+  const tags = frame.trace
+    .filter((m) => m.kind !== "device" && (m.kind !== "leg" || m.state === "pending"))
+    .map((m) => ({ m, at: placeTag(screenAt(m.px), m.text, taken, size) }));
+  const lookLines = frame.robot ? frame.trace.filter((m) => m.kind === "look" && m.state === "pending") : [];
   const markTone = (id: string): MarkTone => {
     const d = devices.get(id);
     return d ? deviceSummary(d).tone : "object";
@@ -150,6 +170,13 @@ export function MapOverlay({ frame, checks, shapes, roomSets, image, size, cam, 
             </div>
           );
         })}
+        {/* 근접 관찰 진행 중: 클로이드 원뿔에서 대상까지 선 */}
+        {lookLines.map((m) => (
+          <div key={m.rowId} data-trace-line={m.rowId} className="absolute inset-0">{draw(lineLayers("route", lineOf([frame.robot!.px, m.px]), k))}</div>
+        ))}
+        {tags.filter(({ m }) => m.kind !== "leg").map(({ m }) => (
+          <div key={m.rowId} data-trace-dot={m.rowId} className="absolute inset-0">{draw(checkDotLayers(m.px, "object", k))}</div>
+        ))}
       </div>
       <div ref={marks} data-map-marks className="absolute inset-0">
         {labels.map((l) => (
@@ -168,15 +195,11 @@ export function MapOverlay({ frame, checks, shapes, roomSets, image, size, cam, 
             </div>
           );
         })}
-        {planned.step && (() => {
-          const p = screenAt(planned.step.px);
-          return <div data-step-tag className="absolute -translate-y-1/2 translate-x-4" style={{ left: p.x, top: p.y }}><Status variant="brand">{planned.step.text}</Status></div>;
-        })()}
-        {planned.person && (() => {
-          const p = screenAt(planned.person.px);
-          return <div data-person-tag className="absolute -translate-x-1/2 -translate-y-full" style={{ left: p.x, top: p.y }}><Status>{planned.person.text}</Status></div>;
-        })()}
-        <SpatialRelations frame={frame} cam={cam} size={size} scene={scene} blocked={blocked} />
+        {tags.map(({ m, at }) => (
+          <div key={m.rowId} data-trace-mark={m.rowId} data-kind={m.kind} data-state={m.state} className="absolute -translate-x-1/2 -translate-y-1/2" style={{ left: at.x, top: at.y }}>
+            <Status variant={m.kind === "guard" ? "warning" : TAG_VARIANT[m.state]}>{m.text}</Status>
+          </div>
+        ))}
         <BubbleLayer checks={shownChecks} devices={devices} objects={objects} points={points} avoid={avoid} keep={keep} />
       </div>
     </div>

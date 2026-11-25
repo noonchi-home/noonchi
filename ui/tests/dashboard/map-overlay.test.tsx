@@ -5,13 +5,16 @@
 import { act, render, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from "vitest";
 import type { DeviceView, EyeEvent, HealthView, ServerMessage } from "../../../src/contract/events.ts";
+import type { TraceEvent, TraceRefs, TraceRow } from "../../../src/contract/trace.ts";
 import type { WorldView } from "../../../src/contract/world.ts";
+import { TraceJournal } from "../../../src/record/trace.ts";
 import run from "../../src/dashboard/fake-run.json";
 import type { Check } from "../../src/dashboard/checks/checks";
 import { coverScale, focusOf, livedOf, toScreen, wideCamera } from "../../src/dashboard/camera";
 import { Dashboard } from "../../src/dashboard/Dashboard";
 import { roomSetsOf, twinFrame } from "../../src/dashboard/frame";
 import { MapOverlay, PRE_FADE } from "../../src/dashboard/MapOverlay";
+import { tagSize } from "../../src/dashboard/labels";
 import type { GoalMarkInput } from "../../src/dashboard/plan-marks";
 import { PreDrawing } from "../../src/dashboard/motion";
 import { TwinEngine } from "../../src/twin/3d/engine";
@@ -114,7 +117,7 @@ describe("트윈 위 표시 판", () => {
     const { container } = render(overlay(3, null));
     const root = container.firstElementChild as HTMLElement;
     expect(root).toHaveClass("pointer-events-none");
-    for (const sel of ['[data-line="now"]', "[data-stop]", "[data-step-tag]", `[data-mark="${SINK}"]`]) {
+    for (const sel of ['[data-line="now"]', "[data-stop]", `[data-mark="${SINK}"]`]) {
       const el = container.querySelector(sel);
       expect(el, sel).not.toBeNull();
       expect(el!.closest(".pointer-events-none")).not.toBeNull();
@@ -139,11 +142,11 @@ describe("트윈 위 표시 판", () => {
     const plate = container.querySelector("[data-map-plate]")!;
     expect(!!plate.querySelector("[data-line]")).toBe(n > 0);
     const kinds = [...plate.children].map((el) => (el as HTMLElement).dataset);
-    for (const d of kinds) expect(d.mapDim !== undefined || d.roomEdge !== undefined || d.line !== undefined || d.mark !== undefined || d.goalRing !== undefined, JSON.stringify(d)).toBe(true);
+    for (const d of kinds) expect(d.mapDim !== undefined || d.roomEdge !== undefined || d.line !== undefined || d.mark !== undefined || d.goalRing !== undefined || d.traceLine !== undefined || d.traceDot !== undefined, JSON.stringify(d)).toBe(true);
     expect(plate.querySelector("[data-target]")).toBeNull();
   });
 
-  it("순간 3(싱크대로 가기): 지나온 길과 지금 구간이 있고, 번호 넷 중 지금 3번만 brand, 끝난 1·2번은 흐림, 남은 4번은 회색이며 지금 단계 이름표는 「③ 싱크대로 가기」다", () => {
+  it("순간 3(싱크대로 가기): 지나온 길과 지금 구간이 있고, 번호 넷 중 지금 3번만 brand, 끝난 1·2번은 흐림, 남은 4번은 회색이다. 지금 단계 이름표는 없다(트레이스 표시가 대신한다)", () => {
     const { container } = render(overlay(3, null));
     expect([...container.querySelectorAll<HTMLElement>("[data-map-plate] [data-line]")].map((l) => l.dataset.line)).toEqual(["done", "now"]);
     const stops = [...container.querySelectorAll<HTMLElement>("[data-stop]")];
@@ -151,17 +154,17 @@ describe("트윈 위 표시 판", () => {
       ["1", "done", "brand", "0.4"], ["2", "done", "brand", "0.4"], ["3", "active", "brand", "1"], ["4", "pending", "off", "1"],
     ]);
     expect(stops[2]).toHaveAttribute("data-now");
-    expect(container.querySelector("[data-step-tag]")).toHaveTextContent("③ 싱크대로 가기");
-    expect(container.querySelector("[data-step-tag] [data-slot=status]")).toHaveAttribute("data-variant", "brand");
+    expect(container.querySelector("[data-step-tag]")).toBeNull();
     expect(container).not.toHaveTextContent("목표");
   });
 
-  it("World State 사람 자리가 있으면 그 자리 위에 「사람 · 마시는 중」 이름표(Status)가 있다. 없으면 이름표가 없다", () => {
+  // 2026-11-25 사용자 결정 5-1: 트윈에는 집·클로이드 원뿔·밝힌 방·가전 상태·트레이스 표시만. 사람 이름표·관계 이름표는 뺀다
+  it("World State 사람 자리가 있어도 사람 이름표와 관계 이름표가 없다", () => {
     const world = (run.moments[0]!.messages as ServerMessage[]).flatMap((m) => (m.type === "world" ? [m.world] : []))[0]!;
-    const { container, unmount } = render(overlay(0, null, undefined, undefined, world));
-    expect(container.querySelector("[data-person-tag]")).toHaveTextContent("사람 · 마시는 중");
-    unmount();
-    expect(render(overlay(0, null)).container.querySelector("[data-person-tag]")).toBeNull();
+    expect(world.person.position).not.toBeNull();
+    const { container } = render(overlay(0, null, undefined, undefined, world));
+    expect(container.querySelector("[data-person-tag], [data-relation-label]")).toBeNull();
+    expect(container).not.toHaveTextContent("마시는 중");
   });
 
   it("목표가 선 동안 치울 컵 자리에 작은 빨간 고리(Line Draw SVG 세 겹, 글 없음)를 판에 그린다. 목표가 서지 않았으면 없다", () => {
@@ -255,6 +258,71 @@ describe("트윈 위 표시 판", () => {
   });
 });
 
+/** 서버 기록기(TraceJournal)가 만든 트레이스 줄. */
+function traceRows(epoch: string, add: (t: { start: (e: TraceEvent, r?: TraceRefs) => string; finish: TraceJournal["finish"] }) => void): TraceRow[] {
+  const rows = new Map<string, TraceRow>();
+  const j = new TraceJournal(epoch, () => 1000, (m) => { for (const r of m.rows) rows.set(r.id, r); });
+  add({ start: (e, r = {}) => j.start(e, r), finish: j.finish.bind(j) });
+  return [...rows.values()];
+}
+
+/** 트레이스 줄을 실은 순간 n의 표시 판. */
+function traced(n: number, rows: TraceRow[], size = SIZE) {
+  const frame = twinFrame({ ...moment(n), checks: [], anchor: anchorOf, home: HOME, cam: CAM, trace: rows });
+  const cam = wideCamera(IMAGE, size, focusOf(frame, HOME.shapes), PAD);
+  return <MapOverlay frame={frame} checks={[]} cam={cam} shapes={HOME.shapes} roomSets={roomSetsOf(PLAN, HOME)} image={IMAGE} size={size} engine={null} devices={devices} objects={objects} moveMs={0} blocked={[]} />;
+}
+
+// 2026-11-25 시연 의견 5: 트윈은 Agent Trace 줄을 집 안 자리에 그린다(가장 최근 활동 하나)
+describe("트윈 위 트레이스 표시", () => {
+  it("근접 관찰 진행 중: 대상 자리에 점과 「근접 관찰 · 결과 대기 중」 이름표(글 전부, 자르지 않음), 클로이드 원뿔에서 대상까지 선", () => {
+    const rows = traceRows("t1", (t) => { t.start("closer", { plan_id: PLAN.id, request_id: "r1", object_id: SINK }); });
+    const { container } = render(traced(3, rows));
+    const tag = container.querySelector<HTMLElement>("[data-trace-mark]")!;
+    expect(tag).not.toBeNull();
+    expect(tag.textContent).toBe("근접 관찰 · 결과 대기 중");
+    expect(tag).toHaveAttribute("data-state", "pending");
+    expect(container.querySelector('[data-map-marks] [class*="truncate"], [data-map-marks] [class*="max-w-"]')).toBeNull();
+    expect(container.querySelector("[data-map-plate] [data-trace-line]")).not.toBeNull();
+    expect(container.querySelector("[data-map-plate] [data-trace-dot]")).not.toBeNull();
+    for (const el of container.querySelectorAll("[data-trace-mark], [data-trace-line]")) expect(el.closest(".pointer-events-none")).not.toBeNull();
+  });
+
+  it("근접 관찰이 끝나면 선 없이 대상 자리에 결과(「컵 안 확인 · 빈 컵 확인」)만 남는다", () => {
+    const rows = traceRows("t2", (t) => { t.finish(t.start("top", { plan_id: PLAN.id, request_id: "r1", object_id: SINK }), "done", "cup_empty"); });
+    const { container } = render(traced(3, rows));
+    expect(container.querySelector("[data-trace-mark]")!.textContent).toBe("컵 안 확인 · 빈 컵 확인");
+    expect(container.querySelector("[data-trace-line]")).toBeNull();
+  });
+
+  it("칸 가장자리에 걸린 자리의 이름표는 칸 안으로 옮겨 글이 끝까지 보인다", () => {
+    const rows = traceRows("t3", (t) => { t.finish(t.start("top", { plan_id: PLAN.id, request_id: "r1", object_id: SINK }), "done", "cup_contents"); });
+    const tiny = { width: 120, height: 90 };
+    const { container } = render(traced(3, rows, tiny));
+    const tag = container.querySelector<HTMLElement>("[data-trace-mark]")!;
+    const [x, y] = [parseFloat(tag.style.left), parseFloat(tag.style.top)];
+    const w = tagSize(tag.textContent!).w;
+    expect(x - w / 2).toBeGreaterThanOrEqual(0);
+    expect(y).toBeGreaterThanOrEqual(13);
+    expect(y).toBeLessThanOrEqual(tiny.height - 13);
+  });
+
+  it("가전 도구 줄은 그 가전 말풍선의 칩 글(결과)이다", () => {
+    const rows = traceRows("t4", (t) => { t.finish(t.start("device_tool", { object_id: FRIDGE }), "done", "device_ack"); });
+    const { container } = render(traced(0, rows));
+    const bubble = container.querySelector<HTMLElement>(`[data-check="${FRIDGE}"]`)!;
+    expect(bubble).not.toBeNull();
+    expect(bubble).toHaveAttribute("data-trace-mark");
+    expect(bubble.getAttribute("aria-label") ?? bubble.textContent).toContain("가전 응답 확인");
+  });
+
+  it("행동 선택·VLM 장면 해석 줄만 있으면 트윈에 트레이스 표시가 없다", () => {
+    const rows = traceRows("t5", (t) => { t.finish(t.start("vlm"), "done", "scene_objects"); t.start("pam", { decision_id: "pam-1" }); });
+    const { container } = render(traced(3, rows));
+    expect(container.querySelector("[data-trace-mark], [data-trace-line], [data-trace-dot]")).toBeNull();
+  });
+});
+
 class FakeSocket {
   static last: FakeSocket | null = null;
   onopen: (() => void) | null = null;
@@ -319,14 +387,16 @@ describe("대시보드 구운 트윈 위 표시", () => {
     Object.defineProperty(HTMLElement.prototype, "offsetHeight", height);
   });
 
-  it("?debug=steps면 트윈 위 표시도 그 순간 것이고 서버 계획은 쓰지 않는다: 순간 3은 계획 길·번호·클로이드 원뿔·주방 묶음, 순간 0은 길 없이 집 전체와 사람 이름표", async () => {
+  it("?debug=steps면 트윈 위 표시도 그 순간 것이고 서버 계획은 쓰지 않는다: 순간 3은 계획 길·번호·클로이드 원뿔·주방 묶음, 순간 0은 길 없이 집 전체(사람 이름표·두뇌 말풍선 없음)", async () => {
     history.replaceState(null, "", "/?debug=steps&step=3");
     const { container } = render(<Dashboard />);
     await waitFor(() => expect(load).toHaveBeenCalled());
     await waitFor(() => expect(engine.setEye.mock.calls.at(-1)?.[0]).toEqual(moment(3).eye));
     // 표시 판의 클로이드 자리는 엔진이 원뿔을 그리는 자리(stand)로 묻고, 엔진에는 받은 눈을 그대로 넣는다
     expect(engine.stand.mock.calls.at(-1)?.[0]).toEqual(moment(3).eye!.position);
-    for (const sel of ["[data-map-plate] [data-line]", "[data-stop]", `[data-mark="${SINK}"]`]) expect(container.querySelector(sel), sel).not.toBeNull();
+    for (const sel of ["[data-map-plate] [data-line]", "[data-stop]"]) expect(container.querySelector(sel), sel).not.toBeNull();
+    // 두뇌 「확인」 말풍선은 트윈에 없다(5-1)
+    expect(container.querySelector(`[data-check="${SINK}"], [data-mark="${SINK}"]`)).toBeNull();
     const lit = () => [...container.querySelectorAll<HTMLElement>("[data-map-dim]")].filter((d) => d.style.opacity === "1").map((d) => d.dataset.mapDim);
     expect(lit()).toEqual(["kitchen+living"]);
     const cover = coverScale(IMAGE, SIZE);
@@ -340,7 +410,7 @@ describe("대시보드 구운 트윈 위 표시", () => {
     act(() => window.__dash!.step(0));
     await waitFor(() => expect(container.querySelector("[data-stop]")).toBeNull());
     expect(container.querySelector("[data-map-plate] [data-line]")).toBeNull();
-    expect(container.querySelector("[data-person-tag]")).toHaveTextContent("사람 · 마시는 중");
+    expect(container.querySelector("[data-person-tag], [data-check]")).toBeNull();
     expect(engine.setEye.mock.calls.at(-1)![0]).toEqual(moment(0).eye);
     expect(container.querySelector("[data-robot]")).toBeNull();
     expect(lit()).toEqual([]);
@@ -370,7 +440,7 @@ describe("대시보드 구운 트윈 위 표시", () => {
     expect(engine.resize.mock.calls.length).toBe(resized);
   });
 
-  it("계획·맞춘 눈이 오면 트윈 위에 계획 길·단계 번호·확인한 것을 그리고, 3D 원뿔이 맞춘 눈을 따르며, 카메라가 그 단계로 옮긴다", async () => {
+  it("계획·맞춘 눈이 오면 트윈 위에 계획 길·단계 번호를 그리고, 3D 원뿔이 맞춘 눈을 따르며, 카메라가 그 단계로 옮긴다", async () => {
     const { container } = render(<Dashboard />);
     await waitFor(() => expect(load).toHaveBeenCalled());
     await waitFor(() => expect(FakeSocket.last).not.toBeNull());
@@ -387,7 +457,7 @@ describe("대시보드 구운 트윈 위 표시", () => {
       FakeSocket.last!.push({ type: "eye", eye });
     });
     await waitFor(() => expect(engine.setEye.mock.calls.at(-1)?.[0]).toEqual(eye));
-    for (const sel of ["[data-map-plate] [data-line]", "[data-stop]", `[data-mark="${SINK}"]`]) expect(container.querySelector(sel), sel).not.toBeNull();
+    for (const sel of ["[data-map-plate] [data-line]", "[data-stop]"]) expect(container.querySelector(sel), sel).not.toBeNull();
     expect(container.querySelector("[data-robot]")).toBeNull();
     const dims = [...container.querySelectorAll<HTMLElement>("[data-map-dim]")];
     expect(dims.filter((d) => d.style.opacity === "1").map((d) => d.dataset.mapDim)).toEqual(["kitchen+living"]);
@@ -404,5 +474,20 @@ describe("대시보드 구운 트윈 위 표시", () => {
     await waitFor(() => expect(container.querySelector("[data-stop]")).toBeNull());
     expect(container.querySelector("[data-map-plate] [data-line]")).toBeNull();
     expect(container.querySelector("[data-map-dim]")).toBeNull();
+  });
+
+  it("트레이스 메시지가 오면 트윈 칸에 그 줄의 표시(data-trace-mark)가 보인다", async () => {
+    const { container } = render(<Dashboard />);
+    await waitFor(() => expect(load).toHaveBeenCalled());
+    await waitFor(() => expect(FakeSocket.last).not.toBeNull());
+    await waitFor(() => expect(container.querySelector("[data-map-plate]")).not.toBeNull());
+    const rows = traceRows("w1", (t) => { t.start("closer", { request_id: "r1", object_id: SINK }); });
+    act(() => {
+      FakeSocket.last!.push({ type: "hello", devices: 0, provider: null, hub: "memory", home: "mokryeon_180b", trace_epoch: "w1" });
+      FakeSocket.last!.push({ type: "eye", eye: moment(0).eye });
+      FakeSocket.last!.push({ type: "trace", epoch: "w1", rows });
+    });
+    await waitFor(() => expect(container.querySelector('[aria-label="3D 트윈"] [data-trace-mark]')).not.toBeNull());
+    expect(container.querySelector('[aria-label="3D 트윈"] [data-trace-mark]')!.textContent).toBe("근접 관찰 · 결과 대기 중");
   });
 });

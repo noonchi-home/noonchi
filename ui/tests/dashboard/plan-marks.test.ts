@@ -78,6 +78,19 @@ describe("계획 표시 자료(planMarks)", () => {
     expect(planMarks({ plan: null, robot: null, world: cup({}), at, goal: { object: "cup_9", standing: true } }).goal).toBeNull();
     expect(planMarks({ plan: null, robot: null, world: cup({}), at, goal: null }).goal).toBeNull();
     expect(planMarks({ plan: null, robot: null, world: cup({}), at }).goal).toBeNull();
+    // 자리를 모르는 컵(손에 있음·놓인 면 없음·사라짐)은 고리를 그리지 않는다(2026-11-25 시연 의견 2: 바닥 「컵」)
+    expect(planMarks({ plan: null, robot: null, world: cup({ position: [4.4, 0.78, 0.3], facts: { place: { value: "in_hand", certainty: "confirmed", at_ms: 0 } } }), at, goal: standing }).goal).toBeNull();
+    expect(planMarks({ plan: null, robot: null, world: cup({ position: [4.4, 0, 0.3], surface: null, surface_label: null }), at, goal: standing }).goal).toBeNull();
+    expect(planMarks({ plan: null, robot: null, world: cup({ status: "gone" }), at, goal: standing }).goal).toBeNull();
+  });
+
+  it("번호 자리를 바닥으로 대신하는 것은 이동 단계 목적지뿐이다: 이동 아닌 단계의 대상 자리를 모르면 그 번호가 없다", () => {
+    const steps: PlanStep[] = [
+      { id: "s1", kind: "move", label: "식탁으로 가기", target: { objectId: "nowhere", position: [3, 1] }, status: "active" },
+      { id: "s2", kind: "act", label: "컵 집기", target: { objectId: "cup_9", position: [3, 1.2] }, status: "pending" },
+    ];
+    const m = planMarks({ plan: { ...planAt(1), path: [], legs: [], steps }, robot: null, world: null, at });
+    expect(m.stops).toEqual([{ n: 1, at: [3, 0, 1], status: "active", now: true }]);
   });
 
   // 2026-11-19 사용자 결정(「만들기, 1.6초 크게」 A+C): 목표가 준비되면 미리 만든 계획의 길과 번호를 흐리게(글 없이) 그려 두고, 시작되면 진해지며 지금 번호 길로 이어진다
