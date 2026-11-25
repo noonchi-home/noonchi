@@ -45,6 +45,10 @@ const OUTPUT = {
   person_seen: "사용자 관찰", person_not_seen: "시야에서 사용자 미확인", person_room_changed: "사용자 방 변화 확인", changed: "상태 변화 확인",
 } satisfies Record<TraceOutput, string>;
 
+/** refs가 빈 관찰 줄. 부를 때마다 새 활동이 되지 않게 한 지켜보기 활동에 모은다. */
+const WATCH: ReadonlySet<TraceEvent> = new Set<TraceEvent>(["vlm", "person_changed", "safety"]);
+const WATCH_KEY = "watch";
+
 const id = (value: string | undefined) => value && /^[a-zA-Z0-9#._:-]{1,180}$/.test(value) ? value : undefined;
 const stamp = (value: number) => Number.isFinite(value) ? value : null;
 const publicEvidence = (evidence?: EvidenceRef): EvidenceRef | undefined =>
@@ -156,11 +160,14 @@ export class TraceJournal implements TracePort {
     cause_id?: string, target?: TraceTarget, retained?: true, ended_ms: number | null = null): TraceRow | undefined {
     if (this.closed) return;
     const refs = publicRefs(keys);
-    const activity_id = this.activity(keysOf(refs));
+    const refKeys = keysOf(refs);
+    const watch = refKeys.length === 0 && WATCH.has(event);
+    const activity_id = this.activity(watch ? [WATCH_KEY] : refKeys);
     const [kind, name, fallback] = LABELS[event];
     const description = this.describe(event, refs, target);
+    // 지켜보기 줄끼리는 원인이 아니다: 앞 관찰 줄에 잇지 않는다.
     const parent = cause_id ?? (refs.evidence?.source === "world_change" ? refs.evidence.originId : undefined)
-      ?? this.first(activity_id, refs.request_id)?.id;
+      ?? (watch ? undefined : this.first(activity_id, refs.request_id)?.id);
     const row = { id: this.epoch + ":" + ++this.seq, activity_id, rev: 1, ...(parent ? { cause_id: parent } : {}), ...(retained ? { retained } : {}),
       refs, kind, name, input: description.input ?? fallback,
       output: output ? description.output ?? OUTPUT[output] : kind === "EXECUTION" ? "시연자 수행 대기" : "결과 대기 중",
