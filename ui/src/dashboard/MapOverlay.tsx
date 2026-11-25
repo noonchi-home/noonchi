@@ -4,7 +4,6 @@ import type { TraceState } from "../../../src/contract/trace.ts";
 import { BubbleLayer } from "./bubbles/BubbleLayer";
 import { deviceSummary } from "./bubbles/summary";
 import type { Check } from "./checks/checks";
-import { Avatar, AvatarFallback } from "../components/ui/avatar";
 import { LineDrawSvg } from "../components/ui/line-draw-svg";
 import { Status } from "../components/ui/status";
 import { type TwinEngine, plateTransform, type MapCamera } from "../twin";
@@ -25,20 +24,18 @@ const TAG_VARIANT: Record<TraceState, "brand" | "default" | "error"> = { pending
 const roomsKey = (rooms: string[]) => [...rooms].sort().join("+");
 /** 꺾은선 → SVG path d. */
 const lineOf = (pts: Px[]) => (pts.length > 1 ? `M${pts.map(([u, v]) => `${u.toFixed(1)},${v.toFixed(1)}`).join("L")}` : "");
-/** 끝난 단계 번호의 흐림(opacity). */
-const DONE_FADE = 0.4;
 /** 미리 그린 길(목표가 준비된 계획)의 흐림(opacity). 시작(사람이 떠남)이면 1이다. */
 export const PRE_FADE = 0.35;
 
 /**
  * 3D 트윈 위 표시 판. 구운 보기 그림 픽셀(image) 크기의 판(data-map-plate) 하나에 같은 그림 픽셀 그림(LineDrawSvg)으로
- * 밝히지 않는 방 어둡게 칠한 층, 밝힌 방 테두리, 계획 길(지나온 길 흐림·지금 구간·남은 길), 확인한 것 점을 겹쳐 놓는다.
- * 미리 세운 목표가 선 동안 치울 물건 위에 작은 빨간 고리(세 겹, 글 없음)를 판에 그린다. 목표가 준비되면 미리 만든 계획의 길(남은 길 색)과 단계 번호를 글 없이 흐리게 그리고,
- * 시작(사람이 떠남)이면 진해지며(opacity), 열린 계획이 오면 같은 번호 자리(같은 요소)가 그 계획의 번호로 이어진다.
- * 단계 번호(①②③④, 21st.dev Avatar: 지금 단계 brand, 끝난 단계 흐림, 남은 단계 회색)는 판 밖 상자 px에 둔다(frame.planned, plan-marks.ts).
- * 트레이스 표시(frame.trace, trace-marks.ts): 가장 최근 활동의 줄마다 그 자리에 점과 「줄 이름 · 결과」 이름표(Status, 이동 구간은 진행 중일 때만 구간 끝에),
- * 근접 관찰 진행 중이면 클로이드 원뿔에서 대상까지 선, 가전 줄은 그 가전 말풍선 칩 글. 이름표는 글을 자르지 않고 칸 안으로 옮긴다(labels.ts placeTag).
- * 사람 이름표·관계 이름표·지금 단계 이름표·두뇌 말풍선은 그리지 않는다(2026-11-25 사용자 결정 5-1).
+ * 밝히지 않는 방 어둡게 칠한 층, 밝힌 방 테두리, 가전 확인 점, 트레이스 표시를 겹쳐 놓는다.
+ * 트윈에는 집·클로이드 원뿔·밝힌 방·가전 상태·트레이스 표시만 있다(2026-11-25 사용자 결정 5-1). 길·고리도 트레이스 줄에서만 나온다:
+ * - 이동 안내 줄: 그 단계 구간(진행 중이면 진한 지금 구간, 끝났으면 지나온 길)과 진행 중이면 구간 끝 「이동 안내 · …」 이름표.
+ * - 목표 준비·사용자 자리 이탈 줄: 대상 위 작은 빨간 고리(세 겹)와 미리 만든 계획의 길(준비됨은 흐림, 시작은 진함), 「목표 준비 · …」 이름표.
+ * - 집기·배치·수행 안내·물건 상태 변화·근접 관찰·실행 보류 줄: 그 자리 점과 「줄 이름 · 결과」 이름표(Status). 근접 관찰 진행 중이면 클로이드 원뿔에서 대상까지 선.
+ * - 가전 줄: 그 가전 말풍선 칩 글.
+ * 단계 번호·남은 길·사람 이름표·관계 이름표·지금 단계 이름표·두뇌 말풍선은 그리지 않는다. 이름표는 글을 자르지 않고 칸 안으로 옮긴다(labels.ts placeTag).
  * 클로이드(맞춘 눈)는 판에 그리지 않고 엔진 장면의 3D 원뿔이 따른다. frame.robot은 카메라 맞춤·말풍선 비킬 자리에만 쓴다.
  * 판 transform은 엔진이 그림을 그릴 때마다 그 지도 카메라로 바꾼다(React 상태를 거치지 않아 3D 그림과 같은 그림에 움직인다).
  * 어둡게 한 층은 계획의 밝힌 방 묶음(roomSets)마다 미리 만들고 지금 묶음만 opacity 1이다: 밝힌 방이 바뀌어도 새 모양을 그리지 않는다.
@@ -127,16 +124,17 @@ export function MapOverlay({ frame, checks, shapes, roomSets, image, size, cam, 
   const { points, checks: shownChecks, labels, keep } = scene;
   const screenAt = (p: Px) => toScreen(cam, size, p);
   // 트레이스 이름표: 가전 말풍선이 아닌 표시마다 「줄 이름 · 결과」(이동 구간은 진행 중일 때만). 칸 안에 끝까지 보이게 둔다
-  // 가린 자리·클로이드 원뿔·단계 번호·방 이름표와 겹치지 않게 비킨다
+  // 가린 자리·클로이드 원뿔·방 이름표와 겹치지 않게 비킨다
   const around = (p: { x: number; y: number }, w: number, h: number): Box => ({ x0: p.x - w / 2, y0: p.y - h / 2, x1: p.x + w / 2, y1: p.y + h / 2 });
   const taken: Box[] = [
-    ...blocked, ...keep.map((r) => ({ x0: r.left, y0: r.top, x1: r.right, y1: r.bottom })),
-    ...planned.stops.map((s) => around(screenAt(s.px), 28, 28)), ...labels.map((l) => around(l.at, LABEL_BOX.w, LABEL_BOX.h)),
+    ...blocked, ...keep.map((r) => ({ x0: r.left, y0: r.top, x1: r.right, y1: r.bottom })), ...labels.map((l) => around(l.at, LABEL_BOX.w, LABEL_BOX.h)),
   ];
   const tags = frame.trace
     .filter((m) => m.kind !== "device" && (m.kind !== "leg" || m.state === "pending"))
     .map((m) => ({ m, at: placeTag(screenAt(m.px), m.text, taken, size) }));
   const lookLines = frame.robot ? frame.trace.filter((m) => m.kind === "look" && m.state === "pending") : [];
+  const legs = frame.trace.filter((m) => m.kind === "leg" && (m.path?.length ?? 0) > 1);
+  const goalMark = [...frame.trace].reverse().find((m) => m.kind === "goal");
   const markTone = (id: string): MarkTone => {
     const d = devices.get(id);
     return d ? deviceSummary(d).tone : "object";
@@ -155,12 +153,17 @@ export function MapOverlay({ frame, checks, shapes, roomSets, image, size, cam, 
           </div>
         ))}
         {litPath && <div data-room-edge className="absolute inset-0">{draw([roomEdgeLayer(litPath, k)])}</div>}
-        {([["done", planned.route.done, "routePassed"], ["now", planned.route.now, "route"], ["ahead", planned.route.ahead, "routeAhead"]] as const).map(([id, pts, tone]) =>
-          pts.length > 1 && <div key={id} data-line={id} className="absolute inset-0">{draw(lineLayers(tone, lineOf([...pts]), k))}</div>)}
-        {planned.pre && planned.pre.route.length > 1 && (
+        {/* 이동 안내 줄: 진행 중이면 진한 지금 구간, 끝났으면 지나온 길 */}
+        {legs.map((m) => (
+          <div key={m.rowId} data-line={m.state === "pending" ? "now" : "done"} data-trace-leg={m.rowId} className="absolute inset-0">
+            {draw(lineLayers(m.state === "pending" ? "route" : "routePassed", lineOf(m.path!), k))}
+          </div>
+        ))}
+        {/* 목표 준비·사용자 자리 이탈 줄: 대상 위 고리와 미리 만든 계획의 길(준비됨은 흐림, 시작은 진함) */}
+        {goalMark && planned.pre && planned.pre.route.length > 1 && (
           <div data-line="pre" className="absolute inset-0 transition-opacity duration-300" style={{ opacity: planned.pre.strong ? 1 : PRE_FADE }}>{draw(lineLayers("routeAhead", lineOf(planned.pre.route), k))}</div>
         )}
-        {planned.goal && <div data-goal-ring className="absolute inset-0">{draw(goalRingLayers(planned.goal.px, k))}</div>}
+        {goalMark && <div data-goal-ring={goalMark.rowId} className="absolute inset-0">{draw(goalRingLayers(goalMark.px, k))}</div>}
         {frame.marks.map((m) => {
           // 상자 가장자리에 걸린 표시는 반쪽만 보이지 않게 흐리게 지운다
           const p = points.get(m.id);
@@ -174,7 +177,7 @@ export function MapOverlay({ frame, checks, shapes, roomSets, image, size, cam, 
         {lookLines.map((m) => (
           <div key={m.rowId} data-trace-line={m.rowId} className="absolute inset-0">{draw(lineLayers("route", lineOf([frame.robot!.px, m.px]), k))}</div>
         ))}
-        {tags.filter(({ m }) => m.kind !== "leg").map(({ m }) => (
+        {tags.filter(({ m }) => m.kind !== "leg" && m.kind !== "goal").map(({ m }) => (
           <div key={m.rowId} data-trace-dot={m.rowId} className="absolute inset-0">{draw(checkDotLayers(m.px, "object", k))}</div>
         ))}
       </div>
@@ -184,17 +187,6 @@ export function MapOverlay({ frame, checks, shapes, roomSets, image, size, cam, 
             <Status>{l.label}</Status>
           </div>
         ))}
-        {/* 단계 번호: 열린 계획의 번호, 없으면 미리 그린 길의 번호(같은 key라 열린 계획이 오면 그 요소가 진해진다) */}
-        {(planned.stops.length ? planned.stops : (planned.pre?.stops ?? []).map((s) => ({ ...s, status: "pending" as const, now: false, pre: true }))).map((s) => {
-          const p = screenAt(s.px);
-          const pre = "pre" in s;
-          const opacity = pre ? (planned.pre?.strong ? 1 : PRE_FADE) : s.status === "done" ? DONE_FADE : 1;
-          return (
-            <div key={s.n} data-stop={s.n} data-status={s.status} data-now={s.now || undefined} data-pre={pre || undefined} className="absolute -translate-x-1/2 -translate-y-1/2 transition-opacity duration-300" style={{ left: p.x, top: p.y, opacity }}>
-              <Avatar size="md"><AvatarFallback tone={s.now || s.status === "done" ? "brand" : "off"}>{s.n}</AvatarFallback></Avatar>
-            </div>
-          );
-        })}
         {tags.map(({ m, at }) => (
           <div key={m.rowId} data-trace-mark={m.rowId} data-kind={m.kind} data-state={m.state} className="absolute -translate-x-1/2 -translate-y-1/2" style={{ left: at.x, top: at.y }}>
             <Status variant={m.kind === "guard" ? "warning" : TAG_VARIANT[m.state]}>{m.text}</Status>

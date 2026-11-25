@@ -50,8 +50,8 @@ export interface TwinFrame {
   /** 밝힐 방(정렬). 비었으면 어둡게 하지 않는다. */
   rooms: string[];
   planned: PlannedView;
-  /** 트윈에 그릴 트레이스 표시(가장 최근 활동 하나, trace-marks.ts)와 그 그림 픽셀 자리. */
-  trace: (TraceMark & { px: Px })[];
+  /** 트윈에 그릴 트레이스 표시(가장 최근 활동 하나, trace-marks.ts)와 그 그림 픽셀 자리. 이동 구간이면 그 구간 길(그림 픽셀 점들). */
+  trace: (TraceMark & { px: Px; path?: Px[] })[];
 }
 
 const len = (a: XZ, b: XZ) => Math.hypot(b[0] - a[0], b[1] - a[1]);
@@ -154,7 +154,15 @@ export function twinFrame(o: {
   };
   const pm = planMarks({ plan, robot: eye ? eye.position : null, world: o.world ?? null, at, goal: o.goal ?? null });
   const toPx = (v: Vec3): Px => planToPixel(cam, [v[0], v[2]], v[1]);
-  const trace = traceMarks(o.trace ?? [], [plan, ...(o.plans ?? [])], o.world ?? null, o.anchor).map((m) => ({ ...m, px: toPx(m.at) }));
+  const tracePlans = [plan, ...(o.plans ?? [])];
+  // 이동 안내 줄의 길: 그 계획의 그 단계 구간(앞 구간 끝 ~ 이 구간 끝)
+  const legPath = ({ planId, stepId }: NonNullable<TraceMark["legOf"]>): Px[] => {
+    const p = tracePlans.find((x): x is PlanView => !!x && x.id === planId);
+    const r = p ? legRanges(p).find((l) => l.stepId === stepId) : undefined;
+    return p && r ? p.path.slice(r.from, r.to + 1).map((q) => planToPixel(cam, q)) : [];
+  };
+  const trace = traceMarks(o.trace ?? [], tracePlans, o.world ?? null, o.anchor)
+    .map((m) => ({ ...m, px: toPx(m.at), ...(m.legOf ? { path: legPath(m.legOf) } : {}) }));
   // 트레이스 가전 표시는 그 가전 말풍선에 붙는다: 말풍선 자리(marks)에 그 가전을 더한다
   for (const m of trace) if (m.kind === "device" && m.target && !marks.some((x) => x.id === m.target)) marks.push({ id: m.target, px: m.px });
   const planned: PlannedView = {

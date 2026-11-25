@@ -113,11 +113,11 @@ describe("트윈 위 표시 판", () => {
     expect(engine.listeners()).toBe(0);
   });
 
-  it("선·점은 마우스를 받지 않는 층 안에 있고 점선이 없다", () => {
-    const { container } = render(overlay(3, null));
+  it("선·점·이름표는 마우스를 받지 않는 층 안에 있고 점선이 없다", () => {
+    const { container } = render(traced(3, moveRows(), { checks: PLAN_CHECKS }));
     const root = container.firstElementChild as HTMLElement;
     expect(root).toHaveClass("pointer-events-none");
-    for (const sel of ['[data-line="now"]', "[data-stop]", `[data-mark="${SINK}"]`]) {
+    for (const sel of ['[data-line="now"]', "[data-trace-mark]", `[data-mark="${SINK}"]`]) {
       const el = container.querySelector(sel);
       expect(el, sel).not.toBeNull();
       expect(el!.closest(".pointer-events-none")).not.toBeNull();
@@ -135,81 +135,72 @@ describe("트윈 위 표시 판", () => {
     expect(container.querySelector('[fill^="url("]')).toBeNull();
   });
 
-  it.each([0, 1, 2, 3, 4])("순간 %i: 판에는 어둡게 한 방·밝힌 방 테두리·계획 길·확인한 것 점만 있다. 계획이 있으면 길을 그리고 목적지 고리는 없다", (n) => {
+  // 2026-11-25 사용자 결정 5-1: 트윈에는 집·클로이드 원뿔·밝힌 방·가전 상태·트레이스 표시만. 길·고리도 트레이스 줄에서만 나온다
+  it.each([0, 1, 2, 3, 4])("순간 %i: 트레이스 줄이 없으면 계획이 있어도 판에는 어둡게 한 방·밝힌 방 테두리·확인한 것 점만 있고 길·번호·고리가 없다", (n) => {
     const { frame } = propsAt(n);
     expect(frame.route.points.length > 0).toBe(n > 0);
     const { container } = render(overlay(n, null));
     const plate = container.querySelector("[data-map-plate]")!;
-    expect(!!plate.querySelector("[data-line]")).toBe(n > 0);
     const kinds = [...plate.children].map((el) => (el as HTMLElement).dataset);
-    for (const d of kinds) expect(d.mapDim !== undefined || d.roomEdge !== undefined || d.line !== undefined || d.mark !== undefined || d.goalRing !== undefined || d.traceLine !== undefined || d.traceDot !== undefined, JSON.stringify(d)).toBe(true);
-    expect(plate.querySelector("[data-target]")).toBeNull();
+    for (const d of kinds) expect(d.mapDim !== undefined || d.roomEdge !== undefined || d.mark !== undefined, JSON.stringify(d)).toBe(true);
+    expect(container.querySelector("[data-line], [data-stop], [data-goal-ring], [data-target]")).toBeNull();
   });
 
-  it("순간 3(싱크대로 가기): 지나온 길과 지금 구간이 있고, 번호 넷 중 지금 3번만 brand, 끝난 1·2번은 흐림, 남은 4번은 회색이다. 지금 단계 이름표는 없다(트레이스 표시가 대신한다)", () => {
-    const { container } = render(overlay(3, null));
-    expect([...container.querySelectorAll<HTMLElement>("[data-map-plate] [data-line]")].map((l) => l.dataset.line)).toEqual(["done", "now"]);
-    const stops = [...container.querySelectorAll<HTMLElement>("[data-stop]")];
-    expect(stops.map((s) => [s.dataset.stop, s.dataset.status, s.querySelector("[data-tone]")?.getAttribute("data-tone"), s.style.opacity])).toEqual([
-      ["1", "done", "brand", "0.4"], ["2", "done", "brand", "0.4"], ["3", "active", "brand", "1"], ["4", "pending", "off", "1"],
-    ]);
-    expect(stops[2]).toHaveAttribute("data-now");
-    expect(container.querySelector("[data-step-tag]")).toBeNull();
+  it("이동 안내 줄: 끝난 구간은 지나온 길, 진행 중 구간은 진한 지금 구간이고 그 끝에 「이동 안내 · 시연자 수행 대기」 이름표다. 단계 번호·남은 길·지금 단계 이름표는 없다", () => {
+    const { container } = render(traced(3, moveRows()));
+    const lines = [...container.querySelectorAll<HTMLElement>("[data-map-plate] [data-line]")];
+    expect(lines.map((l) => l.dataset.line)).toEqual(["done", "now"]);
+    expect(container.querySelector("[data-stop], [data-step-tag]")).toBeNull();
+    const tags = [...container.querySelectorAll<HTMLElement>("[data-trace-mark]")];
+    // 같은 활동의 끝난 집기 안내는 그 단계 대상(식탁) 자리에 남는다. 끝난 이동 구간은 길만 있고 이름표는 없다
+    expect(tags.map((t) => [t.dataset.kind, t.textContent])).toEqual([["spot", "집기 안내 · 수행 확인"], ["leg", "이동 안내 · 시연자 수행 대기"]]);
     expect(container).not.toHaveTextContent("목표");
   });
 
-  // 2026-11-25 사용자 결정 5-1: 트윈에는 집·클로이드 원뿔·밝힌 방·가전 상태·트레이스 표시만. 사람 이름표·관계 이름표는 뺀다
   it("World State 사람 자리가 있어도 사람 이름표와 관계 이름표가 없다", () => {
-    const world = (run.moments[0]!.messages as ServerMessage[]).flatMap((m) => (m.type === "world" ? [m.world] : []))[0]!;
+    const world = worldAt0();
     expect(world.person.position).not.toBeNull();
     const { container } = render(overlay(0, null, undefined, undefined, world));
     expect(container.querySelector("[data-person-tag], [data-relation-label]")).toBeNull();
     expect(container).not.toHaveTextContent("마시는 중");
   });
 
-  it("목표가 선 동안 치울 컵 자리에 작은 빨간 고리(Line Draw SVG 세 겹, 글 없음)를 판에 그린다. 목표가 서지 않았으면 없다", () => {
-    const world = (run.moments[0]!.messages as ServerMessage[]).flatMap((m) => (m.type === "world" ? [m.world] : []))[0]!;
-    const { container, unmount } = render(overlay(0, null, undefined, undefined, world, { object: "cup_1", standing: true }));
+  it("목표 고리는 목표 준비 줄이 있을 때만: 대상 컵 위 작은 빨간 고리(Line Draw SVG 세 겹, 글 없음)와 「목표 준비 · …」 이름표다. 목표가 서 있어도 그 줄이 없으면 없다", () => {
+    const world = worldAt0();
+    const standing: GoalMarkInput = { object: "cup_1", standing: true };
+    const { container, unmount } = render(traced(0, goalRows("goal_ready"), { world, goal: standing }));
     const ring = container.querySelector<HTMLElement>("[data-map-plate] [data-goal-ring]")!;
     expect(ring).not.toBeNull();
     expect(ring.querySelectorAll("svg")).toHaveLength(3);
     for (const svg of ring.querySelectorAll("svg")) expect([...svg.children].map((c) => c.tagName.toLowerCase())).toEqual(["path"]);
     expect(ring.textContent).toBe("");
+    expect(container.querySelector("[data-trace-mark]")!.textContent).toBe("목표 준비 · 미리 만든 계획 준비됨");
     unmount();
-    expect(render(overlay(0, null, undefined, undefined, world, { object: "cup_1", standing: false })).container.querySelector("[data-goal-ring]")).toBeNull();
+    expect(render(overlay(0, null, undefined, undefined, world, standing)).container.querySelector("[data-goal-ring]")).toBeNull();
   });
 
-  // 2026-11-19 사용자 결정(A+C 만들기): 목표가 준비되면 미리 만든 계획의 길과 번호를 흐리게(글 없이), 시작되면 진해지며 지금 번호 길로 이어진다
-  it("미리 그린 길: 목표가 준비되면 미리 만든 계획의 길(남은 길 색, 흐림)과 번호(흐림, 글 없음)를 그리고, 시작이면 진하며, 열린 계획이 오면 같은 번호 요소가 그 계획 번호로 이어진다. 버리면 없다", () => {
-    const world = (run.moments[0]!.messages as ServerMessage[]).flatMap((m) => (m.type === "world" ? [m.world] : []))[0]!;
+  // 2026-11-19 사용자 결정(A+C 만들기)의 미리 그린 길은 목표 준비 줄의 표시로만 남는다(번호 없음)
+  it("미리 그린 길: 목표 준비 줄이 있고 목표가 준비되면 미리 만든 계획의 길(흐림)이고 시작이면 진하다. 번호는 없고, 줄이 없거나 버리면 없다", () => {
+    const world = worldAt0();
     const pre = { ...PLAN, status: "planned" as const, steps: PLAN.steps.map((s) => ({ ...s, status: "pending" as const })) };
     const goal = (stage: GoalMarkInput["stage"]): GoalMarkInput => ({ object: "cup_1", standing: stage !== "dropped", stage, plan: pre });
-    const { container, rerender } = render(overlay(0, null, undefined, [], world, goal("ready")));
+    const rows = goalRows("goal_ready");
+    const { container, rerender } = render(traced(0, rows, { world, goal: goal("ready") }));
     const line = container.querySelector<HTMLElement>('[data-map-plate] [data-line="pre"]')!;
     expect(line).not.toBeNull();
     expect(Number(line.style.opacity)).toBe(PRE_FADE);
     expect(line.querySelectorAll("svg").length).toBeGreaterThan(0);
-    const stops = () => [...container.querySelectorAll<HTMLElement>("[data-stop]")];
-    expect(stops().length).toBe(pre.steps.length);
-    for (const s of stops()) {
-      expect(s).toHaveAttribute("data-pre");
-      expect(Number(s.style.opacity)).toBe(PRE_FADE);
-    }
-    expect(container.querySelector("[data-step-tag]")).toBeNull();
-    const first = stops()[0]!;
-    rerender(overlay(0, null, undefined, [], world, goal("started")));
+    expect(container.querySelector("[data-stop], [data-step-tag]")).toBeNull();
+    rerender(traced(0, rows, { world, goal: goal("started") }));
     expect(Number(container.querySelector<HTMLElement>('[data-line="pre"]')!.style.opacity)).toBe(1);
-    rerender(overlay(1, null, undefined, undefined, world, goal("started")));
+    rerender(traced(0, [], { world, goal: goal("ready") }));
     expect(container.querySelector('[data-line="pre"]')).toBeNull();
-    expect(stops()[0]).toBe(first);
-    expect(first).not.toHaveAttribute("data-pre");
-    expect(first).toHaveAttribute("data-now");
-    rerender(overlay(0, null, undefined, [], world, goal("dropped")));
-    expect(container.querySelector('[data-line="pre"], [data-pre]')).toBeNull();
+    rerender(traced(0, rows, { world, goal: goal("dropped") }));
+    expect(container.querySelector('[data-line="pre"]')).toBeNull();
   });
 
   it("표시는 21st.dev Line Draw SVG를 겹친 것이고, 한 장은 받은 코드처럼 path 하나만 그린다", () => {
-    const { container } = render(overlay(3, null));
+    const { container } = render(traced(3, moveRows(), { checks: PLAN_CHECKS }));
     const plate = container.querySelector("[data-map-plate]")!;
     const svgs = [...plate.querySelectorAll("svg")];
     expect(svgs.length).toBeGreaterThan(0);
@@ -267,11 +258,37 @@ function traceRows(epoch: string, add: (t: { start: (e: TraceEvent, r?: TraceRef
 }
 
 /** 트레이스 줄을 실은 순간 n의 표시 판. */
-function traced(n: number, rows: TraceRow[], size = SIZE) {
-  const frame = twinFrame({ ...moment(n), checks: [], anchor: anchorOf, home: HOME, cam: CAM, trace: rows });
+function traced(n: number, rows: TraceRow[], o: { size?: { width: number; height: number }; checks?: Check[]; world?: WorldView | null; goal?: GoalMarkInput | null } = {}) {
+  const size = o.size ?? SIZE;
+  const checks = o.checks ?? [];
+  const frame = twinFrame({ ...moment(n), checks, anchor: anchorOf, home: HOME, cam: CAM, trace: rows, world: o.world ?? null, goal: o.goal ?? null });
   const cam = wideCamera(IMAGE, size, focusOf(frame, HOME.shapes), PAD);
-  return <MapOverlay frame={frame} checks={[]} cam={cam} shapes={HOME.shapes} roomSets={roomSetsOf(PLAN, HOME)} image={IMAGE} size={size} engine={null} devices={devices} objects={objects} moveMs={0} blocked={[]} />;
+  return <MapOverlay frame={frame} checks={checks} cam={cam} shapes={HOME.shapes} roomSets={roomSetsOf(PLAN, HOME)} image={IMAGE} size={size} engine={null} devices={devices} objects={objects} moveMs={0} blocked={[]} />;
 }
+
+let rowsSeq = 0;
+/** 순간 3(싱크대로 가기)의 실행 줄: 식탁 구간 이동 끝, 컵 집기 끝, 싱크대 구간 이동 중. */
+function moveRows(): TraceRow[] {
+  const plan = moment(3).plan!;
+  const [toTable, toSink] = plan.legs.map((l) => l.stepId);
+  const pick = plan.steps.find((s) => s.kind === "act")!.id;
+  return traceRows(`m${++rowsSeq}`, (t) => {
+    t.finish(t.start("move", { plan_id: plan.id, step_id: toTable }), "done", "move_done");
+    t.finish(t.start("pick", { plan_id: plan.id, step_id: pick }), "done", "step_done");
+    t.start("move", { plan_id: plan.id, step_id: toSink });
+  });
+}
+
+/** 목표 줄(cup_1). */
+function goalRows(output: "goal_ready" | "goal_fired"): TraceRow[] {
+  const rows = new Map<string, TraceRow>();
+  const j = new TraceJournal(`g${++rowsSeq}`, () => 1000, (m) => { for (const r of m.rows) rows.set(r.id, r); });
+  j.event("goal", { goal_id: "goal-1", object_id: "cup_1" }, output);
+  return [...rows.values()];
+}
+
+/** 가짜 단계 순간 0의 World State(사람이 마시는 중, cup_1이 식탁 위). */
+const worldAt0 = () => (run.moments[0]!.messages as ServerMessage[]).flatMap((m) => (m.type === "world" ? [m.world] : []))[0]!;
 
 // 2026-11-25 시연 의견 5: 트윈은 Agent Trace 줄을 집 안 자리에 그린다(가장 최근 활동 하나)
 describe("트윈 위 트레이스 표시", () => {
@@ -298,7 +315,7 @@ describe("트윈 위 트레이스 표시", () => {
   it("칸 가장자리에 걸린 자리의 이름표는 칸 안으로 옮겨 글이 끝까지 보인다", () => {
     const rows = traceRows("t3", (t) => { t.finish(t.start("top", { plan_id: PLAN.id, request_id: "r1", object_id: SINK }), "done", "cup_contents"); });
     const tiny = { width: 120, height: 90 };
-    const { container } = render(traced(3, rows, tiny));
+    const { container } = render(traced(3, rows, { size: tiny }));
     const tag = container.querySelector<HTMLElement>("[data-trace-mark]")!;
     const [x, y] = [parseFloat(tag.style.left), parseFloat(tag.style.top)];
     const w = tagSize(tag.textContent!).w;
@@ -387,14 +404,14 @@ describe("대시보드 구운 트윈 위 표시", () => {
     Object.defineProperty(HTMLElement.prototype, "offsetHeight", height);
   });
 
-  it("?debug=steps면 트윈 위 표시도 그 순간 것이고 서버 계획은 쓰지 않는다: 순간 3은 계획 길·번호·클로이드 원뿔·주방 묶음, 순간 0은 길 없이 집 전체(사람 이름표·두뇌 말풍선 없음)", async () => {
+  it("?debug=steps면 트윈 위 표시도 그 순간 것이고 서버 계획은 쓰지 않는다: 순간 3은 클로이드 원뿔·주방 묶음, 순간 0은 집 전체. 가짜 단계에는 트레이스 줄이 없어 길·번호·사람 이름표·두뇌 말풍선이 없다", async () => {
     history.replaceState(null, "", "/?debug=steps&step=3");
     const { container } = render(<Dashboard />);
     await waitFor(() => expect(load).toHaveBeenCalled());
     await waitFor(() => expect(engine.setEye.mock.calls.at(-1)?.[0]).toEqual(moment(3).eye));
     // 표시 판의 클로이드 자리는 엔진이 원뿔을 그리는 자리(stand)로 묻고, 엔진에는 받은 눈을 그대로 넣는다
     expect(engine.stand.mock.calls.at(-1)?.[0]).toEqual(moment(3).eye!.position);
-    for (const sel of ["[data-map-plate] [data-line]", "[data-stop]"]) expect(container.querySelector(sel), sel).not.toBeNull();
+    expect(container.querySelector("[data-map-plate] [data-line], [data-stop]")).toBeNull();
     // 두뇌 「확인」 말풍선은 트윈에 없다(5-1)
     expect(container.querySelector(`[data-check="${SINK}"], [data-mark="${SINK}"]`)).toBeNull();
     const lit = () => [...container.querySelectorAll<HTMLElement>("[data-map-dim]")].filter((d) => d.style.opacity === "1").map((d) => d.dataset.mapDim);
@@ -408,8 +425,7 @@ describe("대시보드 구운 트윈 위 표시", () => {
     expect(lit()).toEqual(["kitchen+living"]);
     expect(engine.setView.mock.calls.at(-1)).toBe(moved);
     act(() => window.__dash!.step(0));
-    await waitFor(() => expect(container.querySelector("[data-stop]")).toBeNull());
-    expect(container.querySelector("[data-map-plate] [data-line]")).toBeNull();
+    await waitFor(() => expect(engine.setEye.mock.calls.at(-1)![0]).toEqual(moment(0).eye));
     expect(container.querySelector("[data-person-tag], [data-check]")).toBeNull();
     expect(engine.setEye.mock.calls.at(-1)![0]).toEqual(moment(0).eye);
     expect(container.querySelector("[data-robot]")).toBeNull();
@@ -440,7 +456,7 @@ describe("대시보드 구운 트윈 위 표시", () => {
     expect(engine.resize.mock.calls.length).toBe(resized);
   });
 
-  it("계획·맞춘 눈이 오면 트윈 위에 계획 길·단계 번호를 그리고, 3D 원뿔이 맞춘 눈을 따르며, 카메라가 그 단계로 옮긴다", async () => {
+  it("계획·맞춘 눈이 오면 밝힌 방을 바꾸고 3D 원뿔이 맞춘 눈을 따르며 카메라가 그 단계로 옮긴다. 길은 이동 안내 트레이스 줄이 와야 그린다", async () => {
     const { container } = render(<Dashboard />);
     await waitFor(() => expect(load).toHaveBeenCalled());
     await waitFor(() => expect(FakeSocket.last).not.toBeNull());
@@ -452,12 +468,15 @@ describe("대시보드 구운 트윈 위 표시", () => {
     expect(showsLivedRooms(whole)).toBe(true);
     const { plan, eye } = moment(3);
     act(() => {
-      FakeSocket.last!.push({ type: "hello", devices: 0, provider: null, hub: "memory", home: "mokryeon_180b" });
+      FakeSocket.last!.push({ type: "hello", devices: 0, provider: null, hub: "memory", home: "mokryeon_180b", trace_epoch: "p1" });
       FakeSocket.last!.push({ type: "plan", plan });
       FakeSocket.last!.push({ type: "eye", eye });
     });
     await waitFor(() => expect(engine.setEye.mock.calls.at(-1)?.[0]).toEqual(eye));
-    for (const sel of ["[data-map-plate] [data-line]", "[data-stop]"]) expect(container.querySelector(sel), sel).not.toBeNull();
+    expect(container.querySelector("[data-map-plate] [data-line], [data-stop]")).toBeNull();
+    act(() => FakeSocket.last!.push({ type: "trace", epoch: "p1", rows: moveRows() }));
+    await waitFor(() => expect([...container.querySelectorAll<HTMLElement>("[data-map-plate] [data-line]")].map((l) => l.dataset.line)).toEqual(["done", "now"]));
+    expect(container.querySelector("[data-stop]")).toBeNull();
     expect(container.querySelector("[data-robot]")).toBeNull();
     const dims = [...container.querySelectorAll<HTMLElement>("[data-map-dim]")];
     expect(dims.filter((d) => d.style.opacity === "1").map((d) => d.dataset.mapDim)).toEqual(["kitchen+living"]);
@@ -469,11 +488,9 @@ describe("대시보드 구운 트윈 위 표시", () => {
     expect(engine.setView.mock.calls.at(-1)).toBe(moved);
     expect(engine.setEye.mock.calls.length).toBe(eyes);
     expect(engine.setEye.mock.calls.some(([e]) => e?.estimated)).toBe(false);
-    // 계획이 끝나면 길·번호·어둡게 한 층이 없어진다
+    // 계획이 끝나면 어둡게 한 층이 없어진다
     act(() => FakeSocket.last!.push({ type: "plan", plan: { ...plan!, revision: plan!.revision + 1, status: "done" } }));
-    await waitFor(() => expect(container.querySelector("[data-stop]")).toBeNull());
-    expect(container.querySelector("[data-map-plate] [data-line]")).toBeNull();
-    expect(container.querySelector("[data-map-dim]")).toBeNull();
+    await waitFor(() => expect(container.querySelector("[data-map-dim]")).toBeNull());
   });
 
   it("트레이스 메시지가 오면 트윈 칸에 그 줄의 표시(data-trace-mark)가 보인다", async () => {
