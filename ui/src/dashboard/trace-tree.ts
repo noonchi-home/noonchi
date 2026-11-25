@@ -1,4 +1,4 @@
-import type { TraceRow } from "../../../src/contract/trace.ts";
+import type { TraceRow, TraceState } from "../../../src/contract/trace.ts";
 
 // These event labels are the fixed public vocabulary of the trace journal.
 const isGoal = (row: TraceRow) => row.kind === "AGENT" && row.name === "목표 준비";
@@ -7,23 +7,31 @@ const isWait = (row: TraceRow) => row.kind === "AGENT" && row.name === "대기 �
 const isResult = (row: TraceRow) =>
   row.kind === "EXECUTION" && row.name === "활동 종료" && row.state !== "pending" && !row.refs.step_id;
 
+// refs가 빈 관찰 줄(장면 해석·사용자 상태 변화·안전 상태)은 기록이 한 지켜보기 활동에 모은다.
+const WATCH_NAMES = new Set(["VLM 장면 해석", "사용자 상태 변화", "안전 상태"]);
+const WATCH_TITLE = "지켜보기";
+const isWatch = (row: TraceRow) => WATCH_NAMES.has(row.name) && Object.values(row.refs).every(value => value == null);
+
 const actionIn = (input: string) => input.split(" · ", 1)[0];
 const sequence = (row: TraceRow) => /:(\d+)$/.exec(row.id)?.[1];
 
-function newestFirst(a: TraceRow, b: TraceRow): number {
+function oldestFirst(a: TraceRow, b: TraceRow): number {
   const left = sequence(a), right = sequence(b);
   // The journal's sequence is assigned once. A released anchor or a revised row keeps it.
-  if (left !== undefined && right !== undefined) return Number(right) - Number(left);
-  return (b.started_ms ?? b.ended_ms ?? 0) - (a.started_ms ?? a.ended_ms ?? 0);
+  if (left !== undefined && right !== undefined) return Number(left) - Number(right);
+  return (a.started_ms ?? a.ended_ms ?? 0) - (b.started_ms ?? b.ended_ms ?? 0);
 }
 
 export interface TraceCompletion {
   title: string;
   output: string;
+  state: TraceState;
   reason?: string;
+  /** 활동 종료 줄의 걸린 시간. */
+  ms?: number;
 }
 
-interface BranchRow {
+export interface BranchRow {
   row: TraceRow;
   depth: 0 | 1;
   current: boolean;
@@ -38,6 +46,8 @@ export interface TraceActivity {
   title: string;
   pending: boolean;
   wait?: string;
+  /** 지켜보기 활동(refs가 빈 관찰 줄만 있음). */
+  watch?: boolean;
   completion?: TraceCompletion;
   entries: BranchRow[];
 }
@@ -73,12 +83,14 @@ function completionOf(row: TraceRow, title: string, byId: ReadonlyMap<string, Tr
   const reason = row.state === "done"
     ? chain.find(cause => cause.state === "done" && (cause.kind === "EXECUTION" || cause.kind === "TOOL"))?.output
     : guardReason || chain.find(cause => cause.state === "failed" || cause.state === "cancelled")?.output;
-  return { title, output: row.output, reason: reason === row.output ? undefined : reason };
+  const ms = row.started_ms !== null && row.ended_ms !== null ? Math.max(0, row.ended_ms - row.started_ms) : undefined;
+  return { title, output: row.output, state: row.state, reason: reason === row.output ? undefined : reason, ms };
 }
 
 function entriesOf(rows: TraceRow[], result: TraceRow | undefined, byId: ReadonlyMap<string, TraceRow>): BranchRow[] {
   const entries = rows.filter(row => !isResult(row));
-  const stage = entries.find(row => row.kind === "TOOL" || row.kind === "EXECUTION");
+  // 지금 단계는 가장 새 도구·실행 줄이다(줄은 옛것부터 온다).
+  const stage = [...entries].reverse().find(row => row.kind === "TOOL" || row.kind === "EXECUTION");
   const children = new Map<string, TraceRow[]>();
   const nested = new Set<string>();
   const live = (row: TraceRow) => !result && (row.state === "pending" || (row.id === stage?.id && row.kind === "TOOL"));
@@ -91,7 +103,7 @@ function entriesOf(rows: TraceRow[], result: TraceRow | undefined, byId: Readonl
     nested.add(row.id);
     if (live(parent)) children.set(parent.id, [...(children.get(parent.id) ?? []), row]);
   }
-  const roots = entries.filter(row => !nested.has(row.id)).sort((a, b) => Number(live(b)) - Number(live(a)));
+  const roots = entries.filter(row => !nested.has(row.id));
   return roots.flatMap((row, index): BranchRow[] => {
     const branch = children.get(row.id) ?? [];
     const last = index === roots.length - 1;
@@ -114,7 +126,7 @@ export function traceActivities(rows: readonly TraceRow[]): TraceActivity[] {
     if (!old || row.rev > old.rev && !(old.state !== "pending" && row.state === "pending")) byId.set(row.id, row);
   }
   const grouped = new Map<string, TraceRow[]>();
-  for (const row of [...byId.values()].reverse().sort(newestFirst)) {
+  for (const row of [...byId.values()].sort(oldestFirst)) {
     const group = grouped.get(row.activity_id);
     if (group) group.push(row);
     else grouped.set(row.activity_id, [row]);
@@ -123,13 +135,15 @@ export function traceActivities(rows: readonly TraceRow[]): TraceActivity[] {
     const result = records.find(isResult);
     const wait = records.find(row => isWait(row) && row.state === "done");
     const watchOnly = wait && records.every(row => row === wait || row.kind === "LLM" && row.state !== "pending");
-    const title = watchOnly ? wait.name : activityTitle(records, result);
+    const watch = !result && records.every(isWatch);
+    const title = watch ? WATCH_TITLE : watchOnly ? wait.name : activityTitle(records, result);
     return {
       id, title,
       pending: !result && records.some(row => row.state === "pending"),
       wait: watchOnly ? wait.output : undefined,
+      ...(watch ? { watch } : {}),
       completion: result && completionOf(result, title, byId),
       entries: entriesOf(records, result, byId),
     };
-  }).sort((a, b) => Number(b.pending) - Number(a.pending));
+  });
 }

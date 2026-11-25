@@ -31,6 +31,22 @@ describe("home trace journal", () => {
     expect(trace.snapshot().rows.find(r => r.id === row)?.state).toBe("cancelled");
   });
 
+  it("refs가 빈 장면 해석·사용자 상태 변화·안전 상태 줄은 한 지켜보기 활동에 모이고 서로를 원인으로 잇지 않는다", () => {
+    const trace = new TraceJournal("h4", () => 5, () => {});
+    const goal = trace.event("goal", { goal_id: "g1" }, "goal_armed")!;
+    const scene = trace.start("vlm");
+    trace.finish(scene, "done", "scene_people");
+    const person = trace.event("person_changed", {}, "person_seen")!;
+    const safety = trace.event("safety", {}, "safety_cleared")!;
+    const later = trace.start("vlm");
+    const closer = trace.start("closer_vlm", { request_id: "look-1" });
+    const rows = new Map(trace.snapshot().rows.map(row => [row.id, row]));
+    const watch = rows.get(scene)!.activity_id;
+    expect([person.activity_id, safety.activity_id, rows.get(later)!.activity_id]).toEqual([watch, watch, watch]);
+    expect(new Set([goal.activity_id, watch, rows.get(closer)!.activity_id]).size).toBe(3);
+    expect([person, safety, rows.get(later)!].map(row => row.cause_id)).toEqual([undefined, undefined, undefined]);
+  });
+
   it("replays an in-flight execution through 300 unrelated model calls and keeps its final revision", () => {
     let now = 1;
     const trace = new TraceJournal("h3", () => now, () => {});

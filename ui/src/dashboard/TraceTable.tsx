@@ -1,16 +1,30 @@
-import { memo, useEffect, useLayoutEffect, useMemo, useState } from "react";
-import type { TraceRow } from "../../../src/contract/trace.ts";
-import { Table, TableBody, TableHeader, TableRow } from "../components/ui/table";
-import { TraceActivityRow, TraceNameCell } from "../components/ui/trace-tree-cell";
-import { traceActivities, type TraceActivity, type TraceCompletion } from "./trace-tree";
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useState } from "react";
+import type { TraceRow, TraceState } from "../../../src/contract/trace.ts";
+import { Conversation, ConversationContent } from "../components/ui/conversation";
+import { ScrollToBottom } from "../components/ui/scroll-to-bottom";
+import { Trace, TraceGroup, TraceStep, type TraceStatus } from "../components/ui/trace-group";
+import { traceActivities, type BranchRow, type TraceActivity, type TraceCompletion } from "./trace-tree";
 
-const columns = ["KIND", "NAME", "INPUT", "OUTPUT", "LATENCY"];
-const cell = "px-1 py-1.5 text-left align-top sm:px-2";
 const foldAfterMs = 2000;
+const STATUS: Record<TraceState, TraceStatus> = { pending: "running", done: "done", failed: "error", cancelled: "cancelled" };
 
-function latency(row: TraceRow): string {
-  if (row.started_ms !== null && row.ended_ms !== null) return `${Math.round(row.ended_ms - row.started_ms)} ms`;
-  return row.state === "pending" ? "대기 중" : "—";
+const span = (row: TraceRow) =>
+  row.started_ms !== null && row.ended_ms !== null ? Math.max(0, row.ended_ms - row.started_ms) : undefined;
+
+/** 끝난 활동에 남은 대기 줄은 더 진행하지 않으니 시간을 재지 않는다. */
+const stepStatus = (row: TraceRow, running: boolean): TraceStatus =>
+  row.state === "pending" && !running ? "pending" : STATUS[row.state];
+
+function detailOf(row: TraceRow, guard?: string): string {
+  const io = `${row.input} → ${row.output}`;
+  return guard ? `${io} · 관련 안전 개입 · ${guard}` : io;
+}
+
+function groupStatus(activity: TraceActivity, completion: TraceCompletion | undefined, running: boolean): TraceStatus {
+  if (completion) return STATUS[completion.state];
+  if (running) return "running";
+  const last = activity.entries.at(-1)?.row;
+  return last ? STATUS[last.state] : "done";
 }
 
 interface SeenActivity {
@@ -56,42 +70,59 @@ function useSeenActivities(activities: readonly TraceActivity[]) {
   return seen;
 }
 
+function ActivitySteps({ activity, running, live }: { activity: TraceActivity; running: boolean; live: boolean }) {
+  // 모델 줄(depth 1)은 바로 앞 도구 줄 아래에 접어 넣는다.
+  const roots: { entry: BranchRow; children: BranchRow[] }[] = [];
+  for (const entry of activity.entries) {
+    if (entry.depth === 1 && roots.length) roots.at(-1)!.children.push(entry);
+    else roots.push({ entry, children: [] });
+  }
+  return roots.map(({ entry: { row, current, guard }, children }) => (
+    <TraceStep key={row.id} data-row={row.id} data-kind={row.kind} data-depth={0} data-current={current && live || undefined}
+      status={stepStatus(row, running)} label={row.name} detail={detailOf(row, guard)} durationMs={span(row)}
+      defaultOpen={children.length ? true : undefined}>
+      {children.length ? <Trace density="compact">
+        {children.map(({ row: child, current: childCurrent }) =>
+          <TraceStep key={child.id} data-row={child.id} data-kind={child.kind} data-depth={1}
+            data-current={childCurrent && live || undefined} status={stepStatus(child, running)}
+            label={child.name} detail={detailOf(child)} durationMs={span(child)} />)}
+      </Trace> : undefined}
+    </TraceStep>
+  ));
+}
+
+/** Agent Trace: 옛 활동이 위, 새 활동이 아래. 바닥에 있으면 새 줄을 따라가고, 위로 올리면 멈추고 알약으로 새 활동 수를 알린다. */
 export const TraceTable = memo(function TraceTable({ rows }: { rows: readonly TraceRow[] }) {
   const activities = useMemo(() => traceActivities(rows), [rows]);
   const seen = useSeenActivities(activities);
+  const [opened, setOpened] = useState<ReadonlyMap<string, boolean>>(() => new Map());
+  const toggle = useCallback((id: string, open: boolean) => setOpened(previous => new Map(previous).set(id, open)), []);
   return (
-    <Table aria-label="Trace" className="min-w-[350px] table-fixed">
-      <colgroup>
-        <col className="w-[16%]" /><col className="w-[29%]" /><col className="w-[19%]" />
-        <col className="w-[21%]" /><col className="w-[15%]" />
-      </colgroup>
-      <TableHeader>
-        <TableRow>{columns.map(label => <th key={label} scope="col" className={`${cell} whitespace-nowrap`}>{label}</th>)}</TableRow>
-      </TableHeader>
-      {activities.map(activity => {
-        const previous = seen.get(activity.id);
-        const completion = activity.completion ?? previous?.completion;
-        const folded = !!completion && previous?.openUntil === undefined;
-        const running = activity.pending && !completion;
-        return <TableBody key={activity.id}>
-          <TraceActivityRow title={completion?.title ?? activity.title} running={running}
-            outcome={completion?.output ?? activity.wait ?? (running ? "진행 중" : undefined)}
-            reason={folded ? completion.reason : undefined} />
-          {!folded && !activity.wait && activity.entries.map(({ row, depth, current, last, opensBranch, continuesRoot, guard }) =>
-            <TableRow key={row.id} className="trace-entry" data-depth={depth} data-current={current && !completion}>
-              <td className={`${cell} [overflow-wrap:anywhere]`}>{row.kind}</td>
-              <TraceNameCell className={`${cell} [overflow-wrap:anywhere]`} last={last} opensBranch={opensBranch}
-                continuesRoot={continuesRoot} guard={guard}>{row.name}</TraceNameCell>
-              <td className={`${cell} [overflow-wrap:anywhere]`}>{row.input}</td>
-              <td className={`${cell} [overflow-wrap:anywhere]`}>{row.output}</td>
-              <td className={cell}>{latency(row)}</td>
-            </TableRow>,
-          )}
-        </TableBody>;
-      })}
-      {activities.length === 0 && <TableBody>
-        <TableRow><td colSpan={5} className={cell}>아직 기록된 활동이 없어요.</td></TableRow>
-      </TableBody>}
-    </Table>
+    <Conversation anchor={false} className="h-full">
+      <ConversationContent label="Agent Trace" className="max-w-none gap-0 px-2.5 pt-4 pb-2 sm:px-2.5">
+        <Trace aria-label="Trace">
+          {activities.map(activity => {
+            const previous = seen.get(activity.id);
+            const completion = activity.completion ?? previous?.completion;
+            const folded = !!completion && previous?.openUntil === undefined;
+            const running = activity.pending && !completion;
+            const latest = activity.entries.at(-1)?.row;
+            const now = running ? activity.entries.filter(entry => entry.current).at(-1)?.row ?? latest : undefined;
+            const summary = completion
+              ? [completion.reason, completion.output].filter(Boolean).join(" · ")
+              : activity.wait ?? (activity.watch && latest ? `${latest.name} · ${latest.output}` : undefined);
+            const auto = !folded && !activity.wait && !activity.watch;
+            return <TraceGroup key={activity.id} data-slot="message" data-activity={activity.id}
+              status={groupStatus(activity, completion, running)} title={completion?.title ?? activity.title}
+              current={now && `${now.name} · ${now.input}`} summary={summary} durationMs={completion?.ms}
+              open={opened.get(activity.id) ?? auto} onOpenChange={open => toggle(activity.id, open)}>
+              <ActivitySteps activity={activity} running={running} live={!completion} />
+            </TraceGroup>;
+          })}
+          {activities.length === 0 && <li>아직 기록된 활동이 없어요.</li>}
+        </Trace>
+      </ConversationContent>
+      <ScrollToBottom when="away" />
+    </Conversation>
   );
 });

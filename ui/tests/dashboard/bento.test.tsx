@@ -195,30 +195,32 @@ describe("장면 중심 대시보드", () => {
     const prepared: TraceRow = { ...base, id: "home:1", kind: "AGENT", name: "목표 준비", input: "컵 치우기", output: "준비 시작", retained: true };
     const placed: TraceRow = { ...base, id: "home:2", kind: "EXECUTION", name: "배치 안내", input: "컵 · 싱크대", output: "배치 확인" };
     const mounted = render(<DashboardScreen {...scene({ trace: [prepared, placed] })} />);
-    const output = () => within(panel("Agent Trace")).getAllByRole("row")
-      .filter(row => /배치 안내|목표 준비/.test(row.textContent ?? "")).map(row => row.textContent);
+    const output = () => Array.from(panel("Agent Trace").querySelectorAll("[data-slot=trace-step]"), row => row.textContent);
     const before = output();
     expect(before).toHaveLength(2);
-    expect(before[0]).toContain("배치 확인");
-    expect(before[1]).toContain("준비 시작");
+    expect(before[0]).toContain("준비 시작");
+    expect(before[1]).toContain("배치 확인");
     mounted.rerender(<DashboardScreen {...scene({ trace: [{ ...prepared, rev: 2, retained: undefined }, placed] })} />);
     expect(output()).toEqual(before);
   });
 
-  it("겹치는 활동과 관련 안전 근거를 함께 갱신하고 활동 선택 버튼을 두지 않는다", () => {
+  it("겹치는 활동과 관련 안전 근거를 함께 갱신하고 알약과 활동 펼치기 단추만 둔다", () => {
     size(390, 740);
     const pendingAc: TraceRow = { ...base, id: "home:3", activity_id: "home:a2", kind: "AGENT", name: "행동 선택", input: "에어컨", output: "에어컨 켜기", state: "pending", ended_ms: null };
     const safety: TraceRow = { ...base, id: "home:4", activity_id: "home:a3", kind: "GUARDRAIL", name: "안전 상태", input: "안전 검사", output: "쓰러짐 의심" };
     const guard: TraceRow = { ...base, id: "home:5", cause_id: "home:4", kind: "GUARDRAIL", name: "실행 보류", input: "실행 전 검사", output: "안전 조치 우선" };
     const mounted = render(<DashboardScreen {...scene({ trace: [picking, pendingAc, safety, guard] })} />);
     const trace = within(panel("Agent Trace"));
-    expect(trace.getAllByRole("columnheader").map(header => header.textContent)).toEqual(["KIND", "NAME", "INPUT", "OUTPUT", "LATENCY"]);
-    expect(trace.getAllByText("에어컨 켜기").length).toBeGreaterThan(0);
-    expect(trace.getAllByText("쓰러짐 의심").length).toBeGreaterThan(0);
-    expect(trace.getByRole("row", { name: /실행 보류.*쓰러짐 의심.*안전 조치 우선/ })).toBeVisible();
-    expect(trace.queryByRole("button")).toBeNull();
+    expect(trace.getAllByText(/에어컨 켜기/).length).toBeGreaterThan(0);
+    expect(trace.getAllByText(/쓰러짐 의심/).length).toBeGreaterThan(0);
+    const steps = Array.from(panel("Agent Trace").querySelectorAll<HTMLElement>("[data-slot=trace-step]"));
+    expect(steps.find(row => /실행 보류.*안전 조치 우선.*쓰러짐 의심/.test(row.textContent ?? ""))).toBeVisible();
+    const buttons = trace.getAllByRole("button", { hidden: true });
+    expect(buttons.filter(button => button.getAttribute("data-slot") === "scroll-to-bottom")).toHaveLength(1);
+    expect(buttons.filter(button => button.getAttribute("data-slot") !== "scroll-to-bottom")
+      .every(button => button.hasAttribute("aria-expanded"))).toBe(true);
     mounted.rerender(<DashboardScreen {...scene({ trace: [{ ...picking, rev: 2, state: "done", ended_ms: 450, output: "수행 확인" }, pendingAc, safety, guard] })} />);
-    expect(trace.getAllByText("수행 확인").length).toBeGreaterThan(0);
-    expect(trace.queryByText("시연자 수행 대기")).toBeNull();
+    expect(trace.getAllByText(/수행 확인/).length).toBeGreaterThan(0);
+    expect(trace.queryByText(/시연자 수행 대기/)).toBeNull();
   });
 });

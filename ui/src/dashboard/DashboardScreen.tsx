@@ -130,7 +130,7 @@ export function DashboardScreen({ index, plan, step, robotKnown, connected, map,
           </div>
         </ScenePanel>
         <ScenePanel name="Agent Trace" box={scene.trace}>
-          <div data-scene-scroll tabIndex={0}><TraceTable rows={rows} /></div>
+          <TraceTable rows={rows} />
         </ScenePanel>
         {mascot}
       </main>
