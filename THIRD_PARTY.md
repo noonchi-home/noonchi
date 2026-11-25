@@ -20,6 +20,10 @@
 
 - 마스코트 전신·얼굴: noonchi-home/wiki `site/public/brand/`의 팀 브랜드 그림. 만든 파일과 쓰는 법은 `ui/public/brand/README.md`.
 
+## 아이콘
+
+- 안드로이드 아래 탭 아이콘 `apps/android/assets/tabs/`(house·map·settings.png): npm `lucide-react` 1.69.0의 House·Map·Settings를 선 굵기 2, 66px로 그린 그림이다(`scripts/android-tab-icons.ts`). ISC License, Copyright (c) 2026 Lucide Icons and Contributors.
+
 ## 화면 부품
 
 - `ui/src/components/ui/`의 부품은 21st.dev에서 받은 코드다. 파일마다 맨 위 출처 줄에 21st.dev 이름·id·작성자/slug와 바꾼 것을 적는다.

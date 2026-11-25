@@ -18,6 +18,29 @@ const bundled = {
 };
 const screens = readdirSync(new URL(".", import.meta.url)).filter(name => name.endsWith(".tsx"));
 
+/** OTF cmap(형식 4·12)에 든 코드 포인트. */
+function codePoints(file: Buffer): Set<number> {
+  const tables = new Map<string, number>();
+  for (let i = 0; i < file.readUInt16BE(4); i++) tables.set(file.toString("latin1", 12 + 16 * i, 16 + 16 * i), file.readUInt32BE(20 + 16 * i));
+  const cmap = tables.get("cmap")!;
+  const found = new Set<number>();
+  for (let i = 0; i < file.readUInt16BE(cmap + 2); i++) {
+    const at = cmap + file.readUInt32BE(cmap + 8 + 8 * i);
+    const format = file.readUInt16BE(at);
+    if (format === 12) {
+      for (let g = 0; g < file.readUInt32BE(at + 12); g++) {
+        for (let cp = file.readUInt32BE(at + 16 + 12 * g); cp <= file.readUInt32BE(at + 20 + 12 * g); cp++) found.add(cp);
+      }
+    } else if (format === 4) {
+      const segments = file.readUInt16BE(at + 6) / 2;
+      for (let s = 0; s < segments; s++) {
+        for (let cp = file.readUInt16BE(at + 16 + 2 * segments + 2 * s); cp <= file.readUInt16BE(at + 14 + 2 * s); cp++) found.add(cp);
+      }
+    }
+  }
+  return found;
+}
+
 test("the app carries the Pretendard 1.3.9 SemiBold and Bold files with their OFL text", () => {
   for (const [name, sha256] of Object.entries(bundled)) {
     const file = bytes(`assets/fonts/${name}.otf`);
@@ -93,6 +116,34 @@ test("when Expo Go fails to load the font files, text drops the unregistered nam
   const shared = lf("AppText.tsx");
   assert.match(shared, /export function Text\([^)]*\) \{\n\s*const nested = useContext\(InText\);\n\s*const missing = useContext\(FontsMissing\);\n\s*const own = withFont\(style, nested\);\n\s*return <InText\.Provider value><NativeText \{\.\.\.props\} style=\{missing \? systemFont\(StyleSheet\.flatten\(own\)\) : own\} \/><\/InText\.Provider>;/);
   assert.match(shared, /export function TextInput\([^)]*\) \{\n\s*const missing = useContext\(FontsMissing\);\n\s*const own = withFont\(style, false\);\n\s*return <NativeTextInput \{\.\.\.props\} style=\{missing \? systemFont\(StyleSheet\.flatten\(own\)\) : own\} \/>;/);
+});
+
+test("every character in the app code is in both Pretendard files, so no text falls back to a system font at 400", () => {
+  const fonts = Object.keys(bundled).map(name => codePoints(bytes(`assets/fonts/${name}.otf`)));
+  assert.ok(fonts.every(set => set.has(0xac00) && set.has(0x203a)), "cmap parsed");
+  const sources = readdirSync(new URL(".", import.meta.url)).filter(name => /\.tsx?$/.test(name) && !name.endsWith(".test.ts"));
+  const missing: string[] = [];
+  for (const name of sources) {
+    const code = read(name).replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/[^\n]*/gm, "$1");
+    for (const char of new Set(code)) {
+      const cp = char.codePointAt(0)!;
+      if (cp > 0x7f && fonts.some(set => !set.has(cp))) missing.push(`${name} ${char} U+${cp.toString(16).toUpperCase()}`);
+    }
+  }
+  assert.deepEqual(missing, []);
+});
+
+test("the bottom tabs draw the web phone tabs' lucide House, Map and Settings PNGs in a 22x22 box, tinted like the labels", () => {
+  const home = lf("ConnectedHome.tsx");
+  assert.match(home, /\{ id: "home", name: "홈", icon: require\("\.\/assets\/tabs\/house\.png"\) \}, \{ id: "house", name: "집 관리", icon: require\("\.\/assets\/tabs\/map\.png"\) \}, \{ id: "settings", name: "설정", icon: require\("\.\/assets\/tabs\/settings\.png"\) \}/);
+  assert.match(home, /<Image source=\{item\.icon\} accessible=\{false\} style=\{\[styles\.tabIcon, tab === item\.id && styles\.activeIcon\]\} \/>/);
+  assert.match(home, /tabIcon: \{ width: 22, height: 22, tintColor: colors\.muted \}/);
+  assert.match(home, /activeIcon: \{ tintColor: colors\.brand \}/);
+  for (const file of ["house", "map", "settings"]) {
+    const png = bytes(`assets/tabs/${file}.png`);
+    assert.equal(png.toString("latin1", 1, 4), "PNG", file);
+    assert.deepEqual([png.readUInt32BE(16), png.readUInt32BE(20)], [66, 66], file);
+  }
 });
 
 test("weights map to the bundled file names and nothing lighter than SemiBold can be named", () => {

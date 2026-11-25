@@ -19,7 +19,8 @@ export interface ConnectedHomeProps {
 
 const peek = require("./assets/face-peek.webp");
 const mascot = require("./assets/mascot-large.webp");
-const tabs = [{ id: "home", name: "홈", glyph: "⌂" }, { id: "house", name: "집 관리", glyph: "▤" }, { id: "settings", name: "설정", glyph: "⚙" }] as const;
+// 웹 폰 탭과 같은 lucide 그림(scripts/android-tab-icons.ts). 기호 글자는 Pretendard에 없어 시스템 글꼴 400으로 그려진다.
+const tabs = [{ id: "home", name: "홈", icon: require("./assets/tabs/house.png") }, { id: "house", name: "집 관리", icon: require("./assets/tabs/map.png") }, { id: "settings", name: "설정", icon: require("./assets/tabs/settings.png") }] as const;
 type Tab = (typeof tabs)[number]["id"];
 const homeName = (name: string) => name.replace(/\s*[(（].*$/, "").trim() || name;
 
@@ -148,7 +149,7 @@ function HubTabs({ hubUrl, onStart, onDisconnect }: ConnectedHomeProps) {
     {!building && <View accessibilityRole="tablist" style={[styles.nav, { paddingBottom: inset.bottom }]}>
       {tabs.map(item => <Pressable key={item.id} accessibilityRole="tab" accessibilityLabel={item.name}
         accessibilityState={{ selected: tab === item.id }} onPress={() => move(item.id)} style={[styles.tab, tab === item.id && styles.active]}>
-        <Text accessible={false} importantForAccessibility="no" style={[styles.tabGlyph, tab === item.id && styles.activeText]}>{item.glyph}</Text>
+        <Image source={item.icon} accessible={false} style={[styles.tabIcon, tab === item.id && styles.activeIcon]} />
         <Text accessible={false} style={[styles.tabLabel, tab === item.id && styles.activeText]}>{item.name}</Text>
       </Pressable>)}
     </View>}
@@ -221,6 +222,6 @@ const styles = StyleSheet.create({
   nav: { flexDirection: "row", backgroundColor: colors.white, borderTopWidth: 1, borderTopColor: colors.edge, paddingHorizontal: 10, zIndex: 1 },
   tab: { flex: 1, minHeight: 56, alignItems: "center", justifyContent: "center", borderBottomWidth: 2, borderBottomColor: "transparent", gap: 3 },
   active: { borderBottomColor: colors.brand }, activeText: { color: colors.brand, ...font(700) },
-  tabGlyph: { fontSize: 22, lineHeight: 24, color: colors.muted },
+  tabIcon: { width: 22, height: 22, tintColor: colors.muted }, activeIcon: { tintColor: colors.brand },
   tabLabel: { fontSize: 12, color: colors.ink },
 });
