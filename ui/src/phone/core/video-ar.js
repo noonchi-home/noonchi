@@ -1,6 +1,6 @@
 // 영상 입력 모드(폰 페이지 ?clip=<이름>): 실제 카메라 대신 /phone/videos/<이름> 영상을 틀고, 고정 카메라로 실제 폰과 같은 길로 보낸다.
-// 시작 자세: 높이 1.15m에서 아래 10°(?h=·?pitch=, 세로 시야각 ?fov= 기본 40°: 앉은 눈높이에서 가로로 찍은 영상). 바닥은 AR y 0이다.
-// 영상은 가로만 튼다: 세로 영상(높이 > 폭)이면 열지 않는다. 첫 영상이면 시작하지 않고 처음 화면에, 단계 영상이면 지금 영상을 두고 알림으로 LANDSCAPE_ONLY를 띄운다. 시작하면 reset → start{fixed:true}를 보내 서버가
+// 영상은 가로만 튼다: 세로 영상(높이 > 폭)이면 열지 않는다. 첫 영상이면 시작하지 않고 처음 화면에, 단계 영상이면 지금 영상을 두고 알림으로 LANDSCAPE_ONLY를 띄운다.
+// 시작 자세: 높이 1.15m에서 아래 10°(?h=·?pitch=, 세로 시야각 ?fov= 기본 40°: 앉은 눈높이에서 가로로 찍은 영상). 바닥은 AR y 0이다. 시작하면 reset → start{fixed:true}를 보내 서버가
 // 시작 자리를 카메라 자리로 바로 맞춘다(src/phone/sync aligner fixStart). 서버 맞춤이 없어지면(못 보냄·다시 붙음·서버 다시 띄움) syncStatus가
 // start fixed를 다시 보낸다(늘 시작 자세: AR 원점은 걸어도 그대로다). 그 뒤 자세는 초당 10번, 화면 프레임은 초당 12장(폭 780, 품질 0.55),
 // 엔진 프레임은 서버 engine_ms마다(품질 0.8, 투영 행렬·서버 시계 촬영 시각). 표시 영상(H.264)은 만들지 않는다. 영상은 다시 틀지 않는다.
@@ -565,7 +565,7 @@ export function createVideoAr({ link, params, hooks, deps }) {
       lastEngine = step.last;
       if (step.action !== "wait" && step.action !== "send") stats.skipped("engine");
       if (step.action === "send") {
-        const ew = Math.min(frameWidth(params.get("w"), false), fw);
+        const ew = Math.min(frameWidth(params.get("w")), fw);
         const eh = Math.round((ew * fh) / fw);
         const e0 = performance.now();
         const pixels = grab(ew, eh);

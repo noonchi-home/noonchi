@@ -134,7 +134,7 @@ describe("대시보드 자료", () => {
   it("물체 모양(seen)은 대시보드 자료에 넣지 않는다(초당 10번 와도 화면 전체를 다시 그리지 않게, masks.ts 저장소가 든다). 가짜 단계에는 컵 모양 seen이 있다", () => {
     const s = at(1);
     const seen = (run.moments[1]!.messages as ServerMessage[]).find((m) => m.type === "seen")!;
-    expect(seen).toMatchObject({ type: "seen", frame: { width: 405, height: 720 }, shapes: [{ label: "cup" }] });
+    expect(seen).toMatchObject({ type: "seen", frame: { width: 405, height: 228 }, shapes: [{ label: "cup" }] });
     expect(reduceDash(s, seen, 5)).toBe(s);
     expect(Object.keys(s).sort()).toEqual(["decision", "eye", "goal", "habit", "mode", "people", "personFed", "plan", "plans", "reflection", "robots", "safety", "say", "says", "talk", "thoughts", "trace", "traceEpoch"]);
   });

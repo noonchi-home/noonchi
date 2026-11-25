@@ -44,11 +44,10 @@ describe("보낸 장 수·시간 측정(최근 2초)", () => {
 });
 
 describe("기본 프레임 크기", () => {
-  it("가로 촬영 480, 세로 360, ?w가 있으면 그것", () => {
-    expect(frameWidth(null, false)).toBe(480);
-    expect(frameWidth(null, true)).toBe(360);
-    expect(frameWidth("640", true)).toBe(640);
-    expect(frameWidth("99999", false)).toBe(1280);
-    expect(frameWidth("abc", false)).toBe(480);
+  it("가로 480(폰도 영상도 가로만 보낸다), ?w가 있으면 그것(160~1280)", () => {
+    expect(frameWidth(null)).toBe(480);
+    expect(frameWidth("640")).toBe(640);
+    expect(frameWidth("99999")).toBe(1280);
+    expect(frameWidth("abc")).toBe(480);
   });
 });

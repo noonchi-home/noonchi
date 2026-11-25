@@ -7,4 +7,4 @@ export function createSendStats(opts?: { windowMs?: number; now?: () => number }
   skipped(reason: "encoding" | "buffer" | "stale" | "engine"): void;
   snapshot(): SendSnapshot;
 };
-export function frameWidth(param: string | null | undefined, portrait: boolean): number;
+export function frameWidth(param: string | null | undefined): number;

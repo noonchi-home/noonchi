@@ -24,7 +24,7 @@
 // 받은 명령은 그 영상 시각으로 기록하고(window.__noonchiVideo), 영상 AR에 넘겨 맞는 단계 영상(?step=)으로 바꾸고 go 단계면 자세를 걷게 한다.
 import type { HeardAt, PhoneCommand, PhoneCommandClear, TalkGrade } from "../../../src/contract/phone.ts";
 import { MOBILE_PHONE_EVENTS } from "../../../src/shared/mobile-phone.ts";
-import { createAr, type ArHooks, type PhoneAr } from "./core/ar.js";
+import { createAr, TURN_LANDSCAPE, type ArHooks, type PhoneAr } from "./core/ar.js";
 import { createVideoAr, logVideoAt, logVideoCommand, videoParams, type VideoArDeps } from "./core/video-ar.js";
 import { createLink, phoneSocketUrl } from "./core/link.js";
 import { createListener, hush as hushAloud, recognition, speak as speakAloud, type RecognitionCtor } from "./core/talk.js";
@@ -286,7 +286,7 @@ export function createPhoneController(deps: ControllerDeps): PhoneController {
       if (turn !== rotation && !askedForLandscape) orientation.unlock?.();
     } catch {
       if (turn === rotation && window.matchMedia?.("(orientation: portrait)").matches) {
-        showNote("폰을 가로로 돌려 주세요.");
+        showNote(TURN_LANDSCAPE);
       }
     }
   }

@@ -35,5 +35,7 @@ export interface PhoneAr {
   setFocus(targets: FocusTargetAr[] | undefined, ttlMs: number | undefined): void;
   perf(): { fps: string; detail: string };
 }
+/** 폰을 세로로 들었을 때 알릴 말(프레임을 보내지 않는다). */
+export const TURN_LANDSCAPE: string;
 export function newEpoch(): string;
 export function createAr(opts: { link: PhoneLink; params: URLSearchParams; hooks: ArHooks; deps?: Record<string, unknown> }): PhoneAr;

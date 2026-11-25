@@ -89,7 +89,7 @@
           "captured_at_ms": 1794214800000,
           "frame": {
             "width": 405,
-            "height": 720
+            "height": 228
           },
           "shapes": [
             {
@@ -98,7 +98,7 @@
               "mask": {
                 "at": [
                   168,
-                  332,
+                  102,
                   24,
                   25
                 ],
@@ -550,7 +550,7 @@
           "captured_at_ms": 1794214804000,
           "frame": {
             "width": 405,
-            "height": 720
+            "height": 228
           },
           "shapes": [
             {
@@ -559,7 +559,7 @@
               "mask": {
                 "at": [
                   168,
-                  332,
+                  102,
                   24,
                   25
                 ],
@@ -993,7 +993,7 @@
           "captured_at_ms": 1794214808000,
           "frame": {
             "width": 405,
-            "height": 720
+            "height": 228
           },
           "shapes": [
             {
@@ -1002,7 +1002,7 @@
               "mask": {
                 "at": [
                   160,
-                  238,
+                  60,
                   85,
                   108
                 ],
@@ -1442,7 +1442,7 @@
           "captured_at_ms": 1794214812000,
           "frame": {
             "width": 405,
-            "height": 720
+            "height": 228
           },
           "shapes": []
         },
@@ -1881,7 +1881,7 @@
           "captured_at_ms": 1794214816000,
           "frame": {
             "width": 405,
-            "height": 720
+            "height": 228
           },
           "shapes": [
             {
@@ -1890,7 +1890,7 @@
               "mask": {
                 "at": [
                   155,
-                  243,
+                  57,
                   95,
                   115
                 ],
@@ -2268,7 +2268,7 @@
         "captured_at_ms": 1794214808000,
         "frame": {
           "width": 405,
-          "height": 720
+          "height": 228
         },
         "shapes": []
       },
