@@ -77,9 +77,10 @@ it("station arrival uses the walk guide, never the last generic eye or the door 
   const sample=(x:number)=>{s.clock.t+=200;s.t.onNavigationPose({quality:"usable",observed_ms:s.clock.t,pose_gen:1,position:[x,2]});s.t.tick();};
   s.t.onEye([5,2]);sample(3.5);sample(3.7);
   s.t.onDirective({op:"grant",id:"visit:walk",kind:"visit",target_id:"spot",rev:1,goal_id:null,until_ms:30000});
-  expect(s.last()).toMatchObject({guide:{remaining:[{kind:"portal"},{kind:"stand"}]}});
+  // 안내는 이동 가능 점 격자 길: 트인 경계 → 주방 격자 점(4.5, 2.1) → 설 자리
+  expect(s.last()).toMatchObject({guide:{remaining:[{kind:"portal"},{kind:"via",position:[4.5,0,2.1]},{kind:"stand"}]}});
   sample(4.1);sample(4.2);
-  expect(s.last()).toMatchObject({step:"visit:walk:go",speak:false,guide:{remaining:[{kind:"stand"}]}});
+  expect(s.last()).toMatchObject({step:"visit:walk:go",speak:false,guide:{remaining:[{kind:"via",position:[4.5,0,2.1]},{kind:"stand"}]}});
   expect(result).toEqual([]);
   sample(4.7);sample(4.8);expect(result).toEqual(["arrived"]);
 });
