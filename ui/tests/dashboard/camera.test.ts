@@ -39,7 +39,8 @@ it("작은 트윈은 지금 집는 물건 둘레를 확대하고 다음 목적�
   expect(focus.y1 - focus.y0).toBeLessThan(600);
 });
 
-/** 고치기 전(2026-11-19 c4801a0) 배율: 지켜보기(순간 0)와 계획 단계(순간 1~4). 사용자 「지금 트윈이 너무 멀어」. */
+/** 고치기 전(2026-11-19 c4801a0) 배율: 지켜보기(순간 0)와 계획 단계(순간 1~4). 사용자 「지금 트윈이 너무 멀어」.
+ *  순간 3(싱크대로 가기)은 계획 길이 이동 가능 점 격자를 따라 식탁을 돌아가면서(11-25 3b) 그 구간이 넓어져, 고치기 전보다 가깝기만 하면 된다. */
 const BEFORE: Record<string, number[]> = {
   "1280x800": [0.586, 1.012, 0.65, 1.012, 1.012],
   "1280x720": [0.502, 0.867, 0.557, 0.867, 0.867],
@@ -114,7 +115,7 @@ describe.each([[1920, 1080], [1440, 900], [1280, 800], [1280, 720]])("%i×%i", (
     for (const n of [1, 2, 3, 4]) {
       const now = view(n).cam.scale;
       if (before[n]! >= MAX_SCALE - 1e-9) expect(now, `순간 ${n}`).toBeCloseTo(MAX_SCALE, 6);
-      else expect(now, `순간 ${n}`).toBeGreaterThan(before[n]! * 1.1);
+      else expect(now, `순간 ${n}`).toBeGreaterThan(before[n]! * (n === 3 ? 1 : 1.1));
     }
   });
 

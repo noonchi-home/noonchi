@@ -1,7 +1,7 @@
 // 트윈 위 표시 시험 자료: 실제 한양목련 장면(loadScene, 도면 설비 포함)과 가짜 단계 자료(ui/src/dashboard/fake-run.json, ?debug=steps와 같은 것)의
 // 다섯 순간(0 지켜보기, 1~4 계획 단계)의 계획과 맞춘 눈. 단계 상태는 앞 done·지금 active·뒤 pending, 0이면 계획 없음.
 // 눈 자리는 0·1 시작 자리, 2 식탁 구간 끝, 3 싱크대 구간 가운데, 4 길 끝이고 yaw는 그 구간 방향이다.
-// CUP_PLAN은 지금 장면·평면도로 짠 컵 치우기 계획 모양(에이전트 컵 계획과 같은 tests/helpers/cup-plan.ts cupPlan, 로봇 [10.6, 8.6], 사람이 걷는 길)이다. 가짜 단계 자료가 지금 것인지 견준다.
+// CUP_PLAN은 지금 장면·평면도로 짠 컵 치우기 계획 모양(에이전트 컵 계획과 같은 tests/helpers/cup-plan.ts cupPlan, 로봇 [10.6, 8.6], 이동 가능 점 격자 길)이다. 가짜 단계 자료가 지금 것인지 견준다.
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { EyeEvent, ServerMessage } from "../../../src/contract/events.ts";
@@ -11,6 +11,8 @@ import { loadScene } from "../../../src/layout/scene.ts";
 import { floorPlanFrom } from "../../../src/layout/floor.ts";
 import { STEP_LABEL } from "../../../src/act/labels.ts";
 import { assemblePlan } from "../../../src/agent/planShape.ts";
+import { loadCatalog } from "../../../src/layout/catalog.ts";
+import { walkWay } from "../../../src/layout/walk-grid.ts";
 import type { Check } from "../../src/dashboard/checks/checks";
 import run from "../../src/dashboard/fake-run.json";
 import { homeIndexOf } from "../../src/dashboard/home";
@@ -23,6 +25,7 @@ export const START: XZ = [10.6, 8.6];
 // jsdom 시험에서는 URL이 jsdom 것이라 글로 받은 파일 주소에서 경로를 잇는다
 const twin = resolve(dirname(fileURLToPath(import.meta.url)), "../../../twin");
 export const SCENE = loadScene(resolveHome(twin, "mokryeon_180b"))!;
+const catalog = loadCatalog(resolveHome(twin, "mokryeon_180b").catalogDir);
 export const HOME = homeIndexOf(SCENE, CAM);
 
 const fp = floorPlanFrom(SCENE);
@@ -35,7 +38,7 @@ export const CUP_PLAN: PlanView = assemblePlan({ ...fp, robot: { ...fp.robot, re
     { kind: "act", label: STEP_LABEL.pickCup, target: { objectId: table.id } },
     { kind: "move", label: STEP_LABEL.goSink, target: { objectId: sink.id, ...(sink.room ? { room: sink.room } : {}) }, to: sink.position },
     { kind: "act", label: STEP_LABEL.placeCup, target: { objectId: sink.id } },
-  ]);
+  ], walkWay(SCENE, (type) => catalog.get(type)?.footprint));
 
 const objects = SCENE.objects as { id: string; type: string }[];
 export const TABLE = objects.find((o) => o.type === "dining_table")!.id;

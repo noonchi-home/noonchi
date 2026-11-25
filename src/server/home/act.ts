@@ -17,7 +17,7 @@ import type { WorldInput, WorldView } from "../../contract/world.js";
 import type { SignalHub } from "../../devices/index.js";
 import type { PlanView } from "../../contract/plan.js";
 import type { TraceRefs } from "../../contract/trace.js";
-import { walkingMap, floorLookup, floorPlanFrom, loadScene, LOOK_HEIGHT_M, type LayoutEditor, type PlaceNames } from "../../layout/index.js";
+import { walkingMap, walkWay, floorLookup, floorPlanFrom, loadScene, LOOK_HEIGHT_M, type LayoutEditor, type PlaceNames, type WalkWay } from "../../layout/index.js";
 import { Trigger, canRelink, deviceStateKeys, deviceStatus, loadTriggerConfig, type PlaneSurface, type TriggerConfig } from "../../world/index.js";
 import { loadEndpoints } from "../../infer/endpoints.js";
 import { DEVICE_STATES } from "../../world/vocab.js";
@@ -284,6 +284,8 @@ export function startAct(core: HomeCore): (event: BrainLog) => void {
   const planCtx = (d: DecisionRecord, task: TaskSpec, world: WorldView, ahead?: PlanAhead): PlanContext => ({
     decision: d, task, world, floor: plans.floor(), places: core.places(), names: placeNames, rooms: twin.rooms, devices: deviceViews(signals), nowIso: new Date(now()).toISOString(),
     placed: new Map(core.tracker?.placed() ?? []), ...(task.coach ? { lesson: lessons.get(task.name) } : {}), ...(ahead ? { ahead } : {}),
+    // 계획 길은 폰 안내와 같은 이동 가능 점 격자를 따른다(src/layout/walk-grid.ts)
+    ...(walking() ? { way: walkWayNow! } : {}),
     // 관찰 흐름이 위에서 본 사진으로 컵 안을 본다(topReady·lookContents top): 컵 치우기 계획에 컵 안 보기 단계가 든다
     topLook: true,
     discardLeftover: task.topLook && discardLeftover(world),
@@ -319,6 +321,7 @@ export function startAct(core: HomeCore): (event: BrainLog) => void {
   let geometryVersion=-1;
   let walkScene:typeof core.scene=null;
   let walkMap:ReturnType<typeof walkingMap>|null=null;
+  let walkWayNow:WalkWay|null=null;
   const walking=()=>{
     const scene=core.scene, editor=layout?.editor;
     if(!scene) return null;
@@ -326,6 +329,7 @@ export function startAct(core: HomeCore): (event: BrainLog) => void {
       walkScene=scene;geometryVersion=editor?.geometryRevision??0;
       const current=editor?{...scene,objects:editor.objects()}:scene;
       walkMap=walkingMap(floorPlanFrom(current),current,type=>layout?.catalog.get(type)?.footprint);
+      walkWayNow=walkWay(current,type=>layout?.catalog.get(type)?.footprint);
     }
     return walkMap;
   };

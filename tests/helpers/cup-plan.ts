@@ -4,14 +4,15 @@ import type { PlanView, XZ } from "../../src/contract/plan.js";
 import type { FloorPlan } from "../../src/layout/floor.js";
 import { GOAL, STEP_LABEL } from "../../src/act/labels.js";
 import { assemblePlan, type DraftStep } from "../../src/agent/planShape.js";
+import type { WalkWay } from "../../src/layout/walk-grid.js";
 
 const byType = (fp: FloorPlan, type: string) => [...fp.objects.values()].find((o) => o.type === type);
 
 /** 집을 물건(World State). 위치는 트윈 좌표 [x, 높이, y], 맞추기 전이면 null. */
 export interface PickTarget { id: string; position: [number, number, number] | null }
 
-/** 컵 치우기: 식탁으로 가서 컵을 집고 싱크대로 가서 내려놓는다. 식탁이 없으면 null, 싱크대가 없으면 식탁 두 단계만. 길은 사람이 걷는 길(모든 방)이다. */
-export function cupPlan(fp: FloorPlan, id: string, nowIso: string, target: PickTarget | null = null): PlanView | null {
+/** 컵 치우기: 식탁으로 가서 컵을 집고 싱크대로 가서 내려놓는다. 식탁이 없으면 null, 싱크대가 없으면 식탁 두 단계만. 길은 걷기 길 자료(way)의 격자 길이고, 없으면 길 없이 단계만. */
+export function cupPlan(fp: FloorPlan, id: string, nowIso: string, target: PickTarget | null = null, way?: WalkWay): PlanView | null {
   const table = byType(fp, "dining_table");
   if (!table) return null;
   const sink = byType(fp, "sink_counter");
@@ -25,7 +26,7 @@ export function cupPlan(fp: FloorPlan, id: string, nowIso: string, target: PickT
     ] : []),
   ];
   const walk = { ...fp, robot: { ...fp.robot, reachable: fp.rooms.map((r) => r.id) } };
-  return assemblePlan(walk, { id, goal: GOAL.clearCup, judgment: "", source: "brain", dryRun: true, nowIso }, draft);
+  return assemblePlan(walk, { id, goal: GOAL.clearCup, judgment: "", source: "brain", dryRun: true, nowIso }, draft, way);
 }
 
 /** 사용자에게 물어보기: 폰으로 묻는 한 단계, 이동 없음. */

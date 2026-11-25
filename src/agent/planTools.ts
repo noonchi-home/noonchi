@@ -12,6 +12,7 @@ import { followedId, planIdOf, type Placed, type TaskSpec } from "../act/tasks.j
 import type { DeviceView, DecisionRecord } from "../contract/events.js";
 import type { DraftStep, PlanHead } from "./planShape.js";
 import { assemblePlan } from "./planShape.js";
+import type { WalkWay } from "../layout/index.js";
 import type { WorldObject, WorldView } from "../contract/world.js";
 import type { RoomSpec } from "../contract/devices.js";
 import type { FloorPlan } from "../layout/index.js";
@@ -108,6 +109,8 @@ export interface PlanContext {
   discardLeftover?: boolean;
   /** 부름에 응하기의 목적지(src/agent/call-target.ts, 코드가 정함). 있으면 입력에 [부름 목적지] 줄을 넣고, 계획 검사는 첫 go가 그 목적지(모르면 후보 중 하나)인 계획만 받는다. */
   call?: import("./call-target.js").CallDestination;
+  /** 걷기 길 자료(이동 가능 점 격자·가구 앞자리·방 대기 자리, src/layout/walk-grid.ts walkWay). 없으면 계획 길을 그리지 않는다. */
+  way?: WalkWay;
 }
 
 
@@ -408,7 +411,7 @@ export class PlanDraft {
     }
     const draft: DraftStep[] = steps.map((s, i) => ({ kind: VIEW_KIND[s.kind], label: s.label, ...this.viewTarget(s, steps[i + 1]) }));
     const head: PlanHead = { id, goal: task.name, judgment: decision.prediction?.reasoning ?? "", source: "brain", dryRun: !steps.some((s) => s.kind === "device"), nowIso };
-    this.done = { view: assemblePlan(walkable(floor), head, draft), steps, task: task.name };
+    this.done = { view: assemblePlan(walkable(floor), head, draft, this.ctx.way), steps, task: task.name };
     return { ok: true, plan: this.done };
   }
 

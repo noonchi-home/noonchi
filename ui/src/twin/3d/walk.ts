@@ -1,12 +1,13 @@
 // 맞춘 눈 표시(원뿔)를 그릴 자리 보정(그리는 자리만, 눈 자세 값은 그대로): 평면 점을 방 안·벽에서 떨어진 자리로 옮기고(stand),
-// 두 자리 사이는 서버 경로 찾기(src/layout/route.ts)와 같은 방 다각형·문·트인 경계로 잇는다(path). 사람이 든 폰이라 모든 방을 지날 수 있다.
+// 두 자리 사이는 계획 선·폰 안내와 같은 이동 가능 점 격자 길로 잇는다(path, src/layout/walk-grid.ts gridRoute). 격자가 없는 곳(욕실 등)은 길이 없다.
 import type { Plan2 } from "../../../../src/contract/events.ts";
-import { floorPlanFrom, roomAt, route } from "../../../../src/layout/browser.ts";
+import type { SceneJson } from "../../../../src/contract/layout.ts";
+import { WALK_STEP, floorPlanFrom, gridRoute, roomAt, walkGrid, walkingGeometry } from "../../../../src/layout/browser.ts";
 
 export interface WalkGuide {
   /** 그릴 자리: 방 안이고 벽에서 벽 반 두께 + 표시 반지름만큼 떨어진 가장 가까운 자리. 방이 없는 장면이면 그대로. */
   stand(p: Plan2): Plan2;
-  /** from에서 to까지 바닥 길(문·트인 경계를 지난다). 못 찾으면 null. */
+  /** from에서 to까지 격자 길(0.6m 안은 곧은 선, 그보다 멀면 x·z 축과 나란하게 꺾인다). 못 찾으면 null. */
   path(from: Plan2, to: Plan2): Plan2[] | null;
 }
 
@@ -17,8 +18,8 @@ interface WalkScene { plan?: { walls?: Wall[] } }
 const NUDGE = 0.01;
 /** 이만큼 안이면 벽 선 위로 본다(m). */
 const ON_LINE = 1e-6;
-/** 문·트인 경계를 건널 때 테두리에서 표시 반지름에 더 떨어지는 거리(m, 안벽 반 두께). */
-const GATE_KEEP = 0.06;
+/** 이보다 가까운 두 자리는 곧은 선으로 잇는다(m, 격자 자리 붙이기 거리와 같다). */
+const STRAIGHT_M = 0.6;
 
 /** 선분 ab에서 p와 가장 가까운 점. */
 function closest(p: Plan2, a: Plan2, b: Plan2): Plan2 {
@@ -42,19 +43,10 @@ export function walkGuide(scene: unknown, reach: number): WalkGuide {
   const fp = floorPlanFrom(scene);
   const plan = (scene as WalkScene).plan ?? {};
   const walls = (plan.walls ?? []).flatMap((w) => (w.a && w.b ? [{ a: w.a, b: w.b, keep: (w.thickness ?? 0) / 2 + reach }] : []));
-  const open = { ...fp, robot: { ...fp.robot, reachable: fp.rooms.map((r) => r.id) } };
   const inRoom = (p: Plan2) => roomAt(fp, p) !== null;
-
-  /** 점이 놓인 방 테두리 변(문·트인 경계 점). 없으면 null. */
-  const edgeAt = (p: Plan2): [Plan2, Plan2] | null => {
-    for (const r of fp.rooms) {
-      for (let i = 0; i < r.polygon.length; i++) {
-        const a = r.polygon[i]!, b = r.polygon[(i + 1) % r.polygon.length]!;
-        if (dist(a, b) > 0 && dist(p, closest(p, a, b)) < NUDGE) return [a, b];
-      }
-    }
-    return null;
-  };
+  // 계획 선·폰 안내와 같은 격자(/api/scene 바닥 물건에 카탈로그 footprint가 실려 서버와 같은 격자가 된다)
+  const geometry = fp.rooms.length ? walkingGeometry(scene as SceneJson) : null;
+  const grid = geometry ? walkGrid(geometry, WALK_STEP) : null;
 
   /** 방 밖 점에서 가장 가까운 방 안 자리(방 테두리에서 안쪽으로 NUDGE). */
   const inside = (p: Plan2): Plan2 | null => {
@@ -98,20 +90,8 @@ export function walkGuide(scene: unknown, reach: number): WalkGuide {
       return inRoom(q) ? q : start;
     },
     path(from, to) {
-      const way = route(open, from, to);
-      if (!way) return null;
-      // 문·트인 경계 점은 방 테두리 위다: 그 앞뒤로 테두리에서 떨어진 점을 두어 테두리(벽 선)를 따라가지 않고 곧게 건넌다
-      const out: Plan2[] = [way[0]!];
-      for (const gate of way.slice(1, -1)) {
-        const edge = edgeAt(gate);
-        if (!edge) { out.push(gate); continue; }
-        const from2 = roomAt(fp, out[out.length - 1]!);
-        const [near, far] = sides(gate, edge[0], edge[1], GATE_KEEP + reach);
-        const first = roomAt(fp, near!) === from2 ? [near!, far!] : [far!, near!];
-        out.push(first[0]!, gate, first[1]!);
-      }
-      out.push(way[way.length - 1]!);
-      return out;
+      if (!geometry || !grid) return null;
+      return gridRoute(grid, geometry, from, to, { square: dist(from, to) > STRAIGHT_M });
     },
   };
 }

@@ -28,6 +28,8 @@ import type { WorldObject, WorldView } from "../../src/contract/world.js";
 import { DEFAULT_TWIN_DIR } from "../../src/layout/twin-files.js";
 import { resolveHome } from "../../src/layout/homes.js";
 import { loadScene } from "../../src/layout/scene.js";
+import { loadCatalog } from "../../src/layout/catalog.js";
+import { walkWay, type WalkWay } from "../../src/layout/walk-grid.js";
 import { STEP_COMMAND, STEP_LABEL } from "../../src/act/labels.js";
 import { cupPlan } from "../../tests/helpers/cup-plan.js";
 import { floorPlanFrom, roomAt } from "../../src/layout/route.js";
@@ -114,7 +116,7 @@ function along(path: XZ[], t: number): { at: XZ; yaw: number } {
 }
 
 /** 코치 행동 중 한 순간(대시보드 ?debug=steps&mode=coach): 라면 끓이기 알려 주기 계획의 2단계(냄비 꺼내기)와 그 판단·규칙 줄·말, 서버 지금 모드 코치. */
-function coachMoment(fp: FloorPlan, world: WorldView): Moment {
+function coachMoment(fp: FloorPlan, world: WorldView, way: WalkWay): Moment {
   const at = T0 + 2 * STEP_MS;
   const byType = (t: string) => [...fp.objects.values()].find((o) => o.type === t)!;
   const cabinet = byType("kitchen_cabinet");
@@ -126,7 +128,7 @@ function coachMoment(fp: FloorPlan, world: WorldView): Moment {
     { kind: "act", label: "냄비 올리기", target: { objectId: cooktop.id } },
   ];
   const walk = { ...fp, robot: { ...fp.robot, reachable: fp.rooms.map((r) => r.id) } };
-  const planned = assemblePlan(walk, { id: planIdOf("pam-7"), goal: RAMEN, judgment: "사용자가 라면 끓이는 법을 물었어요.", source: "brain", dryRun: true, nowIso: iso(at) }, draft);
+  const planned = assemblePlan(walk, { id: planIdOf("pam-7"), goal: RAMEN, judgment: "사용자가 라면 끓이는 법을 물었어요.", source: "brain", dryRun: true, nowIso: iso(at) }, draft, way);
   const plan: PlanView = { ...planned, revision: 2, status: "running", steps: planned.steps.map((s, i) => ({ ...s, status: i === 0 ? "done" : i === 1 ? "active" : "pending" })) };
   const decision: Extract<BrainLog, { type: "decision" }> = {
     type: "decision", at_ms: at, id: "pam-7", seq: 7, text_sent: "사람이 말함: 「들은 말 있음」", status: "valid",
@@ -156,10 +158,14 @@ function coachMoment(fp: FloorPlan, world: WorldView): Moment {
 
 function build(): { moments: Moment[]; coach: Moment } {
   const home = resolveHome(DEFAULT_TWIN_DIR, HOME);
-  const base = floorPlanFrom(loadScene(home));
+  const scene = loadScene(home)!;
+  const catalog = loadCatalog(home.catalogDir);
+  // 계획 길은 서버와 같은 이동 가능 점 격자 길이다(src/layout/walk-grid.ts)
+  const way = walkWay(scene, (type) => catalog.get(type)?.footprint);
+  const base = floorPlanFrom(scene);
   const fp = { ...base, robot: { ...base.robot, position: START, room: roomAt(base, START) } };
   const decisionId = "pam-1";
-  const plan = cupPlan(fp, planIdOf(decisionId), iso(T0 + STEP_MS));
+  const plan = cupPlan(fp, planIdOf(decisionId), iso(T0 + STEP_MS), null, way);
   if (!plan || plan.steps.length !== 4 || plan.legs.length !== 2) throw new Error("컵 치우기 계획이 네 단계·두 이동 구간이 아니에요");
   const table = [...fp.objects.values()].find((o) => o.type === "dining_table")!;
   const tableLeg = plan.path.slice(0, plan.legs[0]!.end + 1);
@@ -266,7 +272,7 @@ function build(): { moments: Moment[]; coach: Moment } {
   return {
     // hello(Trace epoch)는 자료를 처음부터 시작하므로 맨 앞에 둔다
     moments: moments.map((m, n) => (n === 0 ? m : { ...m, messages: [m.messages[0]!, watched, ...m.messages.slice(1).filter((x) => x.type !== "say"), decided, ...said.slice(1, n + 1)] })),
-    coach: coachMoment(fp, world),
+    coach: coachMoment(fp, world, way),
   };
 }
 

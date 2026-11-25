@@ -1,11 +1,18 @@
 // @vitest-environment node
 // 원뿔 그릴 자리 보정: 방 밖·벽 속 점은 방 안으로, 벽 가까운 점은 벽 반 두께 + 표시 반지름(원뿔 꼭짓점 공 0.11 m) 밖으로 옮긴다. 방 한가운데 점은 그대로다.
-// 두 자리 사이 길은 문·트인 경계를 지나고 길 위 모든 점이 방 안이다(벽을 지나는 직선이 아니다). 로봇이 못 가는 방(욕실)도 사람은 간다.
+// 두 자리 사이 길은 계획 선·폰 안내와 같은 이동 가능 점 격자 길이다: 문을 지나고 길 위 모든 점이 방 안이며, 멀면 x·z 축과 나란하게 꺾이고 가구 상자 + 0.18m를 지나지 않는다.
+// 격자가 없는 방(로봇이 못 가는 욕실)은 길이 없다(원뿔은 바로 옮겨 간다).
 import { readFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import type { Plan2 } from "../../../src/contract/events.ts";
+import type { SceneObject, Vec2 } from "../../../src/contract/layout.ts";
+import { loadCatalog } from "../../../src/layout/catalog.ts";
+import { insidePolygon } from "../../../src/layout/floor.ts";
+import { resolveHome } from "../../../src/layout/homes.ts";
 import { floorPlanFrom, roomAt } from "../../../src/layout/route.ts";
+import { loadScene, withFootprints } from "../../../src/layout/scene.ts";
 import { CONE } from "../../src/twin/3d/eye";
 import { walkGuide } from "../../src/twin/3d/walk";
 
@@ -65,21 +72,50 @@ describe("원뿔 그릴 자리 보정", () => {
     const path = guide.path(from, to)!;
     expect(path[0]).toEqual(from);
     expect(path.at(-1)).toEqual(to);
-    expect(path.some((p) => p[0] === 7.78 && p[1] === 6.8)).toBe(true);
+    // 안방 문(7.78, 6.8)을 지난다
+    expect(samples([...path]).concat(path).some((p) => Math.hypot(p[0] - 7.78, p[1] - 6.8) < 0.03)).toBe(true);
+    const doors = (SCENE as unknown as { plan: { doors: { position: Plan2 }[] } }).plan.doors.map((d) => d.position);
     for (const p of samples(path)) {
       // 문 자리(방 테두리 위)는 어느 쪽 방으로도 본다
-      const near = path.some((q) => Math.hypot(q[0] - p[0], q[1] - p[1]) < 0.06);
+      const near = path.some((q) => Math.hypot(q[0] - p[0], q[1] - p[1]) < 0.06) || doors.some((d) => Math.hypot(d[0] - p[0], d[1] - p[1]) < 0.06);
       expect(near || roomAt(FP, p) !== null, `${p}`).toBe(true);
       const wall = WALLS.find((w) => toWall(p, w) < 0.03);
-      const atDoor = path.slice(1, -1).some((q) => Math.hypot(q[0] - p[0], q[1] - p[1]) < 0.5);
+      const atDoor = doors.some((d) => Math.hypot(d[0] - p[0], d[1] - p[1]) < 0.5);
       expect(!wall || atDoor, `${p} 벽 ${JSON.stringify(wall)}`).toBe(true);
     }
   });
 
-  it("로봇이 못 가는 욕실도 길이 있다", () => {
-    const path = guide.path([5, 6], [1, 6]);
-    expect(path).not.toBeNull();
-    expect(path!.some((p) => p[0] === 1.8 && p[1] === 6.2)).toBe(true);
+  it("격자가 없는 욕실(로봇이 못 가는 방)은 길이 없다", () => {
+    expect(guide.path([5, 6], [1, 6])).toBeNull();
+  });
+
+  it("한양목련 거실 대기 자리 → 식탁 앞자리: 모든 구간이 x 또는 z 축과 나란하고, 욕실 2와 식탁 상자 + 0.18m를 지나지 않고, 식탁 앞자리에서 끝난다", () => {
+    const home = resolveHome(resolve(dirname(fileURLToPath(import.meta.url)), "../../../twin"), "mokryeon_180b");
+    const catalog = loadCatalog(home.catalogDir);
+    const footprint = (type: string) => catalog.get(type)?.footprint;
+    // 대시보드가 받는 /api/scene 장면(바닥 물건에 카탈로그 footprint)
+    const scene = withFootprints(loadScene(home)!, footprint);
+    const objects = scene.objects as SceneObject[];
+    const table = objects.find((o) => o.type === "dining_table")!;
+    const front = scene.stations.surface_fronts.find((f) => f.surface_id === table.id)!.position as Plan2;
+    const from = scene.stations.stations.find((s) => s.id === "living_standby")!.position as Plan2;
+    const bath = (scene.plan.rooms as { id: string; polygon: Vec2[] }[]).find((r) => r.id === "bath_center")!.polygon;
+    const dims = table.footprint!;
+    const yaw = table.rotation?.[1] ?? ((90 - table.plan.facing_deg) * Math.PI) / 180;
+    const [hw, hd] = [dims[0] / 2 + 0.18, dims[1] / 2 + 0.18];
+    const [c, s] = [Math.cos(yaw), Math.sin(yaw)];
+    const box = ([[-hw, -hd], [hw, -hd], [hw, hd], [-hw, hd]] as Vec2[]).map(([u, v]) => [table.plan.position[0] + u * c + v * s, table.plan.position[1] - u * s + v * c] as Vec2);
+    const path = walkGuide(scene, CONE.apex).path(from, front)!;
+    expect(path[0]).toEqual(from);
+    expect(path.at(-1)).toEqual(front);
+    for (let i = 1; i < path.length; i++) {
+      const [a, b] = [path[i - 1]!, path[i]!];
+      expect(Math.abs(a[0] - b[0]) < 1e-9 || Math.abs(a[1] - b[1]) < 1e-9, `${a} → ${b}`).toBe(true);
+    }
+    for (const p of samples(path)) {
+      expect(insidePolygon(p, bath), `${p} 욕실 2`).toBe(false);
+      expect(insidePolygon(p, box), `${p} 식탁`).toBe(false);
+    }
   });
 
   it("방이 없는 장면이면 자리를 바꾸지 않고 길도 없다", () => {
