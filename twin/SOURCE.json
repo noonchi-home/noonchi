@@ -555,7 +555,7 @@
       "path": "apartment/viewer/style.css",
       "bytes": 8798,
       "sha256": "b6bc75a605cf55e191651e9f7ae07d111ab67ceec05df66352d6f692251a102a",
-      "patched": "feat/pretendard"
+      "patched": "baed4780"
     },
     {
       "path": "apartment/viewer/touch.mjs",
