@@ -10,8 +10,8 @@
 {"at":0,"kind":"initial","source":"composed"}
 {"at":500,"kind":"fridge_open","source":"composed: the resident opens the fridge"}
 {"at":150,"kind":"eye","value":"meal_watch","source":"composed phone start spot"}
-{"at":7400,"kind":"eye","value":"kitchen_entry","depart":2000,"source":"composed phone: departs after the go command, walks straight at 0.8 m/s, arrives"}
-{"at":18400,"kind":"eye","value":"meal_watch","depart":13000,"source":"composed phone: departs after the go command, walks straight at 0.8 m/s, arrives"}
+{"at":7450,"kind":"eye","value":"kitchen_entry","depart":2000,"source":"composed phone: departs after the go command, walks straight at 0.8 m/s, arrives"}
+{"at":18550,"kind":"eye","value":"meal_watch","depart":13000,"source":"composed phone: departs after the go command, walks straight at 0.8 m/s, arrives"}
 {"at":34500,"kind":"eye","value":"living_standby","depart":30000,"source":"composed phone: departs after the go command, walks straight at 0.8 m/s, arrives"}
 {"at":45900,"kind":"eye","value":"table","depart":41000,"source":"composed phone: departs after the go command, walks straight at 0.8 m/s, arrives"}
 {"at":58900,"kind":"eye","value":"sink","depart":52000,"source":"composed phone: departs after the go command, walks straight at 0.8 m/s, arrives"}

@@ -93,7 +93,7 @@ describe("walking map", () => {
       walkingMap(floorPlanFrom(scene), scene).clear([3.72, 2], [4, 2], "A", [floorPlanFrom(scene).portals[0]!])
     ).toBe(false);
   });
-  it("guides from the table through the kitchen opening to the basin even when furniture blocks the grid", () => {
+  it("guides from the table around the table corner and through the kitchen opening to the basin (dining chairs are not walking obstacles)", () => {
     const scene = loadScene(resolveHome(DEFAULT_TWIN_DIR, "mokryeon_180b"))!;
     const fronts = scene.stations.surface_fronts;
     const sink = fronts.find((f) => f.surface_id === "sink_counter_kitchen")!;
@@ -110,7 +110,7 @@ describe("walking map", () => {
     // Stage 8 also starts here in recordings made with the original table front.
     const from: [number,number] = [9.96,5.15];
     sample(from);
-    expect(sample(from).guide?.remaining[0]).toMatchObject({kind:"portal",to_room:"kitchen"});
+    expect(sample(from).guide?.remaining.slice(0,2)).toMatchObject([{kind:"via",room:"living"},{kind:"portal",to_room:"kitchen"}]);
     for (const p of [[9.6,4.6],[9.4,4.1],[9.1,3.6],[8.9,3.206],[8.6,3.206]] as [number,number][]) sample(p);
     expect(sample([8.45,3.206]).guide?.remaining[0]).toMatchObject({kind:"stand",position:[6.52,0,0.693]});
     expect(map.plan(table.position,sink.position,sink.near_m,true)).not.toBeNull();

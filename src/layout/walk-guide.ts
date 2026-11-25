@@ -17,6 +17,8 @@ export function edges(poly: Vec2[]) {
   return poly.map((a,i): [Vec2,Vec2] => [a,poly[(i+1)%poly.length]!]);
 }
 const clearance = 0.18;
+/** 걷기 장애물이 아닌 바닥 가구: 식탁 의자는 밀고 지나간다고 본다(한양목련은 의자를 막으면 주방과 거실 사이 길이 끊긴다). */
+export const WALK_THROUGH_TYPES: ReadonlySet<string> = new Set(["dining_chair"]);
 export function walkingGeometry(scene: SceneJson, footprintOf?: (type: string)=>Vec2 | undefined) {
   const floor = floorPlanFrom(scene);
   const rooms = new Map(floor.rooms.map(r=>[r.id,r.polygon]));
@@ -24,7 +26,7 @@ export function walkingGeometry(scene: SceneJson, footprintOf?: (type: string)=>
   const solids = rawWalls.flatMap(w=>w.polygon ? [{id:w.id,polygon:w.polygon}] : []);
   const walls = rawWalls.flatMap(w=>w.a && w.b ? [{id:w.id,a:w.a,b:w.b,thickness:w.thickness??0}] :
     edges(w.polygon??[]).map(([a,b])=>({id:w.id,a,b,thickness:0})));
-  const obstacles = (scene.objects as SceneObject[]).filter(o=>o.mount==="floor" && o.room && (o.plan.elevation??0)<1.8);
+  const obstacles = (scene.objects as SceneObject[]).filter(o=>o.mount==="floor" && o.room && (o.plan.elevation??0)<1.8 && !WALK_THROUGH_TYPES.has(o.type));
   const boxes=obstacles.flatMap(o=>{
     const dims=o.footprint??footprintOf?.(o.type);
     if(!dims) return [];

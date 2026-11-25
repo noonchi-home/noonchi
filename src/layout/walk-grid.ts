@@ -1,5 +1,5 @@
 // 이동 가능 점 격자: 트윈 원점 기준 step 배수 자리 가운데 걸을 수 있는 점과, 이웃 점을 x·z 축 4방향으로 잇는 이음.
-// 걸을 수 있음은 walkingGeometry(walk-guide.ts)와 같다: 로봇이 갈 수 있는 방 안, 고체 밖, 벽에서 0.18m + 벽 두께 절반 밖, 가구 상자 + 0.18m 밖.
+// 걸을 수 있음은 walkingGeometry(walk-guide.ts)와 같다: 로봇이 갈 수 있는 방 안, 고체 밖, 벽에서 0.18m + 벽 두께 절반 밖, 가구 상자 + 0.18m 밖(식탁 의자 빼고).
 // 이음은 두 점 사이 선 위(0.05m마다)가 모두 걸을 수 있고 가구 상자를 지나지 않을 때만 둔다. 트인 경계(open_edges)는 벽이 없어 이음이 그대로 지난다.
 // 문은 벽 여유가 개구부를 막으므로, 개구부 가운데 점과 그 점에서 벽에 수직으로 양쪽 첫 격자 줄까지 나간 문 앞 점을 더한다.
 // 문 앞 점은 같은 격자 줄의 양옆 격자 점과 잇는다. 그래서 모든 이음이 x·z 축과 나란하다(트윈 카메라에서는 두 대각선 방향).
@@ -10,8 +10,7 @@ import { edgeDistance, type walkingGeometry } from "./walk-guide.js";
 
 type Geometry = ReturnType<typeof walkingGeometry>;
 
-/** 격자 간격(m): 0.30·0.25·0.20 가운데 대기·관찰 자리, 가구 앞자리, 충전 자리, 문 양쪽이 가장 많이 한 덩어리로 이어지는 가장 큰 값(tests/walk-grid.test.ts).
- *  한양목련은 세 값 모두 주방 쪽만 끊겨(식탁·의자·그릇장 둘레 여유 길이 3cm) 0.30이다. */
+/** 격자 간격(m): 0.30·0.25·0.20 가운데 대기·관찰 자리, 가구 앞자리, 충전 자리, 문 양쪽이 가장 많이 한 덩어리로 이어지는 가장 큰 값(tests/walk-grid.test.ts). */
 export const WALK_STEP = 0.3;
 
 export interface WalkGrid {

@@ -1,5 +1,5 @@
 // 이동 가능 점 격자 그림: npx tsx scripts/walk-grid-svg.ts [--home mokryeon_180b] [--step 0.3] [--out runtime/walk-grid.svg]
-// 평면도(방·벽), 가구 바닥 상자(실선)와 걷기 여유 0.18m(점선), 격자 점과 이음(가장 큰 덩어리는 진홍, 떨어진 덩어리는 주황), 문 점(진한 점),
+// 평면도(방·벽), 가구 바닥 상자(실선)와 걷기 여유 0.18m(점선, 식탁 의자는 장애물이 아니라 없음), 격자 점과 이음(가장 큰 덩어리는 진홍, 떨어진 덩어리는 주황), 문 점(진한 점),
 // 대기·관찰 자리·가구 앞자리·충전 자리(이름표)를 SVG 한 장으로 쓴다. 위가 평면 z가 작은 쪽이다.
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
@@ -8,7 +8,7 @@ import { loadCatalog } from "../src/layout/catalog.js";
 import { resolveHome } from "../src/layout/homes.js";
 import { loadScene } from "../src/layout/scene.js";
 import { DEFAULT_TWIN_DIR } from "../src/layout/twin-files.js";
-import { walkingGeometry } from "../src/layout/walk-guide.js";
+import { WALK_THROUGH_TYPES, walkingGeometry } from "../src/layout/walk-guide.js";
 import { WALK_STEP, attach, gridParts, walkGrid } from "../src/layout/walk-grid.js";
 
 const arg = (k: string, d: string) => { const i = process.argv.indexOf(`--${k}`); return i > 0 ? process.argv[i + 1]! : d; };
@@ -54,7 +54,7 @@ for (const o of scene.objects as SceneObject[]) {
     return ([[-hw, -hd], [hw, -hd], [hw, hd], [-hw, hd]] as Vec2[]).map(([u, v]) => [o.plan.position[0] + u * c + v * s, o.plan.position[1] - u * s + v * c] as Vec2);
   };
   svg.push(`<polygon points="${pts(box(0))}" fill="#d9cfc6" stroke="#8c8079" stroke-width="1"/>`);
-  svg.push(`<polygon points="${pts(box(0.18))}" fill="none" stroke="#8c8079" stroke-width="1" stroke-dasharray="4 3"/>`);
+  if (!WALK_THROUGH_TYPES.has(o.type)) svg.push(`<polygon points="${pts(box(0.18))}" fill="none" stroke="#8c8079" stroke-width="1" stroke-dasharray="4 3"/>`);
 }
 for (const [a, b] of grid.edges) {
   const [p, q] = [grid.points[a]!, grid.points[b]!];

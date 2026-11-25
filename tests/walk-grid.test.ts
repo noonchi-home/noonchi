@@ -70,35 +70,37 @@ describe("이동 가능 점 격자(한양목련)", () => {
     }
   });
 
-  it("가구 상자 + 0.18m 안과 벽 여유(0.18m + 벽 두께 절반) 안에 점이 없다(문 개구부 가운데 점만 문 벽 위)", () => {
-    const boxes = (scene.objects as SceneObject[])
-      .filter((o) => o.mount === "floor" && o.room && (o.plan.elevation ?? 0) < 1.8)
-      .flatMap((o) => {
-        const dims = o.footprint ?? footprint(o.type);
-        if (!dims) return [];
-        const yaw = o.rotation?.[1] ?? ((90 - o.plan.facing_deg) * Math.PI) / 180;
-        return [{ id: o.id, p: o.plan.position, cos: Math.cos(yaw), sin: Math.sin(yaw), w: (dims[0] * (o.scale?.[0] ?? 1)) / 2 + 0.18, d: (dims[1] * (o.scale?.[2] ?? 1)) / 2 + 0.18 }];
-      });
+  it("가구 상자 + 0.18m 안과 벽 여유(0.18m + 벽 두께 절반) 안에 점이 없다(문 개구부 가운데 점만 문 벽 위). 식탁 의자는 장애물이 아니라 그 자리에도 점이 있다", () => {
+    const floorObjects = (scene.objects as SceneObject[]).filter((o) => o.mount === "floor" && o.room && (o.plan.elevation ?? 0) < 1.8);
+    const box = (o: SceneObject, extra: number) => {
+      const dims = o.footprint ?? footprint(o.type)!;
+      const yaw = o.rotation?.[1] ?? ((90 - o.plan.facing_deg) * Math.PI) / 180;
+      return { id: o.id, p: o.plan.position, cos: Math.cos(yaw), sin: Math.sin(yaw), w: (dims[0] * (o.scale?.[0] ?? 1)) / 2 + extra, d: (dims[1] * (o.scale?.[2] ?? 1)) / 2 + extra };
+    };
+    const inside = (p: Vec2, b: ReturnType<typeof box>) => {
+      const dx = p[0] - b.p[0], dz = p[1] - b.p[1];
+      return Math.abs(dx * b.cos - dz * b.sin) < b.w && Math.abs(dx * b.sin + dz * b.cos) < b.d;
+    };
+    const chairs = floorObjects.filter((o) => o.type === "dining_chair").map((o) => box(o, 0.18));
+    expect(chairs.length).toBe(4);
+    expect(grid.points.some((p) => chairs.some((b) => inside(p, b)))).toBe(true);
+    const boxes = floorObjects
+      .filter((o) => o.type !== "dining_chair")
+      .flatMap((o) => (o.footprint ?? footprint(o.type) ? [box(o, 0.18)] : []));
     expect(boxes.length).toBeGreaterThan(10);
     const centers = new Set(grid.doors.map((d) => d.center));
     grid.points.forEach((p, i) => {
       if (centers.has(i)) return;
-      for (const b of boxes) {
-        const dx = p[0] - b.p[0], dz = p[1] - b.p[1];
-        expect(Math.abs(dx * b.cos - dz * b.sin) < b.w && Math.abs(dx * b.sin + dz * b.cos) < b.d, `${p} 가 ${b.id} 상자 안`).toBe(false);
-      }
+      for (const b of boxes) expect(inside(p, b), `${p} 가 ${b.id} 상자 안`).toBe(false);
       for (const w of geometry.walls) expect(edgeDistance(p, w.a, w.b), `${p} 가 벽 ${w.id} 가까이`).toBeGreaterThanOrEqual(0.18 + w.thickness / 2);
     });
   });
 
-  it("대기·관찰 자리, 가구 앞자리, 충전 자리, 갈 수 있는 방 사이 문 양쪽이 한 덩어리다. 식탁 둘레가 막힌 주방 쪽(주방 입구·싱크대 앞자리)만 따로 한 덩어리다", () => {
+  it("대기·관찰 자리, 가구 앞자리(주방 입구·싱크대 앞 포함), 충전 자리, 갈 수 있는 방 사이 문 양쪽이 모두 한 덩어리다", () => {
     expect(targets.length).toBeGreaterThanOrEqual(13);
+    expect(targets.map(([id]) => id)).toEqual(expect.arrayContaining(["kitchen_entry", "front:sink_counter_kitchen", "dock"]));
     expect(doors.length).toBeGreaterThan(3);
-    // 식탁(가운데 x 9.96, 반폭 0.72)과 주방 벽(x 8.775, 두께 0.15) 사이, 식탁과 그릇장 사이는 가구 여유 0.18m를 빼면 3cm라 격자가 지나지 못한다
-    expect(disconnected(WALK_STEP)).toEqual(["kitchen_entry", "front:sink_counter_kitchen"]);
-    const parts = gridParts(grid);
-    const kitchen = ["kitchen_entry", "front:sink_counter_kitchen"].map((id) => attach(grid, geometry, targets.find(([t]) => t === id)![1])!);
-    expect(parts[kitchen[0]!]).toBe(parts[kitchen[1]!]);
+    expect(disconnected(WALK_STEP)).toEqual([]);
   });
 
   it("WALK_STEP은 0.30·0.25·0.20m 가운데 끊기는 자리·문이 가장 적은 값들 중 가장 큰 값이다", () => {
