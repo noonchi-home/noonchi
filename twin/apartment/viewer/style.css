@@ -1,3 +1,6 @@
+@import url("/fonts/pretendard.css");
+/* twin-home 서버가 ui 빌드의 Pretendard 조각(@font-face)을 이 주소로 내준다. 없으면 아래 대체 글꼴로 그린다 */
+
 :root {
   --bg: #e2e0dc;
   --bar: #fbfaf8;
@@ -17,10 +20,15 @@ html, body {
   height: 100%;
   background: var(--bg);
   color: var(--text);
-  font: 14px/1.45 system-ui, "Pretendard", "Malgun Gothic", sans-serif;
+  font: 600 14px/1.45 "Pretendard Variable", system-ui, "Pretendard", "Malgun Gothic", sans-serif;
 }
 
 body { display: flex; flex-direction: column; }
+
+/* 기본 bolder는 body 600에서 900이 되어 예전 굵기 700으로 둔다 */
+strong { font-weight: 700; }
+/* 크롬 기본 option 굵기는 normal(400)이라 펼친 목록 글이 600보다 가늘어진다 */
+option { font-weight: 600; }
 
 .bar {
   display: flex;
@@ -75,11 +83,11 @@ button[aria-pressed="true"] { border-color: var(--accent); color: var(--accent);
 .report { margin: 0; padding-left: 18px; }
 .report .ok { color: var(--ok); }
 .report .bad { color: var(--bad); }
-code { font-size: 12px; }
+code { font-size: 12px; font-family: "Pretendard Variable", monospace; }
 
 .devices details { border-top: 1px solid var(--line); padding: 4px 0; }
 .devices summary { cursor: pointer; font-weight: 600; padding: 2px 0; }
-.devices summary .count { color: var(--muted); font-weight: 400; margin-left: 4px; }
+.devices summary .count { color: var(--muted); font-weight: 600; margin-left: 4px; }
 
 .device { padding: 4px 0 4px 6px; }
 .device > .name {
@@ -88,7 +96,7 @@ code { font-size: 12px; }
   border: 0;
   background: none;
   text-align: left;
-  font-weight: 500;
+  font-weight: 600;
 }
 .device > .name:hover { color: var(--accent); }
 .device.active > .name::after { content: " ●"; color: var(--on); }
@@ -164,7 +172,7 @@ code { font-size: 12px; }
 body:not(.debug) .debug-only { display: none !important; }
 
 /* 가전 상태: 지금 켜졌거나 기본값이 아닌 가전 */
-.panel h2 .count { font-weight: 400; margin-left: 4px; }
+.panel h2 .count { font-weight: 600; margin-left: 4px; }
 .active-list { display: grid; gap: 2px; margin-bottom: 6px; }
 .active-room { margin-top: 6px; font-size: 12px; font-weight: 600; color: var(--muted); }
 .active-item {
@@ -203,7 +211,7 @@ body:not(.debug) .debug-only { display: none !important; }
   padding: 4px 12px;
   border-radius: 6px;
   background: rgb(0 0 0 / 0.5);
-  font: 600 13px/1.4 ui-monospace, "Consolas", monospace;
+  font: 600 13px/1.4 "Pretendard Variable", ui-monospace, "Consolas", monospace;
   letter-spacing: 0.04em;
 }
 .rec { color: #ff5a4f; }

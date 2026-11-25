@@ -61,3 +61,5 @@ android {
 ```
 
 The app reuses the team assets in `ui/public/brand/` and the existing `ui/public/icon-512.png` icon.
+
+All app text, including Android alert dialogs, uses Pretendard 1.3.9 SemiBold or Bold. `expo-font` embeds `assets/fonts/Pretendard-SemiBold.otf` and `Pretendard-Bold.otf` as native font families under the names in `fonts.ts`. `plugins/pretendard.cjs` makes SemiBold the app theme font for native dialogs and copies the font license `assets/fonts/OFL-pretendard.txt` into the APK. Expo Go loads the same files at startup during development.

@@ -1,7 +1,7 @@
 // 디자인 토큰(src/design/tokens.json 하나): 화면마다 쓰는 파일은 이 원본에서 npm run tokens가 만든다. 어긋나면 실패한다.
 import { existsSync, readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { FONT_FACES, OUTPUTS, SOURCE, copies, readTokens, renderFontFaces, renderTokens, repoPath, resolver } from "../scripts/design-tokens.js";
+import { FONT_FACES, OUTPUTS, PLAN_SVG, SOURCE, copies, readTokens, renderFontFaces, renderPlanFont, renderTokens, repoPath, resolver } from "../scripts/design-tokens.js";
 import { scene3d } from "../src/design/tokens.js";
 
 const tokens = readTokens();
@@ -17,19 +17,25 @@ describe("디자인 토큰 원본", () => {
   });
 
   it("글꼴 라이선스만 ui/public/fonts로 옮긴다. 폰 전용 사본(web/phone)은 없다", () => {
-    expect(copies()).toEqual([{ from: "ui/node_modules/@fontsource-variable/noto-sans-kr/LICENSE", to: "ui/public/fonts/OFL-noto-sans-kr.txt" }]);
+    expect(copies()).toEqual([{ from: "ui/node_modules/pretendard/dist/LICENSE.txt", to: "ui/public/fonts/OFL-pretendard.txt" }]);
     const text = (p: string) => readFileSync(repoPath(p), "utf8").replace(/\r\n/g, "\n");
-    expect(text("ui/public/fonts/OFL-noto-sans-kr.txt")).toBe(text("ui/node_modules/@fontsource-variable/noto-sans-kr/LICENSE"));
+    expect(text("ui/public/fonts/OFL-pretendard.txt")).toBe(text("ui/node_modules/pretendard/dist/LICENSE.txt"));
     expect(existsSync(repoPath("web/phone"))).toBe(false);
   });
 
   it("워커 글꼴 목록(ui/src/phone/core/font-faces.js)이 꾸러미 CSS와 같고, 글꼴 파일은 ui 빌드가 묶는다(?url)", () => {
     expect(FONT_FACES).toBe("ui/src/phone/core/font-faces.js");
     expect(onDisk(FONT_FACES)).toBe(renderFontFaces());
-    const css = readFileSync(repoPath("ui/node_modules/@fontsource-variable/noto-sans-kr/index.css"), "utf8");
-    const imports = renderFontFaces().match(/^import f\d+ from "@fontsource-variable\/noto-sans-kr\/files\/[\w-]+\.woff2\?url";$/gm) ?? [];
+    const css = readFileSync(repoPath("ui/node_modules/pretendard/dist/web/variable/pretendardvariable-dynamic-subset.css"), "utf8");
+    const imports = renderFontFaces().match(/^import f\d+ from "pretendard\/dist\/web\/variable\/woff2-dynamic-subset\/PretendardVariable\.subset\.\d+\.woff2\?url";$/gm) ?? [];
     expect(imports).toHaveLength(css.match(/@font-face/g)!.length);
     expect(renderFontFaces()).toMatch(/\{ url: f0, unicodeRange: "U\+/);
+  });
+
+  it("평면도 SVG(ui/src/mobile/mokryeon-plan.svg)가 품은 글꼴 조각이 지금 글자·꾸러미와 같다(다르면 npm run tokens)", () => {
+    expect(PLAN_SVG).toBe("ui/src/mobile/mokryeon-plan.svg");
+    const svg = onDisk(PLAN_SVG)!;
+    expect(renderPlanFont(svg)).toBe(svg);
   });
 
   it("원본의 글꼴 설명이 지금 길과 같다: 폰 글꼴은 ui 빌드 /assets/, 워커는 font-faces.js, 라이선스는 ui/public/fonts 하나", () => {
@@ -37,7 +43,7 @@ describe("디자인 토큰 원본", () => {
     expect(JSON.stringify(sans)).not.toContain("web/phone");
     expect(sans.phone).toContain("/assets/");
     expect(sans.phone).toContain(FONT_FACES);
-    expect(sans.licenseFile).toBe(`node_modules/@fontsource-variable/noto-sans-kr/LICENSE → ${copies()[0]!.to}`);
+    expect(sans.licenseFile).toBe(`node_modules/pretendard/dist/LICENSE.txt → ${copies()[0]!.to}`);
   });
 
   it("원본이 바뀌면 만든 파일도 바뀐다", () => {

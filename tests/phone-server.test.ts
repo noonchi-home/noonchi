@@ -50,10 +50,10 @@ function fakeUiDist(): string {
   const files: [string, string][] = [
     ["phone/index.html", '<title>폰 테스트</title><script type="module" src="/assets/phone-x.js"></script>'],
     ["assets/phone-x.js", "export {};"],
-    ["assets/noto-sans-kr-0-wght-normal-x.woff2", "w"],
+    ["assets/PretendardVariable.subset.0-x.woff2", "w"],
     ["brand/mascot@1x.webp", "m"],
     ["favicon.ico", "i"],
-    ["fonts/OFL-noto-sans-kr.txt", "ofl"],
+    ["fonts/OFL-pretendard.txt", "ofl"],
     ["index.html", "<title>대시보드</title>"],
     ["setup/index.html", "<title>설정</title>"],
   ];
@@ -314,8 +314,8 @@ describe("phone server", () => {
     const js = await fetchRetry(`${base}/assets/phone-x.js`);
     expect(js.status).toBe(200);
     expect(js.headers.get("content-type")).toContain("javascript");
-    expect((await fetchRetry(`${base}/assets/noto-sans-kr-0-wght-normal-x.woff2`)).headers.get("content-type")).toBe("font/woff2");
-    for (const p of ["/brand/mascot@1x.webp", "/favicon.ico", "/fonts/OFL-noto-sans-kr.txt"]) expect((await fetchRetry(`${base}${p}`)).status, p).toBe(200);
+    expect((await fetchRetry(`${base}/assets/PretendardVariable.subset.0-x.woff2`)).headers.get("content-type")).toBe("font/woff2");
+    for (const p of ["/brand/mascot@1x.webp", "/favicon.ico", "/fonts/OFL-pretendard.txt"]) expect((await fetchRetry(`${base}${p}`)).status, p).toBe(200);
     for (const p of ["/index.html", "/setup/", "/setup/index.html", "/api/devices", "/phone/..%2Findex.html", "/brand/..%2Findex.html", "/assets/..%2Fsetup%2Findex.html"]) {
       expect((await fetchRetry(`${base}${p}`)).status, p).toBe(404);
     }

@@ -9,7 +9,7 @@
   },
   "scripts": {
     "start": "expo start --go",
-    "test": "node --experimental-transform-types --disable-warning=ExperimentalWarning --test dashboard-flow.test.ts twa.test.ts wordmark.test.ts home-start.test.ts mascot-resolution.test.ts plan-lines.test.ts screen-boundary.test.ts client-error.test.ts launch-layout.test.ts",
+    "test": "node --experimental-transform-types --disable-warning=ExperimentalWarning --test dashboard-flow.test.ts twa.test.ts wordmark.test.ts home-start.test.ts mascot-resolution.test.ts plan-lines.test.ts screen-boundary.test.ts client-error.test.ts launch-layout.test.ts fonts.test.ts",
     "typecheck": "tsc --noEmit",
     "export:android": "expo export --platform android",
     "prebuild:android": "expo prebuild --platform android --no-install"
@@ -18,6 +18,7 @@
     "expo": "~58.0.26",
     "expo-camera": "~58.0.14",
     "expo-file-system": "~58.0.14",
+    "expo-font": "~58.0.12",
     "expo-image-manipulator": "~58.0.16",
     "expo-splash-screen": "~58.0.14",
     "react": "19.3.0",

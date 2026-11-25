@@ -7,7 +7,7 @@ import { drawTargets } from "../draw.ts";
 
 const canvasFont = font.canvas;
 
-/** 이름표 글꼴: 묶은 Noto Sans KR Variable(화면은 @font-face, 워커는 FontFace로 넣는다). */
+/** 이름표 글꼴: 묶은 Pretendard Variable(화면은 @font-face, 워커는 FontFace로 넣는다). */
 export function markFont(width) {
   return `bold ${Math.max(12, Math.round(width / 40))}px ${canvasFont}`;
 }
