@@ -508,5 +508,9 @@ describe("대시보드 구운 트윈 위 표시", () => {
     });
     await waitFor(() => expect(container.querySelector('[aria-label="3D 트윈"] [data-trace-mark]')).not.toBeNull());
     expect(container.querySelector('[aria-label="3D 트윈"] [data-trace-mark]')!.textContent).toBe("근접 관찰 · 결과 대기 중");
+    // 트레이스 칸의 같은 줄에 트윈 표시와 같은 색 점(data-on-twin)이 붙는다
+    const row = rows[0]!.id;
+    await waitFor(() => expect(container.querySelector(`[data-row="${row}"][data-on-twin]`)).not.toBeNull());
+    expect(container.querySelector(`[data-row="${row}"] [data-twin-dot]`)).toHaveAttribute("data-variant", "brand");
   });
 });

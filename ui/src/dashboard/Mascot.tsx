@@ -16,20 +16,22 @@ const TURN = "scaleX(-1)";
  * 마스코트는 설정 창(SettingsDialog)을 여는 단추(Button ghost)다: 마우스를 올리면 바탕이 바뀌고, 키보드 초점 고리가 보이며, Enter·스페이스로도 열린다.
  * 화면 바탕 위라 바탕 바뀜이 옅어서, 마우스를 올리거나 초점이 오면 그림이 8px 올라온다(transform, 움직임 줄이기면 바로).
  * 창을 닫으면 초점이 단추로 돌아온다. 그림은 단추(relative overflow-hidden) 안 판에 있어 단추 끝에서 잘린다: 단추 바깥에 그려지는 초점 고리를 덮지 않는다.
- * 트윈·폰 칸 가림판(z-40)보다 위(z-50)에 있다. settingsOpen이면 설정 창을 연 채 그린다.
+ * 트윈·폰 칸 가림판(z-40)보다 위(z-50)에 있다. 설정 창 열림은 화면이 정한다(open, Ctrl+1로도 열린다).
  */
-export function Mascot({ image, hub, box, imageBox, logoBox, settingsOpen = false }: {
+export function Mascot({ image, hub, box, imageBox, logoBox, open, onOpenChange }: {
   image: MascotImage;
   hub: HubState;
   box: Rect;
   imageBox: Rect;
   logoBox: Rect;
-  settingsOpen?: boolean;
+  /** 설정 창 열림(화면이 정할 때, Ctrl+1). 없으면 단추가 스스로 연다. */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }) {
   const turn = TURN;
   return (
     <section aria-label="마스코트" data-mascot className="absolute z-50" style={{ left: box.left, top: box.top, width: box.width, height: box.height }}>
-      <Dialog defaultOpen={settingsOpen}>
+      <Dialog open={open} onOpenChange={onOpenChange}>
         <DialogTrigger asChild>
           <Button variant="ghost" aria-label="설정 열기" className="group relative size-full cursor-pointer overflow-hidden p-0">
             <span data-mascot-turn className="pointer-events-none absolute inset-0 transition-transform duration-300 will-change-transform motion-reduce:transition-none" style={{ transform: turn, transformOrigin: "50% 50%" }}>

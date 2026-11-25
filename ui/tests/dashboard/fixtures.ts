@@ -186,7 +186,7 @@ export function screenAt(n: number, over: Partial<ScreenProps> = {}): ScreenProp
   return {
     index: n, plan, step: plan ? plan.steps[n - 1]! : null, robotKnown: true, connected: true, map: MAP, mapReady: true,
     phone: imageSlot(), seen: seenOf([BOX]),
-    talk: n > 0 ? TALK : WATCH_TALK, timeline: n > 0 ? TIMELINE_CLEAR : TIMELINE_WATCH, timelineNow: TIMELINE_NOW, mode: n > 0 ? "noonchi" : null, hub: HUB,
+    hub: HUB,
     ...over,
   };
 }
