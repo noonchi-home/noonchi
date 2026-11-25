@@ -216,9 +216,10 @@ describe("시나리오 1 합성(composed) 판단 재생", { timeout: 20_000 }, (
     expect(walkProblem(from, to, guide)).toBeNull();
     expect(walkProblem(from, to, null, [{at:25,remaining:guide}], 50,100,0.05)).toBeNull();
     expect(walkProblem(from, to, null)).toMatch("보류");
-    expect(walkProblem(from, to, guide, [{at:50, remaining:null}], 0, 100)).toMatch("보류");
+    // 첫 경유점에 닿기 전(걷기 100 가운데 5)에 안내를 거두거나 바꾼다
+    expect(walkProblem(from, to, guide, [{at:5, remaining:null}], 0, 100)).toMatch("보류");
     const displaced = { ...guide, remaining: guide.remaining.map(p=>({...p,position:[0,0,0]})) as typeof guide.remaining };
-    expect(walkProblem(from, to, guide, [{at:50, remaining:displaced}], 0, 100)).toMatch("다름");
+    expect(walkProblem(from, to, guide, [{at:5, remaining:displaced}], 0, 100)).toMatch("바뀐 안내 길이 걸은 길과 다름");
     // 다른 길(경유점이 0.5m 옆)
     const moved = guide.remaining.map((p) => ({ ...p, position: [p.position[0] + 0.5, p.position[1], p.position[2]] as [number, number, number] }));
     expect(walkProblem(from, to, { ...guide, remaining: moved as typeof guide.remaining })).toMatch("다름");
@@ -245,12 +246,14 @@ describe("시나리오 1 합성(composed) 판단 재생", { timeout: 20_000 }, (
     expect(v.firstMismatch, JSON.stringify(trace)).toBeNull();
     expect(v.passed).toBe(true);
     expect(v.tvConfirmToCupCommandMs).toBeGreaterThanOrEqual(0);
-    // 벽 쪽 복귀 후 떠남 82.05초. YOLO가 시청 자리에서 사용자를 못 본 구간이 82.5초(첫 빈 사진 촬영)부터 이어져 85.0초 프레임에 2.5초를 넘고,
-    // 83.75초 TV 규칙 틱에 끈다(VLM 사진 2초 규칙이면 86.4초)
-    expect(v.leftToOffMs).toBe(2950);
-    expect(v.noViewerToOffMs).toBe(2500);
+    // 벽 쪽 복귀 후 떠남 91.15초(이동 가능 점 격자 안내로 걸은 합성 장면, scripts/scenario1-compose.ts). YOLO가 시청 자리에서 사용자를 못 본 구간이
+    // 91.2초(첫 빈 사진 촬영)부터 이어져 93.7초에 2.5초를 넘고, 집 상태 노드가 사람 없음을 250ms 틱(93.75초)에 내서 93.8초에 끈다
+    expect(v.leftToOffMs).toBe(2650);
+    expect(v.noViewerToOffMs).toBe(2600);
     expect(v.noViewerToAckMs).toBeGreaterThanOrEqual(v.noViewerToOffMs!);
-    expect(judgeScenario1(trace.map((e) => (e.kind === "tv_off" || e.kind === "tv_off_ack" ? { ...e, at: e.at + 2051 } : e))).firstMismatch).toBe(
+    // TV 끄기를 떠남 뒤 5초 한도보다 1ms 늦게 옮기면 늦음이다
+    const overLimit = 5000 - v.leftToOffMs! + 1;
+    expect(judgeScenario1(trace.map((e) => (e.kind === "tv_off" || e.kind === "tv_off_ack" ? { ...e, at: e.at + overLimit } : e))).firstMismatch).toBe(
       "late:tv_off",
     );
     expect(judgeScenario1(trace.filter((e) => e.kind !== "left")).firstMismatch).toBe("unexpected:empty");

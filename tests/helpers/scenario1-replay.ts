@@ -39,7 +39,7 @@ import { historyRoutes } from "../../src/record/history.js";
 import type { PlannedCommand } from "../../src/contract/phone.js";
 import type { ScenarioEvent } from "../../scripts/scenario1-judge.js";
 
-type Variant = "normal" | "back" | "brief" | "manual" | "cadence_wrong" | "lag_missing" | "lag_zero" | "arrive_early" | "pam_seated";
+export type Variant = "normal" | "back" | "brief" | "manual" | "cadence_wrong" | "lag_missing" | "lag_zero" | "arrive_early" | "pam_seated";
 /** at: 촬영(또는 사건) 시각. 사진 줄(fridge·table·away·tv)은 lag가 반드시 있고, VLM 답이 at + lag에 도착한다(집 상태가 그때 바뀐다).
  *  폰 도착 줄(eye)은 depart(그 자리로 걷기 시작한 때)를 싣는다(처음 선 자리는 없음). */
 type Line = { at: number; kind: string; value?: string; frame?: string; response?: object; source: string; lag?: number; depart?: number };
@@ -64,12 +64,24 @@ const tvSpec: DeviceSpec = {
   sensors: [],
   twinAttrs: { power: ["off", "on"] },
 };
-const raw = readFileSync(new URL("../fixtures/scenario1/judgment-composed.ndjson", import.meta.url), "utf8")
+let raw = readFileSync(new URL("../fixtures/scenario1/judgment-composed.ndjson", import.meta.url), "utf8")
   .trim()
   .split(/\r?\n/)
   .map((s) => JSON.parse(s));
 if (raw[0].kind !== "metadata" || !raw[0].name.includes("composed"))
   throw new Error("합성 자료 머리말이 없습니다.");
+/** 합성 기록을 만드는 scripts/scenario1-compose.ts가 만든 줄로 바꿔 재생한다(시험은 쓰지 않는다: 시험은 기록 파일만 읽는다). */
+export function useComposedRows(rows: Record<string, unknown>[]): void {
+  if (rows[0]?.kind !== "metadata") throw new Error("합성 자료 머리말이 없습니다.");
+  raw = rows as typeof raw;
+}
+/** 폰이 그 자리들을 차례로 걸을 때 구간마다 걷는 시간(ms): 안내 길(문·경유점)을 영상 모드 걷기 빠르기로(합성 기록 도착 검사와 같은 셈). 첫 자리는 처음 선 곳. */
+export function composedWalkMs(values: readonly string[]): number[] {
+  const legs = legsOf(values.map((value, i) => ({ at: i, value })));
+  return legs.slice(1).map((l) => Math.ceil(pathLength(l.path) / WALK_MPS * 1000));
+}
+/** 재생 뒤(합성 기록 검사 전) 본 것: 차례(trace), 폰에 보낸 가기 명령, 틱마다 빠른 VLM 간격(fast). 시각은 합성 기록 ms. */
+export type ReplaySeen = { trace: ScenarioEvent[]; goes: { at: number; target: string }[]; fastAt: [number, boolean][] };
 const frames: { frame: string; scene: SceneObservation; view: CameraView }[] = JSON.parse(
   readFileSync(new URL("../fixtures/replay/wide-mug-v1.json", import.meta.url), "utf8"),
 );
@@ -132,8 +144,8 @@ function phoneAt(stops: readonly Stop[], t: number): { position: Vec2; look: Vec
   return {position:legs[i]!.end,look:spotOf(stops[i]!.value).look};
 }
 const base = Date.UTC(2026, 10, 20, 12);
-/** 재생 길이(ms). */
-const REPLAY_MS = 100000;
+/** 재생 길이(ms): 100초, 기록 마지막 줄이 그보다 늦으면 그 5초 뒤까지. */
+const replayMs = () => Math.max(100000, ...raw.filter((r) => Number.isFinite(r.at)).map((r) => r.at + 5000));
 function makeBag(bag: Bag, variant: Variant): {
   left: number | null;
   photos: Photo[];
@@ -198,6 +210,7 @@ function makeBag(bag: Bag, variant: Variant): {
   const eyes = source.filter((r) => r.kind === "eye").sort((a, b) => a.at - b.at);
   const stops: Stop[] = eyes.map((e) => ({ at: e.at, value: e.value!, ...(e.depart !== undefined ? { depart: e.depart } : {}) }));
   const eyeAt = new Set(eyes.map((e) => e.at));
+  const REPLAY_MS = replayMs();
   for (let t = (eyes[0]?.at ?? 0) + POSE_MS; t < REPLAY_MS; t += POSE_MS)
     if (!eyeAt.has(t)) source.push({ at: t, kind: "pose", source: "composed phone pose stream" });
   // 집 상태 노드는 바뀐 것이 없어도 WORLD_TICK_MS(250ms)마다 같은 rev로 상태를 다시 낸다(src/world/node.ts): 그때 폰 눈이 새것이다
@@ -448,6 +461,7 @@ export async function replayScenario(
   variant: Variant,
   recording?: (v: ReturnType<LiveScenario["judge"]>) => void,
   worldReceived?: (at: number, rev: number, power: string) => void,
+  seen?: (s: ReplaySeen) => void,
 ): Promise<ScenarioEvent[]> {
   const bag = Bag.open(":memory:"),
     trace: ScenarioEvent[] = [];
@@ -489,7 +503,7 @@ export async function replayScenario(
         return withPower(view, rev);
       },
       from: base,
-      to: base + REPLAY_MS,
+      to: base + replayMs(),
       topics: ["/world/state", "/world/household_photo", "/brain/decision", "/phone/pose", "/device/changes"],
       launch: async (bus, clock) => {
         const node = (name: "manager" | "act" | "devices" | "recorder" | "world") =>
@@ -835,6 +849,7 @@ export async function replayScenario(
         return [manager, goalNode.mirror.node, act, device, recorder, worldNode];
       },
     });
+    seen?.({ trace: [...trace], goes: goes.map((g) => ({ at: g.at - base, target: g.target })), fastAt: fastAt.map(([t, f]): [number, boolean] => [t - base, f]) });
     // 합성 기록이 실제와 어긋난 곳을 모아 가장 이른 것을 알린다(뒤의 어긋남은 앞 어긋남 때문에 생길 수 있다)
     const wrong: { at: number; text: string }[] = [];
     // 폰은 그 자리로 보낸 가기 명령을 받은 뒤 출발(depart)하고, 앞 자리에서 안내 길로 걸어도 걸리는 시간(영상 모드 걷기 초당 WALK_MPS) 뒤에 도착한다(첫 자리는 처음 선 곳)
