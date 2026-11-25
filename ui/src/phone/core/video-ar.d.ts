@@ -32,11 +32,11 @@ export interface VideoStep { kind: PhoneStepKind; word: string; clipUrl: string 
 export interface VideoArDeps {
   /** /phone/videos/<이름>. */
   clipUrl: string;
-  /** 세로 시야각(도, 기본 60). */
+  /** 세로 시야각(도, 기본 CAMERA.fovDeg 40). */
   fovDeg?: number;
-  /** 숙인 각(도, 기본 −25). */
+  /** 숙인 각(도, 기본 CAMERA.pitchDeg −10). */
   pitchDeg?: number;
-  /** 카메라 높이(m, 기본 1.4). */
+  /** 카메라 높이(m, 기본 CAMERA.heightM 1.15). */
   heightM?: number;
   /** 단계 영상 칸(기본 없음). */
   steps?: VideoStep[];
@@ -78,6 +78,10 @@ export interface VideoRecord {
 }
 
 /** 영상 모드인지 아는 하나뿐인 길: 주소의 clip(영상 이름)이 있으면 그 이름과 영상 AR 값, 없으면 null(실제 모드). clip은 여기서만 읽는다. */
+/** 영상 모드 기본 카메라(가로 시험 영상): 세로 시야각 40°, 숙인 각 −10°, 높이 1.15m. */
+export const CAMERA: { readonly fovDeg: number; readonly pitchDeg: number; readonly heightM: number };
+/** 세로 영상(높이 > 폭)을 열지 않을 때 폰 화면 글. */
+export const LANDSCAPE_ONLY: string;
 export function videoParams(params: URLSearchParams): (Required<Pick<VideoArDeps, "clipUrl" | "fovDeg" | "pitchDeg" | "heightM" | "steps" | "reactMs" | "rate">> & { clip: string }) | null;
 export function videoRecord(target?: object): VideoRecord;
 /** 짝 수 상한. */

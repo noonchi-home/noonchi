@@ -7,7 +7,7 @@
 // --rate: 영상 빠르기(0.25~2, 기본 1). 1이 아니면 폰 주소에 rate=로 붙고 폰 페이지가 첫 영상·단계 영상을 그 빠르기로 튼다(영상 시각은 원본 시각 그대로).
 //   서버 시각 ↔ 영상 시각 옮기기(videoClock·serverClock)는 짝 밖을 그 빠르기로 세고, 지금 영상이 너무 오래 도는지는 영상 길이 ÷ 빠르기로 본다.
 //   판정 줄 아래 반응 줄(reactionLine): 사람이 떠난 때(기록의 사람 사라짐) → 그 뒤 첫 명령을 서버 시각으로 세어 빠르기와 상관없이 같은 초다.
-// --fov·--pitch·--h: 영상 모드 카메라(세로 시야각 20~120, 숙인 각 -89~89, 높이 0.2~3). 준 것만 폰 주소에 fov=·pitch=·h=로 붙고, 없으면 폰 페이지 기본값(60°, -25°, 1.4m).
+// --fov·--pitch·--h: 영상 모드 카메라(세로 시야각 20~120, 숙인 각 -89~89, 높이 0.2~3). 준 것만 폰 주소에 fov=·pitch=·h=로 붙고, 없으면 폰 페이지 기본값(가로 영상 40°, -10°, 1.15m, video-ar.js CAMERA).
 // --say: 영상 시각(서버 시계를 폰 페이지 짝으로 옮긴 값)이 그 초가 되면 폰 페이지 안의 폰 소켓(/phone/events)으로 {type: "say", text, at}를 보낸다
 // (CDP로 그 소켓을 찾아 보냄). 시각표에 「말」 줄: 보낸 서버 시각을 두었다가 끝에서 같은 짝으로 옮긴다.
 //   at은 폰 페이지가 화면이 바뀔 때마다 실제 폰 말과 같은 heardAtOf로 남긴 기록(__noonchiVideo.at) 그대로다(없으면 none).
@@ -19,7 +19,8 @@
 // 지금 영상 길이 + 60초, 판 전체 --max초. 끄기 안내가 남은 채 끝나면 「끝까지 돌지 않음」에 남긴다.
 // 계획이 끝남(done)이면 폰 명령 줄의 완료 문장(done:<계획 id>, src/act/done-step.ts)이 보인 뒤 DONE_TAIL_MS(2초)까지 더 보고 끝낸다(8초 안에 안 오면 그냥 끝).
 // 미니맵 판 기록(run.json)에 그 완료 문장 영상 시각(doneMs)과 빠르기(rate)를 남긴다: scripts/minimap-cut.ts가 마지막 조각 끝에서 완료 문장 + 2초까지 남긴다.
-// 영상 모드 판정: 헤드리스 크롬 하나(390×844)로 폰 페이지 <phone>/phone/?clip=<clip>을 열고 「카메라 켜기」를 눌러 영상을 끝까지 튼다.
+// 영상 모드 판정: 헤드리스 크롬 하나(가로 폰 844×390)로 폰 페이지 <phone>/phone/?clip=<clip>을 열고 「카메라 켜기」를 눌러 영상을 끝까지 튼다.
+// 영상은 가로만 튼다: 폰 페이지가 세로 영상(높이 > 폭)을 열지 않고 「가로로 찍은 영상을 골라 주세요.」를 띄우면 기다리지 않고 오류로 끝낸다(landscapeRefusal).
 // 폰 페이지 자기 자원(<phone>/assets/…)을 못 받았으면 「카메라 켜기」 전에 페이지를 한 번 다시 읽고 판정 줄 위에 적는다(이 PC는 127.0.0.1 연결이 가끔 실패한다).
 // --step(여러 번, 종류 go·pick·place·do, 낱말 a-z·_)은 폰 주소에 step=으로 하나씩 붙는다. 폰 페이지는 종류가 같고 대상 id에 낱말이 든 명령이 오면
 // 그 단계 영상으로 바꿔 튼다(영상 시각은 이어 셈). --step·--approve·--done-on이 있으면 --done-after 기본은 0이다(고른 명령 밖에는 단추를 누르지 않고 비전·폰 위치로 단계가 넘어가는지 본다).
@@ -88,12 +89,14 @@ import { resolveTwinStudioDir } from "../src/layout/twin-files.js";
 import { resolveHome } from "../src/layout/homes.js";
 import { loadScene } from "../src/layout/scene.js";
 import { DEMO_STARTS, startFor, type DemoScene } from "./demo-start.js";
+import { LANDSCAPE_ONLY } from "../ui/src/phone/core/video-ar.js";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const CLIP_NAME = /^[A-Za-z0-9_-]{1,64}\.(?:mp4|webm)$/;
 /** --step 값: 종류:대상 낱말:단계 영상 */
 const STEP_ARG = /^(?:go|pick|place|do):[a-z_]+:[A-Za-z0-9_-]{1,64}\.(?:mp4|webm)$/;
-const SIZE: [number, number] = [390, 844];
+/** 폰 탭 크기: 가로로 든 폰(가로 영상이 화면을 채운다). */
+const SIZE: [number, number] = [844, 390];
 /** 대시보드 사진 탭 크기와 열고 기다리는 시간 */
 const DASH_SIZE: [number, number] = [1280, 800];
 /** 비전 미니맵만 보기(?view=minimap) 창 크기: 16:9 미니맵 칸이 창을 채운다. */
@@ -673,9 +676,10 @@ const FAKE_PERSON_MS = 30_000;
 const HOME = "mokryeon_180b";
 // tests/video-mode-e2e.test.ts와 같은 시작 자리: 식탁 가운데([9.9612, 3.9242])에서 1.5m 떨어진 거실, 시작 방향 0°(+x)로 식탁을 본다
 const START: [number, number] = [9.9612 - 1.5, 3.9242];
-// 세로 영상의 엔진 프레임 360×640(core/pipeline.js frameWidth). 컵 상자 아래 가운데가 그림 한가운데(카메라 축, 식탁 윗면)
-const CUP: Detection = det("cup", 0.9, [160, 300, 40, 20], 41);
-const PERSON: Detection = det("person", 0.9, [100, 60, 160, 420], 0);
+// 가로 영상의 엔진 프레임 480×270(core/pipeline.js frameWidth), 폰 페이지 기본 카메라(40°, -10°, 1.15m, video-ar.js CAMERA).
+// 컵 상자 아래 가운데(240, 167)가 1.5m 앞 식탁 윗면(0.75m) 가운데, 사람 상자는 식탁 건너편 2.4m(발 아래 가운데 240, 239·머리 1.25m 높이 y 45)
+const CUP: Detection = det("cup", 0.9, [220, 147, 40, 20], 41);
+const PERSON: Detection = det("person", 0.9, [205, 45, 70, 194], 0);
 
 /** personUntil: 대본 YOLO가 사람을 내지 않기 시작하는 서버 시각(첫 엔진 프레임 전이면 null). runtimeDir: 임시 RUNTIME_DIR. */
 interface Fake { api: string; phone: string; runtimeDir: string; logs: string[]; personUntil(): number | null; close(): Promise<void> }
@@ -752,7 +756,7 @@ const USAGE = "쓰는 법: npx tsx scripts/video-check.ts --clip <이름.mp4> [-
   + " [--scenario scenario1 --left [<영상.mp4>:]<초>] [--say <초>:<글> ...] [--start-at <cup|tv|microwave|kitchen>] [--home mokryeon_180b] [--tail 30] [--max 1800] [--approve <초>] [--done-on <초>:<명령 글> ...]"
   + " [--fov <도>] [--pitch <도>] [--h <m>] [--rate 1] [--answer <초>:<답 단추 글> ...]";
 
-/** 영상 모드 카메라(폰 주소 fov·pitch·h): 준 값만 있다. 없는 값은 폰 페이지 기본값(세로 시야각 60°, pitch −25°, 높이 1.4m). */
+/** 영상 모드 카메라(폰 주소 fov·pitch·h): 준 값만 있다. 없는 값은 폰 페이지 기본값(가로 영상 세로 시야각 40°, pitch −10°, 높이 1.15m). */
 export interface Camera { fov?: number; pitch?: number; h?: number }
 /** 카메라 값 범위: 폰 페이지(ui/src/phone/core/video-ar.js)가 받는 범위와 같다. */
 const CAMERA_RANGE: Record<keyof Camera, [number, number]> = { fov: [20, 120], pitch: [-89, 89], h: [0.2, 3] };
@@ -873,10 +877,16 @@ export async function waitLoaded(tab: Pick<Page, "send">, url: string, o: { what
 /** 대시보드 창 크기: minimap 1280×720, top 1280×800. */
 const dashSizeOf = (view: DashView): [number, number] => (view === "minimap" ? MINIMAP_SIZE : DASH_SIZE);
 
-/** 녹화 모양: 대시보드 창 크기(dashSizeOf), ack 간격(1000/fps), mp4 fps, mp4 높이(폰도 녹화하면 기본 높이에 맞춰 붙이므로 없음, 아니면 창 높이). */
-export function recordSetup(a: Pick<Args, "recordView" | "recordFps" | "recordPhone">): { size: [number, number]; intervalMs: number; fps: number; height: number | undefined } {
+/** 녹화 모양: 대시보드 창 크기(dashSizeOf), ack 간격(1000/fps), mp4 fps, mp4 높이(폰도 녹화하면 기본 높이에 맞춰 붙이므로 없음, 아니면 창 높이),
+ *  폰 탭 크기(폰도 녹화할 때만, 가로 SIZE). */
+export function recordSetup(a: Pick<Args, "recordView" | "recordFps" | "recordPhone">): { size: [number, number]; intervalMs: number; fps: number; height: number | undefined; phoneSize: [number, number] | undefined } {
   const size = dashSizeOf(a.recordView);
-  return { size, intervalMs: 1000 / a.recordFps, fps: a.recordFps, height: a.recordPhone ? undefined : size[1] };
+  return { size, intervalMs: 1000 / a.recordFps, fps: a.recordFps, height: a.recordPhone ? undefined : size[1], phoneSize: a.recordPhone ? SIZE : undefined };
+}
+
+/** 폰 지원 줄이 세로 영상 알림(video-ar.js LANDSCAPE_ONLY)이면 판정을 끝낼 오류 글, 아니면 null. */
+export function landscapeRefusal(support: string | null, clip: string): string | null {
+  return support === LANDSCAPE_ONLY ? `세로 영상이라 열지 않았어요(${clip}): ${LANDSCAPE_ONLY}` : null;
 }
 
 /** 대시보드 탭·창: 크기를 보기 창 크기(모바일 아님, dashSizeOf)로 맞추고 대시보드 <api>/(view minimap이면 <api>/?view=minimap)로 옮긴 뒤 그 문서가 다 불러와질 때까지 기다린다(waitLoaded). */
@@ -1050,7 +1060,7 @@ async function main(): Promise<number> {
         if (args.recordView === "minimap") await dash.evaluate(SCENES_START, 10_000).catch(() => {});
         rmSync(framesDir, { recursive: true, force: true });
         recStartMs = Date.now();
-        rec = await startRecording(framesDir, [...(args.recordPhone ? [{ name: "phone", page: cdp, size: SIZE }] : []), { name: "dash", page: dash, size: shape.size }], { intervalMs: shape.intervalMs });
+        rec = await startRecording(framesDir, [...(shape.phoneSize ? [{ name: "phone", page: cdp, size: shape.phoneSize }] : []), { name: "dash", page: dash, size: shape.size }], { intervalMs: shape.intervalMs });
         const shown = await cdp.evaluate("document.visibilityState", 10_000).catch(() => "모름");
         if (args.recordPhone && shown !== "visible") recordNotes.push(`녹화: 폰 탭이 가려짐(visibilityState ${String(shown)})`);
         console.log(`[video-check] 녹화 시작 · ${shape.fps}fps · ${args.recordPhone ? "폰·대시보드" : args.recordView === "minimap" ? "미니맵만" : "대시보드만"} · 크롬 ${args.chrome} · ${framesDir}`);
@@ -1072,6 +1082,8 @@ async function main(): Promise<number> {
       }
       let seen = await read();
       for (const end = Date.now() + 30_000; seen.record?.t0 == null; seen = await read()) {
+        const refused = landscapeRefusal(seen.support, args.clip);
+        if (refused) throw new Error(refused);
         if (Date.now() > end || stop) throw new Error(`30초 안에 영상이 시작되지 않음(지원 줄 「${seen.support ?? ""}」)`);
         await sleep(250);
       }
@@ -1308,7 +1320,7 @@ async function main(): Promise<number> {
           console.log(`[video-check] 미니맵 장면 기록 ${scenes.length}개${scenes.length ? ` · 끝 지연 ${sceneLag(scenes)}ms` : " · 받은 시각으로 이어요"}`);
           writeFileSync(join(framesDir, CUT_RUN_FILE), JSON.stringify(run));
         }
-        const made = await encodeDemo(framesDir, recorded, demo, { ...(args.recordPhone ? { phoneSize: SIZE } : {}), dashSize: shape.size, fps: shape.fps, height: shape.height, keepFrames: args.recordView === "minimap" });
+        const made = await encodeDemo(framesDir, recorded, demo, { ...(shape.phoneSize ? { phoneSize: shape.phoneSize } : {}), dashSize: shape.size, fps: shape.fps, height: shape.height, keepFrames: args.recordView === "minimap" });
         encoded = true;
         if (made.ok) console.log(`[video-check] 시연 영상 ${demo}`);
         else { console.log(`[video-check] ${made.why}`); notes.push(`시연 영상 못 만듦: ${made.why}`); }
