@@ -1,6 +1,7 @@
 // 클로이드의 눈 AR(phone.js에서 옮겼다): WebXR AR로 폰 자세를 재고, 화면 가운데 조준점이 가리키는 바닥 점을 '여기'로 쓴다.
 // 조준점은 hit-test 점이고, 없으면 시선이 어림 바닥(local-floor, 없으면 폰 1.5m 아래)과 만나는 점이다(aim.js aimPoint, hitEstimated).
-// 자세(+조준점, 실제 hit이면 면 법선 hit_normal, 어림 바닥 높이 floor_y)는 초당 10번(서버 위치 맞추기가 벽 점·바닥 높이로 쓴다), 카메라 화면은 기본 초당 12장(가로 촬영 가로 480px·세로 360px JPEG, ?fps=·?w=로 바꾼다) /phone/events로 보낸다.
+// 자세(+조준점, 실제 hit이면 면 법선 hit_normal, 어림 바닥 높이 floor_y)는 초당 10번(서버 위치 맞추기가 벽 점·바닥 높이로 쓴다), 카메라 화면은 기본 초당 12장(가로 480px JPEG, ?fps=·?w=로 바꾼다) /phone/events로 보낸다.
+// 폰도 가로만 보낸다: 세로로 들면(카메라 그림 높이 > 폭) 화면·엔진 프레임·사진·표시 영상을 보내지 않고, 세로가 될 때마다 TURN_LANDSCAPE를 한 번 알린다(자세는 그대로 보낸다).
 // 인코딩은 워커 두 개로 두 장까지 겹치고(capture.js), 순서가 뒤바뀐 오래된 프레임과 와이파이에 쌓인 프레임은 건너뛴다(pipeline.js).
 // '사진 찍기'는 카메라 원본 크기로 한 장을 보내고, 서버가 그 순간의 눈 자세를 붙여 저장한다. 트윈 좌표 계산은 서버(src/phone)가 한다.
 // 초점: 서버가 보낸 대상(AR 좌표)을 화면 표시(hooks.onMarks)와 대시보드로 가는 화면 프레임에 그린다(사진·엔진 프레임에는 그리지 않음).
@@ -15,6 +16,8 @@ import { createFramePipeline, createSendStats, frameWidth } from "./pipeline.js"
 import { focusMarks } from "./project.js";
 import { aimPoint, floorPlaneY, planeNormal } from "./aim.js";
 
+/** 폰을 세로로 들었을 때 알릴 말(프레임을 보내지 않는다). */
+export const TURN_LANDSCAPE = "폰을 가로로 돌려 주세요.";
 const SEND_MS = 100;
 const FRAME_QUALITY = 0.55; // 장 수를 늘린 만큼 한 장 크기를 줄인다(사진은 0.9)
 const ENGINE_QUALITY = 0.8; // 엔진 프레임은 YOLO·VLM이 분석한다
@@ -54,6 +57,7 @@ export function createAr({ link, params, hooks, deps = {} }) {
   let generation = 0;
   let display = null; // 표시 영상(H.264, display-encoder.js). 분석용 JPEG와 따로 대시보드 화면에만 간다
   let wantPhoto = false;
+  let turnNoted = false; // 세로로 든 지금 구간에 TURN_LANDSCAPE를 알렸는가
   let engineMs = 0;
   let lastEngine = null;
   let lastSent = 0;
@@ -132,6 +136,7 @@ export function createAr({ link, params, hooks, deps = {} }) {
       lastEngine = null;
       lastSent = lastFrame = 0;
       wantPhoto = false;
+      turnNoted = false;
       hooks.onStart();
       link.send({ type: "reset", epoch: state.epoch });
       space.addEventListener?.("reset", () => {
@@ -232,15 +237,20 @@ export function createAr({ link, params, hooks, deps = {} }) {
       const camera = xrView?.camera;
       if (!grabber || !camera) return;
       cameraSeen = true;
+      if (camera.height > camera.width) {
+        if (!turnNoted) hooks.note(TURN_LANDSCAPE);
+        turnNoted = true;
+        return;
+      }
+      turnNoted = false;
       display?.frame(binding.getCameraImage(camera), camera, time);
       if (ws()?.readyState !== OPEN) return;
-      const portrait = camera.height > camera.width;
       // 엔진 프레임 차례: 앞 엔진 프레임이 인코딩 중이거나 보낼 것이 쌓였으면 건너뛴다(쌓지 않는다)
       let engineSize = null;
       const step = engineStep({ last: lastEngine, now: time, intervalMs: engineMs, canStart: enginePipeline.canStart(), buffered: ws().bufferedAmount, maxBuffered: MAX_BUFFERED });
       lastEngine = step.last;
       if (step.action === "send") {
-        const ew = Math.min(frameWidth(params.get("w"), portrait), camera.width);
+        const ew = Math.min(frameWidth(params.get("w")), camera.width);
         engineSize = { width: ew, height: Math.round((ew * camera.height) / camera.width) };
       } else if (step.action !== "wait") stats.skipped("engine");
       // 표시 프레임·사진 차례
@@ -252,7 +262,7 @@ export function createAr({ link, params, hooks, deps = {} }) {
         else {
           wantPhoto = false;
           lastFrame = time;
-          const width = photo ? camera.width : Math.min(frameWidth(params.get("w"), portrait), camera.width);
+          const width = photo ? camera.width : Math.min(frameWidth(params.get("w")), camera.width);
           frameSize = { width, height: Math.round((width * camera.height) / camera.width) };
           if (!photo) state.size = `${frameSize.width}×${frameSize.height}`;
         }

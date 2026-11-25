@@ -146,11 +146,11 @@ describe("화면 자리 위 YOLO 상자", () => {
     });
   });
 
-  it.each([[1920, 1080], [1440, 900]])("%i×%i: 세로 눈 그림(405×720)은 미니맵 높이에 맞춰 다 보이고(contain) 양옆이 빈다", (width, height) => {
+  it.each([[1920, 1080], [1440, 900]])("%i×%i: 가로 눈 그림(405×228)은 16:9 미니맵 칸을 다 채워 보인다(contain, 남는 띠 1px 미만)", (width, height) => {
     const L = pageLayout({ width, height }, MASCOT);
     const f = EYE_FRAMES[0]!;
     const k = Math.min(L.video.width / f.width, L.video.height / f.height);
     expect(near(f.height * k, L.video.height)).toBe(true);
-    expect(f.width * k).toBeLessThan(L.video.width);
+    expect(L.video.width - f.width * k).toBeLessThan(1);
   });
 });

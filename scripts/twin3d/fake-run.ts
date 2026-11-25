@@ -2,7 +2,7 @@
 // 한양목련 실제 장면·평면도(loadScene·floorPlanFrom)로 컵 치우기 계획(에이전트 컵 계획이 맞춰야 할 모양 tests/helpers/cup-plan.ts, 로봇 [10.6, 8.6])을 짜고, 다섯 순간(0 지켜보기, 1~4 계획 단계)마다
 // 서버가 대시보드 /events로 보내는 메시지 묶음(plan·eye·brain decision·생각 메시지 thought·brain observe·seen·say·world·습관 FSM 그림 habit·목표 goal)을 적는다.
 // 지켜보기(0)는 사람이 식탁에서 컵으로 마시는 중이고 목표 「컵을 두고 자리를 뜨면 컵 치우기」가 서 있다(목표 줄이 메시지 상자에 있다). 계획 순간(1~4)은 사람이 떠난 뒤다(사람 안 보임, 목표 씀). 생각 메시지는 계획 순간의 컵 치우기 판단 규칙 줄(src/brain/thought.ts decisionLines, 지켜보기 판단은 줄 없음)이다. 판단(decision)은 생각 한 문장(reasoning)과 PAM 답의 사람 상태·화살표(fsm, src/brain/decision.ts fsmStep: 지켜보기는 마시는 중 화살표 없음, 계획 순간은 배운 뒤 기억의 떠남 화살표)를 싣는다. 말은 sayLine에 그 단계 명령을 넣은 글이고, 계획 순간에는 그 앞 계획 순간의 말이 차례로 쌓여 있다.
-// 대시보드 폰 칸 그림은 시안 눈 그림(ui/public/debug-eye/, 세로 405×720)이고, 컵 모양(seen 마스크)은 시안 가로 그림 상자를 잘라 낸 자리만큼 옮긴 상자 안에 컵꼴로 채운 것이다.
+// 대시보드 폰 칸 그림은 시안 가로 그림(1280×720)에서 405×228을 잘라 낸 눈 그림(ui/public/debug-eye/)이고, 컵 모양(seen 마스크)은 시안 가로 그림 상자를 잘라 낸 자리만큼 옮긴 상자 안에 컵꼴로 채운 것이다.
 // 시각을 고정해서 다시 만들어도 같은 파일이 나온다.
 import { writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -40,15 +40,17 @@ const HOME = "mokryeon_180b";
 const START: XZ = [10.6, 8.6];
 const T0 = Date.parse("2026-11-09T09:00:00.000Z");
 const STEP_MS = 4000;
-const FRAME = { width: 405, height: 720 };
+/** 눈 그림 크기(ui/src/dashboard/debug.ts EYE_FRAME). */
+const FRAME = { width: 405, height: 228 };
 const EYE_HEIGHT_M = 1.1;
 const OBSERVATION = "식탁 위에 컵이 있고 사람이 자리를 비웠어요.";
 const ACTION = "컵 치우기";
 const RAMEN = "라면 끓이기 알려 주기";
 const OUT = fileURLToPath(new URL("../../ui/src/dashboard/fake-run.json", import.meta.url));
 
-/** 세로 눈 그림을 잘라 낸 가로 그림(1280×720) 자리 x0(시안 assets.ts EYE_CROP_X0). */
+/** 눈 그림을 잘라 낸 시안 가로 그림(1280×720) 자리: 왼쪽 x0(시안 assets.ts EYE_CROP_X0)과 위 y0. */
 const EYE_CROP_X0: Record<EyeFrameId, number> = { "table-far": 428, "table-near": 383, sink: 437, "sink-cup": 524 };
+const EYE_CROP_Y0: Record<EyeFrameId, number> = { "table-far": 230, "table-near": 178, sink: 180, "sink-cup": 186 };
 /** 눈 그림마다 컵 상자(가로 그림 픽셀 [왼쪽, 위, 오른쪽, 아래], 시안 scenario.ts BOX.cupFar·cupNear·cupInSink). 싱크대 그림에는 컵이 없다. */
 const CUP_BOX: Partial<Record<EyeFrameId, [number, number, number, number]>> = {
   "table-far": [596, 332, 620, 357], "table-near": [543, 238, 628, 346], "sink-cup": [679, 243, 774, 358],
@@ -79,14 +81,16 @@ function cupMask(at: [number, number, number, number]): Mask {
   return { at, cols, rows, bits: bytes.toString("base64") };
 }
 
-/** 가로 그림 컵 상자 → 세로 눈 그림의 컵 모양(그림 끝에서 자른 상자 안). */
+/** 시안 가로 그림 컵 상자 → 눈 그림의 컵 모양(그림 끝에서 자른 상자 안). */
 function cupShapes(eye: EyeFrameId, score: number): SeenEvent["shapes"] {
   const b = CUP_BOX[eye];
   if (!b) return [];
-  const dx = EYE_CROP_X0[eye];
+  const [dx, dy] = [EYE_CROP_X0[eye], EYE_CROP_Y0[eye]];
   const x0 = Math.max(0, b[0] - dx);
   const x1 = Math.min(FRAME.width, b[2] - dx);
-  return [{ label: "cup", score, mask: cupMask([x0, b[1], x1 - x0, b[3] - b[1]]) }];
+  const y0 = Math.max(0, b[1] - dy);
+  const y1 = Math.min(FRAME.height, b[3] - dy);
+  return [{ label: "cup", score, mask: cupMask([x0, y0, x1 - x0, y1 - y0]) }];
 }
 
 /** 꺾은선 위에서 길이 몫 t(0~1) 자리와 그 구간 방향. */

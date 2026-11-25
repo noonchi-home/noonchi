@@ -89,8 +89,8 @@ describe("대시보드 배치", () => {
       expect(close(boxOf(talk()), L.bubble)).toBe(true);
       const stage = twinPane().parentElement!;
       expect(close(boxOf(stage), L.twin)).toBe(true);
-      // 미니맵은 보이는 영상(세로 눈 그림 405×720) 비율을 따른다
-      expect(close(boxOf(phonePane()), pageLayout({ width, height }, MASCOT, 405 / 720).video)).toBe(true);
+      // 미니맵은 보이는 영상 비율을 따른다: 가로 눈 그림(405×228)은 16:9와 2% 안이라(nextAspect) 칸은 16:9 그대로다
+      expect(close(boxOf(phonePane()), pageLayout({ width, height }, MASCOT).video)).toBe(true);
       expect(document.querySelector("[data-thought]")).toBeNull();
       const map = twinPane().querySelector<HTMLElement>("[data-map]")!;
       for (const c of ["absolute", "inset-0", "overflow-hidden"]) expect(cls(map, c), c).toBe(true);
@@ -158,7 +158,7 @@ describe("대시보드 배치", () => {
       const wide = boxes(screenAt(2, { phone: { kind: "image", src: "/w.webp", width: 480, height: 222 } }));
       expect(close(wide.phone, at(480 / 222))).toBe(true);
       expect(wide.phone.height).toBeCloseTo(wide.phone.width / (480 / 222), 5);
-      const tall = boxes(screenAt(2));
+      const tall = boxes(screenAt(2, { phone: { kind: "image", src: "/t.webp", width: 405, height: 720 } }));
       expect(close(tall.phone, at(405 / 720))).toBe(true);
       expect(tall.phone.height).toBeLessThan(tall.phone.width / (405 / 720));
       for (const phone of [{ kind: "qr", url: PHONE_URL }, { kind: "none" }, { kind: "live", url: PHONE_URL }] as const) {
@@ -588,12 +588,12 @@ describe("대시보드 폰 카메라(대시보드 폰 칸)", () => {
       draw(screenAt(2, { seen: store }));
       const slot = slotOf(phonePane());
       expect(drawn).toHaveLength(2);
-      // 컵 [168, 332, 192, 357]: 영상 칸에 contain으로 놓인 그림과 같은 배율·자리
+      // 컵 [168, 102, 192, 127]: 영상 칸에 contain으로 놓인 그림과 같은 배율·자리
       const scale = Math.min(SLOT.width / f.width, SLOT.height / f.height);
       const left = (SLOT.width - f.width * scale) / 2, top = (SLOT.height - f.height * scale) / 2;
       const cup = drawn[1]!;
       expect(cup[0]).toBeCloseTo(left + 168 * scale, 3);
-      expect(cup[1]).toBeCloseTo(top + 332 * scale, 3);
+      expect(cup[1]).toBeCloseTo(top + 102 * scale, 3);
       expect(cup[2]).toBeCloseTo(24 * scale, 3);
       expect(cup[3]).toBeCloseTo(25 * scale, 3);
       expect(slot.querySelectorAll("[data-detection-label]")).toHaveLength(2);

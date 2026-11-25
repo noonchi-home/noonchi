@@ -128,10 +128,9 @@ describe("대시보드 단계 바뀜", () => {
   });
 
   it("단계가 바뀌어도 미니맵 칸 크기는 그대로다: 칸은 영상 비율이 바뀔 때만 높이가 바뀐다(가로 영상에서 단계만 바뀜 → 그대로, 세로 영상으로 바뀜 → 높이만)", () => {
-    const wide = { kind: "image", src: "/debug-eye/eye-table-near-wide.webp", width: 405, height: 228 } as const;
-    const { view, was } = step(screenAt(2, { phone: wide }), screenAt(3, { phone: { ...wide, src: "/debug-eye/eye-sink-wide.webp" } }));
+    const { view, was } = step(screenAt(2, { phone: imageSlot("table-near") }), screenAt(3, { phone: imageSlot("sink") }));
     expect(box(phoneOf(view.container))).toBe(was.boxes.phone);
-    view.rerender(<DashboardScreen {...screenAt(3, { phone: imageSlot("sink") })} />);
+    view.rerender(<DashboardScreen {...screenAt(3, { phone: { kind: "image", src: "/t.webp", width: 405, height: 720 } })} />);
     const now = phoneOf(view.container);
     expect(now).toBe(was.phone);
     expect(box(now)).not.toBe(was.boxes.phone);

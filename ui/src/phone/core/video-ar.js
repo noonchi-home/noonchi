@@ -1,7 +1,8 @@
 // 영상 입력 모드(폰 페이지 ?clip=<이름>): 실제 카메라 대신 /phone/videos/<이름> 영상을 틀고, 고정 카메라로 실제 폰과 같은 길로 보낸다.
-// 시작 자세: 높이 1.4m에서 아래 25°(?h=·?pitch=, 시야각 ?fov= 기본 60°). 바닥은 AR y 0이다. 시작하면 reset → start{fixed:true}를 보내 서버가
+// 영상은 가로만 튼다: 세로 영상(높이 > 폭)이면 열지 않는다. 첫 영상이면 시작하지 않고 처음 화면에, 단계 영상이면 지금 영상을 두고 알림으로 LANDSCAPE_ONLY를 띄운다.
+// 시작 자세: 높이 1.15m에서 아래 10°(?h=·?pitch=, 세로 시야각 ?fov= 기본 40°: 앉은 눈높이에서 가로로 찍은 영상). 바닥은 AR y 0이다. 시작하면 reset → start{fixed:true}를 보내 서버가
 // 시작 자리를 카메라 자리로 바로 맞춘다(src/phone/sync aligner fixStart). 서버 맞춤이 없어지면(못 보냄·다시 붙음·서버 다시 띄움) syncStatus가
-// start fixed를 다시 보낸다(늘 시작 자세: AR 원점은 걸어도 그대로다). 그 뒤 자세는 초당 10번, 화면 프레임은 초당 12장(긴 변 780, 품질 0.55),
+// start fixed를 다시 보낸다(늘 시작 자세: AR 원점은 걸어도 그대로다). 그 뒤 자세는 초당 10번, 화면 프레임은 초당 12장(폭 780, 품질 0.55),
 // 엔진 프레임은 서버 engine_ms마다(품질 0.8, 투영 행렬·서버 시계 촬영 시각). 표시 영상(H.264)은 만들지 않는다. 영상은 다시 틀지 않는다.
 // 재생을 기다리는 동안 다시 시작하면 같은 시작을 기다리고(영상은 하나), 그 사이 끝내면 그 영상을 닫고 시작하지 않는다.
 // 단계 영상(?step=<종류>:<대상 낱말>:<영상>, 여러 개): 사람 단계 명령(command)의 종류가 같고 대상 id에 낱말이 든 첫 칸이면, 그 id·step에 한 번
@@ -59,6 +60,10 @@ const ARRIVE_SLACK_M = 0.2;
 const NEAR_WALK = 0.8;
 /** 위에서 비추기 자세: 대상에서 지금 자리 쪽으로 수평(m)·대상 위(m). 크기를 모르는 좁고 깊은 컵도 입구 바로 위라 안이 보인다(src/world/place.ts topView). */
 const ABOVE = { backM: 0.02, upM: 0.4 };
+/** 영상 모드 기본 카메라: 가로 시험 영상(runtime/videos/LABELS.md 가로 영상)을 찍은 세로 시야각·숙인 각·높이. */
+export const CAMERA = { fovDeg: 40, pitchDeg: -10, heightM: 1.15 };
+/** 세로 영상(높이 > 폭)을 열지 않을 때 폰 화면 글. */
+export const LANDSCAPE_ONLY = "가로로 찍은 영상을 골라 주세요.";
 const STEP_KINDS = new Set(["go", "pick", "place", "do"]);
 const STEP_WORD = /^[a-z_]+$/;
 const CLIP_NAME = /^[A-Za-z0-9_-]{1,64}\.(?:mp4|webm)$/;
@@ -86,9 +91,9 @@ export function videoParams(params) {
   return {
     clip,
     clipUrl: clipUrlOf(clip),
-    fovDeg: clamp(params.get("fov"), 20, 120, 60),
-    pitchDeg: clamp(params.get("pitch"), -89, 89, -25),
-    heightM: clamp(params.get("h"), 0.2, 3, 1.4),
+    fovDeg: clamp(params.get("fov"), 20, 120, CAMERA.fovDeg),
+    pitchDeg: clamp(params.get("pitch"), -89, 89, CAMERA.pitchDeg),
+    heightM: clamp(params.get("h"), 0.2, 3, CAMERA.heightM),
     steps: params.getAll("step").map(stepEntry).filter(Boolean),
     reactMs: Math.round(clamp(params.get("react"), 0, 10, REACT_S) * 1000),
     // 영상 모드: 카메라 입력. 재생 빠르기
@@ -279,12 +284,12 @@ function pageFullscreen() {
 export function createVideoAr({ link, params, hooks, deps }) {
   const d = { ...browser, ...deps };
   const FRAME_MS = 1000 / clamp(params.get("fps"), 1, 30, 12);
-  const pitchDeg = d.pitchDeg ?? -25;
+  const pitchDeg = d.pitchDeg ?? CAMERA.pitchDeg;
   const steps = d.steps ?? [];
   const reactMs = d.reactMs ?? REACT_S * 1000;
   const rate = d.rate ?? 1;
   // 시작 자세: 서버가 시작 자리로 맞추는 자세. 걸어도 start는 이 자세로 보낸다
-  const startPosition = [0, d.heightM ?? 1.4, 0];
+  const startPosition = [0, d.heightM ?? CAMERA.heightM, 0];
   const startOrientation = pitchQuat(pitchDeg);
   // 지금 자세(go 단계 걷기·집기·놓기 바라보기가 바꾼다): pose·프레임 머리·고리 view가 모두 이것을 쓴다
   let position = startPosition;
@@ -357,10 +362,13 @@ export function createVideoAr({ link, params, hooks, deps }) {
       throw new Error("영상을 열지 못했어요");
     }
     if (wait.cancelled) return;
+    if (video.videoHeight > video.videoWidth) {
+      video.close();
+      throw new Error(LANDSCAPE_ONLY);
+    }
     let fw = video.videoWidth;
     let fh = video.videoHeight;
-    let portrait = fh > fw;
-    let projection = projectionFromFov(d.fovDeg ?? 60, fw / fh);
+    let projection = projectionFromFov(d.fovDeg ?? CAMERA.fovDeg, fw / fh);
     const encoder = d.createEncoder();
     const canvas = d.createCanvas();
     const ctx = canvas.getContext("2d", { willReadFrequently: true });
@@ -557,7 +565,7 @@ export function createVideoAr({ link, params, hooks, deps }) {
       lastEngine = step.last;
       if (step.action !== "wait" && step.action !== "send") stats.skipped("engine");
       if (step.action === "send") {
-        const ew = Math.min(frameWidth(params.get("w"), portrait), fw);
+        const ew = Math.min(frameWidth(params.get("w")), fw);
         const eh = Math.round((ew * fh) / fw);
         const e0 = performance.now();
         const pixels = grab(ew, eh);
@@ -575,9 +583,8 @@ export function createVideoAr({ link, params, hooks, deps }) {
         return;
       }
       due = Math.max(due + FRAME_MS * rate, t + (FRAME_MS * rate) / 2);
-      const long = Math.min(FRAME_LONG, Math.max(fw, fh));
-      const width = portrait ? Math.round((long * fw) / fh) : long;
-      const h = portrait ? long : Math.round((long * fh) / fw);
+      const width = Math.min(FRAME_LONG, fw);
+      const h = Math.round((width * fh) / fw);
       state.size = `${width}×${h}`;
       const r0 = performance.now();
       const pixels = grab(width, h);
@@ -667,6 +674,13 @@ export function createVideoAr({ link, params, hooks, deps }) {
         next.close();
         return;
       }
+      // 세로 단계 영상은 틀지 않는다: 지금 영상·자세를 두고 알린다. 다시 와도 또 세로라 줄 표시는 풀지 않는다
+      if (next.videoHeight > next.videoWidth) {
+        next.close();
+        hooks.note(LANDSCAPE_ONLY);
+        console.warn(`[video] 세로 단계 영상은 틀지 않아요 ${clipNameOf(q.url)} ${next.videoWidth}×${next.videoHeight}`);
+        return;
+      }
       const old = video;
       stopHold();
       offset += old.currentTime * 1000;
@@ -674,8 +688,7 @@ export function createVideoAr({ link, params, hooks, deps }) {
       if (next.videoWidth !== fw || next.videoHeight !== fh) {
         fw = next.videoWidth;
         fh = next.videoHeight;
-        portrait = fh > fw;
-        projection = projectionFromFov(d.fovDeg ?? 60, fw / fh);
+        projection = projectionFromFov(d.fovDeg ?? CAMERA.fovDeg, fw / fh);
       }
       if (walk?.clip) {
         setPose(walk.goal, orientation);
