@@ -4,8 +4,10 @@
 // 열린 계획(planned·running)만 쓴다. 클로이드 자리는 맞춘 눈만(추정 눈은 쓰지 않는다).
 import type { EyeEvent } from "../../../src/contract/events.ts";
 import type { PlanStep, PlanTarget, PlanView, StepStatus, XZ } from "../../../src/contract/plan.ts";
+import type { TraceRow } from "../../../src/contract/trace.ts";
 import type { WorldView } from "../../../src/contract/world.ts";
-import { planMarks, type GoalMarkInput, type Vec3 } from "./plan-marks";
+import { planMarks, thingAt, type GoalMarkInput, type Vec3 } from "./plan-marks";
+import { traceMarks, type TraceMark } from "./trace-marks";
 import { dashboardChecks, type Check } from "./checks/checks";
 import { conePixelBox, planDirToScreen, planToPixel, screenAngle, type OrthoCamera } from "../twin";
 import type { Px } from "./camera";
@@ -45,10 +47,11 @@ export interface TwinFrame {
   /** 지금 이동 구간 끝(지금 단계가 이동이 아니면 다음 이동 구간 끝), 없으면 null. */
   target: Px | null;
   marks: MapMark[];
-  relations: (MapMark & { label: string })[];
   /** 밝힐 방(정렬). 비었으면 어둡게 하지 않는다. */
   rooms: string[];
   planned: PlannedView;
+  /** 트윈에 그릴 트레이스 표시(가장 최근 활동 하나, trace-marks.ts)와 그 그림 픽셀 자리. 이동 구간이면 그 구간 길(그림 픽셀 점들). */
+  trace: (TraceMark & { px: Px; path?: Px[] })[];
 }
 
 const len = (a: XZ, b: XZ) => Math.hypot(b[0] - a[0], b[1] - a[1]);
@@ -105,7 +108,10 @@ export function twinFrame(o: {
   world?: WorldView | null;
   /** 미리 세운 목표(goal.ts): 선 동안 그 물건 위 고리, 준비되면 미리 만든 계획의 길. */
   goal?: GoalMarkInput | null;
-  anchors?: readonly { id: string; label: string; target: PlanTarget }[];
+  /** 대시보드가 받은 트레이스 줄. 트윈에는 가장 최근 활동 하나의 표시만 그린다. */
+  trace?: readonly TraceRow[];
+  /** 트레이스 줄의 계획 id로 자리를 찾을 계획(열린 계획·미리 만든 계획·최근 계획). */
+  plans?: readonly (PlanView | null | undefined)[];
 }): TwinFrame {
   const { cam, home } = o;
   const plan = isOpen(o.plan) ? o.plan : null;
@@ -140,18 +146,25 @@ export function twinFrame(o: {
     if (a) marks.push({ id, px: planToPixel(cam, [a[0], a[2]], a[1]) });
   }
 
-  // 계획 표시 자료(트윈 좌표) → 그림 픽셀. 대상 자리는 장면 물건·가전 anchor, 없으면 World State 물건 자리
+  // 계획 표시 자료(트윈 좌표) → 그림 픽셀. 대상 자리는 장면 물건·가전 anchor, 아니면 놓인 면이 있고 손에 없는 World State 물건 자리(thingAt).
+  // 자리를 모르는 물건은 그리지 않는다: 바닥 높이 0으로 대신하는 것은 이동 단계 목적지뿐이다(plan-marks.ts stopsOf)
   const at = (t: PlanTarget): Vec3 | null => {
     const id = t.deviceId ?? t.objectId;
-    const found = id ? o.anchor(id) ?? o.world?.objects.find((x) => x.id === id)?.position : null;
-    return found ?? (t.position ? [t.position[0], 0, t.position[1]] : null);
+    return id ? thingAt(id, o.world, o.anchor) : null;
   };
   const pm = planMarks({ plan, robot: eye ? eye.position : null, world: o.world ?? null, at, goal: o.goal ?? null });
   const toPx = (v: Vec3): Px => planToPixel(cam, [v[0], v[2]], v[1]);
-  const relations = (o.anchors ?? []).flatMap(({ id, label, target }) => {
-    const position = at(target);
-    return position?.every(Number.isFinite) ? [{ id, label, px: toPx(position) }] : [];
-  });
+  const tracePlans = [plan, ...(o.plans ?? [])];
+  // 이동 안내 줄의 길: 그 계획의 그 단계 구간(앞 구간 끝 ~ 이 구간 끝)
+  const legPath = ({ planId, stepId }: NonNullable<TraceMark["legOf"]>): Px[] => {
+    const p = tracePlans.find((x): x is PlanView => !!x && x.id === planId);
+    const r = p ? legRanges(p).find((l) => l.stepId === stepId) : undefined;
+    return p && r ? p.path.slice(r.from, r.to + 1).map((q) => planToPixel(cam, q)) : [];
+  };
+  const trace = traceMarks(o.trace ?? [], tracePlans, o.world ?? null, o.anchor)
+    .map((m) => ({ ...m, px: toPx(m.at), ...(m.legOf ? { path: legPath(m.legOf) } : {}) }));
+  // 트레이스 가전 표시는 그 가전 말풍선에 붙는다: 말풍선 자리(marks)에 그 가전을 더한다
+  for (const m of trace) if (m.kind === "device" && m.target && !marks.some((x) => x.id === m.target)) marks.push({ id: m.target, px: m.px });
   const planned: PlannedView = {
     route: { done: pm.route.done.map(toPx), now: pm.route.now.map(toPx), ahead: pm.route.ahead.map(toPx) },
     stops: pm.stops.map((s) => ({ n: s.n, px: toPx(s.at), status: s.status, now: s.now })),
@@ -165,8 +178,27 @@ export function twinFrame(o: {
     plan, index, step, robot,
     route: { points, legs },
     target: next ? points[next.to] ?? null : null,
-    marks, relations,
+    marks,
     rooms: plan ? litRooms(plan, k, home) : [],
     planned,
+    trace,
   };
+}
+
+/**
+ * 말풍선 목록에 트레이스 가전 표시를 붙인다: 같은 가전 줄이 있으면 그 줄에 트레이스 글을 달고, 없으면 번호 없는 가전 줄을 더한다.
+ * 말풍선 칩 글은 트레이스 결과(OUTPUT)다.
+ */
+export function withTraceChecks(checks: Check[], trace: readonly TraceMark[]): Check[] {
+  const devices = trace.filter((m) => m.kind === "device" && m.target);
+  if (!devices.length) return checks;
+  const out = checks.map((c) => {
+    const m = [...devices].reverse().find((x) => x.target === c.deviceId);
+    return m ? { ...c, trace: { rowId: m.rowId, text: m.text, state: m.state } } : c;
+  });
+  for (const m of devices) {
+    if (out.some((c) => c.deviceId === m.target)) continue;
+    out.push({ key: `trace:${m.target}`, order: 0, source: "agent", deviceId: m.target, verb: "확인", at: 0, trace: { rowId: m.rowId, text: m.text, state: m.state } });
+  }
+  return out;
 }

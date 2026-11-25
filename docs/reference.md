@@ -10,7 +10,7 @@ The phone provides camera frames, pose and voice input. The server projects obse
 
 ### Dashboard and Agent Trace
 
-The four default panels are Vision, Digital Twin, Action Conditions, and Agent Trace. The live preview can align detection masks with display frames by capture time. The twin shows the current step and route. **집 전체** switches to the full-home view at `/?view=overview`.
+The four default panels are Vision, Digital Twin, Action Conditions, and Agent Trace. The live preview can align detection masks with display frames by capture time. The twin shows only the home, the CLOiD cone, lit rooms, device states, and the latest Agent Trace activity drawn where it happens: the leg of each move row (the running leg strong with a "name · output" tag at its end, finished legs as passed route), the goal ring and prepared route for goal and departure rows, a dot and a "name · output" tag at the target for pick, place, work, look, object, and guard rows, a line from the CLOiD cone while a close look runs, and the result in the device bubble for device rows. Step numbers, person tags, relation labels, and brain bubbles are not drawn. Objects without a known place (held, or with no surface) are not drawn, and tags are never cut off. **집 전체** switches to the full-home view at `/?view=overview`.
 
 Action Conditions uses the active plan and public evidence for the same attempt and target. The three lines show a confirmed fact when available, the check in progress, and the next step supplied by the plan. Confirmation requires a result for the active task. Ending the plan or changing the connection clears the old conditions.
 

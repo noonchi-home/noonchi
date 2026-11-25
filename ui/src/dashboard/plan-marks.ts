@@ -7,7 +7,7 @@
 // - 미리 그린 길: 목표가 준비됨(또는 시작, 사람이 떠남)이고 열린 계획이 없으면 미리 만든 계획(목표 plan)의 길 전체와 단계 번호. 글은 없고, 준비됨은 흐리고 시작은 진하다.
 //   열린 계획이 오면 그 계획의 번호 길(위)로 이어지고, 세움·끝·버림이면 없다(2026-11-19 사용자 결정).
 import type { PlanTarget, PlanView, StepStatus, XZ } from "../../../src/contract/plan.ts";
-import type { WorldView } from "../../../src/contract/world.ts";
+import type { WorldObject, WorldView } from "../../../src/contract/world.ts";
 import { STATE_TEXT } from "../../../src/world/labels.ts";
 import { CLASSES } from "../../../src/world/vocab.ts";
 import { isOpen, stepIndex } from "./data";
@@ -34,6 +34,22 @@ export interface GoalMarkInput { object: string | null; standing: boolean; stage
 const len = (a: XZ, b: XZ) => Math.hypot(b[0] - a[0], b[1] - a[1]);
 const same = (a: XZ, b: XZ) => len(a, b) < 1e-9;
 const floor = ([x, z]: XZ): Vec3 => [x, 0, z];
+
+/** 손에 든 물건(확인됨)인가. 손에 든 물건은 트윈 자리를 모르는 것으로 본다. */
+const held = (o: Pick<WorldObject, "facts">) => o.facts.place?.value === "in_hand" && o.facts.place.certainty === "confirmed";
+
+/**
+ * 트윈 위 물건 표시 자리(자리를 모르면 그리지 않는다): 장면 물건·가전이면 그 anchor,
+ * World State 물건이면 놓인 면(surface)이 있고 손에 없을 때만 그 물건 자리(없으면 놓인 면 anchor). 사라진 물건·손에 든 물건·놓인 면이 없는 물건은 null이다.
+ * 바닥 높이 0이나 폰 눈 자리로 대신하지 않는다.
+ */
+export function thingAt(id: string, world: WorldView | null | undefined, anchor: (id: string) => Vec3 | null): Vec3 | null {
+  const scene = anchor(id);
+  if (scene) return scene;
+  const o = world?.objects.find((x) => x.id === id && x.status !== "gone");
+  if (!o || held(o) || !o.surface) return null;
+  return o.position ?? anchor(o.surface);
+}
 
 /** 꺾은선 위에서 p에 가장 가까운 자리까지 걸은 길이. */
 function walkedTo(path: XZ[], p: XZ): number {
@@ -69,12 +85,13 @@ function cut(path: XZ[], w: number): [XZ[], XZ[]] {
   return [path.slice(0, 1), path.slice()];
 }
 
-/** 단계 번호 자리: 이동은 그 구간 끝(바닥), 그 밖은 대상 자리(모르면 대상 평면 자리). */
+/** 단계 번호 자리: 이동은 그 구간 끝(바닥, 구간이 없으면 대상 평면 자리), 그 밖은 대상 자리. 이동 아닌 단계의 대상 자리를 모르면 번호를 두지 않는다(바닥으로 대신하지 않는다). */
 function stopsOf(plan: PlanView, at: (t: PlanTarget) => Vec3 | null): { n: number; at: Vec3; i: number }[] {
   const path = plan.path;
   return plan.steps.flatMap((s, i) => {
     const l = plan.legs.find((x) => x.stepId === s.id);
-    const spot = l && path[l.end] ? floor(path[l.end]!) : s.target ? at(s.target) ?? (s.target.position ? floor(s.target.position) : null) : null;
+    const floorSpot = s.kind === "move" && s.target?.position ? floor(s.target.position) : null;
+    const spot = l && path[l.end] ? floor(path[l.end]!) : s.target ? at(s.target) ?? floorSpot : null;
     return spot ? [{ n: i + 1, at: spot, i }] : [];
   });
 }
@@ -100,12 +117,12 @@ function personMark(w: WorldView | null): PlanMarks["person"] {
   return { at: [p.position[0], PERSON_H, p.position[1]], text: `${CLASSES.person!.label} · ${state}` };
 }
 
-/** 목표 고리 자리: 목표가 서 있으면 그 대상 World State 물건 자리, 자리를 모르면 놓인 면의 자리. */
+/** 목표 고리 자리: 목표가 서 있으면 그 대상 World State 물건 자리(없으면 놓인 면의 자리). 손에 든 물건·놓인 면이 없는 물건·사라진 물건이면 없다. */
 function goalMark(goal: GoalMarkInput | null | undefined, w: WorldView | null, at: (t: PlanTarget) => Vec3 | null): PlanMarks["goal"] {
   if (!goal?.standing || !goal.object) return null;
-  const o = w?.objects.find((x) => x.id === goal.object);
-  if (!o) return null;
-  const spot = o.position ?? (o.surface ? at({ objectId: o.surface }) : null);
+  const o = w?.objects.find((x) => x.id === goal.object && x.status !== "gone");
+  if (!o || held(o) || !o.surface) return null;
+  const spot = o.position ?? at({ objectId: o.surface });
   return spot ? { at: spot } : null;
 }
 

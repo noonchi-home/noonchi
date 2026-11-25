@@ -6,6 +6,7 @@
 import type { AgentAction, BrainLog, PendingView, ServerMessage } from "../../../../src/contract/events.ts";
 import type { PlanView } from "../../../../src/contract/plan.ts";
 import type { EyeEvent } from "../../../../src/contract/events.ts";
+import type { TraceState } from "../../../../src/contract/trace.ts";
 import type { WorldObject, WorldView } from "../../../../src/contract/world.ts";
 import { STATE_TEXT } from "../../../../src/world/labels.ts";
 import { CLASSES } from "../../../../src/world/vocab.ts";
@@ -33,6 +34,8 @@ export type Check = {
   at: number;
   /** 승인 대기 표(취소 알림은 표만 온다). */
   token?: string;
+  /** 이 가전에 붙은 트레이스 줄(트윈에 그린 가장 최근 활동의 가전 도구·가전 상태 변화): 말풍선 칩 글은 그 결과다. */
+  trace?: { rowId: string; text: string; state: TraceState };
 };
 
 export interface ChecksState {
@@ -172,7 +175,7 @@ const EYE_MARK_H = 0.9;
  *   대상이 없는 단계(묻기·기다리기)는 폰 눈.
  * - 계획이 없으면: 지켜보는 대상(마지막 두뇌 계획의 act 대상 가운데 World State 물건, 없으면 마지막 판단 행동의 대상 종류 중 가장 최근에 본 물건)의 지금 자리.
  *   대상이 없는 대기 판단이면 폰 눈.
- * - World State 물건의 지금 자리: 손에 있으면(확인됨) 폰 눈, 장면 면 위면 그 면, 아니면 그 물건 자리. 폰 눈을 모르면 null(표시 없음).
+ * - World State 물건의 지금 자리: 장면 면 위면 그 면, 아니면 그 물건 자리. 손에 있거나(확인됨) 놓인 면이 없으면 자리를 모르는 것이라 null(표시 없음).
  * scene: 장면 물건·가전 id인가(트윈 고리가 있다).
  */
 export function spotOf(o: {
@@ -183,12 +186,12 @@ export function spotOf(o: {
     ? { id: "spot:eye", at: [o.eye.position[0], EYE_MARK_H, o.eye.position[1]], ...(o.world?.eye?.room_label ? { label: o.world.eye.room_label } : {}) }
     : null;
   const objects = (o.world?.objects ?? []).filter((x) => x.status !== "gone");
+  // 손에 든 물건과 놓인 면이 없는 물건은 자리를 모른다: 폰 눈 자리나 바닥으로 대신하지 않는다
   const thingAt = (x: WorldObject): Spot | null => {
     const label = CLASSES[x.cls as keyof typeof CLASSES]?.label ?? x.cls;
-    if (x.facts.place?.value === "in_hand" && x.facts.place.certainty === "confirmed") return eye && { ...eye, label };
-    if (x.surface && o.scene(x.surface)) return { id: x.surface };
-    if (x.position) return { id: `spot:${x.id}`, at: [...x.position] as [number, number, number], label };
-    return eye && { ...eye, label };
+    if ((x.facts.place?.value === "in_hand" && x.facts.place.certainty === "confirmed") || !x.surface) return null;
+    if (o.scene(x.surface)) return { id: x.surface };
+    return x.position ? { id: `spot:${x.id}`, at: [...x.position] as [number, number, number], label } : null;
   };
   const plan = o.plan && (o.plan.status === "planned" || o.plan.status === "running") ? o.plan : null;
   if (plan) {

@@ -29,12 +29,16 @@ const RANK: Record<Tone, number> = { alert: 1, on: 2, off: 2, unknown: 3 };
 
 type Shown = { id: string; title: string; line?: string; tone?: Tone; order?: number };
 
+/** 트레이스 결과 칩 색(21st.dev Status variant): 진행 중 brand, 끝 success, 실패 error, 취소 기본. */
+const TRACE_CHIP: Record<NonNullable<Check["trace"]>["state"], "default" | "success" | "error" | "brand"> = { pending: "brand", done: "success", failed: "error", cancelled: "default" };
+
 function shownOf(c: Check, devices: Map<string, DeviceView>, objects: Map<string, string>): Shown | null {
   if (c.deviceId) {
     const d = devices.get(c.deviceId);
     if (!d) return null;
     const s = deviceSummary(d);
-    return { id: d.id, title: s.title, line: s.line, tone: s.tone, order: c.order };
+    // 트레이스로만 붙은 가전(번호 0)은 번호 없이 점으로
+    return { id: d.id, title: s.title, line: s.line, tone: s.tone, order: c.order > 0 ? c.order : undefined };
   }
   // 장면 이름이 없는 자리(폰 눈·World State 물건)는 그 자리 이름
   const name = c.label ?? (c.objectId ? objects.get(c.objectId) : undefined);
@@ -47,18 +51,21 @@ function shownOf(c: Check, devices: Map<string, DeviceView>, objects: Map<string
  * 말풍선 하나: 기기 자리(p)에 둔 0×0 상자. 판은 21st.dev Tooltip(화살표 끝이 기기 자리)이고, 상자 안(container)에 그려 상자와 함께 움직인다.
  * 늘 열어 두고 마우스를 받지 않는다.
  */
-function Bubble({ s, verb, p, big, place, measure, onSize }: {
-  s: Shown; verb: CheckVerb; p: ScreenPoint; big: boolean; place: Placement;
+function Bubble({ s, verb, trace, p, big, place, measure, onSize }: {
+  s: Shown; verb: CheckVerb; trace?: Check["trace"]; p: ScreenPoint; big: boolean; place: Placement;
   measure: (el: HTMLElement) => Box; onSize: (id: string, box: Box) => void;
 }) {
   const [box, setBox] = useState<HTMLDivElement | null>(null);
   const content = useRef<HTMLDivElement>(null);
   // 그린 판 크기를 알린다(자리 고르기에 쓴다)
   useLayoutEffect(() => { if (content.current) onSize(s.id, measure(content.current)); });
+  // 칩 글: 트레이스 줄이 붙었으면 그 결과, 아니면 확인 verb
+  const chip = trace ? { text: trace.text, variant: TRACE_CHIP[trace.state] } : { text: verb, variant: VERB[verb] };
   return (
     <div
       ref={setBox}
       data-check={s.id}
+      data-trace-mark={trace?.rowId}
       data-focus={big ? "true" : undefined}
       className={cn("pointer-events-none absolute h-0 w-0 transform-gpu", big ? "z-30" : s.tone ? LAYER[s.tone] : "z-10")}
       style={{ left: p.x, top: p.y }}
@@ -69,7 +76,7 @@ function Bubble({ s, verb, p, big, place, measure, onSize }: {
           <TooltipContent
             ref={content} container={box} side={place.side} align={place.align} alignOffset={place.align === "center" ? 0 : -ALIGN_EDGE} sideOffset={0}
             avoidCollisions={false} showArrow tone="twin" size={SIZE} focus={big}
-            aria-label={[s.title, verb, s.line].filter(Boolean).join(" ")}
+            aria-label={[s.title, chip.text, s.line].filter(Boolean).join(" ")}
             className="pointer-events-none w-max max-w-none motion-reduce:animate-none"
           >
             <div className="flex items-center gap-1.5">
@@ -83,7 +90,7 @@ function Bubble({ s, verb, p, big, place, measure, onSize }: {
                 <Status variant="brand" aria-hidden="true"><StatusIndicator /></Status>
               )}
               <span>{s.title}</span>
-              <Status variant={VERB[verb]}>{verb}</Status>
+              <Status variant={chip.variant}>{chip.text}</Status>
             </div>
             {s.line && <div data-line>{s.line}</div>}
           </TooltipContent>
@@ -147,7 +154,7 @@ export function BubbleLayer({ checks, devices, objects = new Map(), points, focu
     <TooltipProvider delayDuration={0}>
       <div ref={layer} className="pointer-events-none absolute left-0 top-0 h-0 w-0" aria-label="확인한 것">
         {shown.map(({ c, s, p, big }) => (
-          <Bubble key={c.key} s={s} verb={c.verb} p={p} big={big} place={places.get(s.id)!} measure={measure} onSize={onSize} />
+          <Bubble key={c.key} s={s} verb={c.verb} trace={c.trace} p={p} big={big} place={places.get(s.id)!} measure={measure} onSize={onSize} />
         ))}
       </div>
     </TooltipProvider>

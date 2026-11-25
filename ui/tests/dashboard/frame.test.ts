@@ -2,6 +2,9 @@
 // 트윈 위 표시 한 순간(twinFrame): 실제 한양목련 장면·컵 치우기 계획·맞춘 눈 → 경로(카메라 맞춤용, 그리지 않음)·목적지·클로이드·확인한 것 자리·밝힐 방(구운 보기 그림 픽셀).
 import { describe, expect, it } from "vitest";
 import type { PlanView } from "../../../src/contract/plan.ts";
+import type { TraceRow } from "../../../src/contract/trace.ts";
+import type { WorldObject, WorldView } from "../../../src/contract/world.ts";
+import { TraceJournal } from "../../../src/record/trace.ts";
 import type { Check } from "../../src/dashboard/checks/checks";
 import { litRooms, roomSetsOf, twinFrame } from "../../src/dashboard/frame";
 import { planToPixel } from "../../src/twin/3d/projection";
@@ -91,6 +94,33 @@ describe("트윈 순간", () => {
     const [u0, v0] = px(eye.position);
     const [u1, v1] = px([eye.position[0] + Math.cos(a), eye.position[1] + Math.sin(a)]);
     expect(f.robot!.angle).toBeCloseTo((Math.atan2(v1 - v0, u1 - u0) * 180) / Math.PI, 6);
+  });
+
+  // 2026-11-25 시연 의견 2: 손에 든 컵·자리를 모르는 컵이 바닥에 「컵」으로 보였다. 자리를 모르는 물건은 그리지 않고, 바닥 대체는 이동 단계 목적지뿐이다
+  it("컵 집기 대상 컵이 손에 있거나 놓인 면이 없으면 그 단계 번호·목표 고리·트레이스 표시가 없다. 식탁 위 컵이면 그 자리에 있다", () => {
+    const steps = PLAN.steps.map((s, i) => (i === 1 ? { ...s, target: { objectId: "cup_1", position: [9.9, 3.9] as [number, number] } } : s));
+    const plan = { ...moment(2).plan!, steps: moment(2).plan!.steps.map((s, i) => ({ ...s, target: steps[i]!.target })) };
+    const rows: TraceRow[] = [];
+    const journal = new TraceJournal("e1", () => 1000, (m) => rows.push(...m.rows));
+    journal.start("pick", { plan_id: plan.id, step_id: plan.steps[1]!.id, object_id: "cup_1" });
+    const cup = (over: Partial<WorldObject>): WorldView => ({
+      at_ms: 0, fixtures: [], devices: [], eye: null, frame_ms: null, vlm_missing: 0, yolo_missing: 0,
+      person: { visible: false, since_ms: 0, last_seen_ms: 0, count: 0, position: null, position_ms: 0, room: null, room_label: null, near: [], holding: [], facts: {}, answered_ms: null },
+      objects: [{ id: "cup_1", cls: "cup", position: [9.9, 0.78, 3.9], surface: TABLE, surface_label: "식탁", room: "living", error_m: null, status: "present",
+        first_seen_ms: 0, last_seen_ms: 0, last_in_view_ms: 0, facts: {}, answered_ms: null, devices: [], closer_hold: false, followed_by: null, ...over } as WorldObject],
+    } as unknown as WorldView);
+    const at = (world: WorldView) => frameAt(2, [], { plan, world, goal: { object: "cup_1", standing: true }, trace: rows, plans: [plan] });
+    const onTable = at(cup({}));
+    expect(onTable.planned.stops.map((s) => s.n)).toEqual([1, 2, 3, 4]);
+    near(onTable.planned.stops[1]!.px, px([9.9, 3.9], 0.78), 1e-6);
+    expect(onTable.planned.goal).not.toBeNull();
+    expect(onTable.trace.map((m) => m.text)).toEqual(["집기 안내 · 시연자 수행 대기"]);
+    for (const world of [cup({ facts: { place: { value: "in_hand", certainty: "confirmed", at_ms: 0 } } as WorldObject["facts"] }), cup({ surface: null, surface_label: null, position: [9.9, 0, 3.9] })]) {
+      const f = at(world);
+      expect(f.planned.stops.map((s) => s.n)).toEqual([1, 3, 4]);
+      expect(f.planned.goal).toBeNull();
+      expect(f.trace).toEqual([]);
+    }
   });
 
   it("밝힐 방: 단계 대상 방과 그 단계 구간이 지나는 방, 정렬", () => {
