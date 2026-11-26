@@ -233,7 +233,7 @@ function runtime(core: HomeCore): HomeRuntime {
     start: core.startStore, app: appNow, twinDir: twin.home.outDir, phoneUrls: core.phoneUrls, phonePort: core.phonePort,
     stationMap: () => core.scene?.stations ?? null,
     checkedStations: raw => checkedStations(core, raw),
-    setStations(map) { if (core.scene) core.scene.stations = map; },
+    setStations(map) { core.setStations(map); },
     onReflection(event) {
       onReflection(core, event);
     },

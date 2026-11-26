@@ -74,6 +74,14 @@ export class HomeCore {
   phonePort: number | undefined;
   // 계획·판단·실행(act.ts)
   scene!: ReturnType<typeof loadScene>;
+  /** 자리 지도 판본: 설정 화면에서 자리 지도를 저장할 때마다 1 오른다(걷기 길 자료 캐시 키, walking.ts). */
+  stationsRevision = 0;
+  /** 설정 화면에서 저장한 자리 지도(대기 자리·가구 앞자리)를 지금 장면에 넣고 판본을 올린다. */
+  setStations(map: NonNullable<ReturnType<typeof loadScene>>["stations"]): void {
+    if (!this.scene) return;
+    this.scene.stations = map;
+    this.stationsRevision++;
+  }
   floorPlan!: FloorPlan;
   placeNames!: PlaceNames;
   places!: () => PlaceInfo[];

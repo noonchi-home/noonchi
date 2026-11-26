@@ -17,13 +17,14 @@ import type { WorldInput, WorldView } from "../../contract/world.js";
 import type { SignalHub } from "../../devices/index.js";
 import type { PlanView } from "../../contract/plan.js";
 import type { TraceRefs } from "../../contract/trace.js";
-import { walkingMap, walkWay, floorLookup, floorPlanFrom, loadScene, LOOK_HEIGHT_M, type LayoutEditor, type PlaceNames, type WalkWay } from "../../layout/index.js";
+import { floorLookup, floorPlanFrom, loadScene, LOOK_HEIGHT_M, type LayoutEditor, type PlaceNames } from "../../layout/index.js";
 import { Trigger, canRelink, deviceStateKeys, deviceStatus, loadTriggerConfig, type PlaneSurface, type TriggerConfig } from "../../world/index.js";
 import { loadEndpoints } from "../../infer/endpoints.js";
 import { DEVICE_STATES } from "../../world/vocab.js";
 import { type HomeCore } from "./core.js";
 import { sendAgain } from "./history-writes.js";
 import { inTraceContext } from "./agent.js";
+import { walkingCache } from "./walking.js";
 import { measuredTrace } from "../../shared/trace.js";
 import type { EvidenceRef } from "../../contract/assistance.js";
 import { HomeBeer, isBeerAction } from "./beer.js";
@@ -285,7 +286,7 @@ export function startAct(core: HomeCore): (event: BrainLog) => void {
     decision: d, task, world, floor: plans.floor(), places: core.places(), names: placeNames, rooms: twin.rooms, devices: deviceViews(signals), nowIso: new Date(now()).toISOString(),
     placed: new Map(core.tracker?.placed() ?? []), ...(task.coach ? { lesson: lessons.get(task.name) } : {}), ...(ahead ? { ahead } : {}),
     // 계획 길은 폰 안내와 같은 이동 가능 점 격자를 따른다(src/layout/walk-grid.ts)
-    ...(walking() ? { way: walkWayNow! } : {}),
+    ...(walk.way() ? { way: walk.way()! } : {}),
     // 관찰 흐름이 위에서 본 사진으로 컵 안을 본다(topReady·lookContents top): 컵 치우기 계획에 컵 안 보기 단계가 든다
     topLook: true,
     discardLeftover: task.topLook && discardLeftover(world),
@@ -318,21 +319,8 @@ export function startAct(core: HomeCore): (event: BrainLog) => void {
     if (cue && result.ok && !core.beer?.reserve(decision, cue, result.plan)) return { ok: false, error: "맥주를 도울 근거가 달라졌어요." };
     return result;
   };
-  let geometryVersion=-1;
-  let walkScene:typeof core.scene=null;
-  let walkMap:ReturnType<typeof walkingMap>|null=null;
-  let walkWayNow:WalkWay|null=null;
-  const walking=()=>{
-    const scene=core.scene, editor=layout?.editor;
-    if(!scene) return null;
-    if(walkScene!==scene || geometryVersion!==(editor?.geometryRevision??0)){
-      walkScene=scene;geometryVersion=editor?.geometryRevision??0;
-      const current=editor?{...scene,objects:editor.objects()}:scene;
-      walkMap=walkingMap(floorPlanFrom(current),current,type=>layout?.catalog.get(type)?.footprint);
-      walkWayNow=walkWay(current,type=>layout?.catalog.get(type)?.footprint);
-    }
-    return walkMap;
-  };
+  const walk=walkingCache(core);
+  const walking=walk.map;
   const stationFloor = floorLookup(core.plan.rooms);
   const events = {
     emit,
