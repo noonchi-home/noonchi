@@ -365,7 +365,7 @@ function dashEngine() {
   return {
     states: { getState: vi.fn(() => ({})), getAttrs: vi.fn(() => null), setState: vi.fn() },
     layout: { move: vi.fn(() => true), add: vi.fn(async () => true), remove: vi.fn(() => true), restore: vi.fn(() => false), isRemoved: () => false, dispose: vi.fn() },
-    requestRender: vi.fn(), resize: vi.fn(), dispose: vi.fn(),
+    requestRender: vi.fn(), layoutChanged: vi.fn(), resize: vi.fn(), dispose: vi.fn(),
     setEye: vi.fn((_eye: EyeEvent | null) => {}),
     stand: vi.fn((p: [number, number]): [number, number] => [p[0], p[1]]),
     setView: vi.fn((c: MapCamera) => { cur = { ...c }; }),

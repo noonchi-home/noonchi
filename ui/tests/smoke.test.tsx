@@ -141,7 +141,7 @@ function fakeEngine() {
   return {
     states: { getState: vi.fn(() => ({ door: "closed" })), getAttrs: vi.fn((id: string) => (id === FRIDGE ? { door: ["closed", "open"] } : null)), setState: vi.fn() },
     layout: { move: vi.fn((_id: string, _patch: unknown) => true), add: vi.fn(async () => true), remove: vi.fn(() => true), restore: vi.fn(() => false), isRemoved: () => false, dispose: vi.fn() },
-    requestRender: vi.fn(), resize: vi.fn(), setView: vi.fn(), setEye: vi.fn(), stand: vi.fn((p: [number, number]) => p), dispose: vi.fn(),
+    requestRender: vi.fn(), layoutChanged: vi.fn(), resize: vi.fn(), setView: vi.fn(), setEye: vi.fn(), stand: vi.fn((p: [number, number]) => p), dispose: vi.fn(),
     onView: vi.fn((cb: (c: unknown) => void) => { views.add(cb); return () => { views.delete(cb); }; }),
     draw() { for (const cb of [...views]) cb({ cx: 0, cy: 0, scale: 1 }); },
   };
@@ -205,6 +205,7 @@ describe("대시보드 구운 트윈 연결", () => {
     act(() => FakeSocket.last!.push(moveSofa(7)));
     expect(engine.layout.move).toHaveBeenCalledTimes(2);
     expect(engine.layout.move.mock.calls[1]![1]).toMatchObject({ position: [7, 0, 9] });
+    expect(engine.layoutChanged).toHaveBeenCalledTimes(2);
   });
 
   it("첫 그림 전에는 main에 data-ready가 없고, 첫 그림을 그리면 단다", async () => {
