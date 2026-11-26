@@ -62,15 +62,7 @@ export class Navigation {
       }
       const gate = this.map.gate(first.id);
       if (gate && room === first.to_room && this.map.room(a) === first.from_room) {
-        // Locate the actual crossing on this measured segment, not just either endpoint.
-        let lo = a,
-          hi = b;
-        for (let n = 0; n < 12; n++) {
-          const mid: XZ = [(lo[0] + hi[0]) / 2, (lo[1] + hi[1]) / 2];
-          if (this.map.room(mid) === first.from_room) lo = mid;
-          else hi = mid;
-        }
-        this.crossed = distance(hi, gate.point) <= this.map.doorRadius(gate);
+        this.crossed = this.throughOpening(this.map, a, b, first.from_room, gate);
       } else if (this.crossed && room === first.to_room && this.map.room(a) === room) {
         this.lastGate = first.id;
         this.advance();
@@ -86,14 +78,7 @@ export class Navigation {
       const gate = portal?.kind === "portal" ? this.map.gate(portal.id) : undefined;
       if (portal?.kind === "portal" && gate && room === portal.to_room && this.map.room(a) === portal.from_room &&
         this.path.remaining.slice(0, at).every((p) => p.kind === "via" && p.room === portal.from_room)) {
-        let lo = a,
-          hi = b;
-        for (let n = 0; n < 12; n++) {
-          const mid: XZ = [(lo[0] + hi[0]) / 2, (lo[1] + hi[1]) / 2];
-          if (this.map.room(mid) === portal.from_room) lo = mid;
-          else hi = mid;
-        }
-        if (distance(hi, gate.point) <= this.map.doorRadius(gate)) {
+        if (this.throughOpening(this.map, a, b, portal.from_room, gate)) {
           this.path = { ...this.path, remaining: this.path.remaining.slice(at) as TwinWalkGuide["remaining"], revision: ++this.revision };
           this.crossed = true;
         } else this.offPath = true;
@@ -112,6 +97,18 @@ export class Navigation {
       if (next && ((distance(b, via) < 0.15 && this.clearTo(this.map, b, next, first.room)) || (passed && this.clearTo(this.map, b, next, first.room, true))))
         this.advance();
     }
+  }
+  /** a→b가 from 방을 나간 점(이 측정 구간 위에서 이분법으로 찾음)이 그 문의 실제 개구부 안인가: 문 점에서 개구부 절반 폭 안.
+   *  걷기 여유 0.18m를 뺀 문 반경(doorRadius)이 아니라 개구부 절반 폭으로 본다: 개구부 가장자리 쪽으로 지난 걸음도 문으로 지난 것이다. */
+  private throughOpening(map: WalkingMap, a: XZ, b: XZ, from: string, gate: NonNullable<ReturnType<WalkingMap["gate"]>>) {
+    let lo = a,
+      hi = b;
+    for (let n = 0; n < 12; n++) {
+      const mid: XZ = [(lo[0] + hi[0]) / 2, (lo[1] + hi[1]) / 2];
+      if (map.room(mid) === from) lo = mid;
+      else hi = mid;
+    }
+    return distance(hi, gate.point) <= map.openingHalf(gate);
   }
   /** walls: bearing이어도 곧은 선이 벽·방 밖을 지나지 않는지 본다(bearing은 가구를 지날 수 있어 가구는 보지 않는다). 아니면 bearing은 늘 통과. */
   private clearTo(map: WalkingMap, from: XZ, point: TwinWalkGuide["remaining"][number], room: string, walls = false) {
