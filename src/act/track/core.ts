@@ -7,7 +7,7 @@ import type { PlannedCommand } from "../../contract/phone.js";
 import { Navigation } from "../robot/navigation.js";
 import type { XZ } from "../../contract/plan.js";
 import type { WorldView } from "../../contract/world.js";
-import { placeName } from "../../layout/index.js";
+import { moveStop, placeName } from "../../layout/index.js";
 import type { ConditionWatch } from "../../world/index.js";
 import { HUMAN_KINDS, type AgentPlan, type AgentStep } from "../../agent/index.js";
 import { DEVICE_UNKNOWN, EXEC_TEXT } from "../labels.js";
@@ -116,9 +116,12 @@ export class TrackCore {
     if (!this.o.layout.walking) return undefined;
     const map=this.o.layout.walking();
     const front=this.o.stations?.map?.()?.surface_fronts.find(f=>f.surface_id===target?.id);
-    const position: [number,number] = front?.position ?? (target ? [target.position[0],target.position[2]] : [0,0]);
+    const at: XZ | null = target ? [target.position[0],target.position[2]] : null;
+    // 이동 목적지는 계획 선(src/agent/planShape.ts)과 같은 moveStop이다: 가구 앞자리, 없으면 그 방 대기 자리, 없으면 물건에서 가장 가까운 격자 점
+    const stop = !station && map && target && at ? moveStop(map.way, target.id, this.o.layout.floor().objects.get(target.id)?.room, at) : null;
+    const position: [number,number] = stop ?? front?.position ?? at ?? [0,0];
     const movedFront=front && target && Math.hypot(front.look_at[0]-target.position[0],front.look_at[1]-target.position[2])>0.2;
-    const result=this.navigation.read(key,target && !movedFront?map:null,position,front?.near_m??0.5,station||!!front,this.clock.now(),hint);
+    const result=this.navigation.read(key,target && !movedFront?map:null,position,front?.near_m??0.5,station||!!front||!!stop,this.clock.now(),hint);
     const portals=result.guide?.remaining.filter(point=>point.kind==="portal");
     if(portals?.length){
       const world=this.o.state.view();

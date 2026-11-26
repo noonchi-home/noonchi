@@ -1,8 +1,9 @@
 import type { SceneJson, SceneObject, Vec2 } from "../contract/layout.js";
 import type { TwinWalkGuide } from "../contract/phone.js";
+import type { StationMap } from "../contract/stations.js";
 import { floorPlanFrom, insidePolygon, sharedOpening, type FloorPlan, type Portal } from "./floor.js";
 import { approach, roomAt, route } from "./route.js";
-import { WALK_STEP, gridRoute, walkGrid } from "./walk-grid.js";
+import { gridRoute, walkWay } from "./walk-grid.js";
 
 export function edgeDistance(p: Vec2, a: Vec2, b: Vec2) {
   const dx = b[0] - a[0], dz = b[1] - a[1];
@@ -71,10 +72,11 @@ const distance = (a: Vec2, b: Vec2) => Math.hypot(a[0] - b[0], a[1] - b[1]);
 const cell = 0.15;
 
 export function walkingMap(floor: FloorPlan, scene: SceneJson, footprint?: (type: string) => Vec2 | undefined) {
-  const geometry = walkingGeometry(scene, footprint);
+  // 걷기 길 자료(격자·가구 앞자리·방 대기 자리)는 계획 선과 같은 walkWay로 만든다: 방 안 길은 같은 이동 가능 점 격자를 따르고(경유점은 모두 격자 점),
+  // 폰 안내의 이동 목적지도 같은 moveStop으로 정한다(src/act/track/core.ts walk)
+  const way = walkWay(scene as SceneJson & { stations?: StationMap }, footprint);
+  const { geometry, grid } = way;
   const { walkable, furnitureClear, walls } = geometry;
-  // 방 안 길은 계획 선·트윈 원뿔과 같은 이동 가능 점 격자를 따른다(src/layout/walk-grid.ts): 경유점은 모두 격자 점이다
-  const grid = walkGrid(geometry, WALK_STEP);
   const doors = (scene.plan.doors ?? []) as { id: string; width?: number; wall?: string }[];
   const height = (room: string) => scene.plan.rooms?.find((r) => r.id === room)?.floor_z ?? 0;
   const widths = new Map(doors.map((d) => [d.id, d.width ?? 0]));
@@ -261,6 +263,6 @@ export function walkingMap(floor: FloorPlan, scene: SceneJson, footprint?: (type
     }
     return remaining.length ? { revision: 0, near_m, remaining: remaining as TwinWalkGuide["remaining"] } : null;
   }
-  return { room, plan, clear, isBearing: (point:Point)=>bearings.has(point),
+  return { room, plan, clear, way, isBearing: (point:Point)=>bearings.has(point),
     gridReachable: (a:Vec2,b:Vec2,id:string,gates:Portal[]=[])=>indoor(a,b,id,gates)!==null, gate: (id: string) => floor.portals.find((g) => g.id === id), doorRadius };
 }
