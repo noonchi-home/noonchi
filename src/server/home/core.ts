@@ -3,15 +3,16 @@
 // 칸은 그 잇기가 채우기 전에는 읽지 않는다. 말풍선 카드 speak는 say.ts가 채우기 전까지 아무것도 하지 않는다.
 import { ProgressReplies, modeNow, type ExecutionTracker, type LessonStore, type Looker, type Mode, type PlanHub, type loadActConfig } from "../../act/index.js";
 import type { Agent, ApprovalStore, Observer, PlaceInfo, Planner, Policy } from "../../agent/index.js";
-import type { BrainPlans, MakePlan, Decider, PersonLane, ThoughtFeed } from "../../brain/index.js";
+import type { BrainPlans, MakePlan, Decider, HelpRoutine, PersonLane, ThoughtFeed } from "../../brain/index.js";
 import type { BrainLog, SeenEvent } from "../../contract/events.js";
 import type { PendingGoal } from "../../contract/goal.js";
 import type { HabitFsm } from "../../contract/habit.js";
 import type { PlannedCommand } from "../../contract/phone.js";
-import type { SignalHub, ThinqLink } from "../../devices/index.js";
+import type { RelayLink, SignalHub, ThinqLink } from "../../devices/index.js";
 import type { FloorPlan, HomePlan, PlaceNames, TwinData, loadLayout, loadScene } from "../../layout/index.js";
 import { realClock, type Body, type BusNode, type Clock, type Outbox } from "../../bus/index.js";
 import { HomeMachines } from "./machines.js";
+import type { HomeTrace } from "./trace.js";
 import type { LookClient, ObservationPipeline, PerceptionNode } from "../../observe/index.js";
 import type { WorldView } from "../../contract/world.js";
 import type { EyeFeed, FrameHeader, PhoneServer, StartStore, twinLandmarks } from "../../phone/index.js";
@@ -36,6 +37,8 @@ export class HomeCore {
   unsubHistory!: () => void;
   /** ThinQ 연결(실제 모드). 닫힌 집이면 붙이지 않는다. */
   link: ThinqLink | null = null;
+  /** TV 중계 연결(실제 모드, TV_RELAY_*). 닫힌 집이면 붙이지 않는다. */
+  relay: RelayLink | null = null;
   closed = false;
   // 에이전트(agent.ts)
   approvals!: ApprovalStore;
@@ -64,6 +67,7 @@ export class HomeCore {
   /** 지금 배치의 물건 기준점(폰 위치 맞추기). */
   landmarksNow!: () => ReturnType<typeof twinLandmarks>;
   /** 엔진 프레임 헤더(찍은 순간 AR 자세·투영): 감지가 끝나면 기준점 상자와 함께 폰 위치 맞추기로 넘긴다. */
+  localizer: import("../../localize/index.js").PhotoLocalizer|null = null;
   engineHeaders = new WeakMap<Buffer, FrameHeader>();
   phone: PhoneServer | undefined;
   phoneUrls: string[] = [];
@@ -78,12 +82,17 @@ export class HomeCore {
   lessons!: LessonStore;
   thoughts: ThoughtFeed | null = null;
   decider: Decider | null = null;
+  beer?: import("./beer.js").HomeBeer;
   tracker: ExecutionTracker | null = null;
   looker: Looker | null = null;
   /** 실제 폰 대화(말 요청 에이전트) 사용: 처리 중인 말 수와 마지막으로 끝난 시각. 실행 추적이 끼어들지 않게 본다(act.ts talking). */
   talk = { inflight: 0, at: Number.NEGATIVE_INFINITY };
   // 관찰 흐름·World State(observe.ts)
   surfaces!: () => PlaneSurface[];
+  /** 그날 기억에 화살표가 든 도움 습관(observe.ts가 단다). 판단이 습관 화살표를 그 시각 창 안에서만 행동으로 낸다. */
+  routines: () => HelpRoutine[] = () => [];
+  /** help 줄을 새로 쓴 뒤 부른다(도움 습관을 기록 작업 스레드에서 다시 읽는다). */
+  routinesChanged = () => {};
   world: WorldState | null = null;
   pipeline: ObservationPipeline | null = null;
   // 노드(src/bus): 집 세대, 인식·집 상태·거울(act)·폰·가전 노드
@@ -94,6 +103,10 @@ export class HomeCore {
   goalMirror: WorldMirror | null = null;
   goalPlans: BrainPlans | null = null;
   goalPulse: number | null = null;
+  roomWatch?: import("../../goal/index.js").RoomWatch;
+  tvWatch?: import("../../goal/index.js").TvWatch;
+  goalFacts: import("../../goal/index.js").TriggerFacts | null = null;
+  checkingVisit: (import("../../goal/index.js").CheckingVisit & {cup:string;surface:string}) | null = null;
   managerNode: BusNode | null = null;
   brainMirror: WorldMirror | null = null;
   brainPlans: BrainPlans | null = null;
@@ -104,6 +117,10 @@ export class HomeCore {
   phoneNode: BusNode | null = null;
   machineRecorder: BusNode | null = null;
   readonly machines = new HomeMachines();
+  trace: HomeTrace | undefined;
+  /** 선호 기록이 필요한 답은 기록 DB 커밋 뒤에 풀리는 Promise다. */
+  resumeProactive?: (text: string, originId: string) => string | null | Promise<string>;
+  captureProactiveRequest?: () => ((action: string) => void) | undefined;
   pamHeard = false;
   devicesNode: BusNode | null = null;
   /** 노드가 내는 입력의 차례대로 보내기 줄(실패하면 같은 봉투로 다시, 닫기 전 비운다): 실행 추적(거울 노드)·폰·가전. */
@@ -131,6 +148,8 @@ export class HomeCore {
   lookSay: { place: string; atMs: number } | null = null;
   reflected: { atMs: number; learned: number; active: number } | null = null;
   serviceSaid: { text: string; atMs: number } | null = null;
+  /** 마지막 도움 기록 글과 그 시각(메시지 상자, src/act/help-record.ts). */
+  helpSaid: { text: string; atMs: number } | null = null;
   // 앱(index.ts)
   app: TwinHomeApp | undefined;
 
@@ -138,12 +157,12 @@ export class HomeCore {
 
   /** 지금 시각(시험 시계가 있으면 그 시계). */
   nowMs(): number {
-    return this.ctx.brain?.clock?.now() ?? Date.now();
+    return this.ctx.clock?.now() ?? this.ctx.brain?.clock?.now() ?? Date.now();
   }
 
-  /** 노드 시계: 시각은 nowMs(시험 시계가 있으면 그 시계), 타이머는 실제 시계. */
+  /** 집 노드는 재생에서 주입한 공통 시계 또는 실제 시계로 돈다. */
   busClock(): Clock {
-    return { now: () => this.nowMs(), every: realClock.every, after: realClock.after };
+    return this.ctx.clock ?? { now: () => this.nowMs(), every: realClock.every, after: realClock.after };
   }
 
   /** 집 상태 보기: 거울이 받은 가장 새 /world/state(관찰 흐름이 없거나 아직 못 받았으면 null). */

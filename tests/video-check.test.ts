@@ -14,7 +14,8 @@ import { doneId, isDoneStep } from "../src/act/done-step.js";
 import { CUP_FSM_MEMORY } from "../src/brain/decision.js";
 import { LEARNED_FSM_MEMORY } from "../scripts/learned-memory.js";
 import { HISTORY_KINDS as DB_KINDS } from "../src/brain/history/db.js";
-import { FETCH_KINDS, SEND_SAY, hasLearnedClear, memoryGate, clickChoice, clock, costLine, judgeInput, judgeState, markdown, parseArgs, phoneUrl, plannedClicks, sendStartPose, mainPlan, planState, stepPlaces, stepVerdict, timeline, verdict, twinRows, usedServer, roomLabels, ownAssetFailures, videoClock, serverClock, reactionLine, DONE_TAIL_MS, runTimeline, clipEnd, syncWarning, mustStop, openDashboard, recordSetup, waitLoaded, waitTwinReady, frameGapLine, sceneLog, sceneLag, type ClickRule, type Row, type VideoCommand } from "../scripts/video-check.js";
+import { supportText } from "../ui/src/phone/state.js";
+import { FETCH_KINDS, SEND_SAY, hasLearnedClear, memoryGate, clickChoice, clock, costLine, judgeInput, judgeState, landscapeRefusal, markdown, parseArgs, phoneUrl, plannedClicks, sendStartPose, mainPlan, planState, stepPlaces, stepVerdict, timeline, verdict, twinRows, usedServer, roomLabels, ownAssetFailures, videoClock, serverClock, reactionLine, DONE_TAIL_MS, runTimeline, clipEnd, syncWarning, mustStop, openDashboard, recordSetup, waitLoaded, waitTwinReady, frameGapLine, sceneLog, sceneLag, type ClickRule, type Row, type VideoCommand } from "../scripts/video-check.js";
 import { createServer, type Server } from "node:http";
 import { listenRetry } from "../src/shared/net.js";
 import type { SceneJson } from "../src/contract/layout.js";
@@ -897,20 +898,20 @@ describe("video-check", () => {
     expect(concatList([{ file: "dash/000001.jpg", ms: 1200 }], 1000)).toBeNull();
   });
 
-  it("ffmpeg 명령: 왼쪽 폰·오른쪽 대시보드를 높이 800에 맞춰 나란히, 10fps, H.264 yuv420p(JPEG 전체 범위를 보통 범위로), 녹화 길이만큼", () => {
-    expect(ffmpegArgs({ phone: "phone.txt", dash: "dash.txt", out: "D:/rec/cup-demo.fake.demo.mp4", seconds: 95.4321, phoneSize: [390, 844], dashSize: [1280, 800] })).toEqual([
+  it("ffmpeg 명령: 위 가로 폰·아래 대시보드를 대시보드 높이 800의 너비에 맞춰 쌓고, 10fps, H.264 yuv420p(JPEG 전체 범위를 보통 범위로), 녹화 길이만큼", () => {
+    expect(ffmpegArgs({ phone: "phone.txt", dash: "dash.txt", out: "D:/rec/cup-demo.fake.demo.mp4", seconds: 95.4321, phoneSize: [844, 390], dashSize: [1280, 800] })).toEqual([
       "-y", "-hide_banner", "-loglevel", "error",
       "-f", "concat", "-safe", "0", "-i", "phone.txt",
       "-f", "concat", "-safe", "0", "-i", "dash.txt",
       "-filter_complex",
-      "[0:v]fps=10,scale=370:800:force_original_aspect_ratio=decrease:force_divisible_by=2:out_range=tv,pad=370:800:(ow-iw)/2:(oh-ih)/2,setsar=1[p];"
+      "[0:v]fps=10,scale=1280:592:force_original_aspect_ratio=decrease:force_divisible_by=2:out_range=tv,pad=1280:592:(ow-iw)/2:(oh-ih)/2,setsar=1[p];"
         + "[1:v]fps=10,scale=1280:800:force_original_aspect_ratio=decrease:force_divisible_by=2:out_range=tv,pad=1280:800:(ow-iw)/2:(oh-ih)/2,setsar=1[d];"
-        + "[p][d]hstack=inputs=2,format=yuv420p[v]",
+        + "[p][d]vstack=inputs=2,format=yuv420p[v]",
       "-map", "[v]", "-c:v", "libx264", "-preset", "veryfast", "-crf", "23", "-pix_fmt", "yuv420p", "-r", "10",
       "-t", "95.432", "-movflags", "+faststart", "D:/rec/cup-demo.fake.demo.mp4",
     ]);
-    // 높이가 다른 대시보드도 같은 높이로: 1280×720 → 1422×800
-    expect(ffmpegArgs({ phone: "p.txt", dash: "d.txt", out: "o.mp4", seconds: 1, phoneSize: [390, 844], dashSize: [1280, 720] })[17]).toMatch(/\[1:v\]fps=10,scale=1422:800:.*pad=1422:800:/);
+    // 높이가 다른 대시보드도 같은 높이로: 1280×720 → 1422×800, 폰은 그 너비에 맞춰 1422×658
+    expect(ffmpegArgs({ phone: "p.txt", dash: "d.txt", out: "o.mp4", seconds: 1, phoneSize: [844, 390], dashSize: [1280, 720] })[17]).toMatch(/^\[0:v\]fps=10,scale=1422:658:.*pad=1422:658:.*\[1:v\]fps=10,scale=1422:800:.*pad=1422:800:.*vstack/);
   });
 
   it("ack 시각: 처음은 바로, 그 뒤는 앞 ack에서 간격 뒤(이미 지났으면 바로)", () => {
@@ -936,8 +937,8 @@ describe("video-check", () => {
       };
       const phone = fakePage();
       const dash = fakePage();
-      const rec = await startRecording(dir, [{ name: "phone", page: phone, size: [390, 844] }, { name: "dash", page: dash, size: [1280, 800] }], { intervalMs: 0, now: () => now });
-      expect(phone.sent[0]).toEqual(["Page.startScreencast", { format: "jpeg", quality: 80, maxWidth: 390, maxHeight: 844, everyNthFrame: 1 }]);
+      const rec = await startRecording(dir, [{ name: "phone", page: phone, size: [844, 390] }, { name: "dash", page: dash, size: [1280, 800] }], { intervalMs: 0, now: () => now });
+      expect(phone.sent[0]).toEqual(["Page.startScreencast", { format: "jpeg", quality: 80, maxWidth: 844, maxHeight: 390, everyNthFrame: 1 }]);
       expect(dash.sent[0]).toEqual(["Page.startScreencast", { format: "jpeg", quality: 80, maxWidth: 1280, maxHeight: 800, everyNthFrame: 1 }]);
       now = 1150; phone.frame("p1", 7);
       now = 1200; dash.frame("d1", 3);
@@ -983,7 +984,7 @@ describe("video-check", () => {
       const phone = fakePage(false);
       const dash = fakePage(true);
       let now = 1000;
-      const started = startRecording(dir, [{ name: "phone", page: phone, size: [390, 844] }, { name: "dash", page: dash, size: [1280, 800] }], { intervalMs: 60_000, now: () => now, startTimeoutMs: 80 });
+      const started = startRecording(dir, [{ name: "phone", page: phone, size: [844, 390] }, { name: "dash", page: dash, size: [1280, 800] }], { intervalMs: 60_000, now: () => now, startTimeoutMs: 80 });
       // 대시보드 시작을 기다리는 사이 폰 프레임 둘: 첫 ack는 바로, 둘째 ack는 60초 뒤로 잡힌다
       await new Promise((r) => setTimeout(r, 10));
       now = 1100; phone.frame("p1", 7);
@@ -1016,7 +1017,7 @@ describe("video-check", () => {
         },
         on(method) { handlers.add(method); return () => handlers.delete(method); },
       });
-      await expect(startRecording(dir, [{ name: "phone", page: page(false), size: [390, 844] }, { name: "dash", page: page(true), size: [1280, 800] }], { startTimeoutMs: 1000 }))
+      await expect(startRecording(dir, [{ name: "phone", page: page(false), size: [844, 390] }, { name: "dash", page: page(true), size: [1280, 800] }], { startTimeoutMs: 1000 }))
         .rejects.toThrow(msg);
       expect(handlers.size).toBe(0);
       expect(sent).toEqual(["Page.startScreencast", "Page.startScreencast", "Page.stopScreencast", "Page.stopScreencast"]);
@@ -1033,7 +1034,7 @@ describe("video-check", () => {
       writeFileSync(join(dir, "phone", "000001.jpg"), "p");
       writeFileSync(join(dir, "dash", "000001.jpg"), "d");
       const frames = { phone: [{ file: "phone/000001.jpg", ms: 0 }], dash: [{ file: "dash/000001.jpg", ms: 10 }] };
-      const r = await encodeDemo(dir, { endMs: 1000, frames, lost: 0 }, join(dir, "x.demo.mp4"), { phoneSize: [390, 844], dashSize: [1280, 800], ffmpeg: "ffmpeg-not-installed-video-check" });
+      const r = await encodeDemo(dir, { endMs: 1000, frames, lost: 0 }, join(dir, "x.demo.mp4"), { phoneSize: [844, 390], dashSize: [1280, 800], ffmpeg: "ffmpeg-not-installed-video-check" });
       expect(r.ok).toBe(false);
       expect(r.ok ? "" : r.why).toMatch(/ffmpeg가 없어요/);
       expect(r.ok ? "" : r.why).toContain(dir);
@@ -1105,7 +1106,7 @@ describe("녹화는 대시보드 한 화면만, 트윈이 다 뜬 뒤 시작", (
     expect(frameGapLine([5])).toBeNull();
   });
 
-  it("녹화 차례: 폰 페이지를 불러온 뒤 대시보드를 열고 트윈이 다 뜬 것을 본 다음 녹화를 시작하고, 그 뒤에 「AR 시작」을 누른다", () => {
+  it("녹화 차례: 폰 페이지를 불러온 뒤 대시보드를 열고 트윈이 다 뜬 것을 본 다음 녹화를 시작하고, 그 뒤에 「카메라 켜기」를 누른다", () => {
     const src = readFileSync(new URL("../scripts/video-check.ts", import.meta.url), "utf8");
     const at = (needle: string) => {
       const k = src.indexOf(needle);
@@ -1163,10 +1164,19 @@ describe("미니맵만 녹화(--record-view minimap, --record-fps)", () => {
     }
   });
 
-  it("녹화 모양(recordSetup): minimap은 창 1280×720·영상 높이 720, top은 1280×800·높이 800, 폰도 녹화하면 높이는 기본(800). ack 간격은 1000/fps", () => {
-    expect(recordSetup({ recordView: "minimap", recordFps: 20, recordPhone: false })).toEqual({ size: [1280, 720], intervalMs: 50, fps: 20, height: 720 });
-    expect(recordSetup({ recordView: "top", recordFps: 10, recordPhone: false })).toEqual({ size: [1280, 800], intervalMs: 100, fps: 10, height: 800 });
-    expect(recordSetup({ recordView: "minimap", recordFps: 20, recordPhone: true })).toEqual({ size: [1280, 720], intervalMs: 50, fps: 20, height: undefined });
+  it("녹화 모양(recordSetup): minimap은 창 1280×720·영상 높이 720, top은 1280×800·높이 800, 폰도 녹화하면 높이는 기본(800)이고 폰 탭은 가로 844×390. ack 간격은 1000/fps", () => {
+    expect(recordSetup({ recordView: "minimap", recordFps: 20, recordPhone: false })).toEqual({ size: [1280, 720], intervalMs: 50, fps: 20, height: 720, phoneSize: undefined });
+    expect(recordSetup({ recordView: "top", recordFps: 10, recordPhone: false })).toEqual({ size: [1280, 800], intervalMs: 100, fps: 10, height: 800, phoneSize: undefined });
+    expect(recordSetup({ recordView: "minimap", recordFps: 20, recordPhone: true })).toEqual({ size: [1280, 720], intervalMs: 50, fps: 20, height: undefined, phoneSize: [844, 390] });
+  });
+
+  it("폰 지원 줄이 세로 영상 알림이면 영상을 기다리지 않고 오류로 끝낸다(landscapeRefusal). 다른 지원 줄은 그대로 기다린다", () => {
+    // 폰 페이지 지원 줄은 실패 글 앞에 「AR을 시작하지 못했어요: 」를 붙인다(2026-11-25 실제 크롬에서 같은 글만 보다 30초를 기다렸다)
+    const shown = supportText({ kind: "failed", message: "가로로 찍은 영상을 골라 주세요." });
+    expect(landscapeRefusal(shown, "work-cup-self-clear-1.mp4")).toBe("세로 영상이라 열지 않았어요(work-cup-self-clear-1.mp4): 가로로 찍은 영상을 골라 주세요.");
+    for (const support of [null, "", supportText({ kind: "ready" }), supportText({ kind: "failed", message: "영상을 열지 못했어요" })]) expect(landscapeRefusal(support, "wide-mug-leave.mp4")).toBeNull();
+    const src = readFileSync(new URL("../scripts/video-check.ts", import.meta.url), "utf8");
+    expect(src).toMatch(/seen\.record\?\.t0 == null; seen = await read\(\)\) \{\s+const refused = landscapeRefusal\(seen\.support, args\.clip\);\s+if \(refused\) throw new Error\(refused\);/);
   });
 
   it("view minimap이면 대시보드 창을 1280×720으로 맞추고 <api>/?view=minimap으로 연다. 없으면 1280×800, <api>/", async () => {
@@ -1187,8 +1197,8 @@ describe("미니맵만 녹화(--record-view minimap, --record-fps)", () => {
     const src = readFileSync(new URL("../scripts/video-check.ts", import.meta.url), "utf8");
     expect(src).toContain("openWindow(port, shape.size");
     expect(src).toContain("openDashboard(dash, api, { view: args.recordView })");
-    expect(src).toMatch(/startRecording\(framesDir, .*\{ name: \"dash\", page: dash, size: shape\.size \}\], \{ intervalMs: shape\.intervalMs \}\)/);
-    expect(src).toMatch(/encodeDemo\(framesDir, recorded, demo, \{.*dashSize: shape\.size, fps: shape\.fps, height: shape\.height[,}]/);
+    expect(src).toMatch(/startRecording\(framesDir, \[\.\.\.\(shape\.phoneSize \? \[\{ name: "phone", page: cdp, size: shape\.phoneSize \}\] : \[\]\), \{ name: \"dash\", page: dash, size: shape\.size \}\], \{ intervalMs: shape\.intervalMs \}\)/);
+    expect(src).toMatch(/encodeDemo\(framesDir, recorded, demo, \{ \.\.\.\(shape\.phoneSize \? \{ phoneSize: shape\.phoneSize \} : \{\}\), dashSize: shape\.size, fps: shape\.fps, height: shape\.height[,}]/);
   });
 
   const ffmpegHere = spawnSync("ffmpeg", ["-version"]).status === 0 && spawnSync("ffprobe", ["-version"]).status === 0;

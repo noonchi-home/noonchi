@@ -8,13 +8,21 @@
 
 ## 글꼴
 
-- Noto Sans KR Variable: npm `@fontsource-variable/noto-sans-kr` 5.3.1, SIL Open Font License 1.1.
-  - 대시보드·설정·폰 화면은 `ui`가 꾸러미를 묶어 내준다. 폰 인코딩 워커는 `ui/src/phone/core/font-faces.js` 목록으로 같은 파일을 넣는다. 외부 CDN을 쓰지 않는다.
-  - 라이선스 글: `ui/public/fonts/OFL-noto-sans-kr.txt`.
+- Pretendard Variable: npm `pretendard` 1.3.9(orioncactus/pretendard), SIL Open Font License 1.1. 고치지 않은 꾸러미 파일을 그대로 쓴다.
+  - 대시보드·설정·폰·모바일 화면은 `ui`가 동적 부분집합 CSS(`dist/web/variable/pretendardvariable-dynamic-subset.css`)와 woff2 조각을 묶어 내준다. 폰 인코딩 워커는 `ui/src/phone/core/font-faces.js` 목록으로 같은 파일을 넣는다. 외부 CDN을 쓰지 않는다.
+  - 트윈 뷰어(`twin/apartment/viewer/style.css`)는 `ui` 빌드가 내주는 `/fonts/pretendard.css`로 같은 조각을 쓴다.
+  - 평면도 `ui/src/mobile/mokryeon-plan.svg`는 글자가 든 정적 SemiBold 조각(`dist/web/static/woff2-dynamic-subset/`)을 data URI로 품는다.
+  - 라이선스 글: `ui/public/fonts/OFL-pretendard.txt`.
+- Pretendard SemiBold·Bold(안드로이드 앱): 같은 꾸러미 `dist/public/static`의 `Pretendard-SemiBold.otf`·`Pretendard-Bold.otf`를 고치지 않고 `apps/android/assets/fonts/`에 둔다. 앱 빌드가 `expo-font`로 묶고, Expo Go는 개발 때 같은 파일을 실행 중에 올린다.
+  - 라이선스 글: `apps/android/assets/fonts/OFL-pretendard.txt`. APK에도 `assets/fonts/OFL-pretendard.txt`로 들어간다.
 
 ## 브랜드 그림
 
 - 마스코트 전신·얼굴: noonchi-home/wiki `site/public/brand/`의 팀 브랜드 그림. 만든 파일과 쓰는 법은 `ui/public/brand/README.md`.
+
+## 아이콘
+
+- 안드로이드 아래 탭 아이콘 `apps/android/assets/tabs/`(house·map·settings.png): npm `lucide-react` 1.69.0의 House·Map·Settings를 선 굵기 2, 66px로 그린 그림이다(`scripts/android-tab-icons.ts`). ISC License, Copyright (c) 2026 Lucide Icons and Contributors.
 
 ## 화면 부품
 

@@ -164,19 +164,21 @@ describe("판단·확인 표시 자리(spotOf): 판단을 내린 자리가 아�
   const at = (o: Partial<Parameters<typeof spotOf>[0]>): Spot | null => spotOf({ plan: null, world: world([]), eye, scene, targets: [], action: null, ...o });
   const EYE: Spot = { id: "spot:eye", at: [6, 0.9, 1], label: "주방·식당" };
 
-  it("계획이 진행 중이면 지금 단계의 자리: 가는 곳, 집는 물건(손에 있으면 폰 눈), 넣는 곳. 대상이 없는 단계는 폰 눈", () => {
+  // 2026-11-25 시연 의견 2: 손에 든 컵이 폰 눈 0.9 m 자리(바닥 가까이)에 「컵」으로 보였다. 자리를 모르는 물건은 그리지 않는다
+  it("계획이 진행 중이면 지금 단계의 자리: 가는 곳, 집는 물건(손에 있으면 표시 없음), 넣는 곳. 대상이 없는 단계는 폰 눈", () => {
     expect(at({ plan: plan(0) })).toEqual({ id: "table_1" });
     expect(at({ plan: plan(1), world: world([cup()]) })).toEqual({ id: "table_1" });
-    expect(at({ plan: plan(1), world: world([inHand]) })).toEqual({ ...EYE, label: "컵" });
+    expect(at({ plan: plan(1), world: world([inHand]) })).toBeNull();
     expect(at({ plan: plan(2), world: world([inHand]) })).toEqual({ id: "sink_1" });
     expect(at({ plan: plan(3), world: world([inHand]) })).toEqual({ id: "sink_1" });
     expect(at({ plan: plan(4) })).toEqual(EYE);
   });
 
-  it("계획이 없으면 지켜보는 대상(마지막 계획의 대상, 없으면 마지막 판단 행동의 대상 종류)의 지금 자리: 손에 있으면 폰 눈, 놓였으면 그 면", () => {
+  it("계획이 없으면 지켜보는 대상(마지막 계획의 대상, 없으면 마지막 판단 행동의 대상 종류)의 지금 자리: 놓였으면 그 면, 손에 있거나 놓인 면이 없으면 표시 없음", () => {
     expect(at({ world: world([inSink]), targets: ["table_1", "cup_1"] })).toEqual({ id: "sink_1" });
-    expect(at({ world: world([inHand]), targets: ["cup_1"] })).toEqual({ ...EYE, label: "컵" });
-    expect(at({ world: world([cup({ surface: null, surface_label: null, position: [4, 0, 4] })]), targets: ["cup_1"] })).toEqual({ id: "spot:cup_1", at: [4, 0, 4], label: "컵" });
+    expect(at({ world: world([inHand]), targets: ["cup_1"] })).toBeNull();
+    expect(at({ world: world([cup({ surface: null, surface_label: null, position: [4, 0, 4] })]), targets: ["cup_1"] })).toBeNull();
+    expect(at({ world: world([cup({ surface: "plane_3", surface_label: "선반" })]), targets: ["cup_1"] })).toEqual({ id: "spot:cup_1", at: [2, 0.75, 3], label: "컵" });
     expect(at({ world: world([inSink]), action: "컵 치우기" })).toEqual({ id: "sink_1" });
   });
 

@@ -5,26 +5,40 @@
 // stop() 뒤(집을 바꿈)에는 늦게 도착한 명령을 실행하지 않는다.
 // 「thinq」 기기(실제 모드에서 ThinQ와 짝지음): 상태는 ThinQ 연결(src/devices/thinq/link.ts)이 읽어 안쪽 허브에 비춘 값 + readback이고,
 // 처음 읽기 전이거나 연결이 없으면 「모름」이다. 명령은 연결로 보내고, 안쪽 허브를 직접 바꾼 변화는 보내지 않는다(읽기로만 바뀜).
+// 「relay」 기기(실제 모드에서 TV_RELAY_*로 짝지은 TV): TV 중계 연결(src/devices/relay/link.ts)이 thinq와 같은 방식으로 읽고 보낸다.
+// 직접 적외선 TV(setInfrared, ir.json)는 신호 출처가 아니라 따로 다룬다. 같은 TV에 둘을 함께 두지 않는다(서버 시작이 막는다).
 // 카메라로 본 상태(observe, World State가 넘김): 실제 출처가 없으면 그 값이 기기 상태이고(vision.applied), 있으면 실제 상태를 두고 보임 기록만 붙인다.
-// 실제 출처: ThinQ 기기는 읽은 값이 있을 때, 가상 기기는 명령·센서 값을 한 번이라도 받은 뒤(안쪽 허브가 바뀜을 알리거나 명령이 받아짐).
+// 실제 출처: ThinQ·중계 기기는 읽은 값이 있을 때, 가상 기기는 명령·센서 값을 한 번이라도 받은 뒤(안쪽 허브가 바뀜을 알리거나 명령이 받아짐).
 // 신호 없음 기기·읽기 전 ThinQ 기기·명령 받은 적 없는 가상 기기는 실제 출처가 없다. 실제 상태와 다르면 처음 한 번만 mismatch로 알린다.
 
+import { IrTv, type IrConfig, type IrPort } from "./ir.js";
+import { AsyncLocalStorage } from "node:async_hooks";
+import { HOUSEHOLD_KINDS } from "../kinds.js";
+import type { PowerStamp } from "../../contract/devices.js";
 import { matterFromTwin } from "../mapping.js";
 import type { ThinqLink } from "../thinq/link.js";
-import type { Command, CommandResult, DeviceHub, DeviceSpec, DeviceState, SightEvidence, VisionResult } from "../../contract/devices.js";
+import type { Command, CommandResult, DeviceHub, DeviceSpec, DeviceState, Readback, SightEvidence, VisionResult } from "../../contract/devices.js";
 
-/** virtual: 트윈 시뮬레이터, none: 신호 없음, thinq: 실제 가전(ThinQ 기기 id). */
-export type SignalSource = { kind: "virtual" } | { kind: "none" } | { kind: "thinq"; deviceId: string };
+/** virtual: 트윈 시뮬레이터, none: 신호 없음, thinq: 실제 가전(ThinQ 기기 id), relay: TV 중계로 잇는 실제 TV(중계 쪽 기기 이름). */
+export type SignalSource = { kind: "virtual" } | { kind: "none" } | { kind: "thinq"; deviceId: string } | { kind: "relay"; deviceId: string };
 export type SignalKind = SignalSource["kind"];
 
 /** SignalHub가 쓰는 ThinQ 연결 부분. */
 export type ThinqLinkLike = Pick<ThinqLink, "readback" | "command" | "onUpdate">;
+/** 실제 가전 연결(ThinQ·TV 중계)이 SignalHub에 주는 것. */
+export interface RealLinkLike {
+  readback(id: string): Readback | undefined;
+  command(id: string, cmd: Command): Promise<CommandResult>;
+  onUpdate(cb: ((id: string) => void) | null): void;
+}
+type RealKind = "thinq" | "relay";
+const isReal = (s: SignalSource): s is Extract<SignalSource, { kind: RealKind }> => s.kind === "thinq" || s.kind === "relay";
 
 const VIRTUAL: SignalSource = { kind: "virtual" };
 const STOPPED: CommandResult = { ok: false, error: "집을 바꾸는 중이라 이 명령은 실행하지 않았어요." };
-const NO_LINK = "ThinQ 연결이 없어 보내지 않았어요.";
+const NO_LINK: Record<RealKind, string> = { thinq: "ThinQ 연결이 없어 보내지 않았어요.", relay: "TV 중계 연결이 없어 보내지 않았어요." };
 
-const sourceKey = (s: SignalSource | undefined) => (!s ? "virtual" : s.kind === "thinq" ? `thinq:${s.deviceId}` : s.kind);
+const sourceKey = (s: SignalSource | undefined) => (!s ? "virtual" : isReal(s) ? `${s.kind}:${s.deviceId}` : s.kind);
 const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
 /** 알릴 만큼 바뀐 보기인가: 마지막 본 시각(vision.at)·updatedAt만 바뀐 것은 아니다. */
 const shown = (s: DeviceState | undefined) => s && JSON.stringify([s.twin, s.signal ?? null, s.online, s.vision ? [s.vision.twin, s.vision.applied] : null]);
@@ -44,7 +58,52 @@ export class SignalHub implements DeviceHub {
   private readonly listeners = new Set<(s: DeviceState) => void>();
   private unsub: (() => void) | null = null;
   private stopped = false;
-  private link: ThinqLinkLike | null = null;
+  private readonly power = new Map<string,PowerStamp>();
+  private readonly sending = new AsyncLocalStorage<{id:string; generation:number; power:"on"|"off"}>();
+  onPowerIntent?: (id:string, power:"on"|"off", commandId:string|null) => void;
+  onPowerStamp?: (state:DeviceState) => void;
+
+  powerStamp(id:string):PowerStamp | undefined {
+    if (!this.power.has(id)) {
+      if (!this.world.list().some(d=>d.id===id && d.kind===HOUSEHOLD_KINDS.viewerPower)) return undefined;
+      this.power.set(id,{power:this.powerOf(this.get(id)),generation:0,command_id:null});
+    }
+    return {...this.power.get(id)!};
+  }
+  private powerOf(state:DeviceState|undefined) {
+    const p=state?.twin.power;
+    return state?.online && !state.signal && !state.vision?.applied && (p==="on" || p==="off") ? p : null;
+  }
+  private infrared: IrTv | null = null;
+
+  setInfrared(config: IrConfig | null, open: IrPort) {
+    if (this.stopped || this.infrared?.config === config) return;
+    const previous = this.infrared;
+    previous?.stop();
+    this.infrared = null;
+    if (previous) {
+      this.vision.delete(previous.config.device);
+      this.emit(this.get(previous.config.device)!);
+    }
+    if (!config) return;
+    const id = config.device;
+    if (!this.list().some(d => d.id === id && d.kind === HOUSEHOLD_KINDS.viewerPower))
+      throw new Error("적외선 설정의 TV를 이 집에서 찾을 수 없어요.");
+    const old = this.powerStamp(id)!;
+    const tv = new IrTv(config, commandId => {
+      if (this.infrared !== tv) return;
+      const generation = this.power.get(id)!.generation + (commandId === null ? 1 : 0);
+      this.power.set(id, { power: tv.power, generation, command_id: commandId });
+      this.emit(this.get(id)!);
+    }, (power, commandId) => this.onPowerIntent?.(id, power, commandId));
+    this.vision.delete(id);
+    this.infrared = tv;
+    this.power.set(id, {power:null, generation:old.generation+1, command_id:null});
+    this.emit(this.get(id)!);
+    tv.start(open);
+  }
+
+  private readonly links: Record<RealKind, RealLinkLike | null> = { thinq: null, relay: null };
   /** 카메라로 본 트윈 속성 값과 마지막으로 본 촬영 시각. */
   private readonly vision = new Map<string, { twin: Record<string, unknown>; atMs: number; evidence: Record<string, SightEvidence> }>();
   /** 명령·센서 값을 받은 가상 기기(실제 출처가 생김). */
@@ -70,10 +129,14 @@ export class SignalHub implements DeviceHub {
     // 근거는 이번에 본 속성마다 새로 쓴다(근거 없이 온 속성은 옛 근거를 지운다)
     const ev: Record<string, SightEvidence> = { ...prev?.evidence };
     for (const attr of Object.keys(seen)) {
-      if (evidence[attr]) ev[attr] = evidence[attr]!;
+      if (evidence[attr]) ev[attr] = Object.freeze({ ...evidence[attr]! }); // 넘긴 값과 나누지 않는다
       else delete ev[attr];
     }
     this.vision.set(id, { twin: { ...prev?.twin, ...seen }, atMs, evidence: ev });
+    if (this.infrared?.config.device === id) {
+      this.infrared.see(seen.power, atMs, evidence.power);
+      return { kind: "seen" };
+    }
     const after = this.get(id);
     if (after && shown(after) !== shown(before)) this.emit(after);
     if (!this.real(id)) {
@@ -92,14 +155,17 @@ export class SignalHub implements DeviceHub {
     return { kind: "mismatch", real: Object.fromEntries(differ.map((attr) => [attr, real[attr]])) };
   }
 
-  /** 실제 출처가 있는가: ThinQ 기기는 읽은 값, 가상 기기는 명령·센서 값을 받은 적. */
+  /** 실제 출처가 있는가: ThinQ·중계 기기는 읽은 값, 가상 기기는 명령·센서 값을 받은 적. */
   private real(id: string): boolean {
     const src = this.source(id);
-    if (src.kind === "thinq") {
-      const back = this.link?.readback(id);
-      return !!back && back.deviceId === src.deviceId;
-    }
+    if (isReal(src)) return !!this.back(id, src);
     return src.kind === "virtual" && this.commanded.has(id);
+  }
+
+  /** 실제 가전 기기의 읽은 값(그 출처·기기 id와 맞을 때만). */
+  private back(id: string, src: Extract<SignalSource, { kind: RealKind }>): Readback | undefined {
+    const back = this.links[src.kind]?.readback(id);
+    return back && back.source === src.kind && back.deviceId === src.deviceId ? back : undefined;
   }
 
   /** 가상 기기가 명령·센서 값을 받았다: 카메라로 본 상태였으면 실제 상태로 바뀐 보기를 알린다(안쪽 허브는 값이 같으면 알리지 않는다). */
@@ -132,15 +198,24 @@ export class SignalHub implements DeviceHub {
 
   /** ThinQ 연결을 붙이거나(실제 모드) 뗀다(시험 모드). thinq 기기의 새 보기를 한 번 보낸다. */
   setLink(link: ThinqLinkLike | null): void {
-    this.link?.onUpdate(null);
-    this.link = link;
+    this.attach("thinq", link);
+  }
+
+  /** TV 중계 연결을 붙이거나(실제 모드) 뗀다. relay 기기의 새 보기를 한 번 보낸다. */
+  setRelay(link: RealLinkLike | null): void {
+    this.attach("relay", link);
+  }
+
+  private attach(kind: RealKind, link: RealLinkLike | null): void {
+    this.links[kind]?.onUpdate(null);
+    this.links[kind] = link;
     link?.onUpdate((id) => {
-      if (this.source(id).kind !== "thinq") return;
+      if (this.source(id).kind !== kind) return;
       const s = this.get(id);
       if (s) this.emit(s);
     });
     for (const [id, src] of this.map) {
-      if (src.kind !== "thinq") continue;
+      if (src.kind !== kind) continue;
       const s = this.get(id);
       if (s) this.emit(s);
     }
@@ -163,6 +238,7 @@ export class SignalHub implements DeviceHub {
 
   async stop(): Promise<void> {
     this.stopped = true;
+    this.infrared?.stop();
     this.unsub?.();
     this.unsub = null;
     await this.world.stop();
@@ -180,11 +256,42 @@ export class SignalHub implements DeviceHub {
     return this.world.states().map((s) => this.view(s)!);
   }
 
-  async command(id: string, cmd: Command): Promise<CommandResult> {
+  async command(id: string, cmd: Command, commandId?:string): Promise<CommandResult> {
     if (this.stopped) return STOPPED;
-    if (this.source(id).kind === "thinq") {
-      if (!this.link) return { ok: false, outcome: "not_sent", error: NO_LINK, state: this.get(id) };
-      const r = await this.link.command(id, cmd);
+    if (this.infrared?.config.device === id) {
+      if (cmd.type !== "on" && cmd.type !== "off")
+        return { ok:false, outcome:"not_sent", error:"이 TV는 전원만 조절할 수 있어요." };
+      const result = await this.infrared.command(cmd.type, commandId ?? null);
+      return { ...result, state: this.get(id) };
+    }
+    const stamp = this.powerStamp(id);
+    if (!stamp || (cmd.type!=="on" && cmd.type!=="off") || this.stopped) return this.sendCommand(id,cmd);
+    if (!commandId) {
+      stamp.generation++;
+      stamp.command_id=null;
+      this.power.set(id,stamp);
+      const state=this.get(id);
+      if (state) this.onPowerStamp?.(state); // An unchanged manual request still revokes ownership.
+    }
+    const power=cmd.type;
+    this.onPowerIntent?.(id,power,commandId??null);
+    const result=await this.sending.run({id,generation:stamp.generation,power},()=>this.sendCommand(id,cmd));
+    const current=this.power.get(id)!;
+    if (commandId && current.generation===stamp.generation && result.ok && result.outcome!=="unverified" &&
+        this.powerOf(result.state)===power && this.powerOf(this.get(id))===power && !this.stopped) {
+      this.power.set(id,{generation:stamp.generation,command_id:commandId,power});
+      this.onPowerStamp?.(result.state!);
+    }
+    return result;
+  }
+
+  private async sendCommand(id: string, cmd: Command): Promise<CommandResult> {
+    if (this.stopped) return STOPPED;
+    const src = this.source(id);
+    if (isReal(src)) {
+      const link = this.links[src.kind];
+      if (!link) return { ok: false, outcome: "not_sent", error: NO_LINK[src.kind], state: this.get(id) };
+      const r = await link.command(id, cmd);
       return { ...r, state: this.view(r.state) };
     }
     const before = this.get(id);
@@ -195,7 +302,7 @@ export class SignalHub implements DeviceHub {
 
   async setSensor(id: string, attr: string, value: unknown): Promise<CommandResult> {
     if (this.stopped) return STOPPED;
-    if (this.source(id).kind === "thinq") {
+    if (this.infrared?.config.device === id || isReal(this.source(id))) {
       const label = this.world.list().find((d) => d.id === id)?.label ?? id;
       return { ok: false, error: `${label}: 실제 가전 값이라 바꿀 수 없어요.`, state: this.get(id) };
     }
@@ -207,10 +314,10 @@ export class SignalHub implements DeviceHub {
 
   subscribe(cb: (s: DeviceState) => void): () => void {
     this.listeners.add(cb);
-    // 신호 없음 기기의 변화는 엔진이 알 수 없으므로 보내지 않는다. thinq 기기는 연결이 읽은 뒤 보낸다(setLink).
+    // 신호 없음 기기의 변화는 엔진이 알 수 없으므로 보내지 않는다. thinq·relay 기기는 연결이 읽은 뒤 보낸다(setLink·setRelay).
     // 가상 기기가 바뀌었다고 알리면 명령·센서 값을 받은 것이라 실제 출처가 생긴다
     this.unsub ??= this.world.subscribe((s) => {
-      if (this.source(s.id).kind !== "virtual") return;
+      if (this.infrared?.config.device === s.id || this.source(s.id).kind !== "virtual") return;
       this.commanded.add(s.id);
       this.emit(this.view(s)!);
     });
@@ -220,16 +327,30 @@ export class SignalHub implements DeviceHub {
   }
 
   private emit(s: DeviceState): void {
+    const stamp=this.power.get(s.id);
+    const power=this.powerOf(s);
+    if (stamp && stamp.power!==power) {
+      const sending=this.sending.getStore();
+      const correlated=sending?.id===s.id && sending.generation===stamp.generation && sending.power===power;
+      this.power.set(s.id,{power,generation:stamp.generation+(correlated ? 0 : 1),command_id:null});
+    }
     for (const cb of this.listeners) cb(s);
   }
 
   private view(s: DeviceState | undefined): DeviceState | undefined {
     if (!s) return s;
+    const ir = this.infrared;
+    if (ir?.config.device === s.id) {
+      const base = { id:s.id, online:ir.online, updatedAt:new Date(ir.updatedAt).toISOString() };
+      if (!ir.power) return { ...base, twin:{}, matter:{}, signal:"none" };
+      return { ...base, twin:{power:ir.power}, matter:{onOff:ir.power === "on"} };
+    }
     const base = this.sourceView(s);
     const v = this.vision.get(s.id);
     if (!v) return base;
     const applied = !this.real(s.id);
-    const vision = { twin: { ...v.twin }, at: new Date(v.atMs).toISOString(), applied, ...(Object.keys(v.evidence).length ? { evidence: { ...v.evidence } } : {}) };
+    // 근거 하나하나는 observe에서 얼린 사본이다: 돌려준 값을 고쳐 다음 조회의 근거를 바꿀 수 없다.
+    const vision = Object.freeze({ twin: Object.freeze({ ...v.twin }), at: new Date(v.atMs).toISOString(), applied, ...(Object.keys(v.evidence).length ? { evidence: Object.freeze({ ...v.evidence }) } : {}) });
     if (!applied) return { ...base, vision };
     // 실제 출처가 없다: 본 값이 상태다. 모름으로 가린 기기는 본 속성만 안다
     const { signal, ...rest } = base;
@@ -239,13 +360,13 @@ export class SignalHub implements DeviceHub {
     return { ...rest, twin, matter: spec ? matterFromTwin(spec, twin) : base.matter, updatedAt, vision };
   }
 
-  /** 신호 출처대로 본 상태: 가상은 그대로, 읽은 ThinQ는 readback을 붙이고, 그 밖은 모름. */
+  /** 신호 출처대로 본 상태: 가상은 그대로, 읽은 ThinQ·중계는 readback을 붙이고, 그 밖은 모름. */
   private sourceView(s: DeviceState): DeviceState {
     const src = this.source(s.id);
     if (src.kind === "virtual") return s;
-    if (src.kind === "thinq") {
-      const back = this.link?.readback(s.id);
-      if (back && back.deviceId === src.deviceId) return { ...s, readback: back };
+    if (isReal(src)) {
+      const back = this.back(s.id, src);
+      if (back) return { ...s, readback: back };
     }
     return { id: s.id, online: true, twin: {}, matter: {}, updatedAt: s.updatedAt, signal: "none" };
   }

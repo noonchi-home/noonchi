@@ -67,7 +67,7 @@ function sight(): string {
 }
 
 /** 그 가전을 카메라로 맞추는 값(가전 설비 글 + 값 글). 없으면 —. */
-function sightOf(d: { kind: string; twinAttrs: Record<string, unknown[]> }): string {
+function sightOf(d: { kind: string; twinAttrs: Readonly<Record<string, readonly unknown[]>> }): string {
   const hits = SIGHT_RULES.filter(([cls]) => cameraKindOf(cls) === d.kind)
     .flatMap(([cls, rules]) => rules.filter((r) => r.attr in d.twinAttrs).map((r) => `${CLASSES[cls].label} ${Object.keys(r.values).map((k) => STATES[k as StateKey].label).join("·")}`));
   return hits.join(", ") || "—";

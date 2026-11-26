@@ -423,19 +423,21 @@ describe.skipIf(!existsSync(frame))("YOLO26n-seg 컵 영상 한 장(파일이 �
   }, 30_000);
 });
 
-// 실제 영상(밤 판정 A 흰 머그·B 빈 유리컵·C 물 남은 유리컵)에서 사람이 나간 뒤 컵만 보이는 장면. 영상은 사용자 집이라 저장소에 넣지 않는다:
+// 실제 가로 영상(runtime/videos/LABELS.md 가로 영상)에서 사람이 나간 뒤 컵만 보이는 장면. 영상은 사용자 집이라 저장소에 넣지 않는다:
 // PHONE_VIDEO_DIR(없으면 저장소 runtime/videos)에 그 영상이 있고 ffmpeg가 있을 때만 돈다(없으면 건너뜀).
 const VIDEOS = process.env.PHONE_VIDEO_DIR ?? join(import.meta.dirname, "..", "runtime", "videos");
-const REAL_CUPS: [string, number[]][] = [["cup-mug-empty-leave.mp4", [21, 27]], ["cup-glass-empty-leave.mp4", [35, 41]], ["cup-glass-water-leave.mp4", [17, 23]]];
+// 엔진 프레임 480×270에서 감지 모델이 컵으로 잡는 것은 유리 머그뿐이다: 흰 머그(wide-mug-leave)는 어느 크기에서도, 긴 유리컵(wide-tall-leave)은 800×450보다 작으면
+// 컵 점수가 minScore 아래다(plans/2026-11-25-landscape-only-report.md 크기별 표). 그 둘은 VLM 관찰로만 컵이 된다.
+const REAL_CUPS: [string, number[]][] = [["wide-glass-leave.mp4", [11.5, 13]]];
 const canExtract = REAL_CUPS.every(([c]) => existsSync(join(VIDEOS, c))) && spawnSync("ffmpeg", ["-version"]).status === 0;
 
-describe.skipIf(!canExtract)("실제 영상의 컵(밤 판정 A·B·C, 영상이 있을 때만)", () => {
-  it("엔진 프레임 크기(360×640)로 뽑은 장면에서 감지 모델이 컵을 World State 컵 기준(낱말 표 minScore) 넘게 잡는다", async () => {
+describe.skipIf(!canExtract)("실제 가로 영상의 컵(유리 머그, 영상이 있을 때만)", () => {
+  it("엔진 프레임 크기(480×270)로 뽑은 장면에서 감지 모델이 컵을 World State 컵 기준(낱말 표 minScore) 넘게 잡는다", async () => {
     const detector = await OnnxDetector.create({ modelPath: y26, provider: "cpu", minScore: 0.05 });
     try {
       for (const [clip, times] of REAL_CUPS) {
         for (const t of times) {
-          const r = spawnSync("ffmpeg", ["-loglevel", "error", "-ss", String(t), "-i", join(VIDEOS, clip), "-frames:v", "1", "-vf", "scale=360:640", "-q:v", "4", "-f", "mjpeg", "pipe:1"], { maxBuffer: 1 << 24 });
+          const r = spawnSync("ffmpeg", ["-loglevel", "error", "-ss", String(t), "-i", join(VIDEOS, clip), "-frames:v", "1", "-vf", "scale=480:270", "-q:v", "4", "-f", "mjpeg", "pipe:1"], { maxBuffer: 1 << 24 });
           expect(r.status, `${clip} ${t}초 장면 뽑기`).toBe(0);
           const best = Math.max(0, ...(await detector.detect(r.stdout)).detections.filter((x) => (Object.values(CLASSES.cup.coco) as string[]).includes(x.label)).map((x) => x.score));
           expect(best, `${clip} ${t}초 컵 점수`).toBeGreaterThanOrEqual(CLASSES.cup.minScore);

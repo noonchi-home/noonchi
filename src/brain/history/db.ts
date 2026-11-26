@@ -4,24 +4,49 @@
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import { CupAnswers } from "./cup-answer.js";
 import type { DecisionRow, HistoryKind, HistoryRow } from "../../contract/history.js";
+import type { AssistanceOutcome } from "../../contract/assistance-outcome.js";
+import type { BeerEvent, BeerRule } from "../../contract/beer.js";
+import { interventionChanges, type CurrentIntervention, type HabitContext, type Intervention, type InterventionPreference } from "./intervention.js";
 
 export type { DecisionRow, HistoryKind, HistoryRow } from "../../contract/history.js";
 
 /** 기록 종류 전부(GET /api/history의 kinds 검사). */
 export const HISTORY_KINDS: readonly HistoryKind[] = [
-  "device", "detection", "vlm", "yolo", "world", "pam_text", "mode", "decision", "plan", "execution", "reflection", "feedback", "photo", "link", "trigger", "look", "thought", "service", "bus_gap", "goal", "planner", "person", "robot", "safety", "manager",
+  "device", "detection", "vlm", "yolo", "world", "pam_text", "mode", "decision", "plan", "execution", "reflection", "feedback", "photo", "link", "trigger", "look", "thought", "service", "bus_gap", "goal", "planner", "person", "robot", "safety", "manager", "household", "help", "assistance_outcome",
 ];
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS events (id INTEGER PRIMARY KEY, at_ms INTEGER NOT NULL, day TEXT NOT NULL, kind TEXT NOT NULL, subject TEXT, text TEXT NOT NULL, data TEXT);
 CREATE INDEX IF NOT EXISTS idx_events_at ON events(at_ms);
+CREATE INDEX IF NOT EXISTS idx_household_photos_at ON events(at_ms) WHERE kind='household' AND json_extract(data,'$.event')='photo';
 CREATE INDEX IF NOT EXISTS idx_events_day_kind ON events(day, kind);
+CREATE INDEX IF NOT EXISTS idx_help_at ON events(at_ms) WHERE kind='help';
 CREATE TABLE IF NOT EXISTS memories (version INTEGER PRIMARY KEY, created_ms INTEGER NOT NULL, day TEXT, applies_day TEXT, kind TEXT NOT NULL, memory TEXT NOT NULL, source TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS photos (id TEXT PRIMARY KEY, at_ms INTEGER NOT NULL, path TEXT NOT NULL, origin TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS bus_seen (topic TEXT NOT NULL, grp TEXT NOT NULL, msg_key TEXT NOT NULL, msg TEXT NOT NULL, boot TEXT NOT NULL, PRIMARY KEY (topic, grp, msg_key, msg));
 CREATE TABLE IF NOT EXISTS device_last (id TEXT PRIMARY KEY, twin TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS assistance_seen (home TEXT NOT NULL, boot TEXT NOT NULL, home_epoch TEXT NOT NULL, attempt_id TEXT NOT NULL, PRIMARY KEY (home, boot, home_epoch, attempt_id));
+CREATE INDEX IF NOT EXISTS idx_assistance_outcome_day ON events(day, at_ms) WHERE kind = 'assistance_outcome';
+CREATE INDEX IF NOT EXISTS idx_beer_observation_day ON events(day, at_ms) WHERE kind = 'household' AND json_extract(data, '$.event') = 'beer_observation';
+CREATE TABLE IF NOT EXISTS beer_rules (version INTEGER PRIMARY KEY, rules TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS assistance_nights (day TEXT PRIMARY KEY, robot INTEGER NOT NULL, candidates INTEGER NOT NULL, result TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS intervention_preferences (
+  home TEXT NOT NULL, user TEXT NOT NULL, action TEXT NOT NULL, context TEXT NOT NULL,
+  at_ms INTEGER NOT NULL, origin_id TEXT NOT NULL, PRIMARY KEY (home, user, action, context, origin_id)
+);
+CREATE TABLE IF NOT EXISTS intervention_policy (
+  home TEXT NOT NULL, user TEXT NOT NULL, action TEXT NOT NULL, context TEXT NOT NULL,
+  applies_day TEXT NOT NULL, version INTEGER NOT NULL, policy TEXT NOT NULL,
+  PRIMARY KEY (home, user, action, context, applies_day, version)
+);
+CREATE TABLE IF NOT EXISTS cup_answers (
+  home TEXT NOT NULL, resident TEXT NOT NULL, discard_leftover_cup INTEGER NOT NULL CHECK(discard_leftover_cup IN (0,1)),
+  single_demo INTEGER NOT NULL DEFAULT 0 CHECK(single_demo IN (0,1)), PRIMARY KEY(home, resident)
+);
+CREATE UNIQUE INDEX IF NOT EXISTS single_demo_resident ON cup_answers(home) WHERE single_demo = 1;
 `;
 
 /** 기록 날짜의 시간대(분). HISTORY_TZ_MINUTES(기본 540 = 서울). -720~840 사이 정수가 아니면 시작을 막는다. */
@@ -59,13 +84,55 @@ type RawRow = Omit<HistoryRow, "data"> & { data: string | null };
 const parseRow = (r: RawRow): HistoryRow => ({ ...r, data: r.data === null ? null : JSON.parse(r.data) as unknown });
 
 export class HistoryDb {
-  private constructor(readonly db: DatabaseSync, readonly offsetMinutes: number) {}
+  readonly cupAnswers: CupAnswers;
+  private constructor(readonly db: DatabaseSync, readonly offsetMinutes: number) {
+    this.cupAnswers = new CupAnswers(db);
+  }
 
-  static open(path: string, offsetMinutes = 540): HistoryDb {
+  /** readOnly: 서버 메인 스레드의 읽기 연결(쓰기는 기록 작업 스레드만 한다, src/record/thread-writer.ts). 쓰면 SQLite가 오류를 던진다.
+   *  읽기 전용은 표를 만들지 않으므로 쓰기 연결이 먼저 연 파일에만 쓴다. */
+  static open(path: string, offsetMinutes = 540, o: { readOnly?: boolean } = {}): HistoryDb {
+    if (o.readOnly) {
+      const db = new DatabaseSync(path, { readOnly: true });
+      db.exec("PRAGMA busy_timeout = 5000");
+      return new HistoryDb(db, offsetMinutes);
+    }
     if (path !== ":memory:") mkdirSync(dirname(path), { recursive: true });
     const db = new DatabaseSync(path);
-    db.exec(`PRAGMA busy_timeout = 5000; PRAGMA journal_mode = WAL; ${SCHEMA}`);
+    db.exec(`PRAGMA busy_timeout = 5000; PRAGMA journal_mode = WAL; PRAGMA synchronous = FULL; ${SCHEMA}`);
     return new HistoryDb(db, offsetMinutes);
+  }
+
+  /** 파일과 표를 만든다(쓰기 연결을 열었다 바로 닫는다). 서버는 돌기 전에 한 번 부르고, 그 뒤 메인 스레드는 읽기 전용으로만 연다. */
+  static create(path: string): void {
+    HistoryDb.open(path).close();
+  }
+
+  #depth = 0;
+  /** fn을 트랜잭션 하나로 감싼다: 바깥이면 BEGIN IMMEDIATE … COMMIT, 이미 트랜잭션 안이면 SAVEPOINT(기록 작업 스레드가 묶음 안 일마다 나눈다).
+   *  fn이 던지면 그 안에서 쓴 것만 되돌리고 다시 던진다. 바깥 COMMIT이 실패해도 되돌리고 던진다. */
+  tx<T>(fn: () => T): T {
+    const name = `tx${this.#depth}`;
+    const outer = this.#depth === 0;
+    this.db.exec(outer ? "BEGIN IMMEDIATE" : `SAVEPOINT ${name}`);
+    this.#depth++;
+    let value: T;
+    try {
+      value = fn();
+    } catch (e) {
+      this.#depth--;
+      this.db.exec(outer ? "ROLLBACK" : `ROLLBACK TO ${name}; RELEASE ${name}`);
+      throw e;
+    }
+    this.#depth--;
+    try {
+      this.db.exec(outer ? "COMMIT" : `RELEASE ${name}`);
+    } catch (e) {
+      // COMMIT이 실패하면(잠김 등) 트랜잭션이 열린 채 남는다. 이미 닫혔으면 ROLLBACK이 던지니 삼킨다
+      if (outer) try { this.db.exec("ROLLBACK"); } catch { /* 열린 트랜잭션 없음 */ }
+      throw e;
+    }
+    return value;
   }
 
   ok(): boolean {
@@ -77,9 +144,27 @@ export class HistoryDb {
     return new Date(ms + this.offsetMinutes * 60_000).toISOString().slice(0, 10);
   }
 
+  /** 시간축 한 줄 넣기는 프레임마다 여러 번 불린다. 문장은 한 번만 준비하고, 그 한 줄만 디스크 동기화 없이(NORMAL) 넣은 뒤 FULL로 돌린다.
+   *  줄마다 동기화하면 엔진 프레임 → 집 상태 지연에 약 3ms가 더해진다. 정전 때 잃을 수 있는 것은 마지막 디스크 동기화 뒤에 넣은
+   *  시간축 줄들이다. 기억·컵 답 같은 다른 쓰기는 FULL 그대로이고, 그 커밋이 앞선 시간축 줄도 함께 동기화한다.
+   *  트랜잭션 안에서는 이 설정을 바꿀 수 없다: 그때는 그대로 넣고, 그 트랜잭션의 커밋(FULL)이 동기화한다.
+   *  설정은 매번 exec로 바꾼다: 준비해 둔 PRAGMA 문장은 준비할 때 적용되고 다시 실행해도 적용되지 않을 때가 있다(첫 줄이 FULL로 들어갔다). */
+  #insert: ReturnType<DatabaseSync["prepare"]> | null = null;
+
   add(kind: HistoryKind, atMs: number, text: string, o: { subject?: string; data?: unknown } = {}): void {
-    this.db.prepare("INSERT INTO events(at_ms, day, kind, subject, text, data) VALUES (?, ?, ?, ?, ?, ?)")
-      .run(atMs, this.dayOf(atMs), kind, o.subject ?? null, text, o.data === undefined ? null : JSON.stringify(o.data));
+    let relaxed = false;
+    try {
+      this.db.exec("PRAGMA synchronous = NORMAL");
+      relaxed = true;
+    } catch {
+      // 트랜잭션 안: FULL 그대로 넣는다
+    }
+    try {
+      (this.#insert ??= this.db.prepare("INSERT INTO events(at_ms, day, kind, subject, text, data) VALUES (?, ?, ?, ?, ?, ?)"))
+        .run(atMs, this.dayOf(atMs), kind, o.subject ?? null, text, o.data === undefined ? null : JSON.stringify(o.data));
+    } finally {
+      if (relaxed) this.db.exec("PRAGMA synchronous = FULL");
+    }
   }
 
   /** 시각 순(같으면 넣은 순). limit 기본 10,000. */
@@ -98,10 +183,15 @@ export class HistoryDb {
 
   /** 기억 판본을 저장하고 새 번호를 돌려준다(1부터). appliesDay가 없으면(seed) 어느 날에나 쓸 수 있다. synthetic은 합성 기록(scripts/seed-history.ts)이다. */
   saveMemory(m: { kind: MemoryKind; memory: unknown; day: string | null; appliesDay: string | null; source: MemorySource }): number {
-    const next = (this.db.prepare("SELECT COALESCE(MAX(version), 0) + 1 AS v FROM memories").get() as { v: number }).v;
+    const next = this.nextMemoryVersion();
     this.db.prepare("INSERT INTO memories(version, created_ms, day, applies_day, kind, memory, source) VALUES (?, ?, ?, ?, ?, ?, ?)")
       .run(next, Date.now(), m.day, m.appliesDay, m.kind, JSON.stringify(m.memory), m.source);
     return next;
+  }
+
+  /** 다음에 저장할 기억 판본 번호(후보 판본까지 센다). */
+  nextMemoryVersion(): number {
+    return (this.db.prepare("SELECT COALESCE(MAX(version), 0) + 1 AS v FROM memories").get() as { v: number }).v;
   }
 
   /** 그날 쓸 수 있는 실행 기억 판본(applies_day가 없거나 그날 이전) 중 가장 새 것. */
@@ -134,19 +224,75 @@ export class HistoryDb {
 
   /** 밤 저장 하나(BEGIN IMMEDIATE): 로봇 판본·후보 판본·반성 기록을 함께 쓰고, 어느 하나라도 던지면 모두 되돌린 뒤 다시 던진다.
    *  reflection은 로봇 판본 번호로 반성 기록 줄(시각·글·data)을 만든다. */
-  saveNight(o: { day: string; appliesDay: string; robot: unknown; candidates: unknown; reflection: (robot: number) => { atMs: number; text: string; data: unknown } }): { robot: number; candidates: number } {
-    this.db.exec("BEGIN IMMEDIATE");
-    try {
-      const robot = this.saveMemory({ kind: "fsm", memory: o.robot, day: o.day, appliesDay: o.appliesDay, source: "reflection" });
-      const candidates = this.saveMemory({ kind: "fsm_candidates", memory: o.candidates, day: o.day, appliesDay: o.appliesDay, source: "reflection" });
+  saveNight(o: { day: string; appliesDay: string; robot: unknown; candidates: unknown; kind?: "list" | "fsm"; pin?: () => void; beerRules?: readonly BeerRule[];
+    reflection: (robot: number) => { atMs: number; text: string; data: unknown } }): { robot: number; candidates: number } {
+    return this.tx(() => {
+      const saved = this.night(o.day);
+      if (saved) return { robot: saved.robot, candidates: saved.candidates };
+      o.pin?.();
+      const robot = this.saveMemory({ kind: o.kind ?? "fsm", memory: o.robot, day: o.day, appliesDay: o.appliesDay, source: "reflection" });
+      const candidates = o.kind === "list" ? 0
+        : this.saveMemory({ kind: "fsm_candidates", memory: o.candidates, day: o.day, appliesDay: o.appliesDay, source: "reflection" });
+      const midnight = Date.parse(`${o.day}T00:00:00Z`) - this.offsetMinutes * 60_000;
+      const firstDay = this.dayOf(midnight - 29 * 86_400_000);
+      const rows = (this.db.prepare(`SELECT id, at_ms, day, kind, subject, text, data FROM events
+        WHERE kind = 'assistance_outcome' AND day BETWEEN ? AND ? ORDER BY at_ms, id`).all(firstDay, o.day) as unknown as RawRow[]).map(parseRow);
+      const preferences = this.db.prepare(`SELECT home, user, action, context, at_ms AS atMs, origin_id AS originId
+        FROM intervention_preferences WHERE at_ms < ? ORDER BY at_ms, origin_id`).all(midnight + 86_400_000) as unknown as InterventionPreference[];
+      const changes = interventionChanges(rows, preferences, scope => this.interventionAt(scope.home, scope.user, scope, o.day), ms => this.dayOf(ms));
+      const insert = this.db.prepare("INSERT INTO intervention_policy (home, user, action, context, applies_day, version, policy) VALUES (?, ?, ?, ?, ?, ?, ?)");
+      for (const change of changes) insert.run(change.home, change.user, change.action, change.context, o.appliesDay, robot, change.policy);
+      if (o.beerRules?.length) this.db.prepare("INSERT INTO beer_rules (version, rules) VALUES (?, ?)").run(robot, JSON.stringify(o.beerRules));
       const r = o.reflection(robot);
       this.add("reflection", r.atMs, r.text, { data: r.data });
-      this.db.exec("COMMIT");
+      this.db.prepare("INSERT INTO assistance_nights (day, robot, candidates, result) VALUES (?, ?, ?, ?)")
+        .run(o.day, robot, candidates, JSON.stringify(r.data));
       return { robot, candidates };
-    } catch (e) {
-      this.db.exec("ROLLBACK");
-      throw e;
-    }
+    });
+  }
+
+  beerEvents(firstDay: string, lastDay: string): BeerEvent[] {
+    const rows = this.db.prepare(`SELECT data FROM events
+      WHERE kind = 'household' AND json_extract(data, '$.event') = 'beer_observation' AND day BETWEEN ? AND ?
+      ORDER BY at_ms, id`).all(firstDay, lastDay) as { data: string }[];
+    return rows.map(row => (JSON.parse(row.data) as { observation: BeerEvent }).observation);
+  }
+
+  beerRules(version: number): BeerRule[] {
+    const row = this.db.prepare("SELECT rules FROM beer_rules WHERE version = ?").get(version) as { rules: string } | undefined;
+    return row ? JSON.parse(row.rules) as BeerRule[] : [];
+  }
+
+  night(day: string): { robot: number; candidates: number; result: unknown } | null {
+    const row = this.db.prepare("SELECT robot, candidates, result FROM assistance_nights WHERE day = ?").get(day) as
+      { robot: number; candidates: number; result: string } | undefined;
+    return row ? { ...row, result: JSON.parse(row.result) as unknown } : null;
+  }
+
+  policyFor(home: string, user: string | null, habit: HabitContext, day: string): Intervention {
+    return this.interventionAt(home, user, habit, day)?.policy ?? "default";
+  }
+
+  private interventionAt(home: string, user: string | null, habit: HabitContext, day: string): CurrentIntervention | null {
+    if (!user || !habit.context) return null;
+    const version = this.pinnedMemory(day) ?? this.memoryFor(day)?.version;
+    if (version === undefined) return null;
+    const row = this.db.prepare(`SELECT policy, applies_day AS appliesDay FROM intervention_policy
+      WHERE home = ? AND user = ? AND action = ? AND context = ? AND applies_day <= ? AND version <= ?
+      ORDER BY applies_day DESC, version DESC LIMIT 1`).get(home, user, habit.action, habit.context, day, version) as CurrentIntervention | undefined;
+    return row ?? null;
+  }
+
+  hasInterventionPreference(day: string): boolean {
+    const start = Date.parse(`${day}T00:00:00Z`) - this.offsetMinutes * 60_000;
+    return !!this.db.prepare("SELECT 1 FROM intervention_preferences WHERE at_ms >= ? AND at_ms < ? LIMIT 1").get(start, start + 86_400_000);
+  }
+
+  recordInterventionPreference(p: InterventionPreference): boolean {
+    if (!p.originId || !Number.isSafeInteger(p.atMs) || this.policyFor(p.home, p.user, p, this.dayOf(p.atMs)) !== "defer_proactive") return false;
+    const row = this.db.prepare(`INSERT INTO intervention_preferences (home, user, action, context, at_ms, origin_id)
+      VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING`).run(p.home, p.user, p.action, p.context, p.atMs, p.originId);
+    return row.changes > 0;
   }
 
   /** 그날까지 기록이 있는 날(차례). kinds가 없으면 모든 종류. */
@@ -176,6 +322,10 @@ export class HistoryDb {
   listPhotos(): StoredPhoto[] {
     return (this.db.prepare("SELECT id, at_ms, path, origin FROM photos ORDER BY at_ms, id").all() as unknown as { id: string; at_ms: number; path: string; origin: StoredPhoto["origin"] }[])
       .map((r) => ({ id: r.id, atMs: r.at_ms, path: r.path, origin: r.origin }));
+  }
+
+  removeExpiredHouseholdPhotos(cutoffMs: number): void {
+    this.db.prepare("DELETE FROM events WHERE kind='household' AND json_extract(data,'$.event')='photo' AND at_ms <= ?").run(cutoffMs);
   }
 
   removePhoto(id: string): void {
@@ -214,8 +364,7 @@ export class HistoryDb {
 
   /** 합성 기록(scripts/seed-history.ts)만 지운다: data.synthetic이 참인 줄, source가 synthetic인 기억 판본, 그 판본에 고정한 날·넣은 seed 바뀜 표시. 지운 수를 돌려준다. */
   removeSynthetic(): { events: number; memories: number; pins: number } {
-    this.db.exec("BEGIN IMMEDIATE");
-    try {
+    return this.tx(() => {
       const versions = (this.db.prepare("SELECT version FROM memories WHERE source = 'synthetic'").all() as { version: number }[]).map((r) => String(r.version));
       const pins = versions.length
         ? Number(this.db.prepare(`DELETE FROM meta WHERE key LIKE 'memory_day:%' AND value IN (${versions.map(() => "?").join(",")})`).run(...versions).changes)
@@ -224,27 +373,26 @@ export class HistoryDb {
       if (versions.length) this.db.prepare(`DELETE FROM meta WHERE key LIKE 'seed_patch:%' AND value IN (${versions.map(() => "?").join(",")})`).run(...versions);
       const memories = Number(this.db.prepare("DELETE FROM memories WHERE source = 'synthetic'").run().changes);
       const events = Number(this.db.prepare("DELETE FROM events WHERE json_extract(data, '$.synthetic') = 1").run().changes);
-      this.db.exec("COMMIT");
       return { events, memories, pins };
-    } catch (e) {
-      this.db.exec("ROLLBACK");
-      throw e;
-    }
+    });
   }
 
-  /** 메시지 하나를 한 번만 쓴다: 처리표에 넣고 write(같은 연결의 add 등)를 한 트랜잭션으로. 이미 처리했으면 쓰지 않고 false.
+  /** Called inside the recorder's envelope transaction, before it acknowledges delivery. */
+  recordAssistanceOutcome(outcome: AssistanceOutcome): void {
+    const added = this.db.prepare("INSERT INTO assistance_seen(home, boot, home_epoch, attempt_id) VALUES (?, ?, ?, ?) ON CONFLICT DO NOTHING")
+      .run(outcome.home, outcome.key.boot, outcome.key.homeEpoch, outcome.key.attemptId).changes;
+    if (added) this.add("assistance_outcome", outcome.endedMs, `${outcome.action} · ${outcome.execution} · ${outcome.reaction}`,
+      { subject: outcome.key.attemptId, data: outcome });
+  }
+
+  /** 메시지 하나를 한 번만 쓴다: 처리표에 넣고 write(같은 연결의 add 등)를 한 트랜잭션으로(이미 트랜잭션 안이면 SAVEPOINT). 이미 처리했으면 쓰지 않고 false.
    *  write가 던지면 처리표 줄까지 되돌리고 다시 던진다. */
   once(k: SeenKey, write: () => void): boolean {
-    this.db.exec("BEGIN IMMEDIATE");
-    try {
+    return this.tx(() => {
       const fresh = Number(this.db.prepare("INSERT OR IGNORE INTO bus_seen(topic, grp, msg_key, msg, boot) VALUES (?, ?, ?, ?, ?)").run(k.topic, k.group, k.key, k.msg, k.boot).changes) > 0;
       if (fresh) write();
-      this.db.exec(fresh ? "COMMIT" : "ROLLBACK");
       return fresh;
-    } catch (err) {
-      this.db.exec("ROLLBACK");
-      throw err;
-    }
+    });
   }
 
   /** 다른 기동의 처리표 줄을 지운다(기록 노드가 시작할 때). */

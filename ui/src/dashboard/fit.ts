@@ -15,20 +15,21 @@ export function fitBox(image: BoxSize, box: BoxSize, mode: "contain" | "cover" =
 export const toBox = (fit: ReturnType<typeof fitBox>, [u, v]: [number, number]) => ({ x: fit.left + u * fit.scale, y: fit.top + v * fit.scale });
 
 /** 요소 크기(ResizeObserver). 처음 그릴 때는 getBoundingClientRect로 읽는다. */
-export function useBoxSize(ref: RefObject<HTMLElement | null>): BoxSize {
+export function useBoxSize(ref: RefObject<HTMLElement | null>, useClientWidth = false): BoxSize {
   const [size, setSize] = useState<BoxSize>({ width: 0, height: 0 });
   useLayoutEffect(() => {
     const el = ref.current;
     if (!el) return;
     const read = () => {
       const r = el.getBoundingClientRect();
-      setSize((s) => (s.width === r.width && s.height === r.height ? s : { width: r.width, height: r.height }));
+      const width = useClientWidth ? el.clientWidth || r.width : r.width;
+      setSize((s) => (s.width === width && s.height === r.height ? s : { width, height: r.height }));
     };
     read();
     if (typeof ResizeObserver === "undefined") return;
     const ro = new ResizeObserver(read);
     ro.observe(el);
     return () => ro.disconnect();
-  }, [ref]);
+  }, [ref, useClientWidth]);
   return size;
 }

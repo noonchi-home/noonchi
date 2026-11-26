@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import type { ServerMessage } from "../../../src/contract/events.ts";
 import { MeerkatFace, PhoneTopLine } from "../components/phone-top-line";
-import { hubOf } from "../lib/hub";
+import { useMobileUrl } from "../lib/hub";
 import { useEvents } from "../lib/use-events";
 import { useHealth } from "../lib/use-health";
 import { useBoxSize, type BoxSize } from "./fit";
@@ -9,6 +9,7 @@ import { MINIMAP_ASPECT, type Rect } from "./layout";
 import { useFontsLoaded } from "./motion";
 import { PhonePane, type PhoneSlot } from "./PhonePane";
 import { useDash } from "./use-dash";
+import { usePhoneCommand } from "./use-phone-command";
 import { WORDS } from "./words";
 
 /** 대시보드 주소가 비전 미니맵만 보기(?view=minimap)인가. */
@@ -36,33 +37,20 @@ export function MinimapView() {
   const health = useHealth(hellos);
   const { seen, onMessage: toDash } = useDash();
   const [connected, setConnected] = useState<boolean | null>(null);
-  // 지금 실제 폰 명령 한 줄. 다시 붙으면(hello) 비우고 서버가 접속 때 지금 명령을 다시 보낸다
-  const [command, setCommand] = useState<string | null>(null);
-  // 폰 칸 장면 지연(ms). 명령 줄은 받은 차례대로 그만큼 뒤에 바꾼다
-  const delay = useRef(0);
-  const later = useRef({ timers: new Set<ReturnType<typeof setTimeout>>(), due: 0 });
-  const clearLater = useCallback(() => {
-    for (const t of later.current.timers) clearTimeout(t);
-    later.current.timers.clear();
-  }, []);
-  useEffect(() => clearLater, [clearLater]);
-  const showCommand = useCallback((text: string | null) => {
-    const l = later.current;
-    if (delay.current <= 0 && !l.timers.size) { setCommand(text); return; }
-    l.due = Math.max(l.due, Date.now() + delay.current);
-    const t = setTimeout(() => { l.timers.delete(t); setCommand(text); }, l.due - Date.now());
-    l.timers.add(t);
-  }, []);
+  const { command, onMessage: toCommand, onDelay, reset } = usePhoneCommand();
   const onMessage = useCallback((m: ServerMessage) => {
-    if (m.type === "hello") { setHellos((n) => n + 1); clearLater(); setCommand(null); }
-    if (m.type === "phone_command") showCommand(m.text);
+    if (m.type === "hello") setHellos((n) => n + 1);
+    toCommand(m);
     toDash(m);
-  }, [toDash, clearLater, showCommand]);
-  const onDelay = useCallback((ms: number) => { delay.current = ms; }, []);
-  useEvents(onMessage, setConnected);
-  const hub = useMemo(() => hubOf(health, connected), [health, connected]);
-  const phone: PhoneSlot = !health ? { kind: "none" } : health.eye ? { kind: "live", url: hub.phoneUrl } : { kind: "qr", url: hub.phoneUrl };
-  const ready = useFontsLoaded("Noto Sans KR Variable", JSON.stringify([WORDS, "0123456789"]));
+  }, [toDash, toCommand]);
+  const onConnection = useCallback((open: boolean) => {
+    setConnected(open);
+    if (!open) reset();
+  }, [reset]);
+  useEvents(onMessage, onConnection);
+  const mobileUrl = useMobileUrl(hellos);
+  const phone: PhoneSlot = health?.eye ? { kind: "live", url: mobileUrl } : health || mobileUrl ? { kind: "qr", url: mobileUrl } : { kind: "none" };
+  const ready = useFontsLoaded("Pretendard Variable", JSON.stringify([WORDS, "0123456789"]));
   const box = minimapBox(view);
   return (
     <main ref={main} data-view="minimap" data-ready={ready || undefined} className="relative h-full w-full overflow-hidden">

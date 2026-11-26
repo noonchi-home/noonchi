@@ -54,8 +54,6 @@ export const WIDE = 1680;
 export const MINIMAP_SHARE = 320 / 1280;
 /** 영상이 없을 때(연결 QR·빈 칸) 미니맵 비율(가로/세로). */
 export const MINIMAP_ASPECT = 16 / 9;
-/** 미니맵 높이 상한: 트윈 칸 높이에 곱하는 몫. 세로 영상이 와도 칸이 이보다 길어지지 않고, 그때만 영상을 contain으로 넣어 양옆이 빈다. 마스코트 위 사이(gap)도 넘지 않는다. */
-export const MINIMAP_MAX_SHARE = 0.5;
 /** 영상 비율이 지금 비율과 이 몫 넘게 다를 때만 미니맵 비율을 바꾼다(프레임 크기가 1px씩 흔들려도 칸이 떨리지 않게). */
 export const ASPECT_STEP = 0.02;
 
@@ -89,8 +87,8 @@ const ZERO: Rect = { left: 0, top: 0, width: 0, height: 0 };
 const right = (r: Rect) => r.left + r.width;
 const bottom = (r: Rect) => r.top + r.height;
 
-/** 화면 크기와 미니맵 영상 비율(videoAspect, 가로/세로)에 맞는 대시보드 자리. 크기를 모르면(0) 모두 0 크기다. */
-export function pageLayout(view: BoxSize, mascot: Pick<MascotImage, "width" | "height" | "x0" | "x1" | "headTop" | "cut" | "logo">, videoAspect = MINIMAP_ASPECT): PageLayout {
+/** 화면 크기에 맞는 대시보드 자리(미니맵은 16:9, 영상은 가로만 온다). 크기를 모르면(0) 모두 0 크기다. */
+export function pageLayout(view: BoxSize, mascot: Pick<MascotImage, "width" | "height" | "x0" | "x1" | "headTop" | "cut" | "logo">): PageLayout {
   const wide = view.width >= WIDE;
   const space = wide ? tokens.layout.hub1920 : tokens.layout.hub1440;
   const pad = space.gutter;
@@ -107,11 +105,9 @@ export function pageLayout(view: BoxSize, mascot: Pick<MascotImage, "width" | "h
   const mw = (mascot.x1 - mascot.x0) * scale;
   const m: Rect = { left: right(twin) - inset - mw, top: view.height - shown, width: mw, height: shown };
 
-  // 비전 미니맵: 트윈 오른쪽 위. 높이는 너비 ÷ 영상 비율이고 상한(트윈 높이 몫, 마스코트 위 사이)을 넘지 않는다
+  // 비전 미니맵: 트윈 오른쪽 위, 16:9
   const videoW = view.width * MINIMAP_SHARE;
-  const videoTop = twin.top + inset;
-  const videoMax = Math.max(0, Math.min(twin.height * MINIMAP_MAX_SHARE, m.top - LIFT - gap - videoTop));
-  const video: Rect = { left: right(twin) - inset - videoW, top: videoTop, width: videoW, height: Math.min(videoW / (videoAspect > 0 ? videoAspect : MINIMAP_ASPECT), videoMax) };
+  const video: Rect = { left: right(twin) - inset - videoW, top: twin.top + inset, width: videoW, height: videoW / MINIMAP_ASPECT };
 
   // 메시지 상자: 트윈 아래쪽 안, 마스코트 왼쪽(초점 고리 밖)에서 사이만큼 띄우고(마스코트가 상자 옆에서 말한다) 남은 너비의 TALK_SHARE
   const bubbleH = TALK_H;

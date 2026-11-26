@@ -1,11 +1,11 @@
 import { Bot, FlaskConical, House, Plug, Server, type LucideIcon } from "lucide-react";
 import type { ReactNode } from "react";
-import { Button } from "../components/ui/button";
-import { DialogContent, DialogFooter, DialogHeader, DialogTitle } from "../components/ui/dialog";
+import { DialogContent, DialogHeader, DialogTitle } from "../components/ui/dialog";
 import { Item, ItemActions, ItemContent, ItemDescription, ItemGroup, ItemMedia, ItemTitle } from "../components/ui/item";
 import { QRCode } from "../components/ui/qr-code";
 import { Status, StatusIndicator, StatusLabel } from "../components/ui/status";
 import type { HubState } from "../lib/hub";
+import { WORDS } from "./words";
 
 /** 운영 모드 칩: 시험 모드 default, 실제 제어 warning. */
 const MODE: Record<HubState["mode"], { text: string; variant: "default" | "warning" }> = {
@@ -27,7 +27,7 @@ function Row({ icon: I, label, children }: { icon: LucideIcon; label: string; ch
 }
 
 /**
- * 설정 창 내용(21st.dev Dialog). 연결 상태, 시험 모드·실제 제어, 허브, 에이전트, 지금 집 이름, 폰 연결 QR(폰 주소가 있을 때), 「집 다시 설정하기」(설정 화면으로 감).
+ * 연결·운영 상태와 폰 홈 QR을 보여 준다.
  * 상태를 보이기만 한다. 입력칸이 없고, 모드를 바꾸는 일은 설정 화면에서 한다. Esc·바깥 누르기·닫기 단추로 닫힌다.
  */
 export function SettingsDialog({ hub }: { hub: HubState }) {
@@ -51,22 +51,17 @@ export function SettingsDialog({ hub }: { hub: HubState }) {
         <Row icon={Bot} label="에이전트"><ItemTitle>{hub.agent}</ItemTitle></Row>
         <Row icon={House} label="집"><ItemTitle>{hub.home}</ItemTitle></Row>
       </ItemGroup>
-      {hub.phoneUrl && (
+      {hub.phoneUrl ? (
         <Item variant="muted" className="flex-nowrap">
           <ItemMedia>
             <QRCode value={hub.phoneUrl} size={132} variant="squares" aria-label="폰 연결 QR" />
           </ItemMedia>
           <ItemContent className="min-w-0">
-            <ItemTitle>폰 카메라로 찍으세요</ItemTitle>
+            <ItemTitle>{WORDS.connectApp}</ItemTitle>
             <ItemDescription className="break-all">{hub.phoneUrl}</ItemDescription>
           </ItemContent>
         </Item>
-      )}
-      <DialogFooter>
-        <Button asChild>
-          <a href={hub.setupHref}>집 다시 설정하기</a>
-        </Button>
-      </DialogFooter>
+      ) : <ItemDescription>{WORDS.appQrUnavailable}</ItemDescription>}
     </DialogContent>
   );
 }

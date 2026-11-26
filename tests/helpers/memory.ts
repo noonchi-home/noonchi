@@ -5,7 +5,7 @@ import { LEARNED_FSM_MEMORY, saveLearned } from "../../scripts/learned-memory.js
 import type { FsmMemory } from "../../src/brain/decision.js";
 
 /** memory(기본 배운 뒤 기억)를 오늘 판본으로 넣는다. */
-export function useLearnedMemory(runtimeDir: string, memory: FsmMemory = LEARNED_FSM_MEMORY): number {
-  const db = HistoryDb.open(join(runtimeDir, "noonchi.db"), historyTzMinutes({}));
+export function useLearnedMemory(runtimeDir: string, memory: FsmMemory = LEARNED_FSM_MEMORY, offset = historyTzMinutes({})): number {
+  const db = HistoryDb.open(join(runtimeDir, "noonchi.db"), offset);
   try { return saveLearned(db, db.dayOf(Date.now()), memory); } finally { db.close(); }
 }

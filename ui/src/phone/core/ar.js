@@ -1,6 +1,7 @@
 // 클로이드의 눈 AR(phone.js에서 옮겼다): WebXR AR로 폰 자세를 재고, 화면 가운데 조준점이 가리키는 바닥 점을 '여기'로 쓴다.
 // 조준점은 hit-test 점이고, 없으면 시선이 어림 바닥(local-floor, 없으면 폰 1.5m 아래)과 만나는 점이다(aim.js aimPoint, hitEstimated).
-// 자세(+조준점, 실제 hit이면 면 법선 hit_normal, 어림 바닥 높이 floor_y)는 초당 10번(서버 위치 맞추기가 벽 점·바닥 높이로 쓴다), 카메라 화면은 기본 초당 12장(가로 촬영 가로 480px·세로 360px JPEG, ?fps=·?w=로 바꾼다) /phone/events로 보낸다.
+// 자세(+조준점, 실제 hit이면 면 법선 hit_normal, 어림 바닥 높이 floor_y)는 초당 10번(서버 위치 맞추기가 벽 점·바닥 높이로 쓴다), 카메라 화면은 기본 초당 12장(가로 480px JPEG, ?fps=·?w=로 바꾼다) /phone/events로 보낸다.
+// 폰도 가로만 보낸다: 세로로 들면(카메라 그림 높이 > 폭) 화면·엔진 프레임·사진·표시 영상을 보내지 않고, 세로가 될 때마다 TURN_LANDSCAPE를 한 번 알린다(자세는 그대로 보낸다).
 // 인코딩은 워커 두 개로 두 장까지 겹치고(capture.js), 순서가 뒤바뀐 오래된 프레임과 와이파이에 쌓인 프레임은 건너뛴다(pipeline.js).
 // '사진 찍기'는 카메라 원본 크기로 한 장을 보내고, 서버가 그 순간의 눈 자세를 붙여 저장한다. 트윈 좌표 계산은 서버(src/phone)가 한다.
 // 초점: 서버가 보낸 대상(AR 좌표)을 화면 표시(hooks.onMarks)와 대시보드로 가는 화면 프레임에 그린다(사진·엔진 프레임에는 그리지 않음).
@@ -15,6 +16,8 @@ import { createFramePipeline, createSendStats, frameWidth } from "./pipeline.js"
 import { focusMarks } from "./project.js";
 import { aimPoint, floorPlaneY, planeNormal } from "./aim.js";
 
+/** 폰을 세로로 들었을 때 알릴 말(프레임을 보내지 않는다). */
+export const TURN_LANDSCAPE = "폰을 가로로 돌려 주세요.";
 const SEND_MS = 100;
 const FRAME_QUALITY = 0.55; // 장 수를 늘린 만큼 한 장 크기를 줄인다(사진은 0.9)
 const ENGINE_QUALITY = 0.8; // 엔진 프레임은 YOLO·VLM이 분석한다
@@ -50,8 +53,11 @@ export function createAr({ link, params, hooks, deps = {} }) {
    *  position·orientation(마지막 폰 자세, 「여기서 시작」에 쓴다), size·encoder(측정 글). */
   const state = { on: false, epoch: null, hitPoint: null, hitEstimated: false, limited: false, position: null, orientation: null, size: "-", encoder: "-" };
   let session = null;
+  let requesting = false;
+  let generation = 0;
   let display = null; // 표시 영상(H.264, display-encoder.js). 분석용 JPEG와 따로 대시보드 화면에만 간다
   let wantPhoto = false;
+  let turnNoted = false; // 세로로 든 지금 구간에 TURN_LANDSCAPE를 알렸는가
   let engineMs = 0;
   let lastEngine = null;
   let lastSent = 0;
@@ -60,56 +66,95 @@ export function createAr({ link, params, hooks, deps = {} }) {
   const ws = () => link.socket();
 
   async function start(overlay) {
-    // 전체 화면·가로 고정은 요청하지 않는다. DOM 오버레이도 전체 화면 기능을 써서, 같이 요청하면 AR 화면이 나오지 않았다.
-    const xrSession = await d.xr().requestSession("immersive-ar", {
-      requiredFeatures: ["local", "hit-test", "dom-overlay"],
-      optionalFeatures: ["camera-access", "local-floor"],
-      domOverlay: { root: overlay },
-    });
+    if (requesting || session) return;
+    const request = ++generation;
+    requesting = true;
+    try {
+      // 사용자가 누른 호출 안에서 바로 세션을 요청한다.
+      const xrSession = await d.xr().requestSession("immersive-ar", {
+        requiredFeatures: ["local", "hit-test", "dom-overlay"],
+        optionalFeatures: ["camera-access", "local-floor"],
+        domOverlay: { root: overlay },
+      });
+      if (request !== generation) { await end(xrSession); return; }
+      await startSession(xrSession, request);
+    } finally {
+      requesting = false;
+    }
+  }
+
+  async function end(xrSession) {
+    try { await xrSession.end(); } catch { /* The browser may already be ending it. */ }
+  }
+
+  async function startSession(xrSession, request) {
     session = xrSession;
-    hooks.onStart();
-    const gl = d.gl();
-    xrSession.updateRenderState({ baseLayer: d.layer(xrSession, gl) });
-    const space = await xrSession.requestReferenceSpace("local");
-    // 새 AR 세션은 좌표 원점이 새로 잡힌다: 이전 맞춤·기록을 버린다. 추적이 원점을 다시 잡아도(reset) 같다
-    state.on = true;
-    state.epoch = newEpoch();
-    link.send({ type: "reset", epoch: state.epoch });
-    space.addEventListener?.("reset", () => {
-      state.epoch = newEpoch();
-      link.send({ type: "reset", epoch: state.epoch });
-      hooks.note("추적 원점이 바뀌어 맞춤을 지웠어요. 시작 위치에서 다시 맞춰 주세요");
-    });
-    const hitSource = await xrSession.requestHitTestSource({ space: await xrSession.requestReferenceSpace("viewer") });
-    // 어림 바닥 높이: 크롬이 local-floor를 주면 그 원점의 local 높이를 프레임마다 읽는다
-    const floorSpace = await xrSession.requestReferenceSpace("local-floor").catch(() => null);
-    const binding = d.binding(xrSession, gl);
-    const grabber = binding ? d.createGrabber(gl, { flipY: FLIP }) : null;
-    state.encoder = grabber?.encoderMode ?? "카메라 없음";
-    // 표시 영상 청크도 엔진 프레임과 같은 서버 시계 촬영 시각을 싣는다(XR 프레임 시각 → link.stamp)
-    display = grabber ? d.createDisplayEncoder({ gl, flipY: FLIP, socket: ws, params, onError: hooks.note, stamp: (ms) => link.stamp(performance.timeOrigin + ms) }) : null;
+    let gl, space, hitSource, floorSpace, binding, grabber, cameraTimer, perfTimer;
     let cameraSeen = false;
-    const cameraTimer = setTimeout(() => {
-      if (!cameraSeen) hooks.note("카메라 화면을 보낼 수 없어요. 위치만 보내요");
-    }, 3000);
-    const perfTimer = setInterval(hooks.onPerf, 1000);
-    xrSession.addEventListener("end", () => {
+    const current = () => session === xrSession && generation === request;
+    const cleanup = () => {
+      if (session !== xrSession) return;
+      const wasOn = state.on;
+      session = null;
       state.on = false;
+      state.epoch = null;
       state.hitPoint = null;
       state.hitEstimated = false;
       state.position = null;
       state.orientation = null;
       display?.close();
       display = null;
-      // 세션마다 새로 만드는 인코딩 워커·WebGL 컨텍스트를 놓는다(다시 시작할 때 쌓이지 않게)
+      hitSource?.cancel?.();
       grabber?.close();
-      gl.getExtension?.("WEBGL_lose_context")?.loseContext();
+      gl?.getExtension?.("WEBGL_lose_context")?.loseContext();
       clearTimeout(cameraTimer);
       clearInterval(perfTimer);
-      session = null;
-      hooks.onMarks([]);
-      hooks.onEnd();
-    });
+      if (wasOn) {
+        hooks.onMarks([]);
+        hooks.onEnd();
+      }
+    };
+    xrSession.addEventListener("end", cleanup, { once: true });
+    try {
+      gl = d.gl();
+      xrSession.updateRenderState({ baseLayer: d.layer(xrSession, gl) });
+      space = await xrSession.requestReferenceSpace("local");
+      if (!current()) return;
+      const viewer = await xrSession.requestReferenceSpace("viewer");
+      if (!current()) return;
+      hitSource = await xrSession.requestHitTestSource({ space: viewer });
+      if (!current()) { hitSource?.cancel?.(); return; }
+      // 어림 바닥 높이: local-floor 원점의 local 높이를 프레임마다 읽는다.
+      floorSpace = await xrSession.requestReferenceSpace("local-floor").catch(() => null);
+      if (!current()) return;
+      binding = d.binding(xrSession, gl);
+      grabber = binding ? d.createGrabber(gl, { flipY: FLIP }) : null;
+      state.encoder = grabber?.encoderMode ?? "카메라 없음";
+      display = grabber ? d.createDisplayEncoder({ gl, flipY: FLIP, socket: ws, params, onError: hooks.note, stamp: (ms) => link.stamp(performance.timeOrigin + ms) }) : null;
+      state.on = true;
+      state.epoch = newEpoch();
+      lastEngine = null;
+      lastSent = lastFrame = 0;
+      wantPhoto = false;
+      turnNoted = false;
+      hooks.onStart();
+      link.send({ type: "reset", epoch: state.epoch });
+      space.addEventListener?.("reset", () => {
+        if (!current()) return;
+        state.epoch = newEpoch();
+        link.send({ type: "reset", epoch: state.epoch });
+        hooks.note("추적 원점이 바뀌어 맞춤을 지웠어요. 시작 위치에서 다시 맞춰 주세요");
+      });
+      cameraTimer = setTimeout(() => {
+        if (!cameraSeen) hooks.note("카메라 화면을 보낼 수 없어요. 위치만 보내요");
+      }, 3000);
+      perfTimer = setInterval(hooks.onPerf, 1000);
+    } catch (error) {
+      if (!current()) return;
+      await end(xrSession);
+      cleanup();
+      throw error;
+    }
 
     // always: 사진·엔진 프레임은 늘 보내고 표시 통계에 넣지 않는다. pipe: 인코딩 중인 장 수를 세는 곳(엔진 프레임은 enginePipeline)
     const sendFrame = (pixels, header, quality, marks, readMs, always, pipe = pipeline) => {
@@ -123,7 +168,7 @@ export function createAr({ link, params, hooks, deps = {} }) {
             stats.skipped("stale");
             return;
           }
-          if (ws()?.readyState !== OPEN) return;
+          if (!current() || ws()?.readyState !== OPEN) return;
           ws().send(framePacket(header, jpeg));
           if (!always) stats.sent({ bytes: jpeg.size, readMs, encodeMs });
         })
@@ -134,7 +179,9 @@ export function createAr({ link, params, hooks, deps = {} }) {
         });
     };
 
+    let previouslyTracked=false;
     const onFrame = (time, frame) => {
+      if (!current()) return;
       xrSession.requestAnimationFrame(onFrame);
       // 아무것도 그리지 않는다(투명). 카메라 화면 위에 DOM 오버레이만 보인다.
       gl.bindFramebuffer(gl.FRAMEBUFFER, xrSession.renderState.baseLayer.framebuffer);
@@ -160,6 +207,12 @@ export function createAr({ link, params, hooks, deps = {} }) {
       state.hitEstimated = aim?.estimated ?? false;
       hooks.onHit(Boolean(state.hitPoint), state.hitEstimated);
 
+      const tracked=!!pose && !pose.emulatedPosition;
+      if(!tracked && previouslyTracked){
+        link.send({type:"tracking_lost",epoch:state.epoch});
+        if(focus.targets.some(t=>t.guided)){focus={targets:[],until:0};hooks.onMarks([]);}
+      }
+      previouslyTracked=tracked;
       if (!pose) return;
       const tracking = pose.emulatedPosition ? "limited" : "ok";
       state.limited = tracking === "limited";
@@ -170,29 +223,34 @@ export function createAr({ link, params, hooks, deps = {} }) {
         // 실제 hit-test 점이면 그 면 법선(벽·바닥 가르기), 어림 바닥 점이면 법선 없음
         const normal = aim && !aim.estimated && aim.orientation ? planeNormal(aim.orientation) : null;
         link.send({
-          type: "pose", position, orientation, tracking, hit: state.hitPoint, hit_estimated: state.hitEstimated,
+          type: "pose", ...link.stamp(performance.timeOrigin + time), position, orientation, tracking, hit: state.hitPoint, hit_estimated: state.hitEstimated,
           ...(normal ? { hit_normal: normal } : {}), floor_y: floorPlaneY(position[1], localFloorY), epoch: state.epoch,
         });
       }
 
       const xrView = pose.views[0];
       const marks = xrView && focus.targets.length && time < focus.until
-        ? focusMarks(focus.targets, xrView.projectionMatrix, xrView.transform.inverse.matrix)
+        ? focusMarks(tracked?focus.targets:focus.targets.filter(t=>!t.guided), xrView.projectionMatrix, xrView.transform.inverse.matrix).filter(m=>hooks.visibleMark?.(m.id)!==false)
         : [];
       hooks.onMarks(marks);
 
       const camera = xrView?.camera;
       if (!grabber || !camera) return;
       cameraSeen = true;
+      if (camera.height > camera.width) {
+        if (!turnNoted) hooks.note(TURN_LANDSCAPE);
+        turnNoted = true;
+        return;
+      }
+      turnNoted = false;
       display?.frame(binding.getCameraImage(camera), camera, time);
       if (ws()?.readyState !== OPEN) return;
-      const portrait = camera.height > camera.width;
       // 엔진 프레임 차례: 앞 엔진 프레임이 인코딩 중이거나 보낼 것이 쌓였으면 건너뛴다(쌓지 않는다)
       let engineSize = null;
       const step = engineStep({ last: lastEngine, now: time, intervalMs: engineMs, canStart: enginePipeline.canStart(), buffered: ws().bufferedAmount, maxBuffered: MAX_BUFFERED });
       lastEngine = step.last;
       if (step.action === "send") {
-        const ew = Math.min(frameWidth(params.get("w"), portrait), camera.width);
+        const ew = Math.min(frameWidth(params.get("w")), camera.width);
         engineSize = { width: ew, height: Math.round((ew * camera.height) / camera.width) };
       } else if (step.action !== "wait") stats.skipped("engine");
       // 표시 프레임·사진 차례
@@ -204,7 +262,7 @@ export function createAr({ link, params, hooks, deps = {} }) {
         else {
           wantPhoto = false;
           lastFrame = time;
-          const width = photo ? camera.width : Math.min(frameWidth(params.get("w"), portrait), camera.width);
+          const width = photo ? camera.width : Math.min(frameWidth(params.get("w")), camera.width);
           frameSize = { width, height: Math.round((width * camera.height) / camera.width) };
           if (!photo) state.size = `${frameSize.width}×${frameSize.height}`;
         }
@@ -246,7 +304,10 @@ export function createAr({ link, params, hooks, deps = {} }) {
   return {
     state,
     start,
-    stop: () => session?.end(),
+    stop() {
+      generation++;
+      if (session) void end(session);
+    },
     requestPhoto: () => { wantPhoto = true; },
     /** 서버 상태 engine_ms. 0보다 큰 숫자일 때만 바꾼다. */
     setEngineMs(ms) {

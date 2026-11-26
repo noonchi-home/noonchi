@@ -7,8 +7,8 @@ import { Status } from "../components/ui/status";
 import { shortName } from "../lib/hub";
 
 /** 1 집 고르기. 지금 띄운 집이 먼저 골라져 있다. 제목(h-home)은 설정 화면 말풍선이 단다. */
-export function HomeStep({ view, picked, onPick, onNext, busy }: {
-  view: SetupView; picked: string | null; onPick: (id: string) => void; onNext: () => void; busy: boolean;
+export function HomeStep({ view, picked, onPick, onNext, busy, phone = false }: {
+  view: SetupView; picked: string | null; onPick: (id: string) => void; onNext: () => void; busy: boolean; phone?: boolean;
 }) {
   return (
     <section aria-labelledby="h-home" className="flex min-h-0 flex-1 flex-col">
@@ -23,7 +23,7 @@ export function HomeStep({ view, picked, onPick, onNext, busy }: {
         </RadioGroup>
       </CardContent>
       <CardFooter className="mt-auto justify-end gap-2">
-        <Button size="setup" disabled={busy || !picked} onClick={onNext}>다음</Button>
+        <Button size="setup" disabled={busy || !picked} onClick={onNext}>{phone ? "저장하고 돌아가기" : "다음"}</Button>
       </CardFooter>
     </section>
   );

@@ -12,17 +12,19 @@ const RECONNECT_MS = 1000;
 const phoneNow = () => performance.timeOrigin + performance.now();
 
 /** 페이지 주소 → 폰 서버 WebSocket 주소(https면 wss). 영상 모드면 트는 영상 이름(video=)을 붙인다: 서버가 그 영상이 있을 때만 영상 모드 연결로 본다. */
-export function phoneSocketUrl(loc, video = null) { // 영상 모드: 카메라 입력
-  return `${loc.protocol === "https:" ? "wss" : "ws"}://${loc.host}/phone/events${video ? `?video=${encodeURIComponent(video)}` : ""}`;
+export function phoneSocketUrl(loc, video = null, path = "/phone/events") { // 영상 모드: 카메라 입력
+  return `${loc.protocol === "https:" ? "wss" : "ws"}://${loc.host}${path}${video ? `?video=${encodeURIComponent(video)}` : ""}`;
 }
 
 /** onMessage: 서버 JSON 메시지(clock 답은 여기서 쓰고 넘기지 않는다). onOpen·onClose: 붙음·끊김. onStale: 판본이 달라도 다시 읽지 못함.
  *  Socket·now·protocol·reload·storage는 시험이 바꾼다. */
 export function createLink({
   url, onMessage, onOpen = () => {}, onClose = () => {}, onStale = () => {}, Socket = WebSocket, now = phoneNow,
+  autoConnect = true,
   protocol = PHONE_PROTOCOL, reload = () => globalThis.location?.reload(), storage = globalThis.sessionStorage,
 }) {
   let ws = null;
+  let active = false;
   let closed = false;
   let clockSamples = [];
   let clockTimer = null;
@@ -61,9 +63,11 @@ export function createLink({
   }
 
   function connect() {
-    if (closed) return;
-    ws = new Socket(url);
-    ws.addEventListener("open", () => {
+    if (!active || closed) return;
+    const socket = new Socket(url);
+    ws = socket;
+    socket.addEventListener("open", () => {
+      if (ws !== socket) return;
       clockSamples = [];
       send({ type: "hello", protocol });
       const ping = () => send({ type: "clock", t0: now() });
@@ -72,22 +76,40 @@ export function createLink({
       clockTimer = setInterval(ping, CLOCK_MS);
       onOpen();
     });
-    ws.addEventListener("message", (event) => {
+    socket.addEventListener("message", (event) => {
+      if (ws !== socket) return;
       const msg = JSON.parse(event.data);
       if (msg.type === "clock") return onClock(msg);
       checkProtocol(msg);
       onMessage(msg);
     });
-    ws.addEventListener("close", () => {
+    socket.addEventListener("close", () => {
+      if (ws !== socket) return;
+      ws = null;
       clearInterval(clockTimer);
-      if (closed) return;
       onClose();
-      reconnectTimer = setTimeout(connect, RECONNECT_MS);
+      if (active && !closed) reconnectTimer = setTimeout(connect, RECONNECT_MS);
     });
   }
-  connect();
+  function start() {
+    if (closed || active) return;
+    active = true;
+    connect();
+  }
+  function suspend() {
+    active = false;
+    clearInterval(clockTimer);
+    clearTimeout(reconnectTimer);
+    const socket = ws;
+    ws = null;
+    clockSamples = [];
+    socket?.close();
+  }
+  if (autoConnect) start();
 
   return {
+    start,
+    suspend,
     send,
     /** 지금 소켓(바이너리 프레임·bufferedAmount). */
     socket: () => ws,
@@ -99,9 +121,7 @@ export function createLink({
     },
     close() {
       closed = true;
-      clearInterval(clockTimer);
-      clearTimeout(reconnectTimer);
-      ws?.close();
+      suspend();
     },
   };
 }

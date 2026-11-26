@@ -4,6 +4,7 @@
 // 켠 위험 가전 추적 상태(hot·끄기 안내·회차·풀린 가전)는 여기 두지 않는다: SafetyTracker(safety.ts)의 # 비공개 칸이다.
 import type { DecisionRecord, ExecState } from "../../contract/events.js";
 import type { PlannedCommand } from "../../contract/phone.js";
+import { Navigation } from "../robot/navigation.js";
 import type { XZ } from "../../contract/plan.js";
 import type { WorldView } from "../../contract/world.js";
 import { placeName } from "../../layout/index.js";
@@ -25,6 +26,9 @@ import type { Dock, DockSlot } from "../robot/dock.js";
 import type { Starter } from "../robot/start.js";
 import type { Steps } from "../robot/steps.js";
 import type { TrackerOptions } from "./tracker.js";
+import { randomUUID } from "node:crypto";
+import { AttemptBook, type Attempt } from "./attempt.js";
+import type { AdaptiveExecution } from "./adaptive.js";
 
 /** at: 지금 단계 번호(실행 전 -1). sent: 실제 폰에 띄운 지금 명령. others: 계획 물건 id → 계획을 받을 때 있던 같은 종류의 다른 물건.
  *  alias: 계획 물건 id → 지금 그 물건으로 보는 World State id(옮겨서 새 id가 붙으면 이어 간다). carried: 집기 단계를 마친(사람이 든) 계획 물건.
@@ -32,6 +36,9 @@ import type { TrackerOptions } from "./tracker.js";
  *  deadline: 이 단계 시간 한도(계속이면 한 번 늘어난다). again: 이 단계에서 시간 초과로 한 번 다시 물었다.
  *  looks·lookAt: 이 단계에서 받아 센 멈춘 단계 부름 수(돌려받은 것은 뺌)와 마지막으로 받은 시각. stepEnd: 이 단계가 끝나면 끊는 신호(멈춘 단계 알림). */
 export interface Run {
+  attempt: Attempt;
+  pendingStep?: number;
+  safePlace?: AgentStep;
   plan: AgentPlan; decision: DecisionRecord; state: ExecState; since: number;
   at: number; stepAt: number; spokeAt: number; visionAt: number; sent: PlannedCommand | null;
   asking: Asking | null; askAt: number; watch: ConditionWatch | null; others: Map<string, Set<string>>; alias: Map<string, string>; carried: Set<string>;
@@ -77,6 +84,7 @@ export interface Run {
   /** 미리 세운 목표(src/goal/watch.ts)로 미리 만든 계획이면 그 목표 id와 사람이 떠난 때(실행 전 검사 seenSince). 아니면 null.
    *  목표 실행은 첫 단계 전 승인을 묻지 않는다(사용자 결정 2026-11-18, approval.ts need). 위험 목록 가전 단계는 그 단계에서 늘 묻는다. */
   goal: string | null; seenSince: number | null;
+  meal?: {object:string;surface:string};
   /** 미리 만든 계획이면 사람이 떠난 때(아니면 null). */
   leftAt: number | null;
   /** 떠나기 직전 사진으로 시작한 목표 실행(떠난 뒤 사진에 대상이 아직 없음): 그 대상 id, 사람이 떠난 때, 그 대상을 다루는 단계 앞에서 기다리기 시작한 때.
@@ -86,7 +94,9 @@ export interface Run {
 
 /** at: 같은 행동 다시 계획 간격(planGapMs)을 세려고 적은 시각. */
 /** prepared: 미리 만든 계획을 쓴 판단(goal.ts take): 그 목표 id와 실행 전 검사 기준(사람이 떠난 때). */
-export interface Job { decision: DecisionRecord; gen: number; abort: AbortController; at: number; resumedStep?: string | null; prepared?: { goal: string; seenSince: number; leftAt: number } }
+export interface Job { decision: DecisionRecord; gen: number; abort: AbortController; at: number; attempt: Attempt; resumedStep?: string | null;
+  replan?: { previous: Run; room: string; skip: number };
+  prepared?: { goal: string; seenSince: number; leftAt: number; meal?: Run["meal"] } }
 
 export const OPEN = new Set<ExecState>(["planned", "running", "verifying"]);
 export const clsOf = (w: WorldView, id: string) => w.objects.find((o) => o.id === id)?.cls ?? id.replace(/_\d+$/, "");
@@ -99,6 +109,26 @@ export interface TrackConfig {
 
 /** 실행 추적의 안쪽 공유 객체: 상태와 기록·실제 폰 길, 부분(ExecutionTracker가 단다). */
 export class TrackCore {
+  readonly attempts: AttemptBook;
+  adaptive!: AdaptiveExecution;
+  readonly navigation = new Navigation();
+  walk(key:string,target:PlannedCommand["target"],station=false,hint?:XZ[]) {
+    if (!this.o.layout.walking) return undefined;
+    const map=this.o.layout.walking();
+    const front=this.o.stations?.map?.()?.surface_fronts.find(f=>f.surface_id===target?.id);
+    const position: [number,number] = front?.position ?? (target ? [target.position[0],target.position[2]] : [0,0]);
+    const movedFront=front && target && Math.hypot(front.look_at[0]-target.position[0],front.look_at[1]-target.position[2])>0.2;
+    const result=this.navigation.read(key,target && !movedFront?map:null,position,front?.near_m??0.5,station||!!front,this.clock.now(),hint);
+    const portals=result.guide?.remaining.filter(point=>point.kind==="portal");
+    if(portals?.length){
+      const world=this.o.state.view();
+      if(portals.some(p=>world.devices.some(d=>d.id===p.id && d.state.includes("door_closed")) ||
+        world.fixtures.some(f=>(f.id===p.id || f.device===p.id) && f.facts.open?.value==="closed" && f.facts.open.certainty==="confirmed")))
+        return {guide:null,distance:null,arrived:false,within:()=>false,vision:"문이 닫혀 있어요."};
+    }
+    const label = target && !station ? this.nameOf(target.id) ?? target.label : target?.label;
+    return {...result,vision:result.blocked ? "지나갈 길을 확인해 주세요." : result.distance===null ? "위치를 다시 맞춰 주세요." : (label??"설 자리")+(station?"까지 ":" 앞까지 ")+result.distance.toFixed(1)+"m"};
+  }
   run: Run | null = null;
   planning: Job | null = null;
   /** 계획 밖 가까이 가서 보기(판단 전 보기 B 뒤에도 모를 때, src/act/robot/contents.ts idle): 명령 id peek:<번호>와 그 상태. 없으면 null. */
@@ -122,6 +152,7 @@ export class TrackCore {
   /** 마지막으로 추정 눈(맞추기 전·다시 맞추는 중)을 받은 시각. 이보다 앞선 맞춘 눈은 지금 맞춘 것이 아니다. */
   eyeLostAt = Number.NEGATIVE_INFINITY;
   readonly manager = new TaskManager<DecisionRecord>();
+  directives!: import("../robot/directive.js").DirectiveRunner;
   robot!: RobotMachine;
   start!: Starter;
   steps!: Steps;
@@ -135,14 +166,16 @@ export class TrackCore {
   goal!: GoalWatch;
   dock!: Dock;
 
-  constructor(readonly o: TrackerOptions, readonly clock: { now(): number }, readonly cfg: TrackConfig) {}
+  constructor(readonly o: TrackerOptions, readonly clock: { now(): number }, readonly cfg: TrackConfig) {
+    this.attempts = new AttemptBook(o.assistance?.boot ?? randomUUID(), o.assistance?.homeEpoch ?? "local");
+  }
 
   open(): Run | null {
     return this.run && OPEN.has(this.run.state) ? this.run : null;
   }
 
   stepOf(r: Run): AgentStep | undefined {
-    return r.plan.steps[r.at];
+    return r.safePlace ?? r.plan.steps[r.at];
   }
 
   /** 손대는 단계인가: 진행 중 계획의 집기·내려놓기 단계이거나 집은 물건을 들고 가는 중(2026-11-18 wide-mug q3). 이때 보이는 사람은 폰을 든 사람일 수 있다. */

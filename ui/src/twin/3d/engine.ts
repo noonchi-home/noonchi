@@ -116,7 +116,7 @@ export class TwinEngine {
     addLights(this.scene, { light, sun: manifest.light.sun, target });
     const cut = data.plan.wall_cut_height ?? manifest.light.occluders.cut ?? 1.05;
     const find = (id: string) => this.find(id);
-    const shown = applyDefaultView({ root: this.root, scene: this.scene, data, view: manifest.view, heading: viewHeading(view), cut, target, find });
+    const shown = applyDefaultView({ root: this.root, scene: this.scene, data, view: manifest.view, dashboardFurniture: true, heading: viewHeading(view), cut, target, find });
     if (ground && manifest.ground) this.scene.add(bakedGround(manifest.ground, ground));
     this.states = new TwinStates(this.scene, this.root);
     for (const e of data.objects) {

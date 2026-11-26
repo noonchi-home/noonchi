@@ -42,7 +42,7 @@ describe("설정: 운영 모드", () => {
     expect(await screen.findByRole("heading", { name: "가전을 어떻게 다룰까요?" })).toBeInTheDocument();
     expect(screen.getByRole("radio", { name: /시험 모드/ })).toBeChecked();
     expect(screen.getByRole("radio", { name: /실제 모드/ })).not.toBeChecked();
-    expect(screen.queryByRole("region", { name: "ThinQ 짝" })).toBeNull();
+    expect(screen.queryByRole("region", { name: "ThinQ 가전 연결" })).toBeNull();
     expect(api.calls.some((c) => c.path === "/api/setup/thinq")).toBe(false);
   });
 
@@ -68,12 +68,13 @@ describe("설정: 운영 모드", () => {
     await user.click(screen.getByRole("button", { name: "실제 모드로 바꾸기" }));
     await waitFor(() => expect(api.posts("/api/setup/mode")).toHaveLength(1));
     expect(api.posts("/api/setup/mode")[0]!.body).toEqual({ mode: "live", confirm: true });
-    const pairs = await screen.findByRole("region", { name: "ThinQ 짝" });
+    const pairs = await screen.findByRole("region", { name: "ThinQ 가전 연결" });
+    expect(within(pairs).getByRole("heading", { name: "가전 연결" })).toBeInTheDocument();
     expect(screen.getByRole("radio", { name: /실제 모드/ })).toBeChecked();
     const ac = await within(pairs).findByRole("combobox", { name: "거실 에어컨 ThinQ 기기" });
-    expect(within(ac).getAllByRole("option").map((o) => o.textContent)).toEqual(["짝 없음", "거실 에어컨"]);
+    expect(within(ac).getAllByRole("option").map((o) => o.textContent)).toEqual(["연결 안 함", "거실 에어컨"]);
     const fridge = within(pairs).getByRole("combobox", { name: "냉장고 ThinQ 기기" });
-    expect(within(fridge).getAllByRole("option").map((o) => o.textContent)).toEqual(["짝 없음", "주방 냉장고"]);
+    expect(within(fridge).getAllByRole("option").map((o) => o.textContent)).toEqual(["연결 안 함", "주방 냉장고"]);
     expect(within(pairs).queryByRole("combobox", { name: /거실 TV/ })).toBeNull();
     await user.selectOptions(ac, "thinq-ac-1");
     await waitFor(() => expect(api.posts("/api/setup/pairs")).toHaveLength(1));
@@ -86,6 +87,15 @@ describe("설정: 운영 모드", () => {
     expect(alert).not.toHaveBeenCalled();
   });
 
+  it("적외선 TV만 등록해도 확인을 거쳐 실제 모드를 켠다", async () => {
+    const {api,user} = open(setupView({thinq:{ready:false}, ir:{ready:true}}));
+    const mode = await screen.findByRole("radio", {name:/실제 모드/});
+    expect(mode).toBeEnabled();
+    await user.click(mode);
+    await user.click(screen.getByRole("button",{name:"실제 모드로 바꾸기"}));
+    await waitFor(()=>expect(mode).toBeChecked());
+    expect(api.calls.some(c=>c.path==="/api/setup/thinq")).toBe(false);
+  });
   it("토큰이 없으면 실제 모드를 고를 수 없다", async () => {
     open(setupView({ thinq: { ready: false } }));
     expect(await screen.findByRole("radio", { name: /실제 모드/ })).toBeDisabled();
@@ -100,7 +110,7 @@ describe("설정: 운영 모드", () => {
     expect(screen.queryByRole("alertdialog")).toBeNull();
     await waitFor(() => expect(api.posts("/api/setup/mode")).toHaveLength(1));
     expect(api.posts("/api/setup/mode")[0]!.body).toEqual({ mode: "test" });
-    await waitFor(() => expect(screen.queryByRole("region", { name: "ThinQ 짝" })).toBeNull());
+    await waitFor(() => expect(screen.queryByRole("region", { name: "ThinQ 가전 연결" })).toBeNull());
   });
 
   it("바꾸지 못하면 이유를 보이고 시험 모드 그대로", async () => {

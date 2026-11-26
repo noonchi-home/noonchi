@@ -2,6 +2,7 @@
 import { existsSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { describe, expect, it } from "vitest";
 import type { BrainLog } from "../src/contract/events.js";
 import type { PlanView } from "../src/contract/plan.js";
@@ -14,7 +15,7 @@ import { CUP_FSM_MEMORY } from "../src/brain/decision.js";
 import { candidateFsmOf } from "../src/brain/pam/adopt.js";
 
 describe("기록 DB", () => {
-  it("폴더를 만들고 WAL·잠금 대기 5초로 연다", () => {
+  it("폴더를 만들고 WAL·잠금 대기 5초·쓰기마다 디스크 동기화(FULL)로 연다", () => {
     const path = join(mkdtempSync(join(tmpdir(), "db-")), "a", "noonchi.db");
     const h = HistoryDb.open(path);
     try {
@@ -22,8 +23,43 @@ describe("기록 DB", () => {
       expect(h.ok()).toBe(true);
       expect(h.db.prepare("PRAGMA journal_mode").get()).toEqual({ journal_mode: "wal" });
       expect(h.db.prepare("PRAGMA busy_timeout").get()).toEqual({ timeout: 5000 });
+      // 기억·컵 답 같은 쓰기는 정전에도 남아야 한다: 기본은 FULL이다.
+      expect(h.db.prepare("PRAGMA synchronous").get()).toEqual({ synchronous: 2 });
+      // 시간축 한 줄(add)만 동기화 없이 넣고(엔진 프레임 → 집 상태 지연, tests/latency-world.test.ts) 끝나면 FULL로 돌아온다.
+      h.add("vlm", 1, "한 줄");
+      expect(h.db.prepare("PRAGMA synchronous").get()).toEqual({ synchronous: 2 });
+      h.cupAnswers.remember("home", "resident", true);
+      expect(h.cupAnswers.allowDiscard("home", "resident")).toBe(true);
     } finally {
       h.close();
+    }
+  });
+
+  it("연 뒤 첫 줄부터 시간축 줄은 NORMAL로 넣는다", () => {
+    // 구조를 바꾸지 않고 본다(트리거를 만들면 준비해 둔 문장이 다시 준비되어 실제와 다르게 돈다): 시간축 INSERT가 실행되기 직전의 설정을 읽는다.
+    const proto = DatabaseSync.prototype;
+    const prepare = proto.prepare;
+    const seen: number[] = [];
+    let h: HistoryDb | undefined;
+    try {
+      proto.prepare = function (this: DatabaseSync, sql: string) {
+        const st = prepare.call(this, sql);
+        if (!sql.startsWith("INSERT INTO events")) return st;
+        return new Proxy(st, {
+          get: (t, k) => k === "run"
+            ? (...a: Parameters<typeof t.run>) => { seen.push((prepare.call(this, "PRAGMA synchronous").get() as { synchronous: number }).synchronous); return t.run(...a); }
+            : typeof Reflect.get(t, k) === "function" ? (Reflect.get(t, k) as (...x: unknown[]) => unknown).bind(t) : Reflect.get(t, k),
+        });
+      } as typeof prepare;
+      h = HistoryDb.open(join(mkdtempSync(join(tmpdir(), "db-")), "sync.db"));
+      h.add("vlm", 1, "첫 줄");
+      h.add("vlm", 2, "둘째 줄");
+      h.add("vlm", 3, "셋째 줄");
+      expect(seen).toEqual([1, 1, 1]);
+      expect(h.db.prepare("PRAGMA synchronous").get()).toEqual({ synchronous: 2 });
+    } finally {
+      proto.prepare = prepare;   // 열기가 실패해도 다음 시험에 감싼 prepare가 남지 않게 먼저 되돌린다
+      h?.close();
     }
   });
 

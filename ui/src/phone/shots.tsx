@@ -2,10 +2,10 @@
 // AR 상태는 카메라 자리에 ink-4 바탕을 깔고 화면 밖이거나 칸에 가린 명령 대상 쪽 세모·조준점(찍기·맞추기 때만)을 그 위에 그린다. 다 그리면 html에 data-shot을 단다(npm run capture --ready).
 // AR 상태는 그린 뒤 배치를 잰다(layout-check.ts): 화면 밖 단추, 세로 화면에서 아래 1/3 밖·가로 화면에서 오른쪽 아래 밖의 엄지 자리 단추, 옆으로 넘친 모달 내용, 조준점이나 그 칸 밖 단추를 가리는 칸(위 줄·엄지 자리),
 // 잘린 명령·비전 상태 글, 칸·단추와 겹친 화면 밖 세모가 있으면 console.error로 내서 capture가 실패한다. 모달 안 단추는 칸 위에 뜨므로 가림 검사에서 뺀다.
-// 처음 화면은 「AR 시작」 단추가 첫 화면 밖이면 같은 방법으로 실패한다.
+// 처음 화면은 「카메라 켜기」 단추가 첫 화면 밖이면 같은 방법으로 실패한다.
 import { useEffect, useRef } from "react";
 import { createRoot } from "react-dom/client";
-import "@fontsource-variable/noto-sans-kr";
+import "pretendard/dist/web/variable/pretendardvariable-dynamic-subset.css";
 import "../styles.css";
 import { color } from "../../../src/design/tokens.ts";
 import { drawOverlay, fitCanvas, overlayEdges, type Drawn } from "./draw";
@@ -63,11 +63,11 @@ function measureOverlay(drawn: Drawn): string[] {
   return [...layoutIssues({ width: innerWidth, height: innerHeight }, targets, panels, drawn.arrows), ...clipIssues(texts), ...modalIssues(modals), ...bubbleIssues({ width: innerWidth, height: innerHeight }, bubbles)];
 }
 
-/** 처음 화면이 보이면 「AR 시작」 단추가 첫 화면 안에 있는지 잰다. */
+/** 처음 화면이 보이면 「카메라 켜기」 단추가 첫 화면 안에 있는지 잰다. */
 function measureIntro(): string[] {
   const intro = document.querySelector("main");
   if (!intro || intro.hidden) return [];
-  const start = [...intro.querySelectorAll("button")].find((b) => b.textContent?.trim() === "AR 시작");
+  const start = intro.querySelector("button[data-phone-action='start-camera']");
   return introIssues({ width: innerWidth, height: innerHeight }, start ? rect(start) : null);
 }
 

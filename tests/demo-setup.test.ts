@@ -9,6 +9,8 @@ import { CUP_FSM_MEMORY, type FsmMemory } from "../src/brain/decision.js";
 import { HistoryDb } from "../src/brain/history/db.js";
 import { learnedEdges, type EdgeLine } from "../src/brain/history/habits.js";
 import { LEARNED_FSM_MEMORY } from "../scripts/learned-memory.js";
+import { findRoutines, routineEdge, STUDY_STATE } from "../src/brain/history/routines.js";
+import { WATER_ACTION } from "../src/act/tasks.js";
 import { insidePolygon } from "../src/layout/home-plan.js";
 import { loadScene } from "../src/layout/scene.js";
 import { resolveHome } from "../src/layout/homes.js";
@@ -122,6 +124,7 @@ describe("시연 폴더(day1·week)", () => {
     expect(start.start.position).toEqual(pose.position);
     const db = HistoryDb.open(join(dir, "noonchi.db"), 540);
     expect(db.list({ limit: 10 })).toEqual([]);
+    expect(db.cupAnswers.allowDiscard("mokryeon_180b", db.cupAnswers.demoResident("mokryeon_180b", 1))).toBe(true);
     db.close();
   });
 
@@ -447,5 +450,31 @@ describe("배운 뒤 기억 넣기(learned)", () => {
     const db = HistoryDb.open(join(dir, "noonchi.db"), 540);
     expect(db.pinnedMemory(TODAY)).toBeNull();
     db.close();
+  });
+});
+
+describe("시나리오 2 나흘째 준비(water)", () => {
+  it("water는 서버를 끈 채 지난 사흘(20:00·19:58·20:04) 책상 물 한 잔 도움 기록과, 그 기록으로 찾은 습관 화살표를 든 오늘 기억을 넣는다(다시 해도 겹치지 않는다)", async () => {
+    const dir = join(tmp(), "day1");
+    await run(["day1", "--dir", dir, "--api", CLOSED]);
+    const logs = await run(["water", "--dir", dir, "--api", CLOSED]);
+    await run(["water", "--dir", dir, "--api", CLOSED]);
+    const db = HistoryDb.open(join(dir, "noonchi.db"), 540);
+    const helps = db.list({ kinds: ["help"] });
+    expect(helps.map((r) => r.text)).toEqual([
+      "20:02 · 책상에서 공부 중 · 물 한 잔 요청 · 전달 완료",
+      "20:00 · 책상에서 공부 중 · 물 한 잔 요청 · 전달 완료",
+      "20:06 · 책상에서 공부 중 · 물 한 잔 요청 · 전달 완료",
+    ]);
+    expect(helps.map((r) => r.day)).toEqual(["2026-11-11", "2026-11-12", "2026-11-13"]);
+    const routines = findRoutines(helps, 540);
+    expect(routines).toEqual([expect.objectContaining({ action: WATER_ACTION, place: "desk_small_ce7e768b", room: "bed_sw", center_min: 20 * 60 })]);
+    // 오늘 기억에 공부하는 중 상태와 그 습관 화살표가 든다(서버는 이 화살표가 있는 습관만 시각 계기로 쓴다)
+    const memory = db.memoryVersion(db.pinnedMemory(TODAY)!)!.memory as FsmMemory;
+    const study = memory.states.find((s) => s.id === STUDY_STATE)!;
+    expect(study.next.some((e) => e.action === WATER_ACTION && e.on === routineEdge(routines[0]!).on)).toBe(true);
+    expect(db.list({ kinds: ["reflection"] }).at(-1)!.data).toMatchObject({ synthetic: true, ok: true, applies_day: TODAY });
+    db.close();
+    expect(logs.at(-1)).toMatch(/^지난 사흘 물 한 잔 도움 기록을 넣고, 습관 화살표를 든 기억 \d+판을 2026-11-14부터 쓰게 넣었어요$/);
   });
 });

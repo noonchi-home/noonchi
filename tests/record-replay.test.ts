@@ -83,6 +83,22 @@ describe("격리 재생", () => {
     expect(objects.map((o) => [o.id, o.facts.place?.value])).toEqual(direct.view(9000).objects.map((o) => [o.id, o.facts.place?.value]));
   });
 
+  it("resolveWorld가 있으면 녹화한 /world/state 보기를 그 함수로 바꿔 흘린다(재생 중 허브가 바꾼 가전 상태를 넣는 자리)", async () => {
+    const bag = Bag.open(":memory:");
+    const view = new WorldState({ surfaces: () => [], floorAt: () => 0, roomAt: () => null, devices: () => [] }).view(1000);
+    bag.write({ topic: "/world/state", key: "_", header: { ...h(1, 1000), node: "world" }, body: { rev: 1, view } } as never, 1000);
+    const got: number[] = [];
+    await replay({
+      bag, from: 0, to: 10_000, topics: ["/world/state"],
+      resolveWorld: (v) => ({ ...v, vlm_missing: 7 }),
+      launch: async (bus, clock) => {
+        const n = new BusNode({ name: "act", bus, epoch: EPOCH, clock, log: () => {} });
+        n.on("/world/state", (b) => { got.push(b.view.vlm_missing); });
+        return [n];
+      },
+    });
+    expect(got).toEqual([7]);
+  });
   it("도착 차례대로 흘리고, 가상 시계는 발행 시각이 아니라 도착 시각까지 당긴다", async () => {
     const bag = Bag.open(":memory:");
     bag.write({ topic: "/perception/analysis", key: "f1", header: h(1, 2000), body: { frame_id: "f1", observed_ms: 1500 } } as never, 2100);

@@ -11,6 +11,7 @@ import type { ListenState } from "./core/talk.js";
 export type { ListenState };
 export type Support =
   | { kind: "checking" }
+  | { kind: "starting" }
   | { kind: "insecure" }
   | { kind: "no-ar" }
   | { kind: "ready" }
@@ -24,13 +25,13 @@ export const pendingLine = (p: Pick<Pending, "deviceLabel" | "reason">): string 
 /** 서버가 보낸 지금 명령·질문(src/contract/phone.ts PhoneCommand에서 speak를 빼고 대상은 id만). target: 화면 밖·칸에 가릴 때 세모로 가리킬 명령 대상 id(없으면 null). */
 export interface Command { id: string; step: string; text: string; vision: string | null; choices: Choice[]; target: string | null; safety?: true }
 /** 화면 위 초점 표시 하나(core/project.js focusMarks와 같은 모양). */
-export interface FocusMark { id: string; label: string; u: number; v: number; off: boolean; angle: number; walking?: boolean }
+export interface FocusMark { id: string; label: string; u: number; v: number; off: boolean; angle: number; walking?: boolean; stand?: boolean }
 /** 엄지 자리를 차지하는 일: 물건 자리 맞추기(「여기」 말하기), 시작 위치 맞추기(「여기서 시작」). */
 export type Setup = "place" | "start";
 /** 서버 위치 맞춤 상태(status.sync). state: none 변환 없음, estimated 어림, aligned 맞춤. source video: 영상 입력 모드의 고정 카메라. */
 export interface SyncView {
   state: "none" | "estimated" | "aligned";
-  source: "start" | "objects" | "walls" | "video" | null;
+  source: "start" | "objects" | "walls" | "video" | "photo" | null;
   /** 이 집 시작 위치 이름(없으면 null). */
   start: { label: string; facing: string } | null;
   started: boolean;
@@ -198,9 +199,10 @@ export function settingsRows(v: PhoneView): { name: string; value: string; tone:
 export function supportText(s: Support, start = false): string {
   switch (s.kind) {
     case "checking": return "AR 지원을 확인하는 중…";
+    case "starting": return "카메라를 여는 중이에요.";
     case "insecure": return "보안 연결이 아니라 AR을 켤 수 없어요. https 주소로 여세요.";
     case "no-ar": return "이 브라우저는 AR을 지원하지 않아요. 안드로이드 크롬으로 여세요.";
-    case "ready": return start ? "준비됐어요. 시작 위치에서 AR을 시작하세요." : "준비됐어요. AR을 시작하세요.";
+    case "ready": return start ? "준비됐어요. 시작 위치에서 카메라를 켜 주세요." : "준비됐어요. 카메라를 켜 주세요.";
     case "failed": return `AR을 시작하지 못했어요: ${s.message}`;
   }
 }

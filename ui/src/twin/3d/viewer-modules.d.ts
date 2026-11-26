@@ -2,6 +2,7 @@
 // 노드·객체는 three를 가져오지 않는 순수 함수라 unknown으로 받는다.
 
 declare module "@viewer/walls.mjs" {
+  export function furnitureAction(entry: { id: string; type?: string }, doorIds: ReadonlySet<string>): "hide" | "none" | null;
   export function cameraHeading(p: number[], t: number[]): [number, number];
   export function upperVisible(
     w: { kind?: string; faces?: { room?: string; normal: number[] }[] },

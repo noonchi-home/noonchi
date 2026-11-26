@@ -49,12 +49,16 @@ describe("설정 1단계: 집 고르기", () => {
     for (const t of within(list).getAllByText(/집 고르기|가전 선택|운영 모드|위치 동기화/)) expect(t.className.split(/\s+/)).toContain("max-sm:sr-only");
   });
 
-  it("머리줄은 로고 짝(얼굴 상자 + NOONCHI)과 「설정」", async () => {
+  it("데스크톱 머리줄은 공식 워드마크와 설정 레이블 및 단계 버튼을 표시한다", async () => {
     open();
     await screen.findByRole("heading", { name: "어느 집을 쓸까요?" });
-    expect(screen.getByRole("heading", { name: "NOONCHI" })).toBeInTheDocument();
-    expect(screen.getByText("설정")).toBeInTheDocument();
-    expect(document.querySelector("header [data-shape=logo]")).not.toBeNull();
+    const banner = screen.getByRole("banner");
+    const heading = within(banner).getByRole("heading", { name: "NOONCHI" });
+    const mark = within(heading).getByRole("img", { name: "NOONCHI" });
+    expect(mark).toHaveAttribute("src", "/brand/noonchi-wordmark.svg");
+    expect(Array.from(banner.querySelectorAll("img"))).toEqual([mark]);
+    expect(within(banner).getByText("설정")).toBeVisible();
+    expect(within(within(banner).getByRole("list", { name: "설정 단계" })).getAllByRole("button")).toHaveLength(4);
   });
 
   it("다른 집을 고르고 다음: 집을 바꾸고 2단계로", async () => {
@@ -251,6 +255,48 @@ describe("설정 4단계: 트윈에서 시작 자리와 방향 고르기", () =>
     };
     return { ...opened, start, viewer, canvas, click: (u: number, v: number) => press([u, v]), press, saved: () => saved };
   }
+
+  it("자리·구역 설정은 트윈에서 두 점을 골라 저장하고, 다시 열어도 구역과 가구 앞 자리가 남는다", async () => {
+    const station = { id:"watch", name:"식탁 관찰", room:"living", roles:["observe"], position:[1,1], look_at:[2,2], rooms:["living"], surfaces:["table"], observes_zone_ids:["meal"] };
+    const zones = [{id:"meal",name:"식탁 옆",room:"living",polygon:[[1,1],[2,1],[2,2]]}];
+    const fronts = [{surface_id:"table",room:"living",position:[1,2],look_at:[2,2],near_m:0.4}];
+    let map = {version:1,stations:[station],zones,surface_fronts:fronts,kitchen_entry:null,meal_watch:"watch"};
+    const { user, click, api } = await withViewer({
+      "GET /api/setup/stations": () => [200,{ok:true,home:"oneroom",map}],
+      "GET /api/scene": () => [200,{ok:true,scene:{plan:{rooms:[{id:"living",label:"거실"}]},objects:[{id:"table",room:"living",name:"식탁",category:"furniture"}]}}],
+      "PUT /api/setup/stations": b => {map=b.map;return [200,{ok:true,home:b.home,map}];},
+    });
+    await user.click(screen.getByRole("button",{name:"자리·구역 설정"}));
+    expect(await screen.findByRole("textbox",{name:"이름"})).toHaveValue("식탁 관찰");
+    await user.click(screen.getByRole("button",{name:"발 위치 고르기"}));
+    await click(125,150);
+    await user.click(screen.getByRole("button",{name:"바라볼 곳 고르기"}));
+    await click(250,220);
+    await user.click(screen.getByRole("button",{name:"저장"}));
+    await waitFor(()=>expect(map.stations[0]).toEqual({...station,position:[1.25,1.5],look_at:[2.5,2.2]}));
+    expect(map.zones).toEqual(zones);
+    expect(map.surface_fronts).toEqual(fronts);
+    expect(api.posts("/api/phone/start-pose/preview")).toHaveLength(0);
+    await user.click(screen.getByRole("button",{name:"폰 시작 위치"}));
+    await user.click(screen.getByRole("button",{name:"자리·구역 설정"}));
+    expect(await screen.findByLabelText("보이는 가구·가전")).toHaveValue(["table"]);
+  });
+
+  it("빈 집에 식사 구역을 추가하면 바닥에서 찍은 꼭짓점이 트윈에 이어지고 저장된다", async () => {
+    const empty = {version:1,stations:[],zones:[],surface_fronts:[],kitchen_entry:null,meal_watch:null};
+    const {api,user,click} = await withViewer({
+      "GET /api/setup/stations":()=>[200,{ok:true,home:"oneroom",map:empty}],
+      "GET /api/scene":()=>[200,{ok:true,scene:{plan:{rooms:[{id:"living",label:"거실"}]},objects:[]}}],
+      "PUT /api/setup/stations":b=>[200,{ok:true,...b}],
+    });
+    await user.click(screen.getByRole("button",{name:"자리·구역 설정"}));
+    await user.selectOptions(await screen.findByLabelText("편집할 항목"),"zone");
+    await user.click(screen.getByRole("button",{name:"추가"}));
+    await click(100,100); await click(200,100); await click(200,200);
+    await waitFor(()=>expect(screen.getByLabelText("선택한 구역 경계").querySelector("path")).toBeTruthy());
+    await user.click(screen.getByRole("button",{name:"저장"}));
+    expect(api.calls.find(c=>c.method==="PUT")?.body).toMatchObject({map:{zones:[{room:"living",polygon:[[1,1],[2,1],[2,2]]}]}});
+  });
 
   it("바닥을 누르면 그 자리에 시작 핀, 이름은 서버가 채우고, 다른 곳을 누르면 그쪽을 본다. 저장은 자리·방향과 고치지 않은 이름(빈 글)을 보낸다", async () => {
     const { api, user, start, click } = await withViewer();

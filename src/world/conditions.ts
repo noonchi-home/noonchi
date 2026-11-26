@@ -76,7 +76,7 @@ export function parseCondition(raw: unknown): Condition {
 
 /** 이 집에서 쓸 수 있는 이름: 가전(종류·속성), 방, 가구·가전·도면 설비 자리. */
 export interface ConditionHome {
-  devices: readonly { id: string; kind: string; twinAttrs: Record<string, unknown[]> }[];
+  devices: readonly { id: string; kind: string; twinAttrs: Readonly<Record<string, readonly unknown[]>> }[];
   rooms: readonly string[];
   /** 가구·가전·도면 설비 id가 트윈에 있는가. */
   hasPlace: (id: string) => boolean;
@@ -127,6 +127,7 @@ export function checkCondition(c: Condition, home: ConditionHome): string[] {
 }
 
 export interface ConditionContext {
+  guidedNear?:(id:string,within:number)=>boolean|undefined;
   nowMs: number;
   /** 단계가 시작된 시각: 사실의 새로움·became·elapsed_s의 기준. */
   sinceMs: number;
@@ -264,6 +265,8 @@ function check(c: Condition, w: WorldView, x: ConditionContext, m: Memo, path: s
     return devs.some((d) => d.history.some((h) => (h.seen_ms ?? h.at_ms) >= x.sinceMs && h.attr === s.attr && h.to === s.value && h.from !== null && h.from !== s.value));
   }
   if ("phone_near" in c) {
+    const guided=x.guidedNear?.(c.phone_near,c.within_m??PHONE_NEAR_M);
+    if(guided!==undefined) return guided;
     const e = w.eye;
     const at = x.locate(c.phone_near);
     const room = x.roomOf(c.phone_near);

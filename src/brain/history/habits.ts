@@ -5,6 +5,7 @@
 import { LEARNED_ACTIONS, TASKS } from "../../act/tasks.js";
 import type { CandidateFsm, Ctx } from "../../contract/pam.js";
 import type { FsmMemory } from "../decision.js";
+export { learnBeerRules, matchesBeerRule } from "./beer-rules.js";
 
 /** 화살표(후보) 하나의 결과. seen: 그 트리거를 본 횟수, fired: 그때 그 행동이 나온 횟수, p: 우연일 확률, conditions: 붙인 조건(둘까지).
  *  reason settings: 사용자가 정한 습관 행동이라 배우지 않음, coach: 코치 행동이라 배우지 않음. */

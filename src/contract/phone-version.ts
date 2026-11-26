@@ -4,4 +4,5 @@
 // 2: 말(say)에 at(말할 때 떠 있던 명령·보인 승인 대기 token)을 싣는다.
 // 3: 명령·reply에 소리 등급(grade)을 싣고, 폰은 안전·질문 말을 자르거나 건너뛰지 않는다.
 // 4: 명령에 near_m(가까이 가기 go가 끝나는 거리)·view(above: 위에서 비추기 do)를 싣는다. 영상 모드가 그 자세를 흉내 낸다.
-export type PhoneProtocol = 4;
+// 5: 이동 명령은 경유점과 바닥 설 자리, 위치를 확인할 수 없으면 guide:null을 보낸다.
+export type PhoneProtocol = 5;

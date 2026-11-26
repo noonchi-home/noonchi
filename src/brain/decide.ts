@@ -3,7 +3,10 @@ import type { BusNode } from "../bus/index.js";
 // 동시 상한을 넘으면 부르지 않는다(Trigger.due가 false). 결과는 기록(decision)과 onDecision으로 넘긴다. 늦게 온 답(받은 가장 큰 번호보다 작은 번호)은 상태를 바꾸지 않고, 행동은 실행 추적이 seq로 버린다.
 // PAM 연결 끊김·연결됨(link)과 주기 판단 멈춤(폰 사진 없음·사람 없음)·다시 시작(trigger)은 바뀔 때 한 번씩 기록한다.
 import type { BrainLog, DecisionRecord, ExecState, PamUsage } from "../contract/events.js";
+import type { Intervention } from "./history/intervention.js";
 import type { WorldChange, WorldView } from "../contract/world.js";
+import type { EvidenceRef } from "../contract/assistance.js";
+import type { TracePort } from "../contract/trace.js";
 import { modeOf, planIdOf } from "../act/tasks.js";
 import { checkInput, fsmStep, isoWithOffset, type PamMemory } from "./decision.js";
 import { contextView, ctxNow } from "./ctx.js";
@@ -45,10 +48,12 @@ function applyAnswer(node: Pick<BusNode, "post"> | undefined, signal: AbortSigna
 }
 
 export interface DeciderOptions {
+  trace?: TracePort;
+  traceEvidence?: (change: WorldChange) => EvidenceRef | undefined;
   node?: () => Pick<BusNode, "spawn" | "post">;
   pam: PamClient;
   /** 집 상태 보기(거울). */
-  world: { view(now: number): WorldView };
+  world: { view(now: number): WorldView; rev?(): number | null };
   trigger: Trigger;
   /** PAM에 보내는 행동 목록. heard: 이번 관찰 텍스트에 사람이 한 말이 있다(지금 모드와 함께 목록을 정한다, src/act/mode.ts pamTasks). */
   tasks: (heard: boolean) => string[];
@@ -57,6 +62,7 @@ export interface DeciderOptions {
   memory: () => { memory: PamMemory; kind: "list" | "fsm"; version: number };
   emit: (log: BrainLog) => void;
   onDecision?: (d: DecisionRecord) => void;
+  interventionFor?: (decision: DecisionRecord, world: WorldView) => Intervention;
   /** 화살표 없는 유효한 답(행동 없음)이 미리 세운 목표의 트리거면 그 목표 행동(실행 추적 goal.ts triggerOf), 아니면 null.
    *  있으면 판단 기록·onDecision에 그 행동(goal 표시)으로 낸다: 기록과 실행이 같은 행동을 본다(밤 채택 검사 robotSpans, Codex b5da6c36 P2). */
   goalTrigger?: (d: DecisionRecord) => string | null;
@@ -67,6 +73,8 @@ export interface DeciderOptions {
   hold?: () => boolean;
   /** 참이면 기록에 남는 판단 줄에도 들은 말을 그대로 둔다(KEEP_HEARD_TEXT, 기본 꺼짐). 없거나 거짓이면 「들은 말 있음」만 남긴다. */
   keepHeard?: () => boolean;
+  /** PAM이 고른 화살표 행동을 지금 할 수 있는가(습관 화살표는 그 시각 창 안만, src/brain/history/routines.ts routineAllows). 거짓이면 행동 없이 기록한다. 없으면 참. */
+  edgeAllowed?: (edge: { on: string | null; action: string | null }, atMs: number) => boolean;
 }
 
 export class Decider {
@@ -186,14 +194,21 @@ export class Decider {
     if (paused === "acting" || !this.o.trigger.due(now, view.person.visible, this.running.size)) return;
     this.o.trigger.called(now);
     const seq = ++this.seq;
-    const textSent = textFromWorld(view, this.recent, { nowMs: now, offsetMinutes: this.o.offsetMinutes });
+    let evidence: EvidenceRef | undefined;
+    const traceEvidence = this.o.traceEvidence;
+    const textSent = textFromWorld(view, this.recent, { nowMs: now, offsetMinutes: this.o.offsetMinutes,
+      onChanges: traceEvidence && (changes => {
+        for (let i = changes.length - 1; i >= 0 && !evidence; i--) evidence = traceEvidence(changes[i]!);
+      }),
+    });
     const finalTime = isoWithOffset(now, this.o.offsetMinutes);
     const tasks = this.o.tasks(saidIn(textSent).length > 0);
     const stored = this.o.memory();
     // 맥락(요일·시각) 화살표는 지금 맞는 것만 맥락 칸 없이 PAM에 보인다(src/brain/ctx.ts contextView). 답 해석(fsmStep)과 목표 미리 세우기(lastMem)도 같은 걸러낸 기억을 써서 화살표 번호가 같다.
     const mem = stored.kind === "fsm" && "states" in stored.memory ? { ...stored, memory: contextView(stored.memory, ctxNow(now, this.o.offsetMinutes)) } : stored;
     this.lastMem = mem;
-    const base = { id: `pam-${seq}`, seq, atMs: now, textSent, finalTime, memoryVersion: mem.version, world: decisionWorld(view), tasks };
+    const requestRev = this.o.world.rev?.();
+    const base = { id: `pam-${seq}`, seq, atMs: now, ...(requestRev != null ? {request_rev:requestRev} : {}), textSent, finalTime, memoryVersion: mem.version, world: decisionWorld(view), tasks };
     // 직전 사람 상태: 행동이 아직 시작되지 않은 화살표가 있으면 그 출발 상태(PENDING_EDGE_MS 안), 아니면 마지막 판단의 상태
     if (this.pending && now - this.pending.at > PENDING_EDGE_MS) this.pending = null;
     const last = this.pending?.from ?? this.lastState;
@@ -201,8 +216,18 @@ export class Decider {
     const node = this.o.node?.();
     const query = async (life: AbortSignal) => {
         checkInput({ text: textSent, finalTime, memory: mem.memory, memoryKind: mem.kind, tasks });
-        return this.o.pam.predict({ final_time: finalTime, observation_text: textSent, memory_kind: mem.kind, memory: mem.memory, tasks, last_state: last },
-          { signal: AbortSignal.any([life, this.cancel.signal]), onUsage: (u) => { usage = u; } });
+        const signal = AbortSignal.any([life, this.cancel.signal]);
+        const trace = this.o.trace;
+        const row = signal.aborted ? "" : trace?.start("pam", { decision_id: base.id, evidence });
+        try {
+          const result = await this.o.pam.predict({ final_time: finalTime, observation_text: textSent, memory_kind: mem.kind, memory: mem.memory, tasks, last_state: last },
+            { signal, onUsage: (u) => { usage = u; } });
+          if (row) trace?.finish(row, signal.aborted ? "cancelled" : "done", signal.aborted ? "stopped" : "model_answer");
+          return result;
+        } catch (error) {
+          if (row) trace?.finish(row, signal.aborted ? "cancelled" : "failed", signal.aborted ? "stopped" : "failed");
+          throw error;
+        }
     };
     const job = Promise.resolve().then(() => node ? node.spawn(query) : query(this.cancel.signal))
       .then(
@@ -210,19 +235,21 @@ export class Decider {
           this.setLink(true);
           const newest = base.seq > this.answered;
           this.answered = Math.max(this.answered, base.seq);
-          const action = p.task_index === -1 ? null : tasks[p.task_index] ?? null;
+          const picked = p.task_index === -1 ? null : tasks[p.task_index] ?? null;
           // PAM의 생각 글은 계획 이유·판단 기록·대시보드에 남는다: 들은 말을 그대로 옮겼으면 뺀다
           const said = this.o.keepHeard?.() ? [] : saidIn(textSent);
           const prediction = said.length ? { ...p, observation: redactSaid(p.observation, said), reasoning: redactSaid(p.reasoning, said) } : p;
           // PAM 답의 상태·화살표를 그대로 싣는다(거꾸로 찾지 않는다)
           const step = mem.kind === "fsm" && "states" in mem.memory ? fsmStep(mem.memory, p) : null;
+          let action = picked !== null && step && this.o.edgeAllowed && !this.o.edgeAllowed(step, now) ? null : picked;
+          if (action && this.deferred({ ...base, status: "valid", prediction, action, fsm: step })) action = null;
           if (step) {
             const stale = this.released !== null && step.from === this.released.from && step.next_index === this.released.next && base.seq <= this.released.seq;
             // 늦은 답 전체를 버린다: 상태·pending을 바꾸지 않고 행동 없이 기록만(실행 추적은 late를 「앞선 판단」으로 남긴다)
             if (stale) return this.finish({ ...base, status: "valid", prediction, action: null, fsm: step, late: true, ...(usage ? { usage } : {}) });
           }
           // 더 뒤에 보낸 요청의 답을 이미 받았다: 앞선 관찰의 답이라 상태·기다리는 화살표·들은 말은 그대로 두고 기록만 넘긴다(실행 추적은 번호로 늦은 답이라 본다)
-          if (!newest) return this.finish({ ...base, status: "valid", prediction, action, fsm: step, ...(usage ? { usage } : {}) });
+          if (!newest) return this.finish({ ...base, status: "valid", prediction, action, fsm: step, late:true, ...(usage ? { usage } : {}) });
           if (step) {
             this.lastState = step.state;
             const same = this.pending !== null && step.from === this.pending.from && step.next_index === this.pending.next;
@@ -253,16 +280,34 @@ export class Decider {
     this.o.emit({ type: "link", at_ms: this.clock.now(), target: "pam", up, text: up ? LINK_TEXT.up : LINK_TEXT.down });
   }
 
+  private deferred(r: DecisionRecord): boolean {
+    return r.source !== "speech" && this.o.interventionFor?.(r, this.o.world.view(this.clock.now())) === "defer_proactive";
+  }
+
   private finish(r: DecisionRecord): void {
     if (this.stopped) return;
-    const action = r.status === "valid" && r.action === null && !r.late ? this.o.goalTrigger?.(r) ?? null : null;
-    if (action) r = { ...r, action, goal: true };
+    const action = r.status === "valid" && !r.late && !r.source ? this.o.goalTrigger?.(r) ?? null : null;
+    if (action) {
+      const goal = { ...r, action, goal: true as const };
+      if (!this.deferred(goal)) r = goal;
+    }
     this.emitDecision(r);
     this.o.onDecision?.(r);
   }
 
   private emitDecision(r: DecisionRecord): void {
     if (this.stopped) return;
+    const trace = this.o.trace;
+    if (trace) {
+      const kind = r.action && !r.late && r.status === "valid" ? "action" : "wait";
+      const output = r.late ? "late" : r.status !== "valid" ? "failed" : r.action === "컵 치우기" ? "select_cup" : r.action ? "selected" : "waiting";
+      const target = r.action && kind === "action" ? { action: r.action } : undefined;
+      if (r.source === "speech") trace.event(kind, { decision_id: r.id }, output, undefined, target);
+      else {
+        const row = trace.start(kind, { decision_id: r.id }, r.atMs, target);
+        trace.finish(row, r.late ? "cancelled" : r.status === "valid" ? "done" : "failed", output);
+      }
+    }
     this.o.emit(decisionLog(r, this.clock.now(), this.o.mode?.(r.action) ?? modeOf(r.action), !!this.o.keepHeard?.()));
   }
 

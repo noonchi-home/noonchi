@@ -2,7 +2,7 @@
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type WebSocket from "ws";
 import { startFakeOpenAI, type FakeServer } from "../scripts/fake-openai.js";
 import { matchChoice } from "../src/act/tasks.js";
@@ -16,6 +16,7 @@ import { CUP_SCRIPTS, planCalls } from "./helpers/planner.js";
 import { startFakePamLlm, type FakePamLlm, pamLlmEnv } from "./helpers/pam.js";
 import { BOX_START, BOX_WALLS } from "./helpers/align.js";
 import { heardAtOf, openPhone, openWebSocket } from "./helpers/ws.js";
+import { expectedSpeechId } from "./helpers/phone-speech.js";
 import { useLearnedMemory } from "./helpers/memory.js";
 import { CUP_FSM_MEMORY, type FsmMemory } from "../src/brain/decision.js";
 
@@ -141,7 +142,8 @@ describe("startServer(BRAIN=1): 클로이드 질문을 폰 말로 답한다", ()
     };
     const ask = await asked();
     expect(ask).toEqual({ type: "command", id: expect.stringMatching(/^plan:pam-\d+$/), step: `${ask.id}:1`, text: "컵을 치울까요?", vision: null, target: null, speak: true,
-      choices: [{ id: "clear", label: "치워 주세요" }, { id: "keep", label: "그대로 둬요" }], grade: "question" });
+      choices: [{ id: "clear", label: "치워 주세요" }, { id: "keep", label: "그대로 둬요" }], grade: "question",
+      speech_id: expectedSpeechId("apartment#1", 1) });
     const replies = async (n: number) => {
       for (const end = Date.now() + 5000; box.filter((m) => m.type === "reply").length < n; ) {
         if (Date.now() > end) throw new Error("답이 오지 않았습니다");
@@ -245,13 +247,16 @@ describe("startServer(BRAIN=1): 말 답은 말할 때 떠 있던 명령에만", 
     expect(replies()[0]).toEqual({ type: "reply", text: "" });
     expect(llm.bodies()).toHaveLength(agentCalls);
     const rows = () => srv!.history.list({ kinds: ["execution", "world"] });
+    // 기록은 기록 작업 스레드가 커밋한 뒤에 읽힌다(들은 말 줄은 버스를 한 번 더 거쳐 쓴다)
+    await vi.waitFor(() => {
+      expect(rows().some((r) => r.kind === "execution" && r.text === "늦은 답이라 쓰지 않음")).toBe(true);
+      expect(rows().some((r) => r.kind === "world" && r.text === "들은 말 있음")).toBe(true);
+    }, { timeout: 5000 });
     expect(rows().some((r) => r.kind === "execution" && r.subject === ask!.id && r.text === "완료: 그대로 둬요")).toBe(false);
-    expect(rows().some((r) => r.kind === "execution" && r.text === "늦은 답이라 쓰지 않음")).toBe(true);
-    expect(rows().some((r) => r.kind === "world" && r.text === "들은 말 있음")).toBe(true);
     ws.send(JSON.stringify({ type: "say", text: "그냥 그대로 둬", at: heardAtOf(box) }));
     for (const end = Date.now() + 5000; replies().length < 2 && Date.now() < end; ) await new Promise((r) => setTimeout(r, 20));
     expect(replies()[1]).toMatchObject({ text: "알겠어요. 그대로 둘게요" });
-    expect(rows().some((r) => r.kind === "execution" && r.subject === ask!.id && r.text === "완료: 그대로 둬요")).toBe(true);
+    await vi.waitFor(() => expect(rows().some((r) => r.kind === "execution" && r.subject === ask!.id && r.text === "완료: 그대로 둬요")).toBe(true), { timeout: 5000 });
   }, 30_000);
 });
 

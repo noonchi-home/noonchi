@@ -14,6 +14,7 @@ import type { WallSeg } from "./sync/walls.js";
 import { fromTwin, planOf, toTwin, type Alignment, type Plan2, type Vec3 } from "../shared/geometry.js";
 import type { Quat, CameraView } from "../contract/observe.js";
 import { DEFAULT_EYE_HEIGHT_M } from "../layout/index.js";
+import { PHOTO_GAP_DEG, photoConflict } from "../shared/photo-alignment.js";
 import type { FrameHeader } from "./packet.js";
 
 export type { EyeEvent } from "../contract/events.js";
@@ -177,6 +178,22 @@ export class PhoneSession {
   /** 폰에 마지막으로 알린 맞춤 상태(바뀜 알림용)와 그때 변환·폰 자리. */
   private told = "";
   private toldRigid: SyncState["rigid"] = null;
+  private photoFrames=new WeakSet<FrameHeader>();
+  private photoAt=-Infinity;
+  markEngine(header:FrameHeader):void { this.photoFrames.add(header); }
+  localized(header:FrameHeader,r:import("../bus/index.js").Body<"/perception/localized">):boolean {
+    if(!this.photoFrames.delete(header) || header.held || header.tracking==="limited" ||
+      !header.position || !header.orientation || !header.projection || (header.epoch!==undefined && header.epoch!==this.epoch) ||
+      this.photoAt>=r.captured_ms) return false;
+    this.photoAt=r.captured_ms;
+    const ar=toTwin(header.position,header.orientation,{theta:0,tx:0,ty:0,floorY:0});
+    const conflict=photoConflict(r.ar_gap_m,r.ar_gap_deg) || (r.pitch_deg!==null && Math.abs(ar.pitch_deg-r.pitch_deg)>PHOTO_GAP_DEG);
+    if(r.position && r.yaw_deg!==null && (!this.aligned || conflict)) {
+      // 다시 맞췄을 때만 그 전 원점으로 표시한 프레임을 버린다
+      if(this.sync.photo(header.position,header.orientation,r.position,r.yaw_deg,conflict)) this.photoFrames=new WeakSet();
+    } else if(r.position && r.yaw_deg!==null) this.sync.photoAgrees();
+    return true;
+  }
   private lastPhone: Plan2 = [0, 0];
 
   constructor(opts: PhoneSessionOptions) {
@@ -261,6 +278,8 @@ export class PhoneSession {
 
   /** 맞춤과 모은 증거를 모두 지운다(새 원점·다시 맞추기). */
   private forget(): void {
+    this.photoFrames=new WeakSet();
+    this.photoAt=-Infinity;
     this.last = null;
     this.sync.reset();
   }
@@ -283,6 +302,17 @@ export class PhoneSession {
     return { stale: false, dropped: had };
   }
 
+  private navRigid: SyncState["rigid"]=null;
+  navigationShifted():boolean {
+    const rigid=this.sync.state().rigid;
+    const gap=rigid && this.navRigid ? rigidGap(this.navRigid,rigid,[this.lastPhone]) : null;
+    const shifted=gap ? gap.shiftM>0.10 || gap.rotDeg>5 : rigid!==this.navRigid;
+    if(shifted) this.navRigid=rigid;
+    return shifted;
+  }
+
+  retiredOrigin(epoch:string):boolean { return this.retired.has(epoch); }
+
   get aligned(): boolean {
     return this.alignedNow() !== null;
   }
@@ -294,7 +324,7 @@ export class PhoneSession {
         ? { error: "폰 위치를 맞추는 중이에요. 방을 천천히 둘러본 뒤 다시 말해 주세요." }
         : { error: "폰을 트윈에 맞추기 전이에요. 폰에서 시작 위치에 서서 「여기서 시작」을 해 주세요." };
     }
-    if (!this.last) return { error: "폰 AR이 켜져 있지 않아요. 폰에서 AR 시작을 눌러 주세요." };
+    if (!this.last) return { error: "폰 AR이 켜져 있지 않아요. 폰에서 ‘카메라 켜기’를 눌러 주세요." };
     if (this.now().getTime() - this.last.at > HERE_MAX_AGE_MS) return { error: "폰 AR 자세가 15초 넘게 오지 않았어요. 폰 화면을 켜고 다시 말해 주세요." };
     if (!this.last.hit) return { error: "폰 조준점이 바닥에 닿지 않았어요. 물건 아래 바닥을 가리키고 다시 말해 주세요." };
     return { position: this.last.hit, from: this.last.eye };
@@ -366,6 +396,7 @@ export class PhoneSession {
       if (!this.startPose) return { reply: this.status("시작 위치가 없어요. 설정 화면에서 시작 위치를 먼저 정해 주세요") };
       if (this.adoptEpoch(msg.epoch).stale) return { reply: this.status("이전 AR 세션의 기록이라 받지 않았어요. 다시 눌러 주세요") };
       this.last = null;
+      this.photoFrames=new WeakSet();
       this.lastPhone = [msg.position[0], msg.position[2]];
       // 영상 모드: 자세 흉내
       if (msg.fixed) this.sync.fixStart(this.startPose, msg.position, msg.orientation);

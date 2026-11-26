@@ -56,7 +56,7 @@ function fakeSession() {
     requestHitTestSource: async () => ({}),
     addEventListener: (t: string, f: Fn) => { (on[t] ??= []).push(f); },
     requestAnimationFrame(f: Fn) { raf = f; },
-    end() { for (const f of on.end ?? []) f(); },
+    end() { raf = null; for (const f of on.end ?? []) f(); },
     step(time: number, frame: unknown) { const f = raf; raf = null; f?.(time, frame); },
   };
 }
@@ -120,6 +120,70 @@ const command = (over: Record<string, unknown> = {}) => ({ type: "command", id: 
 const CUP = { id: "cup_1", label: "컵", ar: [0, 0, -0.5] };
 
 describe("연결·지원", () => {
+  it("카메라를 허용한 동안만 가로 잠금을 요청하고 종료하면 푼다", async () => {
+    const orientation = { lock: vi.fn(async () => {}), unlock: vi.fn() };
+    const { c, startAr } = make({ orientation });
+    expect(orientation.lock).not.toHaveBeenCalled();
+    await startAr();
+    expect(orientation.lock).toHaveBeenCalledExactlyOnceWith("landscape");
+    c.stopAr();
+    expect(orientation.unlock).toHaveBeenCalledTimes(1);
+  });
+  it("포털은 첫 호출에 XR을 바로 요청하고 승인 전 소켓을 열지 않으며 중복 호출을 막는다", async () => {
+    let grant = (_session: ReturnType<typeof fakeSession>) => {};
+    const session = fakeSession();
+    const pending = new Promise<ReturnType<typeof fakeSession>>((resolve) => { grant = resolve; });
+    const requestSession = vi.fn(() => pending);
+    const previousSocket = FakeSocket.last;
+    const c = createPhoneController({
+      location: { protocol: "https:", host: "hub.example.test", search: "" },
+      portal: true, Socket: FakeSocket, Recognition: Rec as never, secure: true, xr: { isSessionSupported: async () => true },
+      arDeps: { xr: () => ({ requestSession }), gl: () => gl, layer: () => ({}), binding: () => null },
+    });
+    made.push(c);
+    const overlay = document.createElement("div");
+    c.attach(overlay, { start() {}, aim() {}, hit() {}, marks() {} });
+    await vi.waitFor(() => expect(c.view().support.kind).toBe("ready"));
+    expect(FakeSocket.last).toBe(previousSocket);
+    c.actions.startAr();
+    c.actions.startAr();
+    expect(requestSession).toHaveBeenCalledExactlyOnceWith("immersive-ar", expect.objectContaining({ domOverlay: { root: overlay } }));
+    expect(FakeSocket.last).toBe(previousSocket);
+    expect(Rec.all).toHaveLength(0);
+    grant(session);
+    await vi.waitFor(() => expect(session.looping()).toBe(true));
+    const ws = FakeSocket.last;
+    expect(ws.url).toBe("wss://hub.example.test/mobile/phone-events");
+    ws.open();
+    expect(ws.sent).toContainEqual(expect.objectContaining({ type: "reset", epoch: expect.any(String) }));
+    expect(rec().started).toBe(1);
+    session.end();
+    expect(c.view().ar).toBe(false);
+    expect(ws.readyState).toBe(3);
+  });
+
+  it("포털을 떠난 뒤 늦게 승인된 XR 세션은 폰 연결이나 마이크를 시작하기 전에 닫는다", async () => {
+    let grant = (_session: ReturnType<typeof fakeSession>) => {};
+    const session = fakeSession();
+    const end = vi.spyOn(session, "end");
+    const pending = new Promise<ReturnType<typeof fakeSession>>((resolve) => { grant = resolve; });
+    const previousSocket = FakeSocket.last;
+    const c = createPhoneController({
+      location: { protocol: "https:", host: "hub.example.test", search: "" },
+      portal: true, Socket: FakeSocket, Recognition: Rec as never, secure: true, xr: { isSessionSupported: async () => true },
+      arDeps: { xr: () => ({ requestSession: () => pending }), gl: () => gl, layer: () => ({}), binding: () => null },
+    });
+    c.attach(document.createElement("div"), { start() {}, aim() {}, hit() {}, marks() {} });
+    await vi.waitFor(() => expect(c.view().support.kind).toBe("ready"));
+    c.actions.startAr();
+    c.close();
+    grant(session);
+    await vi.waitFor(() => expect(end).toHaveBeenCalledOnce());
+    expect(FakeSocket.last).toBe(previousSocket);
+    expect(Rec.all).toHaveLength(0);
+    expect(c.view().ar).toBe(false);
+  });
+
   it("https 주소면 wss로 /phone/events에 붙는다", () => {
     expect(make().ws.url).toBe("wss://pc.ts.net:8443/phone/events");
   });
@@ -266,6 +330,88 @@ describe("말의 at: 말할 때 떠 있던 명령과 승인 대기", () => {
 describe("소리 차례(sayAloud): 앞 말을 끊지 않고 차례로 읽는다", () => {
   const WARN = "인덕션이 다시 켜졌어요. 꺼 주세요";
   const ASK = "냄비와 상판이 뜨거워져요. 인덕션을 켤까요?";
+
+  it("같은 명령의 재전달·비전 갱신·재접속은 무음이고 새 재안내 번호와 새 단계만 읽는다", () => {
+    vi.useFakeTimers();
+    const { c, ws, spoken, dones } = make();
+    const speech = (revision: number) => ({ speech_id: { boot: "boot", homeEpoch: "목련#1", publisher: "act", revision } });
+    ws.push(command(speech(1)));
+    ws.push(command(speech(1)));
+    dones[0]!();
+    ws.push(command({ ...speech(2), vision: "컵 · 손에 있음", speak: false }));
+    expect(c.view().command?.vision).toBe("컵 · 손에 있음");
+    ws.drop();
+    vi.advanceTimersByTime(1000);
+    const again = FakeSocket.last;
+    again.open();
+    expect(again.sent[0]).toEqual({ type: "hello", protocol: PHONE_PROTOCOL });
+    again.push(command({ ...speech(2), speak: false }));
+    again.push(command(speech(1)));
+    expect(spoken).toEqual(["컵을 들어 주세요"]);
+    again.push(command(speech(3)));
+    again.push(command(speech(3)));
+    dones[1]!();
+    again.push(command({ ...speech(4), step: "plan:pam-1:3", text: "싱크대로 가 주세요" }));
+    expect(spoken).toEqual(["컵을 들어 주세요", "컵을 들어 주세요", "싱크대로 가 주세요"]);
+  });
+
+  it.each([["boot-2", "목련#1"], ["boot-1", "목련#2"]])("같은 ID로 다시 시작한 새 기동·집 %s / %s의 첫 명령은 읽는다", (boot, homeEpoch) => {
+    vi.useFakeTimers();
+    const { ws, spoken, dones } = make();
+    const previous = command({ id: "dock:1", step: "dock:1:1", text: "충전 자리로 가 주세요",
+      speech_id: { boot: "boot-1", homeEpoch: "목련#1", publisher: "act-1", revision: 12 } });
+    ws.push(previous);
+    dones[0]!();
+    ws.drop();
+    vi.advanceTimersByTime(1000);
+    const connected = FakeSocket.last;
+    connected.open();
+    connected.push({ ...previous, speak: false });
+    expect(spoken).toEqual([previous.text]);
+    const next = { ...previous, speech_id: { boot, homeEpoch, publisher: "act-1", revision: 2 } };
+    connected.push(next);
+    connected.push(next);
+    expect(spoken).toEqual([previous.text, next.text]);
+  });
+
+  it("새 단계·명령 삭제·세션 종료는 진행 중인 낭독을 끊고 늦은 합성 콜백을 무시한다", async () => {
+    const hush = vi.fn();
+    const { c, ws, spoken, dones, startAr } = make({ hush });
+    await startAr();
+    ws.push(command());
+    ws.push(command({step: "plan:pam-1:3", text: "싱크대로 가 주세요"}));
+    expect(spoken).toEqual(["컵을 들어 주세요", "싱크대로 가 주세요"]);
+    expect(hush).toHaveBeenCalledTimes(1);
+    dones[0]!();
+    expect(c.view().listening).toBe("paused");
+    ws.push({type:"command_clear", id:"plan:pam-1"});
+    expect(hush).toHaveBeenCalledTimes(2);
+    expect(c.view().listening).toBe("on");
+    dones[1]!();
+    ws.push(command({step: "plan:pam-1:4", text: "컵을 놓아 주세요"}));
+    c.stopAr();
+    expect(hush).toHaveBeenCalledTimes(3);
+    expect(c.view().listening).toBe("off");
+    dones[2]!();
+    expect(c.view().listening).toBe("off");
+  });
+
+  it("낭독 때 폐기한 인식기의 늦은 완료·승인과 말 시작을 무시한다", async () => {
+    const { ws, sent, dones, startAr } = make();
+    await startAr();
+    const old = rec();
+    ws.push(command());
+    old.speechStart();
+    old.hear("완료");
+    expect(sent().filter(m => m.type === "say")).toEqual([]);
+    dones[0]!();
+    old.speechStart();
+    old.hear("승인");
+    rec().hear("다 했어");
+    expect(sent().filter(m => m.type === "say")).toEqual([
+      { type: "say", text: "다 했어", at: { kind: "command", id: "plan:pam-1", step: "plan:pam-1:2", pending: [] } },
+    ]);
+  });
 
   it("B 명령(안전 문구 포함)을 읽는 중 경고 reply가 오면 명령을 끝까지 읽은 뒤 경고를 읽고, 그다음 B 명령을 한 번 다시 읽는다. 명령 줄은 그대로다", () => {
     const { c, ws, spoken, dones } = make();
@@ -586,6 +732,16 @@ describe("물건 자리 맞추기", () => {
 });
 
 describe("AR 화면 그림", () => {
+  it("hides a walking guide on local tracking loss and on disconnect",async()=>{
+    const {ws,session,marks,startAr}=make();
+    await startAr();ws.push(status({aligned:true}));
+    ws.push(command({kind:"go",target:CUP,speak:false,guide:{revision:1,near_m:0.32,remaining:[
+      {kind:"stand",room:"kitchen",ar:[0.2,0,-0.5]}]}}));
+    session.step(100,frame());expect(marks.at(-1)).toMatchObject([{id:CUP.id,stand:true}]);
+    session.step(200,frame(true));expect(marks.at(-1)).toEqual([]);
+    ws.drop();session.step(300,frame());expect(marks.at(-1)).toEqual([]);
+  });
+
   it("명령 대상 고리: 명령에 실린 대상 하나에만 그린다. 에이전트 초점(다른 물건)은 그리지 않는다", async () => {
     const { ws, session, marks, startAr } = make();
     await startAr();

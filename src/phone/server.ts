@@ -1,10 +1,10 @@
-// 폰 AR 페이지와 자세 WebSocket만 여는 작은 서버(SSOT 9.6). 같은 와이파이의 폰이 붙도록 0.0.0.0에 열 수 있다.
+// 폰 AR 페이지와 자세 WebSocket만 여는 작은 서버(SSOT 9.6). 이 PC(루프백)에서만 듣고 폰은 Tailscale serve HTTPS로 들어온다(src/server/loopback.ts).
 // 기기 제어 REST는 여기 없다. 본 서버(127.0.0.1)는 그대로 두고 눈 자세는 onEye로, 폰의 말(say)과 승인 답(승인·거절)은 onSay·onConfirm·onCancel로
 // 넘긴다(그 뒤는 에이전트·승인 정책이 맡는다). 실제 폰에 명령·질문이 떠 있으면 말을 먼저 그 답으로 맞춰 보고(onAnswer),
 // 답 단추(answer)는 onChoice로 넘긴다(src/contract/phone.ts). 명령 대상의 트윈 자리는 맞춘 변환으로 AR 자리로 바꿔 보내고(맞추기 전 null),
 // 맞춤이 바뀌면 지금 명령을 다시 보낸다(speak false). 위치 맞춤 모듈(src/phone/sync)의 상태가 바뀌면 붙은 폰 모두에 상태를 보낸다.
 // 명령의 소리 등급(grade)은 실행 추적이 붙여 온 그대로 보낸다(src/act/talk-grade.ts). 실제 폰은 안전·질문 말을 자르지 않고 끝까지 읽는다.
-// 내부 테스트용이라 같은 와이파이의 누구나 말을 보낼 수 있다.
+// 인증은 없다: 이 PC와 Tailscale serve로 들어온 tailnet 기기만 닿는다.
 // 폰 화면은 React 빌드 ui/dist/phone/이고 빌드 파일은 /assets/다(대시보드와 같은 빌드). 영상 모드 영상은 /phone/videos/다(videoDir, Range).
 // 폰 판본(src/contract/phone-version.ts): 연결마다 hello를 기다린다. 판본이 맞는 hello를 받기 전에는 그 연결에 계획 명령을 보내지 않고 답(answer·say·confirm·cancel)을
 // 받지 않는다(관찰 사진·자세는 받는다). 열린 뒤 2초 안에 hello가 없거나 판본이 다르면 옛 탭으로 두고 새로 고침 안내(명령 id refresh)를 보낸다.
@@ -13,14 +13,15 @@
 
 import { existsSync, statSync } from "node:fs";
 import { createServer, type IncomingMessage, type Server } from "node:http";
-import { networkInterfaces } from "node:os";
 import { join, resolve } from "node:path";
+import type { Duplex } from "node:stream";
 import { WebSocket, WebSocketServer } from "ws";
+import { MOBILE_PHONE_EVENTS } from "../shared/mobile-phone.js";
 import type { FocusTarget } from "../contract/events.js";
 import type { ApprovalAnswer, HeardAt, PhoneCommand, PhonePending, PhoneTalkReply, PlannedCommand, PlannedCommandMessage } from "../contract/phone.js";
 import { PHONE_PROTOCOL } from "./protocol.js";
 import { REFRESH_TEXT } from "../act/labels.js";
-import { listenRetry } from "../shared/net.js";
+import { isLoopbackHost, listenRetry } from "../shared/net.js";
 import { headWithin } from "../shared/cut.js";
 import { serveFile, serveRange } from "../shared/static.js";
 import { captureTime } from "../shared/capture-time.js";
@@ -33,6 +34,7 @@ import type { CameraView } from "../contract/observe.js";
 import type { SyncState } from "./sync/aligner.js";
 import type { TwinLandmark } from "./sync/landmarks.js";
 import type { StartPose } from "./sync/start.js";
+import { ANDROID_ASSET_LINKS_PATH, type AndroidAssetLink } from "./android-twa.js";
 
 export type { FocusTarget } from "../contract/events.js";
 
@@ -70,6 +72,7 @@ export function engineHeader(header: FrameHeader, video: boolean): FrameHeader {
 export interface PhoneServerOptions {
   onReady?: (ready: boolean) => void;
   onEye: (eye: EyeEvent) => void;
+  onNavigationPose?: (p:import("../contract/phone.js").NavigationPose)=>void;
   /** 카메라 프레임·사진을 받을 곳. 없으면 바이너리 메시지를 무시한다. */
   feed?: EyeFeed;
   /** 있으면 맞추기 전에도 창가 고정 위치 + 폰 방향으로 추정 눈을 보낸다(session.ts estimateFor). */
@@ -84,6 +87,7 @@ export interface PhoneServerOptions {
   uiDir?: string;
   /** 영상 모드 영상 폴더(runtime/videos). 있으면 GET /phone/videos/<이름>.mp4·.webm을 Range로 나눠 준다. */
   videoDir?: string;
+  androidAssetLinks?: readonly AndroidAssetLink[];
   log?: (msg: string) => void;
   /** 폰에서 말하거나 쓴 문장(음성 인식 결과). 에이전트 답과 승인 대기를 돌려준다. */
   onSay?: (text: string) => Promise<PhoneReply>;
@@ -133,6 +137,8 @@ export function heardAt(raw: unknown): HeardAt | undefined {
 
 export interface PhoneServer {
   readonly server: Server;
+  /** 허브에서 검사한 같은 출처 연결을 기존 폰 처리기에 잇는다. */
+  upgradePortal(req: IncomingMessage, socket: Duplex, head: Buffer): void;
   /** '여기': 마지막 자세의 조준점(평면도). */
   here(): HerePoint;
   /** 클로이드가 지금 다루는 물건을 폰 화면에 표시하게 보낸다(맞추기 전이면 보내지 않는다). */
@@ -142,6 +148,7 @@ export interface PhoneServer {
   /** 트윈 물건 기준점을 바꾼다(배치 보정). */
   setLandmarks(list: readonly TwinLandmark[]): void;
   /** 엔진 프레임 YOLO 기준점 상자(관찰 흐름이 넘긴다). 맞춤이 바뀌면 폰에 상태를 보낸다. */
+  localized(header:FrameHeader, result:import("../bus/index.js").Body<"/perception/localized">):boolean;
   landmarks(header: FrameHeader, boxes: readonly LandmarkBoxIn[]): void;
   /** 위치 맞춤 모듈 상태. */
   syncState(): SyncState;
@@ -167,18 +174,17 @@ export function sameHost(origin: string | undefined, host: string | undefined): 
   }
 }
 
-/** 폰에서 열 주소. 0.0.0.0이면 이 PC의 사설 IPv4마다 하나씩. */
-export function lanUrls(port: number, host: string): string[] {
-  if (host !== "0.0.0.0" && host !== "::") return [`http://${host}:${port}/phone/`];
-  return Object.values(networkInterfaces())
-    .flat()
-    .filter((a) => a && a.family === "IPv4" && !a.internal)
-    .map((a) => `http://${a!.address}:${port}/phone/`);
+/** 이 PC에서 여는 폰 주소: 루프백이면 그 주소 하나. 컨테이너의 0.0.0.0·::면 없다(밖에서는 PHONE_URL·tailscale serve 주소로 연다). */
+export function localPhoneUrls(port: number, host: string): string[] {
+  if (!isLoopbackHost(host)) return [];
+  const shown = host.includes(":") && !host.startsWith("[") ? `[${host}]` : host;
+  return [`http://${shown}:${port}/phone/`];
 }
 
 export function createPhoneServer(opts: PhoneServerOptions): PhoneServer {
   const uiDir = resolve(opts.uiDir ?? DEFAULT_UI_DIR);
   const videoDir = opts.videoDir ? resolve(opts.videoDir) : null;
+  const assetLinks = opts.androidAssetLinks?.length ? JSON.stringify(opts.androidAssetLinks) : null;
   const log = opts.log ?? ((m: string) => console.log(m));
   const session = new PhoneSession({ fallback: opts.fallback, eyeHeightM: opts.eyeHeightM, floorAt: opts.floorAt, sync: opts.sync });
 
@@ -195,6 +201,11 @@ export function createPhoneServer(opts: PhoneServerOptions): PhoneServer {
       return;
     }
     const head = req.method === "HEAD";
+    if (path === ANDROID_ASSET_LINKS_PATH && assetLinks) {
+      res.writeHead(200, { "content-type": "application/json", "cache-control": "no-store" });
+      res.end(head ? undefined : assetLinks);
+      return;
+    }
     // 폴더마다 그 폴더를 뿌리로 내준다(..%2F로 ui/dist의 대시보드·설정 화면에 닿지 않게)
     const file = PHONE_FILES.exec(path);
     // 영상은 같은 출처로 준다(폰 페이지가 영상을 canvas에 그려 보낸다). 이름이 틀리거나 없으면 404
@@ -214,12 +225,18 @@ export function createPhoneServer(opts: PhoneServerOptions): PhoneServer {
   });
 
   const wss = new WebSocketServer({
-    server,
-    path: "/phone/events",
+    noServer: true,
     maxPayload: MAX_PACKET_BYTES,
     verifyClient: ({ origin, req }: { origin?: string; req: IncomingMessage }) => sameHost(origin, req.headers.host),
   });
-  wss.on("error", () => {}); // listen 실패는 listen()의 reject로 전달된다(app.ts와 같은 이유)
+  wss.on("error", () => {});
+  const upgrade = (req: IncomingMessage, socket: Duplex, head: Buffer) =>
+    wss.handleUpgrade(req, socket, head, (ws) => wss.emit("connection", ws, req));
+  const badUpgrade = (socket: Duplex) => socket.end("HTTP/1.1 400 Bad Request\r\nConnection: close\r\nContent-Length: 0\r\n\r\n");
+  server.on("upgrade", (req, socket, head) => {
+    if (req.url?.split("?", 1)[0] === "/phone/events") upgrade(req, socket, head);
+    else badUpgrade(socket);
+  });
 
   const reply = (ws: WebSocket, msg: unknown) => {
     if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(msg));
@@ -252,7 +269,9 @@ export function createPhoneServer(opts: PhoneServerOptions): PhoneServer {
     if (header.kind === "engine") {
       const view = header.position && header.orientation ? session.viewAt(header.position, header.orientation, header.projection, header.epoch) : null;
       // 영상 모드: held
-      opts.onEngine?.(jpeg, engineHeader(header, video), eyeOf(), view, receivedAtMs);
+      const original=engineHeader(header,video);
+      session.markEngine(original);
+      opts.onEngine?.(jpeg, original, eyeOf(), view, receivedAtMs);
       return;
     }
     // 화면 프레임은 표시만, 사진은 저장만 한다(관찰 흐름에는 엔진 프레임만 들어간다)
@@ -309,15 +328,27 @@ export function createPhoneServer(opts: PhoneServerOptions): PhoneServer {
     opts.onReady?.(current);
   };
   /** 실제 폰에 보낼 명령: 대상 트윈 자리 → AR 자리(맞추기 전이면 대상 null). */
-  const wire = (c: PlannedCommand, speak = c.speak): PhoneCommand => {
+  const navSources=new Map<WebSocket,string>();
+  let navGen=0, navAt=-Infinity;
+  const invalidate=()=>{
+    navGen++;navAt=-Infinity;
+    opts.onNavigationPose?.({quality:"unavailable",position:null,pose_gen:navGen,observed_ms:Date.now()});
+    if(current?.guide) for(const client of wss.clients) if(ok(client)) reply(client,wire(current,false,client));
+  };
+  const wire = (c: PlannedCommand, speak = c.speak, client?:WebSocket): PhoneCommand => {
     const ar = c.target ? session.toAr(c.target.position) : null;
-    return { ...c, target: c.target && ar ? { id: c.target.id, label: c.target.label, ar } : null, speak };
+    const {guide,...command}=c;
+    const owner=client && navSources.has(client) && navSources.size===1 && Date.now()-navAt<=2000;
+    const wireGuide=guide && ar && owner && guide.pose_gen===navGen ? {...guide,remaining:guide.remaining.map(({position,...point})=>({
+      ...point,ar:session.toAr(position)!})) as NonNullable<PhoneCommand["guide"]>["remaining"]} : null;
+    const vision=guide && !wireGuide ? "위치를 다시 맞춰 주세요." : command.vision;
+    const look = c.target?.look ? session.toAr(c.target.look) : null;
+    return { ...command, vision, ...(guide===undefined?{}:{guide:wireGuide}), target: c.target && ar ? { id: c.target.id, label: c.target.label, ar, ...(look ? { look } : {}) } : null, speak };
   };
   /** 맞춤이 바뀌었으면(moved: 맞춘 변환이 움직였어도) 지금 명령을 새 대상 자리로 다시 보낸다. */
   const resendIf = (wasAligned: boolean, moved = false) => {
     if (!current || (session.aligned === wasAligned && !(moved && session.aligned))) return;
-    const msg = wire(current, false);
-    for (const ws of wss.clients) if (ok(ws)) reply(ws, msg);
+    for (const ws of wss.clients) if (ok(ws)) reply(ws,wire(current,false,ws));
   };
   /** 위치 맞춤 상태가 바뀌면 붙은 폰 모두에 상태를 보낸다. */
   const broadcastStatus = () => {
@@ -330,6 +361,7 @@ export function createPhoneServer(opts: PhoneServerOptions): PhoneServer {
     const video = videoSession(req.url, videoDir);
     log(`[phone] 폰 연결(지금 ${wss.clients.size}대)`);
     ws.on("close", () => {
+      if(navSources.delete(ws)) invalidate();
       notifyReady();
       opts.feed?.video.endSource(source);
       log(`[phone] 폰 끊김(지금 ${wss.clients.size}대)`);
@@ -348,6 +380,7 @@ export function createPhoneServer(opts: PhoneServerOptions): PhoneServer {
     const hello = (protocol: unknown) => {
       const was = phase.get(ws);
       if (protocol !== PHONE_PROTOCOL) {
+        if(navSources.delete(ws)) invalidate();
         if (was !== "old") old();
         return;
       }
@@ -355,7 +388,7 @@ export function createPhoneServer(opts: PhoneServerOptions): PhoneServer {
       phase.set(ws, "ok");
       notifyReady();
       if (was === "old") reply(ws, { type: "command_clear", id: REFRESH_COMMAND.id });
-      reply(ws, current ? wire(current, false) : { type: "command_clear" });
+      reply(ws, current ? wire(current, false, ws) : { type: "command_clear" });
       // 지금 승인 대기 목록도 보낸다(새로 연 폰도 이미 대기 중인 질문을 보고 답한다)
       if (opts.pending) reply(ws, { type: "reply", text: "", pending: opts.pending() } satisfies PhoneTalkReply);
     };
@@ -401,8 +434,34 @@ export function createPhoneServer(opts: PhoneServerOptions): PhoneServer {
         }
         return;
       }
+      const sample=raw as {epoch?:unknown;captured_at?:unknown;time_err_ms?:unknown};
+      const origin=typeof sample.epoch==="string" && sample.epoch.length<=64 ? sample.epoch : "";
+      if(origin && session.retiredOrigin(origin)) return;
+      if(type==="tracking_lost"){
+        if(ok(ws) && origin && navSources.get(ws)===origin && Number.isFinite(navAt)) invalidate();
+        return;
+      }
+      if(ok(ws) && origin && (type==="start" || type==="pose") && navSources.get(ws)!==origin){
+        navSources.set(ws,origin);invalidate();
+      }
+      if(type==="reset" && navSources.get(ws)===origin){navSources.delete(ws);invalidate();}
+      // The shared alignment must not ingest a second AR origin during a guided walk.
+      if(navSources.size && navSources.keys().next().value!==ws) return;
       const wasAligned = session.aligned;
       const out = session.handle(raw);
+      const shifted=session.navigationShifted();
+      if((type==="start" && !out.reply?.error) || wasAligned!==session.aligned || shifted) invalidate();
+      if(type==="pose" && ok(ws) && navSources.get(ws)===origin && navSources.size===1){
+        const t=sample.captured_at, eye=out.eye;
+        const now=Date.now();
+        if(typeof t==="number" && t<=navAt) return;
+        if(eye && !eye.estimated && eye.tracking==="ok" && session.aligned && typeof t==="number" && Number.isFinite(t)
+          && t<=now+100 && now-t<=2000 && !(typeof sample.time_err_ms==="number" && sample.time_err_ms>200)){
+          const st=session.syncState();
+          navAt=t;
+          opts.onNavigationPose?.({quality:"usable",pose_gen:navGen,position:eye.position,observed_ms:t,error_m:Math.max(st.anchorRmsM??0,st.wallRmsM??0)});
+        } else if(Number.isFinite(navAt)) invalidate();
+      }
       if (out.changed) broadcastStatus();
       if (out.reply && !(out.changed && !out.reply.error)) reply(ws, withEngine(out.reply));
       if (out.eye) opts.onEye(out.eye);
@@ -413,6 +472,14 @@ export function createPhoneServer(opts: PhoneServerOptions): PhoneServer {
 
   return {
     server,
+    upgradePortal(req, socket, head) {
+      if (req.url !== MOBILE_PHONE_EVENTS) { badUpgrade(socket); return; }
+      if (!req.headers.origin || !sameHost(req.headers.origin, req.headers.host)) {
+        socket.end("HTTP/1.1 403 Forbidden\r\nConnection: close\r\nContent-Length: 0\r\n\r\n");
+        return;
+      }
+      upgrade(req, socket, head);
+    },
     here: () => session.here(),
     sendFocus(targets, ttlMs) {
       if (!session.aligned) return;
@@ -424,12 +491,21 @@ export function createPhoneServer(opts: PhoneServerOptions): PhoneServer {
     },
     setStart(start) {
       session.setStart(start);
+      invalidate();
       broadcastStatus();
     },
     setLandmarks: (list) => session.setLandmarks(list),
+    localized(header,result) {
+      const before=session.aligned;
+      if(!session.localized(header,result)) return false;
+      const moved=session.navigationShifted();
+      if(moved || before!==session.aligned) {invalidate();broadcastStatus();resendIf(before,moved);}
+      return true;
+    },
     landmarks(header, boxes) {
       const wasAligned = session.aligned;
       if (!session.landmarks(header, boxes)) return;
+      if(session.navigationShifted()) invalidate();
       broadcastStatus();
       resendIf(wasAligned, true);
     },
@@ -441,12 +517,11 @@ export function createPhoneServer(opts: PhoneServerOptions): PhoneServer {
     command(msg) {
       if (msg.type === "command") current = msg;
       else if (msg.id === undefined || msg.id === current?.id) current = null;
-      const out = msg.type === "command" ? wire(msg) : msg;
-      for (const ws of wss.clients) if (ok(ws)) reply(ws, out);
+      for (const ws of wss.clients) if (ok(ws)) reply(ws, msg.type==="command"?wire(msg,msg.speak,ws):msg);
     },
     async listen(port, host) {
       const addr = await listenRetry(server, port, host, { log });
-      return { port: addr.port, urls: lanUrls(addr.port, host) };
+      return { port: addr.port, urls: localPhoneUrls(addr.port, host) };
     },
     async close() {
       // 처리 중인 승인 답(confirm·cancel)의 답을 보내고, 보낸 글이 소켓에 다 넘어갈 때까지(최대 1초) 기다린 뒤 연결을 끊는다.

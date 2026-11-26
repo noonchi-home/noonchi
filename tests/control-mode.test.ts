@@ -33,10 +33,10 @@ const runtime = () => {
   return dir;
 };
 
-async function start(opts: { token?: boolean; runtimeDir?: string; persist?: boolean; logs?: string[] } = {}) {
+async function start(opts: { token?: boolean; runtimeDir?: string; persist?: boolean; logs?: string[]; home?: string } = {}) {
   fake ??= await startFakeThinq();
   const env: Record<string, string> = {
-    HUB: "memory", PORT: "0", ...llm.env, HOME_ID: "oneroom", RUNTIME_DIR: opts.runtimeDir ?? runtime(),
+    HUB: "memory", PORT: "0", ...llm.env, HOME_ID: opts.home ?? "oneroom", RUNTIME_DIR: opts.runtimeDir ?? runtime(),
     THINQ_BASE_URL: fake.url, THINQ_POLL_MS: "0", THINQ_READBACK_MS: "0,10",
   };
   if (opts.token !== false) env.THINQ_TOKEN = TOKEN;
@@ -71,6 +71,20 @@ async function waitFor(pred: () => Promise<boolean>, ms = 3000) {
 }
 
 describe("시험 모드(기본)", () => {
+  it("목련 기본 연결을 요청하면 테스트 모드 그대로 해당 집의 목록만 읽는다", async () => {
+    const logs: string[] = [];
+    await start({ home: "mokryeon_180b", logs });
+    expect(home()).toBe("mokryeon_180b");
+    expect((await get("/api/setup/thinq?home=oneroom")).status).toBe(409);
+    expect(fake!.requests).toEqual([]);
+    const list = await get("/api/setup/thinq?home=mokryeon_180b");
+    expect(list.status).toBe(200);
+    expect(list.json).toMatchObject({ home: "mokryeon_180b", devices: [{ id: FAKE_AC }, { id: FAKE_FRIDGE }] });
+    expect((await get("/api/setup")).json.mode).toBe("test");
+    expect(fake!.requests).toHaveLength(1);
+    expect(JSON.stringify(list.json)).not.toContain(TOKEN);
+    expect(logs.join("\n")).not.toContain(TOKEN);
+  });
   it("기본은 시험 모드: health·설정에 mode test, ThinQ를 한 번도 부르지 않는다", async () => {
     await start();
     expect((await get("/api/health")).json.mode).toBe("test");
@@ -138,6 +152,8 @@ describe("실제 모드로 바꾸기", () => {
     expect((await goLive()).status).toBe(200);
     expect((await goLive()).status).toBe(200);
     expect((await post("/api/setup/mode", { mode: "test" })).status).toBe(200);
+    // 기록은 기록 작업 스레드가 커밋한 뒤에 읽힌다
+    await srv!.historyWriter.flush();
     expect(srv!.history.list({ kinds: ["mode"] }).map((r) => [r.text, r.data])).toEqual([["실제 모드", { mode: "live" }], ["시험 모드", { mode: "test" }]]);
   });
 });

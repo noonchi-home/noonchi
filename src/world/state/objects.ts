@@ -5,7 +5,7 @@ import type { FixtureClass, WorldChange } from "../../contract/world.js";
 import type { Detection, FrameMeta, Pose } from "../../contract/observe.js";
 import { CHANGE_TEXT } from "../labels.js";
 import { CLASSES } from "../vocab.js";
-import { KEYS, PERSON, Part } from "./core.js";
+import { FAST_GONE_MS, KEYS, PERSON, Part } from "./core.js";
 
 const FIXTURE_CLASSES: ReadonlySet<string> = new Set(KEYS.filter((k) => CLASSES[k].role === "fixture"));
 
@@ -24,15 +24,13 @@ export class Detections extends Part {
     if (view) core.sawCamera = true;
     const ids = new Map<string, string>();
     const seen = new Set<string>();
-    const people: Detection[] = [];
+    const candidates: { tmp: string; d: Detection }[] = [];
     const eyeRoom = frame.eye ? this.o.roomAt([frame.eye.position[0], frame.eye.position[1]]) : null;
     dets.forEach((d, i) => {
       const tmp = `d${i + 1}`;
       if (!core.accepts(d)) return;
       if (d.label === "person") {
-        ids.set(tmp, PERSON);
-        seen.add(PERSON);
-        people.push(d);
+        candidates.push({ tmp, d });
         return;
       }
       if (FIXTURE_CLASSES.has(d.label)) {
@@ -42,17 +40,39 @@ export class Detections extends Part {
         return;
       }
     });
-    if (people.length > 1) core.crowdAt = at;
+    // 사람 감지 가운데 사용자로 세는 것만 사람이다(시연자 손·폰을 든 시연자는 빼고, people.ts users)
+    const users = new Set(core.people.users(frame, candidates.map((c) => c.d), poses));
+    const people: Detection[] = [];
+    for (const c of candidates) {
+      if (!users.has(c.d)) continue;
+      ids.set(c.tmp, PERSON);
+      seen.add(PERSON);
+      people.push(c.d);
+    }
+    // 누구의 VLM 답인지 모르는 때(crowdAt)는 사용자로 세지 않은 상자까지 센다(VLM은 그 손·사람도 본다)
+    if (candidates.length > 1) core.crowdAt = at;
     if (seen.has(PERSON)) {
       core.person.last_seen_ms = at;
       core.person.count = people.length;
       core.people.locatePerson(frame, people);
     }
     const events = core.confirmer.observe(at, seen, core.person.visible ? [PERSON] : [], () => true);
+    if (seen.has(PERSON)) core.fastBlocked = false;
+    // 떠남 빠르게: 사람이 있던 자리가 화면 안인데 YOLO가 FAST_GONE_MS 이어 못 보면 사라짐 확정(4초)을 기다리지 않는다.
+    // 자리가 화면 밖이거나 모르면 셈을 지우고 확정 규칙(confirmer)에 맡긴다. VLM 답이 그 뒤 사람을 보면 되돌린다(WorldState.revertGone)
+    // 못 본 구간(vacantFrom)은 안 보임이 된 뒤에도 자리가 화면 안이고 못 보는 동안 이어진다(TV 규칙이 WorldPerson.vacant로 읽는다)
+    if (seen.has(PERSON) || !core.people.spotInView(frame)) core.vacantFrom = null;
+    else core.vacantFrom ??= at;
+    if (core.vacantFrom !== null && core.person.visible && !core.fastBlocked && at - core.vacantFrom >= FAST_GONE_MS && !events.some((e) => e.key === PERSON)) {
+      core.fastGone = { at, since: core.person.since_ms, count: core.person.count, facts: core.person.facts };
+      core.confirmer.forget(PERSON);
+      events.push({ key: PERSON, kind: "gone", atMs: at });
+    }
     const changes: WorldChange[] = [];
     for (const e of events) {
       core.person.visible = e.kind === "appeared";
       core.person.since_ms = at;
+      if (e.kind === "appeared") core.fastGone = null;
       if (e.kind === "gone") {
         core.person.facts = {};
         core.person.count = 0;

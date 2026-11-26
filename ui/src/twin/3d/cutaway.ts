@@ -2,7 +2,7 @@
 // 나머지 벽 위쪽은 숨긴다. 낮춘 벽의 문(문틀과 열리거나 닫힌 문짝)·창, 키 큰 가구(view.clip)는 자르기 높이(cut)에서 자르고 단면을 스텐실 뚜껑으로 어둡게 칠한다.
 // 키 큰 가구는 자른 자리에 몸통 색 뚜껑을 덮어 꽉 찬 가구로 보이고, 낮춘 벽의 창은 그 자리 낮은 유리 난간이다.
 import * as THREE from "three";
-import { cameraHeading, collectWalls, cutAction, upperVisible } from "@viewer/walls.mjs";
+import { cameraHeading, collectWalls, cutAction, furnitureAction, upperVisible } from "@viewer/walls.mjs";
 import { scene3d } from "../../../../src/design/tokens.ts";
 import type { Manifest } from "./materials";
 import type { OrthoCamera } from "./projection";
@@ -28,6 +28,7 @@ export interface SceneData {
 }
 export interface SceneEntry {
   id: string;
+  type?: string;
   category?: string;
   mount?: string;
   plan?: { wall?: string | null; elevation?: number } | null;
@@ -92,6 +93,7 @@ export function applyDefaultView(o: {
   scene: THREE.Object3D;
   data: SceneData;
   view: Manifest["view"];
+  dashboardFurniture?: boolean;
   heading: [number, number];
   cut: number;
   /** 단면 뚜껑 판의 가운데(three 좌표). */
@@ -237,6 +239,14 @@ export function applyDefaultView(o: {
   for (const e of data.objects) {
     const node = find(e.id);
     if (!node) continue;
+    const furniture = o.dashboardFurniture ? furnitureAction(e, doorIds) : null;
+    if (furniture) {
+      node.visible = furniture !== "hide";
+      const rail = railOf.get(e.id);
+      if (rail) rail.visible = false;
+      actions[furniture] = (actions[furniture] ?? 0) + 1;
+      continue;
+    }
     let act: string = cutAction(e, upperByWall, cut, wallOf);
     if (tallClip.has(e.id)) act = "clip";
     if (hideIds.has(e.id) && e.plan?.wall && upperByWall.get(e.plan.wall) === false) act = "hide"; // 낮춘 벽에 높이 걸린 가전도

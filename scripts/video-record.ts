@@ -1,5 +1,5 @@
 // 시연 녹화(scripts/video-check.ts --record): 같은 크롬의 대시보드 창(--record-phone이면 폰 탭도)을 CDP Page.startScreencast로 받아 폴더에 JPEG로 쓰고,
-// 끝나면 ffmpeg로 대시보드 한 화면(폰도 받았으면 왼쪽 폰·오른쪽 대시보드를 높이 맞춰 나란히) mp4 하나(H.264, yuv420p, RECORD_FPS)로 합친다.
+// 끝나면 ffmpeg로 대시보드 한 화면(폰도 받았으면 위 가로 폰·아래 대시보드를 너비 맞춰 쌓아) mp4 하나(H.264, yuv420p, RECORD_FPS)로 합친다.
 // 프레임은 받은 시각을 붙여 두고, concat 목록의 프레임마다 다음 프레임까지 보이게 해 영상 길이가 녹화한 실제 시간과 같다.
 // ack는 앞 ack에서 RECORD_MS(intervalMs를 주면 그 값) 뒤에 보낸다(크롬은 ack를 받아야 다음 프레임을 보내므로 화면마다 초당 약 10장, video-check --record-fps면 그 장 수).
 // 녹화 시작 답이 화면마다 START_TIMEOUT_MS 안에 오지 않거나 오류면 리스너·타이머·녹화를 정리하고 오류를 낸다.
@@ -12,7 +12,7 @@ import type { Page } from "./twin3d/cdp.js";
 export const RECORD_FPS = 10;
 /** 프레임 사이 간격(ms). 판정이 느려지면 늘린다. */
 export const RECORD_MS = 1000 / RECORD_FPS;
-/** mp4 높이: 두 화면을 이 높이에 맞춘다. */
+/** mp4 대시보드 높이: 대시보드를 이 높이에, 폰은 그 너비에 맞춘다. */
 export const RECORD_HEIGHT = 800;
 const JPEG_QUALITY = 80;
 /** ffmpeg가 이보다 오래 걸리면 끝낸다. */
@@ -71,21 +71,24 @@ export function concatList(frames: Frame[], endMs: number): string | null {
 /** 높이 height에 맞춘 화면 너비(짝수). */
 const panelWidth = (size: [number, number], height: number) => 2 * Math.round((size[0] * height) / size[1] / 2);
 
-/** ffmpeg 인자: concat 목록(폰이 있으면 폰, 대시보드)을 fps로 고르게 하고 높이를 맞춰(비율 그대로, 남는 곳은 채움) 폰이 있으면 나란히 붙여 H.264 yuv420p로, seconds 길이.
- *  폰이 없으면 대시보드 한 화면이다. JPEG는 전체 범위(yuvj420p)라 보통 범위(tv)로 바꾼다. 그대로 두면 mp4가 yuvj420p가 된다. */
+/** 너비 width에 맞춘 화면 높이(짝수). */
+const panelHeight = (size: [number, number], width: number) => 2 * Math.round((size[1] * width) / size[0] / 2);
+
+/** ffmpeg 인자: concat 목록(폰이 있으면 폰, 대시보드)을 fps로 고르게 하고 대시보드는 높이 height, 폰(가로 탭)은 그 대시보드 너비에 맞춰(비율 그대로, 남는 곳은 채움)
+ *  폰이 있으면 위 폰·아래 대시보드로 쌓아 H.264 yuv420p로, seconds 길이. 폰이 없으면 대시보드 한 화면이다.
+ *  JPEG는 전체 범위(yuvj420p)라 보통 범위(tv)로 바꾼다. 그대로 두면 mp4가 yuvj420p가 된다. */
 export function ffmpegArgs(o: { phone?: string; dash: string; out: string; seconds: number; phoneSize?: [number, number]; dashSize: [number, number]; fps?: number; height?: number }): string[] {
   const fps = o.fps ?? RECORD_FPS;
   const h = o.height ?? RECORD_HEIGHT;
-  const fit = (input: number, size: [number, number], label: string) => {
-    const w = panelWidth(size, h);
-    return `[${input}:v]fps=${fps},scale=${w}:${h}:force_original_aspect_ratio=decrease:force_divisible_by=2:out_range=tv,pad=${w}:${h}:(ow-iw)/2:(oh-ih)/2,setsar=1[${label}]`;
-  };
+  const w = panelWidth(o.dashSize, h);
+  const fit = (input: number, pw: number, ph: number, label: string) =>
+    `[${input}:v]fps=${fps},scale=${pw}:${ph}:force_original_aspect_ratio=decrease:force_divisible_by=2:out_range=tv,pad=${pw}:${ph}:(ow-iw)/2:(oh-ih)/2,setsar=1[${label}]`;
   const both = o.phone !== undefined && o.phoneSize !== undefined;
   return [
     "-y", "-hide_banner", "-loglevel", "error",
     ...(both ? ["-f", "concat", "-safe", "0", "-i", o.phone!] : []),
     "-f", "concat", "-safe", "0", "-i", o.dash,
-    "-filter_complex", both ? `${fit(0, o.phoneSize!, "p")};${fit(1, o.dashSize, "d")};[p][d]hstack=inputs=2,format=yuv420p[v]` : `${fit(0, o.dashSize, "d")};[d]format=yuv420p[v]`,
+    "-filter_complex", both ? `${fit(0, w, panelHeight(o.phoneSize!, w), "p")};${fit(1, w, h, "d")};[p][d]vstack=inputs=2,format=yuv420p[v]` : `${fit(0, w, h, "d")};[d]format=yuv420p[v]`,
     "-map", "[v]", "-c:v", "libx264", "-preset", "veryfast", "-crf", "23", "-pix_fmt", "yuv420p", "-r", String(fps),
     "-t", o.seconds.toFixed(3), "-movflags", "+faststart", o.out,
   ];

@@ -1,9 +1,9 @@
-// 대시보드 단계가 바뀔 때 끊기지 않게: 대시보드 폰 칸(미니맵)·트윈 칸·메시지 상자는 다시 만들지 않고 크기·자리(레이아웃)도 바꾸지 않으며, 움직이는 것은
+// 대시보드 단계가 바뀔 때 끊기지 않게: Vision 칸·트윈 칸은 다시 만들지 않고 크기·자리(레이아웃)도 바꾸지 않으며, 움직이는 것은
 // transform·opacity만 움직인다. 실제 크롬에서 재는 것은 ui/scripts/measure-switch.mjs.
 import { act, render, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DashboardScreen, type ScreenProps } from "../../src/dashboard/DashboardScreen";
-import { EYE_FRAMES, imageSlot, MESSAGES, PHONE_URL, screenAt, seenOf, TALK } from "./fixtures";
+import { EYE_FRAMES, imageSlot, PHONE_URL, screenAt, seenOf } from "./fixtures";
 
 const STAGE = { width: 1504, height: 896 };
 const ALLOWED = new Set(["transform", "opacity", "offset", "easing", "composite"]);
@@ -42,7 +42,6 @@ afterEach(() => { for (const r of restore.reverse()) r(); });
 
 const phoneOf = (c: HTMLElement) => c.querySelector<HTMLElement>('section[aria-label="폰 카메라"]')!;
 const twinOf = (c: HTMLElement) => c.querySelector<HTMLElement>('section[aria-label="트윈"]')!;
-const talkOf = (c: HTMLElement) => c.querySelector<HTMLElement>("[data-talk]")!;
 /** 칸 크기·자리를 정하는 것: class(트윈 칸은 class flex-1로 너비를 정한다)와 inline style 전부. */
 const box = (el: HTMLElement) => `${el.className} | ${el.style.cssText}`;
 
@@ -51,12 +50,10 @@ function step(from: ScreenProps, to: ScreenProps) {
   const view = render(<DashboardScreen {...from} />);
   const phone = phoneOf(view.container);
   const twin = twinOf(view.container);
-  const talk = talkOf(view.container);
   const was = {
-    phone, twin, talk, phoneImg: phone.querySelector("img"), canvas: twin.querySelector("canvas"),
+    phone, twin, phoneImg: phone.querySelector("img"), canvas: twin.querySelector("canvas"),
     boxes: {
       phone: box(phone), twin: box(twin), stage: box(twin.parentElement!), map: box(twin.querySelector<HTMLElement>("[data-map]")!), canvas: box(twin.querySelector("canvas")!),
-      talk: box(talk),
     },
   };
   calls = [];
@@ -92,27 +89,9 @@ describe("대시보드 단계 바뀜", () => {
     expect(box(was.phone)).toBe(was.boxes.phone);
     expect(box(was.twin)).toBe(was.boxes.twin);
     expect(box(was.twin.parentElement!)).toBe(was.boxes.stage);
-    expect(calls.length).toBeGreaterThan(0);
     for (const c of calls) {
       for (const k of c.keyframes) for (const p of Object.keys(k)) expect(ALLOWED.has(p), p).toBe(true);
     }
-  });
-
-  it("지켜보기에서 1단계로 넘어가도, 새 줄이 와도 메시지 상자는 같은 칸이고 크기·자리가 그대로다", async () => {
-    motionOn();
-    const { view, was } = step(screenAt(0), screenAt(1));
-    const t = talkOf(view.container);
-    expect(t).toBe(was.talk);
-    expect(box(t)).toBe(was.boxes.talk);
-    // 새 줄은 차례로 굴러 들어온다
-    await waitFor(() => expect(t).toHaveTextContent(MESSAGES[1]!.text));
-    const m = (n: number) => ({ id: `m${n}`, text: `메시지 ${n}` });
-    view.rerender(<DashboardScreen {...screenAt(1, { talk: { ...TALK, lines: [m(3), m(4)] } })} />);
-    expect(talkOf(view.container)).toBe(t);
-    expect(box(t)).toBe(was.boxes.talk);
-    await waitFor(() => expect([...t.querySelectorAll("[data-talk-line]")].map((l) => l.textContent)).toEqual(["메시지 3", "메시지 4"]));
-    expect(box(t)).toBe(was.boxes.talk);
-    for (const c of calls) for (const k of c.keyframes) for (const p of Object.keys(k)) expect(ALLOWED.has(p), p).toBe(true);
   });
 
   it("두 판의 크기·자리는 그대로이고, 레이아웃 값을 움직이지 않는다", () => {
@@ -127,16 +106,14 @@ describe("대시보드 단계 바뀜", () => {
     }
   });
 
-  it("단계가 바뀌어도 미니맵 칸 크기는 그대로다: 칸은 영상 비율이 바뀔 때만 높이가 바뀐다(가로 영상에서 단계만 바뀜 → 그대로, 세로 영상으로 바뀜 → 높이만)", () => {
-    const wide = { kind: "image", src: "/debug-eye/eye-table-near-wide.webp", width: 405, height: 228 } as const;
-    const { view, was } = step(screenAt(2, { phone: wide }), screenAt(3, { phone: { ...wide, src: "/debug-eye/eye-sink-wide.webp" } }));
+  // 2026-11-25 사용자 결정(배치 시안): Vision 칸은 16:9 고정. 세로 영상이 와도 칸 크기를 바꾸지 않고 영상을 칸 안에 맞춘다
+  it("Vision 칸 크기는 단계·영상 비율과 상관없이 그대로다(가로 영상에서 단계가 바뀌어도, 세로 영상 720×1280이 와도)", () => {
+    const { view, was } = step(screenAt(2, { phone: imageSlot("table-near") }), screenAt(3, { phone: imageSlot("sink") }));
     expect(box(phoneOf(view.container))).toBe(was.boxes.phone);
-    view.rerender(<DashboardScreen {...screenAt(3, { phone: imageSlot("sink") })} />);
+    view.rerender(<DashboardScreen {...screenAt(3, { phone: { kind: "image", src: "/t.webp", width: 720, height: 1280 } })} />);
     const now = phoneOf(view.container);
     expect(now).toBe(was.phone);
-    expect(box(now)).not.toBe(was.boxes.phone);
-    const strip = (v: string) => v.replace(/height: [^;]+;/, "");
-    expect(strip(box(now))).toBe(strip(was.boxes.phone));
+    expect(box(now)).toBe(was.boxes.phone);
     expect(box(was.twin)).toBe(was.boxes.twin);
     expect(box(was.twin.parentElement!)).toBe(was.boxes.stage);
   });
@@ -172,12 +149,11 @@ describe("대시보드 단계 바뀜", () => {
     expect(main).toHaveAttribute("data-step", "2");
     expect(main).toHaveAttribute("data-ready");
     expect(draws).toBe(1);
-    expect(loads.at(-1)).toContain(MESSAGES[1]!.text);
+    expect(loads.at(-1)).toContain(screenAt(2).step!.label);
   });
 
   it("움직임 줄이기를 켠 화면에서는 단계가 바뀌어도 움직이지 않는다", () => {
-    const { view } = step(screenAt(1), screenAt(2));
-    expect(view.container.querySelectorAll("[data-talk-line]").length).toBeGreaterThan(0);
+    step(screenAt(1), screenAt(2));
     expect(calls).toEqual([]);
   });
 });

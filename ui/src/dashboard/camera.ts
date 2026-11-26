@@ -83,6 +83,17 @@ export function focusOf(frame: TwinFrame, shapes: RoomShape[]): Bounds | null {
   return atLeast(boundsOf(pts), MIN_FOCUS);
 }
 
+/** 작은 트윈은 지금 단계와 맞춘 폰 주변을 담는다. 다음 이동 구간은 아직 화면을 당기지 않는다. */
+export function activityFocus(frame: TwinFrame, rooms: RoomShape[]): Bounds | null {
+  const subject = frame.planned.step ?? frame.planned.goal ?? frame.planned.person;
+  const points: Px[] = subject ? [subject.px] : [];
+  if (frame.robot) {
+    const { x0, y0, x1, y1 } = frame.robot.body;
+    points.push([x0, y0], [x1, y1]);
+  }
+  return atLeast(boundsOf(points), MIN_FOCUS) ?? watchFocus(frame, rooms);
+}
+
 /**
  * 계획 전 지켜보기가 맞출 곳: 클로이드(맞춘 눈)가 있는 방(바닥·벽 위)과 그 3D 원뿔, 사람 이름표 자리. 가운데를 두고 MIN_WATCH까지 넓힌다.
  * 눈을 모르면(맞추기 전) 사람이 있는 방(livedOf). 방이 없으면 null.

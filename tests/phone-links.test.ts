@@ -1,6 +1,6 @@
-// 폰에서 열 주소 순서: PHONE_URL → tailscale serve가 폰 포트로 잇는 https 주소 → 와이파이 주소. 주소는 모두 가짜다.
+// 폰에서 열 주소 순서: PHONE_URL → tailscale serve가 폰 포트로 잇는 https 주소 → 이 PC(루프백) 주소. 주소는 모두 가짜다.
 import { describe, expect, it } from "vitest";
-import { findServedPhoneUrls, orderPhoneUrls, servedPhoneUrls } from "../src/phone/links.js";
+import { findServedPhoneUrls, orderPhoneUrls, phoneUrlWarning, servedPhoneUrls } from "../src/phone/links.js";
 
 const serve = (web: Record<string, unknown>) => ({ TCP: { "443": { HTTPS: true } }, Web: web });
 const FAKE = "phone-pc.example-net.ts.net";
@@ -28,13 +28,20 @@ describe("servedPhoneUrls", () => {
 });
 
 describe("orderPhoneUrls", () => {
-  it("PHONE_URL, tailscale, 와이파이 순서로 겹치지 않게", () => {
-    const lan = ["http://192.168.0.7:8210/phone/", "http://10.0.0.5:8210/phone/"];
+  it("PHONE_URL, tailscale, 이 PC 주소 순서로 겹치지 않게", () => {
+    const local = ["http://127.0.0.1:8210/phone/"];
     const ts = [`https://${FAKE}/phone/`];
-    expect(orderPhoneUrls(lan, ts)).toEqual([...ts, ...lan]);
-    expect(orderPhoneUrls(lan, ts, " https://my.example/phone/ ")).toEqual(["https://my.example/phone/", ...ts, ...lan]);
-    expect(orderPhoneUrls(lan, ts, ts[0])).toEqual([...ts, ...lan]);
-    expect(orderPhoneUrls(lan, [], "")).toEqual(lan);
+    expect(orderPhoneUrls(local, ts)).toEqual([...ts, ...local]);
+    expect(orderPhoneUrls(local, ts, " https://my.example/phone/ ")).toEqual(["https://my.example/phone/", ...ts, ...local]);
+    expect(orderPhoneUrls(local, ts, ts[0])).toEqual([...ts, ...local]);
+    expect(orderPhoneUrls(local, [], "")).toEqual(local);
+  });
+});
+
+describe("phoneUrlWarning", () => {
+  it("PHONE_URL이 http면 폰 카메라는 HTTPS 주소가 필요하다고 알린다", () => {
+    expect(phoneUrlWarning(" http://my.example:8210/phone/ ")).toBe("폰 카메라는 HTTPS 주소가 필요해요: PHONE_URL=http://my.example:8210/phone/");
+    for (const ok of [undefined, "", "https://my.example/phone/"]) expect(phoneUrlWarning(ok)).toBeNull();
   });
 });
 

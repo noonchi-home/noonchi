@@ -33,6 +33,13 @@ export function wallVisibility(walls, options) {
   return new Map(walls.map((w) => [w.id, upperVisible(w, options)]));
 }
 
+// 잘라 보는 평면에서는 통로를 보이되, 문과 붙박이 옷장의 형상은 온전히 남긴다.
+export function furnitureAction(entry, doorIds) {
+  if (entry.type === "dining_chair") return "hide";
+  if (doorIds.has(entry.id) || /^wardrobe(?:_\d+)?$/.test(entry.type ?? "")) return "none";
+  return null;
+}
+
 // 평면도 벽 id의 위쪽이 보이는지. 벽이 조각(I05_0, I05-a …)으로 나뉘었으면 한 조각이라도 보이면 보인다.
 // 모르는 벽이면 undefined.
 function wallUpper(upperByWall, wall) {

@@ -1,6 +1,6 @@
 // 대시보드가 서버 자료(/events·health)를 화면에 잇는다: 할 일 진행도·말풍선 카드·마스코트 방향·시간 줄 카드·대시보드 폰 칸 영상과 YOLO 상자·연결 끊김 칩.
 // 승인 대기는 대시보드에 보이지 않는다(D37). 서버 메시지는 가짜 단계(fake-run.json) 순간 2(컵 집기)를 쓴다.
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from "vitest";
 import type { DeviceView, HealthView, ServerMessage } from "../../../src/contract/events.ts";
 import { Dashboard } from "../../src/dashboard/Dashboard";
@@ -30,6 +30,7 @@ class FakeSocket {
 }
 
 const PHONE_URL = "http://192.168.0.7:8210/phone/";
+const MOBILE_URL = "https://hub.example.ts.net/mobile/";
 const device = (id: string, label: string, kind: DeviceView["kind"], twin: Record<string, unknown>): DeviceView => ({
   id, label, room: "living", roomLabel: "거실", twinType: "t", kind, matterDeviceType: "x", capabilities: [], sensors: [], twinAttrs: {},
   state: { id, online: true, twin, matter: {}, updatedAt: "t" },
@@ -45,15 +46,15 @@ function stubServer(eye: boolean, twin = true) {
       agent: { provider: "openai", base_url: "", model: "", key: false, reachable: false }, db: false },
   };
   vi.stubGlobal("fetch", vi.fn(async (path: string) => (
-    path === "/api/health" ? Response.json(health) : path === "/api/devices" ? Response.json(DEVICES) : new Response("{}", { status: 404 }))));
+    path === "/api/health" ? Response.json(health) : path === "/api/devices" ? Response.json(DEVICES)
+      : path === "/api/setup" ? Response.json({ ok: true, done: false, mobile_urls: [MOBILE_URL] }) : new Response("{}", { status: 404 }))));
   return health;
 }
 
 const moment = (n: number) => run.moments[n]!.messages as ServerMessage[];
 /** 그 순간 자료의 가장 늦은 때(시간 줄의 지금으로 쓴다). */
 const lastOf = (n: number) => timelineLast(moment(n).reduce((s, m) => reduceDash(s, m, 0), EMPTY_DASH))!;
-/** 시간 줄 줄 하나의 칸 글. */
-const rowText = (id: string) => [...document.querySelectorAll(`[data-timeline-card] [data-slot=timeline-row][data-row=${id}] [data-slot=timeline-slot]`)].map((s) => s.textContent);
+const statusCells = (label: string) => within(screen.getByRole("rowheader", { name: label }).closest("tr")!).getAllByRole("cell");
 const turnedOn: ServerMessage = {
   type: "agent", event: "action", sessionId: "phone",
   action: { tool: "turn_on", args: {}, ok: true, deviceId: "lamp", deviceLabel: "플로어 스탠드", reason: "켜 달라고 해서", at: "t" },
@@ -105,66 +106,56 @@ describe("대시보드 자료 연결", () => {
     history.replaceState(null, "", "/");
   });
 
-  it("순간 2(컵 집기)를 받으면 단계 2, 말풍선 카드 말, 시간 줄 사람 줄 지금 상태는 자리에 없음이고 로봇 줄 지금 단계는 컵 집기, 마스코트는 늘 왼쪽을 본다", async () => {
-    const clock = vi.spyOn(Date, "now").mockReturnValue(lastOf(2) + 1000);
+  it("미설정 허브는 health보다 먼저 폰 홈 QR을 보여 준다", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (path: string) => (
+      path === "/api/setup" ? Response.json({ ok: true, done: false, mobile_urls: [MOBILE_URL] }) : new Response("{}", { status: 503 })
+    )));
+    render(<Dashboard />);
+    expect(await screen.findByRole("img", { name: "폰 연결 QR" })).toBeInTheDocument();
+    expect(phonePane()).toHaveTextContent(MOBILE_URL);
+    expect(phonePane()).toHaveTextContent("NOONCHI 앱으로 스캔해 서버에 연결하세요");
+  });
+
+  it("기본 대시보드는 실제 계획과 Trace를 세 칸에 받아 집을 다시 열면 이전 줄을 지운다", async () => {
     await mount(false);
     send(moment(2));
-    expect(document.querySelector("[data-progress]")).toBeNull();
-    expect(sayLine()).toHaveTextContent("컵을 들게요.");
-    expect(rowText("person").at(-1)).toBe("자리에 없음");
-    expect(rowText("robot").at(-1)).toBe("컵 집기");
-    expect(document.querySelector('[data-timeline-card] [data-row=robot] [data-tone=brand]')).toHaveTextContent("컵 집기");
-    clock.mockRestore();
-    expect(screen.getByRole("region", { name: "마스코트" }).querySelector<HTMLElement>("[data-mascot-turn]")!.style.transform).toBe("scaleX(-1)");
+    expect([...document.querySelectorAll("fieldset > legend")].map((e) => e.textContent)).toEqual(["Vision", "Digital Twin", "Agent Trace"]);
+    const active = [...moment(2)].reverse().find(m => m.type === "plan");
+    expect(active?.type).toBe("plan");
+    if (active?.type !== "plan" || !active.plan) throw new Error("컵 집기 계획이 있어야 한다");
+    const step = active.plan.steps.find(p => p.status === "active")!;
+    const objectId = step.target?.objectId ?? "cup";
+    const refs = { plan_id: active.plan.id, object_id: objectId };
+    const rows = [
+      { id: "house:b", activity_id: "house:work", rev: 1, kind: "EXECUTION", name: "집기 안내", input: "컵 · 식탁",
+        output: "시연자 수행 대기", started_ms: 250, ended_ms: null, state: "pending", refs: { ...refs, step_id: step.id } },
+    ] as const;
+    const hello = { type: "hello", devices: 0, provider: null, hub: "memory", home: "h", trace_epoch: "house" } as const;
+    send([hello, active, { type: "trace", epoch: "house", rows: [...rows] }]);
+    expect(screen.getByRole("group", { name: "Agent Trace" })).toHaveTextContent("시연자 수행 대기");
+    expect(screen.queryByRole("link", { name: "집 전체" })).toBeNull();
+    send([{ ...hello, trace_epoch: "house:reopened" }, { type: "trace", epoch: "house", rows: [...rows] }]);
+    expect(screen.getByRole("group", { name: "Agent Trace" })).not.toHaveTextContent("시연자 수행 대기");
+  });
+
+  // 의견 4(2026-11-25): 「집 전체」 단추와 overview 화면을 없앴다. 옛 주소로 열어도 기본 세 칸 배치다
+  it("?view=overview로 열어도 기본 세 칸 배치이고 「집 전체」 링크·마스코트·메시지 상자가 없다", async () => {
+    history.replaceState(null, "", "/?view=overview");
+    await mount(false);
+    send(moment(2));
+    expect([...document.querySelectorAll("fieldset > legend")].map((e) => e.textContent)).toEqual(["Vision", "Digital Twin", "Agent Trace"]);
+    expect(screen.queryByRole("link", { name: "집 전체" })).toBeNull();
+    expect(screen.queryByRole("region", { name: "마스코트" })).toBeNull();
+    expect(document.querySelector("[data-talk], [data-timeline-card], [data-mode-text]")).toBeNull();
     expect(document.querySelector("main")).toHaveAttribute("data-step", "2");
   });
 
-  it("지켜보기(순간 0)는 사람이 마시는 중이고 목표가 서 있다: 최신 줄은 목표 문장이고 목표 칩은 없다, 마스코트는 늘 왼쪽을 본다", async () => {
-    const clock = vi.spyOn(Date, "now").mockReturnValue(lastOf(2) + 1000);
+  it("대시보드에서 Ctrl+1을 누르면 설정 창(허브 상태·폰 연결 QR)이 열린다", async () => {
     await mount(false);
-    send(moment(2));
-    send(moment(0));
-    expect(screen.getByRole("region", { name: "마스코트" }).querySelector<HTMLElement>("[data-mascot-turn]")!.style.transform).toBe("scaleX(-1)");
-    expect(sayLine()).toHaveTextContent("컵을 두고 자리를 뜨면 컵을 치울게요");
-    // 순간 0의 판단(seq 1)은 순간 2의 판단(seq 2)보다 늦게 온 옛 판단이라 사람 줄 지금 상태는 그대로다
-    expect(rowText("person").at(-1)).toBe("자리에 없음");
-    expect(talk().querySelector("[data-goal-line], [data-talk-goal]")).toBeNull();
-    expect(document.querySelector("[data-timeline-card]")).not.toHaveTextContent("목표");
-    clock.mockRestore();
-  });
-
-  it("판단 없이 반성 사건만 와도 메시지 상자에 그 규칙 두 줄이 쌓인다. 칩은 없다", async () => {
-    await mount(false);
-    expect(messageTexts()).toEqual([]);
-    const rule = { from: "away", to: "watching_tv", on: "사용자가 소파에 앉아 TV를 보기 시작한다.", when: null, action: "에어컨 켜기" };
-    send([{ type: "brain", replay: true, event: { type: "reflection", at_ms: 5, day: "2026-11-13", ok: true, version: 3, applies_day: "2026-11-14", text: "반성 완료", learned: [rule], active: [rule], dropped: [] } }]);
-    expect(messageTexts()).toEqual(["사용자가 소파에 앉아 TV를 보기 시작한다", "새로 배운 습관이에요"]);
-    expect(document.querySelector("[data-thought], [data-thought-chips]")).toBeNull();
-  });
-
-  it("마스코트 모드 말풍선은 서버 mode 메시지를 따른다: 받기 전과 눈치면 「눈치 모드」, 코치면 「코치 모드」. 코치 행동 판단·계획만으로는 바뀌지 않는다", async () => {
-    await mount(false);
-    const mode = () => document.querySelector("[data-mode-text]")?.textContent ?? null;
-    await waitFor(() => expect(mode()).toBe("눈치 모드"));
-    send([branchDecision(COACH, 1), { type: "plan", plan: { ...PLAN, revision: 50 } }]);
-    await new Promise((r) => setTimeout(r, 50));
-    expect(mode()).toBe("눈치 모드");
-    send([{ type: "mode", mode: "coach" }]);
-    await waitFor(() => expect(mode()).toBe("코치 모드"));
-    send([{ type: "mode", mode: "noonchi" }]);
-    await waitFor(() => expect(mode()).toBe("눈치 모드"));
-  });
-
-  it("/events thought 메시지와 말이 받은 차례로 쌓이고 최근 세 줄만 보인다. 원래 생각은 보이지 않는다", async () => {
-    await mount(false);
-    send(moment(2).filter((m) => m.type !== "thought" && m.type !== "say"));
-    expect(messageTexts()).toEqual([]);
-    const msg = (id: string, at: number, text: string) => ({ id, text, at_ms: at, decision: "pam-1" });
-    send([{ type: "thought", messages: [msg("a", 1, "사람이 떠났어요"), msg("b", 2, "컵이 남아 있어요")] }]);
-    expect(messageTexts()).toEqual(["사람이 떠났어요", "컵이 남아 있어요"]);
-    send([{ type: "thought", messages: [msg("c", 3, "치우는 습관이 있어요"), msg("d", 4, "컵을 치울게요")] }]);
-    await waitFor(() => expect(messageTexts()).toEqual(["컵이 남아 있어요", "치우는 습관이 있어요", "컵을 치울게요"]));
-    expect(talk()).not.toHaveTextContent("사람이 자리를 비운 뒤에도 컵이 식탁에 남아 있어요.");
+    expect(screen.queryByRole("dialog")).toBeNull();
+    fireEvent.keyDown(window, { key: "1", code: "Digit1", ctrlKey: true });
+    const dialog = await screen.findByRole("dialog", { name: "설정" });
+    expect(within(dialog).getByRole("list", { name: "허브 상태" })).toBeInTheDocument();
   });
 
   it("다시 연결되면(hello) health를 다시 받아 날짜·시간 칩이 새 서버 기록 시간대를 쓴다(서버를 다른 시간대로 다시 띄운 때)", async () => {
@@ -205,10 +196,16 @@ describe("대시보드 자료 연결", () => {
     expect(phonePane().querySelector('[data-detection], [data-slot="bounding-box"]')).toBeNull();
   });
 
-  it("실제 폰 명령 자막(phone_command)은 비전 미니맵만 보기(?view=minimap)에만 있고 대시보드에는 없다", async () => {
+  it("실제 폰 명령을 영상 위 고정 줄에 한 번만 띄우고, 해제하면 글만 지운다", async () => {
     await mount(true);
     send([{ type: "phone_command", text: "식탁으로 가 주세요" }]);
-    expect(document.querySelector("[data-phone-command]")).toBeNull();
+    const line = phonePane().querySelector<HTMLElement>("[data-phone-line]")!;
+    expect(line).toHaveTextContent("식탁으로 가 주세요");
+    expect(screen.getAllByText("식탁으로 가 주세요")).toHaveLength(1);
+    expect(line.closest("[data-video]")).toBe(phonePane().querySelector("[data-video]"));
+    send([{ type: "phone_command", text: null }]);
+    expect(line).not.toHaveTextContent("식탁으로 가 주세요");
+    expect(line).toBeInTheDocument();
   });
 
   it("소켓이 닫히면 「연결 끊김 · 다시 연결 중」 칩이 생기고 다시 열리면 없어진다", async () => {
@@ -259,22 +256,25 @@ describe("가짜 단계(?debug=steps)", () => {
   it("&step=2면 서버 자료 없이 그 순간이다: 단계·말·대시보드 폰 칸 눈 그림·시간 줄 카드(그 순간 때로 멈춤)·컵 이름표", async () => {
     open("&step=2");
     expect(document.querySelector("main")).toHaveAttribute("data-step", "2");
-    expect(sayLine()).toHaveTextContent("컵을 들게요.");
+    expect(screen.getByRole("region", {name: "현재 상황"})).toHaveTextContent("컵");
+    expect(phonePane().querySelector("[data-phone-text=명령]")).toHaveTextContent("컵을 들어 주세요");
     const img = phonePane().querySelector<HTMLImageElement>('img[alt="폰 카메라 영상"]')!;
     expect(img.getAttribute("src")).toBe("/debug-eye/eye-table-near.webp");
-    expect(document.querySelector("[data-mode-text]")).toHaveTextContent(/^눈치 모드$/);
-    expect(talk().querySelector("[data-talk-pill]")).toBeNull();
-    expect(rowText("person")).toEqual(["먹거나 마시는 중", "자리에 없음"]);
-    expect(rowText("robot")).toEqual(["지켜봄", "식탁으로 가기", "컵 집기"]);
-    expect(document.querySelector("[data-timeline-card] [data-slot=timeline-drop-region]")).toHaveTextContent("4.0초");
+    expect(document.querySelector("[data-mode-text]")).toBeNull();
+    expect(document.querySelector("[data-talk-pill]")).toBeNull();
+    expect(statusCells("사용자")[0]).not.toHaveTextContent("먹거나 마시는 중");
+    expect(statusCells("사용자")[0]).toHaveTextContent("자리에 없음");
+    expect(statusCells("클로이드")[0]).not.toHaveTextContent("식탁으로 가기");
+    expect(statusCells("클로이드")[0]).toHaveTextContent("컵 집기");
+    expect(statusCells("클로이드")[1]!.querySelector("time")).toBeInTheDocument();
     expect([...phonePane().querySelectorAll("[data-detection-label]")].map((t) => t.textContent?.split(" ")[0])).toEqual(["컵"]);
     expect(phonePane().querySelector("canvas[data-masks]")).not.toBeNull();
   });
 
-  it("&wide=1이면 대시보드 폰 칸은 가로 눈 그림(405×228)이고, 컵 모양(seen)도 그 가로 프레임 자리로 온다", async () => {
-    open("&step=2&wide=1");
+  it("대시보드 폰 칸은 가로 눈 그림(405×228)이고, 컵 모양(seen)도 그 가로 프레임 자리로 온다", async () => {
+    open("&step=2");
     const img = phonePane().querySelector<HTMLImageElement>('img[alt="폰 카메라 영상"]')!;
-    expect(img.getAttribute("src")).toBe("/debug-eye/eye-table-near-wide.webp");
+    expect(img.getAttribute("src")).toBe("/debug-eye/eye-table-near.webp");
     expect([...phonePane().querySelectorAll("[data-detection-label]")].map((t) => t.textContent?.split(" ")[0])).toEqual(["컵"]);
   });
 
@@ -283,7 +283,7 @@ describe("가짜 단계(?debug=steps)", () => {
     await waitFor(() => expect(FakeSocket.last).not.toBeNull());
     send(moment(4));
     expect(document.querySelector("main")).toHaveAttribute("data-step", "2");
-    expect(sayLine()).toHaveTextContent("컵을 들게요.");
+    expect(screen.getByRole("region", {name: "현재 상황"})).toHaveTextContent("컵");
   });
 
   it("window.__dash.step(n)으로 그 순간으로 간다", () => {
@@ -291,13 +291,15 @@ describe("가짜 단계(?debug=steps)", () => {
     expect(document.querySelector("main")).toHaveAttribute("data-step", "1");
     act(() => window.__dash!.step(3));
     expect(document.querySelector("main")).toHaveAttribute("data-step", "3");
-    expect(sayLine()).toHaveTextContent("싱크대로 갈게요.");
+    expect(phonePane().querySelector("[data-phone-text=명령]")).toHaveTextContent("싱크대");
     expect(phonePane().querySelector('img[alt="폰 카메라 영상"]')!.getAttribute("src")).toBe("/debug-eye/eye-sink.webp");
     act(() => window.__dash!.step(0));
     expect(document.querySelector("main")).toHaveAttribute("data-step", "0");
-    expect(rowText("person")).toEqual(["먹거나 마시는 중"]);
-    expect(rowText("robot")).toEqual(["지켜봄"]);
-    expect(document.querySelector("[data-timeline-card] [data-row=guess], [data-timeline-card] [data-timeline-caption]")).toBeNull();
+    expect(phonePane().querySelector("[data-phone-text=명령]")).toBeNull();
+    expect(statusCells("사용자")[0]).toHaveTextContent("먹거나 마시는 중");
+    // 옛 0번 샘플에는 실행 상태 사건도 시작한 단계도 없다.
+    expect(statusCells("클로이드")[0]).toHaveTextContent("—");
+    expect(screen.getAllByRole("rowheader")).toHaveLength(2);
   });
 
   it("&play=MS면 지도가 준비된 뒤부터 MS마다 4→0→1 차례로 넘긴다", async () => {
@@ -324,6 +326,8 @@ describe("가짜 단계(?debug=steps)", () => {
     expect(screen.getByText("연결 끊김 · 다시 연결 중")).toBeInTheDocument();
     b.unmount();
     open("&step=0&settings=1");
-    expect(await screen.findByRole("dialog")).toHaveTextContent("집 다시 설정하기");
+    const settings = await screen.findByRole("dialog");
+    expect(await within(settings).findByRole("img", { name: "폰 연결 QR" })).toBeInTheDocument();
+    expect(settings).toHaveTextContent(MOBILE_URL);
   });
 });

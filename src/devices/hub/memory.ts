@@ -20,6 +20,19 @@ export interface MemoryHubOptions {
 
 type Listener = (s: DeviceState) => void;
 
+/** 깊은 사본을 만들어 안쪽까지 얼린다. 허브는 상태가 바뀔 때만 이것으로 새 값을 만들고, 읽는 쪽에는 그 값을 그대로 준다
+ *  (읽을 때마다 복사하면 프레임마다 지연이 쌓인다). 사본이라 넘겨받은 값(겉만 얼린 초기값 등)과 안쪽을 나누지 않는다. */
+function frozen<T>(v: T): T {
+  const deep = (x: unknown): void => {
+    if (!x || typeof x !== "object") return;
+    for (const y of Object.values(x)) deep(y);
+    Object.freeze(x);
+  };
+  const copy = structuredClone(v);
+  deep(copy);
+  return copy;
+}
+
 export class MemoryHub implements DeviceHub {
   private readonly specs = new Map<string, DeviceSpec>();
   private readonly data = new Map<string, DeviceState>();
@@ -29,7 +42,7 @@ export class MemoryHub implements DeviceHub {
   constructor(devices: DeviceSpec[], initial: Record<string, Record<string, unknown>> = {}, opts: MemoryHubOptions = {}) {
     this.now = opts.now ?? (() => new Date());
     for (const spec of devices) {
-      this.specs.set(spec.id, structuredClone(spec));
+      this.specs.set(spec.id, frozen(spec));
       const twin: Record<string, unknown> = {};
       for (const [attr, values] of Object.entries(spec.twinAttrs)) {
         twin[attr] = initial[spec.id]?.[attr] ?? defaultTwinValue(attr, values);
@@ -47,16 +60,15 @@ export class MemoryHub implements DeviceHub {
   async stop(): Promise<void> {}
 
   list(): DeviceSpec[] {
-    return [...this.specs.values()].map((s) => structuredClone(s));
+    return [...this.specs.values()];
   }
 
   get(id: string): DeviceState | undefined {
-    const s = this.data.get(id);
-    return s ? structuredClone(s) : undefined;
+    return this.data.get(id);
   }
 
   states(): DeviceState[] {
-    return [...this.data.values()].map((s) => structuredClone(s));
+    return [...this.data.values()];
   }
 
   async command(id: string, cmd: Command): Promise<CommandResult> {
@@ -65,7 +77,7 @@ export class MemoryHub implements DeviceHub {
     if (!spec || !state) return { ok: false, error: `기기를 찾을 수 없습니다: ${id}` };
     const c = normalizeCommand(spec, cmd);
     const error = checkCommand(spec, c, state);
-    if (error) return { ok: false, error, state: structuredClone(state) };
+    if (error) return { ok: false, error, state };
     const matter = applyCommandToMatter(spec, state.matter, c);
     return this.commit(id, { ...state.twin, ...twinFromMatter(spec, matter) }, matter);
   }
@@ -76,11 +88,11 @@ export class MemoryHub implements DeviceHub {
     if (!spec || !state) return { ok: false, error: `기기를 찾을 수 없습니다: ${id}` };
     if (!spec.sensors.includes(attr)) {
       const list = spec.sensors.length > 0 ? spec.sensors.join(", ") : "없음";
-      return { ok: false, error: `${spec.label}: '${attr}'은(는) 센서 값이 아닙니다(센서: ${list}).`, state: structuredClone(state) };
+      return { ok: false, error: `${spec.label}: '${attr}'은(는) 센서 값이 아닙니다(센서: ${list}).`, state };
     }
     const allowed = spec.twinAttrs[attr] ?? [];
     if (allowed.length > 0 && !allowed.includes(value)) {
-      return { ok: false, error: `${spec.label}: ${attr} 값은 ${allowed.map(String).join("/")} 중 하나여야 합니다(받은 값: ${JSON.stringify(value)}).`, state: structuredClone(state) };
+      return { ok: false, error: `${spec.label}: ${attr} 값은 ${allowed.map(String).join("/")} 중 하나여야 합니다(받은 값: ${JSON.stringify(value)}).`, state };
     }
     const matter = applySensorToMatter(spec, state.matter, attr, value);
     return this.commit(id, { ...state.twin, [attr]: value, ...twinFromMatter(spec, matter) }, matter);
@@ -94,7 +106,7 @@ export class MemoryHub implements DeviceHub {
   }
 
   private make(id: string, twin: Record<string, unknown>, matter: MatterSummary): DeviceState {
-    return { id, online: true, twin, matter, updatedAt: this.now().toISOString() };
+    return frozen({ id, online: true, twin, matter, updatedAt: this.now().toISOString() });
   }
 
   private commit(id: string, twin: Record<string, unknown>, matter: MatterSummary): CommandResult {
@@ -102,11 +114,11 @@ export class MemoryHub implements DeviceHub {
     this.data.set(id, state);
     for (const cb of [...this.listeners]) {
       try {
-        cb(structuredClone(state));
+        cb(state);
       } catch {
         // 구독자 오류는 허브 동작에 영향을 주지 않는다
       }
     }
-    return { ok: true, state: structuredClone(state) };
+    return { ok: true, state };
   }
 }

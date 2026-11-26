@@ -21,12 +21,15 @@ function record(v: unknown): Record<string, unknown> {
   return v as Record<string, unknown>;
 }
 
-export async function readJson(req: IncomingMessage): Promise<Record<string, unknown>> {
+const sizeLabel = (bytes: number) => bytes % (1 << 20) === 0 ? `${bytes >> 20}MB` : `${Math.round(bytes / 1024)}KB`;
+
+/** 본문 JSON 객체. maxBytes를 넘으면 413, 빈 본문은 {}. */
+export async function readJson(req: IncomingMessage, maxBytes = MAX_BODY): Promise<Record<string, unknown>> {
   const chunks: Buffer[] = [];
   let size = 0;
   for await (const chunk of req) {
     size += (chunk as Buffer).length;
-    if (size > MAX_BODY) throw new HttpError(413, "요청 본문이 너무 큽니다(최대 1MB).");
+    if (size > maxBytes) throw new HttpError(413, `요청 본문이 너무 큽니다(최대 ${sizeLabel(maxBytes)}).`);
     chunks.push(chunk as Buffer);
   }
   const text = Buffer.concat(chunks).toString("utf8").trim();

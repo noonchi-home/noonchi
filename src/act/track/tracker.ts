@@ -82,10 +82,13 @@ import type { Stray } from "../robot/coach.js";
 import type { ContentsLook } from "../robot/contents.js";
 import { OPEN, TrackCore, type TrackConfig } from "./core.js";
 import { SafetyTracker, type Cycle, type CycleEnd } from "./safety.js";
+import { AdaptiveExecution } from "./adaptive.js";
 import { Starter } from "../robot/start.js";
 import { UseWatch } from "../../manage/index.js";
 import { GoalWatch, type GoalPorts } from "../../goal/index.js";
 import { noticeTick } from "../robot/phone-line.js";
+import { stationDirectives, visitPhoneBusy } from "../robot/directive.js";
+import type { DirectiveResult, ManagerDirective } from "../../contract/machines.js";
 export { DONE_NOTICE_MS } from "../robot/phone-line.js";
 
 export type { HeardResult } from "./answers.js";
@@ -98,7 +101,7 @@ export type { Stall } from "../robot/steps.js";
  *  결과의 unverified(ThinQ가 받았지만 다시 읽은 값이 다름)·state 「모름」(신호 없음)은 적용을 확인하지 못한 것이다. */
 export interface DeviceRunner {
   /** live가 거짓이면(계획이 바뀌었거나 닫힘) 가전에 보내지 않는다. 보내기 바로 앞에서 본다. */
-  run(tool: string, deviceId: string, args: Record<string, unknown>, live: () => boolean): Promise<ToolResult>;
+  run(tool: string, deviceId: string, args: Record<string, unknown>, live: () => boolean, commandId?:string): Promise<ToolResult>;
   confirm(token: string, live: () => boolean): Promise<Pick<ToolResult, "ok" | "error" | "unverified" | "state">>;
   cancel(token: string): void;
 }
@@ -107,6 +110,36 @@ export interface DeviceRunner {
 export interface SpeechRequest { task: string; heard: string; atMs: number; afterSeq: number; via?: "answer" }
 
 export interface TrackerOptions {
+  trace?: import("../../contract/trace.js").TracePort;
+  assistance?: {
+    boot: string;
+    homeEpoch: string;
+    home?: string;
+    resident?(world: WorldView): string | null;
+    bindResident?(world: WorldView): string | null;
+    targetDevice?(decision: DecisionRecord, world: WorldView): string | null;
+    readDevice?(id: string): import("./attempt.js").AssessmentWorld["device"] | null;
+    interventionFor?(decision: DecisionRecord, world: WorldView): import("../../contract/assistance.js").Intervention;
+    ended?(attempt: import("../../contract/assistance-outcome.js").AssistanceAttempt,
+      execution: import("../../contract/assistance-outcome.js").AssistanceExecution, endedMs: number,
+      proofs: readonly import("../../contract/assistance-outcome.js").AssistanceReactionProof[]): void;
+    evidence?: import("./evidence.js").EvidencePorts;
+    cropVisible?(id: string): boolean;
+  };
+  /** Recheck the current resident after any approval or phone wait. */
+  cupAnswers?: {
+    discardLeftover?: () => boolean;
+    rememberLeftover?: (allow:boolean) => void;
+  };
+  stations?: {
+    map?():import("../../contract/stations.js").StationMap | null;
+    rev():number;
+    /** look: 도착해서 비출 곳(트윈 [x, 높이, y])과 그 이름(그 자리가 보는 구역 이름, 보는 구역이 없는 자리는 null). */
+    target(id:string): {id:string;label:string;position:[number,number,number];look:{label:string|null;position:[number,number,number]}|null} | null;
+    choose?(job:Extract<import("../../contract/machines.js").HouseholdOffer,{kind:"choose_station"}>, signal:AbortSignal):Promise<string|null>;
+    tvAllowed?(job:import("../../contract/machines.js").HouseholdOffer):boolean;
+    result(value:DirectiveResult):void;
+  };
   plans: PlanHub;
   /** 계획 전 검사(src/act/check.ts checkDecision). 에이전트를 부르기 전에 본다. 없으면 통과. */
   precheck?: (d: DecisionRecord) => CheckResult;
@@ -166,12 +199,14 @@ export interface TrackerOptions {
     contentsAction?: (objectId: string, on: boolean) => void;
   };
   layout: {
+    walking?:()=>import("../../layout/index.js").WalkingMap|null;
     /** 트윈 면(식탁·책상·조리대·싱크대). 미리 세운 목표가 컵이 놓이기 전에 사람 곁 면을 다 쓰고 둘 자리로 본다(goal.ts useSpot). 없으면 후보를 본 면만 쓴다. */
     surfaces?: () => PlaneSurface[];
     floor: () => FloorPlan;
     /** 평면도 물건의 이름과 트윈 자리 [x, 높이, y](명령 대상 고리·가까이 볼 자리, 면이면 윗면 가운데). 모르면 undefined. */
     locate?: (id: string) => { label: string; position: [number, number, number] } | undefined;
     /** 이 집의 충전 자리(트윈 자리 [x, 높이, y], twin/data/homes/<집>/dock.json). 없으면(null) 계획이 끝나도 충전 자리로 가지 않는다(src/act/robot/dock.ts). */
+    batteryLow?: () => boolean | null;
     dock?: () => [number, number, number] | null;
     /** 부르는 이름 자료(src/layout/names.ts, 계획 단계와 같은 것). 배치 이름이 없으면 locate 이름을 배치 이름으로 본다. */
     names?: PlaceNames;
@@ -205,6 +240,7 @@ export interface TrackerOptions {
     tasks?: () => readonly string[];
   };
   goals: {
+    meal?: GoalPorts["meal"];
     update?: () => void;
     view?: () => WorldView;
     prepare?: TrackerOptions["planner"];
@@ -237,6 +273,8 @@ export interface TrackerOptions {
     emit: (l: BrainLog) => void;
     /** 생각 말풍선에 정한 상태 글 한 줄을 올린다(src/brain/thought.ts note): 찾기 시작·찾음·못 찾음. decisionId는 그 일의 판단 id. 없으면 올리지 않는다. */
     thought?: (text: string, decisionId: string) => void;
+    /** 가져다주는 일을 끝까지 마친 도움 기록(src/act/help-record.ts): 기록 DB help 줄과 메시지 상자. 없으면 남기지 않는다. */
+    help?: (record: import("../help-record.js").HelpRecord) => void;
   };
   appliances: {
     /** 기기 단계 실행. 없으면 기기 단계는 실패한다. */
@@ -266,21 +304,24 @@ export class ExecutionTracker {
       rearmMs: o.rearmMs ?? TRACK_DEFAULTS.rearmMs, showAskMs: o.showAskMs ?? TRACK_DEFAULTS.showAskMs,
     };
     const core = new TrackCore(o, clock, cfg);
+    core.adaptive = new AdaptiveExecution(core);
     core.start = new Starter(core);
     core.safety = new SafetyTracker(core);
     core.answers = new Answers(core);
     core.use = new UseWatch({
       world: o.state.view, tasks: o.brain.tasks, touching: () => core.touching(),
+      checking: t => t.cls === "cup" && core.goal.protects(t.id ?? null),
       thought: (text) => { if (!core.stopped) o.events.thought?.(text, core.lastDecision ?? "use"); },
     });
     core.goal = new GoalWatch({
       world: o.goals.view ?? o.state.view, now: () => clock.now(), stopped: () => core.stopped, openState: () => core.open()?.state ?? null,
       planning: () => !!core.planning, docking: () => core.dock.busy(), notices: () => core.safety.offTrack().notices,
       placed: () => core.steps.placed(), holding: () => core.use.holding(), planner: o.goals.prepare ?? o.planner, habit: o.brain.habit,
-      reuse: o.goals.reuse, surfaces: o.layout.surfaces, tasks: o.brain.tasks, nudge: o.brain.nudge, onGoal: o.goals.publish,
+      meal: o.goals.meal, reuse: o.goals.reuse, surfaces: o.layout.surfaces, tasks: o.brain.tasks, nudge: o.brain.nudge, onGoal: o.goals.publish,
       thought: o.events.thought, log: o.events.log, goalArmMs: o.goalArmMs,
     });
     core.robot = new RobotMachine(core);
+    core.directives = stationDirectives(core);
     this.core = core;
   }
 
@@ -300,6 +341,8 @@ export class ExecutionTracker {
     else this.updateGoal();
   }
   workContext() { return this.core.start.context(); }
+  visitPhoneBusy() { return visitPhoneBusy(this.core); }
+  onDirective(d:ManagerDirective) { this.core.directives.receive(d); }
   onOrder(d: DecisionRecord, gate: Parameters<typeof this.core.start.order>[1], resumed: boolean, check?: CheckResult) {
     this.core.start.order(d, gate, resumed, check);
   }
@@ -328,10 +371,17 @@ export class ExecutionTracker {
 
   /** 말 부탁: 들은 말 부탁을 판단 기록 꼴(source speech)로 만들어 판단 받기 길에 넣는다(계획 전 검사·계획 모드·승인·실행이 PAM 판단과 같다). */
   onRequest(r: SpeechRequest): void {
+    this.core.directives.cancel();
+    if (this.core.goal.current()?.meal) this.core.goal.drop("replaced");
     this.core.start.request(r);
   }
 
   /** 폰 눈(맞춘 자세)의 평면 자리 [x, z]. 맞추기 전 추정 눈은 쓰지 않는다. 이동 단계는 다음 tick에 본다. */
+  onNavigationReading(p:import("../../contract/phone.js").NavigationPose|{observed_ms:number}) {
+    if("quality" in p) this.onNavigationPose(p); else this.core.navigation.missing(p.observed_ms);
+  }
+  onNavigationPose(p: import("../../contract/phone.js").NavigationPose) { this.core.navigation.pose(p); }
+
   onEye(position: XZ, estimated = false): void {
     if (!position.every(Number.isFinite)) return;
     // 추정 눈: 위치 맞춤을 다시 하는 중이다(그 전 맞춘 눈은 지금 것이 아니다)
@@ -356,6 +406,7 @@ export class ExecutionTracker {
    *  사람 방·가전·가전 설비 변화가 왔는데 지금 단계가 넘어가지 않았으면 strayed를 부른다. */
   onWorld(changes: readonly WorldChange[] = []): void {
     const core = this.core;
+    if (!core.stopped) core.adaptive.handoffTick();
     core.steps.placed();
     core.safety.reminderTick();
     core.coach.see(changes);
@@ -363,6 +414,8 @@ export class ExecutionTracker {
     if (!core.stopped) this.changedGoal();
     const r = core.run;
     if (core.stopped || r?.state !== "running") return;
+    if (r.pendingStep !== undefined) return core.steps.activate(r, r.pendingStep);
+    if (core.adaptive.gate(r, r.at)) return;
     const gen = r.gen;
     if (core.steps.look(r) || r.gen !== gen) return;
     core.coach.strayOn(r, changes);
@@ -398,7 +451,9 @@ export class ExecutionTracker {
   tick(): void {
     const core = this.core;
     const { steps, safety } = core;
+    if (!core.stopped) core.adaptive.handoffTick();
     if (!core.stopped) safety.reminderTick();
+    if (!core.stopped) core.directives.tick();
     if (!core.stopped && core.start.resumeRequest()) return;
     const r = core.run;
     // 계획 전 찾기(대상이 안 보여 막은 판단)가 먼저, 계획 밖 가까이 가서 보기(판단 전 보기 B 뒤에도 모를 때)는 계획·찾기가 없을 때만 하고 막는 것이 생기면 거둔다
@@ -414,7 +469,10 @@ export class ExecutionTracker {
     if (!core.stopped) core.contents.idle();
     if (core.stopped || !r || !OPEN.has(r.state)) return;
     const now = core.clock.now();
+    if (core.planning?.replan?.previous === r) return;
     if (r.state === "planned" && !r.asking) return core.start.tryStart(r, now - r.since >= core.cfg.recheckMs);
+    if (r.pendingStep !== undefined) return steps.activate(r, r.pendingStep);
+    if (r.state === "running" && core.adaptive.gate(r, r.at)) return;
     if (r.asking) {
       if (r.asking.why === "again" && steps.look(r)) return;
       if (now - r.askAt > core.cfg.askMs) return steps.finish(r, "failed", EXEC_TEXT.noAnswer);
@@ -449,11 +507,13 @@ export class ExecutionTracker {
     return !core.stopped && (!!core.run?.top || core.finder.looking() || core.contents.looking());
   }
 
-  /** VLM 사진 간격을 줄일 때인가(src/observe/pipeline.ts vlmFast, FAST_VLM_MS 1초): 가까이 보는 차례이거나 미리 세운 목표가 서 있는 동안(세움·떠남).
+  /** VLM 사진 간격을 줄일 때인가(src/observe/pipeline.ts vlmFast, FAST_VLM_MS 1초): 가까이 보는 차례이거나 미리 세운 목표가 서 있는 동안(세움·떠남),
+   *  또는 집기 전에 목표 컵을 다시 보는 동안(start.ts held, 다시 보기 기한 recheckMs 3초: 2초 간격이면 새 사진의 답이 기한 뒤에 온다).
    *  목표가 버려지거나 계획이 시작되면(씀) 원래 간격이다(2026-11-18 사용자 결정: 목표 동안 컵 확정(사진 2장)을 빨리). */
   fastVlm(): boolean {
     const core = this.core;
-    return !core.stopped && (this.looking() || core.goal.current() !== null);
+    // 다시 보기는 계획이 도는 동안만이다: 끝난(실패·완료) 계획에 남은 verify로 1초 간격을 두지 않는다
+    return !core.stopped && (this.looking() || core.goal.current() !== null || (!!core.run && core.run.state !== "done" && core.run.state !== "failed" && core.run.verify?.at != null));
   }
 
   /** 판단 전 보기 B가 그 컵을 잘라 봤다(src/act/look.ts looked): 계획 밖으로 가까이 가서 볼지 본다. */
@@ -464,6 +524,7 @@ export class ExecutionTracker {
   /** 멈추면 더 기록하지 않고 폰에도 보내지 않는다. 만들던 계획과 멈춘 단계 알림은 끊는다. */
   stop(): void {
     const core = this.core;
+    core.directives.close();
     core.manager.cancel();
     core.goal.stop();
     if (core.run) core.steps.endTop(core.run);
@@ -472,9 +533,15 @@ export class ExecutionTracker {
     core.contents.dropIdle();
     core.finder.drop();
     core.dock.drop();
-    core.planning?.abort.abort();
+    if (core.planning) {
+      core.planning.abort.abort();
+      core.adaptive.finish(core.planning.attempt, "cancelled");
+    }
     core.planning = null;
     core.run?.stepEnd?.abort();
+    core.adaptive.handoffTick(true);
+    const open = core.open();
+    if (open) core.adaptive.finish(open.attempt, "cancelled");
     const a = core.run?.asking;
     if (a?.why === "device") core.o.appliances.run?.cancel(a.token);
     // 집기·내려놓기 대상(World State focus)도 푼다

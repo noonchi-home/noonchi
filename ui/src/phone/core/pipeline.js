@@ -54,9 +54,9 @@ export function createSendStats({ windowMs = 2000, now = () => performance.now()
   };
 }
 
-/** 프레임 가로 크기: ?w가 있으면 그것(160~1280), 없으면 가로 촬영 480·세로 360. */
-export function frameWidth(param, portrait) {
+/** 프레임 가로 크기: ?w가 있으면 그것(160~1280), 없으면 480(폰도 영상도 가로만 보낸다). */
+export function frameWidth(param) {
   const n = Number(param);
   if (param !== null && param !== undefined && param !== "" && Number.isFinite(n)) return Math.min(1280, Math.max(160, n));
-  return portrait ? 360 : 480;
+  return 480;
 }

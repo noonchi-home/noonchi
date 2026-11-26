@@ -11,7 +11,8 @@
  *  planner 계획 모드 차례(모델 호출 하나)마다 시간·토큰·낸 단계·계획 검사가 버린 까닭(src/agent/planner.ts PlanRound). 반성 입력이 아니다. */
 export type HistoryKind =
   | "device" | "detection" | "vlm" | "yolo" | "world" | "pam_text" | "mode" | "decision" | "plan" | "execution" | "reflection" | "feedback" | "photo"
-  | "link" | "trigger" | "look" | "thought" | "service" | "bus_gap" | "goal" | "planner" | "person" | "robot" | "safety" | "manager";
+  | "link" | "trigger" | "look" | "thought" | "service" | "bus_gap" | "goal" | "planner" | "person" | "robot" | "safety" | "manager" | "household"
+  | "help" | "assistance_outcome";
 
 export interface HistoryRow {
   id: number;
@@ -48,4 +49,17 @@ export interface DaySummary {
   action_summary: string;
   counts: Partial<Record<HistoryKind, number>>;
   dropped: { observation: number; action: number };
+}
+
+/** 도움 기록(src/act/help-record.ts)이 온 길: 이름을 불러 물은 답(call), 사람이 바로 시킨 말(speech), 배운 습관으로 먼저 한 일(habit). */
+export type HelpVia = "call" | "speech" | "habit";
+/** 도움 기록 한 줄(기록 DB help 줄 data). at_ms: 다 마친 때, asked_ms: 그 일을 정한 판단(부탁·습관)의 때. 습관 시각은 asked_ms로 찾는다. */
+export interface HelpRecord {
+  at_ms: number; asked_ms: number; action: string; via: HelpVia;
+  /** 가져다준 면(평면도 id)과 이름. */
+  place: string | null; place_label: string | null;
+  /** 그때 사용자가 하던 일(World State activity 값)과 그 방. */
+  activity: string | null; room: string | null;
+  result: "done";
+  text: string;
 }

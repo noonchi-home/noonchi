@@ -3,8 +3,8 @@
     "env": {},
     "limits": {
       "max_model_len": 32768,
-      "predict_input_bytes": 86043,
-      "reflect_input_bytes": 38814
+      "predict_input_bytes": 86004,
+      "reflect_input_bytes": 38763
     }
   },
   {
@@ -13,8 +13,8 @@
     },
     "limits": {
       "max_model_len": 32768,
-      "predict_input_bytes": 86043,
-      "reflect_input_bytes": 38814
+      "predict_input_bytes": 86004,
+      "reflect_input_bytes": 38763
     }
   },
   {
@@ -24,8 +24,8 @@
     },
     "limits": {
       "max_model_len": 20000,
-      "predict_input_bytes": 47739,
-      "reflect_input_bytes": 510
+      "predict_input_bytes": 47700,
+      "reflect_input_bytes": 459
     }
   },
   {
@@ -35,8 +35,8 @@
     },
     "limits": {
       "max_model_len": 24576,
-      "predict_input_bytes": 61467,
-      "reflect_input_bytes": 14238
+      "predict_input_bytes": 61428,
+      "reflect_input_bytes": 14187
     }
   }
 ]

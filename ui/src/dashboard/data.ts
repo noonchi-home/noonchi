@@ -5,12 +5,16 @@ import type { RobotMessage } from "../../../src/contract/machines.ts";
 import type { PendingGoal } from "../../../src/contract/goal.ts";
 import type { HabitFsm } from "../../../src/contract/habit.ts";
 import type { PlanStep, PlanView } from "../../../src/contract/plan.ts";
+import type { TraceRow } from "../../../src/contract/trace.ts";
+import { TRACE_KEPT } from "../../../src/shared/trace.ts";
 import { WORDS } from "./words";
 
 type Decision = Extract<BrainLog, { type: "decision" }>;
 type Reflection = Extract<BrainLog, { type: "reflection" }>;
 
 export interface DashData {
+  traceEpoch: string | null;
+  trace: TraceRow[];
   plan: PlanView | null;
   /** 맞춘 폰 눈(추정은 넣지 않는다). */
   eye: EyeEvent | null;
@@ -46,11 +50,24 @@ export interface DashData {
 /** 사람 상태 하나: 상태 id와 그 상태가 된 때(서버 시각), 서버가 붙인 이름(person 메시지만, 판단에서 온 것은 습관 그림 이름을 쓴다). */
 export interface PersonAt { state: string; at_ms: number; name?: string }
 const PEOPLE_KEPT = 8;
+const ROBOTS_KEPT = 64;
 const PLANS_KEPT = 4;
 
 export const EMPTY_DASH: DashData = {
+  traceEpoch: null, trace: [],
   plan: null, eye: null, decision: null, thoughts: [], reflection: null, say: null, mode: null, says: 0, safety: null, talk: [], goal: null, habit: null, people: [], robots: [], personFed: false, plans: [],
 };
+
+/** 서버 시각순으로 최근 전이를 보존한다. 같은 시각의 다른 전이는 첫 수신 순서를 유지한다. */
+function addTransition<T>(
+  list: T[], event: T, limit: number,
+  timeOf: (event: T) => number, sameState: (a: T, b: T) => boolean,
+): T[] {
+  const at = timeOf(event);
+  if (list.some(known => timeOf(known) === at && sameState(known, event))) return list;
+  if (list.length === limit && list.every(known => timeOf(known) > at)) return list;
+  return [...list, event].sort((a, b) => timeOf(a) - timeOf(b)).slice(-limit);
+}
 
 /** 유효한 판단 하나로 사람 상태 줄을 잇는다: 상태(서버 fsmNow)를 모르면(null) 그대로, 마지막과 같으면 그대로. */
 function peopleNext(list: PersonAt[], d: Decision): PersonAt[] {
@@ -102,7 +119,23 @@ function reflectionThoughts(r: Reflection): ThoughtMessage[] {
 export function reduceDash(s: DashData, m: ServerMessage, now: number): DashData {
   switch (m.type) {
     case "hello":
-      return EMPTY_DASH;
+      return { ...EMPTY_DASH, traceEpoch: m.trace_epoch ?? null };
+    case "trace": {
+      if (m.epoch !== s.traceEpoch) return s;
+      const rows = new Map(s.trace.map(row => [row.id, row]));
+      let changed = false;
+      for (const row of m.rows) {
+        const old = rows.get(row.id);
+        if (old && (old.rev >= row.rev || (old.state !== "pending" && row.state === "pending"))) continue;
+        if (old?.state === "pending" && row.state !== "pending") rows.delete(row.id);
+        rows.set(row.id, row);
+        changed = true;
+      }
+      if (!changed) return s;
+      const stored = [...rows.values()];
+      const omit = new Set(stored.filter(row => row.state !== "pending" && !row.retained).slice(0, Math.max(0, rows.size - TRACE_KEPT)).map(row => row.id));
+      return { ...s, trace: stored.filter(row => !omit.has(row.id)).slice(-TRACE_KEPT) };
+    }
     case "plan": {
       const p = m.plan;
       // 같은 계획은 지금 것과 같거나 작은 번호를 버린다(계획 계약)
@@ -128,14 +161,15 @@ export function reduceDash(s: DashData, m: ServerMessage, now: number): DashData
       return { ...s, say: m.text, safety, talk, says: changed && m.text ? s.says + 1 : s.says };
     }
     case "robot": {
-      const prev = s.robots.at(-1);
-      if (prev && (m.since_ms < prev.since_ms || (m.since_ms === prev.since_ms && m.state === prev.state &&
-        m.step?.plan_id === prev.step?.plan_id && m.step?.number === prev.step?.number && m.step?.label === prev.step?.label))) return s;
-      return { ...s, robots: [...s.robots, m].slice(-64) };
+      const robots = addTransition(s.robots, m, ROBOTS_KEPT, r => r.since_ms, (a, b) =>
+        a.state === b.state && a.step?.plan_id === b.step?.plan_id &&
+        a.step?.number === b.step?.number && a.step?.label === b.step?.label);
+      return robots === s.robots ? s : { ...s, robots };
     }
     case "person": {
-      const people = s.people.at(-1)?.state === m.state ? s.people : [...s.people, { state: m.state, at_ms: m.since_ms, name: m.name }].slice(-PEOPLE_KEPT);
-      return { ...s, people, personFed: true };
+      const event: PersonAt = { state: m.state, at_ms: m.since_ms, name: m.name };
+      const people = addTransition(s.people, event, PEOPLE_KEPT, p => p.at_ms, (a, b) => a.state === b.state && a.name === b.name);
+      return people === s.people && s.personFed ? s : { ...s, people, personFed: true };
     }
     case "thought": {
       const thoughts = addThoughts(s.thoughts, m.messages);

@@ -4,6 +4,7 @@
 export const color = {
   "brand": "#a1143e",
   "brand-strong": "#971238",
+  "brand-portal": "#a50034",
   "brand-bright": "#b92a51",
   "on-brand": "#ffffff",
   "cream": "#f2e4d3",
@@ -12,6 +13,7 @@ export const color = {
   "ink-2": "#574f50",
   "ink-3": "#645b5b",
   "ink-4": "#9b918e",
+  "bento-surface": "#ffffff",
   "page": "#fffcf8",
   "canvas": "#f8f2ea",
   "surface": "#fffcf8",
@@ -380,12 +382,15 @@ export const scene3d = {
 } as const;
 
 export const font = {
-  "sans": "\"Noto Sans KR Variable\", \"Noto Sans KR\", \"Malgun Gothic\", \"Apple SD Gothic Neo\", system-ui, sans-serif",
-  "mono": "ui-monospace, \"Cascadia Mono\", Consolas, \"D2Coding\", monospace",
-  "canvas": "\"Noto Sans KR Variable\", \"Malgun Gothic\", sans-serif",
+  "sans": "\"Pretendard Variable\", \"Noto Sans KR Variable\", \"Noto Sans KR\", \"Malgun Gothic\", \"Apple SD Gothic Neo\", system-ui, sans-serif",
+  "mono": "\"Pretendard Variable\", ui-monospace, \"Cascadia Mono\", Consolas, \"D2Coding\", monospace",
+  "canvas": "\"Pretendard Variable\", \"Noto Sans KR Variable\", \"Malgun Gothic\", sans-serif",
   "weights": {
-    "regular": 400,
-    "medium": 500,
+    "thin": 600,
+    "extralight": 600,
+    "light": 600,
+    "normal": 600,
+    "medium": 600,
     "semibold": 600,
     "bold": 700,
     "brand": 850

@@ -94,6 +94,7 @@ describe("서버: 실제 폰 말 → 외부 연락 승인 → 전화 서비스 �
     const body = fake.requests[0]!.body;
     expect(body).toMatchObject({ version: 1, kind: "as_center", to, home: { id: "oneroom", name: "원룸 예시 (테스트용)" }, device: { id: "washer_1", label: "세탁기", kind: "washer" }, error_code: "UE" });
     await dash.waitFor((m) => m.type === "say" && m.text === "AS센터에 전화를 요청했어요.", "말풍선 카드");
+    await srv!.historyWriter.flush();
     const rows = srv!.history.list({ kinds: ["service"] });
     expect(rows).toEqual([expect.objectContaining({
       kind: "service", subject: "washer_1", text: "세탁기 AS센터 전화 · 보냄",
@@ -112,6 +113,7 @@ describe("서버: 실제 폰 말 → 외부 연락 승인 → 전화 서비스 �
     const reply = await phone.waitFor((m) => m.type === "reply" && m.text !== "", "폰 답");
     expect(reply).toMatchObject({ text: "AS센터 연락처가 등록되지 않았어요.", pending: [] });
     expect(fake.requests).toEqual([]);
+    await srv!.historyWriter.flush();
     expect(srv!.history.list({ kinds: ["service"] })).toEqual([]);
   }, SLOW);
 
@@ -130,6 +132,7 @@ describe("서버: 실제 폰 말 → 외부 연락 승인 → 전화 서비스 �
     const { phone, token } = await asked({ KEEP_HEARD_TEXT: "1" });
     phone.ws.send(JSON.stringify({ type: "confirm", token, choice: "approve" }));
     await phone.waitFor((m) => m.type === "reply" && m.text === "전화 서비스가 아직 연결되지 않았어요.", "폰 답");
+    await srv!.historyWriter.flush();
     expect(srv!.history.list({ kinds: ["service"] })[0]!.data).toMatchObject({ outcome: "unconnected", to: { name: "AS센터", phone: "1588-0000" }, problem: "탈수할 때 멈춤", error_code: "UE" });
   }, SLOW);
 
@@ -138,6 +141,7 @@ describe("서버: 실제 폰 말 → 외부 연락 승인 → 전화 서비스 �
     phone.ws.send(JSON.stringify({ type: "confirm", token, choice: "approve" }));
     await phone.waitFor((m) => m.type === "reply" && m.text === "전화 서비스가 아직 연결되지 않았어요.", "폰 답");
     await dash.waitFor((m) => m.type === "say" && m.text === "전화 서비스가 아직 연결되지 않았어요.", "말풍선 카드");
+    await srv!.historyWriter.flush();
     expect(srv!.history.list({ kinds: ["service"] }).map((r) => [r.text, (r.data as Msg).outcome])).toEqual([["세탁기 AS센터 전화 · 연결 없음", "unconnected"]]);
   }, SLOW);
 
@@ -147,6 +151,7 @@ describe("서버: 실제 폰 말 → 외부 연락 승인 → 전화 서비스 �
     phone.ws.send(JSON.stringify({ type: "confirm", token, choice: "reject" }));
     await phone.waitFor((m) => m.type === "reply" && m.text === "AS센터 전화는 하지 않을게요.", "폰 답");
     expect(fake.requests).toEqual([]);
+    await srv!.historyWriter.flush();
     expect(srv!.history.list({ kinds: ["service"] }).map((r) => [r.text, (r.data as Msg).outcome])).toEqual([["세탁기 AS센터 전화 · 거절", "refused"]]);
     expect(JSON.stringify(srv!.history.list({ kinds: ["service"] }))).not.toMatch(HIDDEN);
     await new Promise((r) => setTimeout(r, 1200));

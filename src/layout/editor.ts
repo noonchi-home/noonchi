@@ -406,20 +406,21 @@ export class LayoutEditor {
     return Math.hypot(dx, dy) < 1e-6 ? 90 : normDeg((Math.atan2(dy, dx) * 180) / Math.PI);
   }
 
-  /** 가장 가까운 벽 면에 붙이고 벽을 등지게 한다(벽 목록이 없으면 그대로). */
+  /** 가장 가까운 선 벽 면에 붙이고 벽을 등지게 한다(선 벽이 없으면 그대로). 끝점 없는 고체(샤프트·기둥)는 붙일 면으로 보지 않는다. */
   private snapToWall(p: Vec2, facing: number): { position: Vec2; facing: number } {
-    let best: { wall: SceneWall; q: Vec2; d: number } | undefined;
-    for (const wall of this.walls) {
-      const r = nearestOnSegment(p, wall.a, wall.b);
-      if (!best || r.d < best.d) best = { wall, ...r };
+    let best: { a: Vec2; b: Vec2; thickness: number | null | undefined; q: Vec2; d: number } | undefined;
+    for (const { a, b, thickness } of this.walls) {
+      if (!a || !b) continue;
+      const r = nearestOnSegment(p, a, b);
+      if (!best || r.d < best.d) best = { a, b, thickness, ...r };
     }
     if (!best) return { position: p, facing };
-    const { wall, q } = best;
-    const len = Math.hypot(wall.b[0] - wall.a[0], wall.b[1] - wall.a[1]) || 1;
-    let n: Vec2 = [-(wall.b[1] - wall.a[1]) / len, (wall.b[0] - wall.a[0]) / len];
+    const { a, b, q } = best;
+    const len = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
+    let n: Vec2 = [-(b[1] - a[1]) / len, (b[0] - a[0]) / len];
     const side = n[0] * (p[0] - q[0]) + n[1] * (p[1] - q[1]);
     if (side < 0 || (side === 0 && !this.roomAt([q[0] + n[0] * 0.2, q[1] + n[1] * 0.2]))) n = [-n[0], -n[1]];
-    const half = (wall.thickness ?? 0.2) / 2;
+    const half = (best.thickness ?? 0.2) / 2;
     return { position: [clean(q[0] + n[0] * half), clean(q[1] + n[1] * half)], facing: normDeg((Math.atan2(n[1], n[0]) * 180) / Math.PI) };
   }
 
@@ -493,7 +494,9 @@ export class LayoutEditor {
     return null;
   }
 
+  geometryRevision = 0;
   private emit(m: LayoutMessage): void {
+    this.geometryRevision++;
     for (const cb of [...this.listeners]) {
       try {
         cb(m);

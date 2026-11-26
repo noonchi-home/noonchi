@@ -1,4 +1,4 @@
-# NOONCHI 한 서버: noonchi(CPU, 서버·YOLO26n 감지·관절·PAM 판단·반성)와 redis(노드 통로). --profile gpu면 vLLM 두 개(VLM, PAM LLM)를 더한다.
+# NOONCHI 한 서버: noonchi(CPU, 서버·YOLO26n 감지·관절·PAM 판단·반성, 노드 통로는 프로세스 안 메모리 버스). --profile gpu면 vLLM 두 개(VLM, PAM LLM)를 더한다.
 # --profile check는 키 없는 확인용 가짜 OpenAI 호환 서버(fake-openai)를 더한다. 포트는 호스트 127.0.0.1에만 연다.
 # 저장소 뿌리에서 띄운다: docker compose --env-file .env -f deploy/compose.yaml up -d --build. 이 파일의 상대 경로는 deploy/ 기준이다.
 # 설정·키는 --env-file로 준 저장소 뿌리 .env(다른 파일도 --env-file)에서 오고, 서비스마다 environment에 적은 이름만 받는다.
@@ -34,6 +34,8 @@ services:
     init: true
     restart: unless-stopped
     environment:
+      # 컨테이너 안에서만 0.0.0.0으로 듣는다. 호스트에는 아래 ports가 127.0.0.1로만 낸다
+      NOONCHI_IN_CONTAINER: "1"
       HOST: 0.0.0.0
       PHONE_HOST: 0.0.0.0
       PORT: "8200"
@@ -43,8 +45,6 @@ services:
       # 영상 모드 영상 폴더: 볼륨 안(기본 공용 폴더 /app/runtime/videos는 이미지 안이라 비어 있다)
       PHONE_VIDEO_DIR: /data/videos
       MATTER_TRANSPORT: local
-      # 컨테이너 안 네트워크 주소(Docker 브리지)는 밖에서 열 수 없다: 폰 주소는 PHONE_URL(과 tailscale serve 주소)만
-      PHONE_LAN_URLS: "0"
       # 에이전트
       AGENT_PROVIDER:
       OPENAI_API_KEY:
@@ -71,8 +71,13 @@ services:
       VLM_MAX_INFLIGHT:
       DETECT_QUEUE_MAX:
       PHONE_URL:
+      ANDROID_TWA_SHA256_FINGERPRINTS:
       PHONE_EYE_HEIGHT_M:
       FOCUS:
+      # 위치 찾기(기준 사진 지도, 구현명세서 6.15)
+      LOCALIZE_MAP:
+      LOCALIZE_BUCKET:
+      LOCALIZE_PYTHON:
       # 추론(VLM·PAM 호출)
       INFERENCE_MODE:
       VLM_BASE_URL:
@@ -104,6 +109,7 @@ services:
       DATASET_COLLECT:
       DATASET_RETENTION_DAYS:
       ALLOWED_ORIGINS:
+      HUB_URL:
       PLAN_TOKEN:
       # 허브
       HUB:
@@ -124,12 +130,18 @@ services:
       THINQ_API_KEY:
       THINQ_BASE_URL:
       THINQ_TIMEOUT_MS:
+      # TV 중계(지훈 님 tvrelay, 빛 센서 없는 적외선 장비): 실제 모드에서 TV_RELAY_DEVICE TV를 중계로 잇는다
+      TV_RELAY_URL:
+      TV_RELAY_TOKEN:
+      TV_RELAY_DEVICE:
+      TV_RELAY_TARGET:
+      TV_RELAY_POLL_MS:
+      TV_RELAY_TIMEOUT_MS:
+      TV_RELAY_COMMAND_TIMEOUT_MS:
       # 외부 연락(전화 에이전트)
       CALL_SERVICE_URL:
-      # 노드 통로(같은 EC2 redis 컨테이너)
-      REDIS_URL: redis://redis:6379
-    depends_on:
-      redis: { condition: service_healthy }
+      # 노드 통로: 빈 값이면 프로세스 안 메모리 버스. 서버를 여러 프로세스로 나눌 때만 Redis 주소를 준다(src/bus/redis.ts)
+      REDIS_URL: ""
     ports:
       - "127.0.0.1:${NOONCHI_PORT:-8200}:8200"
       - "127.0.0.1:${NOONCHI_PHONE_PORT:-8210}:8210"
@@ -141,19 +153,6 @@ services:
       timeout: 5s
       retries: 5
       start_period: 60s
-
-  # 노드 통로(ROS 2 통로 역할). noonchi와 같은 EC2, 호스트에 열지 않는다. 디스크에 저장하지 않는다(noonchi가 켜질 때 확인한다).
-  # 넘치면 지우지 않고(noeviction) 발행 오류가 난다
-  redis:
-    image: redis:8.10.2-alpine@sha256:9f8d2d789b9a1d1e3f283f979aa9cbf393373806472e1ccd460e2f9c869b833b
-    init: true
-    restart: unless-stopped
-    command: ["redis-server", "--appendonly", "no", "--save", "", "--maxmemory", "512mb", "--maxmemory-policy", "noeviction"]
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 3s
-      retries: 5
 
   fake-openai:
     image: noonchi:local

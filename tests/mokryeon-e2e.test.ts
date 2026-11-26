@@ -16,6 +16,7 @@ import type { Detection } from "../src/contract/observe.js";
 import { startFakePamLlm, type FakePamLlm, pamLlmEnv } from "./helpers/pam.js";
 import { CUP_SCRIPTS, plannerRespond } from "./helpers/planner.js";
 import { heardAtOf, openPhone, openWebSocket } from "./helpers/ws.js";
+import { expectedSpeechId } from "./helpers/phone-speech.js";
 import { alignOnServer } from "./helpers/align.js";
 import { useLearnedMemory } from "./helpers/memory.js";
 import { topLook } from "./helpers/top-look.js";
@@ -77,9 +78,13 @@ describe("한양목련 처음부터 끝까지", () => {
       ? { observation: "빈 컵이 식탁에 남음", reasoning: "자리를 비워 컵을 치운다", task_index: 0 } : { observation: "컵 없음", reasoning: "할 일 없음", task_index: -1 }) });
     const runtimeDir = mkdtempSync(join(tmpdir(), "rt-"));
     // 치우기를 보는 시험은 배운 뒤 기억(합성 3일째부터의 로봇 FSM)으로 돈다. seed 기억이면 떠날 때 묻는다
-    useLearnedMemory(runtimeDir);
+    // 이 장면은 밤 복귀를 확인한다. 같은 집 시간대로 기억을 고정하고 서버를 시작한다.
+    const utc = new Date();
+    const delta = 22 * 60 + 30 - (utc.getUTCHours() * 60 + utc.getUTCMinutes());
+    const offset = ((delta + 2160) % 1440) - 720;
+    useLearnedMemory(runtimeDir, undefined, offset);
     srv = await startServer({
-      env: { HUB: "memory", PORT: "0", HOME_ID: "mokryeon_180b", RUNTIME_DIR: runtimeDir, PHONE_PORT: "0", PHONE_HOST: "127.0.0.1",
+      env: { HUB: "memory", HISTORY_TZ_MINUTES:String(offset), PORT: "0", HOME_ID: "mokryeon_180b", RUNTIME_DIR: runtimeDir, PHONE_PORT: "0", PHONE_HOST: "127.0.0.1",
         BRAIN: "1", VLM_BASE_URL: `${fake.url}/v1`, ...pamLlmEnv(pam), OPENAI_API_KEY: "fake-key", OPENAI_BASE_URL: `${fake.url}/v1` },
       brain: { detector: new ScriptedDetector(top.detect(() => [...people, det("cup", 0.9, CUP_BOX, 41)])) }, log: () => {},
       // 처음 하는 일 승인 길을 끝까지 본다: 처음 하는 일 묻기를 켜 본다(기본 끔, 기본 흐름은 tests/noonchi-e2e.test.ts)
@@ -138,6 +143,7 @@ describe("한양목련 처음부터 끝까지", () => {
     expect(asked).toEqual({
       type: "command", id: expect.stringMatching(/^plan:pam-\d+$/), step: `${planId}:approve`, text: "컵 치우기를 할까요?", vision: null,
       choices: [{ id: "approve", label: "승인" }, { id: "reject", label: "거절" }], target: null, speak: true, grade: "question",
+      speech_id: expectedSpeechId("mokryeon_180b#1", 1),
     });
     const waiting = dash.filter((m) => m.type === "plan" && m.plan?.id === planId).at(-1)!.plan;
     expect(waiting.status).toBe("planned");
@@ -207,6 +213,9 @@ describe("한양목련 처음부터 끝까지", () => {
     const memory = JSON.parse(readFileSync(join(runtimeDir, "homes", "mokryeon_180b", "approvals.json"), "utf8")) as Record<string, unknown>;
     expect(memory).toEqual({ always: { "task:컵 치우기": expect.any(String) } });
     cupPlace = "on_table";
+    // 다음 방문 전에 컵이 다시 식탁 위로 보인다: 앞 계획 끝에 VLM이 「싱크대 안」으로 본 컵을 VLM이 다시 「식탁 위」로 볼 때까지 기다린다.
+    // 떠남은 0.5초(FAST_GONE_MS)라 떠남 화살표가 사람이 떠난 바로 뒤에 나간다. 그때 컵 자리가 아직 「싱크대 안」이면 계획 전 검사가 막는다(src/act/check.ts checkDecision in_sink)
+    await pump(() => !!dash.filter((m) => m.type === "world").at(-1)?.world.objects.some((o: Msg) => o.cls === "cup" && o.facts.place?.value === "on_table"));
     await visitThenLeave();
     await pump(() => spoken().some((m) => m.id !== planId && m.text === "식탁으로 가 주세요"));
     // 앞 계획의 완료 문장(done:)과 충전 자리 명령(dock:)은 다음 계획 명령이 아니다

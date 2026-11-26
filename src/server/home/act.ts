@@ -1,9 +1,13 @@
 // 집 실행 묶음의 판단·검사·실행 잇기(src/act·src/brain 판단 호출): 클로이드 계획(PlanHub), 실행 설정·수업 기록, 생각 메시지·판단 호출(PAM)·실행 추적, 보기 담당(관찰 모드).
 // 판단 → 계획(에이전트 계획 모드) → 실행 전 검사 → 실행 추적이 실제 폰에 명령을 낸다. 생각 메시지는 판단 기록 뒤에 따로 만들어 대시보드로 보내고 기록 DB(thought)에 남긴다.
-import { ExecutionTracker, LessonStore, Looker, PlanHub, emitRobotCommand, checkDecision, checkPlan, deviceRunner, lessonsPath, loadActConfig, pamTasks } from "../../act/index.js";
-import { lookTargets, taskOf, type TaskSpec } from "../../act/tasks.js";
-import { deviceViews, placesOf, resubmit, type PlaceInfo, type PlanAhead, type PlanContext } from "../../agent/index.js";
-import { Decider, PamClient, PersonLane, dailyMemory, habitView, lastStoredThoughts, memoryForDay, pamSettings, thoughtFeed, type FsmMemory } from "../../brain/index.js";
+import { viewerAt } from "../../goal/index.js";
+import { ExecutionTracker, LessonStore, Looker, PlanHub, publishAssistanceOutcome, emitRobotCommand, checkDecision, checkPlan, deviceRunner, lessonsPath, loadActConfig, pamTasks } from "../../act/index.js";
+import { assistanceResident, proactiveIntent } from "./assistance.js";
+import { assistanceContext, assistanceOutcome } from "../../shared/assistance-outcome.js";
+import type { Intervention } from "../../brain/index.js";
+import { CALL_ACTION, lookTargets, taskOf, type TaskSpec } from "../../act/tasks.js";
+import { callDestination, callPlaces, withChosenStation, deviceViews, placesOf, resubmit, type PlaceInfo, type PlanAhead, type PlanContext } from "../../agent/index.js";
+import { Decider, PamClient, PersonLane, dailyMemory, routineAllows, habitView, lastStoredThoughts, previewDayMemory, pamSettings, thoughtFeed, type FsmMemory } from "../../brain/index.js";
 import type { BrainLog, DecisionRecord } from "../../contract/events.js";
 import type { PendingGoal } from "../../contract/goal.js";
 import type { HabitFsm } from "../../contract/habit.js";
@@ -12,11 +16,17 @@ import { AGAIN, APPROVE } from "../../act/prompts.js";
 import type { WorldInput, WorldView } from "../../contract/world.js";
 import type { SignalHub } from "../../devices/index.js";
 import type { PlanView } from "../../contract/plan.js";
-import { floorPlanFrom, loadScene, type LayoutEditor, type PlaceNames } from "../../layout/index.js";
+import type { TraceRefs } from "../../contract/trace.js";
+import { walkingMap, floorLookup, floorPlanFrom, loadScene, LOOK_HEIGHT_M, type LayoutEditor, type PlaceNames } from "../../layout/index.js";
 import { Trigger, canRelink, deviceStateKeys, deviceStatus, loadTriggerConfig, type PlaneSurface, type TriggerConfig } from "../../world/index.js";
 import { loadEndpoints } from "../../infer/endpoints.js";
 import { DEVICE_STATES } from "../../world/vocab.js";
 import { type HomeCore } from "./core.js";
+import { sendAgain } from "./history-writes.js";
+import { inTraceContext } from "./agent.js";
+import { measuredTrace } from "../../shared/trace.js";
+import type { EvidenceRef } from "../../contract/assistance.js";
+import { HomeBeer, isBeerAction } from "./beer.js";
 
 /** 명령 대상·가까이 볼 자리(이름과 트윈 자리 [x, 높이, y]): 면(식탁·싱크대처럼 윗면이 있는 배치)이면 윗면 가운데(싱크볼이 있으면 윗면 높이의 싱크볼 가운데),
  *  그 밖은 배치 가운데. 배치 가운데는 싱크대면 높이 약 0.45m라, 대상을 겨눈 폰 사진에서 윗면(컵이 놓이는 곳)보다 한참 아래다.
@@ -45,12 +55,22 @@ function liveDevices(v: WorldView, hub: SignalHub): WorldView {
   };
 }
 
+function deviceEvidence(hub: SignalHub, id: string): { attr: string; value: boolean; ref: EvidenceRef } | null {
+  const s = hub.get(id);
+  const value = s?.twin.power;
+  if (!s?.online || s.signal === "none" || (s.vision?.applied && !s.readback) || (value !== "on" && value !== "off")) return null;
+  const observedMs = Date.parse(s.readback?.at ?? s.updatedAt);
+  if (!Number.isFinite(observedMs)) return null;
+  return { attr: "power", value: value === "on", ref: { source: s.readback?.source ?? "hub", subjectId: id,
+    originId: `${s.readback?.deviceId ?? id}@${observedMs}`, observedMs } };
+}
+
 /** 실행 추적이 World State에 넣는 것(보기 지킴·따르기 창)은 /world/input으로 낸다(거울 노드 act, 집 상태 노드가 넣는다). */
 function worldInput(core: HomeCore, i: WorldInput): void {
   core.out.act?.push("/world/input", i);   // 차례대로, 실패하면 같은 봉투로 다시(src/bus/outbox.ts)
 }
 
-/** 판단 호출 시점 설정: 주기 기본은 PAM_LLM_MODEL을 반영한 최종 PAM 모델(loadEndpoints)로 고른다(nano면 1초, src/world/trigger.ts). */
+/** 판단 호출 시점 설정: 주기 기본은 PAM_LLM_MODEL을 반영한 최종 PAM 모델(loadEndpoints)로 고른다(nano·mini면 1초, src/world/trigger.ts). */
 export function triggerConfigOf(env: Record<string, string | undefined>): TriggerConfig {
   return loadTriggerConfig(env, { pamModel: loadEndpoints(env).pam.model });
 }
@@ -92,6 +112,7 @@ export function startPlans(core: HomeCore): void {
   const places = (): PlaceInfo[] => placesOf(floorPlan, placeNames);
   // 대시보드 말풍선 카드(src/act/say.ts): 계획 방송·실제 폰 명령·World State 바뀜·판단 타이머 뒤에 다시 보고, 글이 바뀔 때만 보낸다
   const plans = new PlanHub(floorPlan, (m) => {
+    if (m.type === "plan" && m.plan) core.trace?.plan(m.plan);
     if (core.out.act && m.type === "plan") {
       core.out.act.push("/act/phone_changes", { plan: m.plan });
       core.out.act.push("/act/plan", { plan: m.plan });
@@ -124,6 +145,7 @@ export function startAct(core: HomeCore): (event: BrainLog) => void {
   const now = () => core.nowMs();
   // 집 상태는 거울(가장 새 /world/state)로 읽고 가전 지금 상태는 허브 값으로 맞춘다. 노드는 실행 추적을 만든 뒤 띄우고 첫 상태를 받은 뒤에 판단·실행이 돈다
   const view = () => liveDevices(core.view()!, signals);
+  if (home.singleResident) core.beer = new HomeBeer(core, home.singleResident);
   // 메시지 상자 문장은 모델 없이 판단 기록의 사실로만 만든다(src/brain/thought.ts). 다시 띄우면 이 집의 최근 메시지(10분 안)로 시작한다
   const feed = thoughtFeed({
     send: (m) => core.out.brain?.push("/brain/thought", { ...m, home: home.id }),
@@ -151,17 +173,31 @@ export function startAct(core: HomeCore): (event: BrainLog) => void {
   // 기억은 그날 처음 정한 판본(src/brain/history/reflect.ts). 관찰 텍스트 시각은 기록 DB와 같은 시간대
   const pamTimeout = Number(env.PAM_TIMEOUT_MS);
   const brainView = () => core.brainMirror!.view()!;
-  const memory = dailyMemory((day) => memoryForDay(history.db, day, { log: ctx.log }));
+  // 판단은 기억을 동기로 읽는다: 읽기 연결로 그날 판본을 미리 보고, 날 고정·seed 저장은 기록 작업 스레드가 같은 골라내기로 한다.
+  // 작업 스레드가 다른 판본을 고정했으면(그사이 다른 판본이 저장됨) 캐시를 비워 다음 판단이 고정한 판본을 읽는다
+  const memory = dailyMemory((day) => {
+    const seen = previewDayMemory(history.db, day, { log: ctx.log });
+    if (seen.write) {
+      sendAgain(() => history.write.dayMemory(day), () => history.write.writable()).then((version) => { if (version !== seen.memory.version) memory.invalidate(); },
+        (e: Error) => ctx.log(`[경고] 그날 기억 판본을 고정하지 못했어요: ${e.message}`));
+    }
+    return seen.memory;
+  });
   core.invalidateMemory = memory.invalidate;
   const decide = new Decider({
+    trace: core.trace,
+    traceEvidence: change => core.trace?.observationOf(change),
     node: () => core.brainMirror!.node,
     pam: new PamClient({ settings: pamSettings(env), timeoutMs: Number.isFinite(pamTimeout) && pamTimeout > 0 ? pamTimeout : undefined }),
     // 행동 목록은 지금 모드를 따르고(들은 말이 있으면 말로 부탁한 코치 행동도), 판단 기록의 모드는 그 판단 뒤의 지금 모드다(src/act/mode.ts)
-    world: { view: brainView }, trigger: new Trigger(triggerConfigOf(env), now()), tasks: (heard) => { core.pamHeard = heard; return pamTasks(core.mode(), heard); }, mode: (action) => core.mode(action),
+    world: { view: brainView, rev: () => core.brainMirror?.rev() ?? null }, trigger: new Trigger(triggerConfigOf(env), now()), tasks: (heard) => { core.pamHeard = heard; return pamTasks(core.mode(), heard); }, mode: (action) => core.mode(action),
     memory: () => memory.get(history.db.dayOf(now())), emit, offsetMinutes: history.db.offsetMinutes, clock: ctx.brain?.clock,
     // 행동 중 기다리기·기기 단계 동안은 PAM을 부르지 않는다(실행 추적이 조건을 본다)
     hold: () => core.brainStatus?.hold ?? false,
     keepHeard: () => core.keepHeard,
+    interventionFor: (d, w) => interventionFor(d, w),
+    edgeAllowed: (edge, atMs) => routineAllows(core.routines(), edge, atMs, history.db.offsetMinutes)
+      && (!isBeerAction(edge.action) || !!core.beer?.available(edge.action)),
     // 판단 → 시간 줄 사람 줄 → 계획 → 실행 전 검사 → 실행 추적(src/act/)
     onDecision: (d) => {
       core.person?.onDecision(d);
@@ -188,24 +224,206 @@ export function startAct(core: HomeCore): (event: BrainLog) => void {
   });
   // 실행 전 검사(src/act/check.ts): 시험 모드에서는 짝지은 실제 가전 단계를 막는다
   const deviceSteps = (p: PlanView) => p.steps.flatMap((s) => (s.target?.deviceId
-    ? [{ deviceId: s.target.deviceId, paired: signals.sources()[s.target.deviceId]?.kind === "thinq" }] : []));
+    ? [{ deviceId: s.target.deviceId, paired: ["thinq", "relay"].includes(signals.sources()[s.target.deviceId]?.kind ?? "") }] : []));
   // 기기 단계(src/act/devices.ts): 말 요청과 같은 기기 도구·정책(위험 목록은 승인 토큰). 보내기 바로 앞에서 그 계획 단계가 아직인지 본다
   const devices = deviceRunner(signals, policy, twin.rooms);
   // 명령 대상 자리는 배치(면이면 윗면 가운데, 싱크볼이 있으면 싱크볼)에서
   const placeAt = placeLocator(layout?.editor, core.surfaces);
   // 계획 입력: 계획 모드·미리 만든 계획 다시 내기가 같은 맥락을 쓴다(이미 치운 물건 placed는 그때 것)
-  const planCtx = (d: DecisionRecord, task: TaskSpec, ahead?: PlanAhead): PlanContext => ({
-    decision: d, task, world: view(), floor: plans.floor(), places: core.places(), names: placeNames, rooms: twin.rooms, devices: deviceViews(signals), nowIso: new Date(now()).toISOString(),
+  const answers = history.db.cupAnswers;
+  const resident = (world: WorldView) => {
+    const people = Math.max(world.person.count, world.household_photo?.proof?.person_count ?? 0);
+    return people > 1 ? null : home.singleResident ?? answers.demoResident(home.id, people);
+  };
+  const observedResident = (w: WorldView) => assistanceResident(w, resident(w), now(), core.act.staleMs);
+  const policyResident = (w: WorldView) => observedResident(w)
+    ?? (!w.person.visible && w.person.count === 0 && w.household_photo?.proof?.person_count === 0 ? home.singleResident ?? null : null);
+  const interventionFor = (d: Pick<DecisionRecord, "action" | "source"> & { fsm?: { from: string | null } | null }, w: WorldView): Intervention =>
+    d.source === "speech" || !d.action ? "default"
+      : history.db.policyFor(home.id, policyResident(w), { action: d.action, context: assistanceContext(d, w) }, history.db.dayOf(now()));
+  const preferenceScope = () => {
+    const world = view();
+    const user = observedResident(world);
+    const state = decide.habit()?.state ?? null;
+    const context = assistanceContext({ fsm: { from: state } }, world);
+    return user && context ? { user, context, since: world.person.since_ms } : null;
+  };
+  type Scope = NonNullable<ReturnType<typeof preferenceScope>>;
+  const sameScope = (a: Scope, b: Scope | null) => b && a.user === b.user && a.context === b.context && a.since === b.since;
+  const followupMs = 30_000;
+  let voiceTurn = 0;
+  let lastRequest: { scope: Scope; action: string; at: number } | null = null;
+  core.captureProactiveRequest = () => {
+    const scope = preferenceScope();
+    if (!scope) return;
+    const at = now();
+    const turn = voiceTurn;
+    return action => {
+      if (turn === voiceTurn && now() - at <= followupMs && sameScope(scope, preferenceScope())) {
+        lastRequest = { scope, action, at };
+      }
+    };
+  };
+  core.resumeProactive = (text, originId) => {
+    voiceTurn++;
+    const previous = lastRequest;
+    lastRequest = null;
+    const intent = proactiveIntent(text);
+    if (!intent) return null;
+    if (intent.kind === "decline") return "지금 설정을 유지할게요.";
+    const scope = preferenceScope();
+    const atMs = now();
+    const action = intent.kind === "named" ? intent.action
+      : previous && atMs >= previous.at && atMs - previous.at <= followupMs && sameScope(previous.scope, scope) ? previous.action : null;
+    if (!action) return "어떤 일을 먼저 도와드리면 될까요?";
+    if (!scope) return "지금 설정을 유지할게요.";
+    return history.write.interventionPreference({ home: home.id, user: scope.user, action, context: scope.context, atMs, originId })
+      .then((saved) => (saved ? "알겠어요. 다음 날부터 같은 상황에서 먼저 도울게요." : "지금 설정을 유지할게요."));
+  };
+  const discardLeftover = (world: WorldView) => answers.allowDiscard(home.id, resident(world));
+  const planCtx = (d: DecisionRecord, task: TaskSpec, world: WorldView, ahead?: PlanAhead): PlanContext => ({
+    decision: d, task, world, floor: plans.floor(), places: core.places(), names: placeNames, rooms: twin.rooms, devices: deviceViews(signals), nowIso: new Date(now()).toISOString(),
     placed: new Map(core.tracker?.placed() ?? []), ...(task.coach ? { lesson: lessons.get(task.name) } : {}), ...(ahead ? { ahead } : {}),
     // 관찰 흐름이 위에서 본 사진으로 컵 안을 본다(topReady·lookContents top): 컵 치우기 계획에 컵 안 보기 단계가 든다
     topLook: true,
+    discardLeftover: task.topLook && discardLeftover(world),
+    // 부름의 목적지는 코드가 사용자 방으로 정한다(계획 모델은 그 목적지로 가는 계획만 낸다)
+    ...(task.name === CALL_ACTION ? { call: callDestination(world, core.scene?.stations ?? null, plans.floor(), now()) } : {}),
   });
   core.makePlan = async ({ decision, ahead }, signal) => {
     const task = taskOf(decision.action);
     if (!task) return { ok: false, error: "행동 목록에 없는 행동" };
-    return planner.plan({ ...planCtx(decision, task, ahead), world: brainView() }, signal);
+    if (interventionFor(decision, brainView()) === "defer_proactive") return { ok: false, error: "이번에는 먼저 돕지 않아요." };
+    const action = decision.action;
+    const beer = decision.source !== "speech" && isBeerAction(action);
+    const cue = beer ? core.beer?.available(action) : null;
+    if (beer && !cue) return { ok: false, error: "현재 맥주를 도울 근거가 없어요." };
+    const current = brainView();
+    const planningWorld = cue?.object ? { ...current, objects: current.objects.filter(o => o.cls !== "beer_can" || o.id === cue.object) } : current;
+    const basins = cue?.object ? (core.beer?.basinIds() ?? []) : [];
+    if (cue?.object && !basins.length) return { ok: false, error: "놓을 싱크볼을 확인할 수 없어요." };
+    const destination = cue?.object ? ` 마지막 놓기 대상은 싱크볼이 있는 싱크대 ${basins.join(", ")} 중 하나이며, ${cue.object}만 집어 놓는다.`
+      : cue ? ` 마지막 놓기 대상은 시청자 곁에서 확인한 면 ${cue.surface}이다.` : "";
+    const ctx = planCtx(decision, destination ? { ...task, description: task.description + destination } : task, planningWorld, ahead);
+    // 부름인데 사용자 방을 모르면 사용자 찾기와 같은 자리 고르기(관찰 모드)로 목적지를 정한다
+    if (ctx.call && !ctx.call.target && core.looker) {
+      const map = core.scene?.stations ?? null;
+      const chosen = await core.looker.chooseStation(callPlaces(ctx.call, map, plans.floor()), JSON.stringify(ctx.world.person_trail ?? []), [], signal);
+      ctx.call = withChosenStation(ctx.call, map, plans.floor(), chosen);
+    }
+    const refs = ahead?.goal_id ? { goal_id: ahead.goal_id, object_id: ahead.object } : { decision_id: decision.id };
+    const result = await inTraceContext(refs, () => planner.plan(ctx, signal));
+    if (cue && result.ok && !core.beer?.reserve(decision, cue, result.plan)) return { ok: false, error: "맥주를 도울 근거가 달라졌어요." };
+    return result;
+  };
+  let geometryVersion=-1;
+  let walkScene:typeof core.scene=null;
+  let walkMap:ReturnType<typeof walkingMap>|null=null;
+  const walking=()=>{
+    const scene=core.scene, editor=layout?.editor;
+    if(!scene) return null;
+    if(walkScene!==scene || geometryVersion!==(editor?.geometryRevision??0)){
+      walkScene=scene;geometryVersion=editor?.geometryRevision??0;
+      const current=editor?{...scene,objects:editor.objects()}:scene;
+      walkMap=walkingMap(floorPlanFrom(current),current,type=>layout?.catalog.get(type)?.footprint);
+    }
+    return walkMap;
+  };
+  const stationFloor = floorLookup(core.plan.rooms);
+  const events = {
+    emit,
+    log: ctx.log,
+    thought: (text: string, decisionId: string) => feed.note(text, decisionId),
+    help: (record: import("../../contract/history.js").HelpRecord) => {
+      sendAgain(() => history.write.add("help", record.at_ms, record.text, { subject: record.action, data: record }), () => history.write.writable())
+        .then(() => core.routinesChanged(), (e: Error) => ctx.log(`[경고] 도움 기록을 쓰지 못했어요: ${e.message}`));
+      core.helpSaid = { text: record.text, atMs: Date.now() };
+      core.speak();
+    },
   };
   core.tracker = new ExecutionTracker({
+    trace: core.trace,
+    assistance: {
+      boot: core.epoch.boot,
+      homeEpoch: core.epoch.home,
+      home: home.id,
+      resident: observedResident,
+      bindResident: policyResident,
+      interventionFor,
+      ended: (attempt, execution, endedMs, proofs) => {
+        core.trace?.ended(attempt, execution, endedMs);
+        const outcome = assistanceOutcome(attempt, execution, endedMs, proofs);
+        if (outcome.action === "맥주 가져다주기" && outcome.proof?.kind === "confirmed_handoff") core.beer?.handoff(outcome.proof.evidence.subjectId);
+        if (core.out.act) publishAssistanceOutcome(core.out.act, outcome);
+      },
+      targetDevice: (d, world) => {
+        const kinds = taskOf(d.action)?.allow.devices?.kinds;
+        const candidates = signals.list().filter(s => kinds?.includes(s.kind) && (!world.person.room || s.room === world.person.room));
+        return candidates.length === 1 ? candidates[0]!.id : null;
+      },
+      readDevice: id => deviceEvidence(signals, id),
+      cropVisible: id => !!core.looker?.evidenceSpot(id),
+      evidence: {
+        now,
+        choose: (question, signal) => core.looker?.chooseEvidence(question, signal) ?? null,
+        acquire: async (choice, signal) => {
+          if (!("target" in choice) || signal.aborted) return null;
+          const id = choice.target;
+          if (choice.tool === "look_closer") {
+            const ref = await core.looker?.acquireEvidence(id, signal);
+            return ref ? { status: "found", ref } : { status: "unavailable" };
+          }
+          if (choice.tool === "read_device") {
+            const ref = deviceEvidence(signals, id)?.ref;
+            return ref ? { status: now() - ref.observedMs <= 10000 ? "found" : "stale", ref } : { status: "unavailable" };
+          }
+          const w = view();
+          const o = w.objects.find(x => x.id === id);
+          const p = w.household_photo;
+          // Historical observations keep their capture time and do not confirm presence.
+          if (!o?.position) return { status: "unavailable" };
+          if (now() - o.last_seen_ms > 10000) return { status: "stale" };
+          const ref = p && o.last_seen_ms === p.at_ms
+            ? { source: "history", subjectId: id, observedMs: o.last_seen_ms, originId: p.id } : undefined;
+          return { status: "position_known", ref };
+        },
+      },
+    },
+    cupAnswers: {
+      discardLeftover: () => discardLeftover(view()),
+      rememberLeftover: allow => {
+        const who = resident(view());
+        if (who) history.write.rememberCup(home.id, who, allow).catch((e: Error) => ctx.log(`[경고] 컵 답을 쓰지 못했어요: ${e.message}`));
+      },
+    },
+    stations:{
+      map:()=>core.scene?.stations ?? null,
+      rev:()=>core.mirror?.rev() ?? 0,
+      target:id=>{
+        const map=core.scene?.stations, station=map?.stations.find(s=>s.id===id);
+        if (!station) return null;
+        const label=map!.zones.filter(z=>station.observes_zone_ids.includes(z.id)).map(z=>z.name).join("·") || null;
+        const look={label,position:[station.look_at[0],stationFloor(station.look_at)+LOOK_HEIGHT_M,station.look_at[1]] as [number,number,number]};
+        return {id,label:station.name,position:[station.position[0],stationFloor(station.position),station.position[1]],look};
+      },
+      choose:(job,signal)=>{
+        const map=core.scene?.stations;
+        if (!map) return Promise.resolve(null);
+        const places=map.stations.filter(s=>job.candidates.includes(s.id)).map(({id,name})=>({id,name}));
+        if (places.length!==job.candidates.length) return Promise.resolve(null);
+        const visited=map.stations.filter(s=>job.visited.includes(s.id)).map(s=>s.name);
+        return core.looker?.chooseStation(places,job.direction,visited,signal) ?? Promise.resolve(null);
+      },
+      tvAllowed:job=>{
+        const fact=viewerAt(core.goalFacts,job.target_id,now());
+        const latest=view().household_photo;
+        // 근거가 지금 것이어야 한다: VLM 사진이면 가장 새 집 사진, YOLO 프레임이면 지금 World State에도 시청 자리에서 사용자를 못 본 구간이 이어진다
+        const fresh=fact.by==="yolo" ? !!view().person.vacant : !!(latest?.proof && latest.at_ms===fact.photo);
+        return !!(fresh &&
+          core.tvWatch?.permits(job,fact,signals.powerStamp(job.target_id),now()));
+      },
+      result:r=>core.out.act?.push("/act/directive_result",r),
+    },
     plans,
     clock: ctx.brain?.clock,
     approvals,
@@ -217,10 +435,15 @@ export function startAct(core: HomeCore): (event: BrainLog) => void {
     planner: (d, signal, ahead) => core.brainPlans!.plan(d, signal, ahead),
     // 처음 하는 일 묻기: 시험이 켜 볼 때만 넘긴다(기본 src/agent/approval.ts ASK_FIRST_TIME 끔)
     askFirst: ctx.askFirst,
-    check: (d, p, seenSince) => checkPlan({
-      decision: d, tasks: d.tasks ?? pamTasks(core.mode(), false), plan: p, world: view(), nowMs: now(), staleMs: core.act.staleMs, mode: ctx.mode?.() ?? "test", deviceSteps: deviceSteps(p),
-      placed: core.tracker?.placed(), ...(seenSince !== undefined ? { seenSince } : {}),
-    }),
+    check: (d, p, seenSince) => {
+      const world = view();
+      if (d.source !== "speech" && isBeerAction(d.action) && !core.beer?.valid(d, world, p))
+        return { ok: false, reason: "unknown_task", text: "현재 맥주를 도울 근거가 없어요." };
+      return checkPlan({
+        decision: d, tasks: d.tasks ?? pamTasks(core.mode(), false), plan: p, world, nowMs: now(), staleMs: core.act.staleMs, mode: ctx.mode?.() ?? "test", deviceSteps: deviceSteps(p),
+        placed: core.tracker?.placed(), ...(seenSince !== undefined ? { seenSince } : {}),
+      });
+    },
     lessons,
     staleMs: core.act.staleMs,
     state: {
@@ -239,7 +462,7 @@ export function startAct(core: HomeCore): (event: BrainLog) => void {
       contentsAction: (id, on) => worldInput(core, { kind: "contents", id, on, at_ms: now() }),
     },
     layout: {
-      floor: () => plans.floor(),
+      floor: () => plans.floor(), walking,
       // 컵이 놓이기 전 미리 만들 때 사람 곁 면을 다 쓰고 둘 자리로 본다(goal.ts useSpot)
       surfaces: core.surfaces,
       locate: placeAt,
@@ -249,7 +472,16 @@ export function startAct(core: HomeCore): (event: BrainLog) => void {
     },
     phone: {
       // 실제 폰 명령(src/contract/phone.ts). 폰 서버가 지금 명령을 기억해 새로 붙은 폰에도 보낸다. 명령 대상 자리는 배치(면이면 윗면 가운데)에서
-      toPhone: (m) => { if (core.out.act) emitRobotCommand(core.out.act, m); },
+      toPhone: (m) => {
+        if (core.out.act) {
+          const queued = emitRobotCommand(core.out.act, m);
+          const plan = core.plans.current();
+          if (queued && m.type === "command" && plan?.id === m.id) {
+            const step = plan.steps.find(candidate => candidate.id === m.step);
+            if (step) core.trace?.command(m, step);
+          }
+        }
+      },
       // 판본이 맞는 실제 폰이 붙어 있는가: 폰이 필요한 계획만 그때 시작한다(폰 서버를 켜지 않았으면 늘 붙어 있다고 본다)
       ready: () => !core.phoneOn || core.phoneReady,
       // 다른 계획이 도는 동안 줄에서 기다리는 끄기 안내: 명령 줄을 바꾸지 않고 붙은 폰에 소리로만 알린다
@@ -265,15 +497,24 @@ export function startAct(core: HomeCore): (event: BrainLog) => void {
       onRefused: (planId) => decide.onRefused(planId),
       // 미리 세운 목표(src/goal/watch.ts): PAM이 쓰는 습관 기억(마지막 판단 때 판본)과 마지막으로 맞은 상태로 목표를 세우고, 미리 만든 계획은 PAM 판단으로 다시 검사해 쓴다.
       // 목표는 /brain/goal_changes·/brain/goal과 대시보드로 보내고, 사람이 떠나면 판단을 다음 타이머(250ms)에 바로 부른다
-      habit: () => decide.habit(),
+      habit: () => {
+        const h = decide.habit();
+        if (!h || !("states" in h.memory)) return h;
+        const w = view();
+        return { ...h, allows: (state: string, edge: { action?: string }) =>
+          interventionFor({ action: edge.action ?? null, fsm: { from: state } }, w) !== "defer_proactive" };
+      },
       nudge: () => core.out.goal?.push("/brain/nudge", { rev: core.goalMirror!.rev() ?? 0 }),
       // 지금 모드의 행동 목록(쓰는 중 지킴·내용물 보류가 볼 행동)
       tasks: () => pamTasks(core.mode(), false),
     },
     goals: {
+      meal: () => core.scene?.stations?.meal_watch ? core.goalFacts?.meal : null,
       reuse: (d, plan, rename) => {
         const task = taskOf(d.action);
-        return task ? resubmit(plan, planCtx(d, task), rename) : { ok: false, error: "행동 목록에 없는 행동" };
+        const world = view();
+        if (interventionFor(d, world) === "defer_proactive") return { ok: false, error: "이번에는 먼저 돕지 않아요." };
+        return task ? resubmit(plan, planCtx(d, task, world), rename) : { ok: false, error: "행동 목록에 없는 행동" };
       },
       view: () => core.goalMirror?.view() ?? view(),
       prepare: (d, signal, ahead) => core.goalPlans!.plan(d, signal, ahead),
@@ -285,6 +526,9 @@ export function startAct(core: HomeCore): (event: BrainLog) => void {
         }
       },
       publish: (g) => {
+        core.checkingVisit = g.status === "checking" && g.meal && g.object && g.checking_ms != null && g.check_until_ms != null
+          ? {id:g.id, since:g.checking_ms, until:g.check_until_ms, cup:g.object, surface:g.meal.surface} : null;
+        core.trace?.goal(g);
         publishGoal(core, g);
         core.machines.sample(core);
       },
@@ -310,15 +554,19 @@ export function startAct(core: HomeCore): (event: BrainLog) => void {
       // 코치 계획 중 다른 행동을 본 것 같으면 보기 담당(관찰 모드 계기 off_track)에 알린다
       strayed: (s) => core.looker?.strayed(s) ?? false,
     },
-    events: {
-      emit,
-      // 계획 검사에서 버린 계획의 까닭 등은 서버 로그에도 남긴다
-      log: ctx.log,
-      // 찾기 상태 줄은 생각 말풍선에 모델 없이 바로 올린다
-      thought: (text, decisionId) => feed.note(text, decisionId),
-    },
+    events,
     appliances: {
-      run: devices,
+      run: {
+        ...devices,
+        run: (tool, deviceId, args, live, commandId) => {
+          const plan = plans.current();
+          const step = plan?.steps.find(candidate => candidate.status === "active");
+          const refs = { plan_id: plan?.id, step_id: step?.id, object_id: deviceId };
+          return measuredTrace(core.trace, "device_tool", refs, undefined, () => devices.run(tool, deviceId, args, live, commandId),
+            result => result.needsConfirmation ? "approval_needed" : result.ok ? result.unverified ? "unconfirmed" : "device_ack" : null,
+            { device: core.specOf.get(deviceId)?.kind });
+        },
+      },
       // 손으로 켜는 단계가 위험 목록 가전인지(켜기 전에 묻는다)와 묻는 글의 가전 이름
       handDevices: () => deviceViews(signals),
     },
@@ -332,8 +580,16 @@ export function startLooker(core: HomeCore, emit: (event: BrainLog) => void): vo
   const observed = core.looks!;
   const tracking = core.tracker!;
   const now = () => core.nowMs();
+  const lookScope = (objectId: string, refs?: TraceRefs) => {
+    const goal = core.goal;
+    return !refs?.plan_id && goal?.object === objectId && goal.status !== "dropped" && goal.status !== "used"
+      ? { ...refs, goal_id: goal.id } : refs;
+  };
   core.looker = new Looker({
-    observer, closer: (spot, signal, sinceMs) => observed.closer(spot, signal, sinceMs), topLook: (spot, sinceMs, signal) => observed.topLook(spot, sinceMs, signal),
+    observer,
+    closer: (spot, signal, sinceMs, refs) => observed.closer(spot, signal, sinceMs, lookScope(spot.id, refs)),
+    topLook: (spot, sinceMs, signal, refs) => observed.topLook(spot, sinceMs, signal, lookScope(spot.id, refs)),
+    traceContext: inTraceContext,
     // B가 잘라 본 컵: 실행 추적이 계획 밖으로 가까이 가서 볼지 본다
     looked: (id) => tracking.lookedIdle(id),
     frame: () => observed.latest(), world: () => liveDevices(core.view()!, core.signals),

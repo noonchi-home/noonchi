@@ -11,17 +11,26 @@ export const REPLAY_INPUTS: readonly TopicName[] = [
   "/brain/decision", "/brain/plan", "/perception/view", "/perception/detections", "/perception/analysis", "/perception/scene", "/perception/look_result", "/phone/pose", "/phone/heard", "/phone/progress", "/device/changes", "/world/input",
 ];
 
-/** 처리 장벽: 모든 노드의 줄이 비고 통로에 예약된 배달이 없는 상태가 두 번 이어질 때까지 기다린다(이어지는 발행이 몇 단계여도). */
-export async function settle(bus: MemoryBus, nodes: readonly BusNode[], maxRounds = 10_000): Promise<void> {
+/** 처리 장벽: 모든 노드의 줄이 비고 통로에 예약된 배달이 없는 상태가 두 번 이어질 때까지 기다린다(이어지는 발행이 몇 단계여도).
+ *  writes: 차례마다 기다릴 기록 쓰기(서버의 historyWriter.flush, 기다린 쓰기 수를 준다). 기록 노드는 기록 작업 스레드가 커밋한 뒤에야 배달을 마치므로,
+ *  기다리지 않으면 커밋이 늦을 때(병렬 시험) 장벽이 그동안 헛돌아 maxRounds를 넘긴다. 쓰기를 기다린 차례는 조용한 차례로 세지 않는다
+ *  (쓰기의 then에서 이어 보낸 쓰기를 다음 차례에 기다린다). */
+export async function settle(bus: MemoryBus, nodes: readonly BusNode[], maxRounds = 10_000, writes?: () => Promise<number>): Promise<void> {
   for (let calm = 0, round = 0; calm < 2; round++) {
     if (round > maxRounds) throw new Error("재생 장벽: 노드가 멈추지 않아요");
     await Promise.all(nodes.map((n) => n.idle()));
+    const waited = writes ? await writes() : 0;
     await new Promise((r) => setImmediate(r));
-    calm = bus.quiet() && nodes.every((n) => !n.busy()) ? calm + 1 : 0;
+    calm = waited === 0 && bus.quiet() && nodes.every((n) => !n.busy()) ? calm + 1 : 0;
   }
 }
 
-export async function replay(o: { bag: Bag; from: number; to: number; launch: (bus: MemoryBus, clock: VirtualClock) => Promise<BusNode[]>; topics?: readonly TopicName[] }): Promise<{ sent: number }> {
+export async function replay(o: { bag: Bag; from: number; to: number; launch: (bus: MemoryBus, clock: VirtualClock) => Promise<BusNode[]>; topics?: readonly TopicName[];
+  /** At the model boundary, resolve a recorded PAM reply against goals created during this replay. */
+  resolveDecision?: (d:import("../contract/events.js").DecisionRecord)=>import("../contract/events.js").DecisionRecord;
+  /** 녹화한 World State에 재생 중 바뀐 것(허브가 바꾼 가전 상태 등)을 넣는다: 실제 집 상태 노드는 /device/changes를 받아 기기 상태를 바꾼다. */
+  resolveWorld?: (view:import("../contract/world.js").WorldView, rev:number)=>import("../contract/world.js").WorldView | import("../contract/world.js").WorldStateMsg
+}): Promise<{ sent: number }> {
   const rows = o.bag.range(o.from, o.to, { topics: o.topics ?? REPLAY_INPUTS });
   // 말 원문을 가린 녹화에서도, 폰이 실제로 받아들인 답만 같은 단추 글로 재생한다.
   const labels = new Map([STEP_DONE, STOP, ...Object.values(QUESTION_CHOICES).flat()].map((c) => [c.id, c.label]));
@@ -48,6 +57,13 @@ export async function replay(o: { bag: Bag; from: number; to: number; launch: (b
       if (e.topic === "/phone/progress" && "text" in e.body && e.body.text === HEARD_MARK && "req" in e.body) {
         const body = e.body as Extract<import("../bus/index.js").Body<"/phone/progress">, { kind: "voice" }>;
         await bus.publish({ ...e, body: { ...body, text: answers.get(answerKey(e.header, body.req)) ?? HEARD_MARK } });
+      } else if (e.topic==="/world/state" && o.resolveWorld) {
+        const body=e.body as import("../bus/index.js").Body<"/world/state">;
+        const resolved = o.resolveWorld(body.view,body.rev);
+        await bus.publish({...e, body:"view" in resolved ? resolved : {...body,view:resolved}});
+      } else if (e.topic==="/brain/decision" && o.resolveDecision) {
+        const body=e.body as import("../bus/index.js").Body<"/brain/decision">;
+        await bus.publish({...e,body:{...body,decision:o.resolveDecision(body.decision)}});
       } else await bus.publish(e);
       await barrier();
     }

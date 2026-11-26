@@ -1,6 +1,6 @@
 # Deploy NOONCHI on an AWS GPU instance
 
-A single EC2 instance runs NOONCHI and Redis on the CPU. In GPU mode, two vLLM services serve the vision model and the PAM language model. Run the commands below from the root of the NOONCHI checkout.
+A single EC2 instance runs NOONCHI on the CPU. Its nodes exchange messages over an in-process memory bus, so the deployment has no Redis service. In GPU mode, two vLLM services serve the vision model and the PAM language model. Run the commands below from the root of the NOONCHI checkout.
 
 ## 1. Prepare the host
 
@@ -20,7 +20,27 @@ sudo tailscale serve --bg --https=8443 http://127.0.0.1:8210
 tailscale serve status
 ```
 
-Open `https://<host>.<tailnet>.ts.net/` for the dashboard and `https://<host>.<tailnet>.ts.net:8443/phone/` for the phone. The first certificate request may take a few seconds. Leave Funnel disabled for this private deployment.
+Open the dashboard on the hub's HTTPS origin. Its connection QR points to `/mobile/` on that origin. Scan it inside the [NOONCHI Android app](../apps/android/README.md) to pair, or open the same URL in a phone browser for the web portal. The setup endpoint supports pairing before a home has been registered. Register the home on the phone. In the web portal, tap **클로이드 켜기** to start the camera and **카메라 끄기** to return home.
+
+The hub handles `/events` for the dashboard and `/mobile/phone-events` for the mobile web camera. The camera listener handles `/phone/`, `/phone/events`, and video playback. Preserve the matching host and origin and pass WebSocket upgrades on both listeners. The ports above are examples. Keep existing Serve mappings and choose an unused hub HTTPS port when a deployment already reserves 443 for the AR listener. Use Serve within the tailnet and leave Funnel disabled.
+
+### Android camera TWA
+
+The Android app pairs with the dashboard HTTPS `/mobile/` QR. Before launch it reads `android_twa.phone_url` and `android_twa.assetlinks_url` from the hub's `GET /api/setup`. Chrome verifies the HTTPS camera origin, including its port. The dashboard can use a different origin. Expo Go can exercise the native screens. Use a signed installed APK for the TWA bridge.
+
+Set `ANDROID_TWA_SHA256_FINGERPRINTS` to the public SHA-256 certificate fingerprint of the installed `app.noonchi.android` APK. Use 32 colon-separated hex bytes per fingerprint and commas between fingerprints. The camera listener serves `/.well-known/assetlinks.json` directly as JSON. Route that path to the camera listener if a reverse proxy splits paths on a shared origin.
+
+Read `GET /api/setup` at the hub to check `mobile_urls`, `android_twa.package_name`, both camera URLs, and `android_twa.statements_configured`. Fetch `/mobile/` from the hub and `/phone/` and `assetlinks_url` from the configured camera origin. Expect HTTP 200 for all three and an Asset Links statement for the installed package and its public certificate. A successful HTTP check establishes server configuration.
+
+On the actual phone, check that **클로이드 켜기** opens the verified TWA without an address bar. Then tap **카메라 켜기** to start immersive WebXR. Once the session starts, the page requests a landscape orientation lock. If the lock fails while the phone is in portrait, the page asks the user to rotate it. Check camera and microphone permissions, tracking, and audible speech on the target phone.
+
+### Reference photos and optional S3 uploads
+
+For each registered home, put `manifest.json` and its reference PNGs in `RUNTIME_DIR/homes/<home>/scenes/`. On the sample Compose deployment, `RUNTIME_DIR` is `/data` in the server container. Check the catalog at `GET /api/homes/<home>/scenes` before capturing a reference photo. A missing catalog returns HTTP 404 and leaves the app without reference views.
+
+To enable private S3 uploads, set `LOCALIZE_BUCKET` and give the server AWS permissions for the target objects. The signer runs `localize/sign_shot.py` using Python with `boto3` installed. Use `LOCALIZE_PYTHON` to select that interpreter if needed. The default Docker runtime image serves the API but requires a custom runtime with the signer script and Python dependencies for S3 signing. [Signing route](../src/server/routes/home-shots.ts)
+
+For a valid scene, `POST /api/homes/<home>/shots` returns separate signed PUT URLs for the JPEG and JSON label. If signing returns HTTP 503, Android keeps the photo on the phone. If either PUT fails after the URLs are issued, Android reports a save error. After both PUTs succeed, Android keeps a local copy for review.
 
 ## 3. Check out the repository and configure services
 
@@ -36,7 +56,9 @@ Create the checkout directory with suitable ownership if needed. Supply credenti
 |---|---|
 | `INFERENCE_MODE` | `vllm` for the GPU deployment or `openai` for hosted inference. |
 | `ALLOWED_ORIGINS` | Dashboard origin, for example `https://<host>.<tailnet>.ts.net`. |
-| `PHONE_URL` | Tailnet HTTPS URL of the phone page on port 8443. |
+| `HUB_URL` | Dashboard HTTPS origin for the phone QR when the server cannot discover its own Serve mapping. Include it in `ALLOWED_ORIGINS` and use the port that serves the hub. |
+| `PHONE_URL` | Tailnet HTTPS URL of the camera page at `/phone/`. Set it to the actual AR origin and port. |
+| `ANDROID_TWA_SHA256_FINGERPRINTS` | Public signing certificate SHA-256 fingerprints for the Android camera TWA. |
 | `BRAIN` | Use `1` to enable perception and decisions. |
 | `PLAN_TOKEN` | Bearer token for external plan submissions. Generate a long random value, for example with `openssl rand -hex 32`. |
 | `VLM_LIVE_MODEL` | Defaults to `Qwen/Qwen3-VL-4B-Instruct`, served as `vlm`. |
@@ -46,12 +68,13 @@ Create the checkout directory with suitable ownership if needed. Supply credenti
 | `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` | The voice and planning agent needs a supported provider key in either mode. OpenAI mode also uses an OpenAI key for vision and PAM. |
 | `HF_TOKEN` | Required only for restricted Hugging Face model downloads. |
 | `THINQ_TOKEN` | Used when connecting to real ThinQ appliances. |
+| `TV_RELAY_URL`, `TV_RELAY_TOKEN`, `TV_RELAY_DEVICE` | Optional TV relay for an IR kit without a light sensor ([TV relay](../hardware/ir-tv/README.md#without-a-light-sensor-use-the-tv-relay)). Use an `https` URL, or `http` only with a Tailscale IP. |
 
 Each container receives only the variables listed for its service in `deploy/compose.yaml`. The ownership rules are in `scripts/compose-keys.ts`.
 
-- NOONCHI uses `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `VLM_API_KEY`, `PAM_LLM_API_KEY`, `THINQ_TOKEN`, `THINQ_API_KEY` and `PLAN_TOKEN`.
+- NOONCHI uses `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `VLM_API_KEY`, `PAM_LLM_API_KEY`, `THINQ_TOKEN`, `THINQ_API_KEY`, `TV_RELAY_TOKEN` and `PLAN_TOKEN`.
 - The vLLM services use `HF_TOKEN` for downloads. NOONCHI and both model services can use `VLLM_API_KEY` to authenticate inference traffic.
-- Compose sets the internal host and ports, `RUNTIME_DIR=/data`, `PHONE_VIDEO_DIR=/data/videos`, `MATTER_TRANSPORT=local` and `PHONE_LAN_URLS=0`. To change published ports, use `NOONCHI_PORT` (8200) and `NOONCHI_PHONE_PORT` (8210). Shell values take precedence over the selected environment file.
+- Compose sets the internal host and ports, `RUNTIME_DIR=/data`, `PHONE_VIDEO_DIR=/data/videos`, and `MATTER_TRANSPORT=local`. To change published ports, use `NOONCHI_PORT` (8200) and `NOONCHI_PHONE_PORT` (8210). Shell values take precedence over the selected environment file.
 
 ## 4. Start and check the services
 

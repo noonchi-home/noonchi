@@ -6,6 +6,25 @@ const request = { action: "라면 끓이기 알려 주기", seq: 0, source: "spe
 const goal = { action: "물 채우기", seq: 8, id: "pam-8" };
 
 describe("일의 우선순위", () => {
+  it("폰 방문과 기기 작업은 따로 허용하고 말 부탁은 둘보다 먼저다",()=>{
+    const m=new TaskManager<typeof request>();
+    const work={...freely,activeAction:null,phoneBusy:false};
+    const event={op:"offer",id:"visit",rev:1,until_ms:1000,kind:"visit",target_id:"entry",goal_id:null} as const;
+    m.intent(event); m.intent({...event,id:"tv",kind:"tv_off"});
+    expect(m.directives({...work,phoneBusy:true},10).map(d=>[d.op,d.id])).toEqual([["grant","tv"]]);
+    expect(m.directives(work,20).map(d=>[d.op,d.id])).toEqual([["grant","visit"]]);
+    m.intent(event);
+    expect(m.directives(work,21)).toEqual([]);
+    expect(m.interruptDirectives().map(d=>d.id).sort()).toEqual(["tv","visit"]);
+    m.intent(event);
+    expect(m.directives(work,22)).toEqual([]);
+  });
+  it("안전 중에는 기기 명령도 보내지 않고 만료된 방문은 되살리지 않는다",()=>{
+    const m=new TaskManager<typeof request>();
+    m.intent({op:"offer",id:"tv",rev:1,until_ms:99,kind:"tv_on",target_id:"screen",goal_id:null});
+    expect(m.directives({...freely,emergency:true},30).filter(d=>d.op==="grant")).toEqual([]);
+    expect(m.directives(freely,100).filter(d=>d.op==="grant")).toEqual([]);
+  });
   it("집기 중 새 말 부탁은 그 단계 뒤 한 번만 넘기고, 비상 동안에는 더 기다린다", () => {
     const manager = new TaskManager<typeof request | typeof goal>();
     expect(manager.offer(request, true, { ...freely, handling: "plan:1/pick" })).toBe("defer");

@@ -6,8 +6,6 @@ import type { FloorPlan } from "../layout/index.js";
 import { DEVICE_VERB, STEP_LABEL } from "../act/labels.js";
 import { approach, route } from "../layout/browser.js";
 
-const STOP_M = 0.55; // 로봇 반지름 0.22m + 여유
-
 const base = (fp: FloorPlan, id: string, nowIso: string) => ({
   id, revision: 1, robot: { position: fp.robot.position, room: fp.robot.room }, updatedAt: nowIso,
 });
@@ -35,7 +33,7 @@ export function assemblePlan(fp: FloorPlan, head: PlanHead, draft: DraftStep[]):
       legs = [];
       break;
     }
-    const seg = approach(leg, STOP_M);
+    const seg = approach(leg);
     path = path.length ? [...path, ...seg.slice(1)] : seg;
     legs.push({ stepId: steps[i]!.id, end: path.length - 1 });
     at = seg.at(-1)!;

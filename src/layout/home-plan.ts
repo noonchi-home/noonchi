@@ -4,6 +4,8 @@
 // - 점이 든 방의 바닥 높이(floorLookup), 집 범위(homeBounds·inBounds), 다각형 안(insidePolygon), 눈높이(eyeHeightOf).
 
 import { readFileSync } from "node:fs";
+import { insidePolygon } from "./floor.js";
+export { insidePolygon } from "./floor.js";
 import type { Plan2 } from "../shared/geometry.js";
 
 export interface PlanRoom {
@@ -88,16 +90,6 @@ export function homeBounds(rooms: { polygon?: number[][] }[]): Bounds | null {
 /** 집 범위 안인지. 범위가 없으면 늘 안. */
 export function inBounds([x, y]: Plan2, bounds: Bounds | null): boolean {
   return !bounds || (x >= bounds.minX && x <= bounds.maxX && y >= bounds.minY && y <= bounds.maxY);
-}
-
-/** 평면 점이 다각형 안인지(짝홀 규칙). */
-export function insidePolygon([x, y]: Plan2, poly: number[][]): boolean {
-  let hit = false;
-  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
-    const [xi, yi] = poly[i]!, [xj, yj] = poly[j]!;
-    if ((yi! > y) !== (yj! > y) && x < ((xj! - xi!) * (y - yi!)) / (yj! - yi!) + xi!) hit = !hit;
-  }
-  return hit;
 }
 
 /** 평면 점이 들어 있는 방의 바닥 높이(floor_z). 어느 방에도 없으면 0. */

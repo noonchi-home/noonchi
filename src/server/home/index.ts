@@ -5,12 +5,14 @@
 // agent.ts 정책·에이전트·외부 연락·계획 모드·관찰 모드·초점, phone.ts 실제 폰, act.ts 계획·판단·실행 추적·보기 담당, observe.ts World State·관찰 흐름·주기 타이머, say.ts 말풍선 카드.
 
 import type { DeviceNote, HistoryDb, ReflectResult } from "../../brain/index.js";
-import type { Bus } from "../../bus/index.js";
+import type { HistoryWriter } from "../../record/index.js";
+import type { Bus, Clock } from "../../bus/index.js";
 import type { BrainLog, ReadyView } from "../../contract/events.js";
 import type { PlanView } from "../../contract/plan.js";
 import type { ControlMode } from "../../contract/setup.js";
+import type { StationMap } from "../../contract/stations.js";
 import type { DeviceHub, DeviceState } from "../../contract/devices.js";
-import type { SignalHub, SignalSource, ThinqLink } from "../../devices/index.js";
+import type { IrConfig, IrPort, RelayLink, SignalHub, SignalSource, ThinqLink } from "../../devices/index.js";
 import type { LayoutEditor, TwinData } from "../../layout/index.js";
 import type { PipelineInject } from "../../observe/index.js";
 import type { StartStore } from "../../phone/index.js";
@@ -18,13 +20,16 @@ import type { Agent, Policy } from "../../agent/index.js";
 import type { HubKind, MatterTransport, StartHubOptions } from "../hubFactory.js";
 import { captionOf, prepareAct, startAct, startLooker, startPlans } from "./act.js";
 import { startAgent, watchFocus } from "./agent.js";
+import { homeSafety } from "./machines.js";
 import { preparePhone, startPhone } from "./phone.js";
 import { drainNodes, startPipeline, startWorld, startNodes, stopNodes } from "./observe.js";
 import { onReflection, sayTimer, startSay } from "./say.js";
-import { setLink, startDevices } from "./devices.js";
+import { setLink, setRelay, startDevices } from "./devices.js";
+import { shotSigner } from "../routes/home-shots.js";
 import { HomeCore } from "./core.js";
-import { listHomes } from "../../layout/index.js";
+import { listHomes, validateStations } from "../../layout/index.js";
 import { createApp, type TwinHomeApp } from "../app.js";
+import { HomeTrace } from "./trace.js";
 
 export { phoneVideoDir } from "./phone.js";
 export { restSource } from "./observe.js";
@@ -33,7 +38,10 @@ type Env = Record<string, string | undefined>;
 
 /** 기록 DB와 기록기(src/brain/history/recorder.ts)에 넘기는 곳. 서버(start.ts)가 만들고 집을 바꿔도 같은 것을 쓴다. */
 export interface HomeHistory {
+  /** 읽기 연결(서버에서는 읽기 전용). 쓰기는 write로 한다. */
   db: HistoryDb;
+  /** 기록 DB 쓰기 함수 묶음(HistoryWriter, 서버에서는 기록 작업 스레드가 쓴다). */
+  write: HistoryWriter;
   device(s: DeviceState, note?: DeviceNote): void;
   brain(l: BrainLog): void;
   plan(p: PlanView): void;
@@ -42,6 +50,10 @@ export interface HomeHistory {
 }
 
 export interface HomeContext {
+  /** 이 집의 직접 적외선 TV 설정(실제 모드일 때). devices로 TV 중계 TV가 이 집에 있는지 본다. */
+  homeInfrared?: (home: string, devices: readonly { id: string; kind: string }[]) => IrConfig | null;
+  irPort?: IrPort;
+  savedStations?: (home: string, defaults: StationMap) => StationMap;
   env: Env;
   log: (line: string) => void;
   runtimeDir: string;
@@ -53,6 +65,7 @@ export interface HomeContext {
   matter?: Record<string, unknown>;
   /** 시험용: 관찰 흐름의 감지기·VLM·시계. */
   brain?: PipelineInject;
+  clock?: Clock;
   /** 시험용: 처음 하는 일 묻기를 켜 본다. 없으면 ASK_FIRST_TIME(끔). */
   askFirst?: boolean;
   /** 폰 포트로 이어진 https 주소 찾기(tailscale serve). */
@@ -76,6 +89,9 @@ export interface HomeContext {
 }
 
 export interface HomeRuntime {
+  stationMap(): StationMap | null;
+  checkedStations(raw: unknown): StationMap;
+  setStations(map: StationMap): void;
   twin: TwinData;
   /** 숨은 세계(실제 시뮬레이터). 엔진·화면은 signals로 읽는다. */
   hub: DeviceHub;
@@ -95,6 +111,8 @@ export interface HomeRuntime {
   phonePort?: number;
   /** ThinQ 연결을 바꾼다(실제 모드). 이전 연결은 멈추고, 새 연결은 붙인 뒤 읽기를 시작한다. null이면 뗀다. */
   setLink(link: ThinqLink | null): void;
+  /** TV 중계 연결을 바꾼다(실제 모드, TV_RELAY_*). 이전 연결은 멈추고, 새 연결은 붙인 뒤 읽기를 시작한다. null이면 뗀다. */
+  setRelay(link: RelayLink | null): void;
   /** 반성 사건(src/server/start.ts가 넘긴다): 말풍선 카드가 20초 동안 배운 습관을 말한다. */
   onReflection(event: Extract<BrainLog, { type: "reflection" }>): void;
   /** 닫지 않고 비운다(닫기와 같은 차례: 발행 줄 → 집 상태 → 거울). 기한(ms) 안에 다 비우면 true. */
@@ -107,10 +125,20 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
   const core = new HomeCore(ctx);
   await startDevices(core, homeId);
   core.epoch = ctx.epochOf(core.twin.home.id);
+  core.trace = new HomeTrace(core.epoch.boot + ":" + core.epoch.home, () => core.nowMs(), m => core.app?.broadcast(m));
+  core.trace.objects = () => core.view()?.objects ?? [];
+  core.trace.surfaces = () => core.surfaces();
+  core.trace.currentSafety = () => homeSafety(core);
+  for (const state of core.signals.states()) core.trace.device(state, core.specOf.get(state.id)?.kind, true);
   try {
     startAgent(core);
     preparePhone(core);
     startPlans(core);
+    if (core.scene && ctx.savedStations) {
+      const defaults = core.scene.stations;
+      const saved = ctx.savedStations(core.twin.home.id, defaults);
+      if (saved !== defaults) core.scene.stations = checkedStations(core, saved);
+    }
     startWorld(core);
     prepareAct(core);
     startSay(core);
@@ -128,6 +156,7 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
   } catch (e) {
     await core.phone?.close().catch(() => {});
     await core.app?.close().catch(() => {});
+    core.trace?.close();
     clearInterval(core.decideTimer);
     core.decider?.stop();
     core.thoughts?.close();
@@ -164,8 +193,11 @@ function startApp(core: HomeCore): void {
   core.app = createApp({
     hub: signals, policy, agent, rooms: twin.rooms, twinDir: home.outDir, viewerDir: home.viewerDir, libraryDir: home.libraryDir, hubKind: core.started.kind, log, eye: feed,
     brain: observe ? { status: () => ({ ...observe.status(), look: core.looker?.status() ?? null }) } : undefined, world: worldNow ?? undefined,
-    home: { id: home.id, name: home.name }, homes: listHomes(twin.dir), layout: layout?.editor, phoneUrls: () => core.phoneUrls, mode: ctx.mode, webDir: ctx.webDir, allowOrigin: ctx.allowOrigin, planToken: ctx.planToken, ready: ctx.ready,
+    home: { id: home.id, name: home.name }, homes: listHomes(twin.dir), layout: layout?.editor, phoneUrls: () => core.phoneUrls,
+    phonePortal: () => core.phone ?? null, mode: ctx.mode, webDir: ctx.webDir, allowOrigin: ctx.allowOrigin, planToken: ctx.planToken, ready: ctx.ready,
     start: startStore && { get: () => startStore.get(), save: (raw) => startStore.save(raw), preview: (raw) => startStore.preview(raw), clear: () => startStore.clear() },
+    sceneRuntimeDir:ctx.runtimeDir, signShot:shotSigner(ctx.runtimeDir,ctx.env),
+    localizeStatus: () => core.localizer?.status() ?? null,
     phoneSync: () => core.phone?.syncState() ?? null,
     plan: plans, offTrack: () => core.tracker?.offTrack() ?? null, history: history.db, reflect: history.reflect, scene: () => core.scene,
     brainLast: () => [...todayReflection(history.db), ...(core.lastDecision ? [core.lastDecision] : [])], thoughtLast: () => core.thoughts?.last() ?? null, seenLast: () => core.lastSeen, say: () => ({ text: core.said, ...(core.saidSafety ? { safety: true as const } : {}) }),
@@ -178,11 +210,19 @@ function startApp(core: HomeCore): void {
       return state && { type: "robot", ...state };
     },
     phoneCommand: () => captionOf(core.command),
+    traceLast: () => core.trace!.snapshot(),
   });
   core.speak();
 }
 
 /** 띄운 집: 반성 사건·ThinQ 연결 바꾸기·닫기. */
+function checkedStations(core: HomeCore, raw: unknown): StationMap {
+  if (!core.scene) throw new Error("집 평면도를 먼저 준비해 주세요.");
+  const editor = core.layout?.editor;
+  const scene = editor ? { ...core.scene, objects: editor.objects() } : core.scene;
+  return validateStations(raw, scene, type => editor?.typeInfo(type)?.footprint);
+}
+
 function runtime(core: HomeCore): HomeRuntime {
   const { twin, started, signals, policy, agent, planner, layout, feed, ctx } = core;
   const { log } = ctx;
@@ -191,13 +231,29 @@ function runtime(core: HomeCore): HomeRuntime {
   return {
     twin, hub: started.hub, signals, hubKind: started.kind, transport: started.transport, warnings: started.warnings, policy, agent, layout: layout?.editor,
     start: core.startStore, app: appNow, twinDir: twin.home.outDir, phoneUrls: core.phoneUrls, phonePort: core.phonePort,
+    stationMap: () => core.scene?.stations ?? null,
+    checkedStations: raw => checkedStations(core, raw),
+    setStations(map) { if (core.scene) core.scene.stations = map; },
     onReflection(event) {
       onReflection(core, event);
     },
     setLink(next) {
       setLink(core, next);
     },
-    settle: (ms) => (core.closed ? Promise.resolve(true) : drainNodes(core, ms)),
+    setRelay(next) {
+      setRelay(core, next);
+    },
+    // 노드를 비운 뒤, 남은 기한 안에 기록 쓰기가 커밋되기를 기다린다(시험이 settle 뒤 바로 읽는다)
+    settle: async (ms) => {
+      if (core.closed) return true;
+      const end = Date.now() + ms;
+      const drained = await drainNodes(core, ms);
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const late = new Promise<false>((r) => { timer = setTimeout(() => r(false), Math.max(0, end - Date.now())); });
+      const flushed = await Promise.race([ctx.history.write.flush().then(() => true as const), late]);
+      clearTimeout(timer);
+      return drained && flushed;
+    },
     async close() {
       if (core.closed) return;
       core.closed = true;
@@ -209,7 +265,7 @@ function runtime(core: HomeCore): HomeRuntime {
         ["외부 연락", () => agent.close()], ["초점", core.unsubFocus], ["관찰 흐름", () => { core.thoughts?.close(); core.unsubWorld(); return core.pipeline?.close(); }],
         // 노드: 새 일을 만드는 쪽(인식) → 집 상태 → 거울·폰·가전 차례(그 뒤 변화가 대시보드로 가지 않는다)
         ["노드", () => stopNodes(core)], ["눈 화면", () => feed?.close()],
-        ["폰 서버", () => phoneNow?.close()], ["앱", () => appNow.close()], ["배치", () => layout?.editor.close()], ["ThinQ", () => core.link?.stop()],
+        ["폰 서버", () => phoneNow?.close()], ["추적", () => core.trace?.close()], ["앱", () => appNow.close()], ["배치", () => layout?.editor.close()], ["ThinQ", () => core.link?.stop()], ["TV 중계", () => core.relay?.stop()],
         ["기록", core.unsubHistory], ["허브", () => signals.stop()],
       ];
       for (const [name, step] of steps) {

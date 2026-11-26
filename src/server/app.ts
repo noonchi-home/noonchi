@@ -10,6 +10,8 @@ import { WebSocket, WebSocketServer } from "ws";
 import type { Agent } from "../agent/index.js";
 import { Policy } from "../agent/index.js";
 import type { BrainLog, HealthView, PersonMessage, ReadyView, SeenEvent, ThoughtEvent } from "../contract/events.js";
+import { MOKRYEON_FLOOR_PLAN_PATH } from "../shared/home-floor-plan.js";
+import { MOBILE_PHONE_EVENTS } from "../shared/mobile-phone.js";
 import type { WorldView } from "../contract/world.js";
 import type { OffTrack } from "../contract/plan.js";
 import type { ControlMode } from "../contract/setup.js";
@@ -17,7 +19,7 @@ import type { DeviceHub, RoomSpec } from "../contract/devices.js";
 import type { HistoryDb } from "../brain/index.js";
 import type { ReflectResult } from "../brain/index.js";
 import type { LayoutEditor } from "../layout/index.js";
-import type { SyncState } from "../phone/index.js";
+import type { PhoneServer, SyncState } from "../phone/index.js";
 import type { StartPose } from "../phone/index.js";
 import { repoPath } from "../shared/paths.js";
 import type { PlanHub } from "../act/index.js";
@@ -27,8 +29,10 @@ import { HttpError, type Handler, type RouteKit } from "./routes/kit.js";
 import { agentRoutes } from "./routes/agent.js";
 import { brainRoutes } from "./routes/brain.js";
 import { devicesRoutes, type MatterControl, type MatterInfoView } from "./routes/devices.js";
+import { serveMokryeonFloorPlan } from "./routes/home-floor-plan.js";
 import { homeRoutes, layoutRoutes } from "./routes/layout.js";
 import { observeRoutes } from "./routes/observe.js";
+import { sceneImage, shotRoutes } from "./routes/home-shots.js";
 import { phoneRoutes } from "./routes/phone.js";
 import { planRoutes } from "./routes/plan.js";
 
@@ -53,6 +57,7 @@ export interface AppOptions {
   homes?: { id: string; name: string }[];
   /** 폰에서 열 주소(폰 AR 서버가 뜬 뒤 정해진다). 대시보드 눈 칸 안내에 쓴다. */
   phoneUrls?: () => string[];
+  phonePortal?: () => Pick<PhoneServer, "upgradePortal"> | null;
   /** 배치 보정(docs/plan.md 계약 B·C). 있으면 /api/layout*, /events layout 메시지. */
   layout?: LayoutEditor;
   /** 서버 장면(scene.json + 도면 설비, src/layout/scene.ts). GET /api/scene. 없거나 null이면 404. */
@@ -69,6 +74,9 @@ export interface AppOptions {
   /** 폰 위치 맞추기 시작 위치(src/phone/sync/start.ts StartStore). 있으면 /api/phone/start-pose*. */
   start?: { get(): StartPose | null; save(raw: unknown): StartPose; preview(raw: unknown): StartPose; clear(): void };
   /** 폰 위치 맞춤 모듈 상태(GET /api/phone/sync). 폰 서버가 없으면 null. */
+  sceneRuntimeDir?: string;
+  signShot?: (home:string, scene:string)=>Promise<{expires_in:number;photo:{url:string};label:{url:string}}>;
+  localizeStatus?: () => unknown;
   phoneSync?: () => SyncState | null;
   /** 관찰 흐름(BRAIN=1, src/observe/pipeline.ts). 있으면 GET /api/brain에 상태를 보인다. */
   brain?: { status(): object };
@@ -93,6 +101,7 @@ export interface AppOptions {
   robotLast?: () => import("../contract/machines.js").RobotMessage | null;
   /** 지금 실제 폰에 낸 명령 한 줄. /events 접속 때 있으면 {type:"phone_command"}로 보낸다. */
   phoneCommand?: () => string | null;
+  traceLast?: () => import("../contract/trace.js").TraceMessage;
   /** 지금 운영 모드(/api/health). 없으면 시험 모드. */
   mode?: () => ControlMode;
   /** 준비 상태(/api/health ready, src/server/ready.ts). 없으면 준비 안 됨. */
@@ -173,6 +182,7 @@ export function createApp(opts: AppOptions): TwinHomeApp {
     ok: true, devices: hub.list().length, hub: opts.hubKind ?? "memory", transport: matterInfo()?.transport ?? null,
     provider: agent?.provider.name ?? null, model: agent?.provider.model ?? null, twin: !!twinDir && existsSync(twinDir),
     eye: !!opts.eye, home: opts.home ?? null, phone_urls: opts.phoneUrls?.() ?? [], ...(opts.history ? { tz_minutes: opts.history.offsetMinutes } : {}),
+    ...(opts.phonePortal ? { portal_camera: !!opts.phonePortal() } : {}),
     brain: !!opts.brain, mode: opts.mode?.() ?? "test",
     ready: opts.ready ? await opts.ready() : NOT_READY,
   }));
@@ -191,6 +201,7 @@ export function createApp(opts: AppOptions): TwinHomeApp {
   phoneRoutes(kit);
   planRoutes(kit);
   homeRoutes(kit);
+  shotRoutes(kit);
   devicesRoutes(kit);
   agentRoutes(kit);
 
@@ -229,6 +240,10 @@ export function createApp(opts: AppOptions): TwinHomeApp {
     const path = url.pathname;
     // 눈 화면은 JSON이 아니라 JPEG·MJPEG 스트림이라 일반 API 라우팅 앞에서 넘긴다
     if (opts.eye && path.startsWith("/api/eye/") && opts.eye.handle(req, res, path)) return;
+    if (path === MOKRYEON_FLOOR_PLAN_PATH) {
+      await serveMokryeonFloorPlan(req, res, url);
+      return;
+    }
     if (path.startsWith("/api/")) {
       const candidates = routes.filter((r) => r.pattern.test(path));
       const r = candidates.find((x) => x.method === req.method);
@@ -259,6 +274,15 @@ export function createApp(opts: AppOptions): TwinHomeApp {
       return;
     }
     const head = req.method === "HEAD";
+    if(path.startsWith("/home-scenes/")) {
+      const match=/^\/home-scenes\/([A-Za-z0-9_-]+)\/([A-Za-z0-9_-]+)\.png$/.exec(path);
+      try {
+        const root=match && sceneImage(opts,match[1],match[2]);
+        if(root && match && serveFile(res,root,match[2]+".png",head)) return;
+      } catch(e) { if(!(e instanceof HttpError)) throw e; }
+      sendJson(res,404,{ok:false,error:"촬영 장면 그림이 없습니다."});
+      return;
+    }
     if (path === "/twin") {
       res.writeHead(301, { location: "/twin/" });
       res.end();
@@ -290,13 +314,22 @@ export function createApp(opts: AppOptions): TwinHomeApp {
   // ── WebSocket /events ──
 
   const wss = new WebSocketServer({
-    server,
+    noServer: true,
     path: "/events",
     verifyClient: ({ origin }: { origin?: string }) => !origin || allowOrigin(origin),
   });
-  // ws는 HTTP 서버의 'error'(listen 실패 등)를 wss로 다시 내보낸다. 듣는 쪽이 없으면 처리 안 된 예외가 되어
-  // listen()이 거부되지 않고 프로세스가 죽는다. 그 오류는 listen()의 reject로 전달되므로 여기서는 받기만 한다.
   wss.on("error", () => {});
+  server.on("upgrade", (req, socket, head) => {
+    if (req.url?.split("?", 1)[0] === MOBILE_PHONE_EVENTS) {
+      const origin = req.headers.origin;
+      const phone = opts.phonePortal?.();
+      if (!origin || !allowOrigin(origin)) socket.end("HTTP/1.1 403 Forbidden\r\nConnection: close\r\nContent-Length: 0\r\n\r\n");
+      else if (!phone) socket.end("HTTP/1.1 503 Service Unavailable\r\nConnection: close\r\nContent-Length: 0\r\n\r\n");
+      else phone.upgradePortal(req, socket, head);
+      return;
+    }
+    wss.handleUpgrade(req, socket, head, (ws) => wss.emit("connection", ws, req));
+  });
 
   function send(ws: WebSocket, msg: unknown): void {
     if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(msg));
@@ -308,7 +341,10 @@ export function createApp(opts: AppOptions): TwinHomeApp {
   }
 
   wss.on("connection", (ws) => {
-    send(ws, { type: "hello", devices: hub.list().length, provider: agent?.provider.name ?? null, hub: opts.hubKind ?? "memory", home: opts.home?.id ?? null });
+    const trace = opts.traceLast?.();
+    send(ws, { type: "hello", devices: hub.list().length, provider: agent?.provider.name ?? null, hub: opts.hubKind ?? "memory", home: opts.home?.id ?? null,
+      ...(trace ? { trace_epoch: trace.epoch } : {}) });
+    if (trace) send(ws, trace);
     for (const state of hub.states()) send(ws, { type: "state", state });
     for (const m of opts.layout?.syncMessages() ?? []) send(ws, m);
     send(ws, { type: "plan", plan: opts.plan?.current() ?? null });

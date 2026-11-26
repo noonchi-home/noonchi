@@ -78,6 +78,9 @@ export interface KindEntry {
 const POWER: Control = { attrs: ["power"], active: "on", inactive: "off" };
 const RUNNING: Control = { attrs: ["running"], active: true, inactive: false };
 
+/** 시청자에 맞춰 전원을 조절하는 기기와 식사 준비를 알리는 문 센서의 등록 키. */
+export const HOUSEHOLD_KINDS = { viewerPower: "tv", mealDoor: "fridge" } as const;
+
 /** 순서가 곧 TYPE_RULES 순서·에이전트 도구 enum 순서다. */
 const ENTRIES = {
   light: {
@@ -93,7 +96,7 @@ const ENTRIES = {
     profile: { model: "onoff", matterDeviceType: "OnOffPlugInUnitDevice", capabilities: ["onoff"], control: POWER, sensors: [] },
     twinTypes: [{ types: ["monitor", "kettle", "rice_cooker"] }],
   },
-  tv: {
+  [HOUSEHOLD_KINDS.viewerPower]: {
     label: "TV", synonyms: ["tv", "티비", "텔레비전", "테레비"],
     profile: { model: "onoff", matterDeviceType: "BasicVideoPlayerDevice", capabilities: ["onoff"], control: POWER, sensors: [] },
     twinTypes: [{ types: ["tv"] }],
@@ -176,7 +179,7 @@ const ENTRIES = {
     twinTypes: [{ types: ["dryer"] }],
     stateText: { running: { became: "건조 시작" }, stopped: { became: "건조 멈춤" } },
   },
-  fridge: {
+  [HOUSEHOLD_KINDS.mealDoor]: {
     label: "냉장고", synonyms: ["냉장고"],
     profile: { model: "contact", matterDeviceType: "RefrigeratorDevice", capabilities: [], sensors: ["door"] },
     twinTypes: [{ types: ["fridge", "kimchi_fridge", "freezer"] }],

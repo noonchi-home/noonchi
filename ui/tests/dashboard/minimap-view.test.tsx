@@ -21,6 +21,7 @@ class FakeSocket {
 }
 
 const PHONE_URL = "http://192.168.0.7:8210/phone/";
+const MOBILE_URL = "https://hub.example.ts.net/mobile/";
 
 /** 구운 3D가 있는 집(한양목련): 대시보드라면 트윈 엔진을 띄우는 집이다. eye는 폰 서버가 켜졌는가. */
 function stubServer(eye: boolean) {
@@ -32,6 +33,7 @@ function stubServer(eye: boolean) {
   };
   vi.stubGlobal("fetch", vi.fn(async (path: string) => (
     path === "/api/health" ? Response.json(health)
+      : path === "/api/setup" ? Response.json({ ok: true, mobile_urls: [MOBILE_URL] })
       : path === "/twin/bake/manifest.json" ? new Response(null, { status: 200 })
         : new Response("{}", { status: 404 }))));
 }
@@ -173,5 +175,13 @@ describe("비전 미니맵만(?view=minimap)", () => {
     windowSize(1280, 800);
     await mount(true);
     expect(box(pane())).toEqual(["0px", "40px", "1280px", "720px"]);
+  });
+
+  it("연결이 끊기면 지난 명령을 바로 지운다", async () => {
+    await mount(true);
+    send([{ type: "phone_command", text: "컵을 들어 주세요" }]);
+    expect(screen.getByText("컵을 들어 주세요")).toBeInTheDocument();
+    act(() => FakeSocket.last!.onclose?.());
+    expect(screen.queryByText("컵을 들어 주세요")).toBeNull();
   });
 });

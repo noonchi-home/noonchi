@@ -10,7 +10,7 @@ describe("가로 영상이 미니맵에 꼭 맞는다", () => {
     for (const frame of [{ width: 1280, height: 720 }, { width: 780, height: 439 }, { width: 640, height: 360 }]) {
       const aspect = nextAspect(MINIMAP_ASPECT, frame);
       expect(aspect).toBe(16 / 9);
-      const { video } = pageLayout({ width, height }, MASCOT, aspect);
+      const { video } = pageLayout({ width, height }, MASCOT);
       expect(video.width).toBeGreaterThan(0);
       expect(Math.abs(video.width / video.height - 1280 / 720)).toBeLessThan(1e-9);
     }

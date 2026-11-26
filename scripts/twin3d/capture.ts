@@ -13,6 +13,12 @@ import { withHeavy } from "./heavy.js";
 import { maskFromBits, sampleColors, shotStats, type MaskBits } from "./shot-stats.js";
 
 const arg = (k: string, d?: string) => { const i = process.argv.indexOf(`--${k}`); return i > 0 ? process.argv[i + 1]! : d; };
+if (process.argv.includes("--home-shots")) {
+  const { captureHomeShots } = await import("./home-shots.js");
+  await captureHomeShots(arg("out", "runtime/shots")!, process.argv.includes("--software"),
+    process.argv.includes("--depth"), process.argv.includes("--holdout"), arg("views"));
+  process.exit(0);
+}
 const url = arg("url")!;
 const out = arg("out")!;
 if (!url || !out) { console.error("쓰는 법: npm run capture -- --url <주소> --out <폴더> (--views a,b | --script <파일>) [--legacy] [--ready <CSS 선택자>]"); process.exit(2); }
@@ -111,6 +117,10 @@ await withHeavy(`capture ${url}`, async (lock) => {
       else throw new Error(`모르는 스크립트 줄: ${step}`);
     }
     if (legacy) await evaluate("window.aptViewer.setPaused(true)");
+    if (process.argv.includes("--joinery-qa")) {
+      const { inspectJoinery } = await import("./joinery-qa.js");
+      measures.joinery = await inspectJoinery(cdp, url, out);
+    }
   } catch (e) {
     errors.push(`중단: ${(e as Error).message}`);
   } finally {

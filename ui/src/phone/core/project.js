@@ -29,7 +29,7 @@ export function toEdge({ u, v }, margin = 0.08) {
 export function focusMarks(targets, projection, view) {
   return targets.map((t) => {
     const p = project(t.ar, projection, view);
-    if (p.inside) return { id: t.id, label: t.label, u: p.u, v: p.v, off: false, angle: 0, ...(t.walking ? { walking: true } : {}) };
+    if (p.inside) return { id: t.id, label: t.label, u: p.u, v: p.v, off: false, angle: 0, ...(t.walking ? { walking: true } : {}), ...(t.stand ? { stand: true } : {}) };
     const e = toEdge(p);
     return { id: t.id, label: t.label, u: e.u, v: e.v, off: true, angle: e.angle };
   });

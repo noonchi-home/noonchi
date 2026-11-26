@@ -133,6 +133,10 @@ export const dist = (a: V3, b: V3) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] 
 export const CLASS_SWITCH_ANSWERS = 2;
 /** 확인된 물건은 그 자리가 시야 안인 장면 VLM 사진 이만큼(서로 다른 원본 프레임, 촬영 순서)이 이어 목록에 없으면 사라짐이다. */
 export const VLM_GONE_PHOTOS = 3;
+/** 떠남 빠르게(2026-11-25 사용자 결정 D): 사람이 있던 자리가 화면 안인데 YOLO가 그 사람을 이만큼(ms) 이어 못 보면 사라짐 확정(4초)을 기다리지 않고 안 보임이다. */
+export const FAST_GONE_MS = 500;
+/** 사람 등장(안 보임 → 보임): 사용자로 세는 사람 상자를 이만큼(ms) 이어 보면 보임이다(2026-11-25 사용자 결정, 시연자 손 규칙 2). */
+export const PERSON_RETURN_MS = 600;
 /** 사라진 물체를 이만큼 두었다가 잊는다(같은 자리에 다시 보이면 같은 id로 돌아온다). */
 export const GONE_KEEP_MS = 600_000;
 /** 장면 VLM 답 후보는 이만큼(ms) 다시 안 보이면 잊는다(VLM 두 장 사이 + 1초). */
@@ -182,6 +186,13 @@ export class WorldCore {
   readonly fallCfg: FallConfig;
   /** 사람 감지가 둘 넘게 보인 마지막 촬영 시각(VLM 자리 사실은 사람을 하나로 합치므로 그동안의 답은 누구의 것인지 모른다). */
   crowdAt = Number.NEGATIVE_INFINITY;
+  /** 사람이 있던 자리가 화면 안인데 YOLO가 그 사람을 못 본 첫 촬영 시각(이어지는 동안). 보거나 자리가 화면 밖이면 null. */
+  vacantFrom: number | null = null;
+  /** 빠른 떠남으로 안 보임이 된 때와 그 전 사람 상태(VLM 답이 사람을 보면 되돌린다, WorldState.revertGone). 되돌리면 YOLO가 다시 볼 때까지 빠른 떠남을 쓰지 않는다. */
+  fastGone: { at: number; since: number | null; count: number; facts: Facts } | null = null;
+  fastBlocked = false;
+  /** 로봇 실행 단계 중(폰에 명령이 떠 있어 폰을 든 시연자가 움직인다, WorldState.robotActing). 아래 가장자리에 닿고 얼굴 관절이 없는 사람 상자를 사용자로 세지 않는다. */
+  acting = false;
   /** 실행 추적이 지금 집기·내려놓기 하는 대상(WorldState.focus): 물건 id, 단계, 자리(집기는 그 물건 자리, 내려놓기는 목적지, 수평 [x, z]). */
   focusOn: { id: string; step: "pick" | "place" | "carry"; spot: [number, number] | null } | null = null;
   /** 지금 든 물건(focusOn)을 처음 알린 촬영 시각: 그 뒤에 생긴 같은 무리 둘째 id를 내려놓기 시작 때 대상으로 합친다. */
@@ -201,8 +212,9 @@ export class WorldCore {
     this.fall = new FallWatch(this.fallCfg);
     this.identityM = o.identityM ?? 0.25;
     this.stepMs = o.evidenceStepMs ?? EVIDENCE_STEP_MS;
-    // 사람만 센다(YOLO 사람 감지): 등장 2장(2초), 사라짐 2장(4초). 물건 등장·사라짐은 장면 VLM 사진으로 센다(sceneobjects.ts)
-    this.confirmer = new Confirmer(() => 2, this.stepMs, () => 2);
+    // 사람만 센다(YOLO 사람 감지 가운데 사용자로 세는 상자, people.ts users): 등장(안 보임 → 보임) PERSON_RETURN_MS 이어 보임, 사라짐 2장(4초).
+    // 물건 등장·사라짐은 장면 VLM 사진으로 센다(sceneobjects.ts)
+    this.confirmer = new Confirmer(() => 2, this.stepMs, () => 1 + PERSON_RETURN_MS / this.stepMs);
   }
 
   /** 이 감지를 받는가(src/world/accept.ts accepts). */

@@ -6,6 +6,7 @@ import type { HealthView, ServerMessage } from "../../src/contract/events.ts";
 import { Dashboard } from "../src/dashboard/Dashboard";
 
 const FIELDS = "input, textarea, select, form, [contenteditable], [role=textbox], [role=searchbox], [role=combobox]";
+const HUB_URL = "https://hub.example.test:8444/mobile/";
 
 class FakeSocket {
   static last: FakeSocket | null = null;
@@ -33,7 +34,11 @@ const health: HealthView = {
 
 beforeEach(() => {
   vi.stubGlobal("WebSocket", FakeSocket);
-  vi.stubGlobal("fetch", vi.fn(async (path: string) => (path === "/api/health" ? Response.json(health) : new Response("{}", { status: 404 }))));
+  vi.stubGlobal("fetch", vi.fn(async (path: string) => {
+    if (path === "/api/health") return Response.json(health);
+    if (path === "/api/setup") return Response.json({ ok: true, mobile_urls: [HUB_URL] });
+    return new Response("{}", { status: 404 });
+  }));
 });
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -47,10 +52,16 @@ describe("대시보드", () => {
     act(() => FakeSocket.last!.push(waiting));
     expect(container.querySelectorAll(FIELDS)).toHaveLength(0);
     expect(screen.queryByRole("button", { name: /보내기|승인$/ })).toBeNull();
-    await screen.findByRole("img", { name: "폰 연결 QR" });
-    await userEvent.click(within(screen.getByRole("region", { name: "마스코트" })).getByRole("button", { name: "설정 열기" }));
+    await within(screen.getByRole("region", { name: "폰 카메라" })).findByRole("img", { name: "폰 연결 QR" });
+    // 화면에 설정 단추가 없다: 설정 창은 Ctrl+1로 연다
+    await userEvent.keyboard("{Control>}1{/Control}");
     const dialog = await screen.findByRole("dialog");
-    expect(dialog).toHaveTextContent("집 다시 설정하기");
+    const settings = within(dialog);
+    expect(settings.getByText(HUB_URL)).toBeInTheDocument();
+    expect(settings.getByRole("img", { name: "폰 연결 QR" })).toBeInTheDocument();
+    expect(dialog).not.toHaveTextContent("집 다시 설정하기");
+    expect(dialog.querySelector('a[href="/setup/"], a[href="/mobile/settings/"]')).toBeNull();
+    expect(settings.queryByRole("button", { name: /집.*설정|보내기|승인$/ })).toBeNull();
     expect(document.querySelectorAll(FIELDS)).toHaveLength(0);
   });
 });

@@ -1,7 +1,8 @@
 // 영상 입력 모드(폰 페이지 ?clip=<이름>): 실제 카메라 대신 /phone/videos/<이름> 영상을 틀고, 고정 카메라로 실제 폰과 같은 길로 보낸다.
-// 시작 자세: 높이 1.4m에서 아래 25°(?h=·?pitch=, 시야각 ?fov= 기본 60°). 바닥은 AR y 0이다. 시작하면 reset → start{fixed:true}를 보내 서버가
+// 영상은 가로만 튼다: 세로 영상(높이 > 폭)이면 열지 않는다. 첫 영상이면 시작하지 않고 처음 화면에, 단계 영상이면 지금 영상을 두고 알림으로 LANDSCAPE_ONLY를 띄운다.
+// 시작 자세: 높이 1.15m에서 아래 10°(?h=·?pitch=, 세로 시야각 ?fov= 기본 40°: 앉은 눈높이에서 가로로 찍은 영상). 바닥은 AR y 0이다. 시작하면 reset → start{fixed:true}를 보내 서버가
 // 시작 자리를 카메라 자리로 바로 맞춘다(src/phone/sync aligner fixStart). 서버 맞춤이 없어지면(못 보냄·다시 붙음·서버 다시 띄움) syncStatus가
-// start fixed를 다시 보낸다(늘 시작 자세: AR 원점은 걸어도 그대로다). 그 뒤 자세는 초당 10번, 화면 프레임은 초당 12장(긴 변 780, 품질 0.55),
+// start fixed를 다시 보낸다(늘 시작 자세: AR 원점은 걸어도 그대로다). 그 뒤 자세는 초당 10번, 화면 프레임은 초당 12장(폭 780, 품질 0.55),
 // 엔진 프레임은 서버 engine_ms마다(품질 0.8, 투영 행렬·서버 시계 촬영 시각). 표시 영상(H.264)은 만들지 않는다. 영상은 다시 틀지 않는다.
 // 재생을 기다리는 동안 다시 시작하면 같은 시작을 기다리고(영상은 하나), 그 사이 끝내면 그 영상을 닫고 시작하지 않는다.
 // 단계 영상(?step=<종류>:<대상 낱말>:<영상>, 여러 개): 사람 단계 명령(command)의 종류가 같고 대상 id에 낱말이 든 첫 칸이면, 그 id·step에 한 번
@@ -53,10 +54,16 @@ const REACT_S = 1.5;
 const RATE = { min: 0.25, max: 2 };
 const WALK_MPS = 0.8;
 const WALK_STOP_M = 0.6;
+/** 관찰 자리 도착을 볼 때 명령 반경(near_m)에 더하는 여유(m): 서버가 도착을 본 자세와 마지막으로 보낸 자세의 차이. */
+const ARRIVE_SLACK_M = 0.2;
 /** 가까이 가서 보기 go(near_m)는 그 거리의 이만큼까지 걷는다(자세 흔들림 여유). */
 const NEAR_WALK = 0.8;
 /** 위에서 비추기 자세: 대상에서 지금 자리 쪽으로 수평(m)·대상 위(m). 크기를 모르는 좁고 깊은 컵도 입구 바로 위라 안이 보인다(src/world/place.ts topView). */
 const ABOVE = { backM: 0.02, upM: 0.4 };
+/** 영상 모드 기본 카메라: 가로 시험 영상(runtime/videos/LABELS.md 가로 영상)을 찍은 세로 시야각·숙인 각·높이. */
+export const CAMERA = { fovDeg: 40, pitchDeg: -10, heightM: 1.15 };
+/** 세로 영상(높이 > 폭)을 열지 않을 때 폰 화면 글. */
+export const LANDSCAPE_ONLY = "가로로 찍은 영상을 골라 주세요.";
 const STEP_KINDS = new Set(["go", "pick", "place", "do"]);
 const STEP_WORD = /^[a-z_]+$/;
 const CLIP_NAME = /^[A-Za-z0-9_-]{1,64}\.(?:mp4|webm)$/;
@@ -84,9 +91,9 @@ export function videoParams(params) {
   return {
     clip,
     clipUrl: clipUrlOf(clip),
-    fovDeg: clamp(params.get("fov"), 20, 120, 60),
-    pitchDeg: clamp(params.get("pitch"), -89, 89, -25),
-    heightM: clamp(params.get("h"), 0.2, 3, 1.4),
+    fovDeg: clamp(params.get("fov"), 20, 120, CAMERA.fovDeg),
+    pitchDeg: clamp(params.get("pitch"), -89, 89, CAMERA.pitchDeg),
+    heightM: clamp(params.get("h"), 0.2, 3, CAMERA.heightM),
     steps: params.getAll("step").map(stepEntry).filter(Boolean),
     reactMs: Math.round(clamp(params.get("react"), 0, 10, REACT_S) * 1000),
     // 영상 모드: 카메라 입력. 재생 빠르기
@@ -277,12 +284,12 @@ function pageFullscreen() {
 export function createVideoAr({ link, params, hooks, deps }) {
   const d = { ...browser, ...deps };
   const FRAME_MS = 1000 / clamp(params.get("fps"), 1, 30, 12);
-  const pitchDeg = d.pitchDeg ?? -25;
+  const pitchDeg = d.pitchDeg ?? CAMERA.pitchDeg;
   const steps = d.steps ?? [];
   const reactMs = d.reactMs ?? REACT_S * 1000;
   const rate = d.rate ?? 1;
   // 시작 자세: 서버가 시작 자리로 맞추는 자세. 걸어도 start는 이 자세로 보낸다
-  const startPosition = [0, d.heightM ?? 1.4, 0];
+  const startPosition = [0, d.heightM ?? CAMERA.heightM, 0];
   const startOrientation = pitchQuat(pitchDeg);
   // 지금 자세(go 단계 걷기·집기·놓기 바라보기가 바꾼다): pose·프레임 머리·고리 view가 모두 이것을 쓴다
   let position = startPosition;
@@ -323,7 +330,7 @@ export function createVideoAr({ link, params, hooks, deps }) {
     if (run) return Promise.resolve();
     // 재생을 기다리는 동안 또 누르면 같은 시작을 기다린다
     if (opening) return opening.done;
-    // 영상 모드: 카메라 입력. 실제 AR(immersive-ar)은 그 자체로 전체 화면이라, 영상으로 그 화면을 흉내 낼 때도 「AR 시작」을 누른 순간
+    // 영상 모드: 카메라 입력. 실제 AR(immersive-ar)은 그 자체로 전체 화면이라, 영상으로 그 화면을 흉내 낼 때도 「카메라 켜기」를 누른 순간
     // 전체 화면을 요청한다(사용자 제스처 안이어야 한다). 실제 모드(ar.js)는 DOM 오버레이와 겹쳐 요청하지 않는다. 방향은 고정하지 않는다
     fullscreen.enter(overlay?.ownerDocument ?? document);
     const wait = { video: null, cancelled: false, done: null };
@@ -355,10 +362,13 @@ export function createVideoAr({ link, params, hooks, deps }) {
       throw new Error("영상을 열지 못했어요");
     }
     if (wait.cancelled) return;
+    if (video.videoHeight > video.videoWidth) {
+      video.close();
+      throw new Error(LANDSCAPE_ONLY);
+    }
     let fw = video.videoWidth;
     let fh = video.videoHeight;
-    let portrait = fh > fw;
-    let projection = projectionFromFov(d.fovDeg ?? 60, fw / fh);
+    let projection = projectionFromFov(d.fovDeg ?? CAMERA.fovDeg, fw / fh);
     const encoder = d.createEncoder();
     const canvas = d.createCanvas();
     const ctx = canvas.getContext("2d", { willReadFrequently: true });
@@ -391,7 +401,15 @@ export function createVideoAr({ link, params, hooks, deps }) {
     // 명령 세대: 새 단계 영상 명령·지우기마다 오른다. 예약 타이머와 재생을 기다리는 바꾸기는 세대가 다르면 버린다
     let cmdGen = 0;
     let lastCmdId = null;
+    // guideFace: 안내의 다음 자리가 서는 자리(마지막 구간)면 go 대상 AR 자리. 그 구간은 대상을 보며 걷는다(영상 속 사람은 다가가는 물건을 본다)
+    let guidedKey=null, guideRevision=null, waypoint=null, guideFace=null, walkReady=null;
+    function followGuide(key, clipMs, generation=cmdGen){
+      if(generation!==cmdGen || key!==guidedKey || key!==lastKey || walkReady!==key || !waypoint) return;
+      startWalk(waypoint,0,clipMs,guideFace);
+    }
     let aboveAim = null;
+    // 영상 모드: 자세 흉내. 관찰 자리 가기의 비출 곳(명령 대상 look, AR): 명령이 떠 있는 동안 도착 반경에 닿으면 그쪽을 바라본다(「…을 비춰 주세요」)
+    let lookAfter = null;
     let lastKey = null; // 마지막으로 받은 명령 id:단계(같은 명령이 다시 오면 비전 상태만 바뀐 것)
     // 영상 모드: 자세 흉내
     let posedKey = null; // 단계 영상 칸 없이 자세만 옮기기로 한 명령 id:단계(같은 명령이 다시 와도 다시 하지 않는다)
@@ -426,7 +444,7 @@ export function createVideoAr({ link, params, hooks, deps }) {
       const e = toEdge({ u, v });
       return { ...m, u: e.u, v: e.v, off: true, angle: e.angle };
     };
-    const frameMarks = () => (focus.targets.length && performance.now() < focus.until ? focusMarks(focus.targets, projection, view) : []);
+    const frameMarks = () => (focus.targets.length && performance.now() < focus.until ? focusMarks(focus.targets, projection, view).filter(m=>hooks.visibleMark?.(m.id)!==false) : []);
     const showMarks = (marks) => hooks.onMarks(marks.map(toScreen));
 
     /** go 단계 걷기 한 칸(자세 타이머마다 0.08m). 멈출 자리에 닿으면 끝. */
@@ -444,13 +462,15 @@ export function createVideoAr({ link, params, hooks, deps }) {
       setPose([position[0] + (dx / left) * stride, position[1], position[2] + (dz / left) * stride], orientation);
     };
     /** target 쪽으로 돌아 서고 stopM(기본 0.6m) 앞까지 걷기 시작한다. 숙인 각은 주소 칸 pitch. 이미 그 안이면 그대로.
-     *  clipMs(단계 영상 조각이 실제로 도는 시간)가 있으면 그 시간에 닿게 걷고(조각과 함께 걷는다), 없으면 초당 WALK_MPS. */
+     *  clipMs(단계 영상 조각이 실제로 도는 시간)가 있으면 그 시간에 닿게 걷고(조각과 함께 걷는다), 없으면 초당 WALK_MPS.
+     *  faceAt이 있으면 걷는 쪽 대신 그 자리 쪽으로 돌아 선다. */
     // 영상 모드: 자세 흉내
-    const startWalk = (target, stopM = WALK_STOP_M, clipMs) => {
+    const startWalk = (target, stopM = WALK_STOP_M, clipMs, faceAt = null) => {
+      if (lookAfter?.key === lastKey) lookAfter.faced = false;
       const w = walkGoal(position, target, stopM);
       const dist = w ? Math.hypot(w.goal[0] - position[0], w.goal[2] - position[2]) : 0;
       walk = w && (clipMs > 0 ? { goal: w.goal, mps: dist / (clipMs / 1000), clip: true } : { goal: w.goal, mps: WALK_MPS, clip: false });
-      if (w) setPose(position, yawPitchQuat(w.yaw, pitchDeg));
+      if (w) setPose(position, yawPitchQuat((faceAt && lookAt(position, faceAt)?.yaw) ?? w.yaw, pitchDeg));
     };
     /** 걷기를 멈추고 그 자리에서 target을 바라본다(사람이 폰을 대상에 겨눈다). 바로 위·아래면 자세는 그대로. */
     const face = (target) => {
@@ -468,8 +488,13 @@ export function createVideoAr({ link, params, hooks, deps }) {
 
     const sendPose = () => {
       stepWalk();
+      // 영상 모드: 자세 흉내. 관찰 자리 가기가 떠 있는 동안 걷기가 끝나 도착 반경 안이면 비출 곳을 한 번 바라본다. 서버는 그쪽을 비춰야 도착으로 본다
+      if (lookAfter && walkReady === lookAfter.key && (!guidedKey || waypoint) && !lookAfter.faced && !walk && Math.hypot(position[0] - lookAfter.target[0], position[2] - lookAfter.target[2]) <= lookAfter.near + ARRIVE_SLACK_M) {
+        lookAfter.faced = true;
+        face(lookAfter.at);
+      }
       link.send({
-        type: "pose", position, orientation, tracking: "ok", hit: state.hitPoint, hit_estimated: state.hitEstimated,
+        type: "pose", ...link.stamp(performance.timeOrigin + performance.now()), position, orientation, tracking: "ok", hit: state.hitPoint, hit_estimated: state.hitEstimated,
         floor_y: 0, epoch: state.epoch,
       });
     };
@@ -540,7 +565,7 @@ export function createVideoAr({ link, params, hooks, deps }) {
       lastEngine = step.last;
       if (step.action !== "wait" && step.action !== "send") stats.skipped("engine");
       if (step.action === "send") {
-        const ew = Math.min(frameWidth(params.get("w"), portrait), fw);
+        const ew = Math.min(frameWidth(params.get("w")), fw);
         const eh = Math.round((ew * fh) / fw);
         const e0 = performance.now();
         const pixels = grab(ew, eh);
@@ -558,9 +583,8 @@ export function createVideoAr({ link, params, hooks, deps }) {
         return;
       }
       due = Math.max(due + FRAME_MS * rate, t + (FRAME_MS * rate) / 2);
-      const long = Math.min(FRAME_LONG, Math.max(fw, fh));
-      const width = portrait ? Math.round((long * fw) / fh) : long;
-      const h = portrait ? long : Math.round((long * fh) / fw);
+      const width = Math.min(FRAME_LONG, fw);
+      const h = Math.round((width * fh) / fw);
       state.size = `${width}×${h}`;
       const r0 = performance.now();
       const pixels = grab(width, h);
@@ -650,6 +674,13 @@ export function createVideoAr({ link, params, hooks, deps }) {
         next.close();
         return;
       }
+      // 세로 단계 영상은 틀지 않는다: 지금 영상·자세를 두고 알린다. 다시 와도 또 세로라 줄 표시는 풀지 않는다
+      if (next.videoHeight > next.videoWidth) {
+        next.close();
+        hooks.note(LANDSCAPE_ONLY);
+        console.warn(`[video] 세로 단계 영상은 틀지 않아요 ${clipNameOf(q.url)} ${next.videoWidth}×${next.videoHeight}`);
+        return;
+      }
       const old = video;
       stopHold();
       offset += old.currentTime * 1000;
@@ -657,8 +688,7 @@ export function createVideoAr({ link, params, hooks, deps }) {
       if (next.videoWidth !== fw || next.videoHeight !== fh) {
         fw = next.videoWidth;
         fh = next.videoHeight;
-        portrait = fh > fw;
-        projection = projectionFromFov(d.fovDeg ?? 60, fw / fh);
+        projection = projectionFromFov(d.fovDeg ?? CAMERA.fovDeg, fw / fh);
       }
       if (walk?.clip) {
         setPose(walk.goal, orientation);
@@ -687,6 +717,29 @@ export function createVideoAr({ link, params, hooks, deps }) {
       command(cmd) {
         const key = `${cmd.id}:${cmd.step}`;
         const fresh = key !== lastKey;
+        // 영상 모드: 자세 흉내
+        if (cmd.kind === "go" && Array.isArray(cmd.target?.ar) && Array.isArray(cmd.target?.look))
+          lookAfter = lookAfter?.key === key ? lookAfter : { key, target: cmd.target.ar, at: cmd.target.look, near: typeof cmd.near_m === "number" ? cmd.near_m : WALK_STOP_M };
+        else if (fresh) lookAfter = null;
+        const guided=cmd.kind==="go" && cmd.guide!==undefined;
+        const nextGuide=guided?cmd.guide?.remaining[0]:null;
+        if(guided && (fresh || guideRevision!==(cmd.guide?.revision??null))){
+          walk=null;guidedKey=key;guideRevision=cmd.guide?.revision??null;waypoint=nextGuide?.ar??null;
+          guideFace=nextGuide?.kind==="stand" && Array.isArray(cmd.target?.ar) ? cmd.target.ar : null;
+          if(nextGuide?.kind==="portal" && waypoint){
+            const beyond=cmd.guide.remaining[1]?.ar;
+            if(beyond){
+              const dx=beyond[0]-waypoint[0],dz=beyond[2]-waypoint[2],len=Math.hypot(dx,dz);
+              if(len>0) waypoint=[waypoint[0]+0.12*dx/len,waypoint[1],waypoint[2]+0.12*dz/len];
+            }
+          }
+          if(!fresh) followGuide(key);
+        } else if(!guided && fresh){
+          // 안내 걷기도 조각과 함께 걷는 중(walk.clip)이면 다음 명령에 멈추지 않는다(영상은 계속 다가간다)
+          if(guidedKey && !walk?.clip) walk=null;
+          guidedKey=null;waypoint=null;guideFace=null;
+        }
+
         // 같은 명령이 이어서 다시 오면(비전 상태만 바뀜) 이미 줄에 넣은 것은 그대로 둔다(대상이 그제야 붙었으면 아래에서 넣는다)
         if (!fresh && switched.has(key)) {
           if (aboveAim?.key === key && cmd.view === "above" && Array.isArray(cmd.target?.ar)) {
@@ -701,11 +754,13 @@ export function createVideoAr({ link, params, hooks, deps }) {
         // 새 명령(다른 id·단계, 단계 영상이 없는 질문·승인도): 앞 명령의 반응 시간 예약과 조각 없는 걷기를 멈춘다. 줄에 든 조각과 그 걷기는 그대로다
         if (fresh) {
           lastKey = key;
+          walkReady = null;
           cmdGen++;
           for (const timer of reactTimers) clearTimeout(timer);
           reactTimers.clear();
           if (walk && !walk.clip) walk = null;
         }
+        if(guided && !waypoint) return;
         const id = cmd.target?.id;
         const first = typeof id === "string" ? steps.find((s) => s.kind === cmd.kind && id.includes(s.word)) : undefined;
         const target = Array.isArray(cmd.target?.ar) ? cmd.target.ar : null;
@@ -717,7 +772,12 @@ export function createVideoAr({ link, params, hooks, deps }) {
         const stopM = typeof cmd.near_m === "number" ? Math.min(WALK_STOP_M, cmd.near_m * NEAR_WALK) : WALK_STOP_M;
         const aim = target && cmd.view === "above" ? { key, at: target, playing: false } : null;
         aboveAim = aim;
-        const pose = target && (cmd.kind === "go" ? (clipMs) => startWalk(target, stopM, clipMs) : aim ? () => {
+        const pose = target && (cmd.kind === "go" ? (clipMs) => {
+          if (gen === cmdGen && lastKey === key) walkReady = key;
+          else if (guided || cmd.target.look) return;
+          if (guided) followGuide(key,clipMs,gen);
+          else startWalk(target, stopM, clipMs);
+        } : aim ? () => {
           aim.playing = true;
           holdAbove(aim.at);
         } : () => face(target));
@@ -781,8 +841,13 @@ export function createVideoAr({ link, params, hooks, deps }) {
        *  줄에 든 조각과 조각과 함께 걷는 걸음은 그대로 튼다(원본 영상을 자르지 않는다). */
       commandClear(id) {
         if (id !== undefined && id !== lastCmdId) return;
+        // 명령이 지워지면(도착·그만·연결 끊김) 비출 곳을 더 바라보지 않는다: 지움만으로는 도착인지 알 수 없다
+        lookAfter = null;
         cmdGen++;
         lastKey = null;
+        // 조각과 함께 걷는 걸음(walk.clip)은 안내 걷기여도 그대로 둔다
+        if(guidedKey && !walk?.clip) walk=null;
+        guidedKey=null;waypoint=null;guideFace=null;guideRevision=null;
         posedKey = null;
         for (const timer of reactTimers) clearTimeout(timer);
         reactTimers.clear();

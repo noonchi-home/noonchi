@@ -1,41 +1,43 @@
 // @vitest-environment node
 // 가짜 단계(debug.ts) 주소 설정과 순간 자료.
 import { describe, expect, it } from "vitest";
+import { STEP_COMMAND } from "../../../src/act/labels";
 import { EMPTY_DASH, modeNow, reduceDash, talkOf } from "../../src/dashboard/data";
-import { COACH_MOMENT, debugPhone, debugQuery, FIND_LINE, modeMoment, MOMENTS, talkMoment, WIDE_FRAME, WIDE_TOP, wideMoment, type Moment } from "../../src/dashboard/debug";
+import { COACH_MOMENT, debugPhone, debugQuery, EYE_FRAME, FIND_LINE, modeMoment, MOMENTS, talkMoment, type Moment } from "../../src/dashboard/debug";
 
 /** 순간 메시지를 차례로 넣은 메시지 상자. */
 const talkAt = (m: Moment) => talkOf(m.messages.reduce((s, x, i) => reduceDash(s, x, i), EMPTY_DASH));
 
-describe("가짜 단계 가로 눈 그림(&wide=1)", () => {
-  it("주소에 wide=1이 있을 때만 가로다", () => {
-    expect(debugQuery("?debug=steps&wide=1")?.wide).toBe(true);
-    expect(debugQuery("?debug=steps")?.wide).toBe(false);
+it("컵 시연은 현재 단계의 공개 폰 지시만 내보내고 대기 중에는 비운다", () => {
+  const captions = MOMENTS.map((m) => m.messages.flatMap((event) => event.type === "phone_command" && event.text !== null ? [event.text] : []));
+  expect(captions).toEqual([[], [STEP_COMMAND.goTable], [STEP_COMMAND.pickCup], [STEP_COMMAND.goSink], [STEP_COMMAND.placeCup]]);
+});
+
+describe("가짜 단계 눈 그림은 가로(실제 폰도 영상도 가로만 보낸다)", () => {
+  it("주소에 가로·세로를 고르는 칸이 없다(wide=1을 줘도 같은 설정)", () => {
+    expect(debugQuery("?debug=steps&wide=1")).toEqual(debugQuery("?debug=steps"));
+    expect(debugQuery("?debug=steps")).not.toHaveProperty("wide");
   });
 
-  it("가로 순간은 세로 눈 그림에서 잘라 낸 가로 프레임(405×228)이다: seen 프레임 크기와 컵 마스크 자리를 잘라 낸 만큼 올리고, 다른 메시지는 그대로다", () => {
+  it("순간마다 seen 프레임은 가로 눈 그림 크기(405×228)이고 컵 마스크가 그 안에 다 들어온다", () => {
+    expect(EYE_FRAME).toEqual({ width: 405, height: 228 });
     for (const m of MOMENTS) {
-      const w = wideMoment(m);
-      const top = WIDE_TOP[m.eye];
-      const seen = (x: typeof m) => x.messages.find((y) => y.type === "seen")!;
-      const [a, b] = [seen(m), seen(w)];
-      if (a.type !== "seen" || b.type !== "seen") throw new Error("seen 없음");
-      expect(b.frame).toEqual(WIDE_FRAME);
-      expect(b.shapes).toHaveLength(a.shapes.length);
-      a.shapes.forEach((s, i) => {
-        const [x, y, cw, ch] = s.mask.at;
-        expect(b.shapes[i]!.mask.at).toEqual([x, y - top, cw, ch]);
-        // 컵이 가로 프레임 안에 다 들어온다
-        expect(y - top).toBeGreaterThanOrEqual(0);
-        expect(y - top + ch).toBeLessThanOrEqual(WIDE_FRAME.height);
-      });
-      expect(w.messages.filter((y) => y.type !== "seen")).toEqual(m.messages.filter((y) => y.type !== "seen"));
+      const seen = m.messages.find((y) => y.type === "seen");
+      if (seen?.type !== "seen") throw new Error("seen 없음");
+      expect(seen.frame).toEqual(EYE_FRAME);
+      for (const s of seen.shapes) {
+        const [x, y, w, h] = s.mask.at;
+        expect(x).toBeGreaterThanOrEqual(0);
+        expect(y).toBeGreaterThanOrEqual(0);
+        expect(x + w).toBeLessThanOrEqual(EYE_FRAME.width);
+        expect(y + h).toBeLessThanOrEqual(EYE_FRAME.height);
+      }
     }
   });
 
-  it("가로면 대시보드 폰 칸 그림은 -wide 그림과 가로 크기다", () => {
-    const q = debugQuery("?debug=steps&wide=1")!;
-    expect(debugPhone(q, MOMENTS[2]!, "u")).toEqual({ kind: "image", src: "/debug-eye/eye-table-near-wide.webp", ...WIDE_FRAME });
+  it("대시보드 폰 칸 그림은 그 순간 가로 눈 그림과 가로 크기다", () => {
+    const q = debugQuery("?debug=steps")!;
+    expect(debugPhone(q, MOMENTS[2]!, "u")).toEqual({ kind: "image", src: "/debug-eye/eye-table-near.webp", width: 405, height: 228 });
   });
 });
 

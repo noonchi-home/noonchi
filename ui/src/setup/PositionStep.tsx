@@ -16,6 +16,7 @@ import { pickPhoneUrl, urlParts } from "../lib/phone-url";
 import { hideViewerBar } from "../lib/twin-embed";
 import { waitForViewer, type AptViewer } from "../lib/twin-viewer";
 import { call, failText, isOk } from "./setup-api";
+import { StationsEditor } from "./StationsEditor";
 import { arrowPath, clockwiseSign, floorAtBox, useFloorClicks, useOverlay, yawOf, type Pos } from "./start-pick";
 
 // 4 위치 동기화: 3D 트윈에서 폰을 켤 시작 자리와 서서 볼 방향을 한 번 골라 저장한다(GET/POST /api/phone/start-pose).
@@ -93,8 +94,9 @@ function TwinBox({ home, frame, onReady, className }: { home: string; frame: Rea
   );
 }
 
-export function PositionStep({ view, onBack, onDone, onNotice, layoutTick }: {
+export function PositionStep({ view, onBack, onDone, onNotice, layoutTick, section = "position", phone = false, busy = false, onSaved, onCleared }: {
   view: SetupView; onBack: () => void; onDone: () => void; onNotice: (text: string, error?: boolean) => void; layoutTick: number;
+  section?: "position" | "stations" | "layout"; phone?: boolean; busy?: boolean; onSaved?: () => void; onCleared?: () => void;
 }) {
   const home = view.home!.id;
   const frame = useRef<HTMLIFrameElement>(null);
@@ -102,6 +104,7 @@ export function PositionStep({ view, onBack, onDone, onNotice, layoutTick }: {
   const [viewer, setViewer] = useState<AptViewer | null>(null);
   const [startOn, setStartOn] = useState<boolean | null>(null);
   const [phoneOpen, setPhoneOpen] = useState(false);
+  const [editingStations, setEditingStations] = useState(false);
   const [spot, setSpot] = useState<Pos | null>(null);
   const [yaw, setYaw] = useState(0);
   const [label, setLabel] = useState("");
@@ -111,13 +114,18 @@ export function PositionStep({ view, onBack, onDone, onNotice, layoutTick }: {
   const [saved, setSaved] = useState(false);
   const [repick, setRepick] = useState(false);
   const [info, setInfo] = useState<{ text: string; error?: boolean }>({ text: "트윈 바닥을 눌러 폰을 켤 자리를 고르세요." });
-  const [layout, setLayout] = useState<LayoutView | null>(null);
+  const [layout, setLayout] = useState<LayoutView | null>();
+  const [storing, setStoring] = useState(false);
+  const showStations = section === "stations" || editingStations;
+  const showStart = section === "position" && !showStations;
 
   const loadLayout = useCallback(async () => {
     const r = await call<LayoutView>("/api/layout");
     setLayout(isOk(r) ? r.json : null);
   }, []);
-  useEffect(() => { void loadLayout(); }, [loadLayout, layoutTick, home]);
+  useEffect(() => {
+    if (!phone || section === "layout") void loadLayout();
+  }, [loadLayout, layoutTick, home, phone, section]);
 
   /** 서버가 준 시작 위치로 화면을 채운다. */
   const apply = (s: StartView["start"]) => {
@@ -129,6 +137,7 @@ export function PositionStep({ view, onBack, onDone, onNotice, layoutTick }: {
     setSaved(Boolean(s));
   };
   useEffect(() => {
+    if (section !== "position") return;
     let live = true;
     call<StartView>("/api/phone/start-pose").then((r) => {
       if (!live) return;
@@ -138,7 +147,7 @@ export function PositionStep({ view, onBack, onDone, onNotice, layoutTick }: {
       if (r.json.start) setInfo({ text: "저장했어요. 폰에서 이 자리에 서서 「여기서 시작」을 하세요." });
     });
     return () => { live = false; };
-  }, [home]);
+  }, [home, section]);
 
   /** 자리·방향이 바뀌면 서버에 이름만 물어 채운다(저장하지 않는다). 방 바닥이 아니면 그 까닭. */
   const preview = async (p: Pos, y: number) => {
@@ -154,8 +163,8 @@ export function PositionStep({ view, onBack, onDone, onNotice, layoutTick }: {
     void preview(p, y);
   };
   // 트윈 바닥 누름: 자리가 없거나 다시 고르는 중이면 자리, 아니면 그쪽을 본다(30cm 안이면 무시)
-  useFloorClicks(viewer, (p) => {
-    if (!startOn) return;
+  useFloorClicks(showStart ? viewer : null, (p) => {
+    if (!startOn || storing) return;
     if (!spot || repick) {
       setSpot(p);
       setRepick(false);
@@ -190,43 +199,58 @@ export function PositionStep({ view, onBack, onDone, onNotice, layoutTick }: {
     const up = () => {
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
+      window.removeEventListener("pointercancel", up);
       aim(spot, last);
     };
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", up);
+    window.addEventListener("pointercancel", up);
   };
   const save = async () => {
-    if (!spot) return;
+    if (!spot || storing) return;
+    setStoring(true);
     const r = await call<StartView>("/api/phone/start-pose", {
       home, position: spot, yaw_deg: yaw, label: edited.current.label ? label : "", facing_label: edited.current.facing ? facing : "",
     });
+    setStoring(false);
     if (!isOk(r)) return setInfo({ text: failText(r, "저장하지 못했어요."), error: true });
     apply(r.json.start);
     setInfo({ text: "저장했어요. 폰에서 이 자리에 서서 「여기서 시작」을 하세요." });
+    onSaved?.();
   };
   const clear = async () => {
+    if (storing) return;
+    setStoring(true);
     const r = await call<StartView>("/api/phone/start-pose/clear", { home });
+    setStoring(false);
     if (!isOk(r)) return setInfo({ text: failText(r, "지우지 못했어요."), error: true });
     apply(null);
     setRepick(false);
     setInfo({ text: "지웠어요. 트윈 바닥을 눌러 다시 고르세요." });
+    onCleared?.();
   };
   const layoutAct = async (what: "save" | "reset") => {
+    if (storing) return;
+    setStoring(true);
     const r = await call<{ ok: true; count?: number; path?: string; reverted?: number }>(`/api/layout/${what}`, { home });
-    if (!isOk(r)) onNotice(failText(r, "배치 보정을 바꾸지 못했어요."), true);
-    else onNotice(what === "save" ? `배치 보정 ${r.json.count ?? 0}건을 저장했어요: ${r.json.path ?? ""}` : `배치 보정 ${r.json.reverted ?? 0}곳을 되돌렸어요.`);
+    setStoring(false);
+    if (!isOk(r)) { onNotice(failText(r, "배치 보정을 바꾸지 못했어요."), true); return; }
+    if (what === "save" && onSaved) { onSaved(); return; }
+    onNotice(what === "save" ? `배치 보정 ${r.json.count ?? 0}건을 저장했어요: ${r.json.path ?? ""}` : `배치 보정 ${r.json.reverted ?? 0}곳을 되돌렸어요.`);
     void loadLayout();
   };
 
   const urls = view.position.phone_urls;
   const best = pickPhoneUrl(urls).best;
   const canFinish = startOn === false || (startOn === true && saved);
+  const desktop = (styles: string) => phone ? "" : styles;
   return (
     <section aria-labelledby="h-position" className="flex min-h-0 flex-1 flex-col">
       <CardContent className="flex min-h-0 flex-1">
-        <div ref={box} data-twin-box className="relative flex min-h-0 flex-1 flex-col gap-2 lg:block">
-          <TwinBox home={home} frame={frame} className="lg:absolute lg:inset-0 lg:min-h-0" onReady={setViewer} />
-          {startOn && spot && overlay.spot?.visible && (
+        <div ref={box} data-twin-box className={cn("relative flex min-h-0 min-w-0 flex-1 flex-col gap-2", desktop("lg:block"))}>
+          <TwinBox home={home} frame={frame} className={desktop("lg:absolute lg:inset-0 lg:min-h-0")} onReady={setViewer} />
+          {showStations && <StationsEditor key={home} home={home} viewer={viewer} frame={frame} box={box} phone={phone} onSaved={onSaved} />}
+          {showStart && startOn && spot && overlay.spot?.visible && (
             <div data-start-overlay aria-hidden="true" className="pointer-events-none absolute inset-0">
               <LineDrawSvg path={arrowPath(overlay)} tone="cloidHeading" width={overlay.width} height={overlay.height} strokeWidth={4} className="absolute inset-0" />
               <div data-start-spot className="absolute -translate-x-1/2 -translate-y-1/2" style={{ left: overlay.spot.x, top: overlay.spot.y }}>
@@ -239,16 +263,16 @@ export function PositionStep({ view, onBack, onDone, onNotice, layoutTick }: {
               )}
             </div>
           )}
-          {startOn && (
-            <section aria-label="시작 위치" className="flex flex-col gap-2 lg:pointer-events-none lg:absolute lg:inset-0">
-              <div className="flex flex-col items-start gap-2 lg:pointer-events-auto lg:absolute lg:left-3 lg:right-48 lg:top-3">
+          {showStart && startOn && (
+            <section aria-label="시작 위치" className={cn("flex flex-col gap-2", desktop("lg:pointer-events-none lg:absolute lg:inset-0"))}>
+              <div className={cn("flex flex-col items-start gap-2", desktop("lg:pointer-events-auto lg:absolute lg:left-3 lg:right-48 lg:top-3"))}>
                 <Item role="status" aria-live="polite" variant="muted" size="sm">
                   {info.error && <ItemMedia><TriangleAlert aria-hidden="true" /></ItemMedia>}
                   <ItemContent><ItemTitle>{info.text}</ItemTitle></ItemContent>
                 </Item>
                 {spot && (
-                  <div data-start-chips className="flex w-full flex-col gap-2 lg:flex-row">
-                    <Card className="flex items-center gap-1.5 p-2 lg:w-80">
+                  <div data-start-chips className={cn("flex w-full flex-col gap-2", desktop("lg:flex-row"))}>
+                    <Card className={cn("flex items-center gap-1.5 p-2", desktop("lg:w-80"))}>
                       <Avatar size="marker" aria-hidden="true"><AvatarFallback tone="marker-a">시작</AvatarFallback></Avatar>
                       <Input
                         type="text" maxLength={MAX_LABEL} value={label} aria-label="시작 자리 이름" placeholder="예: 거실 소파 앞" className="min-w-0 flex-1"
@@ -256,7 +280,7 @@ export function PositionStep({ view, onBack, onDone, onNotice, layoutTick }: {
                       />
                       <Button variant="secondary" size="sm" aria-label="시작 자리 다시 고르기" onClick={() => { setRepick(true); setInfo({ text: "트윈 바닥을 눌러 새 자리를 고르세요." }); }}>다시 고르기</Button>
                     </Card>
-                    <Card className="flex items-center gap-1.5 p-2 lg:w-80">
+                    <Card className={cn("flex items-center gap-1.5 p-2", desktop("lg:w-80"))}>
                       <Input
                         type="text" maxLength={MAX_LABEL} value={facing} aria-label="보는 쪽 이름" placeholder="예: TV" className="min-w-0 flex-1"
                         onChange={(e) => { edited.current.facing = true; setFacing(e.target.value); setSaved(false); }}
@@ -268,14 +292,17 @@ export function PositionStep({ view, onBack, onDone, onNotice, layoutTick }: {
                 )}
               </div>
               {(spot || saved) && (
-                <Card className="flex justify-center gap-1.5 self-center p-2 lg:pointer-events-auto lg:absolute lg:bottom-3 lg:left-1/2 lg:-translate-x-1/2">
-                  <Button size="sm" disabled={!spot || saved} onClick={save}>저장</Button>
-                  <Button variant="outline" size="sm" onClick={clear}>지우기</Button>
+                <Card className={cn("flex justify-center gap-1.5 self-center p-2", desktop("lg:pointer-events-auto lg:absolute lg:bottom-3 lg:left-1/2 lg:-translate-x-1/2"))}>
+                  <Button size="sm" disabled={!spot || saved || storing} onClick={save}>저장</Button>
+                  <Button variant="outline" size="sm" disabled={storing} onClick={clear}>지우기</Button>
                 </Card>
               )}
             </section>
           )}
-          <div className="flex flex-col items-end gap-2 lg:absolute lg:right-3 lg:top-3">
+          {!phone && <div className="flex flex-col items-end gap-2 lg:absolute lg:right-3 lg:top-3">
+            {view.position.start && <Button variant="outline" size="sm" aria-pressed={editingStations} onClick={() => setEditingStations(!editingStations)}>
+              {editingStations ? "폰 시작 위치" : "자리·구역 설정"}
+            </Button>}
             {urls.length > 0 ? (
               <Button variant="outline" size="sm" aria-expanded={phoneOpen} onClick={() => setPhoneOpen((o) => !o)}>
                 <Smartphone aria-hidden="true" />폰 연결
@@ -292,20 +319,22 @@ export function PositionStep({ view, onBack, onDone, onNotice, layoutTick }: {
                 </ul>
               </Card>
             )}
-          </div>
-          {layout && layout.edits > 0 && (
-            <section aria-label="배치 보정" className="lg:absolute lg:bottom-3 lg:left-3">
+          </div>}
+          {(section === "layout" || (!phone && layout && layout.edits > 0)) && (
+            <section aria-label="배치 보정" className={desktop("lg:absolute lg:bottom-3 lg:left-3")}>
               <Card className="flex flex-wrap items-center gap-1.5 p-2">
-                <Status variant={layout.dirty ? "error" : "success"}>{`보정 ${layout.edits}건 · ${layout.dirty ? "저장 안 함" : "저장됨"}`}</Status>
-                <Button variant="outline" size="sm" onClick={() => layoutAct("reset")}>되돌리기</Button>
-                <Button size="sm" disabled={!layout.dirty} onClick={() => layoutAct("save")}>저장</Button>
+                {layout ? <>
+                  <Status variant={layout.dirty ? "error" : "success"}>{`보정 ${layout.edits}건 · ${layout.dirty ? "저장 안 함" : "저장됨"}`}</Status>
+                  <Button variant="outline" size="sm" disabled={storing || layout.edits === 0} onClick={() => layoutAct("reset")}>되돌리기</Button>
+                  <Button size="sm" disabled={storing || !layout.dirty} onClick={() => layoutAct("save")}>저장</Button>
+                </> : <Status>{layout === undefined ? "배치 보정을 불러오는 중이에요." : "배치 보정을 불러오지 못했어요."}</Status>}
               </Card>
             </section>
           )}
-          <div className="flex justify-end gap-2 lg:absolute lg:bottom-3 lg:right-3">
-            <Button variant="outline" onClick={onBack}>이전</Button>
-            <Button disabled={!canFinish} onClick={onDone}>완료하고 대시보드로</Button>
-          </div>
+          {(!phone || section === "position") && <div className={cn("flex justify-end gap-2", desktop("lg:absolute lg:bottom-3 lg:right-3"))}>
+            {!phone && <Button variant="outline" onClick={onBack}>이전</Button>}
+            <Button disabled={!canFinish || busy || storing} onClick={onDone}>{phone ? "완료하고 돌아가기" : "완료하고 대시보드로"}</Button>
+          </div>}
         </div>
       </CardContent>
     </section>

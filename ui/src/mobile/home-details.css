@@ -1,0 +1,26 @@
+.phone-home-details {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  background: var(--inset);
+}
+
+.phone-home-details > [role="listitem"] + [role="listitem"] {
+  border-block-start: 1px solid var(--line-soft);
+}
+
+.phone-home-details__row {
+  min-block-size: 44px;
+  padding: 0.4375rem 0.75rem;
+  flex-wrap: nowrap;
+}
+
+.phone-home-details__row [data-slot="item-actions"] {
+  flex-shrink: 0;
+}
+
+.phone-home-details__connected {
+  inline-size: 0.4375rem;
+  block-size: 0.4375rem;
+  border-radius: 50%;
+  background: var(--ok);
+}

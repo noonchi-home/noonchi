@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { MeerkatFace, PhoneTopLine } from "../components/phone-top-line";
 import { Item, ItemContent, ItemDescription, ItemTitle } from "../components/ui/item";
 import { LiquidGlass } from "../components/ui/liquid-glass";
 import { QRCode } from "../components/ui/qr-code";
@@ -22,7 +23,7 @@ const QR_MIN = 96;
 
 /**
  * 폰 연결 QR과 그 오른쪽 할 일 한 줄·주소(Item). 가로 칸이라 옆으로 나란히 둔다. 폰 영상이 없을 때 영상 칸 자리에 보인다.
- * 주소가 없으면 지금 상태 한 줄(Item sm): 폰 서버가 꺼졌으면 「폰 서버가 꺼져 있어요.」, 켜졌으면(live) 「폰에서 AR을 시작하세요.」.
+ * 주소가 없으면 앱 연결용 HTTPS 안내를 표시한다. 실행 중인 영상이 첫 장을 기다릴 때는 폰에서 AR 시작을 안내한다.
  */
 function ConnectQr({ url, live, slot }: { url: string; live: boolean; slot: { width: number; height: number } }) {
   if (!url) {
@@ -30,7 +31,7 @@ function ConnectQr({ url, live, slot }: { url: string; live: boolean; slot: { wi
       <div className="flex size-full items-center justify-center p-6">
         <Item size="sm" className="w-auto min-w-0">
           <ItemContent className="min-w-0">
-            <ItemTitle>{live ? WORDS.startAr : WORDS.phoneOff}</ItemTitle>
+            <ItemTitle>{live ? WORDS.startAr : WORDS.appQrUnavailable}</ItemTitle>
           </ItemContent>
         </Item>
       </div>
@@ -42,7 +43,7 @@ function ConnectQr({ url, live, slot }: { url: string; live: boolean; slot: { wi
       <QRCode value={url} size={size} variant="squares" aria-label="폰 연결 QR" className="shrink-0" />
       <Item size="sm" className="w-auto min-w-0 shrink">
         <ItemContent className="min-w-0">
-          <ItemTitle>폰 카메라로 찍으세요</ItemTitle>
+          <ItemTitle>{WORDS.connectApp}</ItemTitle>
           <ItemDescription className="break-all">{url}</ItemDescription>
         </ItemContent>
       </Item>
@@ -51,17 +52,17 @@ function ConnectQr({ url, live, slot }: { url: string; live: boolean; slot: { wi
 }
 
 /**
- * 비전 미니맵(대시보드 폰 칸, 화면 이름 「폰 카메라」). 트윈 오른쪽 위에 얹은 칸(자리 box, layout.ts)이고 둥근 불투명 판(LiquidGlass) 하나다.
- * 칸 높이는 들어오는 영상 비율을 따른다: 보이는 영상 크기(가짜 단계 그림 크기, 실시간이면 H.264·MJPEG 영상 크기, 그 전에는 마지막 seen의 프레임 크기)를 onVideoSize로 알리고, 화면이 그 비율로 box를 다시 정한다.
- * 영상이 안 보이면(QR·빈 칸) null을 알려 16:9가 된다. 단계가 바뀌는 것으로는 알리지 않는다.
+ * 대시보드 폰 칸(화면 이름 「폰 카메라」). command를 받으면 영상 위에 실제 폰의 명령 줄을 겹친다.
+ * 미니맵 녹화에서는 창 전체를 영상에 쓰고 MinimapView가 실제 폰 위 줄을 겹쳐 놓는다.
+ * 보이는 영상 크기(가짜 단계 그림 또는 실시간 H.264·MJPEG, 그 전에는 마지막 seen의 프레임 크기)를 onVideoSize로 알린다. 영상이 없으면 null이다.
  * 칸을 다 채우는 영상 칸에 폰에서 온 영상을 잘리지 않게(contain) 깔아 세로 영상이 높이 상한에 걸리면 양옆을 비우고, 그 위에 물체 모양(마스크, MaskLayer)과 이름·신뢰도(Status)를 그린다.
  * 네모 테두리는 그리지 않는다. 마스크는 영상이 보일 때만(image, 또는 live 첫 장 뒤) 그린다.
  * 영상이 없으면(qr) 영상 칸 자리에 칸에 맞춘 연결 QR을 보이고, live는 첫 장이 오기 전까지 영상 위에 연결 QR을 둔다. 폰 주소가 없으면 QR 대신 지금 상태 한 줄이다.
  * 폰 서버 상태를 아직 모르면(none) 빈 칸이다.
  * 실시간 영상은 장면·마스크 짝을 맞춘다(scene-sync.ts): 장면을 마스크 지연만큼 늦게 그리고, 그린 장면마다 그 촬영 시각의 마스크를 얹는다. onDelay로 그 지연을 알린다.
- * 보기만 한다: 마우스를 받지 않는다. 트윈 위(z-50)에 있다.
+ * 실제 폰이 인코딩한 방향 세모는 영상에 이미 들어 있다. 칸은 마우스를 받지 않는다.
  */
-export function PhonePane({ slot, seen, box, connected, onVideoSize, onDelay }: {
+export function PhonePane({ slot, seen, box, connected, command, onVideoSize, onDelay }: {
   slot: PhoneSlot;
   /** 마지막 물체 모양(seen) 저장소. 마스크 층만 듣는다. */
   seen: SeenStore;
@@ -69,6 +70,8 @@ export function PhonePane({ slot, seen, box, connected, onVideoSize, onDelay }: 
   box: Rect;
   /** 서버와 실시간으로 이어져 있는가(다시 붙으면 실시간 영상도 다시 붙인다). */
   connected: boolean | null;
+  /** 일반 대시보드의 공개 폰 명령. null은 명령이 없는 상태, 생략은 녹화용 영상만 보기다. */
+  command?: string | null;
   /** 보이는 영상 크기(안 보이면 null)가 생기거나 바뀌면 부른다. */
   onVideoSize?: (size: BoxSize | null) => void;
   /** 실시간 장면을 늦게 그리는 시간(ms, 마스크 지연만큼)이 바뀌면 부른다. */
@@ -96,17 +99,21 @@ export function PhonePane({ slot, seen, box, connected, onVideoSize, onDelay }: 
   const report = useRef(onVideoSize);
   report.current = onVideoSize;
   useEffect(() => { report.current?.(vw! > 0 && vh! > 0 ? { width: vw!, height: vh! } : null); }, [vw, vh]);
-  return (
-    <section aria-label="폰 카메라" data-phone className="pointer-events-none absolute z-50" style={{ left: box.left, top: box.top, width: box.width, height: box.height }}>
-      <LiquidGlass mode="opaque" radius={16} className="size-full">
+  const content = (
         <div ref={video} data-video className="relative size-full overflow-hidden">
           {slot.kind === "image" && (
             <img src={slot.src} alt="폰 카메라 영상" draggable={false} className="absolute inset-0 size-full select-none object-contain will-change-transform" />
           )}
           {live && <EyeVideo connected={connected} onShown={setShown} onSize={setStreamed} sync={sync} />}
           {visible ? <MaskLayer seen={live ? sync.store : seen} fallback={image} size={size} ceiling={0} /> : slot.kind === "none" ? null : <ConnectQr url={slot.url} live={live} slot={size} />}
+          {command !== undefined && slot.kind !== "none" && <div data-phone-line className="absolute inset-x-0 top-0 z-50">
+            <PhoneTopLine lead={<MeerkatFace />} text={command} />
+          </div>}
         </div>
-      </LiquidGlass>
+  );
+  return (
+    <section aria-label="폰 카메라" data-phone className="pointer-events-none absolute z-50" style={{ left: box.left, top: box.top, width: box.width, height: box.height }}>
+      {command !== undefined ? content : <LiquidGlass mode="opaque" radius={16} className="size-full">{content}</LiquidGlass>}
     </section>
   );
 }

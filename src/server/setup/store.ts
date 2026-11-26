@@ -8,6 +8,7 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import type { ControlMode } from "../../contract/setup.js";
+import type { StationMap } from "../../contract/stations.js";
 import type { SignalSource } from "../../devices/index.js";
 import type { DeviceKind } from "../../devices/kinds.js";
 import { PAIRABLE_KINDS } from "../../devices/index.js";
@@ -88,6 +89,19 @@ export class SetupStore {
   private currentMode: ControlMode;
   private readonly memory = new Map<string, Record<string, StoredSource>>();
   private readonly memoryPairs = new Map<string, Record<string, string>>();
+  private readonly roomStations = new Map<string, StationMap>();
+
+  stations(homeId: string, defaults: StationMap): StationMap {
+    if (!this.persist) return structuredClone(this.roomStations.get(homeId) ?? defaults);
+    const file = join(this.runtimeDir, "homes", homeId, "stations.json");
+    if (!existsSync(file)) return defaults;
+    return JSON.parse(readFileSync(file, "utf8")) as StationMap;
+  }
+
+  writeStations(homeId: string, map: StationMap): void {
+    if (this.persist) writeJson(join(this.runtimeDir, "homes", homeId, "stations.json"), map);
+    else this.roomStations.set(homeId, structuredClone(map));
+  }
 
   constructor(opts: SetupStoreOptions) {
     this.persist = opts.persist;

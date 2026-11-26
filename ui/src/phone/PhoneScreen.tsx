@@ -1,4 +1,4 @@
-// 실제 폰 화면(에이전트의 손). 처음 화면: 마스코트(세로에서만)·제목·AR 지원 줄·시작 위치 안내·AR 시작, 답 줄·승인 대기(답마다 단추 하나)·글 입력.
+// 실제 폰 화면(에이전트의 손). 처음 화면: 마스코트(세로에서만)·제목·AR 지원 줄·시작 위치 안내·카메라 켜기, 답 줄·승인 대기(답마다 단추 하나)·글 입력.
 // AR 덮개(DOM 오버레이 뿌리): 맨 아래 canvas(화면 밖이거나 칸에 가린 명령 대상 쪽 세모, 물건 자리 맞추기 때만 조준점), 위 줄(왼쪽 위 미어캣 = 설정 단추, 그 옆 지금 명령 한 줄),
 // 엄지 자리(명령·질문·승인·시작 위치 맞추기·물건 자리 맞추기가 있을 때만 카드 하나: 비전 상태 한 줄, 그 바로 아래 답 단추). 설정과 문제 모달(연결 끊김·마이크 꺼짐·시작 위치 없음)은
 // Alert Dialog를 덮개 뿌리 안에 띄운다(AR 중에는 그 안만 보인다). 세로가 기본 배치이고, 가로면 엄지 자리를 오른쪽 아래로 옮기고(landscape:) 설정 모달 단추 줄은 모달 폭 안에서 줄을 바꾼다(sm:flex-wrap). 폰은 세로·가로 어느 쪽으로 들어도 된다.
@@ -8,7 +8,7 @@ import { MessageSquare } from "lucide-react";
 import { useCallback, useRef, useState, type FormEvent, type Ref } from "react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import {
-  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
@@ -31,6 +31,8 @@ export interface PhoneScreenProps {
   act: PhoneActions;
   overlayRef?: Ref<HTMLDivElement>;
   canvasRef?: Ref<HTMLCanvasElement>;
+  onExit?: () => void;
+  embedded?: boolean;
 }
 
 function assign<T>(ref: Ref<T> | undefined, value: T | null) {
@@ -38,7 +40,7 @@ function assign<T>(ref: Ref<T> | undefined, value: T | null) {
   else if (ref) (ref as { current: T | null }).current = value;
 }
 
-export function PhoneScreen({ view, act, overlayRef, canvasRef }: PhoneScreenProps) {
+export function PhoneScreen({ view, act, overlayRef, canvasRef, onExit, embedded = !!onExit }: PhoneScreenProps) {
   // 모달은 덮개 뿌리 안에 그린다: 뿌리 요소를 상태로도 들고 있는다
   const [root, setRoot] = useState<HTMLDivElement | null>(null);
   const attach = useCallback((el: HTMLDivElement | null) => {
@@ -47,8 +49,8 @@ export function PhoneScreen({ view, act, overlayRef, canvasRef }: PhoneScreenPro
   }, [overlayRef]);
   return (
     <>
-      <Intro view={view} act={act} />
-      <Overlay view={view} act={act} root={root} attach={attach} canvasRef={canvasRef} />
+      {!embedded && <Intro view={view} act={act} onExit={onExit} />}
+      <Overlay view={view} act={act} root={root} attach={attach} canvasRef={canvasRef} onExit={onExit} />
     </>
   );
 }
@@ -107,12 +109,12 @@ function PendingList({ items, act }: { items: Pending[]; act: PhoneActions }) {
   );
 }
 
-function Intro({ view, act }: { view: PhoneView; act: PhoneActions }) {
+function Intro({ view, act, onExit }: { view: PhoneView; act: PhoneActions; onExit?: () => void }) {
   const spot = view.sync?.start ?? null;
   const canStart = view.support.kind === "ready" || view.support.kind === "failed";
   return (
     <main hidden={view.ar} className="mx-auto flex min-h-dvh w-full max-w-[480px] flex-col gap-4 px-4 pt-6 pb-4">
-      {/* 가로로 들면 마스코트 그림을 숨겨 AR 시작 단추가 첫 화면에 들어오게 한다 */}
+      {/* 가로로 들면 마스코트 그림을 숨겨 카메라 켜기 단추가 첫 화면에 들어오게 한다 */}
       <img src="/brand/mascot@1x.webp" alt="" width={55} height={96} className="mx-auto my-2.5 h-24 w-auto landscape:hidden" />
       <Card>
         <CardHeader>
@@ -122,12 +124,13 @@ function Intro({ view, act }: { view: PhoneView; act: PhoneActions }) {
         <CardContent>
           <ol className="flex list-decimal flex-col gap-2 ps-5">
             {spot
-              ? <li>{spot.label}에 서서 {spot.facing || "정한 방향"} 쪽을 보고 <b>{START_BUTTON}</b>을 눌러요</li>
+              ? <li>카메라를 켠 뒤 {spot.label}에 서서 {spot.facing || "정한 방향"} 쪽을 보고 <b>{START_BUTTON}</b>을 눌러요</li>
               : <li>먼저 설정 화면에서 시작 위치를 정해 주세요</li>}
           </ol>
         </CardContent>
-        <CardFooter>
-          <Button className="h-12 w-full" disabled={!canStart} onClick={act.startAr}>AR 시작</Button>
+        <CardFooter className={onExit ? "flex-wrap gap-2" : undefined}>
+          <Button className="h-12 w-full" data-phone-action="start-camera" disabled={!canStart} onClick={act.startAr}>카메라 켜기</Button>
+          {onExit && <Button variant="outline" className="h-12 w-full" onClick={onExit}>앱으로 돌아가기</Button>}
         </CardFooter>
       </Card>
       <section aria-label="클로이드와 대화" className="flex flex-col gap-2">
@@ -156,7 +159,8 @@ function Answers({ hand, act }: { hand: Hand; act: PhoneActions }) {
 
 /** 미어캣(설정 단추)과 설정 모달: 연결·듣기·위치(·기준) 상태, 물건 자리 맞추기, 닫기, 시작 위치가 있으면 「시작 위치에서 다시 맞추기」(주 단추).
  *  닫으면 미어캣으로 초점이 돌아온다. */
-function Settings({ view, act, root, open }: { view: PhoneView; act: PhoneActions; root: HTMLElement | null; open: boolean }) {
+function Settings({ view, act, root, open, portal }: { view: PhoneView; act: PhoneActions; root: HTMLElement | null; open: boolean; portal?: boolean }) {
+  const micHelp = portal && view.listening === "off";
   return (
     <AlertDialog open={open} onOpenChange={act.setSettings}>
       <AlertDialogTrigger asChild>
@@ -164,8 +168,11 @@ function Settings({ view, act, root, open }: { view: PhoneView; act: PhoneAction
           <MeerkatFace />
         </Button>
       </AlertDialogTrigger>
-      <AlertDialogContent container={root} aria-describedby={undefined} className="motion-reduce:animate-none">
-        <AlertDialogHeader><AlertDialogTitle>설정</AlertDialogTitle></AlertDialogHeader>
+      <AlertDialogContent container={root} {...(micHelp ? {} : { "aria-describedby": undefined })} className="motion-reduce:animate-none">
+        <AlertDialogHeader>
+          <AlertDialogTitle>설정</AlertDialogTitle>
+          {micHelp && <AlertDialogDescription>브라우저가 음성 입력을 지원하는지 확인하고, 사이트 설정에서 마이크를 허용해 주세요.</AlertDialogDescription>}
+        </AlertDialogHeader>
         <ItemGroup>
           {settingsRows(view).map((r) => (
             <Item key={r.name} size="sm" role="listitem">
@@ -187,32 +194,43 @@ function Settings({ view, act, root, open }: { view: PhoneView; act: PhoneAction
 }
 
 /** 일이 멈추는 문제 모달: 제목과 고치는 단추(연결 끊김·시작 위치 없음은 단추 없이, 다시 붙거나 시작 위치가 생기면 닫힌다). 닫히는 동안에도 마지막 글을 보인다. */
-function ProblemDialog({ problem, act, root }: { problem: Problem | null; act: PhoneActions; root: HTMLElement | null }) {
+function ProblemDialog({ problem, act, root, onExit }: { problem: Problem | null; act: PhoneActions; root: HTMLElement | null; onExit?: () => void }) {
   const [last, setLast] = useState<Problem | null>(problem);
   if (problem !== null && problem !== last) setLast(problem);
   const shown = problem ?? last;
   const text = shown ? PROBLEM_TEXT[shown] : null;
   const fix = act.micOn;
+  const micHelp = !!onExit && shown === "mic";
   return (
     <AlertDialog open={problem !== null}>
-      <AlertDialogContent container={root} aria-describedby={undefined} className="motion-reduce:animate-none">
-        <AlertDialogHeader><AlertDialogTitle>{text?.title}</AlertDialogTitle></AlertDialogHeader>
-        {text?.fix && (
-          <AlertDialogFooter><AlertDialogAction className="h-12" onClick={fix}>{text.fix}</AlertDialogAction></AlertDialogFooter>
+      <AlertDialogContent container={root} {...(micHelp ? {} : { "aria-describedby": undefined })} className="motion-reduce:animate-none">
+        <AlertDialogHeader>
+          <AlertDialogTitle>{text?.title}</AlertDialogTitle>
+          {micHelp && <AlertDialogDescription>브라우저의 사이트 설정에서 마이크 권한을 확인해 주세요.</AlertDialogDescription>}
+        </AlertDialogHeader>
+        {(text?.fix || onExit) && (
+          <AlertDialogFooter>
+            {onExit && <Button variant="outline" className="h-12" onClick={onExit}>카메라 끄기</Button>}
+            {text?.fix && <AlertDialogAction className="h-12" onClick={fix}>{text.fix}</AlertDialogAction>}
+          </AlertDialogFooter>
         )}
       </AlertDialogContent>
     </AlertDialog>
   );
 }
 
-function Overlay({ view, act, root, attach, canvasRef }: { view: PhoneView; act: PhoneActions; root: HTMLElement | null; attach: (el: HTMLDivElement | null) => void; canvasRef?: Ref<HTMLCanvasElement> }) {
+function Overlay({ view, act, root, attach, canvasRef, onExit }: { view: PhoneView; act: PhoneActions; root: HTMLElement | null; attach: (el: HTMLDivElement | null) => void; canvasRef?: Ref<HTMLCanvasElement>; onExit?: () => void }) {
   const hand = handOf(view);
   const problem = view.ar ? problemOf(view) : null;
   return (
     <div ref={attach} hidden={!view.ar} data-phone-overlay="" className="fixed inset-0">
       <canvas ref={canvasRef} aria-hidden="true" className="pointer-events-none fixed inset-0 size-full" />
+      {/* 포털은 세션을 여는 데 필요한 뿌리를 두고, 종료할 때 모달을 내려 홈의 접근성을 복원한다. */}
+      {(!onExit || view.ar) && <>
       {/* 위 줄: 왼쪽 위 미어캣(늘, 설정 단추), 그 옆 지금 할 명령 한 줄(있을 때만). 대시보드 비전 미니맵 자막도 같은 부품이다 */}
-      <PhoneTopLine className="fixed inset-x-0 top-0" lead={<Settings view={view} act={act} root={root} open={view.ar && view.settingsOpen && problem === null} />} text={hand.top} />
+      <PhoneTopLine className="fixed inset-x-0 top-0" lead={<Settings view={view} act={act} root={root}
+        open={view.ar && view.settingsOpen && problem === null} portal={!!onExit} />}
+        text={hand.top} trailing={onExit && problem === null && <Button variant="outline" size="setup-sm" className="ms-auto h-12 shrink-0" onClick={onExit}>카메라 끄기</Button>} />
       {/* 엄지 자리: 비전 상태 한 줄, 그 바로 아래 답 단추. 세로는 맨 아래 폭 전체, 가로는 오른쪽 아래 */}
       {hand.thumb && (
         <div data-phone-zone="thumb" className="fixed right-4 bottom-[calc(env(safe-area-inset-bottom)+16px)] left-4 landscape:left-auto landscape:w-[min(360px,calc(50vw-40px))]">
@@ -227,7 +245,8 @@ function Overlay({ view, act, root, attach, canvasRef }: { view: PhoneView; act:
           </LiquidGlass>
         </div>
       )}
-      <ProblemDialog problem={problem} act={act} root={root} />
+      <ProblemDialog problem={problem} act={act} root={root} onExit={onExit} />
+      </>}
     </div>
   );
 }

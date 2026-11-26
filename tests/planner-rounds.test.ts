@@ -45,8 +45,8 @@ describe("계획 검사: 한 차례에 틀린 단계를 모두 돌려준다", ()
   it("지시문과 도구 설명은 틀린 단계마다 까닭이 오고, follow는 물건 조건(object)에만 쓴다고 말한다", () => {
     const lines = PLANNER_PROMPT.split("\n");
     expect(lines.find((l) => l.startsWith("- 결과가 오류면"))).toBe("- 결과가 오류면 틀린 단계마다 번호와 까닭이 온다. 그 단계를 모두 고친 계획 전체를 submit_plan으로 다시 낸다. 답 글은 쓰지 않는다.");
-    expect(lines.find((l) => l.startsWith("- place:"))).toContain(`물건 조건({"object": …})은 모두 follow: true로 쓴다. person_holding에는 follow를 쓰지 않는다.`);
-    expect(SUBMIT_ARGS.shape.steps.element.shape.until.description).toContain(`물건 조건({"object": …})은 모두 follow: true(person_holding에는 쓰지 않음)`);
+    expect(lines.find((l) => l.startsWith("- place:"))).toContain(`물건 id 조건({"object": id})은 모두 follow: true로 쓴다. 종류 이름 조건({"object": "cup"} 등)과 person_holding에는 follow를 쓰지 않는다.`);
+    expect(SUBMIT_ARGS.shape.steps.element.shape.until.description).toContain(`물건 id 조건({"object": id})은 모두 follow: true(종류 이름 조건·person_holding에는 쓰지 않음)`);
   });
 });
 

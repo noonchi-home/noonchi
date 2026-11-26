@@ -31,8 +31,8 @@ function fakeSession({ localFloor = false } = {}) {
 /** x축으로 deg도 돌린 폰 방향(음수면 아래를 본다). */
 const pitch = (deg: number) => { const r = (deg * Math.PI) / 360; return { x: Math.sin(r), y: 0, z: 0, w: Math.cos(r) }; };
 
-/** look: 폰 방향(기본은 수평 앞). floorY: local-floor 원점의 local 높이. */
-function frame({ hit = [0, 0, -1] as number[] | null, pose = true, camera = false, limited = false, look = { x: 0, y: 0, z: 0, w: 1 }, floorY = 0 } = {}) {
+/** look: 폰 방향(기본은 수평 앞). floorY: local-floor 원점의 local 높이. portrait: 폰을 세로로 들어 카메라 그림이 480×640(아니면 640×480). */
+function frame({ hit = [0, 0, -1] as number[] | null, pose = true, camera = false, limited = false, look = { x: 0, y: 0, z: 0, w: 1 }, floorY = 0, portrait = false } = {}) {
   return {
     getHitTestResults: () => (hit ? [{ getPose: () => ({ transform: { position: { x: hit[0], y: hit[1], z: hit[2] }, orientation: { x: 0, y: 0, z: 0, w: 1 } } }) }] : []),
     getPose: (space: { kind: string }, base: { kind: string }) =>
@@ -40,7 +40,7 @@ function frame({ hit = [0, 0, -1] as number[] | null, pose = true, camera = fals
     getViewerPose: () => (pose ? {
       emulatedPosition: limited,
       transform: { position: { x: 0, y: 1.5, z: 0 }, orientation: look },
-      views: [{ projectionMatrix: identity, transform: { inverse: { matrix: identity } }, camera: camera ? { width: 640, height: 480 } : undefined }],
+      views: [{ projectionMatrix: identity, transform: { inverse: { matrix: identity } }, camera: camera ? (portrait ? { width: 480, height: 640 } : { width: 640, height: 480 }) : undefined }],
     } : null),
   };
 }
@@ -55,6 +55,7 @@ async function header(blob: Blob) {
 function setup({ camera = false, localFloor = false } = {}) {
   const session = fakeSession({ localFloor });
   const released = { grabber: 0, gl: 0 };
+  const displayed = { count: 0 };
   const sent: Record<string, any>[] = [];
   const socket = { readyState: 1, bufferedAmount: 0, binary: [] as Blob[], send(d: Blob) { this.binary.push(d); } };
   const link = { send: (m: Record<string, unknown>) => { sent.push(m); return true; }, socket: () => socket, open: () => true, stamp: () => ({ captured_at: 5, time_err_ms: 1 }), close() {} };
@@ -79,11 +80,11 @@ function setup({ camera = false, localFloor = false } = {}) {
       encoderMode: "worker×2", grab, toJpeg,
       close: () => { released.grabber += 1; },
     }),
-    createDisplayEncoder: () => ({ frame() {}, close() {}, describe: () => "표시 영상 시험" }),
+    createDisplayEncoder: () => ({ frame() { displayed.count += 1; }, close() {}, describe: () => "표시 영상 시험" }),
   };
   const ar = createAr({ link, params: new URLSearchParams(""), hooks, deps });
   stops.push(() => ar.stop());
-  return { ar, session, sent, socket, log, marks, toJpeg, grab, released };
+  return { ar, session, sent, socket, log, marks, toJpeg, grab, released, displayed };
 }
 
 const overlay = {};
@@ -108,7 +109,7 @@ describe("폰 AR(ar.js)", () => {
     for (const time of [100, 150, 200]) t.session.step(time, frame());
     const poses = t.sent.filter((m) => m.type === "pose");
     expect(poses).toHaveLength(2);
-    expect(poses[0]).toEqual({ type: "pose", position: [0, 1.5, 0], orientation: [0, 0, 0, 1], tracking: "ok", hit: [0, 0, -1], hit_estimated: false, hit_normal: [0, 1, 0], floor_y: 0, epoch: t.ar.state.epoch });
+    expect(poses[0]).toEqual({ type: "pose", captured_at:5,time_err_ms:1, position: [0, 1.5, 0], orientation: [0, 0, 0, 1], tracking: "ok", hit: [0, 0, -1], hit_estimated: false, hit_normal: [0, 1, 0], floor_y: 0, epoch: t.ar.state.epoch });
     expect([t.ar.state.position, t.ar.state.orientation]).toEqual([[0, 1.5, 0], [0, 0, 0, 1]]);
     expect(t.log.filter((l) => l === "hit")).toHaveLength(3);
     t.session.step(300, frame({ hit: null }));
@@ -222,6 +223,28 @@ describe("폰 AR(ar.js)", () => {
     await vi.waitFor(() => expect(t.socket.binary).toHaveLength(3));
     expect(await header(t.socket.binary[2]!)).toMatchObject({ kind: "engine", width: 480, height: 360, projection: identity, captured_at: 5 });
     expect(t.toJpeg.mock.calls[2]!.slice(3, 5)).toEqual([0.8, []]);
+  });
+
+  it("세로로 든 폰(카메라 그림 높이 > 폭)은 화면·엔진 프레임·사진·표시 영상을 보내지 않고 「폰을 가로로 돌려 주세요.」를 세로가 될 때마다 한 번 알린다. 자세는 그대로 보낸다", async () => {
+    const t = setup({ camera: true });
+    await t.ar.start(overlay);
+    t.ar.setEngineMs(100);
+    t.ar.requestPhoto();
+    for (const time of [100, 200, 300, 400]) t.session.step(time, frame({ camera: true, portrait: true }));
+    await new Promise((r) => setTimeout(r, 0));
+    expect(t.socket.binary).toHaveLength(0);
+    expect(t.grab).not.toHaveBeenCalled();
+    expect(t.displayed.count).toBe(0);
+    expect(t.sent.filter((m) => m.type === "pose").length).toBeGreaterThan(0);
+    expect(t.log.filter((l) => l === "note 폰을 가로로 돌려 주세요.")).toHaveLength(1);
+    // 가로로 돌리면 기다리던 사진과 화면 프레임이 간다
+    t.session.step(500, frame({ camera: true }));
+    await vi.waitFor(async () => expect((await Promise.all(t.socket.binary.map(header))).map((h) => h.kind)).toContain("photo"));
+    expect(t.displayed.count).toBe(1);
+    // 다시 세로로 들면 또 한 번 알린다
+    t.session.step(600, frame({ camera: true, portrait: true }));
+    t.session.step(700, frame({ camera: true, portrait: true }));
+    expect(t.log.filter((l) => l === "note 폰을 가로로 돌려 주세요.")).toHaveLength(2);
   });
 
   it("엔진 프레임 간격 100ms: 그림 틀이 16.7ms마다 1초 동안 오면 엔진 프레임이 9~10장 나간다", async () => {

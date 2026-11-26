@@ -56,7 +56,8 @@ describe("로봇에서 폰으로", () => {
       await emitRobotCommand(other, { type: "command_clear", id: "other" });
       await emitRobotCommand(act, { type: "command_clear", id: "p" });
       await expect.poll(() => received.length).toBe(2);
-      expect(received).toEqual([cmd, { type: "command_clear", id: "p" }]);
+      expect(received).toEqual([{ ...cmd, speak: false, speech_id: { boot: epoch.boot, homeEpoch: epoch.home, publisher: act.inst, revision: 1 } },
+        { type: "command_clear", id: "p" }]);
     } finally {
       await phone.stop();
       await other.stop();

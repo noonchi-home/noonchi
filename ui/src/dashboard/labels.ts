@@ -22,6 +22,27 @@ export function avoidBoxes(bubbles: Pt[], dots: Pt[]): Box[] {
   ];
 }
 
+/** 이름표(21st.dev Status, 글 12px 한 줄) 대략 크기: 글자마다 한글 12px·그 밖 7px, 좌우 여백 24px, 높이 26px. */
+export const tagSize = (text: string) => ({ w: 24 + [...text].reduce((w, c) => w + (c.charCodeAt(0) > 0x2fff ? 12 : 7), 0), h: 26 });
+
+/**
+ * 트윈 위 이름표 자리(가운데 px): 점(p) 바로 위에 두되, 칸 가장자리에 닿으면 칸 안으로 옮기고(글을 자르지 않는다),
+ * 앞서 둔 이름표·가린 자리와 겹치면 아래·위로 비킨다. 둔 자리는 taken에 더한다.
+ */
+export function placeTag(p: Pt, text: string, taken: Box[], size: { width: number; height: number }): Pt {
+  const { w, h } = tagSize(text);
+  const inside = (q: Pt): Pt => ({
+    x: Math.min(Math.max(q.x, w / 2 + 4), Math.max(w / 2 + 4, size.width - w / 2 - 4)),
+    y: Math.min(Math.max(q.y, h / 2 + 4), Math.max(h / 2 + 4, size.height - h / 2 - 4)),
+  });
+  const box = (q: Pt): Box => ({ x0: q.x - w / 2, y0: q.y - h / 2, x1: q.x + w / 2, y1: q.y + h / 2 });
+  const first = inside({ x: p.x, y: p.y - 24 });
+  const tries = [0, h + 6, -(h + 6), 2 * (h + 6), -2 * (h + 6)].map((dy) => inside({ x: first.x, y: first.y + dy }));
+  const at = tries.find((q) => !taken.some((a) => hit(a, box(q)))) ?? first;
+  taken.push(box(at));
+  return at;
+}
+
 /** 방 가운데(center)에서 가장 가까운 빈 자리. 상자(size) 밖이거나 다 막혔으면 null. 앞서 둔 이름표도 피한다. */
 export function placeLabel(center: Pt, avoid: Box[], size: { width: number; height: number }): Pt | null {
   for (const o of OFFSETS) {

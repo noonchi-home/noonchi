@@ -23,7 +23,9 @@ function serverEnvNames(): Set<string> {
   return new Set(files.flatMap((f) => { const t = readFileSync(f, "utf8"); return res.flatMap((re) => [...t.matchAll(re)].map((m) => m[1]!)); }));
 }
 /** 컨테이너에 넘기지 않는 서버 설정: 호스트 경로(이미지 안 twin/·모델, RUNTIME_DIR/photos), MCP 서버용 주소, matter.js 안쪽 값. */
-const NOT_FOR_CONTAINER = new Set(["TWIN_STUDIO_DIR", "PHONE_PHOTO_DIR", "BRAIN_YOLO_PATH", "BRAIN_POSE_PATH", "TWIN_HOME_URL", "MATTER_RUNTIME_SIGNALS"]);
+const NOT_FOR_CONTAINER = new Set(["TWIN_STUDIO_DIR", "PHONE_PHOTO_DIR", "BRAIN_YOLO_PATH", "BRAIN_POSE_PATH", "TWIN_HOME_URL", "MATTER_RUNTIME_SIGNALS",
+  // 데스크톱 허브 앱(apps/desktop)만 넘긴다: 표준 입력으로 서버를 끄는 설정(src/server/shutdown.ts)
+  "NOONCHI_STDIN_CONTROL"]);
 
 describe("배포 파일", () => {
   it("Dockerfile: Node 22.15 이상 22.x, 운영 의존성만, 화면 빌드, 트윈 포함, 저장소 models/의 YOLO26 두 개 sha256 검사", () => {
@@ -49,6 +51,13 @@ describe("배포 파일", () => {
     // onnxruntime v1.31.1 docs/Privacy.md "Disabling Telemetry": ORT_DISABLE_TELEMETRY=1을 onnxruntime이 뜨기 전에 준다
     const run = d.slice(d.lastIndexOf("FROM "));
     expect(run).toContain("ORT_DISABLE_TELEMETRY=1");
+  });
+
+  it("Dockerfile: 실행 이미지는 컨테이너 표시를 달아 0.0.0.0에서 듣는다(밖에는 compose가 127.0.0.1로만 낸다)", () => {
+    const d = read("deploy/Dockerfile");
+    const run = d.slice(d.lastIndexOf("FROM "));
+    expect(run).toMatch(/ENV [^\n]*NOONCHI_IN_CONTAINER=1/);
+    expect(run).toContain("HOST=0.0.0.0 PHONE_HOST=0.0.0.0");
   });
 
   it("compose: 포트는 127.0.0.1만, gpu 프로필 vLLM 두 개(태그 고정·내건 이름·GPU 몫·캐시·차례로 뜸), 볼륨·env_file·상태 검사", () => {
@@ -87,8 +96,9 @@ describe("배포 파일", () => {
     const env = Object.keys(c.services.noonchi.environment ?? {});
     for (const k of ["INFERENCE_MODE", "PAM_LLM_BASE_URL", "PAM_LLM_MODEL", "PAM_LLM_API_KEY", "PAM_LLM_TIMEOUT_S", "PAM_MAX_MODEL_LEN", "VLLM_API_KEY", "OPENAI_API_KEY"]) expect(env, k).toContain(k);
     for (const k of ["PAM_URL", "PAM_LLM_PROVIDER", "OPENROUTER_API_KEY"]) expect(env, k).not.toContain(k);
-    // 컨테이너 안 네트워크 주소(Docker 브리지)는 밖에서 열 수 없으니 폰 주소에 넣지 않는다
-    expect(c.services.noonchi.environment.PHONE_LAN_URLS).toBe("0");
+    // 와이파이 직접 연결 갈래는 없다: 폰 주소는 PHONE_URL·tailscale serve 주소뿐이다
+    expect(env.filter((k) => k.includes("_LAN_"))).toEqual([]);
+    expect(c.services.noonchi.environment.NOONCHI_IN_CONTAINER).toBe("1");
     // 이름만 적은 칸은 .env에 있을 때만 넘긴다. ${X:-}로 두면 비어 있어도 늘 넘긴다
     for (const v of Object.values(c.services.noonchi.environment ?? {})) expect(String(v)).not.toContain("${");
     const fake = c.services["fake-openai"];
@@ -129,21 +139,20 @@ describe("배포 파일", () => {
     expect(missing, "deploy/compose.yaml noonchi environment에 더하세요").toEqual([]);
   });
 
-  it("compose: redis는 판을 고정한 공식 이미지, 디스크 저장 끔, 볼륨·호스트 포트 없음, noonchi가 REDIS_URL로 붙는다", () => {
+  it("compose: noonchi는 메모리 버스다(REDIS_URL 빈 값). redis 서비스가 없고 아무 서비스도 redis를 기다리지 않는다", () => {
     const c = parse(read("deploy/compose.yaml"), { merge: true }) as { services: Record<string, any> };
-    const r = c.services.redis;
-    expect(r.image).toBe("redis:8.10.2-alpine@sha256:9f8d2d789b9a1d1e3f283f979aa9cbf393373806472e1ccd460e2f9c869b833b");
-    expect(r.command).toEqual(["redis-server", "--appendonly", "no", "--save", "", "--maxmemory", "512mb", "--maxmemory-policy", "noeviction"]);
-    expect(r.volumes).toBeUndefined();
-    expect(r.ports).toBeUndefined();
-    expect(c.services.noonchi.environment.REDIS_URL).toBe("redis://redis:6379");
-    expect(c.services.noonchi.depends_on.redis).toEqual({ condition: "service_healthy" });
+    expect(c.services.redis).toBeUndefined();
+    expect(c.services.noonchi.environment.REDIS_URL ?? "").toBe("");
+    for (const [name, svc] of Object.entries(c.services)) {
+      const deps = Array.isArray(svc.depends_on) ? svc.depends_on : Object.keys(svc.depends_on ?? {});
+      expect(deps, `${name} depends_on`).not.toContain("redis");
+      expect(JSON.stringify(svc.healthcheck ?? null), `${name} healthcheck`).not.toMatch(/redis/i);
+    }
   });
 
-  it("개발용 compose: noonchi-redis가 같은 이미지·같은 디스크 저장 끔으로 127.0.0.1:6379만 연다", () => {
+  it("개발용 compose: noonchi-redis(RedisBus 시험용)가 판을 고정한 공식 이미지·디스크 저장 끔으로 127.0.0.1:6379만 연다", () => {
     const d = parse(read("deploy/compose.dev.yaml")) as { name?: string; services: Record<string, any> };
-    const c = parse(read("deploy/compose.yaml"), { merge: true }) as { services: Record<string, any> };
-    expect(d.services.redis.image).toBe(c.services.redis.image);
+    expect(d.services.redis.image).toBe("redis:8.10.2-alpine@sha256:9f8d2d789b9a1d1e3f283f979aa9cbf393373806472e1ccd460e2f9c869b833b");
     expect(d.services.redis.container_name).toBe("noonchi-redis");
     // 프로젝트 이름이 파일 자리 폴더(deploy)를 따라가지 않게 정해 둔다
     expect(d.name).toBe("noonchi-dev");

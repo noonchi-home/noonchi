@@ -15,7 +15,8 @@ function agentProbe(a: AgentEndpoint, fetchImpl?: typeof fetch): () => Promise<b
   return () => reachable(`${a.baseUrl}/models`, { headers: a.apiKey ? { authorization: `Bearer ${a.apiKey}` } : {}, fetchImpl });
 }
 
-export function makeReady(o: { endpoints: Endpoints; agent: AgentEndpoint; db: HistoryDb; cache?: ReachCache; fetchImpl?: typeof fetch }): () => Promise<ReadyView> {
+/** writable: 기록 DB에 쓸 수 있는가(기록 작업 스레드가 연속 3번 끝나면 false). */
+export function makeReady(o: { endpoints: Endpoints; agent: AgentEndpoint; db: HistoryDb; writable?: () => boolean; cache?: ReachCache; fetchImpl?: typeof fetch }): () => Promise<ReadyView> {
   const cache = o.cache ?? new ReachCache();
   const { vlm, pam, mode } = o.endpoints;
   const { agent } = o;
@@ -27,7 +28,7 @@ export function makeReady(o: { endpoints: Endpoints; agent: AgentEndpoint; db: H
       pam.blocked ? Promise.resolve(false) : cache.check(`pam:${pam.baseUrl}`, () => reachable(`${pam.baseUrl}/models`, { headers: bearer(pam.apiKey), fetchImpl: o.fetchImpl })),
       cache.check(`agent:${agent.provider}:${agent.baseUrl}`, agentProbe(agent, o.fetchImpl)),
     ]);
-    const db = o.db.ok();
+    const db = o.db.ok() && (o.writable?.() ?? true);
     const agentKey = agent.apiKey !== "";
     return {
       ok: vlmOk && pamOk && agentKey && agentOk && db, inference_mode: mode,

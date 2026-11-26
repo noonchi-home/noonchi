@@ -1,6 +1,6 @@
 // 에이전트(LLM)(구현명세서 6.6)
 // 다른 도메인은 이 입구로만 가져온다.
-export { describeError, Agent, newSessionId } from "./agent.js";
+export { describeError, Agent, newSessionId, type LlmProvider } from "./agent.js";
 export { approvalNeed, taskKey, type ApprovalAnswer, type ApprovalBook, ApprovalStore, approvalsPath } from "./approval.js";
 export { type ObserveChoice, type ObserveSituation, Observer, type ObserverStatus } from "./observer.js";
 export { devicePlan } from "./planShape.js";
@@ -10,4 +10,5 @@ export { Planner, planRoundLine, planRoundText, type PlanRound } from "./planner
 export { Policy } from "./policy.js";
 export { ServiceRetryStore, contactsPath, loadContacts, serviceRecord, serviceRetryPath, serviceSay } from "./service.js";
 export { createProvider, type AgentEndpoint, agentEndpoint } from "./providers/index.js";
-export { AGENT_TOOLS, localBackend, runTool, type ToolBackend, type ToolResult, deviceViews, roomViews } from "./tools.js";
+export { AGENT_TOOLS, REQUEST_TASK, localBackend, runTool, type ToolBackend, type ToolResult, deviceViews, roomViews } from "./tools.js";
+export { callDestination, callPlaces, withChosenStation, type CallDestination } from "./call-target.js";

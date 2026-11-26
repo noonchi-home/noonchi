@@ -1,7 +1,7 @@
 // 미리 세운 목표를 처음부터 끝까지(가짜 서버, 한양목련, 기준점을 맞춘 카메라): 사람이 컵으로 마시는 동안 「컵 치우기」 목표를 세우고 계획을 미리 만든다.
-// 사람이 떠나면 판단을 바로 부르고, PAM이 컵 치우기를 고르면 미리 만든 계획으로 첫 명령을 낸다(계획 모드 호출은 처음 한 번뿐, 처음 하는 일이어도 묻지 않음).
-// 떠나기 직전 2.5초 안에 식탁 위에서 본 컵이면 떠난 뒤 사진을 기다리지 않는다(2026-11-18 사용자 결정): 사람 사라짐 1초 안 첫 명령이 VLM 사진 때와 상관없다.
+// 식탁에서 떠난 뒤에는 확인 중이다. 폰이 거실을 비추고 TV 시청이 확인된 때부터 첫 명령 지연을 잰다.
 // 목표가 서 있는 동안 VLM 사진 간격은 1초이고, 계획이 시작되면 2초로 돌아간다(src/observe/pipeline.ts FAST_VLM_MS, src/act/track/tracker.ts fastVlm).
+// 다만 TV 규칙이 켜진 TV(또는 우리가 끈 TV)의 시청 구역을 보는 동안은 1초다(src/goal/tv-watch.ts watching).
 // 물건은 장면 VLM 물건 목록(objects)으로만 생기고 VLM 사진 간격(VLM_FRAME_MS 2초)마다 확정되므로, 컵이 서고 목표가 서기까지 몇 초가 걸린다. 주기 판단은 기본 5초다.
 // 폰 눈·카메라는 tests/mokryeon-e2e.test.ts와 같다(식탁 윗면 가운데를 1.5 m 떨어진 거실에서 높이 1.5 m로 본다).
 import { mkdtempSync } from "node:fs";
@@ -19,6 +19,7 @@ import { CUP_SCRIPTS, planTurn, plannerRespond } from "./helpers/planner.js";
 import { openPhone, openWebSocket } from "./helpers/ws.js";
 import { alignOnServer } from "./helpers/align.js";
 import { useLearnedMemory } from "./helpers/memory.js";
+import { HistoryDb } from "../src/brain/history/db.js";
 
 type Msg = Record<string, any>;
 let srv: RunningServer | undefined;
@@ -46,12 +47,14 @@ const SIZE = { width: 480, height: 360 };
 // 상자 아래 가운데가 480×360 화면 한가운데(식탁 윗면 가운데)
 const CUP_BOX: [number, number, number, number] = [220, 160, 40, 20];
 const CUP = det("cup", 0.9, CUP_BOX, 41);
-const PERSON = det("person", 0.9, [40, 40, 120, 280]);
+const PERSON = det("person", 0.9, [180, 40, 120, 286]);
 const TABLE_ID = "dining_table_978b20c7";
 interface Scene { dets: Detection[]; facts: Record<string, string[]> }
 
 describe("미리 세운 목표(가짜 서버 처음부터 끝까지)", () => {
-  it("마시는 동안 목표를 세우고 계획을 미리 만든다. 사람이 떠나면 계획 모드를 다시 부르지 않고, 묻지 않고, 사람 사라짐 1초 안에 「식탁으로 가 주세요」를 보낸다", async () => {
+  it("식탁에서 마시는 동안 미리 만들고, 떠난 뒤 TV 앞에 앉아 시청하는 것을 확인하면 준비한 계획을 쓴다", async () => {
+    let watching = false;
+    let camera = EYE;
     const scene: Scene = { dets: [PERSON, CUP], facts: { person: ["sitting", "drinking"], cup: ["on_table", "has_contents"] } };
     /** 장면 VLM 요청을 받은 시각(실제 시계). */
     const vlmAt: number[] = [];
@@ -66,7 +69,8 @@ describe("미리 세운 목표(가짜 서버 처음부터 끝까지)", () => {
         const cup = dets.find((d) => d.class === "cup");
         const [x, y, w, h] = CUP_BOX;
         return JSON.stringify({
-          scene: "kitchen", summary: "식탁",
+          scene: "living", summary: watching ? "TV 시청" : "식탁",
+          household: {seats:"clear", dining_food:"yes", people:dets.filter(d=>d.class==="person").map(d=>({id:d.id,attention:watching?"toward_tv":"elsewhere"}))},
           observations: dets.flatMap((d) => (scene.facts[d.class] ?? []).map((state) => ({ object_id: d.id, state }))),
           objects: cup ? [{ id: "v1", cls: "cup", box: { x: x / SIZE.width, y: y / SIZE.height, w: w / SIZE.width, h: h / SIZE.height }, det: cup.id }] : [],
         });
@@ -80,6 +84,8 @@ describe("미리 세운 목표(가짜 서버 처음부터 끝까지)", () => {
     const runtimeDir = mkdtempSync(join(tmpdir(), "rt-"));
     // 치우기를 보는 시험은 배운 뒤 기억(합성 3일째부터의 로봇 FSM)으로 돈다. seed 기억이면 떠날 때 묻는다
     useLearnedMemory(runtimeDir);
+    const history = HistoryDb.open(join(runtimeDir,"noonchi.db"));
+    try { history.cupAnswers.seedDemo("mokryeon_180b"); } finally { history.close(); }
     srv = await startServer({
       env: { HUB: "memory", PORT: "0", HOME_ID: "mokryeon_180b", RUNTIME_DIR: runtimeDir, PHONE_PORT: "0", PHONE_HOST: "127.0.0.1",
         BRAIN: "1", VLM_BASE_URL: `${fake.url}/v1`, ...pamLlmEnv(pam), OPENAI_API_KEY: "fake-key", OPENAI_BASE_URL: `${fake.url}/v1` },
@@ -105,7 +111,7 @@ describe("미리 세운 목표(가짜 서버 처음부터 끝까지)", () => {
     const pump = async (done: () => boolean, what: string, ms = 30_000) => {
       for (const end = Date.now() + ms; Date.now() < end; ) {
         if (done()) return;
-        ws.send(encodeFramePacket({ kind: "engine", ...SIZE, position: EYE, orientation: ORIENTATION, tracking: "ok", projection: PROJECTION, captured_at: Date.now(), time_err_ms: 0 },
+        ws.send(encodeFramePacket({ kind: "engine", ...SIZE, position: camera, orientation: ORIENTATION, tracking: "ok", projection: PROJECTION, captured_at: Date.now(), time_err_ms: 0 },
           Buffer.from([0xff, 0xd8, n++ % 256, n >> 8])));
         await new Promise((r) => setTimeout(r, 150));
       }
@@ -120,6 +126,7 @@ describe("미리 세운 목표(가짜 서버 처음부터 끝까지)", () => {
     const cup = dash.filter((m) => m.type === "world").at(-1)!.world.objects.find((o: Msg) => o.cls === "cup");
     expect(cup).toMatchObject({ surface: TABLE_ID });
     expect(planned()).toBe(1);
+    expect(dash.filter(m=>m.type==="goal").at(-1)!.goal.plan.steps.map((step: Msg)=>step.label)).not.toContain("컵 안 보기");
     expect(spoken()).toEqual([]);
     expect(dash.some((m) => m.type === "thought" && m.messages.some((t: { text: string }) => t.text === "컵을 두고 자리를 뜨면 컵을 치울게요"))).toBe(true);
     expect(dash.filter((m) => m.type === "goal").at(-1)!.goal).toMatchObject({ action: "컵 치우기", object: cup.id, plan: { goal: "컵 치우기" } });
@@ -132,22 +139,63 @@ describe("미리 세운 목표(가짜 서버 처음부터 끝까지)", () => {
     expect(gaps(armed).length, JSON.stringify(gaps(armed))).toBeGreaterThanOrEqual(3);
     expect(median(gaps(armed))).toBeLessThanOrEqual(1300);
 
-    // 2 사람이 떠난다(컵은 식탁에 그대로): 사람 사라짐 1초 안에 첫 명령, 계획 모드는 다시 부르지 않고 승인도 묻지 않는다
+    // 2 떠남만으로는 청소하지 않는다. 같은 집 거실의 실제 TV 상태와 시청 사진을 판단에 넣는다.
     scene.dets = [CUP];
     scene.facts = { cup: ["on_table", "has_contents"] };
-    await pump(() => spoken().length > 0, "첫 명령");
+    await pump(() => goals().includes("checking/ready"), "식탁 이탈 확인 중");
+    expect(spoken().some(m=>m.id?.startsWith("plan:pam"))).toBe(false);
+    const tv = srv.signals.list().find(d=>d.kind==="tv")!;
+    expect((await srv.hub.command(tv.id,{type:"on"})).ok).toBe(true);
+    const fridge = srv.signals.list().find(d => d.kind === "fridge")!;
+    expect(fridge).toBeDefined();
+    const at = Date.now();
+    srv.signals.observe(fridge.id, { door: "closed" }, at);
+    srv.signals.observe(fridge.id, { door: "open" }, at + 1);
+    srv.signals.observe(fridge.id, { door: "open" }, at + 2);
+    camera = [4,1.5,9.8];
+    ws.send(JSON.stringify({type:"pose",position:camera,orientation:ORIENTATION,tracking:"ok"}));
+    watching = true;
+    scene.dets = [det("person",0.9,[180,40,120,128])];
+    scene.facts = {person:["sitting","watching_tv"]};
+    const cleanup = () => spoken().filter(m=>m.id?.startsWith("plan:pam"));
+    await pump(() => cleanup().length > 0, "첫 식탁 명령");
     const gone = dash.find((m) => m.type === "brain" && m.event.type === "world_change" && m.event.kind === "person_gone")!;
     expect(gone).toBeDefined();
-    expect(spoken()[0]).toMatchObject({ text: "식탁으로 가 주세요", kind: "go" });
-    expect(spoken()[0]!._at - gone._at).toBeLessThanOrEqual(1000);
+    expect(cleanup()[0]).toMatchObject({ text: "식탁으로 가 주세요", kind: "go" });
+    const confirmed = dash.find(m=>m.type==="goal" && m.goal.confirmed_ms)!;
+    expect(cleanup()[0]!._at - confirmed._at).toBeLessThanOrEqual(1000);
     expect(planned()).toBe(1);
     expect(goals().slice(-2)).toEqual(["fired/ready", "used/ready"]);
+    const trace = [...new Map<string, Msg>(dash.filter(m => m.type === "trace").flatMap(m => m.rows.map((r: Msg) => [r.id, r]))).values()];
+    const cupGoal = trace.find(r => r.name === "목표 준비" && r.refs.object_id === cup.id)!;
+    expect(cupGoal).toMatchObject({ kind: "AGENT", input: expect.stringContaining("컵 치우기") });
+    expect(trace).toEqual(expect.arrayContaining([
+      expect.objectContaining({ activity_id: cupGoal.activity_id, name: "PAM 판단" }),
+      expect.objectContaining({ activity_id: cupGoal.activity_id, name: "실행 계획 작성" }),
+      expect.objectContaining({ activity_id: cupGoal.activity_id, name: "이동 안내", state: "pending" }),
+    ]));
+    const doors = trace.filter(r => r.name === "가전 상태 변화" && r.refs.object_id === fridge.id);
+    expect(doors).toHaveLength(1);
+    expect(doors[0]).toMatchObject({ input: "냉장고" });
+    expect(doors[0]!.activity_id).not.toBe(cupGoal.activity_id);
     expect(JSON.stringify(phone)).not.toContain("할까요");
 
-    // 3 계획이 시작되면(목표 씀) VLM 사진 간격은 다시 2초
+    // 3 계획이 시작되면(목표 씀) 목표의 1초 간격은 끝난다. 그래도 켜진 거실 TV의 시청 구역이 보이면 TV 규칙이 지켜보는 동안이라 1초다(2026-11-21 사용자 결정)
     const started = Date.now();
+    await pump(() => gaps(started + 1000).length >= 3, "계획 뒤 VLM 사진 네 장", 8000);
+    expect(median(gaps(started + 1000)), JSON.stringify(gaps(started + 1000))).toBeLessThanOrEqual(1300);
+    // A running phone plan leaves the independent TV slot available.
+    const viewer=scene.dets;
+    scene.dets=[]; scene.facts={};
+    await pump(()=>srv!.signals.get(tv.id)?.twin.power==="off","시청자 부재로 허브 TV 끄기",15_000);
+    scene.dets=viewer; scene.facts={person:["sitting","watching_tv"]};
+    await pump(()=>srv!.signals.get(tv.id)?.twin.power==="on","다시 보는 사람이 있어 허브 TV 켜기",10_000);
+    // 4 직접 끈 TV는 TV 규칙이 지켜보지 않는다: 계획이 도는 동안 VLM 사진 간격은 다시 2초
+    expect((await srv.hub.command(tv.id,{type:"off"})).ok).toBe(true);
+    const manual = Date.now();
     // 전환 직후 1초를 빼면 다음 사진까지 최대 한 주기를 더 기다려야 한다.
-    await pump(() => gaps(started + 1000).length >= 2, "계획 뒤 VLM 사진 세 장", 8000);
-    expect(Math.min(...gaps(started + 1000)), JSON.stringify(gaps(started + 1000))).toBeGreaterThanOrEqual(1800);
+    await pump(() => gaps(manual + 1000).length >= 2, "직접 끈 뒤 VLM 사진 세 장", 8000);
+    expect(Math.min(...gaps(manual + 1000)), JSON.stringify(gaps(manual + 1000))).toBeGreaterThanOrEqual(1800);
+
   }, 120_000);
 });

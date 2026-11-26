@@ -251,6 +251,14 @@ export function validateMemory(value: Json, kind: "list" | "fsm"): PamMemory {
   return validateFsm(value);
 }
 
+/** ~<하는 일 이름표>(빈칸 대신 _도 됨, 예: ~쉬거나_자는_중)면 ~<하는 일 값>(~resting)으로, 아니면 그대로. */
+function tempFromLabel(said: string): string {
+  if (!said.startsWith(TEMP_STATE)) return said;
+  const label = said.slice(TEMP_STATE.length).replace(/_/g, " ").trim();
+  const value = PERSON_ACTIVITIES.find((k) => STATES[k as keyof typeof STATES].label === label);
+  return value ? TEMP_STATE + value : said;
+}
+
 /** 기억에 없는 활동의 임시 상태(~<하는 일 값>): 그 값이 World State 하는 일 값이고 기억의 어느 상태도 갖지 않았다. */
 export const isTempState = (memory: FsmMemory, id: string): boolean =>
   id.startsWith(TEMP_STATE) && PERSON_ACTIVITIES.includes(id.slice(TEMP_STATE.length)) && !memory.states.some((s) => s.activity.includes(id.slice(TEMP_STATE.length)));
@@ -266,7 +274,8 @@ export function validateFsmPrediction(value: Json, memory: FsmMemory, tasks: str
   const said = text(p.state, "prediction.state");
   const byId = (id: string) => memory.states.find((s) => s.id === id);
   // 기억에 있는 상태 id에 ~를 붙여 오면(~drinking) 그 상태로 읽는다(2026-11-19 tall pfsm5). 기억에 없는 활동의 임시 상태(~using_laptop)는 그대로
-  const state = said.startsWith(TEMP_STATE) && byId(said.slice(TEMP_STATE.length)) ? said.slice(TEMP_STATE.length) : said;
+  // 관찰 기록은 하는 일을 이름표(사람 쉬거나 자는 중)로 써서 모델이 그 글로 낼 수 있다(~쉬거나_자는_중, 2026-11-25): 하는 일 값(~resting)으로 읽는다
+  const state = said.startsWith(TEMP_STATE) && byId(said.slice(TEMP_STATE.length)) ? said.slice(TEMP_STATE.length) : tempFromLabel(said);
   if (!byId(state) && !isTempState(memory, state)) throw new ContractError(`prediction.state: unknown state identifier ${pyRepr(state)}`);
   const index = p.next_index;
   if (typeof index !== "number" || !Number.isInteger(index) || index < -1) throw new ContractError("prediction.next_index: expected an integer from -1");

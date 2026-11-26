@@ -1,5 +1,5 @@
-// 대시보드 화면 시험 자료: 지켜보기(0)와 컵 치우기 4단계 계획(1~4, 계획 계약 PlanView), 세로 그림 칸(가짜 단계용 image), 물체 모양 하나(seenOf),
-// 눈 그림 넷(405×720)과 그림마다 YOLO 상자(EYE_FRAMES). 상자는 시안 scenario.ts BOX를 EYE_CROP_X0만큼 옮겨 그림 끝에서 자른 값이다.
+// 대시보드 화면 시험 자료: 지켜보기(0)와 컵 치우기 4단계 계획(1~4, 계획 계약 PlanView), 가로 그림 칸(가짜 단계용 image), 물체 모양 하나(seenOf),
+// 가로 눈 그림 넷(405×228)과 그림마다 YOLO 상자(EYE_FRAMES). 상자는 시안 scenario.ts BOX를 눈 그림을 잘라 낸 자리(scripts/twin3d/fake-run.ts EYE_CROP_X0·Y0)만큼 옮겨 그림 끝에서 자른 값이다.
 import { createElement } from "react";
 import type { HealthView, ServerMessage } from "../../../src/contract/events.ts";
 import type { PlanStep, PlanView } from "../../../src/contract/plan.ts";
@@ -34,28 +34,28 @@ export interface EyeFrame { id: EyeFrameId; width: number; height: number; boxes
 
 /** 눈 그림 넷과 그 위 YOLO 상자(그림 픽셀 [왼쪽, 위, 오른쪽, 아래]). */
 export const EYE_FRAMES: EyeFrame[] = [
-  { id: "table-far", width: 405, height: 720, boxes: [
-    { label: "식탁", score: 0.91, box: [106, 338, 298, 528] },
-    { label: "컵", score: 0.84, box: [168, 332, 192, 357] },
+  { id: "table-far", width: 405, height: 228, boxes: [
+    { label: "식탁", score: 0.91, box: [106, 108, 298, 228] },
+    { label: "컵", score: 0.84, box: [168, 102, 192, 127] },
   ] },
-  { id: "table-near", width: 405, height: 720, boxes: [
-    { label: "컵", score: 0.95, box: [160, 238, 245, 346] },
-    { label: "식탁", score: 0.89, box: [0, 162, 405, 720] },
+  { id: "table-near", width: 405, height: 228, boxes: [
+    { label: "컵", score: 0.95, box: [160, 60, 245, 168] },
+    { label: "식탁", score: 0.89, box: [0, 0, 405, 228] },
   ] },
-  { id: "sink", width: 405, height: 720, boxes: [
-    { label: "싱크대", score: 0.87, box: [0, 262, 405, 325] },
+  { id: "sink", width: 405, height: 228, boxes: [
+    { label: "싱크대", score: 0.87, box: [0, 82, 405, 145] },
   ] },
-  { id: "sink-cup", width: 405, height: 720, boxes: [
-    { label: "싱크대", score: 0.93, box: [0, 100, 405, 370] },
-    { label: "컵", score: 0.92, box: [155, 243, 250, 358] },
+  { id: "sink-cup", width: 405, height: 228, boxes: [
+    { label: "싱크대", score: 0.93, box: [0, 0, 405, 184] },
+    { label: "컵", score: 0.92, box: [155, 57, 250, 172] },
   ] },
 ];
 
-export const FRAME = { width: 405, height: 720 };
-/** 세로 그림 칸(가짜 단계용). */
+export const FRAME = { width: 405, height: 228 };
+/** 가로 그림 칸(가짜 단계용). */
 export const imageSlot = (id: EyeFrameId = "table-far"): PhoneSlot => ({ kind: "image", src: `/debug-eye/eye-${id}.webp`, ...FRAME });
 /** YOLO 상자 하나(먼 식탁 위 컵). */
-export const BOX: Detection = { label: "컵", score: 0.84, box: [168, 332, 192, 357] };
+export const BOX: Detection = { label: "컵", score: 0.84, box: [168, 102, 192, 127] };
 
 const KIND = Object.fromEntries(Object.entries(BOX_NAME).map(([kind, name]) => [name, kind]));
 /** 상자들(화면 이름·[왼쪽, 위, 오른쪽, 아래])을 상자를 꽉 채운 모양으로 담은 seen 사건. */
@@ -186,7 +186,7 @@ export function screenAt(n: number, over: Partial<ScreenProps> = {}): ScreenProp
   return {
     index: n, plan, step: plan ? plan.steps[n - 1]! : null, robotKnown: true, connected: true, map: MAP, mapReady: true,
     phone: imageSlot(), seen: seenOf([BOX]),
-    talk: n > 0 ? TALK : WATCH_TALK, timeline: n > 0 ? TIMELINE_CLEAR : TIMELINE_WATCH, timelineNow: TIMELINE_NOW, mode: n > 0 ? "noonchi" : null, hub: HUB,
+    hub: HUB,
     ...over,
   };
 }

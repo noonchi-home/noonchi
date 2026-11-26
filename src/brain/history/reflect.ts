@@ -22,6 +22,20 @@ export function memoryForDay(db: HistoryDb, day: string, o: { log?: (line: strin
   return dayMemory(db, day, o);
 }
 
+/** 읽기 전용 연결로 memoryForDay를 미리 본다(같은 골라내기, 쓰지 않는다). 쓰기(seed 저장·날 고정)가 필요하면 write가 참이고 저장할 seed 판본은 다음 번호로 본다.
+ *  서버 메인 스레드가 쓴다: 쓰기는 기록 작업 스레드가 memoryForDay로 한다(그사이 다른 판본이 저장되지 않았으면 같은 판본이다). */
+export function previewDayMemory(db: HistoryDb, day: string, o: { log?: (line: string) => void } = {}): { memory: DayMemory; write: boolean } {
+  let write = false;
+  const view: MemoryStore = {
+    pinnedMemory: (d) => db.pinnedMemory(d), memoryVersion: (v) => db.memoryVersion(v), memoryFor: (d) => db.memoryFor(d), latestMemoryVersion: () => db.latestMemoryVersion(),
+    saveMemory: () => { write = true; return db.nextMemoryVersion(); },
+    pinMemory: () => { write = true; },
+  };
+  return { memory: dayMemory(view, day, o), write };
+}
+
+type MemoryStore = Pick<HistoryDb, "pinnedMemory" | "memoryVersion" | "memoryFor" | "latestMemoryVersion" | "saveMemory" | "pinMemory">;
+
 /** 반성이 읽는 그날 기억: 고정·저장하지 않는다. 그날 고정 판본 → 그날 쓸 판본 → 지금 seed 차례(dayMemory와 같은 골라내기). */
 export function readDayMemory(db: HistoryDb, day: string): { memory: PamMemory; kind: "list" | "fsm" } {
   const pinned = db.pinnedMemory(day);
@@ -36,7 +50,7 @@ export function readDayMemory(db: HistoryDb, day: string): { memory: PamMemory; 
   return { memory: validateMemory(m.memory, m.kind), kind: m.kind };
 }
 
-function dayMemory(db: HistoryDb, day: string, o: { log?: (line: string) => void }): DayMemory {
+function dayMemory(db: MemoryStore, day: string, o: { log?: (line: string) => void }): DayMemory {
   const pinned = db.pinnedMemory(day);
   const m = pinned !== null ? db.memoryVersion(pinned) : db.memoryFor(day);
   const seed = JSON.stringify(CUP_FSM_MEMORY);
@@ -68,6 +82,11 @@ function dayMemory(db: HistoryDb, day: string, o: { log?: (line: string) => void
 /** 하루 끝 반성 = 밤 흐름(src/brain/history/night.ts runNight): 반성 → 검사 → 시각 찾기 → 채택 검사 → 로봇 FSM → 한 트랜잭션 저장.
  *  dir: 시각 찾기·검사 결과 사본 폴더(runtime/homes/<집>/habit). signal로 끊으면(서버를 끌 때) PAM 요청을 끊고 기록 DB에 아무것도 쓰지 않는다. */
 export async function runReflection(db: HistoryDb, pam: PamClient, day: string, o: NightOptions = {}): Promise<ReflectResult> {
+  const saved = db.night(day);
+  if (saved) {
+    const data = saved.result as { applies_day: string; learned: EdgeLine[]; active: EdgeLine[]; dropped: HabitRuleNote[] };
+    return { ok: true, version: saved.robot, appliesDay: data.applies_day, learned: data.learned, active: data.active, dropped: data.dropped };
+  }
   const r = await runNight(db, pam, day, o);
   if (!r.ok) return { ok: false, error: r.error, ...(r.empty ? { empty: true as const } : {}) };
   return { ok: true, version: r.version, appliesDay: r.appliesDay, learned: r.learned, active: r.active, dropped: r.dropped };

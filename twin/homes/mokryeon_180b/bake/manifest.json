@@ -9,33 +9,33 @@
    "name": "lm0",
    "file": "lm0.png",
    "webp": "lm0.webp",
-   "bytes": 867117,
-   "webp_bytes": 609994,
+   "bytes": 873996,
+   "webp_bytes": 616892,
    "size": 1024,
    "colorSpace": "srgb",
    "flipY": false,
-   "scale": 1.68555,
-   "intensity": 5.295311497258276,
+   "scale": 1.71387,
+   "intensity": 5.3842814012079385,
    "rooms": [
     "living",
     "bed_ne",
     "bath_east"
    ],
-   "density": 34.36,
-   "uv_fill": 0.5171,
-   "area": 459.31
+   "density": 33.77,
+   "uv_fill": 0.4997,
+   "area": 459.6
   },
   {
    "name": "lm1",
    "file": "lm1.png",
    "webp": "lm1.webp",
-   "bytes": 946523,
-   "webp_bytes": 663530,
+   "bytes": 974175,
+   "webp_bytes": 684670,
    "size": 1024,
    "colorSpace": "srgb",
    "flipY": false,
-   "scale": 1.69043,
-   "intensity": 5.310642469407794,
+   "scale": 1.68164,
+   "intensity": 5.28302786998274,
    "rooms": [
     "balcony_front",
     "kitchen",
@@ -43,21 +43,21 @@
     "closet",
     "rails"
    ],
-   "density": 30.26,
-   "uv_fill": 0.4002,
-   "area": 458.32
+   "density": 30.2,
+   "uv_fill": 0.3989,
+   "area": 458.53
   },
   {
    "name": "lm2",
    "file": "lm2.png",
    "webp": "lm2.webp",
-   "bytes": 919820,
-   "webp_bytes": 652844,
+   "bytes": 936235,
+   "webp_bytes": 665658,
    "size": 1024,
    "colorSpace": "srgb",
    "flipY": false,
-   "scale": 1.69531,
-   "intensity": 5.325973441557313,
+   "scale": 1.67871,
+   "intensity": 5.273823003507721,
    "rooms": [
     "bed_sw",
     "bed_se",
@@ -65,30 +65,30 @@
     "balcony_west",
     "entrance"
    ],
-   "density": 33.58,
-   "uv_fill": 0.4826,
-   "area": 448.65
+   "density": 33.25,
+   "uv_fill": 0.4734,
+   "area": 449.07
   },
   {
    "name": "lm3",
    "file": "lm3.png",
    "webp": "lm3.webp",
-   "bytes": 729519,
-   "webp_bytes": 517210,
+   "bytes": 745739,
+   "webp_bytes": 528676,
    "size": 1024,
    "colorSpace": "srgb",
    "flipY": false,
-   "scale": 1.66895,
-   "intensity": 5.243161059208685,
+   "scale": 1.66992,
+   "intensity": 5.246208404082668,
    "rooms": [
     "balcony_north",
     "bath_center",
     "bath_west",
     "shared"
    ],
-   "density": 51.66,
-   "uv_fill": 0.4786,
-   "area": 188.04
+   "density": 51.95,
+   "uv_fill": 0.4843,
+   "area": 188.17
   }
  ],
  "nodes": {
@@ -922,7 +922,7 @@
   "strength": 0.45,
   "colorSpace": "linear",
   "flipY": true,
-  "bytes": 29482
+  "bytes": 29676
  },
- "glb_bytes": 21913176
+ "glb_bytes": 25025352
 }

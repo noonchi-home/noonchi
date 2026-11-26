@@ -18,19 +18,22 @@ export interface WorldMirror {
 export async function startWorldMirror(o: {
   bus: Bus; epoch: { boot: string; home: string }; name: NodeName; clock?: Clock; log?: (s: string) => void;
   routes?: (node: BusNode, afterRev: AfterRev) => void;
-  onChanges?: (changes: WorldChange[], view: WorldView) => void | Promise<void>;
+  onChanges?: (changes: WorldChange[], view: WorldView, rev: number) => void | Promise<void>;
   onView?: (view: WorldView) => void | Promise<void>;
+  /** 같은 rev에서 집 사진(household_photo serial)만 바뀐 상태: 변화 없는 VLM 답도 새 증거다(목표 노드의 TV 규칙). rev가 바뀐 상태는 onView만 부른다. */
+  onPhoto?: (view: WorldView) => void | Promise<void>;
 }): Promise<WorldMirror> {
   const node = new BusNode({ name: o.name, bus: o.bus, epoch: o.epoch, clock: o.clock, log: o.log });
   let latest: WorldStateMsg | null = null;
   let shown: number | null = null;
+  let photo: number | null = null;
   const waiting = new Set<{ rev: number; run: (actual: number) => void; settle: (ok: boolean) => void }>();
   const afterRev: AfterRev = (rev, ctx, run) => {
     if (latest && latest.rev >= rev) run(latest.rev);
     else waiting.add({ rev, run, settle: ctx.defer() });
   };
   node.withState("/world/changes", "/world/state",
-    (c, s) => o.onChanges?.(c.changes, s.view),
+    (c, s) => o.onChanges?.(c.changes, s.view, c.rev),
     async (s) => {
       latest = s;
       for (const job of waiting) {
@@ -38,9 +41,16 @@ export async function startWorldMirror(o: {
         waiting.delete(job);
         try { job.run(s.rev); job.settle(true); } catch { job.settle(false); }
       }
-      if (s.rev === shown) return;
+      const serial = s.view.household_photo?.serial ?? null;
+      if (s.rev === shown) {
+        if (serial === photo) return;
+        await o.onPhoto?.(s.view);
+        photo = serial;
+        return;
+      }
       await o.onView?.(s.view);
       shown = s.rev;   // 보인 뒤에만 센다: 실패하면 같은 rev가 다시 올 때(250ms 다시 냄) 다시 부른다
+      photo = serial;
     });
   o.routes?.(node, afterRev);
   await node.prepare();

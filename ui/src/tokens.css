@@ -1,7 +1,14 @@
 /* 만든 파일: src/design/tokens.json(NOONCHI 1.1.0)에서 npm run tokens가 만든다. 고칠 때는 원본을 고치고 npm run tokens를 돌린다. */
 @theme {
-  --font-sans: "Noto Sans KR Variable", "Noto Sans KR", "Malgun Gothic", "Apple SD Gothic Neo", system-ui, sans-serif;
-  --font-mono: ui-monospace, "Cascadia Mono", Consolas, "D2Coding", monospace;
+  --font-sans: "Pretendard Variable", "Noto Sans KR Variable", "Noto Sans KR", "Malgun Gothic", "Apple SD Gothic Neo", system-ui, sans-serif;
+  --font-mono: "Pretendard Variable", ui-monospace, "Cascadia Mono", Consolas, "D2Coding", monospace;
+  --font-weight-thin: 600;
+  --font-weight-extralight: 600;
+  --font-weight-light: 600;
+  --font-weight-normal: 600;
+  --font-weight-medium: 600;
+  --font-weight-semibold: 600;
+  --font-weight-bold: 700;
   --font-weight-brand: 850;
   --radius-xs: 2px;
   --radius-sm: 4px;
@@ -32,6 +39,7 @@
 @theme inline {
   --color-brand: var(--brand);
   --color-brand-strong: var(--brand-strong);
+  --color-brand-portal: var(--brand-portal);
   --color-brand-bright: var(--brand-bright);
   --color-on-brand: var(--on-brand);
   --color-cream: var(--cream);
@@ -40,6 +48,7 @@
   --color-ink-2: var(--ink-2);
   --color-ink-3: var(--ink-3);
   --color-ink-4: var(--ink-4);
+  --color-bento-surface: var(--bento-surface);
   --color-page: var(--page);
   --color-canvas: var(--canvas);
   --color-surface: var(--surface);
@@ -113,19 +122,19 @@
   --text-caption: var(--type-caption-size);
   --text-caption--line-height: var(--type-caption-line);
   --text-caption--letter-spacing: 0.01em;
-  --text-caption--font-weight: 400;
+  --text-caption--font-weight: 600;
   --text-label: var(--type-label-size);
   --text-label--line-height: var(--type-label-line);
   --text-label--letter-spacing: 0em;
-  --text-label--font-weight: 500;
+  --text-label--font-weight: 600;
   --text-body-sm: var(--type-body-sm-size);
   --text-body-sm--line-height: var(--type-body-sm-line);
   --text-body-sm--letter-spacing: 0em;
-  --text-body-sm--font-weight: 400;
+  --text-body-sm--font-weight: 600;
   --text-body: var(--type-body-size);
   --text-body--line-height: var(--type-body-line);
   --text-body--letter-spacing: 0em;
-  --text-body--font-weight: 400;
+  --text-body--font-weight: 600;
   --text-title-sm: var(--type-title-sm-size);
   --text-title-sm--line-height: var(--type-title-sm-line);
   --text-title-sm--letter-spacing: -0.01em;
@@ -151,6 +160,7 @@
 :root {
   --brand: #a1143e;
   --brand-strong: #971238;
+  --brand-portal: #a50034;
   --brand-bright: #b92a51;
   --on-brand: #ffffff;
   --cream: #f2e4d3;
@@ -159,6 +169,7 @@
   --ink-2: #574f50;
   --ink-3: #645b5b;
   --ink-4: #9b918e;
+  --bento-surface: #ffffff;
   --page: #fffcf8;
   --canvas: #f8f2ea;
   --surface: #fffcf8;

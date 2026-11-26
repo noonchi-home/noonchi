@@ -7,6 +7,7 @@ import { captionOf } from "./act.js";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { PROGRESS_MS } from "../../act/index.js";
+import { REQUEST_TASK } from "../../agent/index.js";
 import type { Body } from "../../bus/index.js";
 import { APPROVE } from "../../act/prompts.js";
 import { EXEC_TEXT } from "../../act/labels.js";
@@ -15,8 +16,10 @@ import { FEEDBACK_TEXT, PHOTO_TEXT } from "../../brain/index.js";
 import type { ApprovalAnswer } from "../../contract/phone.js";
 import { eyeHeightOf, floorLookup, homeBounds, readScenePlan } from "../../layout/index.js";
 import { EyeFeed, StartStore, createPhoneServer, describeStart, estimateViewpoint, orderPhoneUrls, readStartPose, startPosePath, twinLandmarks, wallSegments, type StartPose } from "../../phone/index.js";
+import { androidTwaStatements } from "../../phone/index.js";
 import { repoPath } from "../../shared/paths.js";
 import { PHONE_SESSION, TALK_QUIET_MS, type HomeCore } from "./core.js";
+import { photoRecorder } from "./history-writes.js";
 
 /** 영상 모드 영상 공용 폴더(저장소 runtime/videos). 시연 폴더(RUNTIME_DIR=runtime/demo/day1·week)로 띄워도 여기서 읽는다:
  *  영상은 커서 시연 폴더마다 복사하지 않고, 시연 폴더를 지우는 준비 명령(demo-setup --fresh)이 이은 폴더를 따라 지우지 않게 정션도 쓰지 않는다. */
@@ -37,10 +40,8 @@ export function preparePhone(core: HomeCore): void {
     ? new EyeFeed({
       photoDir: env.PHONE_PHOTO_DIR?.trim() || join(runtimeDir, "photos"), broadcast: (m) => core.app?.broadcast(m),
       // 사진 찍기 사진은 보관 기간이 지나면 지운다(src/brain/history/retention.ts)
-      onSaved: (p) => {
-        history.db.addPhoto({ ...p, origin: "photo" });
-        history.db.add("photo", p.atMs, PHOTO_TEXT.saved, { subject: p.id });
-      },
+      // 기록 줄을 쓰지 못하면 사진 파일을 지운다(보관 표에 없으면 보관 기간이 지나도 지워지지 않는다)
+      onSaved: photoRecorder(history.write, PHOTO_TEXT.saved, ctx.log),
     })
     : undefined;
   // 폰 위치 맞추기(src/phone/sync): 시작 위치(설정 4단계에서 자리·방향) + 물건 기준점(엔진 프레임 YOLO) + 벽 모양(hit 벽 점)
@@ -85,7 +86,7 @@ export function syncPhoneClaims(core: HomeCore): void {
   if (core.talk.inflight || now - core.talk.at < TALK_QUIET_MS) next.set("dialog", "dialog");
   const cmd = core.command;
   if (cmd) {
-    const kind = cmd.grade === "safety" ? "safety" : /^(peek|find):/.test(cmd.id) ? "peek" : "plan";
+    const kind = cmd.grade === "safety" ? "safety" : /^(peek|find|visit):/.test(cmd.id) ? "peek" : "plan";
     next.set("command:" + cmd.id + ":" + cmd.step, kind);
   }
   core.policy.visibleApprovals(tokens.map((p) => p.token), cmd?.grade === "safety" ? null : tokens[0]?.token ?? null, cmd?.grade === "safety");
@@ -110,10 +111,14 @@ function heardSpeech(core: HomeCore, text: string): void {
 }
 
 /** 버튼과 말의 답은 실행 노드가 지금 명령과 다시 대조한다. 승인 토큰은 폰 세션 밖으로 보내지 않는다. */
-export function applyPhoneProgress(core: HomeCore, b: Body<"/phone/progress">): Body<"/act/progress_result"> {
+export function applyPhoneProgress(core: HomeCore, b: Body<"/phone/progress">): Body<"/act/progress_result"> | Promise<Body<"/act/progress_result">> {
   const req = b.req;
   const tracker = core.tracker;
   if (core.closed || !tracker) return { req, status: "stale" };
+  const preferenceReply = b.kind === "voice" ? core.resumeProactive?.(b.text, req) : null;
+  // 선호를 기록한 답은 기록 DB 커밋 뒤에 답한다
+  if (preferenceReply instanceof Promise) return preferenceReply.then((reply) => ({ req, status: "answer" as const, reply }));
+  if (preferenceReply) return { req, status: "answer", reply: preferenceReply };
   const open = tracker.openCommand();
   const at = b.kind === "voice" && b.at ? { ...b.at, pending: [] } : undefined;
   const before = core.speechOrder;
@@ -160,8 +165,10 @@ export async function startPhone(core: HomeCore): Promise<void> {
   const fallback = estimateViewpoint(JSON.parse(readFileSync(home.scenePath, "utf8").replace(/^﻿/, "")));
   const phone = createPhoneServer({
     eyeHeightM: core.eyeHeightM, feed, log, fallback, floorAt: floorLookup(core.plan.rooms), videoDir: phoneVideoDir(env),
+    androidAssetLinks: androidTwaStatements(env.ANDROID_TWA_SHA256_FINGERPRINTS),
     sync: { landmarks: core.landmarksNow(), walls: wallSegments(core.plan), start: startStore?.get() ?? null },
     onReady: (ready) => { core.out.phone?.push("/phone/link", { ready }); },
+    onNavigationPose:p=>{ if(!core.closed) core.out.phone?.push("/phone/pose",p); },
     onEye: (eye) => {
       appNow.broadcast({ type: "eye", eye });
       plans.onEye([eye.position[0], eye.position[1]], eye.estimated === true);
@@ -178,7 +185,12 @@ export async function startPhone(core: HomeCore): Promise<void> {
       core.talk.inflight++;
       syncPhoneClaims(core);
       try {
+        const remember = core.captureProactiveRequest?.();
         const r = await agent.chat(PHONE_SESSION, text, { heard: true });
+        if (remember) {
+          const tasks = new Set(r.actions.flatMap(a => a.ok && a.tool === REQUEST_TASK && typeof a.args.task === "string" ? [a.args.task] : []));
+          if (tasks.size === 1) remember([...tasks][0]!);
+        }
         return { reply: r.reply, pending: r.pendingConfirmations.map((p) => ({ token: p.token, deviceLabel: p.deviceLabel, reason: p.reason, choices: p.choices })) };
       } finally {
         core.talk.inflight--;
@@ -199,7 +211,8 @@ export async function startPhone(core: HomeCore): Promise<void> {
       const open = tracker?.openCommand();
       const stale = () => {
         heardSpeech(core, text);
-        history.db.add("execution", core.nowMs(), EXEC_TEXT.staleAnswer, { subject: open?.planId ?? (at?.kind === "command" ? at.id : PHONE_SESSION) });
+        history.write.add("execution", core.nowMs(), EXEC_TEXT.staleAnswer, { subject: open?.planId ?? (at?.kind === "command" ? at.id : PHONE_SESSION) })
+          .catch((e: Error) => log(`[경고] 늦은 답 기록을 쓰지 못했어요: ${e.message}`));
         return { handled: true, reply: "" };
       };
       // 말로 한 승인·거절: 말할 때 보인 승인 대기 token이 하나이고 지금도 대기일 때 그 하나에만 답한다.
@@ -234,12 +247,10 @@ export async function startPhone(core: HomeCore): Promise<void> {
   core.phone = phone;
   layout?.editor.setHere(() => phone.here());
   const wantedPhone = ctx.phonePort ?? Number(env.PHONE_PORT);
-  const listened = await phone.listen(Number.isInteger(wantedPhone) && wantedPhone >= 0 ? wantedPhone : 8210, env.PHONE_HOST?.trim() || "0.0.0.0");
-  // 폰 주소: PHONE_URL → tailscale serve https → 와이파이(대시보드 QR은 맨 앞 주소).
-  // PHONE_LAN_URLS=0(compose)이면 이 기계 네트워크 주소를 넣지 않는다: 컨테이너 안 주소는 밖에서 열 수 없다
+  const listened = await phone.listen(Number.isInteger(wantedPhone) && wantedPhone >= 0 ? wantedPhone : 8210, env.PHONE_HOST?.trim() || "127.0.0.1");
+  // 폰 주소: PHONE_URL → tailscale serve https → 이 PC(루프백) 주소(대시보드 QR은 맨 앞 주소)
   const served = await (ctx.servedPhoneUrls?.(listened.port) ?? Promise.resolve([])).catch(() => []);
-  const lanOff = /^(0|false|off)$/i.test(env.PHONE_LAN_URLS?.trim() ?? "");
-  core.phoneUrls = orderPhoneUrls(lanOff ? [] : listened.urls, served, env.PHONE_URL);
+  core.phoneUrls = orderPhoneUrls(listened.urls, served, env.PHONE_URL);
   core.phonePort = (phone.server.address() as { port: number } | null)?.port;
 }
 

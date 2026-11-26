@@ -7,9 +7,10 @@ export const WORDS = {
   more: "▼",
   /** 시간 줄 카드: 줄 이름, 계획 밖 로봇, 지금 선, 초 눈금 「N초 전」, 반응 간격 「N.N초」. */
   timeline: {
-    rows: { person: "사람", robot: "로봇" },
+    rows: { person: "사용자", robot: "클로이드" },
+    checking: "사용자 상태 확인 중",
     watch: "지켜봄",
-    robot: { idle: "지켜봄", observe: "살펴보는 중", move: "이동 중", run: "실행 중", return: "충전 자리로 가는 중", recover: "다시 확인하는 중" },
+    robot: { idle: "지켜봄", observe: "살펴보는 중", move: "이동 중", run: "실행 중", return: "충전 자리로 가는 중", return_room: "대기 자리로 가는 중", standby: "대기 중", recover: "다시 확인하는 중" },
     now: "지금",
     ago: (sec: number) => `${sec}초 전`,
     gap: (sec: string) => `${sec}초`,
@@ -23,7 +24,8 @@ export const WORDS = {
   oldHabit: "전에 배운 습관이에요",
   offline: "연결 끊김 · 다시 연결 중",
   noRobot: "클로이드 위치 모름",
-  phoneOff: "폰 서버가 꺼져 있어요.",
+  connectApp: "NOONCHI 앱으로 스캔해 서버에 연결하세요",
+  appQrUnavailable: "앱에 연결할 HTTPS 주소가 없어요.",
   startAr: "폰에서 AR을 시작하세요.",
 } as const;
 

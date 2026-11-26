@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { Outbox, type Body, type BusNode, type Clock } from "../bus/index.js";
 import type { CloserResult } from "../contract/events.js";
+import type { TracePort, TraceRefs } from "../contract/trace.js";
 import type { LookSpot } from "./crop.js";
 import type { LatestFrame, ObservationPipeline } from "./pipeline.js";
 
@@ -17,7 +18,7 @@ export class LookClient {
   private readonly probes = new Map<string, { req: string; ready: boolean; since: number; stop: () => void }>();
   private closed = false;
 
-  constructor(private readonly out: Outbox, private readonly clock: Clock) {}
+  constructor(private readonly out: Outbox, private readonly clock: Clock, private readonly trace?: TracePort) {}
 
   routes(node: BusNode): void {
     node.on("/perception/view", (f) => { this.frame = f; });
@@ -31,11 +32,11 @@ export class LookClient {
   spotReady(position: [number, number, number], since: number): boolean {
     return this.ready("spot:" + position.join(","), since, (req, until) => ({ req, until, kind: "ready_spot", position, since }));
   }
-  closer(spot: LookSpot, signal?: AbortSignal, since?: number): Promise<CloserResult> {
-    return this.look({ req: randomUUID(), kind: "closer", spot, since, until: this.clock.now() + WINDOW_MS }, signal);
+  closer(spot: LookSpot, signal?: AbortSignal, since?: number, refs?: TraceRefs): Promise<CloserResult> {
+    return this.look({ req: randomUUID(), kind: "closer", spot, since, until: this.clock.now() + WINDOW_MS }, signal, refs);
   }
-  topLook(spot: LookSpot, since: number, signal?: AbortSignal): Promise<CloserResult> {
-    return this.look({ req: randomUUID(), kind: "top", spot, since, until: this.clock.now() + WINDOW_MS }, signal);
+  topLook(spot: LookSpot, since: number, signal?: AbortSignal, refs?: TraceRefs): Promise<CloserResult> {
+    return this.look({ req: randomUUID(), kind: "top", spot, since, until: this.clock.now() + WINDOW_MS }, signal, refs);
   }
 
   private ready(key: string, since: number, make: (req: string, until: number) => Probe): boolean {
@@ -63,15 +64,29 @@ export class LookClient {
     return false;
   }
 
-  private look(b: Look, signal?: AbortSignal): Promise<CloserResult> {
+  private look(b: Look, signal?: AbortSignal, refs?: TraceRefs): Promise<CloserResult> {
     if (this.closed || signal?.aborted) return Promise.resolve({ ok: false, why: this.closed ? "closed" : "aborted" });
     return new Promise((resolve) => {
       const abort = () => this.cancel(b.req);
       const timeout = this.clock.after(WINDOW_MS, abort);
+      const row = this.trace?.start(b.kind, { ...refs, request_id: b.req, object_id: b.spot.id });
       this.replies.set(b.req, (result) => {
         timeout();
         signal?.removeEventListener("abort", abort);
         this.replies.delete(b.req);
+        if (row) {
+          if (typeof result === "boolean" || !result.ok || result.vlm === "aborted") {
+            const cancelled = typeof result !== "boolean" && (result.ok || result.why === "aborted" || result.why === "closed");
+            this.trace?.finish(row, cancelled ? "cancelled" : "failed", cancelled ? "stopped" : "unconfirmed");
+          } else {
+            const target = result.found.find(found => found.id === b.spot.id);
+            const output = target?.facts.includes("empty") ? "cup_empty" : target?.facts.includes("has_contents") ? "cup_contents"
+              : target ? "found" : "unconfirmed";
+            const evidence = target ? { source: "photo", subjectId: b.spot.id, observedMs: result.captured_at_ms,
+              originId: result.frame_id.replace(/\.c\d+$/, "") } : undefined;
+            this.trace?.finish(row, "done", output, undefined, undefined, evidence);
+          }
+        }
         resolve(typeof result === "boolean" ? { ok: false, why: "error" } : result);
       });
       signal?.addEventListener("abort", abort, { once: true });
@@ -131,7 +146,7 @@ export function lookRoutes(node: BusNode, pipeline: () => Pipeline | null, clock
       const signal = AbortSignal.any([life, end.signal]);
       const timeout = clock.after(Math.max(0, p.until - clock.now()), () => end.abort());
       try {
-        const r = p.kind === "top" ? await pipe.topLook(p.spot, p.since, signal) : await pipe.closer(p.spot, signal, p.since);
+        const r = p.kind === "top" ? await pipe.topLook(p.spot, p.since, signal, p.req) : await pipe.closer(p.spot, signal, p.since, p.req);
         if (!life.aborted) send(p.req, r);
       } catch {
         if (!life.aborted) send(p.req, { ok: false, why: signal.aborted ? "aborted" : "error" });

@@ -140,11 +140,19 @@ function underPanel(y: number, height: number, edges: Edges): number | null {
 export function drawTargets(ctx: CanvasRenderingContext2D, size: { width: number; height: number }, marks: readonly FocusMark[], edges: Edges = NO_EDGES): ArrowBox[] {
   const arrows: ArrowBox[] = [];
   for (const m of marks) {
-    const toward = m.off ? m.angle : underPanel(m.v * size.height, size.height, edges);
+    let toward = m.off ? m.angle : underPanel(m.v * size.height, size.height, edges);
+    if(m.stand && toward===null){
+      const inset=arrowInsets(edges), margin=ARROW.box/2+F.casing.width+F.edge.width;
+      const x=m.u*size.width, y=m.v*size.height;
+      if(y<inset.top+margin) toward=-90;
+      else if(y>size.height-inset.bottom-margin) toward=90;
+      else if(x<inset.left+margin) toward=180;
+      else if(x>size.width-inset.right-margin) toward=0;
+    }
     if (toward !== null) arrows.push({ name: m.label, box: drawArrow(ctx, { ...m, angle: toward }, size, edges) });
     else if (m.walking) {
       const angle = -90 + Math.atan2(m.u - 0.5, 0.5) * 180 / Math.PI;
-      arrows.push({ name: m.label, box: drawArrow(ctx, { ...m, u: 0.5, v: 0.78, angle }, size, edges) });
+      arrows.push({ name: m.label, box: drawArrow(ctx, { ...m, u: m.stand ? m.u : 0.5, v: m.stand ? m.v : 0.78, angle }, size, edges) });
     }
   }
   return arrows;

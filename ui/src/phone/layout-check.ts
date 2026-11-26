@@ -5,7 +5,7 @@
 // 명령·비전 상태 글(data-phone-text)은 …나 줄 자름으로 잘리지 않는다. 화면 밖 세모는 칸·단추와 겹치지 않는다.
 // 위 줄 명령 말풍선은 글 너비(좌우 여백 더하기)만큼만 차지하고 화면 안에 있다(긴 명령은 줄을 바꾼다).
 // 모달 내용은 옆으로 넘치지 않는다(가로 화면에서 단추 줄이 모달보다 넓으면 상태 칩이 잘린다). 위아래는 모달 안에서 스크롤한다.
-// 처음 화면은 「AR 시작」 단추가 스크롤하지 않은 첫 화면 안에 있어야 한다(세로·가로 모두).
+// 처음 화면은 「카메라 켜기」 단추가 스크롤하지 않은 첫 화면 안에 있어야 한다(세로·가로 모두).
 
 export interface Box { left: number; top: number; right: number; bottom: number }
 /** 단추 하나. scroller는 그 단추를 담은 스크롤 칸(없으면 null), zone은 그 단추를 담은 칸 이름(모달 안이면 「모달」, 없으면 비움). */
@@ -87,8 +87,8 @@ export function modalIssues(modals: { name: string; scroll: { width: number; hei
   return modals.filter((m) => m.scroll.width > m.client.width + 1).map((m) => `「${m.name}」 모달 내용이 옆으로 넘쳐요(${m.scroll.width} / ${m.client.width})`);
 }
 
-/** 처음 화면: 「AR 시작」 단추(start, 스크롤 0에서 잰 자리)가 첫 화면 안에 있는지. */
+/** 처음 화면: 「카메라 켜기」 단추(start, 스크롤 0에서 잰 자리)가 첫 화면 안에 있는지. */
 export function introIssues(view: { width: number; height: number }, start: Box | null): string[] {
-  if (!start) return ["「AR 시작」 단추가 없어요"];
-  return inside(start, view.width, view.height) ? [] : [`「AR 시작」 단추가 첫 화면 밖이에요(${where(start)} / ${view.width}×${view.height})`];
+  if (!start) return ["「카메라 켜기」 단추가 없어요"];
+  return inside(start, view.width, view.height) ? [] : [`「카메라 켜기」 단추가 첫 화면 밖이에요(${where(start)} / ${view.width}×${view.height})`];
 }

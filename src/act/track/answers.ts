@@ -3,8 +3,8 @@
 import type { HeardAt } from "../../contract/phone.js";
 import type { ApprovalAnswer } from "../../agent/index.js";
 import { EXEC_TEXT } from "../labels.js";
-import { ASK_FOLLOW, STEP_DONE, STOP, type ActionChoice } from "../prompts.js";
-import { ASK_ACTION, matchChoice } from "../tasks.js";
+import { ASK_FOLLOW, ASK_FROM, STEP_DONE, STOP, type ActionChoice } from "../prompts.js";
+import { matchChoice } from "../tasks.js";
 import { Part, choicesOf } from "./core.js";
 
 /** 들은 말의 결과: 답으로 받음, 말할 때와 다른 명령에 온 답이라 버림(stale), 답이 아님(null). */
@@ -23,7 +23,8 @@ export class Answers extends Part {
       // 계획 전 찾기(src/act/robot/find.ts)·계획 밖 가까이 가서 보기(src/act/robot/contents.ts idle): 단추 없는 사람 단계 명령
       const q = core.finding?.sent ? core.finding : core.docking?.sent ? core.docking : core.idlePeek;
       // 충전 자리 명령만 「완료」가 있다(폰 눈을 모를 때 닿음을 받는다, dock.ts)
-      return q?.sent && !core.stopped ? { planId: q.id, stepId: q.sent.step, kind: "command", text: q.sent.text, choices: q === core.docking ? [STEP_DONE] : [] } : null;
+      const sent=q?.sent ?? core.directives.shown();
+      return sent && !core.stopped ? { planId:sent.id, stepId:sent.step, kind:"command",text:sent.text,choices:q?.sent && q===core.docking && core.docking?.charging?[STEP_DONE]:[] } : null;
     }
     const ask = r.asking !== null || core.stepOf(r)?.kind === "ask";
     return { planId: r.plan.view.id, stepId: r.sent.step, kind: ask ? "ask" : "command", text: r.sent.text, choices: choicesOf(r, core.stepOf(r)) };
@@ -43,7 +44,7 @@ export class Answers extends Part {
     // 충전 자리 명령의 「완료」: 닿은 것으로 받는다
     const dock = core.docking;
     if (!core.stopped && dock?.sent && dock.id === planId && dock.sent.step === stepId) {
-      if (choice !== STEP_DONE.id) return false;
+      if (!dock.charging || choice !== STEP_DONE.id) return false;
       core.dock.arrived();
       return true;
     }
@@ -63,6 +64,16 @@ export class Answers extends Part {
       steps.timeout(r, step);
       return false;
     }
+    // The answer must belong to this exact shown question and an identified
+    // current resident. A safety approval or a generic stop is not a preference.
+    if (a?.why === "plan" || a?.why === "leftover") {
+      const user = this.o.assistance?.resident?.(this.o.state.view());
+      if (user && ["approve", "reject", "clear", "keep"].includes(picked.id)) {
+        const kind = picked.id === "reject" || picked.id === "keep" ? "explicit_decline" : "explicit_accept";
+        core.adaptive.response(r, kind, { source: "phone_answer", subjectId: user,
+          originId: `${planId}:${stepId}:${now}`, observedMs: now });
+      }
+    }
     if (a?.why === "plan") approval.approvedPlan(r, picked.id as ApprovalAnswer);
     else if (a?.why === "device") approval.approvedDevice(r, a.token, picked.id as ApprovalAnswer);
     else if (a?.why === "hand") approval.approvedHand(r, picked.id as ApprovalAnswer);
@@ -73,8 +84,8 @@ export class Answers extends Part {
     } else if (step?.kind === "ask") {
       if (r.at + 1 >= r.plan.steps.length || step.prompt?.ends.includes(picked.id)) {
         steps.finish(r, "done", EXEC_TEXT.answered(picked.label));
-        // 묻기 답 → 말 부탁(「치워 주세요」면 컵 치우기를 말 부탁 길로 시작한다, 「그대로 둬요」는 하지 않는다)
-        const task = r.decision.action === ASK_ACTION ? ASK_FOLLOW[picked.id] : undefined;
+        // 묻기 답 → 말 부탁(「치워 주세요」면 컵 치우기, 「물 한 잔」이면 물 한 잔 가져다주기를 말 부탁 길로 시작한다. 「그대로 둬요」·「괜찮아요」는 하지 않는다)
+        const task = r.decision.action && ASK_FROM.includes(r.decision.action) ? ASK_FOLLOW[picked.id] : undefined;
         if (task) core.start.request({ task, heard: picked.label, atMs: now, afterSeq: this.o.brain.sentSeq?.() ?? 0, via: "answer" });
       } else steps.advance(r);
     } else steps.advance(r);
@@ -91,7 +102,9 @@ export class Answers extends Part {
     const open = core.open();
     // 미리 세운 목표(미리 만든 계획·만드는 중 포함)에 「그만」: 목표를 버린다. 남겨 두면 사람이 떠날 때 그 계획을 실행한다(goal.ts)
     const stopping = matchChoice(text, [STOP]) !== null;
+    const endedVisit = stopping && core.directives.cancel();
     const awaiting = stopping && core.start.cancelSpeech();
+    if (stopping && !awaiting) core.o.manager.cancelSpeech?.();
     const deferred = (stopping && core.manager.cancel()) || awaiting;
     const goal = !!core.goal.current() && matchChoice(text, [STOP]) !== null;
     if (goal) core.goal.drop("stop");
@@ -115,8 +128,8 @@ export class Answers extends Part {
       core.dock.drop();
       return { kind: "answer", choice: STOP };
     }
-    if (goal || deferred) return { kind: "answer", choice: STOP };
-    if (dock?.sent && matchChoice(text, [STEP_DONE])) {
+    if (goal || deferred || endedVisit) return { kind: "answer", choice: STOP };
+    if (dock?.charging && dock.sent && matchChoice(text, [STEP_DONE])) {
       if (at?.kind !== "command" || at.id !== dock.id || at.step !== dock.sent.step) return { kind: "stale" };
       core.dock.arrived();
       return { kind: "answer", choice: STEP_DONE };

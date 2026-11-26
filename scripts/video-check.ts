@@ -1,11 +1,13 @@
 // npx tsx scripts/video-check.ts --clip cup-demo.mp4 [--step <종류>:<낱말>:<영상.mp4> ...] [--phone http://127.0.0.1:8210] [--api http://127.0.0.1:8200]
 //   [--done-after 3] [--out runtime/videos/cup-demo.<시각>.timeline.md] [--expect-after 36.3] [--record <폴더>] [--record-view <top|minimap>] [--record-fps 10] [--fake]
 //   [--say <초>:<글> ...] [--start-at <cup|tv|microwave|kitchen>] [--home mokryeon_180b] [--tail 30] [--max 1800] [--approve <초>] [--done-on <초>:<명령 글> ...]
-//   [--fov <도>] [--pitch <도>] [--h <m>] [--rate 1]
+//   [--fov <도>] [--pitch <도>] [--h <m>] [--rate 1] [--scenario scenario1 --left [<영상.mp4>:]<초>]
+// --left: 시나리오 1에서 시청자가 실제로 떠난 때(필수). 그 영상(없으면 --clip 첫 영상) 안의 초다. 폰 페이지가 그 영상을 튼 영상 시각에 더해
+//   서버 시각으로 옮기고, TV 끄기 5초를 그때부터 잰다(scripts/scenario1-judge.ts left, leftServerAt).
 // --rate: 영상 빠르기(0.25~2, 기본 1). 1이 아니면 폰 주소에 rate=로 붙고 폰 페이지가 첫 영상·단계 영상을 그 빠르기로 튼다(영상 시각은 원본 시각 그대로).
 //   서버 시각 ↔ 영상 시각 옮기기(videoClock·serverClock)는 짝 밖을 그 빠르기로 세고, 지금 영상이 너무 오래 도는지는 영상 길이 ÷ 빠르기로 본다.
 //   판정 줄 아래 반응 줄(reactionLine): 사람이 떠난 때(기록의 사람 사라짐) → 그 뒤 첫 명령을 서버 시각으로 세어 빠르기와 상관없이 같은 초다.
-// --fov·--pitch·--h: 영상 모드 카메라(세로 시야각 20~120, 숙인 각 -89~89, 높이 0.2~3). 준 것만 폰 주소에 fov=·pitch=·h=로 붙고, 없으면 폰 페이지 기본값(60°, -25°, 1.4m).
+// --fov·--pitch·--h: 영상 모드 카메라(세로 시야각 20~120, 숙인 각 -89~89, 높이 0.2~3). 준 것만 폰 주소에 fov=·pitch=·h=로 붙고, 없으면 폰 페이지 기본값(가로 영상 40°, -10°, 1.15m, video-ar.js CAMERA).
 // --say: 영상 시각(서버 시계를 폰 페이지 짝으로 옮긴 값)이 그 초가 되면 폰 페이지 안의 폰 소켓(/phone/events)으로 {type: "say", text, at}를 보낸다
 // (CDP로 그 소켓을 찾아 보냄). 시각표에 「말」 줄: 보낸 서버 시각을 두었다가 끝에서 같은 짝으로 옮긴다.
 //   at은 폰 페이지가 화면이 바뀔 때마다 실제 폰 말과 같은 heardAtOf로 남긴 기록(__noonchiVideo.at) 그대로다(없으면 none).
@@ -17,8 +19,9 @@
 // 지금 영상 길이 + 60초, 판 전체 --max초. 끄기 안내가 남은 채 끝나면 「끝까지 돌지 않음」에 남긴다.
 // 계획이 끝남(done)이면 폰 명령 줄의 완료 문장(done:<계획 id>, src/act/done-step.ts)이 보인 뒤 DONE_TAIL_MS(2초)까지 더 보고 끝낸다(8초 안에 안 오면 그냥 끝).
 // 미니맵 판 기록(run.json)에 그 완료 문장 영상 시각(doneMs)과 빠르기(rate)를 남긴다: scripts/minimap-cut.ts가 마지막 조각 끝에서 완료 문장 + 2초까지 남긴다.
-// 영상 모드 판정: 헤드리스 크롬 하나(390×844)로 폰 페이지 <phone>/phone/?clip=<clip>을 열고 「AR 시작」을 눌러 영상을 끝까지 튼다.
-// 폰 페이지 자기 자원(<phone>/assets/…)을 못 받았으면 「AR 시작」 전에 페이지를 한 번 다시 읽고 판정 줄 위에 적는다(이 PC는 127.0.0.1 연결이 가끔 실패한다).
+// 영상 모드 판정: 헤드리스 크롬 하나(가로 폰 844×390)로 폰 페이지 <phone>/phone/?clip=<clip>을 열고 「카메라 켜기」를 눌러 영상을 끝까지 튼다.
+// 영상은 가로만 튼다: 폰 페이지가 세로 영상(높이 > 폭)을 열지 않고 「가로로 찍은 영상을 골라 주세요.」를 띄우면 기다리지 않고 오류로 끝낸다(landscapeRefusal).
+// 폰 페이지 자기 자원(<phone>/assets/…)을 못 받았으면 「카메라 켜기」 전에 페이지를 한 번 다시 읽고 판정 줄 위에 적는다(이 PC는 127.0.0.1 연결이 가끔 실패한다).
 // --step(여러 번, 종류 go·pick·place·do, 낱말 a-z·_)은 폰 주소에 step=으로 하나씩 붙는다. 폰 페이지는 종류가 같고 대상 id에 낱말이 든 명령이 오면
 // 그 단계 영상으로 바꿔 튼다(영상 시각은 이어 셈). --step·--approve·--done-on이 있으면 --done-after 기본은 0이다(고른 명령 밖에는 단추를 누르지 않고 비전·폰 위치로 단계가 넘어가는지 본다).
 // 판마다 서버를 새로 띄운다. 앞 판 계획이 끝나지 않았거나 엔진 프레임을 이미 받은 서버(World State가 남음)면 크롬을 띄우기 전에 멈춘다.
@@ -39,7 +42,7 @@
 // 끝에 같은 크롬 새 탭(1280×800)으로 대시보드 <api>/를 열어 8초 뒤 사진을 runtime/videos/<영상>.<시각 또는 fake>.twin.png에 남기고 markdown에 넣는다.
 // 사진을 못 남기면 판정 줄 위에 적기만 한다.
 // --record <폴더>: 폰 페이지를 연 뒤 같은 크롬 새 창(1280×800)으로 대시보드를 판정 내내 띄우고, 트윈이 다 뜬 뒤(waitTwinReady) 대시보드 한 화면
-// (--record-phone이면 폰 탭도)을 CDP screencast로 초당 약 10장 받아 끝(30초 더 보기 포함)까지 녹화한다(scripts/video-record.ts). 「AR 시작」은 그 뒤에 누른다.
+// (--record-phone이면 폰 탭도)을 CDP screencast로 초당 약 10장 받아 끝(30초 더 보기 포함)까지 녹화한다(scripts/video-record.ts). 「카메라 켜기」는 그 뒤에 누른다.
 // 녹화하는 동안 대시보드 그림 간격을 재 적는다. 끝 사진은 그 창으로 바로 찍는다. 크롬을 끈 뒤 ffmpeg로 대시보드(폰도 받았으면 나란히) mp4 하나
 // (H.264, yuv420p, 10fps, 실제 시간 길이)를 <폴더>/<시각표 이름 줄기>.demo.mp4로 만든다. --chrome은 크롬 그리기 방식(기본 headless-gpu)이다.
 // ffmpeg가 없거나 실패하면 <폴더>/<줄기>.frames 프레임 폴더를 남기고 판정 줄 위에 적는다.
@@ -48,7 +51,7 @@
 // minimap 보기는 mp4를 만든 뒤에도 <줄기>.frames 장면 폴더를 두고 판 기록 run.json(녹화 시작 시각·장면·폰 페이지 짝·단계 영상·첫 영상 길이)을 남긴다.
 // 미니맵은 장면을 마스크 지연만큼 늦게 보이므로(ui/src/dashboard/scene-sync.ts) 보인 장면의 촬영 시각 기록(scenes)도 남기고, 완료 문장 2초는 미니맵에 보인 때부터 센다.
 // scripts/minimap-cut.ts가 그것으로 붙잡기를 뺀 이은 영상(<줄기>.minimap.mp4)을 만든다.
-// 영상은 소리 없이 「AR 시작」 누름에서 튼다. launchChrome은 자동 재생 플래그를 받지 않지만 소리 없는 재생은 크롬 기본값으로 된다.
+// 영상은 소리 없이 「카메라 켜기」 누름에서 튼다. launchChrome은 자동 재생 플래그를 받지 않지만 소리 없는 재생은 크롬 기본값으로 된다.
 // 오늘 기억: 영상을 틀기 전에 GET /api/memory/day/<오늘>의 uses.memory를 본다(memoryGate). 마시는 중에서 떠나는 배운 컵 치우기 화살표가 없으면(seed·옛 모양)
 // 크롬을 띄우지 않고 끝 코드 1과 판정 줄(서버를 끄고 demo-setup learned로 넣으라는 글). 있으면 시각표 머리에 「기억 <v>판 · <source>」 한 줄.
 // --fake: 실제 모델 없이 같은 프로세스에서 스스로 시험한다. 본 서버(HUB=memory, 한양목련, 새 RUNTIME_DIR, 영상·단계 영상은 공용 runtime/videos에서 바로 읽음, BRAIN=1, PAM 1초마다)와
@@ -62,6 +65,8 @@ import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import type { Detection } from "../src/contract/observe.js";
+import { LiveScenario, SCENARIO_KINDS } from "./scenario1-live.js";
+import type { StationMap } from "../src/contract/stations.js";
 import type { HistoryRow } from "../src/contract/history.js";
 import type { WorldObject, WorldView } from "../src/contract/world.js";
 import { EXEC_TEXT } from "../src/act/labels.js";
@@ -84,12 +89,14 @@ import { resolveTwinStudioDir } from "../src/layout/twin-files.js";
 import { resolveHome } from "../src/layout/homes.js";
 import { loadScene } from "../src/layout/scene.js";
 import { DEMO_STARTS, startFor, type DemoScene } from "./demo-start.js";
+import { LANDSCAPE_ONLY } from "../ui/src/phone/core/video-ar.js";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const CLIP_NAME = /^[A-Za-z0-9_-]{1,64}\.(?:mp4|webm)$/;
 /** --step 값: 종류:대상 낱말:단계 영상 */
 const STEP_ARG = /^(?:go|pick|place|do):[a-z_]+:[A-Za-z0-9_-]{1,64}\.(?:mp4|webm)$/;
-const SIZE: [number, number] = [390, 844];
+/** 폰 탭 크기: 가로로 든 폰(가로 영상이 화면을 채운다). */
+const SIZE: [number, number] = [844, 390];
 /** 대시보드 사진 탭 크기와 열고 기다리는 시간 */
 const DASH_SIZE: [number, number] = [1280, 800];
 /** 비전 미니맵만 보기(?view=minimap) 창 크기: 16:9 미니맵 칸이 창을 채운다. */
@@ -149,6 +156,26 @@ export function videoClock(t0: number, sync: readonly (readonly [number, number]
     const [an, vn] = sync.at(-1)!;
     return vn + (at - an) * rate;
   };
+}
+
+/** 시나리오 1에서 시청자가 떠난 때: 영상 이름과 그 영상 안의 ms. */
+export interface LeftAt { clip: string; ms: number }
+
+/** 떠난 때 → 서버 시각. 첫 영상(--clip)은 영상 시각 0에서, 단계 영상은 폰 페이지가 그 영상을 튼 영상 시각(clips의 첫 기록)에서 시작한다.
+ *  아직 틀지 않은 영상이거나, 영상 길이(단계 영상은 clips의 duration_ms, 첫 영상은 firstDurationMs)를 모르거나 넘으면 null:
+ *  넘은 시각은 붙잡은 끝 장면이나 다음 영상 시각이 된다. 영상 시각과 sync는 같은 폰 페이지 시계라 끝 장면을 붙잡은 시간이 섞여도 어긋나지 않는다. */
+export function leftServerAt(left: LeftAt, firstClip: string, record: { t0: number; sync: readonly (readonly [number, number])[]; clips: readonly VideoClip[] }, rate = 1, firstDurationMs?: number | null): number | null {
+  const clip = left.clip === firstClip ? { video_ms: 0, duration_ms: firstDurationMs ?? undefined } : record.clips.find((c) => c.clip === left.clip);
+  if (!clip || clip.duration_ms == null || left.ms > clip.duration_ms) return null;
+  return serverClock(record.t0, record.sync, rate)(clip.video_ms + left.ms);
+}
+
+/** 중간 판정에서 더 볼 것 없이 실패로 끝난 결과인가: 늦은 끄기·다른 기기·다른 컵·직접 끈 TV 켜기, 그리고 대기 자리에 도착한 뒤의
+ *  대기 전 끔→켬 실패(early_tv, 그 묶음은 더 채워지지 않는다), 기록 DB에서 빠진 집 사진(photo_gap, 다시 받을 수 없다). 아직 오지 않은 단계(missing)와 기록이 늦게 닿아 잠깐 생길 수 있는
+ *  순서 어긋남(unexpected·unconfirmed)은 계속 본다. */
+export function scenarioSettled(r: { passed: boolean; firstMismatch: string | null; events?: readonly { kind: string }[] }): boolean {
+  const m = r.firstMismatch ?? "";
+  return !r.passed && (/^(late:|wrong_|manual_off_then_on$|photo_gap$)/.test(m) || (m.startsWith("early_tv:") && !!r.events?.some((e) => e.kind === "standby")));
 }
 
 /** 영상 시각 → 서버 시각(videoClock을 거꾸로): 짝 사이는 잇고, 멈춘 구간(영상 시각이 그대로)이면 그 영상 시각에 처음 닿은 서버 시각, 짝 밖은 빠르기(rate)로 센다. */
@@ -607,9 +634,9 @@ const getJson = async <T>(url: string): Promise<T | null> => fetch(url).then((r)
 
 // 크롬에서 돌리는 식
 
-/** 「AR 시작」 단추를 누를 수 있으면 누른다. */
+/** 「카메라 켜기」 단추를 누를 수 있으면 누른다. */
 const CLICK_START = `(() => {
-  const b = [...document.querySelectorAll("button")].find((x) => x.textContent.trim() === "AR 시작");
+  const b = document.querySelector("button[data-phone-action='start-camera']");
   if (!b || b.disabled) return false;
   b.click();
   return true;
@@ -649,9 +676,10 @@ const FAKE_PERSON_MS = 30_000;
 const HOME = "mokryeon_180b";
 // tests/video-mode-e2e.test.ts와 같은 시작 자리: 식탁 가운데([9.9612, 3.9242])에서 1.5m 떨어진 거실, 시작 방향 0°(+x)로 식탁을 본다
 const START: [number, number] = [9.9612 - 1.5, 3.9242];
-// 세로 영상의 엔진 프레임 360×640(core/pipeline.js frameWidth). 컵 상자 아래 가운데가 그림 한가운데(카메라 축, 식탁 윗면)
-const CUP: Detection = det("cup", 0.9, [160, 300, 40, 20], 41);
-const PERSON: Detection = det("person", 0.9, [100, 60, 160, 420], 0);
+// 가로 영상의 엔진 프레임 480×270(core/pipeline.js frameWidth), 폰 페이지 기본 카메라(40°, -10°, 1.15m, video-ar.js CAMERA).
+// 컵 상자 아래 가운데(240, 167)가 1.5m 앞 식탁 윗면(0.75m) 가운데, 사람 상자는 식탁 건너편 2.4m(발 아래 가운데 240, 239·머리 1.25m 높이 y 45)
+const CUP: Detection = det("cup", 0.9, [220, 147, 40, 20], 41);
+const PERSON: Detection = det("person", 0.9, [205, 45, 70, 194], 0);
 
 /** personUntil: 대본 YOLO가 사람을 내지 않기 시작하는 서버 시각(첫 엔진 프레임 전이면 null). runtimeDir: 임시 RUNTIME_DIR. */
 interface Fake { api: string; phone: string; runtimeDir: string; logs: string[]; personUntil(): number | null; close(): Promise<void> }
@@ -725,16 +753,19 @@ async function startFake(clip: string, steps: string[]): Promise<Fake> {
 // 돌리기
 
 const USAGE = "쓰는 법: npx tsx scripts/video-check.ts --clip <이름.mp4> [--step <종류>:<낱말>:<영상.mp4> ...] [--phone http://127.0.0.1:8210] [--api http://127.0.0.1:8200] [--done-after 3] [--out <파일.md>] [--expect-after 36.3] [--record <폴더>] [--record-view <top|minimap>] [--record-fps 10] [--fake]"
-  + " [--say <초>:<글> ...] [--start-at <cup|tv|microwave|kitchen>] [--home mokryeon_180b] [--tail 30] [--max 1800] [--approve <초>] [--done-on <초>:<명령 글> ...]"
+  + " [--scenario scenario1 --left [<영상.mp4>:]<초>] [--say <초>:<글> ...] [--start-at <cup|tv|microwave|kitchen>] [--home mokryeon_180b] [--tail 30] [--max 1800] [--approve <초>] [--done-on <초>:<명령 글> ...]"
   + " [--fov <도>] [--pitch <도>] [--h <m>] [--rate 1] [--answer <초>:<답 단추 글> ...]";
 
-/** 영상 모드 카메라(폰 주소 fov·pitch·h): 준 값만 있다. 없는 값은 폰 페이지 기본값(세로 시야각 60°, pitch −25°, 높이 1.4m). */
+/** 영상 모드 카메라(폰 주소 fov·pitch·h): 준 값만 있다. 없는 값은 폰 페이지 기본값(가로 영상 세로 시야각 40°, pitch −10°, 높이 1.15m). */
 export interface Camera { fov?: number; pitch?: number; h?: number }
 /** 카메라 값 범위: 폰 페이지(ui/src/phone/core/video-ar.js)가 받는 범위와 같다. */
 const CAMERA_RANGE: Record<keyof Camera, [number, number]> = { fov: [20, 120], pitch: [-89, 89], h: [0.2, 3] };
 
 export interface Args {
   /** expectSet: --expect-after를 적었는가(아니면 스스로 시험은 대본 사람 시간을 영상 시각으로 옮겨 쓴다). */
+  scenario?: "scenario1";
+  /** --left: 시나리오 1에서 시청자가 떠난 때(그 영상 안의 ms). 시나리오 1이면 반드시 있다. */
+  left?: LeftAt;
   clip: string; fake: boolean; steps: string[]; doneAfterMs: number; expectMs: number; expectSet: boolean; phone: string; api: string; out: string | undefined; record: string | undefined;
   says: { atMs: number; text: string }[]; startAt: DemoScene | null; home: string; tailMs: number; maxMs: number; approveAfterMs: number; doneOn: { afterMs: number; text: string }[];
   /** --answer: 질문에 누를 답 단추 글과 기다릴 시간. */
@@ -756,6 +787,14 @@ export function parseArgs(argv: string[]): Args | string {
   const arg = (k: string) => { const i = argv.indexOf(`--${k}`); return i >= 0 ? argv[i + 1] : undefined; };
   const clip = arg("clip") ?? "";
   if (!CLIP_NAME.test(clip)) return USAGE;
+  const scenario = arg("scenario");
+  if (argv.includes("--scenario") && scenario !== "scenario1") return "--scenario scenario1을 지정해 주세요.";
+  if (scenario && (argv.includes("--fake") || argv.includes("--approve") || argv.includes("--done-on") || argv.includes("--answer") || Number(arg("done-after")??0)!==0)) return "시나리오 1은 실제 입력과 자동 도착으로 판정합니다."
+  const leftArg = /^(?:([^:]+):)?(\d+(?:\.\d+)?)$/.exec(arg("left") ?? "");
+  const left: LeftAt | null = leftArg && (leftArg[1] === undefined || CLIP_NAME.test(leftArg[1])) ? { clip: leftArg[1] ?? clip, ms: Number(leftArg[2]) * 1000 } : null;
+  if (scenario && !left) return "시나리오 1은 시청자가 떠난 때를 --left [<영상.mp4>:]<초>로 주세요(영상을 빼면 --clip 첫 영상).";
+  if (scenario && left!.clip !== clip && !argv.some((a, i) => argv[i - 1] === "--step" && a.split(":")[2] === left!.clip))
+    return `--left의 영상 ${left!.clip}이 --clip·--step에 없어요.`;;
   const steps = argv.flatMap((a, i) => (a === "--step" ? [argv[i + 1] ?? ""] : []));
   const bad = steps.find((s) => !STEP_ARG.test(s));
   if (bad !== undefined) return `--step은 <go|pick|place|do>:<낱말 a-z·_>:<영상.mp4|webm>예요: 「${bad}」`;
@@ -763,7 +802,7 @@ export function parseArgs(argv: string[]): Args | string {
   if (argv.includes("--record") && (!record || record.startsWith("--"))) return "--record 뒤에 시연 영상을 남길 폴더를 주세요: --record <폴더>";
   const fake = argv.includes("--fake");
   // --step·--approve·--done-on이 있으면 --done-after 기본은 0이다(고른 명령에만 누른다)
-  const doneAfterMs = Number(arg("done-after") ?? (steps.length || argv.includes("--approve") || argv.includes("--done-on") || argv.includes("--answer") ? "0" : "3")) * 1000;
+  const doneAfterMs = Number(arg("done-after") ?? (scenario || steps.length || argv.includes("--approve") || argv.includes("--done-on") || argv.includes("--answer") ? "0" : "3")) * 1000;
   const expectMs = Number(arg("expect-after") ?? (fake ? String(FAKE_PERSON_MS / 1000) : "36.3")) * 1000;
   if (!Number.isFinite(doneAfterMs) || doneAfterMs < 0 || !Number.isFinite(expectMs)) return "--done-after·--expect-after는 0 이상 숫자(초)예요";
   // <초>:<글>: 초는 0 이상 숫자, 글은 비지 않고 60자까지
@@ -807,7 +846,7 @@ export function parseArgs(argv: string[]): Args | string {
   const rate = Number(rawRate);
   if (!rawRate?.trim() || rawRate.startsWith("--") || !Number.isFinite(rate) || rate < 0.25 || rate > 2) return `--rate는 0.25~2 숫자(영상 빠르기)예요. ${USAGE}`;
   return {
-    recordPhone: argv.includes("--record-phone"), chrome, recordView, recordFps, rate,
+    ...(scenario==="scenario1"?{scenario,left:left!}:{}), recordPhone: argv.includes("--record-phone"), chrome, recordView, recordFps, rate,
     clip, fake, steps, doneAfterMs, expectMs, expectSet: arg("expect-after") !== undefined, phone: arg("phone") ?? "http://127.0.0.1:8210", api: arg("api") ?? "http://127.0.0.1:8200", out: arg("out"), record,
     says: says.map((x) => ({ atMs: x!.ms, text: x!.text })), startAt: startAt as DemoScene | null, home: arg("home") ?? HOME, tailMs, maxMs, approveAfterMs,
     doneOn: doneOn.map((x) => ({ afterMs: x!.ms, text: x!.text })), answers: answers.map((x) => ({ afterMs: x!.ms, label: x!.text })), camera,
@@ -838,10 +877,16 @@ export async function waitLoaded(tab: Pick<Page, "send">, url: string, o: { what
 /** 대시보드 창 크기: minimap 1280×720, top 1280×800. */
 const dashSizeOf = (view: DashView): [number, number] => (view === "minimap" ? MINIMAP_SIZE : DASH_SIZE);
 
-/** 녹화 모양: 대시보드 창 크기(dashSizeOf), ack 간격(1000/fps), mp4 fps, mp4 높이(폰도 녹화하면 기본 높이에 맞춰 붙이므로 없음, 아니면 창 높이). */
-export function recordSetup(a: Pick<Args, "recordView" | "recordFps" | "recordPhone">): { size: [number, number]; intervalMs: number; fps: number; height: number | undefined } {
+/** 녹화 모양: 대시보드 창 크기(dashSizeOf), ack 간격(1000/fps), mp4 fps, mp4 높이(폰도 녹화하면 기본 높이에 맞춰 붙이므로 없음, 아니면 창 높이),
+ *  폰 탭 크기(폰도 녹화할 때만, 가로 SIZE). */
+export function recordSetup(a: Pick<Args, "recordView" | "recordFps" | "recordPhone">): { size: [number, number]; intervalMs: number; fps: number; height: number | undefined; phoneSize: [number, number] | undefined } {
   const size = dashSizeOf(a.recordView);
-  return { size, intervalMs: 1000 / a.recordFps, fps: a.recordFps, height: a.recordPhone ? undefined : size[1] };
+  return { size, intervalMs: 1000 / a.recordFps, fps: a.recordFps, height: a.recordPhone ? undefined : size[1], phoneSize: a.recordPhone ? SIZE : undefined };
+}
+
+/** 폰 지원 줄에 세로 영상 알림(video-ar.js LANDSCAPE_ONLY)이 들었으면 판정을 끝낼 오류 글, 아니면 null. 지원 줄은 실패 글 앞에 말을 붙인다(ui/src/phone/state.ts supportText). */
+export function landscapeRefusal(support: string | null, clip: string): string | null {
+  return support?.includes(LANDSCAPE_ONLY) ? `세로 영상이라 열지 않았어요(${clip}): ${LANDSCAPE_ONLY}` : null;
 }
 
 /** 대시보드 탭·창: 크기를 보기 창 크기(모바일 아님, dashSizeOf)로 맞추고 대시보드 <api>/(view minimap이면 <api>/?view=minimap)로 옮긴 뒤 그 문서가 다 불러와질 때까지 기다린다(waitLoaded). */
@@ -997,12 +1042,12 @@ async function main(): Promise<number> {
       await cdp.send("Emulation.setDeviceMetricsOverride", { width: SIZE[0], height: SIZE[1], deviceScaleFactor: 1, mobile: true });
       await cdp.send("Page.navigate", { url });
       console.log(`[video-check] ${url}`);
-      // 폰 문서가 다 뜬 뒤에 녹화·「AR 시작」으로 간다(새 문서가 들어서기 전 screencast는 「Not attached to an active page」로 실패한다)
+      // 폰 문서가 다 뜬 뒤에 녹화·「카메라 켜기」로 간다(새 문서가 들어서기 전 screencast는 「Not attached to an active page」로 실패한다)
       await waitLoaded(cdp, url, { what: "폰 페이지" });
       const read = async () => (await cdp.evaluate(READ, 10_000)) as Seen;
 
       // 시연 녹화: 같은 크롬 새 창(탭은 폰 탭을 가린다)으로 대시보드를 판정 내내 띄우고, 트윈이 다 뜬 뒤 대시보드(--record-phone이면 폰도) 프레임을 받는다.
-      // 「AR 시작」(영상 재생)은 녹화를 시작한 뒤에 누른다
+      // 「카메라 켜기」(영상 재생)는 녹화를 시작한 뒤에 누른다
       if (framesDir) {
         dash = await openWindow(port, shape.size, (msg) => dashErrors.push(msg));
         await openDashboard(dash, api, { view: args.recordView });
@@ -1015,13 +1060,13 @@ async function main(): Promise<number> {
         if (args.recordView === "minimap") await dash.evaluate(SCENES_START, 10_000).catch(() => {});
         rmSync(framesDir, { recursive: true, force: true });
         recStartMs = Date.now();
-        rec = await startRecording(framesDir, [...(args.recordPhone ? [{ name: "phone", page: cdp, size: SIZE }] : []), { name: "dash", page: dash, size: shape.size }], { intervalMs: shape.intervalMs });
+        rec = await startRecording(framesDir, [...(shape.phoneSize ? [{ name: "phone", page: cdp, size: shape.phoneSize }] : []), { name: "dash", page: dash, size: shape.size }], { intervalMs: shape.intervalMs });
         const shown = await cdp.evaluate("document.visibilityState", 10_000).catch(() => "모름");
         if (args.recordPhone && shown !== "visible") recordNotes.push(`녹화: 폰 탭이 가려짐(visibilityState ${String(shown)})`);
         console.log(`[video-check] 녹화 시작 · ${shape.fps}fps · ${args.recordPhone ? "폰·대시보드" : args.recordView === "minimap" ? "미니맵만" : "대시보드만"} · 크롬 ${args.chrome} · ${framesDir}`);
       }
 
-      // 폰 페이지 자기 자원을 못 받았으면(이 PC는 127.0.0.1 연결이 가끔 실패하고 크롬은 다시 받지 않는다) 「AR 시작」 전에 한 번 다시 읽는다
+      // 폰 페이지 자기 자원을 못 받았으면(이 PC는 127.0.0.1 연결이 가끔 실패하고 크롬은 다시 받지 않는다) 「카메라 켜기」 전에 한 번 다시 읽는다
       const failed = ownAssetFailures(errors, fake?.phone ?? args.phone);
       if (failed.length) {
         recordNotes.push(`자원 받기 실패로 폰 페이지를 한 번 다시 읽음: ${failed.join(", ")}`);
@@ -1031,12 +1076,14 @@ async function main(): Promise<number> {
         await waitLoaded(cdp, url, { what: "폰 페이지" });
       }
 
-      // 「AR 시작」을 누르고 재생이 시작될 때까지(t0)
+      // 「카메라 켜기」를 누르고 재생이 시작될 때까지(t0)
       for (const end = Date.now() + 60_000; !(await cdp.evaluate(CLICK_START, 10_000).catch(() => false)); await sleep(250)) {
-        if (Date.now() > end || stop) throw new Error("60초 안에 「AR 시작」 단추를 누를 수 없음");
+        if (Date.now() > end || stop) throw new Error("60초 안에 「카메라 켜기」 단추를 누를 수 없음");
       }
       let seen = await read();
       for (const end = Date.now() + 30_000; seen.record?.t0 == null; seen = await read()) {
+        const refused = landscapeRefusal(seen.support, args.clip);
+        if (refused) throw new Error(refused);
         if (Date.now() > end || stop) throw new Error(`30초 안에 영상이 시작되지 않음(지원 줄 「${seen.support ?? ""}」)`);
         await sleep(250);
       }
@@ -1047,10 +1094,25 @@ async function main(): Promise<number> {
       // 트윈 줄: 1초마다 World State를 읽어 바뀐 것만 쌓는다(ms는 서버 시각, 끝에 t0를 뺀다). 못 받으면 넘어간다
       const twin: { seen: TwinSeen | null; rows: Row[]; last: WorldView | null } = { seen: null, rows: [], last: null };
       // 컵 줄의 방 이름: 장면의 방 목록(못 받으면 「방 모름」)
-      const rooms = roomLabels(await getJson<{ scene?: { plan?: { rooms?: { id: string; label?: string }[] } } }>(`${api}/api/scene`));
+      const sceneAnswer = await getJson<{scene?:SceneJson & {stations:StationMap}}>(`${api}/api/scene`);
+      const rooms = roomLabels(sceneAnswer);
+      if(args.scenario && !sceneAnswer?.scene?.stations) throw Error("시나리오 1 자리 설정을 받지 못했어요.");
+      const scenario=args.scenario && sceneAnswer?.scene ? new LiveScenario(sceneAnswer.scene) : null;
+      // rec: 그때 폰 페이지 기록(t0·sync·틀은 영상). --left를 서버 시각으로 옮긴다(leftServerAt).
+      // 중간 판정(final 아님)에서는 아직 오지 않은 떠난 때를 넣지 않는다: 미래 시각이 앞 단계 사이에 끼어 순서 어긋남이 되지 않게
+      const scenarioResult=async(since:number, received:VideoCommand[], rec:{t0:number; sync:readonly (readonly [number, number])[]; clips:readonly VideoClip[]}, final:boolean)=>{
+        const response=await fetch(`${api}/api/history?since=${since}&kinds=${SCENARIO_KINDS.join(",")}&limit=5000`,{signal:AbortSignal.timeout(5000)});
+        if(!response.ok)throw Error("시나리오 1 기록 조회 실패 "+response.status);
+        const {rows}=await response.json() as {rows:HistoryRow[]};
+        if(rows.length>=5000)throw Error("시나리오 1 기록 조회 한도를 넘었어요.");
+        const left=args.left?leftServerAt(args.left,args.clip,rec,args.rate,firstDurationMs):null;
+        if(final && args.left && left===null) throw Error(`--left ${args.left.clip}:${args.left.ms/1000}초가 튼 영상 안에 없어요(안 튼 영상이거나 영상 길이를 넘음).`);
+        return scenario!.judge(rows,received,left!==null && (final || left<=Date.now())?left:null);
+      };
       const pollWorld = async () => {
         const w = (await getJson<{ world?: WorldView }>(`${api}/api/world`))?.world;
         if (!w) return;
+        scenario?.sample(w);
         try {
           const r = twinRows(twin.seen, w, 0, rooms);
           twin.seen = r.seen;
@@ -1149,6 +1211,19 @@ async function main(): Promise<number> {
           due: due.length, planStatus, tailMs: args.tailMs, totalMs: Date.now() - runStart, maxMs: args.maxMs, offOpen,
           doneNotice: { shownForMs: noticeAt === null ? null : Date.now() - noticeAt, waitedMs: planDoneAt === null ? 0 : Date.now() - planDoneAt },
         });
+        if(scenario) {
+          const result=await scenarioResult(Math.min(firstT0,seen.record?.t0??firstT0),commands,
+            {t0:seen.record?.t0??firstT0,sync:seen.record?.sync??[],clips:seen.record?.clips??clips},false);
+          if(result.passed && !offOpen) break;
+          // 되돌릴 수 없는 실패면 영상·VLM 호출을 더 쓰지 않는다. 판정은 아래 마지막 판정이 다시 낸다
+          if(scenarioSettled(result)) break;
+          if(stop || Date.now()-runStart>=args.maxMs){
+            unfinished.push((stop?"중단":"전체 시간 초과")+" · "+(result.firstMismatch??"끄기 안내 대기"));
+            break;
+          }
+          await sleep(1000);
+          continue;
+        }
         if (offOpen && state !== "watch" && state !== "done") unfinished.push("끄기 안내가 풀리지 않음");
         if (state === "clip_over") { unfinished.push(`${Math.round((clipRealMs! + 60_000) / 1000)}초 안에 영상이 끝나지 않음`); break; }
         if (state === "max_over") { unfinished.push(`판 전체 ${Math.round(args.maxMs / 1000)}초를 넘음`); break; }
@@ -1195,7 +1270,14 @@ async function main(): Promise<number> {
       const personUntil = fake?.personUntil() ?? null;
       const expect = fakeMode && !args.expectSet && personUntil !== null ? toVideo(personUntil) : expectMs;
       const v = verdict(rows, commands, history, expect);
-      const stepLine = steps.length ? stepVerdict(history, commands, clicks, twin.last) : null;
+      const scenarioVerdict=scenario?await scenarioResult(Math.min(firstT0,t0),commands,{t0,sync,clips},true):null;
+      if(scenarioVerdict) {
+        const n=scenarioVerdict;
+        v.text=[n.passed?"시나리오 1 통과":"시나리오 1 실패 · "+n.firstMismatch,
+          `시청 확인 → 첫 컵 이동 ${n.tvConfirmToCupCommandMs??"미확인"}ms · 시청자 떠남 → TV 끄기 ${n.leftToOffMs??"미확인"}ms(5000 이하) · 첫 시청자 부재 → TV 끄기 ${n.noViewerToOffMs??"미확인"}ms · 허브 확인 ${n.noViewerToAckMs??"미확인"}ms`,
+          ...n.events.map(e=>`${clock(toVideo(e.at))} · ${e.kind} ${e.id??""}`)].join("\n\n");
+      }
+      const stepLine = !scenario && steps.length ? stepVerdict(history, commands, clicks, twin.last) : null;
       const reaction = reactionLine(history, commands, t0, sync, args.rate);
       // 단계 자리 판정: --step 자리와 실제 명령 대상, 끝에 치운 컵이 싱크대 안인지. 틀리면 시각표 위에 적고 실패다
       const judged = mainPlan(commands, history);
@@ -1238,7 +1320,7 @@ async function main(): Promise<number> {
           console.log(`[video-check] 미니맵 장면 기록 ${scenes.length}개${scenes.length ? ` · 끝 지연 ${sceneLag(scenes)}ms` : " · 받은 시각으로 이어요"}`);
           writeFileSync(join(framesDir, CUT_RUN_FILE), JSON.stringify(run));
         }
-        const made = await encodeDemo(framesDir, recorded, demo, { ...(args.recordPhone ? { phoneSize: SIZE } : {}), dashSize: shape.size, fps: shape.fps, height: shape.height, keepFrames: args.recordView === "minimap" });
+        const made = await encodeDemo(framesDir, recorded, demo, { ...(shape.phoneSize ? { phoneSize: shape.phoneSize } : {}), dashSize: shape.size, fps: shape.fps, height: shape.height, keepFrames: args.recordView === "minimap" });
         encoded = true;
         if (made.ok) console.log(`[video-check] 시연 영상 ${demo}`);
         else { console.log(`[video-check] ${made.why}`); notes.push(`시연 영상 못 만듦: ${made.why}`); }
@@ -1258,6 +1340,7 @@ async function main(): Promise<number> {
       console.log(`[video-check] ${out}`);
 
       if (pageErrors.length) console.log(`[video-check] 페이지 오류\n${pageErrors.slice(0, 20).join("\n")}`);
+      if (scenarioVerdict) return unfinished.length || !scenarioVerdict.passed ? 1 : 0;
       if (!fakeMode) return unfinished.length || (places && !places.ok) ? 1 : 0;
       // 스스로 시험: 사람 사라짐 → PAM 컵 치우기 → 사람 사라짐 뒤 첫 명령 → 네 단계 끝 → 계획 끝, 트윈 눈·컵 줄
       const gone = rows.find((r) => r.kind === "사람 사라짐");

@@ -83,6 +83,9 @@ export interface WorldPerson {
   facts: Partial<Record<Facet, WorldFact>>;
   /** 사람이 든 마지막 VLM 답의 촬영 시각(없으면 null). */
   answered_ms: number | null;
+  /** 사람이 있던 자리(마지막 발 자리)가 엔진 프레임 화면 안인데 YOLO가 사용자를 이어 못 본 구간: 그 시작 촬영 시각과 그 자리·방.
+   *  보거나 자리가 화면 밖이 되면 없다. 안 보임이 된 뒤에도 이어지는 동안 남는다(TV 규칙이 쓴다, src/goal/triggers.ts yoloVacant). */
+  vacant?: { since_ms: number; position: [number, number]; room: string | null };
 }
 
 /** 자리가 정해진 가전·설비(TV·냉장고·전자레인지·오븐·토스터·싱크대)를 YOLO·VLM으로 본 것. 방마다 종류 하나. */
@@ -144,7 +147,27 @@ export interface WorldEye { position: [number, number]; height_m: number; yaw_de
  *  in_hand: 관절로 손에 든 채 본 자리(그 후보의 손에 없던 자리가 있으면 그 자리를 손에 없음으로 남긴다). */
 export interface WorldSighting { cls: ObjClass; position: [number, number, number]; surface: string | null; surface_label: string | null; at_ms: number; in_hand: boolean }
 
+export interface HouseholdPhoto {
+  cap_from_ms?: number;
+  id: string; at_ms: number; serial: number;
+  /** 집 상태 노드가 이 사진의 VLM 답(또는 답 없음)을 넣은 때(노드 시계). at_ms는 촬영 시각이다. 다시 낸 상태의 발행 시각(WorldView at_ms)과 다르다. */
+  answered_ms?: number;
+  proof: {
+    localized_fixtures?: string[];
+    localized_position?: [number,number,number];
+    camera: SceneLookInput["view"]; seats: "clear"|"obscured"|"unknown";
+    person_count: number; dining_food: "yes"|"no"|"unknown";
+    person: { position:[number,number]; room:string|null; seated:boolean|null; attention:"toward_tv"|"elsewhere"|"unknown" } | null;
+  } | null;
+}
+/** 전체 사진 VLM 답이 온 사진에 윗면 가운데가 들어 있던 트윈 면(눈과 같은 방). seen_ms는 그 사진의 촬영 시각이다.
+ *  그 면 위 물건은 objects가 말한다: 마실 것이 없으면 PAM 글에 「그 면 위 마실 것 없음」을 쓴다(src/world/text.ts). */
+export interface WorldSurfaceSeen { id: string; label: string; room: string | null; center: [number, number]; seen_ms: number }
 export interface WorldView {
+  household_photo?: HouseholdPhoto;
+  /** 본 트윈 면(본 적 없으면 없음). */
+  surfaces_seen?: WorldSurfaceSeen[];
+  person_trail?: { position: [number,number]; room: string | null; at_ms: number }[];
   at_ms: number;
   objects: WorldObject[];
   /** 후보 자리(없으면 없음). 확인 물건이 아니므로 objects에 들지 않는다. */

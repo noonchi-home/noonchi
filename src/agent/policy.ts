@@ -272,7 +272,7 @@ export class Policy {
   }
 
   /** 정책을 거쳐 명령한다(말로 시킨 명령). 승인이 필요하면 needsConfirmation(토큰)을 돌려주고 실행하지 않는다. 닫혔으면 하지 않는다. */
-  async guard(hub: DeviceHub, id: string, cmd: Command, confirmToken?: string): Promise<CommandResult> {
+  async guard(hub: DeviceHub, id: string, cmd: Command, confirmToken?: string, commandId?:string): Promise<CommandResult> {
     if (this.closed) return { ok: false, error: POLICY_CLOSED };
     const spec = hub.list().find((d) => d.id === id);
     if (!spec) return { ok: false, error: `기기를 찾을 수 없습니다: ${id}` };
@@ -284,7 +284,7 @@ export class Policy {
     const risky = this.requiresConfirmation(spec, c);
     // 말로 시킨 명령이라 위험 목록만 묻는다(approvalNeed)
     const need = approvalNeed({ key: deviceKey(id, c.type), risky: risky !== null, requested: true, memory: this.approvals.memory() });
-    if (!need || risky === null) return hub.command(id, c);
+    if (!need || risky === null) return hub.command(id, c, commandId);
     const reason = risky;
 
     if (confirmToken !== undefined) {

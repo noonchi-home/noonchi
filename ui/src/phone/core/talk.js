@@ -45,16 +45,18 @@ export function createListener(Recognition, hooks, { restartMs = 300 } = {}) {
     r.continuous = true;
     r.interimResults = false;
     r.maxAlternatives = 1;
+    const active = () => rec === r && want && !paused && !denied;
     r.onresult = (e) => {
       for (let i = e.resultIndex ?? 0; i < e.results.length; i++) {
+        if (!active()) return;
         const res = e.results[i];
         const text = res.isFinal === false ? "" : (res[0]?.transcript ?? "").trim();
         if (text) hooks.onHeard(text);
       }
     };
-    r.onspeechstart = () => hooks.onSpeechStart?.();
+    r.onspeechstart = () => { if (active()) hooks.onSpeechStart?.(); };
     r.onerror = (e) => {
-      if (!DENIED.has(e.error)) return;
+      if (!active() || !DENIED.has(e.error)) return;
       denied = true;
       report();
     };
@@ -99,17 +101,23 @@ export function createListener(Recognition, hooks, { restartMs = 300 } = {}) {
 
 /** 소리로 읽기(ko-KR, 1.05배). 다 읽거나 오류가 나면 done. 음성 합성이 없거나 글이 비면 바로 done. */
 export function speak(text, done = () => {}) {
-  if (!("speechSynthesis" in globalThis) || !text) return done();
-  speechSynthesis.cancel();
-  const u = new SpeechSynthesisUtterance(text);
-  u.lang = "ko-KR";
-  u.rate = 1.05;
-  u.onend = () => done();
-  u.onerror = () => done();
-  speechSynthesis.speak(u);
+  const { speechSynthesis: synth, SpeechSynthesisUtterance: Utterance } = globalThis;
+  if (!synth || typeof Utterance !== "function" || !text) return done();
+  let finished = false;
+  const finish = () => { if (!finished) { finished = true; done(); } };
+  try {
+    const u = new Utterance(text);
+    u.lang = "ko-KR";
+    u.rate = 1.05;
+    u.onend = u.onerror = finish;
+    synth.cancel();
+    synth.speak(u);
+  } catch {
+    finish();
+  }
 }
 
 /** 읽던 소리를 끊는다. 음성 합성이 없으면 아무것도 안 한다. */
 export function hush() {
-  if ("speechSynthesis" in globalThis) speechSynthesis.cancel();
+  try { globalThis.speechSynthesis?.cancel(); } catch { /* The browser already dropped the session. */ }
 }

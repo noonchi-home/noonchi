@@ -89,7 +89,7 @@
           "captured_at_ms": 1794214800000,
           "frame": {
             "width": 405,
-            "height": 720
+            "height": 228
           },
           "shapes": [
             {
@@ -98,7 +98,7 @@
               "mask": {
                 "at": [
                   168,
-                  332,
+                  102,
                   24,
                   25
                 ],
@@ -108,6 +108,10 @@
               }
             }
           ]
+        },
+        {
+          "type": "phone_command",
+          "text": null
         },
         {
           "type": "say",
@@ -546,7 +550,7 @@
           "captured_at_ms": 1794214804000,
           "frame": {
             "width": 405,
-            "height": 720
+            "height": 228
           },
           "shapes": [
             {
@@ -555,7 +559,7 @@
               "mask": {
                 "at": [
                   168,
-                  332,
+                  102,
                   24,
                   25
                 ],
@@ -565,6 +569,10 @@
               }
             }
           ]
+        },
+        {
+          "type": "phone_command",
+          "text": "식탁으로 가 주세요"
         },
         {
           "type": "mode",
@@ -985,7 +993,7 @@
           "captured_at_ms": 1794214808000,
           "frame": {
             "width": 405,
-            "height": 720
+            "height": 228
           },
           "shapes": [
             {
@@ -994,7 +1002,7 @@
               "mask": {
                 "at": [
                   160,
-                  238,
+                  60,
                   85,
                   108
                 ],
@@ -1004,6 +1012,10 @@
               }
             }
           ]
+        },
+        {
+          "type": "phone_command",
+          "text": "컵을 들어 주세요"
         },
         {
           "type": "mode",
@@ -1430,9 +1442,13 @@
           "captured_at_ms": 1794214812000,
           "frame": {
             "width": 405,
-            "height": 720
+            "height": 228
           },
           "shapes": []
+        },
+        {
+          "type": "phone_command",
+          "text": "싱크대로 가 주세요"
         },
         {
           "type": "mode",
@@ -1865,7 +1881,7 @@
           "captured_at_ms": 1794214816000,
           "frame": {
             "width": 405,
-            "height": 720
+            "height": 228
           },
           "shapes": [
             {
@@ -1874,7 +1890,7 @@
               "mask": {
                 "at": [
                   155,
-                  243,
+                  57,
                   95,
                   115
                 ],
@@ -1884,6 +1900,10 @@
               }
             }
           ]
+        },
+        {
+          "type": "phone_command",
+          "text": "컵을 싱크대에 넣어 주세요"
         },
         {
           "type": "mode",
@@ -2248,7 +2268,7 @@
         "captured_at_ms": 1794214808000,
         "frame": {
           "width": 405,
-          "height": 720
+          "height": 228
         },
         "shapes": []
       },

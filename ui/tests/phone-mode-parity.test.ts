@@ -40,7 +40,7 @@ const gl = { FRAMEBUFFER: 1, COLOR_BUFFER_BIT: 2, bindFramebuffer() {}, clearCol
 function fakeVideo() {
   const element = document.createElement("div");
   return {
-    element, currentTime: 0, videoWidth: 720, videoHeight: 1280, ended: false,
+    element, currentTime: 0, videoWidth: 1280, videoHeight: 720, ended: false,
     drawTo() {}, play: async () => {}, nextFrame() {}, onEnded() {}, close() { element.remove(); },
   };
 }
@@ -64,7 +64,7 @@ function arDepsFor(video: boolean): Partial<ControllerDeps> {
         createVideo: () => fakeVideo(),
         createEncoder: () => ({ mode: "test", encode: async () => jpeg(), close() {} }),
         createCanvas: () => ({ width: 0, height: 0, getContext: () => ({ getImageData: (_x: number, _y: number, w: number, h: number) => ({ data: new Uint8ClampedArray(w * h * 4) }) }) }),
-        screen: () => ({ width: 390, height: 844 }),
+        screen: () => ({ width: 844, height: 390 }),
       },
     } as Partial<ControllerDeps>;
   }

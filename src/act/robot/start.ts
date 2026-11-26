@@ -14,6 +14,7 @@ import { isoWithOffset } from "../../shared/time.js";
 import type { SpeechRequest } from "../track/tracker.js";
 import { emergencyOf } from "../mode.js";
 import { Part, clsOf, type Job, type Run } from "../track/core.js";
+import { goalOf } from "../track/attempt.js";
 
 /** 계획 전 검사가 막은 까닭 가운데 분명한 것(더 봐도 바뀌지 않음): 이미 치움·확인된 내용물 반대·행동 목록 밖.
  *  대상이 안 보임(no_target)은 확정 전 컵일 수 있는 모름이라 넣지 않는다(판단이 그 화살표를 기다려 컵이 확정되면 다시 켠다). */
@@ -22,6 +23,7 @@ const SETTLED: ReadonlySet<CheckFail> = new Set<CheckFail>(["in_sink", "contents
 /** 판단 받기·계획 시작. */
 export class Starter extends Part {
   private readonly jobs = new Set<Promise<void>>();
+  private readonly deferredDrafts = new WeakSet<DecisionRecord>();
   private readonly planAt = new Map<string, number>();
   private gen = 0;
   private lastSeq = 0;
@@ -69,8 +71,8 @@ export class Starter extends Part {
     return {
       activeAction: r?.decision.action ?? c.planning?.decision.action ?? c.finding?.decision.action ?? null,
       handling: r && c.touching(r) ? c.stepOf(r)?.id ?? null : null,
-      requested: r?.decision.source === "speech" || c.planning?.decision.source === "speech" || c.finding?.decision.source === "speech",
-      docking: !!c.docking,
+      requested: this.speechWaiting !== null || r?.decision.source === "speech" || c.planning?.decision.source === "speech" || c.finding?.decision.source === "speech",
+      docking: c.dock.busy(),
       emergency: emergencyOf({ world: this.o.state.view(), offNotices: c.safety.offTrack().notices }),
     };
   }
@@ -106,7 +108,7 @@ export class Starter extends Part {
     // 화살표 없는 답의 목표 트리거는 판단이 기록 전에 action으로 넣어 온다(src/brain/decide.ts goalTrigger, goal.ts triggerOf)
     if (!d.action) return this.note(d, EXEC_TEXT.wait);
     // 미리 세운 목표와 같은 행동인데 사람이 떠난 뒤의 판단이 아니면 목표가 맡는다(사람이 떠나면 판단을 다시 부른다, goal.ts)
-    if (d.source !== "speech" && core.goal.holds(d)) return this.note(d, EXEC_TEXT.goalWait);
+    if (d.source !== "speech" && ((d.goal && !core.goal.current()) || core.goal.holds(d))) return this.note(d, EXEC_TEXT.goalWait);
     // 사람이 떠나 목표가 판단을 부른 뒤에는 떠나기 전 관찰로 고른 다른 행동을 받지 않는다(말로 한 부탁·비상은 받는다)
     if (this.beforeLeave(d)) return this.note(d, EXEC_TEXT.beforeLeave);
     // 계획이 끝난 뒤 사용자 위치 확인·충전 자리로 가는 동안은 새 일을 미룬다(충전 자리에서 시작한다, dock.ts).
@@ -118,7 +120,7 @@ export class Starter extends Part {
     if (gate === "request") return this.note(d, EXEC_TEXT.requestWait);
     if (gate === "dock") return this.note(d, EXEC_TEXT.docking);
     if (gate === "hands") return this.note(d, EXEC_TEXT.handling);
-    if (core.dock.busy()) core.dock.drop();
+    if (core.docking) core.dock.drop();
     const open = core.open();
     if (open?.decision.action === d.action || core.planning?.decision.action === d.action) return this.note(d, EXEC_TEXT.same);
     // 손대는 단계(집기·내려놓기·들고 가기) 중에는 다른 행동 판단으로 계획을 바꾸지 않는다(계획이 끝난 뒤 다시 판단). 비상과 사람이 말로 한 부탁만 바꾼다
@@ -128,6 +130,7 @@ export class Starter extends Part {
     // 행동 중 기다리기·기기 단계에는 다른 판단으로 바꾸지 않는다(그동안 판단도 멈춘다, waiting)
     if (open && core.waiting()) return this.note(d, EXEC_TEXT.busy);
     if (this.closerNewer(d)) return this.note(d, EXEC_TEXT.closerNewer);
+    if (core.adaptive.policy(d) === "defer_proactive") return this.note(d, "이번에는 먼저 돕지 않아요.");
     // 남은 음료를 그대로 두라고 한 컵만 남았으면 치우지 않는다(사람이 다시 보일 때까지, steps.ts leftover). 판단이 그 화살표를 기다리지 않게 알린다
     if (this.kept(d)) {
       core.emit(planIdOf(d.id), "decided");
@@ -136,9 +139,11 @@ export class Starter extends Part {
       return;
     }
     const pre = prechecked ?? this.o.precheck?.(d) ?? { ok: true };
-    if (!pre.ok) {
+    if (!pre.ok && !(pre.reason === "no_target" && core.goal.authorized(d))) {
       // 대상이 안 보이면 마지막으로 본 자리로 찾으러 간다(찾을 자리가 없으면 지금처럼 닫는다)
       if ((pre.reason === "no_target" || pre.reason === "in_sink") && core.finder.start(d, pre.text)) return;
+      const output = pre.reason === "no_target" ? "guard_target" : pre.reason === "in_sink" ? "guard_placed" : "guard_plan";
+      this.o.trace?.event("guard", { decision_id: d.id, object_id: pre.object }, output);
       core.emit(planIdOf(d.id), "decided");
       core.emit(planIdOf(d.id), "failed", pre.text);
       // 분명한 까닭이면 판단이 그 화살표를 기다리지 않게 알린다(15초 동안 같은 막음을 되풀이하지 않게). 싱크대 안이어도 찾을 후보 자리가 남았으면
@@ -153,7 +158,16 @@ export class Starter extends Part {
     // 미리 세운 목표는 여기서 버리지 않는다: 다른 행동의 계획이 실제로 시작할 때(begin) 버린다. 골라졌다가 막히면(계획 실패·쓰는 중·실행 전 검사) 목표가 그대로 맡는다
     // 계획을 만드는 중이던 다른 행동은 끊고 버린다(답이 와도 쓰지 않는다)
     this.dropPlanning(EXEC_TEXT.superseded);
-    const job: Job = { decision: d, gen: ++this.gen, abort: new AbortController(), at: now };
+    const resumedId = resumed && this.deferredDrafts.delete(d) ? `${d.id}:resumed:${this.gen + 1}` : undefined;
+    const attempt = core.attempts.issue(d, resumedId);
+    if (attempt.ended) return;
+    const gateState = core.adaptive.preflight(attempt, d);
+    if (gateState === "fulfilled") {
+      core.emit(planIdOf(d.id), "done", "기기가 이미 원하는 상태예요.");
+      return core.adaptive.finish(attempt, "done");
+    }
+    if (gateState === "deferred") return;
+    const job: Job = { decision: d, gen: ++this.gen, abort: new AbortController(), at: now, attempt };
     if (resumed) job.resumedStep = context.handling;
     core.planning = job;
     core.emit(planIdOf(d.id), "decided");
@@ -162,7 +176,10 @@ export class Starter extends Part {
       const plan = () => this.o.planner(d, job.abort.signal);
       // 사람이 떠난 목표와 같은 행동이면 미리 만든 계획을 이 판단으로 다시 검사해 쓴다(계획 모드를 다시 부르지 않는다, goal.ts take)
       const ready = core.goal.take(d, job.abort.signal, plan);
-      if (ready) job.prepared = { goal: ready.goal, seenSince: ready.seenSince, leftAt: ready.leftAt };
+      if (ready) {
+        job.prepared = { goal: ready.goal, seenSince: ready.seenSince, leftAt: ready.leftAt, meal: ready.meal };
+        this.o.trace?.link({ decision_id: d.id, attempt: attempt.key }, { goal_id: ready.goal });
+      }
       out = ready ? ready.out : plan();
     } catch (e) {
       out = { ok: false, error: (e as Error).message };
@@ -178,7 +195,9 @@ export class Starter extends Part {
   private userBusy(r: Run): boolean {
     const cls = touchTarget(r.decision.action);
     const ids = cls ? planObjectsOf(r.plan.view, this.o.state.view(), cls, clearsAway(taskOf(r.decision.action), cls)).map((id) => r.alias.get(id) ?? id) : [];
-    const used = ids.length ? ids.some((id) => this.core.use.busy({ cls, id })) : this.core.use.busy({ cls, id: null });
+    const blocked = (id:string|null) => this.core.use.busy({cls,id}) ||
+      (r.decision.source !== "speech" && cls === "cup" && this.core.goal.protects(id));
+    const used = ids.length ? ids.some(blocked) : blocked(null);
     if (!used) {
       r.usedAt = null;
       return false;
@@ -187,6 +206,7 @@ export class Starter extends Part {
     r.useHeld = true;
     if (r.usedAt === null) {
       r.usedAt = now;
+      this.o.trace?.event("guard", { decision_id: r.decision.id, plan_id: r.plan.view.id, attempt: r.attempt.key }, "guard_busy");
       this.core.finder.release(r, true);
       this.core.contents.pause(r);
       this.core.emit(r.plan.view.id, "planned", EXEC_TEXT.inUse);
@@ -251,7 +271,33 @@ export class Starter extends Part {
     if (!job) return;
     this.core.planning = null;
     job.abort.abort();
+    this.core.adaptive.finish(job.attempt, "cancelled");
     this.core.emit(planIdOf(job.decision.id), "failed", text);
+  }
+
+  replan(r: Run, room: string, next: number): boolean {
+    const core = this.core;
+    if (core.planning?.replan?.previous === r) return true;
+    if (core.planning || !core.adaptive.canReplan(r, next) || r.attempt.goal?.kind !== "deliver") return false;
+    const now = this.clock.now();
+    const gen = ++this.gen;
+    const d: DecisionRecord = { ...r.decision, id: `${r.decision.id}:replacement:${gen}`, atMs: now, world: decisionWorld(this.o.state.view()),
+      assistanceRevision: { room, objectId: r.attempt.goal.objectId, completed: next } };
+    const job: Job = { decision: d, gen, abort: new AbortController(), at: now, attempt: r.attempt,
+      replan: { previous: r, room, skip: next } };
+    r.attempt.replans = (r.attempt.replans ?? 0) + 1;
+    core.attempts.advance(r.attempt);
+    core.adaptive.cancel(r.attempt);
+    r.stepEnd?.abort();
+    r.gen++;
+    core.steps.clear(r);
+    core.planning = job;
+    core.emit(r.plan.view.id, "verifying", core.adaptive.changedRoomText());
+    const p = Promise.resolve().then(() => this.o.planner(d, job.abort.signal))
+      .then(out => this.planned(job, out), () => this.planned(job, { ok: false, error: "재계획 실패" }))
+      .finally(() => this.jobs.delete(p));
+    this.jobs.add(p);
+    return true;
   }
 
   /** 만들던 계획이 끝날 때까지 기다린다(시험용). */
@@ -265,18 +311,43 @@ export class Starter extends Part {
     if (core.stopped || core.planning !== job) return;
     core.planning = null;
     const d = job.decision;
+    const cancelDraft = (text: string) => {
+      this.traceHold(d, text);
+      core.adaptive.finish(job.attempt, "cancelled");
+      core.emit(planIdOf(d.id), "failed", text);
+    };
+    const replacement = job.replan;
+    if (replacement) {
+      const { previous, room, skip } = replacement;
+      const state = this.o.state.view();
+      const g = job.attempt.goal;
+      const target = r.ok ? [...r.plan.steps].reverse().find(s => s.kind === "place") : undefined;
+      const prefix = r.ok && r.plan.steps.length > skip && r.plan.steps.slice(0, skip).every((s, i) => {
+        const before = previous.plan.steps[i];
+        return s.kind === before?.kind && s.target === before.target;
+      });
+      const candidate = target?.target ? this.o.layout.floor().objects.get(target.target) : undefined;
+      if (core.open() !== previous || job.attempt.ended) return;
+      if (this.context().emergency || !r.ok || !prefix || g?.kind !== "deliver" || state.person.room !== room ||
+          candidate?.room !== room || target?.object !== g.objectId) {
+        return core.steps.finish(previous, "failed", "바뀐 자리에서 안전하게 이어갈 수 없어요.", "cancelled");
+      }
+      g.room = room;
+      core.steps.finish(previous, "failed", EXEC_TEXT.superseded, null, true);
+    }
     if (!r.ok) {
       // 계획 검사(PlanDraft)가 버린 까닭(첫 틀린 단계와 이유)을 실행 기록과 서버 로그에 남기고, 같은 행동 다시 계획 간격 없이 다음 판단에서 바로 다시 짠다
       // (2026-11-18 wide-glass q3: 까닭 없이 버리고 「방금 계획한 일이라 잠시 뒤 다시 봄」으로 12초를 기다렸다)
       this.ungap(d, job.at);
       this.o.events.log?.(`[실행 추적] ${planIdOf(d.id)} 계획 버림(${d.action}): ${r.error}`);
+      core.adaptive.finish(job.attempt, "failed");
       return core.emit(planIdOf(d.id), "failed", EXEC_TEXT.badPlan, r.error);
     }
     // 만드는 사이 진행 중 계획이 기다리기·기기 단계에 들어갔으면 바꾸지 않는다(그 판단은 그 단계 전 관찰이다)
-    if (core.waiting() || (d.source !== "speech" && d.atMs < core.quietFrom)) return core.emit(planIdOf(d.id), "failed", EXEC_TEXT.busy);
+    if (core.waiting() || (d.source !== "speech" && d.atMs < core.quietFrom)) return cancelDraft(EXEC_TEXT.busy);
     if (this.closerNewer(d)) {
       this.ungap(d, job.at);
-      return core.emit(planIdOf(d.id), "failed", EXEC_TEXT.closerNewer);
+      return cancelDraft(EXEC_TEXT.closerNewer);
     }
     // 만드는 사이 진행 중 계획이 손대는 단계에 들어갔으면 바꾸지 않는다(판단 받을 때와 같은 지킴, Codex 79f25b8). 다음 판단에서 다시 짠다
     const context = this.context();
@@ -284,14 +355,15 @@ export class Starter extends Part {
       job.resumedStep !== undefined && job.resumedStep === context.handling);
     if (gate !== "take") {
       this.ungap(d, job.at);
+      if (gate === "defer") this.deferredDrafts.add(d);
       const text = gate === "dock" ? EXEC_TEXT.docking : gate === "request" ? EXEC_TEXT.requestWait
         : context.emergency ? EXEC_TEXT.safetyWait : EXEC_TEXT.handling;
-      return core.emit(planIdOf(d.id), "failed", text);
+      return cancelDraft(text);
     }
     // 만드는 사이 사람이 떠나 목표가 판단을 불렀으면 떠나기 전 판단의 계획은 시작하지 않는다(판단 받을 때와 같은 지킴)
     if (this.beforeLeave(d)) {
       this.ungap(d, job.at);
-      return core.emit(planIdOf(d.id), "failed", EXEC_TEXT.beforeLeave);
+      return cancelDraft(EXEC_TEXT.beforeLeave);
     }
     const open = core.open();
     // 새 계획이 있으면 PlanHub.onDecision이 지금 계획을 취소로 닫고 supersedes를 단다
@@ -299,6 +371,13 @@ export class Starter extends Part {
     const now = this.clock.now();
     const world = this.o.state.view();
     const ids = new Set<string>();
+    const goal = goalOf(r.plan, { objects: world.objects, room: world.person.room }, core.adaptive.bind(job.attempt, d));
+    if (!replacement && job.attempt.goal?.kind === "device" &&
+        (goal?.kind !== "device" || goal.deviceId !== job.attempt.goal.deviceId || goal.value !== job.attempt.goal.value)) {
+      core.adaptive.finish(job.attempt, "failed");
+      return core.emit(planIdOf(d.id), "failed", "계획의 기기가 확인한 대상과 달라요.");
+    }
+    if (!replacement) job.attempt.goal = goal;
     for (const s of r.plan.steps) {
       if (s.object) ids.add(s.object);
       // 그 자리에서 하는 일의 대상 물건도 계획 물건이다(옮겨 새 id가 붙으면 이어 간다)
@@ -307,13 +386,13 @@ export class Starter extends Part {
     }
     const others = new Map([...ids].map((id) => [id, new Set(world.objects.filter((o) => o.cls === clsOf(world, id) && o.id !== id).map((o) => o.id))]));
     const run: Run = {
-      plan: r.plan, decision: d, state: "decided", since: now, at: -1, stepAt: now, spokeAt: now, visionAt: now, sent: null,
+      plan: r.plan, decision: d, attempt: job.attempt, state: "decided", since: now, at: -1, stepAt: now, spokeAt: now, visionAt: now, sent: null,
       asking: null, askAt: now, watch: null, others, alias: new Map([...ids].map((id) => [id, id])), carried: new Set(), placeAt: (id) => (id ? this.o.layout.floor().objects.get(id)?.position ?? null : null), deadline: now, again: false, device: "idle", gen: 0,
       looks: 0, lookAt: Number.NEGATIVE_INFINITY, stepEnd: null, gapAt: job.at, onAt: new Map(), ends: new Map(), offAsked: -1, deferred: false, phoneWait: false, phone: false,
       strays: 0, strayAt: Number.NEGATIVE_INFINITY, strayNear: null, told: null, helped: false,
       quiet: taskOf(r.plan.task)?.coach ? quietLabels(this.o.lessons?.get(r.plan.task) ?? null) : new Set(), quietOn: false, outcomes: [], hold: null, top: null, window: null, heldIds: new Set(), busyAt: null, usedAt: null,
       // 미리 만든 계획은 쓰는 중이라 미룬 계획처럼 첫 명령을 폰 대화·승인 대기 동안 미룬다(사람 요청이 먼저)
-      useHeld: !!job.prepared, goal: job.prepared?.goal ?? null, seenSince: job.prepared?.seenSince ?? null, leftAt: job.prepared?.leftAt ?? null, verify: null,
+      useHeld: !!job.prepared, goal: job.prepared?.goal ?? null, seenSince: job.prepared?.seenSince ?? null, leftAt: job.prepared?.leftAt ?? null, verify: null, meal: job.prepared?.meal,
       // 계획 전 찾기에서 찾은 뒤 만든 계획이면 찾기로 붙잡았던 계획처럼 첫 명령을 폰 대화·승인 대기 동안 미룬다
       find: null, findHeld: core.foundFor === d.id,
     };
@@ -322,8 +401,16 @@ export class Starter extends Part {
     core.contents.dropIdle();
     core.finder.drop(EXEC_TEXT.superseded);
     core.run = run;
+    const traceObject = goal?.kind === "clear" || goal?.kind === "deliver" ? goal.objectId : null;
+    this.o.trace?.link({ plan_id: r.plan.view.id, attempt: job.attempt.key, ...(traceObject ? { object_id: traceObject } : {}) }, { decision_id: d.id });
+    if (replacement) this.o.trace?.event("replan", { plan_id: r.plan.view.id, decision_id: d.id, attempt: job.attempt.key }, "replanned");
     this.o.plans.onDecision(r.plan.view, this.clock.now());
     core.step(run, "planned");
+    if (replacement?.skip) {
+      this.o.plans.setSteps(run.plan.view.id, Object.fromEntries(run.plan.steps.slice(0, replacement.skip).map(s => [s.id, "done" as const])), now);
+      run.at = replacement.skip - 1;
+      run.pendingStep = replacement.skip;
+    }
     this.tryStart(run, false);
   }
 
@@ -338,9 +425,17 @@ export class Starter extends Part {
     }
     // 미리 세운 목표 실행은 첫 명령 전에 안전(쓰러짐 의심·끄기 안내)을 다시 보고, 비상이면 시작하지 않는다
     // (받아 쓰던 미리 만들기를 기다리는 동안은 목표를 떼어 목표의 안전 버림이 보지 않는다, Codex 59447ec P1)
-    if (r.goal !== null && emergencyOf({ world: this.o.state.view(), offNotices: safety.offTrack().notices })) return steps.finish(r, "failed", EXEC_TEXT.goalSafety, "cancelled");
+    if (r.goal !== null && emergencyOf({ world: this.o.state.view(), offNotices: safety.offTrack().notices })) {
+      this.o.trace?.event("guard", { plan_id: r.plan.view.id, attempt: r.attempt.key }, "guard_safety");
+      return steps.finish(r, "failed", EXEC_TEXT.goalSafety, "cancelled");
+    }
     // 사람이 계획 대상을 쓰는 중이면 사람이 사라질 때까지 첫 명령·찾기·가까이 보기를 미룬다(holdMs 넘으면 닫음, src/manage/use.ts)
     if (this.userBusy(r)) return;
+    if (this.core.adaptive.gate(r, r.pendingStep ?? 0)) return;
+    if (r.meal && !this.mealCup(r, r.plan.steps[0]?.kind !== "go")) {
+      if (last) steps.finish(r,"failed",CHECK_TEXT.stale);
+      return;
+    }
     const c = this.o.check(r.decision, r.plan.view, this.startSince(r));
     if (!c.ok) {
       // 찾는 중에 대상이 안 보임이 아닌 까닭으로 막히면 찾기를 거둔다(그 까닭은 아래가 본다)
@@ -422,11 +517,20 @@ export class Starter extends Part {
   }
 
   private begin(r: Run): void {
+    if (taskOf(r.plan.task)?.topLook && this.o.cupAnswers?.discardLeftover) {
+      const needsLook = !this.o.cupAnswers?.discardLeftover();
+      if (needsLook !== r.plan.steps.some(step => step.look === "top")) {
+        const revised = this.o.goals.reuse?.(r.decision, r.plan);
+        if (!revised?.ok) return this.core.steps.finish(r, "failed", EXEC_TEXT.badPlan);
+        r.plan = revised.plan;
+        this.o.plans.onDecision(r.plan.view, this.clock.now());
+      }
+    }
     this.takeover(r.decision);
     this.core.step(r, "running");
     if (r.plan.steps.length === 0) return this.core.steps.finish(r, "done");
     this.verifyFrom(r);
-    this.core.steps.activate(r, 0);
+    this.core.steps.activate(r, r.pendingStep ?? 0);
   }
 
   /** 목표 실행의 대상 물건 id(실행 전 검사와 같은 기준: 집는 것이 대상 자신인 행동이면 지금 종류, Codex 59447ec P2). 목표 실행이 아니거나 없으면 null. */
@@ -446,12 +550,19 @@ export class Starter extends Part {
 
   /** 떠나기 직전 사진으로 시작한 목표 실행이면(대상을 사람이 떠난 뒤에 아직 못 봄) 그 대상을 다루는 단계 전에 다시 볼 것으로 둔다(held).
    *  첫 단계가 그 대상을 다루면 실행 전 검사가 떠난 뒤 사진을 이미 봤다(startSince). */
+  private mealCup(r:Run, fresh:boolean, since = r.leftAt ?? 0): boolean {
+    const world = this.o.state.view();
+    const cup = world.objects.find(o => o.id === followedId(world,r.meal!.object));
+    return !!cup && cup.cls === "cup" && cup.surface === r.meal!.surface && cup.status !== "gone" && !cup.carried &&
+      cup.facts.place?.value !== "in_hand" && (!fresh || (cup.status === "present" && cup.last_seen_ms >= since));
+  }
+
   private verifyFrom(r: Run): void {
     const leftAt = r.leftAt;
     const id = this.goalTarget(r);
     if (leftAt === null || !id) return;
     const o = this.o.state.view().objects.find((x) => x.id === id);
-    if (o && o.last_seen_ms < leftAt && !touches(r.plan.steps[0], id)) r.verify = { objectId: id, since: leftAt, at: null };
+    if ((r.meal || (o && o.last_seen_ms < leftAt)) && !touches(r.plan.steps[0], id)) r.verify = { objectId: id, since: leftAt, at: null };
   }
 
   /** 다음 단계(next)가 떠난 뒤 다시 보지 못한 목표 대상(verify)을 다루면 그 전에 다시 본다: 떠난 뒤 사진에 그 대상이 있으면(실행 전 검사, 기준 = 떠난 때) 풀고 false.
@@ -464,6 +575,11 @@ export class Starter extends Part {
     if (!v || !step || !touches(step, v.objectId)) return false;
     const now = this.clock.now();
     v.at ??= now;
+    if (r.meal && (!this.mealCup(r,true,v.at) || emergencyOf({world:this.o.state.view(),offNotices:this.core.safety.offTrack().notices}) ||
+      this.core.use.busy({cls:"cup",id:r.meal.object}))) {
+      if (now-v.at >= this.cfg.recheckMs) this.core.steps.finish(r,"failed",CHECK_TEXT.stale);
+      return true;
+    }
     const c = this.o.check(r.decision, r.plan.view, v.since);
     if (c.ok) {
       r.verify = null;
@@ -491,7 +607,14 @@ export class Starter extends Part {
 
   /** 계획을 만들지 않는 판단(대기·실패·같은 행동·늦은 답·잠시 뒤)은 그 판단 줄에 기록만 한다. */
   private note(d: DecisionRecord, text: string): void {
+    this.traceHold(d, text);
     this.core.emit(planIdOf(d.id), "decided", text);
+  }
+
+  private traceHold(d: DecisionRecord, text: string): void {
+    const output = text === EXEC_TEXT.safetyWait ? "guard_safety" : text === EXEC_TEXT.handling ? "guard_busy"
+      : text === EXEC_TEXT.closerNewer || text === EXEC_TEXT.beforeLeave ? "guard_changed" : null;
+    if (output) this.o.trace?.event("guard", { decision_id: d.id }, output);
   }
 }
 

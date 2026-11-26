@@ -9,6 +9,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import type WebSocket from "ws";
 import { startFakeOpenAI, type FakeServer } from "../scripts/fake-openai.js";
 import type { HistoryRow } from "../src/contract/history.js";
+import type { PhoneCommand } from "../src/contract/phone.js";
 import type { WorldView } from "../src/contract/world.js";
 import { PEEK_TEXT } from "../src/act/labels.js";
 import { alignPhone, CUP_BOX, cupPos, frameOf, SINK_VIEW, topLook } from "./helpers/top-look.js";
@@ -20,6 +21,7 @@ import type { Detection } from "../src/contract/observe.js";
 import { startFakePamLlm, type FakePamLlm, pamLlmEnv } from "./helpers/pam.js";
 import { CUP_SCRIPTS, plannerRespond } from "./helpers/planner.js";
 import { heardAtOf, openPhone, openWebSocket } from "./helpers/ws.js";
+import { expectedSpeechId } from "./helpers/phone-speech.js";
 import { useLearnedMemory } from "./helpers/memory.js";
 
 type Msg = Record<string, any>;
@@ -40,7 +42,7 @@ afterEach(stop);
 
 const inbox = (list: Msg[]) => (ws: WebSocket) => ws.on("message", (d, bin) => { if (!bin) list.push(JSON.parse(String(d)) as Msg); });
 
-/** 컵 치우기 대본을 query(""이면 실제 연결, ?video=이면 영상 연결)로 처음부터 끝까지 돌리고, 계획 id를 PLAN으로 바꾼 결과를 모은다. */
+/** 컵 치우기 대본을 두 연결에 돌린다. 기동마다 달라지는 값은 검증한 뒤 비교용 이름으로 바꾼다. */
 async function cupRun(query: string, videoDir: string) {
   let cupPlace = "on_table";
   const top = topLook();
@@ -113,8 +115,23 @@ async function cupRun(query: string, videoDir: string) {
 
   const norm = (v: unknown) => JSON.parse(JSON.stringify(v).split(planId).join("PLAN"));
   const rows = await history("execution,feedback");
+  const commands = phone.filter((m) => (m.type === "command" && m.speak && !String(m.id).startsWith("dock:")) || (m.type === "command_clear" && m.id === planId));
+  const firstSpeech = (commands.find((m) => m.type === "command") as PhoneCommand | undefined)?.speech_id;
+  if (!firstSpeech) throw new Error("첫 명령의 낭독 발행 식별자가 없습니다.");
+  expect(firstSpeech).toEqual(expectedSpeechId("apartment#1", 1));
+  let previousRevision = 0;
+  const comparableCommands = commands.map((m) => {
+    if (m.type === "command_clear") return m;
+    const speech = (m as PhoneCommand).speech_id;
+    if (!speech) throw new Error(`명령 ${m.step}의 낭독 발행 식별자가 없습니다.`);
+    expect(speech).toEqual({ boot: firstSpeech.boot, homeEpoch: "apartment#1", publisher: firstSpeech.publisher, revision: speech.revision });
+    expect(Number.isSafeInteger(speech.revision)).toBe(true);
+    expect(speech.revision).toBeGreaterThan(previousRevision);
+    previousRevision = speech.revision;
+    return { ...m, speech_id: { ...speech, boot: "BOOT", publisher: "ACT" } };
+  });
   const result = norm({
-    commands: phone.filter((m) => (m.type === "command" && m.speak && !String(m.id).startsWith("dock:")) || (m.type === "command_clear" && m.id === planId)),
+    commands: comparableCommands,
     steps: rows.filter((r) => r.kind === "execution" && r.subject === planId).sort((a, b) => a.id - b.id).map((r) => r.text),
     feedback: rows.filter((r) => r.kind === "feedback").sort((a, b) => a.id - b.id).map((r) => r.text),
     progress: dash.filter((m) => m.type === "plan" && m.plan?.id === planId).map((m) => `${m.plan.status}:${m.plan.steps.map((s: Msg) => s.status).join(",")}`)
@@ -122,7 +139,7 @@ async function cupRun(query: string, videoDir: string) {
     cup: { id: cup?.id, place: cup?.facts.place?.value, status: cup?.status },
   });
   await stop();
-  return result;
+  return { boot: firstSpeech.boot, result };
 }
 
 describe("영상 연결과 실제 연결은 서버에서 같다", () => {
@@ -131,11 +148,13 @@ describe("영상 연결과 실제 연결은 서버에서 같다", () => {
     writeFileSync(join(videoDir, "cup-demo.mp4"), "mp4");
     // ?video=가 이 서버가 내주는 영상이라 영상 연결로 붙는다(없는 영상 이름이면 실제 연결로 붙어 견줌이 뜻없다)
     expect(videoSession("/phone/events?video=cup-demo.mp4", videoDir)).toBe(true);
-    const real = await cupRun("", videoDir);
-    const video = await cupRun("?video=cup-demo.mp4", videoDir);
+    const { boot: realBoot, result: real } = await cupRun("", videoDir);
+    const { boot: videoBoot, result: video } = await cupRun("?video=cup-demo.mp4", videoDir);
+    expect(videoBoot).not.toBe(realBoot);
     expect(video).toEqual(real);
-    // 대본이 실제로 네 명령·완료·컵 싱크대 안까지 갔는지(빈 결과끼리 같아 통과하지 않게)
+    // 비교에 사용한 대본이 다섯 단계, 완료 안내, 싱크볼 안 확인까지 갔는지 본다.
     expect(real.commands.filter((m: Msg) => m.type === "command").map((m: Msg) => m.text)).toEqual(["식탁으로 가 주세요", PEEK_TEXT.above("컵"), "컵을 들어 주세요", "싱크대로 가 주세요", "컵을 싱크대에 넣어 주세요", "컵을 다 치웠어요."]);
+    expect(real.commands.filter((m: Msg) => m.type === "command_clear")).toEqual([{ type: "command_clear", id: "PLAN" }]);
     expect(real.steps).toEqual(["판단", "계획", "실행 중", "완료"]);
     expect(real.cup.place).toBe("in_sink");
   }, 90_000);

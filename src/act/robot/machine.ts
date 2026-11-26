@@ -46,7 +46,7 @@ export class RobotMachine {
     const decision = r?.decision ?? c.planning?.decision ?? c.finding?.decision;
     return {
       step: r && step ? { plan_id: r.plan.view.id, number: r.at + 1, label: step.label } : null,
-      dock: c.docking?.phase ?? null,
+      dock: c.dock.state(),
       inspection: inspecting ? (walking ? "go" as const : "look" as const) : null,
       blocked: find?.blockedAt != null || hold?.pausedAt != null || (!find && r?.verify?.at != null) || r?.asking?.why === "again"
         || (r?.state === "planned" && !r.asking && (r.phoneWait || r.deferred || r.busyAt !== null || r.usedAt !== null)),

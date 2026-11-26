@@ -31,14 +31,15 @@ export class ProgressReplies {
 }
 
 /** 답 방송이 실패해 다시 배달되어도 단추·말을 실행 추적에 두 번 넣지 않는다. 기한이 지난 답은 실행하지 않는다. */
-export function progressRoutes(node: BusNode, handle: (progress: Progress) => Result, now: () => number): void {
+export function progressRoutes(node: BusNode, handle: (progress: Progress) => Result | Promise<Result>, now: () => number): void {
   const replies = new Map<string, { expires: number; result: Result }>();
   node.on("/phone/progress", async (p) => {
     const t = now();
     for (const [key, entry] of replies) if (entry.expires <= t) replies.delete(key);
     let result = replies.get(p.req)?.result;
     if (!result) {
-      result = t >= p.expires_ms ? { req: p.req, status: "stale" } : handle(p);
+      const handled = t >= p.expires_ms ? { req: p.req, status: "stale" as const } : handle(p);
+      result = handled instanceof Promise ? await handled : handled;
       if (t < p.expires_ms) replies.set(p.req, { expires: p.expires_ms, result });
     }
     await node.publish("/act/progress_result", result);

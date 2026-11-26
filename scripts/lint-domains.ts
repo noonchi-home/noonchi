@@ -8,9 +8,9 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { importsOf, isCode, nonLiteralLoads, parseCode, resolveSpec, walk, type AstNode, type ImportRef } from "./domain-ast.js";
 
 /** 서버 도메인(2.1). 폴더 src/<이름>/, 입구 src/<이름>/index.ts. */
-export const SERVER_DOMAINS = ["bus", "phone", "observe", "world", "brain", "act", "agent", "devices", "layout", "record", "machines", "manage", "goal", "server"] as const;
+export const SERVER_DOMAINS = ["bus", "phone", "localize", "observe", "world", "brain", "act", "agent", "devices", "layout", "record", "machines", "manage", "goal", "server"] as const;
 /** 화면 도메인(2.1). 폴더 ui/src/<이름>/, 입구 ui/src/<이름>/index.ts. 서버 도메인과 이름이 겹치지 않게 "ui/"를 붙인다. */
-export const SCREEN_DOMAINS = ["ui/dashboard", "ui/twin", "ui/phone", "ui/setup"] as const;
+export const SCREEN_DOMAINS = ["ui/dashboard", "ui/twin", "ui/phone", "ui/setup", "ui/mobile"] as const;
 
 /** 의존 표(2.3): 도메인마다 가져와도 되는 도메인. 기반층(계약·공용 표·shared·infer·design·화면 공용)은 늘 된다. 줄을 고칠 때는 이 표 하나만 고친다. */
 export const DEPS: Record<string, readonly string[]> = {
@@ -22,16 +22,18 @@ export const DEPS: Record<string, readonly string[]> = {
   layout: ["devices"],
   world: ["bus", "devices", "layout"],
   phone: ["bus", "world", "layout"],
+  localize: ["bus", "phone"],
   observe: ["bus", "phone", "world", "devices"],
   brain: ["bus", "world", "devices"],
   agent: ["world", "devices", "layout"],
   act: ["manage", "goal", "bus", "machines", "agent", "brain", "observe", "phone", "world", "devices", "layout"],
   record: ["bus", "brain"],
-  server: ["manage", "goal", "bus", "phone", "observe", "world", "brain", "act", "agent", "devices", "layout", "record", "machines"],
+  server: ["localize", "manage", "goal", "bus", "phone", "observe", "world", "brain", "act", "agent", "devices", "layout", "record", "machines"],
   "ui/twin": [],
   "ui/dashboard": ["ui/twin"],
   "ui/setup": ["ui/twin"],
   "ui/phone": [],
+  "ui/mobile": ["ui/phone"],
 };
 
 /** 지금 자리 → 도메인(2.1 「들어갈 지금 코드」). 끝이 /면 폴더. 옮기는 단계(3·6단계)마다 줄이고 9단계에 빈다. */
@@ -67,6 +69,8 @@ export const PATHS_FILE = "src/shared/paths.ts";
 /** 글자 그대로가 아닌 import()·require를 써도 되는 파일과 까닭. 옮기면 새 자리로 고친다. */
 export const DYNAMIC_OK: Record<string, string> = {
   "src/observe/detector-worker.mjs": "Worker 입구: workerData로 받은 감지 스레드 파일(같은 폴더 detector-thread.ts)을 연다",
+  "src/brain/history/night-worker.mjs": "Worker 입구: workerData로 받은 밤 반성 스레드 파일(같은 폴더 night-thread.ts)을 연다",
+  "src/record/writer-worker.mjs": "Worker 입구: workerData로 받은 기록 DB 쓰기 스레드 파일(같은 폴더 writer-thread.ts)을 연다",
 };
 
 export interface Config { deps: Record<string, readonly string[]>; legacy: Record<string, string>; tables: readonly string[]; dynamicOk: readonly string[] }

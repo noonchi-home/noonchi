@@ -22,7 +22,7 @@ describe("VLM 장면 분석", () => {
     expect(SCENE_PROMPT).toContain("not_in_use");
   });
   it("JSON Schema는 엄격 모드(모든 칸 필수, 다른 칸 없음)", () => {
-    expect(SCENE_JSON_SCHEMA).toMatchObject({ type: "object", additionalProperties: false, required: ["scene", "observations", "objects", "summary"] });
+    expect(SCENE_JSON_SCHEMA).toMatchObject({ type: "object", additionalProperties: false, required: ["household", "scene", "observations", "objects", "summary"] });
   });
 
   // 가로 유리컵 실제 판(2026-11-18): 잘라 본 칸의 YOLO가 컵을 못 잡아 found가 비었지만 VLM은 컵을 봤다. VLM이 대상 종류 물건을 상자와 함께 답한다
@@ -73,7 +73,7 @@ describe("VLM 장면 분석", () => {
   it("스키마 objects의 종류 enum은 낱말 표에서 VLM 종류 기준(vlm)이 있는 물건(VLM_FIND)이고, 프롬프트가 감지 목록에 없는 물건도 상자와 함께 답하라고 한다", () => {
     const schema = JSON.stringify(SCENE_JSON_SCHEMA);
     for (const c of VLM_FIND) expect(schema).toContain(`"${c}"`);
-    expect([...VLM_FIND].sort()).toEqual(["bottle", "bowl", "cup", "pot", "ramen"]);
+    expect([...VLM_FIND].sort()).toEqual(["beer_can", "bottle", "bowl", "cup", "pot", "ramen"]);
     expect(VLM_FIND).toEqual((Object.keys(CLASSES) as (keyof typeof CLASSES)[]).filter((k) => CLASSES[k].role === "object" && "vlm" in CLASSES[k]));
     expect(SCENE_PROMPT).toContain("including ones missing from Detections");
   });

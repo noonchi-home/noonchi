@@ -7,6 +7,34 @@
   /* 받은 shadcn 부품의 border는 border 토큰 색(Tailwind v4 기본은 currentColor) */
   *, ::after, ::before, ::backdrop, ::file-selector-button { border-color: var(--border); }
   html, body, #root { height: 100%; margin: 0; }
-  body { background: var(--canvas); color: var(--ink); word-break: keep-all; overflow-wrap: break-word; }
+  body { background: var(--canvas); color: var(--ink); font-weight: var(--font-weight-semibold); word-break: keep-all; overflow-wrap: break-word; }
+  /* 기본 bolder는 body 600에서 900이 되어 예전 굵기 700으로 둔다 */
+  b, strong { font-weight: var(--font-weight-bold); }
+  /* 크롬 기본 option 굵기는 normal(400)이라 펼친 목록 글이 600보다 가늘어진다 */
+  option { font-weight: var(--font-weight-semibold); }
+  main[data-bento] { background: var(--bento-surface); }
+  [data-scene-panel] {
+    position: absolute;
+    isolation: isolate;
+    min-inline-size: 0;
+    margin: 0;
+    padding: 0;
+    border: 1px solid var(--line);
+    background: var(--bento-surface);
+  }
+  [data-scene-legend] {
+    position: absolute;
+    z-index: 60;
+    inset-block-start: -1px;
+    inset-inline-start: 11px;
+    transform: translateY(-50%);
+    padding-inline: 8px;
+    background: var(--brand-portal);
+    color: var(--on-brand);
+    font-size: var(--text-sm);
+    font-weight: var(--font-weight-semibold);
+    line-height: 24px;
+    white-space: nowrap;
+  }
   iframe { border: 0; }
 }

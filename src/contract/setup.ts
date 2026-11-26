@@ -1,8 +1,23 @@
 // 설정 화면 ↔ 서버 계약(GET /api/setup, /api/setup/*). 순수 타입만 둔다: ui/가 이 파일을 그대로 가져다 쓴다.
 import type { RoomSpec } from "./devices.js";
+import type { StationMap } from "./stations.js";
+
+export interface SetupStationsView {
+  ok: true;
+  home: string;
+  map: StationMap;
+}
+
+export interface AndroidTwaView {
+  phone_url: string;
+  assetlinks_url: string;
+  package_name: string;
+  /** The server has public fingerprints configured. Chrome verifies the installed APK separately. */
+  statements_configured: boolean;
+}
 import type { DeviceKind } from "../devices/kinds.js";
 
-/** test: 시험 모드(트윈에서만, ThinQ를 부르지 않음, 기본). live: 실제 모드(짝지은 기기는 ThinQ로 실제 가전). */
+/** test: 테스트 모드(트윈에서만 동작, 기본). live: 운영 모드(짝지은 실제 가전을 다룸). */
 export type ControlMode = "test" | "live";
 
 
@@ -44,9 +59,12 @@ export interface SetupView {
   devices_saved: boolean;
   /** 4단계: start는 시작 위치를 쓸 수 있다(집 scene.json이 있음), layout은 배치 보정을 쓸 수 있다. */
   position: { start: boolean; layout: boolean; phone_urls: string[] };
+  android_twa?: AndroidTwaView | null;
   mode: ControlMode;
   /** ready: ThinQ 토큰이 있어 실제 모드로 바꿀 수 있다. */
   thinq: { ready: boolean };
+  /** 이 집에 실제 모드로 다룰 적외선 TV가 있다: 직접 적외선(ir.json) 또는 TV 중계(TV_RELAY_*). 연결과 전원은 허브가 알린다. */
+  ir?: { ready: boolean };
   /** 트윈 기기 id → ThinQ 기기 id(실제 모드에서만 쓴다). */
   pairs: Record<string, string>;
 }
@@ -54,5 +72,7 @@ export interface SetupView {
 /** GET /api/setup/thinq. */
 export interface ThinqDevicesView {
   ok: true;
+  /** 집을 명시한 조회의 현재 집. */
+  home?: string;
   devices: ThinqDeviceView[];
 }

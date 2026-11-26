@@ -27,6 +27,68 @@ function gatedVlm() {
 const head = (at: number) => ({ kind: "engine" as const, width: 100, height: 100, captured_at: at, time_err_ms: 0 });
 
 describe("관찰 흐름", () => {
+  it("맞춤 직후와 10초마다 한 장을 확인하고 중간의 집 사진이 주기를 미루지 않는다",async()=>{
+    const requested:number[]=[];
+    let household=false;
+    const p=pipelineOn({config:{engineMs:100,vlmMs:1000,vlmMaxInflight:1,vlmTimeoutMs:5000,detectQueueMax:8,keepMs:20000},
+      needsHouseholdPhoto:()=>household,localize:async f=>{requested.push(f.capturedAtMs);return {position:null,conflict:false};},
+      detector:null,world:new WorldState({surfaces:()=>[],floorAt:()=>0,roomAt:()=>null,devices:()=>[]}),
+      vlm:{model:"test",json:async()=>({value:{scene:"home",summary:"",observations:[]},costUsd:0,model:"test"})} as unknown as VlmClient,emit:()=>{}});
+    const camera={origin:[0,1,0] as [number,number,number],orientation:[0,0,0,1] as [number,number,number,number],theta:0,projection:[]};
+    try{
+      const times=[1000,2000,3000,4000,7000,12900,13000,14000,23000,23100];
+      for(const [i,at] of times.entries()){
+        household=at===7000 || at===13000;
+        p.onEngine(jpeg(i),{...head(at),...(at===23000 ? {held:true as const} : {})},null,at<3000?null:camera,at);
+        await p.idle();
+      }
+      expect(requested).toEqual([1000,3000,7000,13000,23100]);
+    } finally {await p.close();}
+  });
+  it("같은 사진의 위치 답을 기다린 뒤에 그 사진을 기록한다. 위치를 모르면 AR 자세로 보고, AR 자세와 다르면 빈 구역 근거로 쓰지 않는다",async()=>{
+    const world=new WorldState({surfaces:()=>[],floorAt:()=>0,roomAt:()=>null,devices:()=>[]});
+    const vlm={model:"test",json:async()=>({value:{scene:"living",summary:"",observations:[],
+      household:{seats:"clear",people:[],dining_food:"unknown"}},costUsd:0,model:"test"})} as unknown as VlmClient;
+    let answer!:(p:import("../src/contract/observe.js").PhotoFix)=>void;
+    const pipeline=pipelineOn({config:{engineMs:1000,vlmMaxInflight:1,vlmTimeoutMs:5000,detectQueueMax:8,keepMs:20000},
+      needsHouseholdPhoto:()=>true,localize:()=>new Promise(r=>{answer=r;}),vlm,detector:new ScriptedDetector(()=>[]),world,emit:()=>{}});
+    const eye={position:[0,0] as [number,number],height_m:1.15,yaw_deg:0,pitch_deg:0,tracking:"ok" as const,at:""};
+    const camera={origin:[0,1.15,0] as [number,number,number],orientation:[0,0,0,1] as [number,number,number,number],
+      theta:0,projection:[1,0,0,0,0,1,0,0,0,0,-1,-1,0,0,-.02,0]};
+    try{
+      for(const n of [1,2,3]){
+        const at=n*1000;
+        pipeline.onEngine(jpeg(n),head(at),eye,camera,at);
+        expect(world.view(at).household_photo?.at_ms).not.toBe(at);
+        answer(n===1 ? {position:[0,1.15,0],conflict:false} : n===2 ? {position:null,conflict:false} : {position:null,conflict:true});
+        await until(()=>world.view(at).household_photo?.at_ms===at);
+        const proof=world.view(at).household_photo?.proof;
+        if(n===1) expect(proof?.localized_position).toEqual([0,1.15,0]);
+        // 위치를 모르는 사진: AR 자세로 본 근거는 남고 사진 위치만 없다
+        else if(n===2) { expect(proof).not.toBeNull(); expect(proof?.localized_position).toBeUndefined(); }
+        // 사진 위치가 AR 자세와 다른 사진: 근거로 쓰지 않는다
+        else expect(proof).toBeNull();
+      }
+    } finally {await pipeline.close();}
+  });
+  it("맞춘 새 원본만 부재와 사람 발자국의 근거로 쓴다. held·추정 눈·반복 원본은 제외한다", async () => {
+    const world = new WorldState({ surfaces:()=>[], floorAt:()=>0, roomAt:()=>({id:"living",label:"거실"}), devices:()=>[] });
+    const vlm = { model:"test", json: async () => ({value:{scene:"living", observations:[],summary:"",household:{seats:"clear",people:[],dining_food:"unknown"}},costUsd:0,model:"test"}) } as unknown as VlmClient;
+    const p = pipelineOn({config:{engineMs:1000,vlmMaxInflight:1,vlmTimeoutMs:5000,detectQueueMax:8,keepMs:20000},
+      detector:new ScriptedDetector(()=>[mkDet("person",.99,[40,35,20,32],0)]),world,vlm,emit:()=>{}});
+    const camera={origin:[0,1,0] as [number,number,number],orientation:[0,0,0,1] as [number,number,number,number],theta:0,projection:[1,0,0,0,0,1,0,0,0,0,-1.0002,-1,0,0,-.020002,0]};
+    const eye={position:[0,0] as [number,number],height_m:1,yaw_deg:0,pitch_deg:0,tracking:"ok" as const,at:""};
+    try {
+      for(const [index,photo] of [1,1,2,1,3].entries()){
+        const at=(index+1)*2000;
+        p.onEngine(jpeg(photo),{...head(at),...(index===1?{held:true as const}: {})},index===2?{...eye,estimated:true}:eye,camera,at+5);
+        await p.idle();
+        const v=world.view(at);
+        expect(Boolean(v.household_photo?.proof)).toBe(index===0 || index===4);
+        expect(v.person_trail?.map(p=>p.at_ms)).toEqual(index===4?[2000,10000]:[2000]);
+      }
+    } finally { await p.close(); }
+  });
   // 가로 유리컵 실제 판 r6(2026-11-18): VLM이 det를 비우고 답한 같은 잔이 YOLO 컵과 다른 물건이 됐다
   it("VLM 물건이 det를 비워 답해도, 같은 사진 YOLO 감지와 상자가 겹치면(IoU 0.3 이상, 같은 종류·같은 무리) 그 감지 물건으로 잇고 사실을 넣는다", async () => {
     const box = { x: 220 / 480, y: 160 / 360, w: 40 / 480, h: 20 / 360 };

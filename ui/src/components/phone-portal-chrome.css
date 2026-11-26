@@ -1,0 +1,200 @@
+:root {
+  --phone-portal-nav-height: 68px;
+  --phone-portal-nav-space: calc(var(--phone-portal-nav-height) + env(safe-area-inset-bottom, 0px));
+  --phone-home-peek-width: clamp(9rem, 35dvh, 17rem);
+  --phone-home-peek-height: calc(var(--phone-home-peek-width) * 252 / 768);
+}
+
+:root:has(.phone-portal-nav) {
+  scroll-padding-block-end: calc(var(--phone-portal-nav-space) + 1rem);
+}
+
+.phone-portal-page {
+  min-block-size: 100dvh;
+  padding-block: env(safe-area-inset-top, 0px) var(--phone-portal-nav-space);
+  padding-inline: env(safe-area-inset-left, 0px) env(safe-area-inset-right, 0px);
+}
+
+.noonchi-wordmark {
+  display: block;
+  inline-size: min(8.4375rem, 25vw);
+  block-size: auto;
+}
+
+.phone-portal-header > nav {
+  --muted: var(--brand-portal);
+  --muted-foreground: var(--on-brand);
+  background: var(--brand-portal);
+}
+
+.phone-portal-header--centered > nav {
+  justify-content: center;
+}
+
+.phone-portal-header .noonchi-wordmark,
+.phone-launch-hero__logo .noonchi-wordmark {
+  filter: brightness(0) invert(1);
+}
+
+.phone-portal-header .noonchi-wordmark {
+  inline-size: 8.4375rem;
+}
+
+.phone-portal-page:not([hidden]):is(.phone-portal-page--home, :has(.phone-home-peek)) {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  block-size: 100dvh;
+  padding-block-end: calc(var(--phone-portal-nav-space) + var(--phone-home-peek-height) + 0.75rem);
+}
+
+.phone-portal-page:not([hidden]):is(.phone-portal-page--home, :has(.phone-home-peek)) > main {
+  min-block-size: 0;
+  overflow: auto;
+  align-content: start;
+}
+
+.phone-home-peek {
+  position: fixed;
+  z-index: 29;
+  inset-inline: env(safe-area-inset-left, 0px) env(safe-area-inset-right, 0px);
+  inset-block-end: calc(var(--phone-portal-nav-space) - 1px);
+  inline-size: var(--phone-home-peek-width);
+  block-size: calc(var(--phone-home-peek-height) + 1px);
+  margin-inline: auto;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.phone-home-peek img {
+  display: block;
+  inline-size: 100%;
+  block-size: auto;
+}
+
+@media (orientation: landscape) and (max-height: 420px) {
+  :root {
+    --phone-home-peek-width: clamp(7rem, 42dvh, 9rem);
+  }
+}
+
+@media (orientation: landscape) and (max-height: 420px) and (min-width: 480px) {
+  .phone-portal-page:not([hidden]):is(.phone-portal-page--home, :has(.phone-home-peek)) {
+    padding-block-end: var(--phone-portal-nav-space);
+  }
+
+  .phone-portal-page--home .phone-portal-header > nav {
+    block-size: 3rem;
+  }
+
+  .phone-portal-page:not([hidden]):is(.phone-portal-page--home, :has(.phone-home-peek)) > main {
+    inline-size: min(58%, 32rem);
+    margin-inline: 0;
+    padding-block: 0.5rem;
+  }
+
+  .phone-home-peek {
+    inset-inline-start: 56%;
+  }
+}
+
+.phone-portal-page.phone-portal-page--registered-home:not([hidden]) {
+  grid-template-rows: auto minmax(0, max-content) minmax(0, 1fr);
+  padding-block-end: var(--phone-portal-nav-space);
+}
+
+.phone-home-peek--registered {
+  position: relative;
+  inset: auto;
+  display: grid;
+  place-items: end center;
+  container-type: size;
+  inline-size: 100%;
+  block-size: auto;
+}
+
+.phone-home-peek__crop {
+  position: relative;
+  inline-size: min(81cqw, 19.6875rem, calc(100cqh * 152 / 124));
+  aspect-ratio: 152 / 124;
+  overflow: hidden;
+}
+
+.phone-home-peek__crop img {
+  position: absolute;
+  /* 기존 마스코트 원본의 x=62–214를 정수리 위 5px부터 목 아래까지 표시한다. */
+  inset-inline-start: calc(-100% * 62 / 152);
+  inset-block-start: calc(100% * 5 / 124);
+  inline-size: calc(100% * 206 / 152);
+  max-inline-size: none;
+  block-size: auto;
+}
+
+@media (orientation: landscape) and (max-height: 420px) and (min-width: 480px) {
+  .phone-portal-page.phone-portal-page--registered-home:not([hidden]) {
+    grid-template: auto minmax(0, 1fr) / minmax(0, 1.1fr) minmax(0, .9fr);
+  }
+
+  .phone-portal-page--registered-home > header {
+    grid-column: 1 / -1;
+  }
+
+  .phone-portal-page.phone-portal-page--registered-home:not([hidden]) > main {
+    inline-size: 100%;
+  }
+}
+
+.phone-launch-hero {
+  position: fixed;
+  z-index: 60;
+  inset: 0;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr);
+  justify-items: center;
+  overflow: hidden;
+  padding-inline: max(1rem, env(safe-area-inset-left, 0px)) max(1rem, env(safe-area-inset-right, 0px));
+  background: var(--brand-portal);
+}
+
+.phone-launch-hero__logo {
+  position: absolute;
+  /* 정지한 마스코트에서 정수리부터 화면 끝까지 원본 이미지의 약 189px가 보인다. */
+  inset: env(safe-area-inset-top, 0px) 0 calc(var(--phone-launch-art-width) * 189 / 206);
+  display: grid;
+  place-items: center;
+}
+
+.phone-launch-hero__logo .noonchi-wordmark {
+  inline-size: min(59vw, 16.875rem, 100%);
+}
+
+.phone-launch-hero__stage {
+  --phone-launch-art-width: min(120cqw, 27rem, calc(100cqh * 206 / 278));
+  position: relative;
+  container-type: size;
+  min-block-size: 0;
+  inline-size: 100%;
+}
+
+.phone-launch-hero__mascot {
+  position: absolute;
+  /* 윗부분의 알파 경계(75–204px, 전체 206px)를 가운데 배치하고 세로 이동만 애니메이션한다. */
+  inset-inline-start: calc(50% - var(--phone-launch-art-width) * 139.5 / 206);
+  inset-block-end: 0;
+  display: block;
+  inline-size: var(--phone-launch-art-width);
+  max-width: none;
+  block-size: auto;
+  transform: translateY(47%);
+  animation: phone-launch-in 600ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes phone-launch-in {
+  from { transform: translateY(100%); }
+  to { transform: translateY(47%); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .phone-launch-hero__mascot {
+    animation: none;
+  }
+}
