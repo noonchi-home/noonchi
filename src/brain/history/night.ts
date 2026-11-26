@@ -9,7 +9,7 @@ import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { ASK_CHOICES, ASK_FOLLOW } from "../../act/prompts.js";
-import { LEARNED_ACTIONS, TASKS } from "../../act/tasks.js";
+import { ASK_ACTION, LEARNED_ACTIONS, TASKS } from "../../act/tasks.js";
 import type { BrainLog, PamUsage } from "../../contract/events.js";
 import type { CandidateFsm } from "../../contract/pam.js";
 import { CUP_FSM_MEMORY, ContractError, MAX_REFLECT_TEXT, validateMemory, type FsmMemory } from "../decision.js";
@@ -232,12 +232,16 @@ export async function runNight(db: HistoryDb, pam: PamClient, day: string, o: Ni
     const lines = linesOf(day);
     const prevChecks = ((db.list({ kinds: ["reflection"], latest: true, limit: 50 }).reverse().find((r) => (r.data as { ok?: boolean; checks?: unknown } | null)?.ok === true && Array.isArray((r.data as { checks?: unknown }).checks))?.data as { checks: NightCheck[] } | undefined)?.checks) ?? [];
     const checksText = prevChecks.length ? latestWithin([NIGHT_TEXT.checksHead, ...prevChecks.map((c) => NIGHT_TEXT.check(c.state, candidateText({ on: c.on, ...(c.when ? { when: c.when } : {}) }), c.action, c.n, c.k, c.passed))], CHECKS_MAX).join("\n") : "";
-    // 요약이 비면 대신 보내는 글(관찰 없음·행동 없음)과 다시 반성할 때 붙는 까닭(RETRY_WHY_MAX 글자, UTF-8 3바이트까지), 지난 검사 결과도 한도 안에 들게 미리 뺀다
+    // 팀이 정한 로봇 일 화살표는 후보 FSM에 없어서(candidateFsmOf), 이미 채택된 것으로 따로 보여 준다: 묻기 자리를 같은 트리거로 바꿀 수 있게(2026-11-25 사용자 결정)
+    const seedText = [NIGHT_TEXT.seedHead, NIGHT_TEXT.seedAsk(ASK_ACTION),
+      ...CUP_FSM_MEMORY.states.flatMap((s) => s.next.filter((e) => e.action).map((e) => NIGHT_TEXT.seed(s.id, candidateText({ on: e.on, ...(e.when ? { when: e.when } : {}) }), e.action!)))].join("\n");
+    // 요약이 비면 대신 보내는 글(관찰 없음·행동 없음)과 다시 반성할 때 붙는 까닭(RETRY_WHY_MAX 글자, UTF-8 3바이트까지), 지난 검사 결과·정한 화살표도 한도 안에 들게 미리 뺀다
     const retryRoom = bytes(REFLECT_TEXT.retry("")) + 1 + RETRY_WHY_MAX * 3;
-    const maxBytes = limits.reflect_input_bytes - bytes(JSON.stringify(input, null, 2)) - bytes(feedback ?? "") - retryRoom - bytes(checksText) - 2
+    const maxBytes = limits.reflect_input_bytes - bytes(JSON.stringify(input, null, 2)) - bytes(feedback ?? "") - retryRoom - bytes(checksText) - 2 - bytes(seedText) - 2
       - bytes(REFLECT_TEXT.noObservation) - bytes(REFLECT_TEXT.noAction);
     if (maxBytes <= 0) throw new Error(REFLECT_TEXT.tooBig);
-    const summary = daySummary(db, day, { maxBytes, caps: MAX_REFLECT_TEXT });
+    // 행동 칸에는 지난 검사 결과와 정한 화살표가 함께 들어가니, 하루 요약의 행동 몫은 칸 상한에서 그만큼 뺀다
+    const summary = daySummary(db, day, { maxBytes, caps: { ...MAX_REFLECT_TEXT, action: MAX_REFLECT_TEXT.action - bytes(checksText) - bytes(seedText) - 4 } });
     let chunks: Chunk[] | null = null;
     if (lines.length) {
       try {
@@ -255,8 +259,8 @@ export async function runNight(db: HistoryDb, pam: PamClient, day: string, o: Ni
       }
     }
     const observation = chunks ? fitLines(chunkLines(db, day, chunks), Math.min(MAX_REFLECT_TEXT.observation, maxBytes - bytes(summary.action_summary))) : summary.observation_text;
-    const actionSummary = [summary.action_summary, checksText].filter(Boolean).join("\n\n");
-    const req = { day, memory: input, observation_text: observation || REFLECT_TEXT.noObservation, action_summary: actionSummary || REFLECT_TEXT.noAction, feedback };
+    const actionSummary = [summary.action_summary || REFLECT_TEXT.noAction, checksText, seedText].filter(Boolean).join("\n\n");
+    const req = { day, memory: input, observation_text: observation || REFLECT_TEXT.noObservation, action_summary: actionSummary, feedback };
     // 2) 반성 한 번(후보 FSM 종류) + 배우지 않는 행동 후보 빼기 + 뜻 검사. 거절이면 까닭 글
     const attempt = async (fb: string | null): Promise<{ candidates: CandidateFsm; notes: HabitRuleNote[]; why: null } | { candidates: null; notes: HabitRuleNote[]; why: string }> => {
       let raw: CandidateFsm;

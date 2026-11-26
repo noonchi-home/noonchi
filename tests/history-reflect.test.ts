@@ -10,7 +10,7 @@ import { MEMORY_CHECK_PROMPT } from "../src/brain/pam/index.js";
 import type { PamClient } from "../src/brain/pam/index.js";
 import type { BrainLog } from "../src/contract/events.js";
 import { HistoryDb } from "../src/brain/history/db.js";
-import { REFLECT_TEXT } from "../src/brain/history/labels.js";
+import { NIGHT_TEXT, REFLECT_TEXT } from "../src/brain/history/labels.js";
 import { loadReflectAt, memoryForDay, runReflection, scheduleReflection } from "../src/brain/history/reflect.js";
 import { fetchRetry, listenRetry } from "../src/shared/net.js";
 import { startServer, type RunningServer } from "../src/server/start.js";
@@ -149,7 +149,14 @@ describe("반성", () => {
     expect(r).toEqual({ ok: true, version: 2, appliesDay: "2026-11-08", learned: [], active: [], dropped: [] });
     expect(got.at(-1)).toMatchObject({ role: "reflect", memory_kind: "fsm_candidates", memory: SEED_C(), feedback: "다 마신 뒤에만 치워 줘" });
     expect(got.at(-1)!.observation_text).toContain("08:00:00 사람 보임");
-    expect(got.at(-1)!.action_summary).toBe("08:01:00 클로이드 판단: 컵 치우기\n08:02:00 사용자: 다 마신 뒤에만 치워 줘");
+    const [acted, fixed] = got.at(-1)!.action_summary.split("\n\n");
+    expect(acted).toBe("08:01:00 클로이드 판단: 컵 치우기\n08:02:00 사용자: 다 마신 뒤에만 치워 줘");
+    // 팀이 정한 로봇 일 화살표는 이미 채택된 것으로 행동 칸 끝에 붙는다(후보 FSM에는 없다)
+    expect(fixed!.split("\n")).toEqual([
+      NIGHT_TEXT.seedHead, NIGHT_TEXT.seedAsk("사용자에게 물어보기"),
+      ...CUP_FSM_MEMORY.states.flatMap((s) => s.next.filter((e) => e.action).map((e) => `${s.id} | ${e.when ? `${e.on} (${e.when})` : e.on} | ${e.action}`)),
+    ]);
+    expect(fixed).toContain("watching_tv | 사용자가 TV 보기를 끝내고 다른 일로 넘어간다. (같이 마시는 중이었다.) | 사용자에게 물어보기");
     expect(memoryForDay(db, "2026-11-07").version).toBe(1); // 그날은 그대로
     const after = memoryForDay(db, "2026-11-08");
     expect(after.version).toBe(2);
@@ -346,7 +353,7 @@ describe("반성", () => {
     const size = Buffer.byteLength(sent.observation_text) + Buffer.byteLength(sent.action_summary) + Buffer.byteLength(JSON.stringify(sent.memory, null, 2));
     expect(size).toBeLessThanOrEqual((await pam.limits()).reflect_input_bytes);
     expect(sent.observation_text.split("\n")[0]).toMatch(/^앞선 기록 \d+줄 생략$/);
-    expect(sent.action_summary).toBe("행동 없음");
+    expect(sent.action_summary.split("\n\n")[0]).toBe("행동 없음");
   });
 
   it("입력 한도가 커도 pam-reflect/3 칸 상한(관찰 100,000·행동 50,000·피드백 8,000자)을 넘지 않는다", async () => {

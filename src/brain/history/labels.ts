@@ -46,6 +46,10 @@ export const MEMORY_TEXT = { restart: (version: number) => `옛 모양 기억 ${
 export const NIGHT_TEXT = {
   checksHead: "Check results:",
   check: (state: string, candidate: string, action: string, n: number, k: number, passed: boolean) => `${state} | ${candidate} | ${action} | n=${n} k=${k} ${passed ? "passed" : "not passed"}`,
+  // 팀이 정한 로봇 일 화살표(seed): 반성이 고치는 후보 FSM에는 없고, 로봇 FSM을 만들 때 늘 들어간다(2026-11-25 사용자 결정: 이미 채택된 것으로 보여 준다)
+  seedHead: "Fixed arrows set by the user (already adopted; they are not in the memory you edit, so never add, change or remove them):",
+  seedAsk: (ask: string) => `"${ask}" only holds the place of a habit not learned yet: a candidate of a learned task with exactly the same on and when replaces it once that candidate passes.`,
+  seed: (state: string, candidate: string, action: string) => `${state} | ${candidate} | ${action}`,
   chunkFailed: (why: string) => `덩어리 기록 실패라 하루 요약으로 반성해요 · ${why}`,
   copyFailed: (why: string) => `밤 흐름 사본을 쓰지 못했어요 · ${why}`,
   markFailed: (day: string, why: string) => `${day} 시각 찾기 실패라 그날은 이번 채택 검사에서 빼요 · ${why}`,
