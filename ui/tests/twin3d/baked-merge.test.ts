@@ -15,7 +15,8 @@ import { loadCatalog } from "../../../src/layout/catalog.ts";
 import { LayoutEditor } from "../../../src/layout/editor.ts";
 import { resolveHome } from "../../../src/layout/homes.ts";
 import { loadScene, withFootprints } from "../../../src/layout/scene.ts";
-import { bakedMerge, twinScenes } from "../../src/twin/3d/engine";
+import { BAKED_SCENE_PATH, SCENE_PATH } from "../../../src/shared/scene-paths.ts";
+import { TwinEngine, bakedMerge, twinScenes, type EngineIo } from "../../src/twin/3d/engine";
 import { LayoutOps } from "../../src/twin/3d/live";
 
 const home = resolveHome(resolve(dirname(fileURLToPath(import.meta.url)), "../../../twin"), "mokryeon_180b");
@@ -73,6 +74,66 @@ describe("배치 편집으로 뺀 구운 물건", () => {
       expect(drawn(meshes.get(KEPT)!)).toBe(false);
       const mergedVertices = scene3.children.filter((c): c is THREE.Mesh => c instanceof THREE.Mesh).reduce((n, m) => n + m.geometry.attributes.position!.count, 0);
       expect(mergedVertices).toBe(meshes.get(KEPT)!.geometry.attributes.position!.count);
+    } finally {
+      rmSync(runtimeDir, { recursive: true, force: true });
+    }
+  });
+
+  it("엔진 불러오기(TwinEngine.load)는 구운 장면으로 합치기를 만든다: edits.json remove로 뺀 탁자·stand_ac·옷장이 맞추기 remove 뒤 그려지지 않고, 합친 메시에는 소파만 남는다", async () => {
+    const runtimeDir = mkdtempSync(join(tmpdir(), "baked-merge-"));
+    try {
+      const catalog = loadCatalog(home.catalogDir);
+      const base = loadScene(home)!;
+      const editor = new LayoutEditor({ homeId: home.id, scene: loadScene(home)!, catalog, savePath: join(runtimeDir, "edits.json"), outDir: home.outDir, libraryDir: home.libraryDir, unbaked: base.added });
+      expect(editor.applyEdits(REMOVED.map((id) => ({ op: "remove" as const, id })))).toBe(REMOVED.length);
+      const footprint = (type: string) => catalog.get(type)?.footprint;
+      const manifest = JSON.parse(readFileSync(join(home.outDir, "bake", "manifest.json"), "utf8")) as { nodes: Record<string, string> };
+      const served: Record<string, unknown> = {
+        [BAKED_SCENE_PATH]: { scene: withFootprints(base, footprint) },
+        [SCENE_PATH]: { scene: withFootprints({ ...base, objects: editor.objects() }, footprint) },
+        "/twin/bake/manifest.json": manifest,
+      };
+      // 구운 GLB 모양의 가짜 나무: 물건 노드마다 manifest 메시 이름 하나(탁자·소파 lm0, 옷장 lm2), stand_ac는 굽지 않은 가전 메시
+      const root = new THREE.Group();
+      const furniture = new THREE.Group();
+      furniture.name = "furniture";
+      root.add(furniture);
+      const wood = new THREE.MeshStandardMaterial({ name: "wood" });
+      const parts: [string, string][] = [["coffee_table_38536572", "coffee_table_38536572_top"], ["wardrobe_0358a8fe", "wardrobe_0358a8fe_carcass"], ["stand_ac_dc22b8f3", "stand_ac_dc22b8f3_body"], [KEPT, "sofa_a848b595_back"]];
+      const meshes = new Map<string, THREE.Mesh>();
+      for (const [id, part] of parts) {
+        const node = new THREE.Group();
+        node.name = id;
+        const geometry = new THREE.BoxGeometry();
+        geometry.setAttribute("uv1", geometry.attributes.uv!.clone());
+        const mesh = new THREE.Mesh(geometry, wood);
+        mesh.name = part;
+        node.add(mesh);
+        furniture.add(node);
+        meshes.set(id, mesh);
+      }
+      expect([manifest.nodes["coffee_table_38536572_top"], manifest.nodes["wardrobe_0358a8fe_carcass"], manifest.nodes["sofa_a848b595_back"], manifest.nodes["stand_ac_dc22b8f3_body"]]).toEqual(["lm0", "lm2", "lm0", undefined]);
+      const renderer = {
+        setPixelRatio() {}, setSize() {}, toneMapping: 0, toneMappingExposure: 1, shadowMap: { enabled: false }, localClippingEnabled: false, autoClear: true,
+        info: { autoReset: true, reset() {} }, capabilities: { getMaxAnisotropy: () => 1 }, compileAsync: async () => {}, render() {}, dispose() {}, forceContextLoss() {},
+      } as unknown as THREE.WebGLRenderer;
+      const io: EngineIo = {
+        renderer: () => renderer,
+        json: async <T,>(url: string) => {
+          if (!(url in served)) throw new Error(`${url} 404`);
+          return served[url] as T;
+        },
+        gltf: async () => ({ scene: root }),
+        texture: async () => new THREE.Texture(),
+      };
+      const engine = await TwinEngine.load({ canvas: {} as HTMLCanvasElement, home: home.id, box: { width: 1920, height: 1080 }, dpr: 1, io });
+      // 대시보드가 연결될 때 서버가 보내는 맞추기 메시지
+      for (const m of editor.syncMessages()) routeLayout(m, engine.layout);
+
+      for (const id of REMOVED) expect(drawn(meshes.get(id)!), id).toBe(false);
+      const merged = engine.scene.children.filter((c): c is THREE.Mesh => c instanceof THREE.Mesh && c.name.startsWith("merged_"));
+      expect(merged.reduce((n, m) => n + m.geometry.attributes.position!.count, 0)).toBe(meshes.get(KEPT)!.geometry.attributes.position!.count);
+      engine.dispose();
     } finally {
       rmSync(runtimeDir, { recursive: true, force: true });
     }

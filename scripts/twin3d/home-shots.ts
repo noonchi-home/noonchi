@@ -8,12 +8,14 @@ import { build } from "esbuild";
 import type { SceneObject } from "../../src/contract/layout.js";
 import { resolveHome, type Home } from "../../src/layout/homes.js";
 import { loadScene } from "../../src/layout/scene.js";
+import { BAKED_SCENE_PATH, SCENE_PATH } from "../../src/shared/scene-paths.js";
 import { chromePath, closeChrome, devtoolsPort, launchChrome, openPage, type Page } from "./cdp.js";
 import { withTimeout } from "./capture-lib.js";
 import { withHeavy } from "./heavy.js";
 import { height, homeShotViews, width } from "./home-shot-views.js";
 
-async function shotServer(home: Home, scene: NonNullable<ReturnType<typeof loadScene>>) {
+/** 장면 사진용 가짜 서버: 그리기 페이지·묶은 스크립트·집 장면·구운 자산만 답한다. 배치를 고치지 않았으니 구운 장면과 고친 배치 장면이 같다. */
+export async function shotServer(home: Home, scene: NonNullable<ReturnType<typeof loadScene>>) {
   const bundle = await build({
     entryPoints: ["scripts/twin3d/home-shot-browser.mjs"], bundle: true, format: "esm", write: false,
     alias: { "@viewer": resolve(home.viewerDir) }, nodePaths: [resolve("ui/node_modules")],
@@ -35,7 +37,7 @@ async function shotServer(home: Home, scene: NonNullable<ReturnType<typeof loadS
     } else if (url === "/render.js") {
       res.setHeader("Content-Type", "text/javascript");
       res.end(bundle.outputFiles[0]!.contents);
-    } else if (url === "/api/scene") {
+    } else if (url === SCENE_PATH || url === BAKED_SCENE_PATH) {
       res.setHeader("Content-Type", "application/json");
       res.end(JSON.stringify({ scene }));
     } else if (assets.has(url)) {
