@@ -115,7 +115,8 @@ export class TrackCore {
   walk(key:string,target:PlannedCommand["target"],station=false,hint?:XZ[]) {
     if (!this.o.layout.walking) return undefined;
     const map=this.o.layout.walking();
-    const front=this.o.stations?.map?.()?.surface_fronts.find(f=>f.surface_id===target?.id);
+    const stations=this.o.stations?.map?.();
+    const front=stations?.surface_fronts.find(f=>f.surface_id===target?.id);
     const at: XZ | null = target ? [target.position[0],target.position[2]] : null;
     // 이동 목적지는 계획 선(src/agent/planShape.ts)과 같은 moveStop이다: 가구 앞자리, 없으면 그 방 대기 자리, 없으면 물건에서 가장 가까운 격자 점
     const stop = !station && map && target && at ? moveStop(map.way, target.id, this.o.layout.floor().objects.get(target.id)?.room, at) : null;
@@ -129,8 +130,10 @@ export class TrackCore {
         world.fixtures.some(f=>(f.id===p.id || f.device===p.id) && f.facts.open?.value==="closed" && f.facts.open.certainty==="confirmed")))
         return {guide:null,distance:null,arrived:false,within:()=>false,vision:"문이 닫혀 있어요."};
     }
-    const label = target && !station ? this.nameOf(target.id) ?? target.label : target?.label;
-    return {...result,vision:result.blocked ? "지나갈 길을 확인해 주세요." : result.distance===null ? "위치를 다시 맞춰 주세요." : (label??"설 자리")+(station?"까지 ":" 앞까지 ")+result.distance.toFixed(1)+"m"};
+    // 가구 앞자리가 아닌 목적지(그 방 대기 자리·격자 점)는 실제로 가는 자리를 말한다: 대기 자리 이름, 격자 점은 「설 자리」
+    const spot = stop && !front ? stations?.stations.find(s=>s.roles.includes("standby") && s.position[0]===stop[0] && s.position[1]===stop[1])?.name ?? "설 자리" : null;
+    const label = spot ?? (target && !station ? this.nameOf(target.id) ?? target.label : target?.label);
+    return {...result,vision:result.blocked ? "지나갈 길을 확인해 주세요." : result.distance===null ? "위치를 다시 맞춰 주세요." : (label??"설 자리")+(station||spot?"까지 ":" 앞까지 ")+result.distance.toFixed(1)+"m"};
   }
   run: Run | null = null;
   planning: Job | null = null;
