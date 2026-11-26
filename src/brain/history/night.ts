@@ -13,7 +13,7 @@ import { LEARNED_ACTIONS, TASKS } from "../../act/tasks.js";
 import type { BrainLog, PamUsage } from "../../contract/events.js";
 import type { CandidateFsm } from "../../contract/pam.js";
 import { CUP_FSM_MEMORY, ContractError, MAX_REFLECT_TEXT, validateMemory, type FsmMemory } from "../decision.js";
-import { candidateText, type PamClient } from "../pam/index.js";
+import { candidateText, MARKING_PROMPT, type PamClient } from "../pam/index.js";
 import { adoptKey, adoptedFsm, candidateFsmOf, findRules, type CtxDay, type CheckResult } from "../pam/adopt.js";
 import type { Ctx } from "../../contract/pam.js";
 import { clock, type Chunk, type Marks } from "../pam/marks.js";
@@ -155,9 +155,12 @@ export function chunkLines(db: HistoryDb, day: string, chunks: readonly Chunk[])
   });
 }
 
-/** 그날 시각 찾기 사본: 읽은 기록 줄의 표시(record), 덩어리, (상태, 후보 글)마다 시각, 행동마다 시각, 안 보인 구간(아직 안 물었으면 null). */
-interface DayMarks { day: string; record: string; chunks: Chunk[] | null; candidates: Record<string, string[]>; actions: Record<string, string[]>; unseen: { start: string; end: string }[] | null }
-const markKey = (state: string, text: string) => JSON.stringify([state, text]);
+/** 그날 시각 찾기 사본: 읽은 기록 줄의 표시(record), 시각 찾기 지시문의 표시(prompt), 덩어리, (상태, 상태 설명, 후보 글)마다 시각, 행동마다 시각, 안 보인 구간(아직 안 물었으면 null). */
+interface DayMarks { day: string; record: string; prompt: string; chunks: Chunk[] | null; candidates: Record<string, string[]>; actions: Record<string, string[]>; unseen: { start: string; end: string }[] | null }
+/** 후보 시각의 열쇠: 상태 설명이 바뀌면 시각 찾기가 그 상태를 다르게 볼 수 있어 다시 묻는다(2026-11-25 사용자 결정). */
+const markKey = (state: string, description: string, text: string) => JSON.stringify([state, description, text]);
+/** 시각 찾기 지시문의 표시(sha256 앞 16자리). 지시문이 바뀌면 그 전 사본을 버리고 다시 묻는다(2026-11-25 사용자 결정). */
+const PROMPT_MARK = createHash("sha256").update(MARKING_PROMPT).digest("hex").slice(0, 16);
 /** 사본이 읽은 그날 기록 줄의 표시(줄 수와 줄 전체의 sha256). 다르면 그날 기록이 바뀐 것이라 사본을 버리고 다시 묻는다. */
 const recordMark = (lines: readonly { line: string }[]) => `${lines.length}:${createHash("sha256").update(lines.map((l) => l.line).join("\n")).digest("hex")}`;
 
@@ -227,14 +230,14 @@ export async function runNight(db: HistoryDb, pam: PamClient, day: string, o: Ni
     const linesCache = new Map<string, { time: string; line: string }[]>();
     const linesOf = (d: string) => linesCache.get(d) ?? linesCache.set(d, dayLines(db, d)).get(d)!;
     const marksCache = new Map<string, DayMarks>();
-    // 사본은 그때 읽은 기록 줄과 같을 때만 쓴다(Codex 1b07d3e2 P2: 23:30 반성 뒤 더해진 같은 날 기록이 사본 때문에 영원히 셈에서 빠졌다)
+    // 사본은 그때 읽은 기록 줄·시각 찾기 지시문과 같을 때만 쓴다(Codex 1b07d3e2 P2: 23:30 반성 뒤 더해진 같은 날 기록이 사본 때문에 영원히 셈에서 빠졌다)
     const marksOf = (d: string): DayMarks => {
       const hit = marksCache.get(d);
       if (hit) return hit;
       const path = markPath(d);
       const record = recordMark(linesOf(d));
       const read = path && existsSync(path) ? (JSON.parse(readFileSync(path, "utf8")) as DayMarks) : null;
-      const m: DayMarks = read?.record === record ? read : { day: d, record, chunks: null, candidates: {}, actions: {}, unseen: null };
+      const m: DayMarks = read?.record === record && read.prompt === PROMPT_MARK ? read : { day: d, record, prompt: PROMPT_MARK, chunks: null, candidates: {}, actions: {}, unseen: null };
       marksCache.set(d, m);
       return m;
     };
@@ -305,11 +308,13 @@ export async function runNight(db: HistoryDb, pam: PamClient, day: string, o: Ni
     // 3) 시각 찾기(지난 날까지, 날마다 아직 모르는 (상태, 후보)·행동만)
     const rules = candidates.states.flatMap((s) => s.rules.filter((r) => LEARNED_ACTIONS.includes(r.action)).flatMap((r) => r.candidates.map((c) => ({ state: s.id, action: r.action, to: r.to, cand: c }))));
     const actions = [...new Set(rules.map((r) => r.action))];
+    const descOf = new Map(candidates.states.map((s) => [s.id, s.description]));
+    const keyOf = (state: string, text: string) => markKey(state, descOf.get(state) ?? "", text);
     const days = db.daysUpTo(day);
     for (const d of days) {
       if (!rules.length) break;
       const m = marksOf(d);
-      const ask = [...new Map(rules.map((r) => [markKey(r.state, candidateText(r.cand)), r])).values()].filter((r) => !(markKey(r.state, candidateText(r.cand)) in m.candidates));
+      const ask = [...new Map(rules.map((r) => [keyOf(r.state, candidateText(r.cand)), r])).values()].filter((r) => !(keyOf(r.state, candidateText(r.cand)) in m.candidates));
       const want = actions.filter((a) => !(a in m.actions));
       if (!ask.length && !want.length && m.unseen !== null) continue;
       const dl = linesOf(d);
@@ -330,7 +335,7 @@ export async function runNight(db: HistoryDb, pam: PamClient, day: string, o: Ni
         continue;
       }
       if (o.signal?.aborted) return cancelled();
-      for (const c of marks.candidates) m.candidates[markKey(c.state, c.candidate)] = c.times;
+      for (const c of marks.candidates) m.candidates[keyOf(c.state, c.candidate)] = c.times;
       for (const a of marks.actions) m.actions[a.action] = a.times;
       m.unseen = marks.unseen;
       keepMarks(m);
@@ -341,7 +346,7 @@ export async function runNight(db: HistoryDb, pam: PamClient, day: string, o: Ni
         const dl = linesOf(d);
         const m = marksOf(d);
         // 시각 찾기가 실패한 날(그 후보·행동 시각이 없음)은 셈에 넣지 않는다
-        if (!dl.length || !(markKey(r.state, candidateText(r.cand)) in m.candidates) || !(r.action in m.actions) || m.unseen === null) return [];
+        if (!dl.length || !(keyOf(r.state, candidateText(r.cand)) in m.candidates) || !(r.action in m.actions) || m.unseen === null) return [];
         const sec = (t: string) => clock(t, "time");
         const asked = answerActions(db, d).find((x) => x.action === r.action)?.times ?? [];
         // 로봇이 그 일을 한 구간은 못 봄: 그 안의 행동 표시(폰 명령대로 사람이 한 일)는 행동으로 세지 않는다(Codex 1b07d3e2 P2: checkCandidate가 행동을 못 봄보다 먼저 센다)
@@ -351,7 +356,7 @@ export async function runNight(db: HistoryDb, pam: PamClient, day: string, o: Ni
         return [{
           date: d,
           start: times[0]!, end: times.at(-1)! + 1,
-          candidate: (m.candidates[markKey(r.state, candidateText(r.cand))] ?? []).map(sec),
+          candidate: (m.candidates[keyOf(r.state, candidateText(r.cand))] ?? []).map(sec),
           action: [...(m.actions[r.action] ?? []).map(sec).filter((a) => !byRobot(a)), ...asked],
           unseen: [...(m.unseen ?? []).map((u) => [sec(u.start), unseenEnd(times, sec(u.end))] as [number, number]), ...robot],
           answered: answerTimes(db, d, r.action),

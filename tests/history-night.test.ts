@@ -1,7 +1,7 @@
 // 밤 흐름(src/brain/history/night.ts): 덩어리 기록 → 반성(후보 FSM) → 검사 → 시각 찾기(모르는 것만) → 채택 검사 → 로봇 FSM → 한 트랜잭션 저장.
 // 셈하기: 「치워 주세요」 답은 따라온 것, 「그대로 둬요」 답은 안 보였어도 본 것(따라오지 않음), 로봇이 그 일을 한 구간은 못 봄(사용자 결정 2026-11-18).
 // 가짜 PAM LLM(같은 주소 자리)이 덩어리·반성·뜻 검사·시각 찾기에 답한다. 시각은 서울 시간대 HH:MM:SS.
-import { existsSync, mkdtempSync, readFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -161,6 +161,45 @@ describe("밤 흐름: 채택 검사", () => {
       const marks = pam.bodies.filter((b): b is MarkView => b.role === "mark");
       expect(marks.map((m) => leaves(m))).toEqual([["08:00:00"], ["08:00:00", "23:40:00"], ["08:00:00"]]);
       expect(second.checks).toContainEqual(expect.objectContaining({ state: "drinking", action: "컵 치우기", on: LEAVE_ON, n: 3, k: 3 }));
+    } finally {
+      await pam.close();
+    }
+  });
+
+  // 2026-11-25 사용자 결정: 시각 찾기 지시문이나 후보 상태의 설명이 바뀌면 그 전 사본의 후보 시각은 쓰지 않고 다시 묻는다
+  it("후보 상태의 설명이 바뀌면 지난 날 사본에 있던 그 후보도 다시 묻는다", async () => {
+    let description = CANDIDATES_ASK_THEN_CLEAR.states.find((s) => s.id === "drinking")!.description;
+    const reflect = () => ({ ...CANDIDATES_ASK_THEN_CLEAR, states: CANDIDATES_ASK_THEN_CLEAR.states.map((s) => (s.id === "drinking" ? { ...s, description } : s)) });
+    const pam = await startFakePamLlm({ chunk: oneChunkPerLine, reflect, check: () => ({ ok: true, items: [] }), mark: markLeaveAt("08:00:00") });
+    try {
+      const db = HistoryDb.open(":memory:");
+      const dir = tmp();
+      for (const d of ["2026-11-10", "2026-11-11"]) leaveAndAnswer(db, d, "08:00:00", "08:01:30", "clear");
+      await runNight(db, pamClientFor(pam), "2026-11-10", { dir });
+      description = "사용자가 식탁에서 먹거나 마시는 중이다.";
+      await runNight(db, pamClientFor(pam), "2026-11-11", { dir });
+      const marks = pam.bodies.filter((b): b is MarkView => b.role === "mark");
+      expect(marks).toHaveLength(3);   // 첫 밤 11-10, 둘째 밤 11-10(설명이 바뀜)·11-11
+      expect(marks.every((m) => m.candidates.length === 1)).toBe(true);
+    } finally {
+      await pam.close();
+    }
+  });
+
+  it("사본의 시각 찾기 지시문 표시가 지금 지시문과 다르면 그날을 처음부터 다시 묻는다", async () => {
+    const pam = await fake();
+    try {
+      const db = HistoryDb.open(":memory:");
+      const dir = tmp();
+      for (const d of ["2026-11-10", "2026-11-11"]) leaveAndAnswer(db, d, "08:00:00", "08:01:30", "clear");
+      await runNight(db, pamClientFor(pam), "2026-11-10", { dir });
+      const path = join(dir, "marks-2026-11-10.json");
+      const saved = JSON.parse(readFileSync(path, "utf8")) as { prompt: string };
+      expect(saved.prompt).toMatch(/^[0-9a-f]{16}$/);
+      writeFileSync(path, JSON.stringify({ ...saved, prompt: "0000000000000000" }));   // 예전 지시문으로 만든 사본
+      await runNight(db, pamClientFor(pam), "2026-11-11", { dir });
+      expect(pam.bodies.filter((b) => b.role === "mark")).toHaveLength(3);
+      expect((JSON.parse(readFileSync(path, "utf8")) as { prompt: string }).prompt).toBe(saved.prompt);
     } finally {
       await pam.close();
     }
