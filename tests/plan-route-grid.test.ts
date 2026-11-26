@@ -99,3 +99,27 @@ describe("가구·벽 여유 안 자리에서 나가는 첫 연결선(검토 R0)
     }
   });
 });
+
+describe("처음·끝 연결선도 같은 길이면 덜 꺾이는 쪽(검토 R2)", () => {
+  const way = walkWay(scene, footprint);
+  const entry = scene.stations.stations.find((s) => s.id === "kitchen_entry")!.position;
+  const route = (from: Vec2, to: Vec2) => gridRoute(way.grid, way.geometry, from, to, { square: true });
+
+  it("거실 대기 자리 → 식탁 앞자리: 대기 자리에서 z로 먼저 붙어 꺾임 3번", () => {
+    expect(standby).toEqual([6.98, 6.38]);
+    expect(front(table.id)).toEqual([9.96, 5.15]);
+    expect(route(standby, front(table.id))).toEqual([[6.98, 6.38], [6.98, 6.3], [9.6, 6.3], [9.6, 5.15], [9.96, 5.15]]);
+  });
+
+  it("주방 입구 → 싱크대 앞자리: 주방 입구에서 z로 곧게 내려간다", () => {
+    expect(entry).toEqual([8.15, 2.9]);
+    expect(route(entry, front(sink.id))).toEqual([[8.15, 2.9], [8.15, 2.4], [6.9, 2.4], [6.9, 0.693], [6.52, 0.693]]);
+  });
+
+  it("식탁 앞자리 → 싱크대 앞자리: 6cm 갔다 5cm 꺾는 Z자 없이 z로 먼저 붙어 꺾임 5번", () => {
+    const path = route(front(table.id), front(sink.id))!;
+    expect(path.slice(0, 3)).toEqual([[9.96, 5.15], [9.96, 5.1], [9.3, 5.1]]);
+    expect(path.at(-1)).toEqual(front(sink.id));
+    expect(path).toHaveLength(7);
+  });
+});

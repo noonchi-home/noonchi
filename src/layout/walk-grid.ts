@@ -179,17 +179,21 @@ export function attach(grid: WalkGrid, g: Geometry, p: Vec2, maxM = LINK_M): num
   return links(grid, g, p, null, false, maxM, true)[0]?.node ?? null;
 }
 
-interface Link { node: number; bend: Vec2[]; cost: number }
+/** 자리와 격자 점을 잇는 길 후보. dir: 격자 점에 들어올 때 방향(0 +x, 1 −x, 2 +z, 3 −z, 4 모름 — square가 아니거나 자리가 격자 점). */
+interface Link { node: number; bend: Vec2[]; cost: number; dir: number }
 /** 자리와 격자 점을 곧게 잇는 가장 먼 거리(m, 걷기 안내 walk-guide.ts nearestStart와 같은 0.6m). */
 const LINK_M = 0.6;
+/** 꺾을 때 더하는 길이(m): 같은 길이 길 가운데 덜 꺾이는 길을 고른다(계단 모양 대신 ㄱ자). 처음·끝 연결선의 꺾임과 연결선·이음 사이 꺾임도 센다. */
+const TURN_M = 1e-3;
 
-/** 자리 p와 격자 점을 잇는 길 후보: 격자 점 번호, 그 사이 꺾이는 점(square면 x·z 축과 나란한 두 구간의 꺾인 점 하나, 아니면 없음), 그 길이.
+/** 자리 p와 격자 점을 잇는 길 후보: 격자 점 번호, 그 사이 꺾이는 점(square면 x·z 축과 나란한 두 구간의 꺾인 점 하나, 아니면 없음), 그 길이(꺾이면 TURN_M을 더한다).
+ *  square면 두 꺾은 점이 모두 되면 둘 다 후보다(다음 이음 방향과 맞춰 덜 꺾이는 쪽을 shortest가 고른다).
  *  p가 격자 점이면 그 점 하나. allowed가 있으면 그 점들만 본다. 이을 점이 없고 p가 가구 여유 안이면(충전 자리처럼 가구에 붙은 자리) 가구는 보지 않고 다시 찾고,
  *  p가 벽 여유 안이면(벽에 붙어 선 폰) 같은 방 안으로만 가는 선으로 다시 찾는다(걷기 안내 nearestStart처럼 벽을 넘지 않는다). 가까운 것부터, first면 첫 하나만. */
 function links(grid: WalkGrid, g: Geometry, p: Vec2, allowed: Set<number> | null, square: boolean, maxM = LINK_M, first = false): Link[] {
   const ok = (i: number) => !allowed || allowed.has(i);
   const same = grid.points.findIndex((q, i) => ok(i) && Math.abs(q[0] - p[0]) < 1e-6 && Math.abs(q[1] - p[1]) < 1e-6);
-  if (same >= 0) return [{ node: same, bend: [], cost: 0 }];
+  if (same >= 0) return [{ node: same, bend: [], cost: 0, dir: 4 }];
   const near = grid.points
     .map((q, i) => ({ i, d: Math.hypot(q[0] - p[0], q[1] - p[1]) }))
     .filter((x) => ok(x.i) && x.d <= maxM)
@@ -199,12 +203,12 @@ function links(grid: WalkGrid, g: Geometry, p: Vec2, allowed: Set<number> | null
     for (const { i, d } of near) {
       const q = grid.points[i]!;
       if (!square || Math.abs(q[0] - p[0]) < 1e-9 || Math.abs(q[1] - p[1]) < 1e-9) {
-        if (pass(p, q)) out.push({ node: i, bend: [], cost: d });
+        if (pass(p, q)) out.push({ node: i, bend: [], cost: d, dir: square ? heading(p, q) : 4 });
       } else {
-        // 여유 안 자리에서 나갈 때(pass가 가구 여유를 보지 않을 때) 가구 실제 상자를 지나지 않는 꺾은 점을 먼저 고른다
+        // 여유 안 자리에서 나갈 때(pass가 가구 여유를 보지 않을 때) 가구 실제 상자를 지나지 않는 꺾은 점만 남긴다(그런 점이 있으면)
         const both = ([[q[0], p[1]], [p[0], q[1]]] as Vec2[]).filter((e) => pass(p, e) && pass(e, q));
-        const e = both.find((e) => !throughBody(grid.bodies, p, e) && !throughBody(grid.bodies, e, q)) ?? both[0];
-        if (e) out.push({ node: i, bend: [e], cost: Math.abs(q[0] - p[0]) + Math.abs(q[1] - p[1]) });
+        const clear = both.filter((e) => !throughBody(grid.bodies, p, e) && !throughBody(grid.bodies, e, q));
+        for (const e of clear.length ? clear : both) out.push({ node: i, bend: [e], cost: Math.abs(q[0] - p[0]) + Math.abs(q[1] - p[1]) + TURN_M, dir: heading(e, q) });
       }
       if (first && out.length) break;
     }
@@ -224,31 +228,33 @@ function links(grid: WalkGrid, g: Geometry, p: Vec2, allowed: Set<number> | null
   });
 }
 
-/** 꺾을 때 더하는 길이(m): 같은 길이 길 가운데 덜 꺾이는 길을 고른다(계단 모양 대신 ㄱ자). */
-const TURN_M = 1e-3;
+/** a→b 방향(0 +x, 1 −x, 2 +z, 3 −z). */
+const heading = (a: Vec2, b: Vec2) => (Math.abs(b[0] - a[0]) >= Math.abs(b[1] - a[1]) ? (b[0] > a[0] ? 0 : 1) : b[1] > a[1] ? 2 : 3);
+/** 반대 방향(4는 그대로). */
+const reverse = (dir: number) => (dir === 4 ? 4 : dir ^ 1);
 const adjacency = new WeakMap<WalkGrid, [number, number, number][][]>();
 /** 점마다 [이웃 점, 이음 길이, 방향(0 +x, 1 −x, 2 +z, 3 −z)]. */
 function neighbours(grid: WalkGrid): [number, number, number][][] {
   let adj = adjacency.get(grid);
   if (adj) return adj;
   adj = grid.points.map(() => []);
-  const dir = (a: Vec2, b: Vec2) => (Math.abs(b[0] - a[0]) >= Math.abs(b[1] - a[1]) ? (b[0] > a[0] ? 0 : 1) : b[1] > a[1] ? 2 : 3);
   for (const [a, b] of grid.edges) {
     const [p, q] = [grid.points[a]!, grid.points[b]!];
     const d = Math.hypot(p[0] - q[0], p[1] - q[1]);
-    adj[a]!.push([b, d, dir(p, q)]);
-    adj[b]!.push([a, d, dir(q, p)]);
+    adj[a]!.push([b, d, heading(p, q)]);
+    adj[b]!.push([a, d, heading(q, p)]);
   }
   adjacency.set(grid, adj);
   return adj;
 }
 
-/** 출발 후보들에서 도착 후보들까지 이음을 따라 가장 짧은 길(꺾일 때 TURN_M을 더한 Dijkstra). allowed가 있으면 그 점들만 지난다.
+/** 출발 후보들에서 도착 후보들까지 이음을 따라 가장 짧은 길(꺾일 때 TURN_M을 더한 Dijkstra: 출발 연결선이 들어온 방향에서 시작하고, 도착 연결선으로 나갈 때 꺾이면 더한다). allowed가 있으면 그 점들만 지난다.
  *  [출발 후보, 점 번호 목록, 도착 후보]. 없으면 null. */
 function shortest(grid: WalkGrid, starts: Link[], ends: Link[], allowed: Set<number> | null): [Link, number[], Link] | null {
   const adj = neighbours(grid);
-  const goal = new Map(ends.map((e) => [e.node, e]));
-  // 상태 = 점 번호 × 5 + 들어온 방향(4는 출발)
+  const goal = new Map<number, Link[]>();
+  for (const e of ends) goal.set(e.node, [...(goal.get(e.node) ?? []), e]);
+  // 상태 = 점 번호 × 5 + 들어온 방향(4는 모름)
   const cost = new Map<number, number>();
   const prev = new Map<number, number>();
   const origin = new Map<number, Link>();
@@ -279,14 +285,14 @@ function shortest(grid: WalkGrid, starts: Link[], ends: Link[], allowed: Set<num
     return top;
   };
   for (const s of starts) {
-    const key = s.node * 5 + 4;
+    const key = s.node * 5 + s.dir;
     if (s.cost < (cost.get(key) ?? Infinity)) {
       cost.set(key, s.cost);
       origin.set(key, s);
       push([s.cost, key]);
     }
   }
-  let best: { total: number; key: number } | null = null;
+  let best: { total: number; key: number; end: Link } | null = null;
   const done = new Set<number>();
   while (heap.length) {
     const [c, key] = pop();
@@ -294,8 +300,11 @@ function shortest(grid: WalkGrid, starts: Link[], ends: Link[], allowed: Set<num
     if (done.has(key)) continue;
     done.add(key);
     const [u, came] = [Math.floor(key / 5), key % 5];
-    const end = goal.get(u);
-    if (end && (!best || c + end.cost < best.total)) best = { total: c + end.cost, key };
+    for (const end of goal.get(u) ?? []) {
+      const out = reverse(end.dir);
+      const total = c + end.cost + (came !== 4 && out !== 4 && came !== out ? TURN_M : 0);
+      if (!best || total < best.total) best = { total, key, end };
+    }
     for (const [v, d, dir] of adj[u]!) {
       if (allowed && !allowed.has(v)) continue;
       const next = v * 5 + dir;
@@ -310,7 +319,7 @@ function shortest(grid: WalkGrid, starts: Link[], ends: Link[], allowed: Set<num
   if (!best) return null;
   const keys = [best.key];
   while (prev.has(keys[0]!)) keys.unshift(prev.get(keys[0]!)!);
-  return [origin.get(keys[0]!)!, keys.map((k) => Math.floor(k / 5)), goal.get(Math.floor(best.key / 5))!];
+  return [origin.get(keys[0]!)!, keys.map((k) => Math.floor(k / 5)), best.end];
 }
 
 /** 꺾이는 점만 남긴다: 겹친 점, 앞뒤 점과 한 줄 위인 가운데 점, 갔다 되돌아오는 점(앞앞 점과 같은 점)을 뺀다. */
