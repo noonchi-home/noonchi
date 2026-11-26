@@ -135,6 +135,14 @@ describe("원뿔 그릴 자리 보정", () => {
     for (const p of samples(path)) expect(insidePolygon(p, body), `${p} 책상`).toBe(false);
   });
 
+  it("한양목련 가구 여유 안에서 0.6m 안 움직임은 곧은 선이다: 식탁 옆 14cm·싱크대 앞 15cm(검토 R6)", () => {
+    const home = resolveHome(resolve(dirname(fileURLToPath(import.meta.url)), "../../../twin"), "mokryeon_180b");
+    const catalog = loadCatalog(home.catalogDir);
+    const g = walkGuide(withFootprints(loadScene(home)!, (type: string) => catalog.get(type)?.footprint), CONE.apex);
+    expect(g.path([9.96, 3.4], [10.1, 3.4])).toEqual([[9.96, 3.4], [10.1, 3.4]]);
+    expect(g.path([6.3, 0.4], [6.45, 0.42])).toEqual([[6.3, 0.4], [6.45, 0.42]]);
+  });
+
   it("방이 없는 장면이면 자리를 바꾸지 않고 길도 없다", () => {
     const g = walkGuide({ plan: {}, objects: [] }, CONE.apex);
     expect(g.stand([3, 4])).toEqual([3, 4]);

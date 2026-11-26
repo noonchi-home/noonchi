@@ -1,5 +1,5 @@
 // 맞춘 눈 표시(원뿔)를 그릴 자리 보정(그리는 자리만, 눈 자세 값은 그대로): 평면 점을 방 안·벽에서 떨어진 자리로 옮기고(stand),
-// 두 자리 사이는 계획 선·폰 안내와 같은 이동 가능 점 격자 길로 잇는다(path, src/layout/walk-grid.ts gridRoute). 격자가 없는 곳(욕실 등)은 길이 없다.
+// 두 자리 사이는 계획 선·폰 안내와 같은 이동 가능 점 격자 길로 잇는다(path, src/layout/walk-grid.ts gridRoute). 0.6m 안 한 방 안 움직임은 곧은 선이다. 격자가 없는 곳(욕실 등)은 길이 없다.
 import type { Plan2 } from "../../../../src/contract/events.ts";
 import type { SceneJson } from "../../../../src/contract/layout.ts";
 import { WALK_STEP, floorPlanFrom, furnitureBodies, gridRoute, roomAt, walkGrid, walkingGeometry } from "../../../../src/layout/browser.ts";
@@ -7,7 +7,8 @@ import { WALK_STEP, floorPlanFrom, furnitureBodies, gridRoute, roomAt, walkGrid,
 export interface WalkGuide {
   /** 그릴 자리: 방 안이고 벽에서 벽 반 두께 + 표시 반지름만큼 떨어진 가장 가까운 자리. 방이 없는 장면이면 그대로. */
   stand(p: Plan2): Plan2;
-  /** from에서 to까지 격자 길(0.6m 안은 곧은 선, 그보다 멀면 x·z 축과 나란하게 꺾인다). 못 찾으면 null. */
+  /** from에서 to까지 길: 0.6m 안이고 선 위가 모두 한 방 안이면 곧은 선(가구 여유 안 자리에서 조금 움직여도 격자 점까지 나갔다 오지 않는다),
+   *  아니면 격자 길(0.6m 안은 곧은 선, 그보다 멀면 x·z 축과 나란하게 꺾인다). 못 찾으면 null. */
   path(from: Plan2, to: Plan2): Plan2[] | null;
 }
 
@@ -20,6 +21,8 @@ const NUDGE = 0.01;
 const ON_LINE = 1e-6;
 /** 이보다 가까운 두 자리는 곧은 선으로 잇는다(m, 격자 자리 붙이기 거리와 같다). */
 const STRAIGHT_M = 0.6;
+/** 곧은 선이 한 방 안인지 볼 간격(m). */
+const SAMPLE_M = 0.05;
 
 /** 선분 ab에서 p와 가장 가까운 점. */
 function closest(p: Plan2, a: Plan2, b: Plan2): Plan2 {
@@ -91,7 +94,13 @@ export function walkGuide(scene: unknown, reach: number): WalkGuide {
     },
     path(from, to) {
       if (!geometry || !grid) return null;
-      return gridRoute(grid, geometry, from, to, { square: dist(from, to) > STRAIGHT_M });
+      const near = dist(from, to) <= STRAIGHT_M;
+      if (near) {
+        const room = roomAt(fp, from);
+        const n = Math.max(1, Math.ceil(dist(from, to) / SAMPLE_M));
+        if (room && Array.from({ length: n + 1 }, (_, k) => roomAt(fp, [from[0] + ((to[0] - from[0]) * k) / n, from[1] + ((to[1] - from[1]) * k) / n])).every((r) => r === room)) return [from, to];
+      }
+      return gridRoute(grid, geometry, from, to, { square: !near });
     },
   };
 }
