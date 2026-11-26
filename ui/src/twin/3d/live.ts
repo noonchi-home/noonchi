@@ -225,6 +225,8 @@ export interface LiveEngine {
   readonly states: LiveStates;
   readonly layout: LayoutOps;
   requestRender(): void;
+  /** 배치가 바뀌었다(원뿔 걷기 격자를 고친 배치로 다시 만든다). */
+  layoutChanged(): void;
 }
 
 /** 엔진에 /events 메시지를 잇는다. 상태·배치가 바뀌면 그리게 한다. hello(다시 접속)면 배치를 원래 장면으로 돌린다: 뒤따르는 맞추기 메시지가 지금 배치를 다시 넣는다.
@@ -243,7 +245,10 @@ export function attachLive(engine: LiveEngine): { handle(m: ServerMessage): void
   };
   const done = (changed: unknown, added: string | null) => {
     if (off) return;
-    if (changed === true) engine.requestRender();
+    if (changed === true) {
+      engine.requestRender();
+      engine.layoutChanged();
+    }
     const s = added ? last.get(added) : undefined;
     if (changed === true && s) apply(s);
   };

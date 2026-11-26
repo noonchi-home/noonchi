@@ -129,4 +129,28 @@ describe("이동 가능 점 격자(한양목련)", () => {
       rmSync(runtime, { recursive: true, force: true });
     }
   }, 60_000);
+
+  it("배치를 고친 뒤 /api/scene은 고친 배치를 주어, 브라우저 격자가 서버 걷기 격자(고친 배치)와 같다(검토 R3)", async () => {
+    const runtime = mkdtempSync(join(tmpdir(), "rt-walk-grid-"));
+    const srv = await startServer({ env: {
+      HUB: "memory", PORT: "0", HOME_ID: "mokryeon_180b", RUNTIME_DIR: runtime, REFLECT_AT: "off",
+      VLM_BASE_URL: "http://127.0.0.1:9/v1", PAM_LLM_BASE_URL: "http://127.0.0.1:9/v1", OPENAI_BASE_URL: "http://127.0.0.1:9/v1",
+    }, log: () => {} });
+    try {
+      const sofaAt = (s: SceneJson) => (s.objects as SceneObject[]).find((o) => o.id === "sofa_a848b595")!.plan.position;
+      const before = ((await (await fetchRetry(`${srv.url}/api/scene`)).json()) as { scene: SceneJson }).scene;
+      const moved = srv.layout!.move("sofa_a848b595", { dx: 0.6, dy: 0 }).object.plan.position;
+      expect(moved).not.toEqual(sofaAt(before));
+      const after = ((await (await fetchRetry(`${srv.url}/api/scene`)).json()) as { scene: SceneJson }).scene;
+      expect(sofaAt(after)).toEqual(moved);
+      const onServer = walkGrid(walkingGeometry({ ...scene, objects: srv.layout!.objects() }, footprint), WALK_STEP);
+      expect(onServer.points).not.toEqual(grid.points);
+      const inBrowser = browserWalkGrid(browserGeometry(after), WALK_STEP);
+      expect(inBrowser.points).toEqual(onServer.points);
+      expect(inBrowser.edges).toEqual(onServer.edges);
+    } finally {
+      await srv.close();
+      rmSync(runtime, { recursive: true, force: true });
+    }
+  }, 60_000);
 });

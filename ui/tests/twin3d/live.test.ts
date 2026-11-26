@@ -74,6 +74,7 @@ function fakeEngine(o: { fridge?: Record<string, unknown>; load?: (url: string) 
     },
     forgetAnchor: vi.fn((id?: string) => { if (id === undefined) anchors.clear(); else anchors.delete(id); }),
     requestRender: vi.fn(),
+    layoutChanged: vi.fn(),
   };
   engine.layout = new LayoutOps(engine, { load: o.load, entry: (id) => scene.objects.find((x) => x.id === id) as StateEntry | undefined });
   const setState = vi.spyOn(states, "setState");
@@ -147,6 +148,15 @@ describe("배치 옮기기", () => {
     live.handle(move(SOFA, [6, 0, 9], [0, Math.PI / 2, 0]));
     expect(detach).toHaveBeenCalledTimes(1);
     expect(close(sofa.position)).toEqual([6, 0, 9]);
+  });
+
+  it("배치가 바뀌면 엔진에 한 번 알린다(원뿔 걷기 격자를 고친 배치로 다시 만든다, 검토 R3). 모르는 물건 옮기기는 알리지 않는다", () => {
+    const { engine } = fakeEngine();
+    const live = attachLive(engine);
+    live.handle(move("nope_1", [6.5, 0, 9.2], [0, 0, 0]));
+    expect(engine.layoutChanged).not.toHaveBeenCalled();
+    live.handle(move(SOFA, [6.5, 0, 9.2], [0, 0, 0]));
+    expect(engine.layoutChanged).toHaveBeenCalledTimes(1);
   });
 
   it("가전은 떼지 않고 변환만 바꾼다", () => {

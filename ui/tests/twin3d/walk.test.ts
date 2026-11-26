@@ -14,7 +14,7 @@ import { resolveHome } from "../../../src/layout/homes.ts";
 import { floorPlanFrom, roomAt } from "../../../src/layout/route.ts";
 import { loadScene, withFootprints } from "../../../src/layout/scene.ts";
 import { CONE } from "../../src/twin/3d/eye";
-import { walkGuide } from "../../src/twin/3d/walk";
+import { liveWalkGuide, walkGuide } from "../../src/twin/3d/walk";
 
 const SCENE = JSON.parse(readFileSync(fileURLToPath(new URL("../../../twin/apartment/scene.json", import.meta.url)), "utf8")) as {
   plan: { walls: { a: Plan2 | null; b: Plan2 | null; thickness: number | null }[] };
@@ -141,6 +141,33 @@ describe("원뿔 그릴 자리 보정", () => {
     const g = walkGuide(withFootprints(loadScene(home)!, (type: string) => catalog.get(type)?.footprint), CONE.apex);
     expect(g.path([9.96, 3.4], [10.1, 3.4])).toEqual([[9.96, 3.4], [10.1, 3.4]]);
     expect(g.path([6.3, 0.4], [6.45, 0.42])).toEqual([[6.3, 0.4], [6.45, 0.42]]);
+  });
+
+  it("배치가 바뀌어 장면을 다시 받으면 길이 고친 배치의 가구를 피한다(검토 R3)", async () => {
+    const home = resolveHome(resolve(dirname(fileURLToPath(import.meta.url)), "../../../twin"), "mokryeon_180b");
+    const catalog = loadCatalog(home.catalogDir);
+    const before = withFootprints(loadScene(home)!, (type: string) => catalog.get(type)?.footprint);
+    const from = before.stations.stations.find((s) => s.id === "living_standby")!.position as Plan2;
+    const table = (before.objects as SceneObject[]).find((o) => o.type === "dining_table")!;
+    const to = before.stations.surface_fronts.find((f) => f.surface_id === table.id)!.position as Plan2;
+    // 소파를 거실 대기 자리 → 식탁 앞자리 길(z 6.3 줄) 위로 옮긴 장면
+    const after = structuredClone(before);
+    const sofa = (after.objects as SceneObject[]).find((o) => o.id === "sofa_a848b595")!;
+    sofa.plan.position = [8.2, 6.3];
+    sofa.position = [8.2, sofa.position[1], 6.3];
+    const dims = sofa.footprint!;
+    const yaw = sofa.rotation?.[1] ?? ((90 - sofa.plan.facing_deg) * Math.PI) / 180;
+    const [hw, hd] = [dims[0] / 2 + 0.18, dims[1] / 2 + 0.18];
+    const [c, s] = [Math.cos(yaw), Math.sin(yaw)];
+    const box = ([[-hw, -hd], [hw, -hd], [hw, hd], [-hw, hd]] as Vec2[]).map(([u, v]) => [8.2 + u * c + v * s, 6.3 - u * s + v * c] as Vec2);
+    const hits = (path: Plan2[]) => samples(path).some((p) => insidePolygon(p, box));
+    const g = liveWalkGuide(before, CONE.apex, async () => after);
+    expect(hits(g.path(from, to)!)).toBe(true);
+    await g.reload();
+    const path = g.path(from, to)!;
+    expect(path[0]).toEqual(from);
+    expect(path.at(-1)).toEqual(to);
+    expect(hits(path)).toBe(false);
   });
 
   it("방이 없는 장면이면 자리를 바꾸지 않고 길도 없다", () => {

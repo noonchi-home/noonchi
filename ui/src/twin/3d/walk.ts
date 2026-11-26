@@ -15,6 +15,36 @@ export interface WalkGuide {
 interface Wall { a?: Plan2; b?: Plan2; thickness?: number }
 interface WalkScene { plan?: { walls?: Wall[] } }
 
+/** 배치가 바뀌면 다시 받은 장면으로 격자를 새로 만드는 걷기 길. */
+export interface LiveWalkGuide extends WalkGuide {
+  /** 배치가 바뀌었다: RELOAD_MS 동안 모은 뒤 장면을 한 번 다시 받아 격자를 새로 만든다(나중에 받은 것이 이긴다). 다 만들면 풀린다. */
+  reload(): Promise<void>;
+}
+
+/** 배치 메시지를 모으는 시간(ms): 접속 때 맞추기 메시지가 여럿 와도 장면은 한 번 받는다. */
+const RELOAD_MS = 150;
+
+/** walkGuide와 같고, reload로 서버 장면(load, /api/scene: 고친 배치)을 다시 받아 서버 계획 선과 같은 격자를 쓴다. */
+export function liveWalkGuide(scene: unknown, reach: number, load: () => Promise<unknown>): LiveWalkGuide {
+  let inner = walkGuide(scene, reach);
+  let waiting: Promise<void> | null = null;
+  let latest = 0;
+  return {
+    stand: (p) => inner.stand(p),
+    path: (from, to) => inner.path(from, to),
+    reload() {
+      waiting ??= new Promise<void>((done) => {
+        setTimeout(() => {
+          waiting = null;
+          const mine = ++latest;
+          load().then((next) => { if (mine === latest) inner = walkGuide(next, reach); }, (e: unknown) => console.warn("[twin3d] 장면을 다시 받지 못했어요", e)).finally(done);
+        }, RELOAD_MS);
+      });
+      return waiting;
+    },
+  };
+}
+
 /** 벽 선 위 점을 방 안으로 들이는 거리(m). */
 const NUDGE = 0.01;
 /** 이만큼 안이면 벽 선 위로 본다(m). */
@@ -47,7 +77,7 @@ export function walkGuide(scene: unknown, reach: number): WalkGuide {
   const plan = (scene as WalkScene).plan ?? {};
   const walls = (plan.walls ?? []).flatMap((w) => (w.a && w.b ? [{ a: w.a, b: w.b, keep: (w.thickness ?? 0) / 2 + reach }] : []));
   const inRoom = (p: Plan2) => roomAt(fp, p) !== null;
-  // 계획 선·폰 안내와 같은 격자(/api/scene 바닥 물건에 카탈로그 footprint가 실려 서버와 같은 격자가 된다)
+  // 계획 선·폰 안내와 같은 격자(/api/scene은 고친 배치를 주고 바닥 물건에 카탈로그 footprint가 실려 서버와 같은 격자가 된다. 배치가 바뀌면 liveWalkGuide가 다시 받는다)
   const geometry = fp.rooms.length ? walkingGeometry(scene as SceneJson) : null;
   const grid = geometry ? walkGrid(geometry, WALK_STEP, furnitureBodies(scene as SceneJson)) : null;
 

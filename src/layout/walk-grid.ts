@@ -3,7 +3,7 @@
 // 이음은 두 점 사이 선 위(0.05m마다)가 모두 걸을 수 있고 가구 상자를 지나지 않을 때만 둔다. 트인 경계(open_edges)는 벽이 없어 이음이 그대로 지난다.
 // 문은 벽 여유가 개구부를 막으므로, 개구부 가운데 점과 그 점에서 벽에 수직으로 양쪽 첫 격자 줄까지 나간 문 앞 점을 더한다.
 // 문 앞 점은 같은 격자 줄의 양옆 격자 점과 잇는다. 그래서 모든 이음이 x·z 축과 나란하다(트윈 카메라에서는 두 대각선 방향).
-// 브라우저도 같은 격자를 쓴다(src/layout/browser.ts, /api/scene 바닥 물건에 카탈로그 footprint가 실린다).
+// 브라우저도 같은 격자를 쓴다(src/layout/browser.ts, /api/scene은 고친 배치를 주고 바닥 물건에 카탈로그 footprint가 실린다. 배치가 바뀌면 트윈이 다시 받는다).
 import type { SceneJson, SceneObject, Vec2 } from "../contract/layout.js";
 import type { StationMap } from "../contract/stations.js";
 import { roomAt } from "./route.js";

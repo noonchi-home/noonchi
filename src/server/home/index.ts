@@ -199,7 +199,7 @@ function startApp(core: HomeCore): void {
     sceneRuntimeDir:ctx.runtimeDir, signShot:shotSigner(ctx.runtimeDir,ctx.env),
     localizeStatus: () => core.localizer?.status() ?? null,
     phoneSync: () => core.phone?.syncState() ?? null,
-    plan: plans, offTrack: () => core.tracker?.offTrack() ?? null, history: history.db, reflect: history.reflect, scene: () => core.scene && withFootprints(core.scene, (type) => layout?.catalog.get(type)?.footprint),
+    plan: plans, offTrack: () => core.tracker?.offTrack() ?? null, history: history.db, reflect: history.reflect, scene: () => core.scene && withFootprints(layout?.editor ? { ...core.scene, objects: layout.editor.objects() } : core.scene, (type) => layout?.catalog.get(type)?.footprint),
     brainLast: () => [...todayReflection(history.db), ...(core.lastDecision ? [core.lastDecision] : [])], thoughtLast: () => core.thoughts?.last() ?? null, seenLast: () => core.lastSeen, say: () => ({ text: core.said, ...(core.saidSafety ? { safety: true as const } : {}) }),
     actMode: () => core.mode(),
     goalLast: () => core.goal,

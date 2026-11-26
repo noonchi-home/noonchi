@@ -19,7 +19,7 @@ import { BAKE_VIEWS, type OrthoCamera } from "./projection";
 import { RenderLoop } from "./schedule";
 import { TwinStates } from "./states";
 import { installAgxHighContrast } from "./tone";
-import { walkGuide, type WalkGuide } from "./walk";
+import { liveWalkGuide, type LiveWalkGuide } from "./walk";
 import { between, ease, placeCamera, viewTarget, type Box, type MapCamera } from "./view";
 
 /** 구운 자산 주소. 서버는 /twin/<경로>를 지금 집 폴더에서 찾는다. */
@@ -49,7 +49,7 @@ export class TwinEngine {
   /** 맞춘 눈 층(원뿔). 집 그림 위에 그린다. */
   private readonly eyeLayer = new THREE.Scene();
   private readonly eye: EyeCone;
-  private readonly guide: WalkGuide;
+  private readonly guide: LiveWalkGuide;
   private readonly loop: RenderLoop;
   private readonly views = new Set<(c: MapCamera) => void>();
   private readonly anchors = new Map<string, [number, number, number] | null>();
@@ -142,7 +142,7 @@ export class TwinEngine {
     this.merge = new StaticMerge(this.scene, statics, (m) => owner.get(m) ?? null);
     const merged = this.merge.build();
     // 맞춘 눈: 합치기 뒤 따로 둔 층이라 합쳐지지 않는다. 벽에서는 꼭짓점 공 반지름만큼 띄운다
-    this.guide = walkGuide(data, CONE.apex);
+    this.guide = liveWalkGuide(data, CONE.apex, () => getJson<{ scene: SceneData }>("/api/scene").then((r) => r.scene));
     this.eye = createEyeCone({ guide: this.guide });
     this.eyeLayer.add(this.eye.group);
     this.info = { raised: shown.raised, actions: shown.actions, materials: { ...materials }, merged };
@@ -205,6 +205,11 @@ export class TwinEngine {
 
   requestRender(): void {
     if (!this.disposed) this.loop.request();
+  }
+
+  /** 배치가 바뀌었다: 원뿔 걷기 격자를 서버 장면(고친 배치)으로 다시 만든다(서버 계획 선과 같은 격자). */
+  layoutChanged(): void {
+    if (!this.disposed) void this.guide.reload();
   }
 
   /** 맞춘 눈을 원뿔로 보인다(null·추정 눈이면 숨김). 보이는 모양이 바뀔 때만 다시 그린다. */
