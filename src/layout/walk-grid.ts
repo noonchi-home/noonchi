@@ -4,10 +4,10 @@
 // 문은 벽 여유가 개구부를 막으므로, 개구부 가운데 점과 그 점에서 벽에 수직으로 양쪽 첫 격자 줄까지 나간 문 앞 점을 더한다.
 // 문 앞 점은 같은 격자 줄의 양옆 격자 점과 잇는다. 그래서 모든 이음이 x·z 축과 나란하다(트윈 카메라에서는 두 대각선 방향).
 // 브라우저도 같은 격자를 쓴다(src/layout/browser.ts, /api/scene 바닥 물건에 카탈로그 footprint가 실린다).
-import type { SceneJson, Vec2 } from "../contract/layout.js";
+import type { SceneJson, SceneObject, Vec2 } from "../contract/layout.js";
 import type { StationMap } from "../contract/stations.js";
 import { roomAt } from "./route.js";
-import { edgeDistance, walkingGeometry } from "./walk-guide.js";
+import { WALK_THROUGH_TYPES, edgeDistance, walkingGeometry } from "./walk-guide.js";
 
 type Geometry = ReturnType<typeof walkingGeometry>;
 
@@ -22,6 +22,44 @@ export interface WalkGrid {
   edges: [number, number][];
   /** 문마다 개구부 가운데 점(center)과 양쪽 문 앞 점(sides, 격자 점과 겹치면 그 격자 점) 번호. */
   doors: { id: string; center: number; sides: number[] }[];
+  /** 걷기 장애물인 가구의 실제 상자(여유 없이). 여유 안 자리에서 나가는 연결선이 두 꺾은 점 가운데 이 상자를 지나지 않는 쪽을 고른다. */
+  bodies: Body[];
+}
+
+/** 가구 실제 상자: 가운데 p, 회전(cos·sin), 반 너비 w·반 깊이 d(m). */
+export interface Body { p: Vec2; cos: number; sin: number; w: number; d: number }
+
+/** 걷기 장애물인 가구의 실제 상자(여유 없이). 어떤 가구가 장애물인지·회전·크기는 walkingGeometry(walk-guide.ts)와 같다. */
+export function furnitureBodies(scene: SceneJson, footprintOf?: (type: string) => Vec2 | undefined): Body[] {
+  return (scene.objects as SceneObject[])
+    .filter((o) => o.mount === "floor" && o.room && (o.plan.elevation ?? 0) < 1.8 && !WALK_THROUGH_TYPES.has(o.type))
+    .flatMap((o) => {
+      const dims = o.footprint ?? footprintOf?.(o.type);
+      if (!dims) return [];
+      const yaw = o.rotation?.[1] ?? ((90 - o.plan.facing_deg) * Math.PI) / 180;
+      return [{ p: o.plan.position, cos: Math.cos(yaw), sin: Math.sin(yaw), w: (dims[0] * (o.scale?.[0] ?? 1)) / 2, d: (dims[1] * (o.scale?.[2] ?? 1)) / 2 }];
+    });
+}
+
+/** a→b 선이 가구 실제 상자 안을 지나는가(상자 테두리에 닿기만 하면 아니다). */
+function throughBody(bodies: Body[], a: Vec2, b: Vec2): boolean {
+  return bodies.some((box) => {
+    const local = (p: Vec2): Vec2 => [(p[0] - box.p[0]) * box.cos - (p[1] - box.p[1]) * box.sin, (p[0] - box.p[0]) * box.sin + (p[1] - box.p[1]) * box.cos];
+    const [s, e] = [local(a), local(b)];
+    let [lo, hi] = [0, 1];
+    for (const axis of [0, 1] as const) {
+      const half = axis === 0 ? box.w : box.d, delta = e[axis] - s[axis];
+      if (Math.abs(delta) < 1e-9) {
+        if (Math.abs(s[axis]) >= half - 1e-9) return false;
+        continue;
+      }
+      const [t1, t2] = [(-half - s[axis]) / delta, (half - s[axis]) / delta];
+      lo = Math.max(lo, Math.min(t1, t2));
+      hi = Math.min(hi, Math.max(t1, t2));
+      if (hi - lo < 1e-9) return false;
+    }
+    return true;
+  });
 }
 
 const SAMPLE_M = 0.05;
@@ -46,7 +84,8 @@ function lineClear(g: Geometry, a: Vec2, b: Vec2, opening?: { wall: string }, fu
   return true;
 }
 
-export function walkGrid(g: Geometry, step: number): WalkGrid {
+/** bodies: 가구 실제 상자(furnitureBodies). 없으면 여유 안 연결선의 꺾은 점을 고를 때 가구 몸체를 보지 않는다. */
+export function walkGrid(g: Geometry, step: number, bodies: Body[] = []): WalkGrid {
   const points: Vec2[] = [];
   const edges: [number, number][] = [];
   const index = new Map<string, number>();
@@ -123,7 +162,7 @@ export function walkGrid(g: Geometry, step: number): WalkGrid {
     for (const s of sideAt) edges.push([s, centerAt]);
     doors.push({ id: gate.id, center: centerAt, sides: sideAt });
   }
-  return { step, points, lattice, edges, doors };
+  return { step, points, lattice, edges, doors, bodies };
 }
 
 /** 점마다 덩어리 번호(이음으로 이어진 점끼리 같은 번호). */
@@ -162,7 +201,9 @@ function links(grid: WalkGrid, g: Geometry, p: Vec2, allowed: Set<number> | null
       if (!square || Math.abs(q[0] - p[0]) < 1e-9 || Math.abs(q[1] - p[1]) < 1e-9) {
         if (pass(p, q)) out.push({ node: i, bend: [], cost: d });
       } else {
-        const e = ([[q[0], p[1]], [p[0], q[1]]] as Vec2[]).find((e) => pass(p, e) && pass(e, q));
+        // 여유 안 자리에서 나갈 때(pass가 가구 여유를 보지 않을 때) 가구 실제 상자를 지나지 않는 꺾은 점을 먼저 고른다
+        const both = ([[q[0], p[1]], [p[0], q[1]]] as Vec2[]).filter((e) => pass(p, e) && pass(e, q));
+        const e = both.find((e) => !throughBody(grid.bodies, p, e) && !throughBody(grid.bodies, e, q)) ?? both[0];
         if (e) out.push({ node: i, bend: [e], cost: Math.abs(q[0] - p[0]) + Math.abs(q[1] - p[1]) });
       }
       if (first && out.length) break;
@@ -346,7 +387,7 @@ export function walkWay(scene: SceneJson & { stations?: StationMap }, footprintO
   const fronts = new Map((scene.stations?.surface_fronts ?? []).map((f) => [f.surface_id, f.position] as [string, Vec2]));
   const standby = new Map<string, Vec2>();
   for (const s of scene.stations?.stations ?? []) if (s.roles.includes("standby") && !standby.has(s.room)) standby.set(s.room, s.position);
-  return { grid: walkGrid(geometry, WALK_STEP), geometry, fronts, standby };
+  return { grid: walkGrid(geometry, WALK_STEP, furnitureBodies(scene, footprintOf)), geometry, fronts, standby };
 }
 
 /** 이동 목적지: 가구 앞자리, 없으면 그 방 대기 자리, 없으면 near에서 가장 가까운 격자 점(격자 점은 모두 가구 상자 + 여유 밖이다). 격자 점이 없으면 null. */

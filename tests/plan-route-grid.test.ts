@@ -11,7 +11,8 @@ import { resolveHome } from "../src/layout/homes.js";
 import { floorPlanFrom, roomAt } from "../src/layout/route.js";
 import { loadScene } from "../src/layout/scene.js";
 import { DEFAULT_TWIN_DIR } from "../src/layout/twin-files.js";
-import { walkWay } from "../src/layout/walk-grid.js";
+import { WALK_THROUGH_TYPES } from "../src/layout/walk-guide.js";
+import { gridRoute, walkWay } from "../src/layout/walk-grid.js";
 import { cupSteps, planContext } from "./helpers/planner.js";
 
 const home = resolveHome(DEFAULT_TWIN_DIR, "mokryeon_180b");
@@ -36,11 +37,11 @@ const decision: DecisionRecord = {
   world: { objects: [], person_visible: false, vlm_missing: 0, yolo_missing: 0 },
 };
 
-/** 가구 상자 + 0.18m(평면 다각형). */
-function box(o: SceneObject): Vec2[] {
+/** 가구 상자 + margin(평면 다각형, 기본 0.18m). */
+function box(o: SceneObject, margin = 0.18): Vec2[] {
   const dims = o.footprint ?? footprint(o.type)!;
   const yaw = o.rotation?.[1] ?? ((90 - o.plan.facing_deg) * Math.PI) / 180;
-  const [hw, hd] = [(dims[0] * (o.scale?.[0] ?? 1)) / 2 + 0.18, (dims[1] * (o.scale?.[2] ?? 1)) / 2 + 0.18];
+  const [hw, hd] = [(dims[0] * (o.scale?.[0] ?? 1)) / 2 + margin, (dims[1] * (o.scale?.[2] ?? 1)) / 2 + margin];
   const [c, s] = [Math.cos(yaw), Math.sin(yaw)];
   return ([[-hw, -hd], [hw, -hd], [hw, hd], [-hw, hd]] as Vec2[]).map(([u, v]) => [o.plan.position[0] + u * c + v * s, o.plan.position[1] - u * s + v * c] as Vec2);
 }
@@ -72,6 +73,29 @@ describe("물건을 피하는 계획 길(한양목련 거실 대기 자리 → �
       expect(Math.abs(a[0] - b[0]) < 1e-9 || Math.abs(a[1] - b[1]) < 1e-9, `${a} → ${b}`).toBe(true);
       expect(crosses(a, b, bath), `${a} → ${b} 욕실 2`).toBe(false);
       expect(crosses(a, b, box(table)), `${a} → ${b} 식탁`).toBe(false);
+    }
+  });
+});
+
+describe("가구·벽 여유 안 자리에서 나가는 첫 연결선(검토 R0)", () => {
+  const way = walkWay(scene, footprint);
+  /** 걷기 장애물인 바닥 가구의 실제 상자(여유 없이). */
+  const bodies = objects
+    .filter((o) => o.mount === "floor" && o.room && (o.plan.elevation ?? 0) < 1.8 && !WALK_THROUGH_TYPES.has(o.type) && (o.footprint ?? footprint(o.type)))
+    .map((o) => [o.id, box(o, 0)] as const);
+
+  it.each([
+    ["책상 여유 안", [5.7, 11.6], "desk_small_ce7e768b"],
+    ["벽 여유 안", [7.0, 11.95], "stand_ac_dc22b8f3"],
+  ] as const)("%s %j에서 거실 대기 자리까지: x·z 축과 나란하고, 옆 가구(%s)를 비롯한 어떤 가구 실제 상자도 지나지 않는다", (_, start, near) => {
+    expect(bodies.map(([id]) => id)).toContain(near);
+    const path = gridRoute(way.grid, way.geometry, [...start], standby, { square: true })!;
+    expect(path[0]).toEqual(start);
+    expect(path.at(-1)).toEqual(standby);
+    for (let i = 1; i < path.length; i++) {
+      const [a, b] = [path[i - 1]!, path[i]!];
+      expect(Math.abs(a[0] - b[0]) < 1e-9 || Math.abs(a[1] - b[1]) < 1e-9, `${a} → ${b}`).toBe(true);
+      for (const [id, body] of bodies) expect(crosses(a, b, body), `${a} → ${b} ${id}`).toBe(false);
     }
   });
 });

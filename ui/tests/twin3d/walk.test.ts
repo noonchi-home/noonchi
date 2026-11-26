@@ -118,6 +118,23 @@ describe("원뿔 그릴 자리 보정", () => {
     }
   });
 
+  it("한양목련 책상 여유 안 [5.7, 11.6] → 거실 대기 자리: 첫 연결선이 책상 실제 상자를 지나지 않는다(검토 R0)", () => {
+    const home = resolveHome(resolve(dirname(fileURLToPath(import.meta.url)), "../../../twin"), "mokryeon_180b");
+    const catalog = loadCatalog(home.catalogDir);
+    const scene = withFootprints(loadScene(home)!, (type: string) => catalog.get(type)?.footprint);
+    const desk = (scene.objects as SceneObject[]).find((o) => o.id === "desk_small_ce7e768b")!;
+    const to = scene.stations.stations.find((s) => s.id === "living_standby")!.position as Plan2;
+    const dims = desk.footprint!;
+    const yaw = desk.rotation?.[1] ?? ((90 - desk.plan.facing_deg) * Math.PI) / 180;
+    const [hw, hd] = [dims[0] / 2, dims[1] / 2];
+    const [c, s] = [Math.cos(yaw), Math.sin(yaw)];
+    const body = ([[-hw, -hd], [hw, -hd], [hw, hd], [-hw, hd]] as Vec2[]).map(([u, v]) => [desk.plan.position[0] + u * c + v * s, desk.plan.position[1] - u * s + v * c] as Vec2);
+    const path = walkGuide(scene, CONE.apex).path([5.7, 11.6], to)!;
+    expect(path[0]).toEqual([5.7, 11.6]);
+    expect(path.at(-1)).toEqual(to);
+    for (const p of samples(path)) expect(insidePolygon(p, body), `${p} 책상`).toBe(false);
+  });
+
   it("방이 없는 장면이면 자리를 바꾸지 않고 길도 없다", () => {
     const g = walkGuide({ plan: {}, objects: [] }, CONE.apex);
     expect(g.stand([3, 4])).toEqual([3, 4]);

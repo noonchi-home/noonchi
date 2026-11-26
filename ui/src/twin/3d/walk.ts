@@ -2,7 +2,7 @@
 // 두 자리 사이는 계획 선·폰 안내와 같은 이동 가능 점 격자 길로 잇는다(path, src/layout/walk-grid.ts gridRoute). 격자가 없는 곳(욕실 등)은 길이 없다.
 import type { Plan2 } from "../../../../src/contract/events.ts";
 import type { SceneJson } from "../../../../src/contract/layout.ts";
-import { WALK_STEP, floorPlanFrom, gridRoute, roomAt, walkGrid, walkingGeometry } from "../../../../src/layout/browser.ts";
+import { WALK_STEP, floorPlanFrom, furnitureBodies, gridRoute, roomAt, walkGrid, walkingGeometry } from "../../../../src/layout/browser.ts";
 
 export interface WalkGuide {
   /** 그릴 자리: 방 안이고 벽에서 벽 반 두께 + 표시 반지름만큼 떨어진 가장 가까운 자리. 방이 없는 장면이면 그대로. */
@@ -46,7 +46,7 @@ export function walkGuide(scene: unknown, reach: number): WalkGuide {
   const inRoom = (p: Plan2) => roomAt(fp, p) !== null;
   // 계획 선·폰 안내와 같은 격자(/api/scene 바닥 물건에 카탈로그 footprint가 실려 서버와 같은 격자가 된다)
   const geometry = fp.rooms.length ? walkingGeometry(scene as SceneJson) : null;
-  const grid = geometry ? walkGrid(geometry, WALK_STEP) : null;
+  const grid = geometry ? walkGrid(geometry, WALK_STEP, furnitureBodies(scene as SceneJson)) : null;
 
   /** 방 밖 점에서 가장 가까운 방 안 자리(방 테두리에서 안쪽으로 NUDGE). */
   const inside = (p: Plan2): Plan2 | null => {
