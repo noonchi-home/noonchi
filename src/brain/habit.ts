@@ -3,7 +3,7 @@
 // to "*"는 다른 어느 상태로든이다. 상태 이름은 FSM_STATE_TEXT(없으면 설명 첫 마디). learned: seed 기억(CUP_FSM_MEMORY)에 없는 상태·화살표(edgeLearned와 같은 뜻).
 import type { HabitFsm } from "../contract/habit.js";
 import { FSM_STATE_TEXT, NEXT_ON, ruleIf } from "../world/labels.js";
-import { CUP_FSM_MEMORY, edgeLearned, seedTrigger, type FsmMemory } from "./decision.js";
+import { CUP_FSM_MEMORY, edgeLearned, seedTrigger, squash, type FsmMemory } from "./decision.js";
 import { ctxText } from "./ctx.js";
 
 /** 글 끝 마침표를 뗀다. */
@@ -27,7 +27,7 @@ export function habitView(memory: FsmMemory, version: number): HabitFsm {
         return { from: s.id, to: e.to, trigger: e.ctx ? `${ctxText(e.ctx)} · ${rule}` : rule, action: e.action as string | null, learned, ...(e.ctx ? { ctx: ctxText(e.ctx) } : {}) };
       }
       // 상태 넘김: 행동 없이 다른 상태로
-      const learned = !seed.find((x) => x.id === s.id)?.next.some((x) => !x.action && x.to === e.to && x.on === e.on);
+      const learned = !seed.find((x) => x.id === s.id)?.next.some((x) => !x.action && x.to === e.to && squash(x.on) === squash(e.on));
       return { from: s.id, to: e.to, trigger: NEXT_ON[e.on] ?? bare(e.on), action: null, learned };
     })),
   };

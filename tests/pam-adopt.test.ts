@@ -102,6 +102,19 @@ describe("로봇 FSM 만들기(석준 님 predictor_fsm을 화살표로)", () =>
     const settings = (m: FsmMemory) => m.states.flatMap((s) => s.next.filter((e) => e.action && e.action !== "사용자에게 물어보기" && e.action !== "컵 치우기"));
     expect(settings(out)).toEqual(settings(CUP_FSM_MEMORY));
   });
+  // 2026-11-25 맥주 실험 실행 3: 반성이 seed 상태 넘김 「사용자가 돌아와 TV를 본다.」를 「TV 를」로 옮겨 써 같은 화살표가 두 번 들어갔다
+  it("띄어쓰기만 다른 트리거는 같은 트리거다: seed 상태 넘김은 한 번만 남고, 띄어 쓴 묻기 트리거 후보도 그 묻기 자리를 바꾼다", () => {
+    const TV_START = "사용자가 돌아와 TV를 본다.";
+    const c = withClear();
+    const away = c.states.find((s) => s.id === "away")!;
+    away.next = away.next.map((e) => (e.on === TV_START ? { ...e, on: "사용자가 돌아와 TV 를 본다." } : e));
+    const spaced = "사용자가 먹거나  마시기를 끝내고 다른 일로 넘어간다.";
+    c.states.find((s) => s.id === "drinking")!.rules[0]!.candidates[0] = { on: spaced };
+    const out = adoptedFsm(c, new Set([adoptKey("drinking", "컵 치우기", { on: spaced })]), CUP_FSM_MEMORY);
+    expect(out.states.find((s) => s.id === "away")!.next.filter((e) => e.to === "watching_tv")).toEqual([{ to: "watching_tv", on: TV_START }]);
+    const drink = out.states.find((s) => s.id === "drinking")!;
+    expect(drink.next.map((e) => e.action ?? null)).toEqual(["컵 치우기", "컵에 물 채워 주기"]);
+  });
   it("사용자가 정한 습관과 같은 트리거인 후보, 배우는 행동이 아닌 후보는 통과로 와도 넣지 않는다", () => {
     const c = withClear();
     const water = CUP_FSM_MEMORY.states[0]!.next[1]!;

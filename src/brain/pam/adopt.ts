@@ -8,7 +8,7 @@
 import type { Candidate, CandidateFsm, Ctx } from "../../contract/pam.js";
 import { ctxKey, ctxMatches, dowOfDay, slotOf, DOW_COUNT, SLOT_COUNT } from "../ctx.js";
 import { ASK_ACTION, LEARNED_ACTIONS } from "../../act/tasks.js";
-import { edgeLearned, validateMemory, type FsmEdge, type FsmMemory, type FsmState } from "../decision.js";
+import { edgeLearned, squash, validateMemory, type FsmEdge, type FsmMemory, type FsmState } from "../decision.js";
 
 /** 기본 검사 창(초). 다른 때 칸도 창 길이다. */
 export const FOLLOW_SECONDS = 300;
@@ -141,7 +141,8 @@ export function findRules(days: CtxDay[], window = FOLLOW_SECONDS): RuleCheck[] 
 
 /** 검사 결과가 묶이는 열쇠: (출발 상태, 행동, 사건, 조건). 상태 id·후보 글은 반성이 바꾸지 않는다. */
 export const adoptKey = (state: string, action: string, c: Candidate) => JSON.stringify([state, action, c.on, c.when ?? null]);
-const trig = (on: string, when?: string | null) => JSON.stringify([on, when ?? null]);
+/** 트리거 견주기 열쇠: 띄어쓰기만 다르면 같은 트리거다(seed 상태 넘김이 띄어쓰기만 바뀐 채 한 번 더 들어가던 것을 막는다). */
+const trig = (on: string, when?: string | null) => JSON.stringify([squash(on), when == null ? null : squash(when)]);
 
 /** 로봇 FSM: seed 상태는 seed 화살표 차례 그대로(사용자가 정한 습관은 늘), 통과한 배우는 행동 후보가 같은 트리거의 묻기(또는 행동 없는) 화살표를
  *  그 자리에서 바꾸고, 새 트리거면 끝에 더한다. 사용자가 정한 습관 자리와 트리거가 같은 후보·배우는 행동이 아닌 후보는 넣지 않는다. 후보 FSM은 바꾸지 않는다.

@@ -388,6 +388,8 @@ export const isOldFsm = (v: unknown): boolean =>
   !!v && typeof v === "object" && Array.isArray((v as { states?: unknown }).states)
   && (v as { states: unknown[] }).states.some((s) => !!s && typeof s === "object" && "rules" in s);
 
+/** 띄어쓰기를 뺀 글: 반성이 seed 글을 옮겨 쓰며 띄어쓰기만 바꾼 것(「TV를」→「TV 를」)을 같은 트리거로 본다(2026-11-25 사용자 결정). */
+export const squash = (s: string): string => s.replace(/\s+/g, "");
 /** seed에 같은 출발·사건·행동 화살표가 없으면 배운 화살표다(묻기 자리를 바꾼 컵 치우기도 배운 것). */
 export function edgeLearned(from: string, edge: Pick<FsmEdge, "on" | "action">): boolean {
   return !CUP_FSM_MEMORY.states.find((s) => s.id === from)?.next.some((e) => e.on === edge.on && e.action === edge.action);
