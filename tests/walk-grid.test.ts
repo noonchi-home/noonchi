@@ -1,6 +1,6 @@
 // 이동 가능 점 격자(대시보드 다시 짜기 의견 3a, src/layout/walk-grid.ts): 한양목련 실제 장면.
 // 점은 트윈 원점 기준 step 배수 자리 가운데 걸을 수 있는 곳만, 이음은 x·z 축 4방향, 문은 개구부 가운데 점과 양쪽 문 앞 점으로 잇는다.
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -148,6 +148,32 @@ describe("이동 가능 점 격자(한양목련)", () => {
       const inBrowser = browserWalkGrid(browserGeometry(after), WALK_STEP);
       expect(inBrowser.points).toEqual(onServer.points);
       expect(inBrowser.edges).toEqual(onServer.edges);
+    } finally {
+      await srv.close();
+      rmSync(runtime, { recursive: true, force: true });
+    }
+  }, 60_000);
+
+  it("배치 편집으로 뺀 구운 물건(edits.json remove: 탁자·가전 stand_ac·키 큰 옷장)은 /api/scene에 없고, 트윈 3D가 읽는 구운 장면 /api/scene/baked에는 그대로 있다(검토 R12)", async () => {
+    const removed = ["coffee_table_38536572", "stand_ac_dc22b8f3", "wardrobe_0358a8fe"];
+    const runtime = mkdtempSync(join(tmpdir(), "rt-walk-grid-"));
+    mkdirSync(join(runtime, "homes", "mokryeon_180b"), { recursive: true });
+    writeFileSync(join(runtime, "homes", "mokryeon_180b", "edits.json"), JSON.stringify({ home: "mokryeon_180b", edits: removed.map((id) => ({ op: "remove", id })) }));
+    const srv = await startServer({ env: {
+      HUB: "memory", PORT: "0", HOME_ID: "mokryeon_180b", RUNTIME_DIR: runtime, REFLECT_AT: "off",
+      VLM_BASE_URL: "http://127.0.0.1:9/v1", PAM_LLM_BASE_URL: "http://127.0.0.1:9/v1", OPENAI_BASE_URL: "http://127.0.0.1:9/v1",
+    }, log: () => {} });
+    try {
+      const get = async (path: string) => {
+        const r = await fetchRetry(`${srv.url}${path}`);
+        expect(r.status, path).toBe(200);
+        return ((await r.json()) as { scene: SceneJson }).scene.objects as SceneObject[];
+      };
+      const ids = (list: SceneObject[]) => list.map((o) => o.id);
+      for (const id of removed) expect(ids(await get("/api/scene"))).not.toContain(id);
+      const baked = await get("/api/scene/baked");
+      expect(ids(baked)).toEqual(ids(scene.objects as SceneObject[]));
+      expect(baked.find((o) => o.id === removed[0])!.footprint).toEqual(catalog.get("coffee_table")!.footprint);
     } finally {
       await srv.close();
       rmSync(runtime, { recursive: true, force: true });

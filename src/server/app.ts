@@ -60,8 +60,10 @@ export interface AppOptions {
   phonePortal?: () => Pick<PhoneServer, "upgradePortal"> | null;
   /** 배치 보정(docs/plan.md 계약 B·C). 있으면 /api/layout*, /events layout 메시지. */
   layout?: LayoutEditor;
-  /** 서버 장면(scene.json + 도면 설비, src/layout/scene.ts). GET /api/scene. 없거나 null이면 404. */
+  /** 서버 장면(scene.json + 도면 설비, src/layout/scene.ts, 고친 배치). GET /api/scene. 없거나 null이면 404. */
   scene?: () => unknown;
+  /** 구운 장면(배치를 고치기 전 scene.json + 도면 설비). GET /api/scene/baked. 트윈 3D가 구운 GLB 물건(상태·정적 합치기)을 잇는 데 쓴다. 없거나 null이면 404. */
+  bakedScene?: () => unknown;
   /** 허용할 브라우저 출처(기본: localhost·127.0.0.1·[::1]의 모든 포트). */
   allowOrigin?: (origin: string) => boolean;
   /** 계획 보내기 토큰(PLAN_TOKEN). 있으면 Authorization: Bearer <토큰>을 붙인 요청은 어느 주소에서나 받는다. */

@@ -35,7 +35,34 @@ async function getJson<T>(url: string): Promise<T> {
 /** 집 전체가 상자를 꽉 채우는 지도 카메라(그림 가운데, cover 배율). */
 export const wholeCamera = (v: OrthoCamera, box: Box): MapCamera => ({ cx: v.width / 2, cy: v.height / 2, scale: Math.max(box.width / v.width, box.height / v.height) });
 
-interface Loaded { data: SceneData; manifest: Manifest; gltf: { scene: THREE.Group }; ground: THREE.Texture | null; maps: Lightmaps }
+/** data: 구운 장면(/api/scene/baked, 배치를 고치기 전). 구운 GLB 물건의 상태·정적 합치기·기본 보기를 잇는다. layout: 고친 배치(/api/scene). 원뿔 걷기 격자를 만든다. */
+interface Loaded { data: SceneData; layout: SceneData; manifest: Manifest; gltf: { scene: THREE.Group }; ground: THREE.Texture | null; maps: Lightmaps }
+
+/** 트윈이 읽는 두 장면: 구운 장면(baked)과 고친 배치(layout). 서버 배치 맞추기 메시지는 구운 장면과의 차이만 보낸다(뺀 물건은 remove로 떼고 숨긴다). */
+export async function twinScenes(get: <T>(url: string) => Promise<T>): Promise<{ baked: SceneData; layout: SceneData }> {
+  const [{ scene: baked }, { scene: layout }] = await Promise.all([get<{ scene: SceneData }>("/api/scene/baked"), get<{ scene: SceneData }>("/api/scene")]);
+  return { baked, layout };
+}
+
+/** 정적 합치기: 움직이는 것(keep: 위쪽 벽·난간, 벽걸이·문·창, 키 큰 가구 clip, 가전 dynamic)과 지금 숨은 것은 뺀다. objects는 구운 장면 물건이다:
+ *  메시 주인(물건 id)을 알아야 배치에서 뺀 물건을 합친 메시에서 뗄 수 있다. 짓기(build)는 부르는 쪽이 한다. */
+export function bakedMerge(scene: THREE.Object3D, root: THREE.Object3D, objects: readonly { id: string; mount?: string }[], o: { clip: readonly string[]; dynamic: readonly string[]; keep: readonly THREE.Object3D[] }, find: (id: string) => THREE.Object3D | null): StaticMerge {
+  const movable = new Set<THREE.Object3D>();
+  const hold = (n: THREE.Object3D | null) => n?.traverse((x) => { movable.add(x); });
+  for (const n of o.keep) hold(n);
+  const clip = new Set(o.clip);
+  const dynamic = new Set(o.dynamic);
+  const owner = new Map<THREE.Object3D, string>();
+  for (const e of objects) {
+    const node = find(e.id);
+    if (!node) continue;
+    node.traverse((x) => { if (!owner.has(x)) owner.set(x, e.id); });
+    if (e.mount === "wall" || e.mount === "opening" || clip.has(e.id) || dynamic.has(e.id)) hold(node);
+  }
+  const statics: THREE.Mesh[] = [];
+  root.traverse((n) => { if (n instanceof THREE.Mesh && n.userData.baked && !movable.has(n) && shownInTree(n)) statics.push(n); });
+  return new StaticMerge(scene, statics, (m) => owner.get(m) ?? null);
+}
 
 export class TwinEngine {
   readonly scene = new THREE.Scene();
@@ -76,7 +103,7 @@ export class TwinEngine {
       renderer.localClippingEnabled = true;
       // 한 그림에 두 번(집, 맞춘 눈) 그리니 그림마다 직접 센다
       renderer.info.autoReset = false;
-      const [{ scene: data }, manifest] = await Promise.all([getJson<{ scene: SceneData }>("/api/scene"), getJson<Manifest>(`${BAKE}manifest.json`)]);
+      const [{ baked: data, layout }, manifest] = await Promise.all([twinScenes(getJson), getJson<Manifest>(`${BAKE}manifest.json`)]);
       const tex = new THREE.TextureLoader();
       const [gltf, ground, ...lms] = await Promise.all([
         new GLTFLoader().loadAsync(BAKE + manifest.glb),
@@ -84,7 +111,7 @@ export class TwinEngine {
         ...manifest.lightmaps.map((lm) => tex.loadAsync(BAKE + lm.webp)),
       ]);
       const maps: Lightmaps = Object.fromEntries(manifest.lightmaps.map((lm, i) => [lm.name, { tex: asLightmap(lms[i]!, manifest.channel, lm.name), intensity: lm.intensity }]));
-      const engine = new TwinEngine(renderer, view, light, o.box, { data, manifest, gltf, ground, maps });
+      const engine = new TwinEngine(renderer, view, light, o.box, { data, layout, manifest, gltf, ground, maps });
       await renderer.compileAsync(engine.scene, engine.camera);
       // 눈이 처음 올 때 셰이더를 만들며 끊기지 않게 숨은 원뿔 재질도 미리 만든다
       await renderer.compileAsync(engine.eyeLayer, engine.camera);
@@ -101,7 +128,7 @@ export class TwinEngine {
     readonly view: OrthoCamera,
     light: (typeof HOME_LIGHTS)[string],
     box: Box,
-    { data, manifest, gltf, ground, maps }: Loaded,
+    { data, layout, manifest, gltf, ground, maps }: Loaded,
   ) {
     this.box = { width: box.width, height: box.height };
     this.cur = wholeCamera(view, this.box);
@@ -124,25 +151,10 @@ export class TwinEngine {
       if (node) this.states.add(e.id, node, e);
     }
     this.root.updateMatrixWorld(true);
-    // 정적 합치기: 움직이는 것(위쪽 벽·난간·벽걸이·문·창·키 큰 가구·가전)과 지금 숨은 것은 뺀다
-    const movable = new Set<THREE.Object3D>();
-    const hold = (n: THREE.Object3D | null) => n?.traverse((x) => { movable.add(x); });
-    for (const n of [...shown.uppers, ...shown.rails]) hold(n);
-    const clip = new Set(manifest.view.clip);
-    const dynamic = new Set(Object.keys(manifest.dynamic ?? {}));
-    const owner = new Map<THREE.Object3D, string>();
-    for (const e of data.objects) {
-      const node = this.find(e.id);
-      if (!node) continue;
-      node.traverse((x) => { if (!owner.has(x)) owner.set(x, e.id); });
-      if (e.mount === "wall" || e.mount === "opening" || clip.has(e.id) || dynamic.has(e.id)) hold(node);
-    }
-    const statics: THREE.Mesh[] = [];
-    this.root.traverse((n) => { if (n instanceof THREE.Mesh && n.userData.baked && !movable.has(n) && shownInTree(n)) statics.push(n); });
-    this.merge = new StaticMerge(this.scene, statics, (m) => owner.get(m) ?? null);
+    this.merge = bakedMerge(this.scene, this.root, data.objects, { clip: manifest.view.clip, dynamic: Object.keys(manifest.dynamic ?? {}), keep: [...shown.uppers, ...shown.rails] }, find);
     const merged = this.merge.build();
     // 맞춘 눈: 합치기 뒤 따로 둔 층이라 합쳐지지 않는다. 벽에서는 꼭짓점 공 반지름만큼 띄운다
-    this.guide = liveWalkGuide(data, CONE.apex, () => getJson<{ scene: SceneData }>("/api/scene").then((r) => r.scene));
+    this.guide = liveWalkGuide(layout, CONE.apex, () => getJson<{ scene: SceneData }>("/api/scene").then((r) => r.scene));
     this.eye = createEyeCone({ guide: this.guide });
     this.eyeLayer.add(this.eye.group);
     this.info = { raised: shown.raised, actions: shown.actions, materials: { ...materials }, merged };
