@@ -56,16 +56,17 @@ const LEGS: { value: string; go: string; hold?: number; minWalk?: number }[] = [
   { value: "sink", go: SINK },
   { value: "living_standby", go: "living_standby" },
 ];
-/** 사람 장면(촬영 시각 from부터): 냉장고 → 식탁 → 소파 TV. rise는 식탁을 떠나는 때, left는 소파를 떠나는 때. */
-const SCENES = (rise: number, left: number): { from: number; kind: string; value: string }[] => [
-  { from: 0, kind: "fridge", value: "standing" },
-  { from: 5500, kind: "away", value: "kitchen" },
-  { from: 7500, kind: "table", value: "sitting" },
-  { from: 9500, kind: "table", value: "drinking" },
-  { from: rise, kind: "away", value: "table" },
-  { from: rise + TO_SOFA_MS, kind: "tv", value: "watching" },
-  { from: left, kind: "tv", value: "empty" },
-  { from: left + RETURN_AFTER_MS, kind: "tv", value: "watching" },
+/** 사람 장면(촬영 시각 from부터): 냉장고 → 식탁 → 소파 TV. rise는 식탁을 떠나는 때, left는 소파를 떠나는 때.
+ *  scene은 사진 장면 이름이다(가전 종류가 아님). 기록 파일 사진 줄에는 kind 칸으로 적는다(photoRow). */
+const SCENES = (rise: number, left: number): { from: number; scene: string; value: string }[] => [
+  { from: 0, scene: "fridge", value: "standing" },
+  { from: 5500, scene: "away", value: "kitchen" },
+  { from: 7500, scene: "table", value: "sitting" },
+  { from: 9500, scene: "table", value: "drinking" },
+  { from: rise, scene: "away", value: "table" },
+  { from: rise + TO_SOFA_MS, scene: "tv", value: "watching" },
+  { from: left, scene: "tv", value: "empty" },
+  { from: left + RETURN_AFTER_MS, scene: "tv", value: "watching" },
 ];
 
 const ceil = (v: number, step: number) => Math.ceil(v / step) * step;
@@ -73,13 +74,13 @@ const sceneAt = (scenes: ReturnType<typeof SCENES>, t: number) => scenes.filter(
 const fastWhen = (seen: ReplaySeen | null) => (t: number) => seen?.fastAt.findLast(([at]) => at <= t)?.[1] ?? false;
 const firstAt = (seen: ReplaySeen | null, kind: string) => seen?.trace.find((e) => e.kind === kind)?.at ?? Infinity;
 
-interface Photo { at: number; kind: string; value: string; lag?: number; frame?: string }
+interface Photo { at: number; scene: string; value: string; lag?: number; frame?: string }
 interface Counters { photos: number; T: number; L: number; S: number }
 
 /** 사진 줄의 프레임: 식탁 장면은 T, 거실 장면(식탁을 떠남·TV)은 컵 상태에 따라 L·든 컵·S. 그 밖(냉장고·주방 떠남)은 없음. */
-function frameOf(p: { at: number; kind: string; value: string }, c: Counters, cup: { pick: number; place: number }): string | undefined {
-  if (p.kind === "table") return FRAMES.T[c.T++ % FRAMES.T.length];
-  if (p.kind === "tv" || (p.kind === "away" && p.value === "table")) {
+function frameOf(p: { at: number; scene: string; value: string }, c: Counters, cup: { pick: number; place: number }): string | undefined {
+  if (p.scene === "table") return FRAMES.T[c.T++ % FRAMES.T.length];
+  if (p.scene === "tv" || (p.scene === "away" && p.value === "table")) {
     if (p.at >= cup.place + HAND_MS) return FRAMES.S[c.S++ % FRAMES.S.length];
     if (p.at >= cup.pick + HAND_MS) return FRAMES.held;
     return FRAMES.L[c.L++ % FRAMES.L.length];
@@ -91,7 +92,7 @@ function counted(photos: Photo[]): Counters {
   const c: Counters = { photos: photos.length, T: 0, L: 0, S: 0 };
   for (const p of photos) {
     if (!p.frame) continue;
-    if (FRAMES.T.includes(p.frame) && p.kind === "table") c.T++;
+    if (FRAMES.T.includes(p.frame) && p.scene === "table") c.T++;
     else if (FRAMES.S.includes(p.frame)) c.S++;
     else if (FRAMES.L.includes(p.frame)) c.L++;
   }
@@ -105,7 +106,7 @@ function captures(after: number | null, end: number, seen: ReplaySeen | null): n
   return out;
 }
 const photoRow = (p: Photo, withSource: boolean): Row => ({
-  at: p.at, kind: p.kind, value: p.value, ...(p.lag !== undefined ? { lag: p.lag } : {}), ...(p.frame ? { frame: p.frame } : {}),
+  at: p.at, kind: p.scene, value: p.value, ...(p.lag !== undefined ? { lag: p.lag } : {}), ...(p.frame ? { frame: p.frame } : {}),
   ...(withSource ? { source: p.frame ? SOURCE.framePhoto(p.frame) : SOURCE.photo } : {}),
 });
 
@@ -131,12 +132,12 @@ function compose(seen: ReplaySeen | null) {
   const c: Counters = { photos: 0, T: 0, L: 0, S: 0 };
   const photos: Photo[] = times.map((at) => {
     const s = sceneAt(scenes, at);
-    const p = { at, kind: s.kind, value: s.value, lag: LAGS[c.photos++ % LAGS.length]! };
+    const p = { at, scene: s.scene, value: s.value, lag: LAGS[c.photos++ % LAGS.length]! };
     return { ...p, frame: frameOf(p, c, cup) };
   });
   // PAM: 대기 자리(세 번째 구간) 도착 뒤 첫 시청 사진의 답 뒤
   const standby = eyes[2]?.at;
-  const watched = standby === undefined ? undefined : photos.find((p) => p.at >= standby && p.kind === "tv" && p.value === "watching");
+  const watched = standby === undefined ? undefined : photos.find((p) => p.at >= standby && p.scene === "tv" && p.value === "watching");
   const rows: Row[] = [
     { at: 0, kind: "initial", source: SOURCE.initial },
     { at: 500, kind: "fridge_open", source: SOURCE.fridgeOpen },
@@ -162,7 +163,7 @@ interface VariantSpec {
   /** 사진 시각을 정해 둔 변형(일부러 틀린 간격). 없으면 그 변형 재생의 VLM 간격. */
   times?: (b: Base) => number[];
   /** 그 변형 사진의 장면 값: 사진 차례 j와 시각. 없으면 SCENES. */
-  value?: (j: number, at: number, b: Base) => { kind: string; value: string } | undefined;
+  value?: (j: number, at: number, b: Base) => { scene: string; value: string } | undefined;
   /** 답 지연 차례를 이 자리부터 다시 돈다(없으면 앞 사진에 이어서). */
   lagFrom?: number;
   lag?: (j: number) => number | undefined;
@@ -171,10 +172,10 @@ interface VariantSpec {
   frameRestart?: boolean;
 }
 const VARIANTS: VariantSpec[] = [
-  { name: "back", from: (b) => b.rise + TO_SOFA_MS - 300, head: (b) => [{ at: b.left, kind: "left" }], value: () => ({ kind: "table", value: "drinking" }), frameRestart: true },
+  { name: "back", from: (b) => b.rise + TO_SOFA_MS - 300, head: (b) => [{ at: b.left, kind: "left" }], value: () => ({ scene: "table", value: "drinking" }), frameRestart: true },
   {
     name: "brief", from: (b) => b.left, head: (b) => [{ at: b.left, kind: "left" }], lagFrom: 3,
-    value: (j) => (j < 5 ? { kind: "tv", value: ["standing", "empty", "watching", "empty", "empty"][j]! } : undefined),
+    value: (j) => (j < 5 ? { scene: "tv", value: ["standing", "empty", "watching", "empty", "empty"][j]! } : undefined),
   },
   { name: "manual", from: (b) => b.left - 1, head: (b) => [{ at: b.left, kind: "left" }, { at: b.left - 1, kind: "manual_off" }], lagFrom: 3 },
   {
@@ -193,7 +194,7 @@ const VARIANTS: VariantSpec[] = [
   },
   {
     // 치울 준비(ready) 바로 앞부터 식탁을 떠나기 바로 앞까지 컵을 내려놓고 쉬고, 떠나기 0.4초 앞에 PAM이 답한다
-    name: "pam_seated", from: (b) => b.ready - 300, until: (b) => b.rise - 300, value: () => ({ kind: "table", value: "resting" }), frames: ["e112", "e93", "e112"],
+    name: "pam_seated", from: (b) => b.ready - 300, until: (b) => b.rise - 300, value: () => ({ scene: "table", value: "resting" }), frames: ["e112", "e93", "e112"],
     tail: (b) => [{ at: b.rise - 400, kind: "pam", value: "~resting", response: PAM_RESTING }],
   },
 ];
@@ -210,7 +211,7 @@ function variantRow(spec: VariantSpec, base: Base, seen: ReplaySeen | null): Row
   const photos = times.map((at, j): Photo => {
     const s = spec.value?.(j, at, base) ?? sceneAt(scenes, at);
     const lag = spec.lag ? spec.lag(j) : LAGS[((spec.lagFrom ?? c.photos) + j) % LAGS.length]!;
-    const p = { at, kind: s.kind, value: s.value };
+    const p = { at, scene: s.scene, value: s.value };
     const frame = spec.frames ? spec.frames[j] : frameOf(p, c, cup);
     return { ...p, ...(lag !== undefined ? { lag } : {}), ...(frame ? { frame } : {}) };
   });
