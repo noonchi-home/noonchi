@@ -224,12 +224,41 @@ describe("walking map", () => {
       at([6.6, 7.5]);
       // 첫 점은 거실 격자 줄 z=7.5 위 door_bed_sw 문 앞 경유점
       expect(at([6.6, 7.5]).guide?.remaining[0]).toMatchObject({ kind: "via", room: "living" });
-      // 벽을 건너 침실로 튄다(건넌 점은 문 점에서 0.27m, 문 반경 0.1997m 밖). 다음 자세도 침실
-      at([6.5, 7.85]);
-      at([6.45, 7.85]);
+      // 벽을 건너 침실로 튄다(건넌 점 x≈6.75는 개구부 x 5.864–6.623 밖, bed_sw_top 벽). 침실에 있는 동안은 길을 벗어난 것으로 본다
+      at([6.78, 7.5]);
+      expect(at([6.75, 7.85]).distance).toBeNull();
+      expect(at([6.72, 7.85]).distance).toBeNull();
       // 같은 pose_gen으로 거실로 돌아와 걷는다
-      at([6.3, 7.5]);
-      expect(at([6.27, 7.5]).distance).not.toBeNull();
+      at([6.6, 7.5]);
+      expect(at([6.57, 7.5]).distance).not.toBeNull();
+    });
+    it("keeps guiding after the phone walks into the bedroom through the real door opening but outside the door radius before passing the waypoint", () => {
+      const nav = new Navigation();
+      let t = 0;
+      const at = (p: [number, number]) => {
+        nav.pose({ position: p, quality: "usable", pose_gen: 1, observed_ms: (t += 100) });
+        return nav.read("go", map, [5.5, 11.7], 0.35, true, t);
+      };
+      // 문 앞 경유점(6.24375, 7.5)을 넘기기 전에 침실로 건넌다: 건넌 점 x≈6.50은 개구부 x 5.864–6.623 안, 문 점에서 0.26m(문 반경 0.1997m 밖)
+      const poses: [number, number][] = [[6.6, 7.5], [6.6, 7.5], [6.57, 7.6], [6.54, 7.7], [6.51, 7.8], [6.48, 7.9], [6.45, 8.0],
+        [6.4, 8.1], [6.35, 8.2], [6.3, 8.3], [6.25, 8.4], [6.2, 8.5], [6.15, 8.6]];
+      const reads = poses.map(at);
+      expect(reads[1]!.guide?.remaining[0]).toMatchObject({ kind: "via", room: "living" });
+      // 건넌 다음 자세(6.45, 8.0)부터 침실에 있는 동안 안내가 이어진다
+      expect(reads.slice(6).map((r) => r.distance !== null)).toEqual(poses.slice(6).map(() => true));
+    });
+    it("keeps guiding after the phone guided at the door crosses through the real door opening but outside the door radius", () => {
+      const nav = new Navigation();
+      let t = 0;
+      const at = (p: [number, number]) => {
+        nav.pose({ position: p, quality: "usable", pose_gen: 1, observed_ms: (t += 100) });
+        return nav.read("go", map, [5.5, 11.7], 0.35, true, t);
+      };
+      // 문간(6.30, 7.65)에서 첫 점은 문. 건넌 점 x≈6.47은 개구부 안, 문 점에서 0.23m(문 반경 0.1997m 밖)
+      const poses: [number, number][] = [[6.3, 7.65], [6.3, 7.65], [6.45, 7.75], [6.5, 7.9], [6.5, 8.0], [6.45, 8.1], [6.4, 8.2]];
+      const reads = poses.map(at);
+      expect(reads[1]!.guide?.remaining[0]).toMatchObject({ kind: "portal", id: "door_bed_sw" });
+      expect(reads.slice(4).map((r) => r.distance !== null)).toEqual([true, true, true]);
     });
     it("approaches every door from a point on the current room's side when the straight line would cross a wall", () => {
       // 식탁 관찰 자리에서 침실 1 문까지 곧은 선은 벽을 지난다(거실 대기 자리는 문 앞으로 옮겨 곧게 보인다)

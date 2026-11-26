@@ -264,5 +264,7 @@ export function walkingMap(floor: FloorPlan, scene: SceneJson, footprint?: (type
     return remaining.length ? { revision: 0, near_m, remaining: remaining as TwinWalkGuide["remaining"] } : null;
   }
   return { room, plan, clear, way, isBearing: (point:Point)=>bearings.has(point),
-    gridReachable: (a:Vec2,b:Vec2,id:string,gates:Portal[]=[])=>indoor(a,b,id,gates)!==null, gate: (id: string) => floor.portals.find((g) => g.id === id), doorRadius };
+    gridReachable: (a:Vec2,b:Vec2,id:string,gates:Portal[]=[])=>indoor(a,b,id,gates)!==null, gate: (id: string) => floor.portals.find((g) => g.id === id), doorRadius,
+    /** 실제 문 개구부 절반 폭(문 폭 / 2, 트인 경계는 맞닿은 길이 / 2): 문 점에서 이 거리 안으로 방 경계를 건너면 문으로 지난 것이다. */
+    openingHalf: (portal: Portal) => (widths.get(portal.id) ?? 0) / 2 };
 }
