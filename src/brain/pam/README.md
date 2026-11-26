@@ -20,7 +20,7 @@
 | 판단 부르기(언제·무엇을 넘기나) | `src/brain/decide.ts` | `tests/world-decide.test.ts`, `tests/brain-pam.test.ts` |
 | 기억 모양(사람 상태 FSM: 상태·화살표)·seed 기억·후보 FSM 검사 | `src/brain/decision.ts` | `tests/brain-decision.test.ts`, `tests/pam-answer.test.ts` |
 | 판단 답(`pam-predict/3`: state·from·next_index → 서버가 행동을 정함) | `answer.ts`, `src/brain/decide.ts` | `tests/pam-answer.test.ts`, `tests/world-decide.test.ts` |
-| 밤 흐름(덩어리 기록 → 반성 → 검사 → 시각 찾기 → 채택 검사 → 저장) | `src/brain/history/night.ts`, `night.ts`(메시지), `marks.ts`, `adopt.ts`, `memoryCheck.ts`, `scenarios/noonchi/chunking.txt`·`marking.txt`·`memory_check.txt` | `tests/history-night.test.ts`, `tests/pam-adopt.test.ts`, `tests/pam-marks.test.ts`, `tests/pam-memory-check.test.ts` |
+| 밤 흐름(반성 → 검사 → 시각 찾기 → 채택 검사 → 저장) | `src/brain/history/night.ts`, `night.ts`(메시지), `marks.ts`, `adopt.ts`, `memoryCheck.ts`, `scenarios/noonchi/marking.txt`·`memory_check.txt` | `tests/history-night.test.ts`, `tests/pam-adopt.test.ts`, `tests/pam-marks.test.ts`, `tests/pam-memory-check.test.ts` |
 | 기억 판본·습관 거르기 | `src/brain/history/reflect.ts`, `src/brain/history/habits.ts` | `tests/history-reflect.test.ts`, `tests/history-habits.test.ts` |
 | 규칙 맥락(요일·3시간 시각 칸: 맥락 찾기 `findRules`·화살표 `ctx` 칸·낮에 맞는 화살표만 PAM에 보이기) | `src/brain/ctx.ts`, `adopt.ts`(`findRules`·`adoptedFsm`), `src/brain/history/night.ts`, `src/brain/decision.ts`(`ctx` 검사), `src/brain/decide.ts`(`tick`), `src/brain/habit.ts` | `tests/brain-ctx.test.ts`, `tests/brain-ctx-view.test.ts`, `tests/pam-ctx.test.ts`, `tests/pam-ctx-fsm.test.ts`, `tests/world-decide-ctx.test.ts`, `tests/beer-scenario.test.ts`(시연 2번 합성 기록 검증) |
 | 관찰 글(PAM이 받는 집 상태 글) | `src/world/text.ts` | `tests/world-text.test.ts` |

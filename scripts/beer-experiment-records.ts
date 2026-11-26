@@ -8,7 +8,7 @@ import type { HistoryDb } from "../src/brain/history/db.js";
 import { candidateFsmOf } from "../src/brain/pam/adopt.js";
 import { CUP_FSM_MEMORY } from "../src/brain/decision.js";
 import type { CandidateFsm } from "../src/contract/pam.js";
-import type { ChunkView, MarkView } from "../tests/helpers/pam.js";
+import type { MarkView } from "../tests/helpers/pam.js";
 
 export const TV_START_ON = "사용자가 돌아와 TV를 본다.";
 export const TV_END_ON = "사용자가 TV 보기를 끝내고 다른 일로 넘어간다.";
@@ -118,8 +118,6 @@ export const BEER_CANDIDATES: CandidateFsm = (() => {
 })();
 
 const timesOf = (lines: string[], text: string) => lines.filter((l) => l.includes(text)).map((l) => l.substring(0, 8));
-/** 덩어리: 줄마다 한 덩어리(가짜). */
-export const fakeChunk = (v: ChunkView) => ({ chunks: v.lines.map((l) => ({ start: l.substring(0, 8), end: l.substring(0, 8), text: l.substring(11) })) });
 /** 시각 찾기(가짜): TV 보기 시작 = 「사람 TV 보는 중」 줄, TV 보기 끝 = 「거실 TV 꺼짐 · 카메라로 봄」 줄, 행동 = 사용자가 맥주를 꺼내는 줄·캔을 싱크대에 놓는 줄. 안 보인 구간 없음. */
 export const fakeMark = (v: MarkView) => ({
   candidates: v.candidates.map(([state, candidate]) => ({ state, candidate, times: candidate.includes("TV를 본다") ? timesOf(v.lines, "사람 TV 보는 중") : candidate.includes("TV 보기를 끝내고") ? timesOf(v.lines, "거실 TV 꺼짐 · 카메라로 봄") : [] })),

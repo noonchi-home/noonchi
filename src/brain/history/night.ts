@@ -1,4 +1,4 @@
-// 밤 흐름(하루 한 번, 판단 속도와 상관없음): 덩어리 기록 → 반성(후보 FSM) → 코드 모양 검사 → 배우지 않는 행동 후보 빼기 → 기억 뜻 검사(LLM, 거절이면 까닭을 붙여 한 번 다시)
+// 밤 흐름(하루 한 번, 판단 속도와 상관없음): 반성(후보 FSM) → 코드 모양 검사 → 배우지 않는 행동 후보 빼기 → 기억 뜻 검사(LLM, 거절이면 까닭을 붙여 한 번 다시)
 // → 시각 찾기(지난 날까지, 모르는 것만) → 채택 검사(석준 님 trigger_check, src/brain/pam/adopt.ts) → 로봇 FSM(seed 화살표 + 통과한 배우는 행동 후보) → 코드 검사
 // → 저장(로봇 판본·후보 판본·반성 기록을 한 트랜잭션, HistoryDb.saveNight). 어느 단계든 끝내 거절·실패면 새 판본을 저장하지 않고 전날 기억을 쓴다(반성 기록에 까닭).
 // 셈하기(사용자 결정 2026-11-18): 행동 때 = 사람이 직접 그 일을 한 때(시각 찾기) ∪ 로봇이 그 일을 물었을 때 「치워 주세요」류로 답한 때(answerActions, 묻기 답 말 부탁 판단).
@@ -16,13 +16,13 @@ import { CUP_FSM_MEMORY, ContractError, MAX_REFLECT_TEXT, validateMemory, type F
 import { candidateText, MARKING_PROMPT, type PamClient } from "../pam/index.js";
 import { adoptKey, adoptedFsm, candidateFsmOf, findRules, type CtxDay, type CheckResult } from "../pam/adopt.js";
 import type { Ctx } from "../../contract/pam.js";
-import { clock, type Chunk, type Marks } from "../pam/marks.js";
+import { clock, type Marks } from "../pam/marks.js";
 import { headWithin } from "../../shared/cut.js";
 import type { HistoryDb } from "./db.js";
 import { edgeKey, learnedEdges, settingsGuard, type EdgeLine, type HabitFilter, type HabitRuleNote } from "./habits.js";
 import { NIGHT_TEXT, REFLECT_TEXT } from "./labels.js";
 import { memoryForDay, readDayMemory } from "./reflect.js";
-import { daySummary, fitLines } from "./summary.js";
+import { daySummary } from "./summary.js";
 
 const DAY_MS = 86_400_000;
 const nextDay = (day: string) => new Date(Date.parse(`${day}T00:00:00Z`) + DAY_MS).toISOString().slice(0, 10);
@@ -35,7 +35,7 @@ const CHECKS_MAX = 4_000;
 export const DAY_KINDS = ["detection", "world", "device", "vlm", "yolo", "decision", "execution", "feedback"] as const;
 /** 습관 거르기에 넘기는 기록 종류. */
 const HABIT_KINDS = ["world", "device", "decision", "execution", "feedback"] as const;
-/** 덩어리 기록·시각 찾기가 읽는 그날 기록 줄 종류(사람·물건·가전·사람 말). */
+/** 시각 찾기가 읽는 그날 기록 줄 종류(사람·물건·가전·사람 말). */
 const LINE_KINDS = ["detection", "world", "device", "feedback"] as const;
 
 /** PAM 사용량 더하기(밤 흐름은 여러 번 부른다): 토큰은 더하고, 비용은 모두 알 때만 더하며, 모델은 다르면 이어 적는다. */
@@ -120,24 +120,8 @@ export function unseenEnd(times: readonly number[], last: number): number {
   return times.find((x) => x > last) ?? DAY_MS / 1000;
 }
 
-/** 덩어리에 그 동안의 사람 상태(판단 기록 fsm.state, 가장 많이 나온 것, 없으면 그 앞 마지막 판단 상태)를 붙인 줄 `HH:MM:SS~HH:MM:SS [상태] 글`. */
-export function chunkLines(db: HistoryDb, day: string, chunks: readonly Chunk[]): string[] {
-  const states = db.list({ day, kinds: ["decision"], limit: 10_000_000 }).flatMap((r) => {
-    const s = (r.data as { fsm?: { state?: unknown } | null } | null)?.fsm?.state;
-    return typeof s === "string" ? [{ at: secOf(r.at_ms, db.offsetMinutes), state: s }] : [];
-  });
-  return chunks.map((c) => {
-    const from = clock(c.start, "start"), to = clock(c.end, "end");
-    const inside = states.filter((s) => s.at >= from && s.at <= to);
-    const count = new Map<string, number>();
-    for (const s of inside) count.set(s.state, (count.get(s.state) ?? 0) + 1);
-    const most = [...count].sort((a, b) => b[1] - a[1])[0]?.[0] ?? states.filter((s) => s.at <= to).at(-1)?.state ?? null;
-    return `${c.start}~${c.end} ${most ? `[${most}] ` : ""}${c.text}`;
-  });
-}
-
-/** 그날 시각 찾기 사본: 읽은 기록 줄의 표시(record), 시각 찾기 지시문의 표시(prompt), 덩어리, (상태, 상태 설명, 후보 글)마다 시각, 행동마다 시각, 안 보인 구간(아직 안 물었으면 null). */
-interface DayMarks { day: string; record: string; prompt: string; chunks: Chunk[] | null; candidates: Record<string, string[]>; actions: Record<string, string[]>; unseen: { start: string; end: string }[] | null }
+/** 그날 시각 찾기 사본: 읽은 기록 줄의 표시(record), 시각 찾기 지시문의 표시(prompt), (상태, 상태 설명, 후보 글)마다 시각, 행동마다 시각, 안 보인 구간(아직 안 물었으면 null). */
+interface DayMarks { day: string; record: string; prompt: string; candidates: Record<string, string[]>; actions: Record<string, string[]>; unseen: { start: string; end: string }[] | null }
 /** 후보 시각의 열쇠: 상태 설명이 바뀌면 시각 찾기가 그 상태를 다르게 볼 수 있어 다시 묻는다(2026-11-25 사용자 결정). */
 const markKey = (state: string, description: string, text: string) => JSON.stringify([state, description, text]);
 /** 시각 찾기 지시문의 표시(sha256 앞 16자리). 지시문이 바뀌면 그 전 사본을 버리고 다시 묻는다(2026-11-25 사용자 결정). */
@@ -188,7 +172,7 @@ export async function runNight(db: HistoryDb, pam: PamClient, day: string, o: Ni
     // 그날 판본을 읽기만 한다(날 고정·seed 판본을 남기지 않는다: 끊긴 반성이 다른 반성의 적용일을 밀지 않게)
     const cur = readDayMemory(db, day);
     const feedback = latestWithin(db.list({ day, kinds: ["feedback"] }).map((r) => r.text), MAX_REFLECT_TEXT.feedback).join("\n") || null;
-    // 사용량은 그 밤에 부른 PAM 호출(덩어리·반성·뜻 검사·시각 찾기)을 모두 더한다(Codex 1b07d3e2 P3: 덮어써 마지막 호출만 남았다)
+    // 사용량은 그 밤에 부른 PAM 호출(반성·뜻 검사·시각 찾기)을 모두 더한다(Codex 1b07d3e2 P3: 덮어써 마지막 호출만 남았다)
     const call = { signal: o.signal, onUsage: (u: PamUsage) => { usage = addUsage(usage, u); } };
     const limits = await pam.limits();
     if (cur.kind === "list") {
@@ -218,7 +202,7 @@ export async function runNight(db: HistoryDb, pam: PamClient, day: string, o: Ni
       const path = markPath(d);
       const record = recordMark(linesOf(d));
       const read = path && existsSync(path) ? (JSON.parse(readFileSync(path, "utf8")) as DayMarks) : null;
-      const m: DayMarks = read?.record === record && read.prompt === PROMPT_MARK ? read : { day: d, record, prompt: PROMPT_MARK, chunks: null, candidates: {}, actions: {}, unseen: null };
+      const m: DayMarks = read?.record === record && read.prompt === PROMPT_MARK ? read : { day: d, record, prompt: PROMPT_MARK, candidates: {}, actions: {}, unseen: null };
       marksCache.set(d, m);
       return m;
     };
@@ -228,8 +212,7 @@ export async function runNight(db: HistoryDb, pam: PamClient, day: string, o: Ni
       if (!path) return;
       try { save(path, m); } catch (e) { o.log?.(NIGHT_TEXT.copyFailed((e as Error).message)); }
     };
-    // 1) 덩어리 기록(그날 기록 줄 → 하는 일 덩어리). 줄이 없으면 하루 요약 관찰 텍스트를 쓴다
-    const lines = linesOf(day);
+    // 1) 반성 입력: 하루 요약 관찰 텍스트(덩어리 기록은 2026-11-25 사용자 결정으로 뺐다: 실제 AI 실험에서 한 번도 통과하지 못했고 채택 검사는 쓰지 않는다)
     const prevChecks = ((db.list({ kinds: ["reflection"], latest: true, limit: 50 }).reverse().find((r) => (r.data as { ok?: boolean; checks?: unknown } | null)?.ok === true && Array.isArray((r.data as { checks?: unknown }).checks))?.data as { checks: NightCheck[] } | undefined)?.checks) ?? [];
     const checksText = prevChecks.length ? latestWithin([NIGHT_TEXT.checksHead, ...prevChecks.map((c) => NIGHT_TEXT.check(c.state, candidateText({ on: c.on, ...(c.when ? { when: c.when } : {}) }), c.action, c.n, c.k, c.passed))], CHECKS_MAX).join("\n") : "";
     // 팀이 정한 로봇 일 화살표는 후보 FSM에 없어서(candidateFsmOf), 이미 채택된 것으로 따로 보여 준다: 묻기 자리를 같은 트리거로 바꿀 수 있게(2026-11-25 사용자 결정)
@@ -242,23 +225,7 @@ export async function runNight(db: HistoryDb, pam: PamClient, day: string, o: Ni
     if (maxBytes <= 0) throw new Error(REFLECT_TEXT.tooBig);
     // 행동 칸에는 지난 검사 결과와 정한 화살표가 함께 들어가니, 하루 요약의 행동 몫은 칸 상한에서 그만큼 뺀다
     const summary = daySummary(db, day, { maxBytes, caps: { ...MAX_REFLECT_TEXT, action: MAX_REFLECT_TEXT.action - bytes(checksText) - bytes(seedText) - 4 } });
-    let chunks: Chunk[] | null = null;
-    if (lines.length) {
-      try {
-        chunks = (await pam.chunk(latestWithin(lines.map((l) => l.line), limits.reflect_input_bytes), call)).chunks;
-      } catch (e) {
-        // 덩어리 답이 틀리거나 한도를 넘으면 하루 요약 관찰 텍스트로 반성한다(연결 오류는 그대로 던진다)
-        if (!(e instanceof ContractError)) throw e;
-        o.log?.(NIGHT_TEXT.chunkFailed((e as Error).message));
-      }
-      if (o.signal?.aborted) return cancelled();
-      if (chunks) {
-        const m = marksOf(day);
-        m.chunks = chunks;
-        keepMarks(m);
-      }
-    }
-    const observation = chunks ? fitLines(chunkLines(db, day, chunks), Math.min(MAX_REFLECT_TEXT.observation, maxBytes - bytes(summary.action_summary))) : summary.observation_text;
+    const observation = summary.observation_text;
     const actionSummary = [summary.action_summary || REFLECT_TEXT.noAction, checksText, seedText].filter(Boolean).join("\n\n");
     const req = { day, memory: input, observation_text: observation || REFLECT_TEXT.noObservation, action_summary: actionSummary, feedback };
     // 2) 반성 한 번(후보 FSM 종류) + 배우지 않는 행동 후보 빼기 + 뜻 검사. 거절이면 까닭 글
@@ -300,14 +267,11 @@ export async function runNight(db: HistoryDb, pam: PamClient, day: string, o: Ni
       if (!ask.length && !want.length && m.unseen !== null) continue;
       const dl = linesOf(d);
       if (!dl.length) continue;
-      if (m.chunks === null) {
-        try { m.chunks = (await pam.chunk(latestWithin(dl.map((l) => l.line), limits.reflect_input_bytes), call)).chunks; } catch (e) { if (!(e instanceof ContractError)) throw e; m.chunks = []; }
-      }
       let marks: Marks;
       try {
         marks = await pam.mark({
           states: candidates.states.map((s) => ({ id: s.id, description: s.description })), candidates: ask.map((r) => ({ state: r.state, candidate: r.cand })), actions: want,
-          lines: dl.map((l) => l.line), chunks: chunkLines(db, d, m.chunks),
+          lines: dl.map((l) => l.line),
         }, call, o.log);
       } catch (e) {
         // 그날 시각 찾기가 틀리거나 줄 하나로도 문맥 한도를 넘으면 그날만 셈에서 빼고 잇는다(사본에 남기지 않아 다음 밤에 다시 묻는다, Codex 1b07d3e2 P2). 연결 오류는 그대로 던진다

@@ -37,7 +37,6 @@ Inputs are `day`, `memory_kind`, `memory`, `observation_text`, `action_summary`,
 | Nightly operation | Prompt file | Result |
 |---|---|---|
 | `checkMemory` | `memory_check.txt` | Checks the meaning of states, conditions, and merges. On rejection the server retries reflection once with feedback. |
-| `chunk` | `chunking.txt` | Returns ordered, non-overlapping `{ start, end, text }` activity chunks using timestamps from that day's records. |
 | `mark` | `marking.txt` | Returns trigger times, action times, and intervals when the person could not be seen. |
 
 An adopted memory takes effect the following day. Each day's decisions use the version pinned for that day.

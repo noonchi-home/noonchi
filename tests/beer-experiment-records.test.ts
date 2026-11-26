@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { HistoryDb } from "../src/brain/history/db.js";
 import { dayLines, runNight, type NightResult } from "../src/brain/history/night.js";
-import { BEER, BEER_CANDIDATES, CAN, beerRecords, fakeChunk, fakeMark, groundMark } from "../scripts/beer-experiment-records.js";
+import { BEER, BEER_CANDIDATES, CAN, beerRecords, fakeMark, groundMark } from "../scripts/beer-experiment-records.js";
 import { pamClientFor, startFakePamLlm, type FakePamLlm } from "./helpers/pam.js";
 
 let pam: FakePamLlm | undefined;
@@ -53,17 +53,17 @@ describe("합성 정답 표시(groundMark)", () => {
     const db = HistoryDb.open(":memory:");
     beerRecords(db);
     const sat = dayLines(db, "2026-10-31").map((l) => l.line), mon = dayLines(db, "2026-10-12").map((l) => l.line);
-    const m = groundMark({ role: "mark", states: [], candidates: [["watching_tv", "TV 가 꺼진다"], ["watching_tv", "사람이 소파에서 일어나 냉장고로 간다"], ["away", "사용자가 돌아와 TV 를 본다."], ["watching_tv", "알 수 없는 문장"]], actions: [BEER, CAN], chunks: [], lines: sat });
+    const m = groundMark({ role: "mark", states: [], candidates: [["watching_tv", "TV 가 꺼진다"], ["watching_tv", "사람이 소파에서 일어나 냉장고로 간다"], ["away", "사용자가 돌아와 TV 를 본다."], ["watching_tv", "알 수 없는 문장"]], actions: [BEER, CAN], lines: sat });
     expect(m.candidates.map((c) => c.times)).toEqual([["20:30:02"], ["19:02:30"], ["19:00:05"], []]);
     expect(m.actions).toEqual([{ action: BEER, times: ["19:02:30"] }, { action: CAN, times: ["20:30:30"] }]);
     expect(m.unseen).toEqual([{ start: "20:36:00", end: "20:36:00" }]);
-    expect(groundMark({ role: "mark", states: [], candidates: [], actions: [BEER], chunks: [], lines: mon }).actions[0]!.times).toEqual([]);
+    expect(groundMark({ role: "mark", states: [], candidates: [], actions: [BEER], lines: mon }).actions[0]!.times).toEqual([]);
   });
 });
 
 describe("간추린 기록 + 가짜 AI 21밤", () => {
   it("토요일 2번만으로는 날이 쌓여 T=21이 되는 18번째 날 밤(금요일)에 처음 통과하고(0.0091), 3번째 토요일 밤에는 0.0025로 여유가 생긴다. 그 전에는 규칙이 없다", async () => {
-    pam = await startFakePamLlm({ chunk: fakeChunk, reflect: () => BEER_CANDIDATES, check: () => ({ ok: true, items: [] }), mark: fakeMark });
+    pam = await startFakePamLlm({ reflect: () => BEER_CANDIDATES, check: () => ({ ok: true, items: [] }), mark: fakeMark });
     const db = HistoryDb.open(":memory:");
     const stats = beerRecords(db);
     const dir = mkdtempSync(join(tmpdir(), "beer-exp-"));

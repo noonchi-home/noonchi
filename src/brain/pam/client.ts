@@ -9,8 +9,8 @@ import { PamAnswerError, PamBudgetError, PamRequestError } from "./errors.js";
 import { PamLlm, type CallOptions } from "./llm.js";
 import { buildPredictMessages, buildReflectMessages, generation } from "./prompt.js";
 import { UNREADABLE, memoryCheckMessages, parseVerdict, type MemoryVerdict } from "./memoryCheck.js";
-import { chunkMessages, markMessages, type MarkInput } from "./night.js";
-import { clock, validateChunks, validateMarks, type Chunks, type Marks } from "./marks.js";
+import { markMessages, type MarkInput } from "./night.js";
+import { clock, validateMarks, type Marks } from "./marks.js";
 import { FOLLOW_SECONDS } from "./adopt.js";
 import { headWithin } from "../../shared/cut.js";
 import { predictRequest, reflectRequest } from "./request.js";
@@ -84,19 +84,6 @@ export class PamClient {
     }
   }
 
-  /** 덩어리 기록(밤 흐름): 그날 기록 줄(`HH:MM:SS | 글`) → 하는 일 덩어리. 시각은 그 줄 시각만 받는다. 답이 틀리면 PamAnswerError. */
-  async chunk(lines: string[], call: CallOptions = {}): Promise<Chunks> {
-    const messages = chunkMessages(lines);
-    assertTextOnly(messages);
-    const raw = await this.llm.complete(messages, generation("reflector"), "reflector", this.o.settings.timeoutMs, call);
-    try {
-      return validateChunks(readPyJson(raw), lines.map((l) => l.substring(0, 8)));
-    } catch (e) {
-      if (e instanceof PyJsonFail || e instanceof ContractError) throw new PamAnswerError(`PAM 덩어리 기록 실패: ${e.message}`);
-      throw e;
-    }
-  }
-
   /** 시각 찾기(밤 흐름): 물은 (상태, 후보)·행동마다 그날 일어난 때와 사람이 안 보인 구간. 시각은 그날 줄 시각만 받는다. 답이 틀리면 PamAnswerError.
    *  한 요청이 문맥 길이를 넘으면 맡은 구간으로 나눠 여러 번 묻는다(planMark): 조각은 앞뒤 검사 창의 맥락 줄을 함께 받고, 답은 맡은 구간 안의 시각만 남긴다.
    *  요청 수가 MARK_MAX_REQUESTS를 넘거나 줄 하나로도 넘으면 PamBudgetError. log: 맥락을 줄인 조각마다 한 줄. */
@@ -140,10 +127,9 @@ export class PamClient {
   }
 }
 
-/** 기록 줄 일부의 시각 찾기 요청: 그 줄 구간(첫 줄 ~ 끝 줄 시각)에 걸친 덩어리 줄(`HH:MM:SS~HH:MM:SS …`)만 붙인다. */
+/** 기록 줄 일부의 시각 찾기 요청. */
 function markPart(i: MarkInput, lines: string[]): MarkInput {
-  const first = lines[0]!.substring(0, 8), last = lines.at(-1)!.substring(0, 8);
-  return { ...i, lines, chunks: i.chunks.filter((c) => c.substring(0, 8) <= last && c.substring(9, 17) >= first) };
+  return { ...i, lines };
 }
 
 /** 하루 시각 찾기 요청 수 상한: 넘으면 묻기 전에 PamBudgetError(밤 흐름이 그날만 빼고 다음 밤에 다시 묻는다). */

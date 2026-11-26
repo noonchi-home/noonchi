@@ -1,6 +1,6 @@
 // 시연 2번(토요일 저녁 TV와 맥주)을 합성 기록으로 검증한다. 4주 동안 TV를 매일 19시에 보기 시작해 20시 30분에 끝내고, 맥주는 토요일에만 사용자가 직접 가져오고(19시 3분) 캔도 직접 싱크대에 놓는다(20시 31분).
 // 밤 흐름(src/brain/history/night.ts)이 토요일 맥락 규칙 둘(맥주 가져다주기·맥주 캔 치우기)을 채택하고, 낮 판단(src/brain/decide.ts)이 토요일 저녁에만 그 화살표를 PAM에 보인다.
-// AI 자리(덩어리·반성·뜻 검사·시각 찾기)는 가짜 PAM LLM이 정해 둔 답을 한다. 실제 AI는 부르지 않는다.
+// AI 자리(반성·뜻 검사·시각 찾기)는 가짜 PAM LLM이 정해 둔 답을 한다. 실제 AI는 부르지 않는다.
 import { afterEach, describe, expect, it } from "vitest";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -16,7 +16,7 @@ import type { CandidateFsm } from "../src/contract/pam.js";
 import type { DecisionRecord } from "../src/contract/events.js";
 import { WorldState } from "../src/world/state/world.js";
 import { Trigger } from "../src/world/trigger.js";
-import { pamClientFor, startFakePamLlm, type ChunkView, type FakePamLlm, type MarkView, type PredictView } from "./helpers/pam.js";
+import { pamClientFor, startFakePamLlm, type FakePamLlm, type MarkView, type PredictView } from "./helpers/pam.js";
 
 const TV_START = "사용자가 돌아와 TV를 본다.";
 const TV_END = "사용자가 TV 보기를 끝내고 다른 일로 넘어간다.";
@@ -38,7 +38,6 @@ const CANDIDATES: CandidateFsm = (() => {
   return c;
 })();
 
-const oneChunkPerLine = (v: ChunkView) => ({ chunks: v.lines.map((l) => ({ start: l.substring(0, 8), end: l.substring(0, 8), text: l.substring(11) })) });
 const startsAt = (lines: string[], time: string) => (lines.some((l) => l.startsWith(time)) ? [time] : []);
 const timesOf = (lines: string[], text: string) => lines.filter((l) => l.includes(text)).map((l) => l.substring(0, 8));
 /** 시각 찾기: 후보는 그 시각 줄, 행동은 사용자가 그 일을 한 줄의 시각. 안 보인 구간 없음. */
@@ -68,7 +67,7 @@ let pam: FakePamLlm | undefined;
 afterEach(async () => { await pam?.close(); pam = undefined; });
 
 async function learn(weeks: number, saturdayDaytimeTv = false): Promise<{ r: Extract<NightResult, { ok: true }>; fsm: FsmMemory }> {
-  pam = await startFakePamLlm({ chunk: oneChunkPerLine, reflect: () => CANDIDATES, check: () => ({ ok: true, items: [] }), mark });
+  pam = await startFakePamLlm({ reflect: () => CANDIDATES, check: () => ({ ok: true, items: [] }), mark });
   const db = HistoryDb.open(":memory:");
   const days = Array.from({ length: weeks * 7 }, (_, i) => dayOf(i));
   days.forEach((d, i) => recordDay(db, d, isSaturday(i), saturdayDaytimeTv && isSaturday(i)));

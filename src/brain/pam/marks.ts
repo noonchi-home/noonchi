@@ -1,10 +1,8 @@
-// 덩어리 기록·시각 찾기 답 검사(석준 님 ai 저장소 pam/contracts.py validate_chunks·validate_marks, origin/main 48d56a1 그대로, 오류 글도 같다).
+// 시각 찾기 답 검사(석준 님 ai 저장소 pam/contracts.py validate_marks, origin/main 48d56a1 그대로, 오류 글도 같다). 덩어리 기록 검사(validate_chunks)는 2026-11-25에 덩어리 기록과 함께 뺐다.
 // within은 석준 님 꼴(첫 줄 시각, 끝 줄 시각, 줄 사이 초) 또는 그날 기록 줄 시각 목록(이 저장소 기록은 줄 사이가 고르지 않다)이다. 답의 시각은 그 줄 시각만 받는다.
 import { ContractError } from "../decision.js";
 import { byCodePoint, isPyBlank, pyList, pyRepr } from "./py.js";
 
-export interface Chunk { start: string; end: string; text: string }
-export interface Chunks { chunks: Chunk[] }
 export interface Marks {
   candidates: { state: string; candidate: string; times: string[] }[];
   actions: { action: string; times: string[] }[];
@@ -49,24 +47,6 @@ function lineTime(value: unknown, path: string, within: Within | undefined): num
     : (within as readonly string[]).includes(value as string);
   if (!ok) throw new ContractError(`${path}: ${String(value)} is not the time of a line of the record`);
   return moment;
-}
-
-/** 하는 일 덩어리: 시각 차례로 겹치지 않는다. within이 있으면 시작·끝이 읽은 기록 줄의 시각이어야 한다. */
-export function validateChunks(value: unknown, within?: Within): Chunks {
-  const chunks = object(value, ["chunks"], "chunks");
-  const items = array(chunks.chunks, "chunks.chunks");
-  if (!items.length) throw new ContractError("chunks.chunks: at least one chunk is required");
-  let previousEnd: number | null = null;
-  items.forEach((item, index) => {
-    const path = `chunks.chunks[${index}]`;
-    const it = object(item, ["start", "end", "text"], path);
-    const times = (["start", "end"] as const).map((name) => lineTime(it[name], `${path}.${name}`, within));
-    if (times[1]! < times[0]!) throw new ContractError(`${path}: end must not come before start`);
-    if (previousEnd !== null && times[0]! <= previousEnd) throw new ContractError(`${path}: chunks must follow in time order without overlapping`);
-    text(it.text, `${path}.text`);
-    previousEnd = times[1]!;
-  });
-  return chunks as unknown as Chunks;
 }
 
 /** 물은 (상태, 후보)·행동마다 꼭 한 번씩 시각을 답하고, 사람이 안 보인 구간을 낸다. within이 있으면 시각은 읽은 기록 줄의 시각이어야 한다. */

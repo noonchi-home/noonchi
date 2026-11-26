@@ -50,7 +50,6 @@ export const NIGHT_TEXT = {
   seedHead: "Fixed arrows set by the user (already adopted; they are not in the memory you edit, so never add, change or remove them):",
   seedAsk: (ask: string) => `"${ask}" only holds the place of a habit not learned yet: a candidate of a learned task with exactly the same on and when replaces it once that candidate passes.`,
   seed: (state: string, candidate: string, action: string) => `${state} | ${candidate} | ${action}`,
-  chunkFailed: (why: string) => `덩어리 기록 실패라 하루 요약으로 반성해요 · ${why}`,
   copyFailed: (why: string) => `밤 흐름 사본을 쓰지 못했어요 · ${why}`,
   markFailed: (day: string, why: string) => `${day} 시각 찾기 실패라 그날은 이번 채택 검사에서 빼요 · ${why}`,
 };

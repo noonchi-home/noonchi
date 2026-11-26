@@ -5,14 +5,13 @@ You find when given events happened during a person's day, using the robot's rec
 - Candidates to find: each line is `state | candidate`. The candidate is a short
 statement of one person moment (with its condition in parentheses when there is one). It counts only while the person is in that state.
 - Actions to find: robot tasks. Find when the person did the same thing themselves.
-- Chunks: the day split into activities, each as `HH:MM:SS~HH:MM:SS [state] sentence` (the state is the person state the robot decided then).
 - Record: the robot's observation of the person and the home, one time-stamped line per change
 (`HH:MM:SS | sentence`) in time order.
 
 # Task
 - For each candidate, list the time of every moment in the record that means the same
 as the candidate, even if it is worded differently, and that happens while the person
-is in the candidate's state. Judge the state from the chunks and the lines around it.
+is in the candidate's state. Judge the state from the lines around it.
 - A candidate about something beginning matches the first line of it. A candidate about
 something finishing or stopping (for example, leaving the table after drinking) matches the line where it finishes. Use that line's time.
 - If the same candidate matches again within 10 seconds, it is one occurrence. List it

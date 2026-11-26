@@ -14,7 +14,7 @@ import { NIGHT_TEXT, REFLECT_TEXT } from "../src/brain/history/labels.js";
 import { loadReflectAt, memoryForDay, runReflection, scheduleReflection } from "../src/brain/history/reflect.js";
 import { fetchRetry, listenRetry } from "../src/shared/net.js";
 import { startServer, type RunningServer } from "../src/server/start.js";
-import { pamClientFor, startFakePamLlm, type ChunkView, type FakePamLlm, type ReflectView, pamLlmEnv } from "./helpers/pam.js";
+import { pamClientFor, startFakePamLlm, type FakePamLlm, type ReflectView, pamLlmEnv } from "./helpers/pam.js";
 import { openWebSocket } from "./helpers/ws.js";
 
 let reflectLlm: FakePamLlm | undefined;
@@ -46,9 +46,9 @@ function dayWithLog(): HistoryDb {
 /** 가짜 PAM LLM(vllm 모드 모델 pam)의 사용량: 토큰 0, 가격표에 없는 모델이라 비용 null. */
 const FAKE_USAGE = { model: "pam", prompt: 0, completion: 0, cached: 0, cost_usd: null };
 /** 반성 답이 memory인 가짜 PAM LLM에 붙은 PamClient. 받은 반성 요청 값은 got에 쌓인다. env로 문맥 길이(PAM_MAX_MODEL_LEN) 등을 바꾼다. */
-async function startPam(memory: unknown, env: Record<string, string> = {}, chunk?: (v: ChunkView) => unknown): Promise<PamClient> {
+async function startPam(memory: unknown, env: Record<string, string> = {}): Promise<PamClient> {
   await reflectLlm?.close();
-  reflectLlm = await startFakePamLlm({ reflect: (v) => { got.push(v); return memory; }, ...(chunk ? { chunk } : {}) });
+  reflectLlm = await startFakePamLlm({ reflect: (v) => { got.push(v); return memory; } });
   return pamClientFor(reflectLlm, { env });
 }
 
@@ -225,8 +225,8 @@ describe("반성", () => {
         const r = await runReflection(db, pamClientFor(pam), DAY);
         expect(r).toMatchObject({ ok: true });
         expect(asked[1]).toContain("컵 상황은 사람이 하는 일이 아니다");
-        // 밤 흐름: 덩어리 기록 → 반성 → 뜻 검사(거절) → 다시 반성 → 뜻 검사
-        expect(pam.calls).toEqual(["chunk", "reflect", "check", "reflect", "check"]);
+        // 밤 흐름: 반성 → 뜻 검사(거절) → 다시 반성 → 뜻 검사
+        expect(pam.calls).toEqual(["reflect", "check", "reflect", "check"]);
         expect(db.candidatesFor(nextDay(DAY))!.memory).toEqual(SEED_C());
       } finally {
         await pam.close();
@@ -362,9 +362,7 @@ describe("반성", () => {
     for (let i = 0; i < 4000; i++) db.add("world", at(i), `컵 cup_${i % 5} 상태 바뀜 번호 ${i}`);
     for (let i = 0; i < 2000; i++) db.add("decision", at(i), `컵 치우기 판단 번호 ${i}`);
     for (let i = 0; i < 400; i++) db.add("feedback", at(i), `피드백 번호 ${i} 다 마신 뒤에 치워 줘`);
-    // 덩어리 기록(초마다 한 덩어리, 긴 글)이 관찰 칸 상한을 넘으면 최근 덩어리부터 담고 첫 줄에 뺀 줄 수를 적는다
-    const long = (v: ChunkView) => ({ chunks: [...new Set(v.lines.map((l) => l.substring(0, 8)))].map((t) => ({ start: t, end: t, text: "덩어리 ".repeat(2000) })) });
-    const r = await runReflection(db, await startPam(SEED_C(), { PAM_MAX_MODEL_LEN: "4000000" }, long), "2026-11-07");
+    const r = await runReflection(db, await startPam(SEED_C(), { PAM_MAX_MODEL_LEN: "4000000" }), "2026-11-07");
     expect(r.ok).toBe(true);
     const sent = got.at(-1)!;
     expect(Buffer.byteLength(sent.observation_text)).toBeLessThanOrEqual(100_000);

@@ -1,7 +1,7 @@
 // 시험용 PAM LLM 자리(OpenAI 호환 /v1/chat/completions, GET /v1/models): 서버 안 PamClient(src/brain/pam/)가 보낸 판단·반성 메시지를 되읽어
 // 요청 값(관찰 텍스트·기억·행동 목록 등)으로 기록하고, 정해진 답 글을 낸다. 서버에는 PAM_LLM_BASE_URL=url(pamLlmEnv)로 붙인다.
 import { createServer, type ServerResponse } from "node:http";
-import { adaptedTemplate, CHUNKING_PROMPT, MARKING_PROMPT, MEMORY_CHECK_HEAD, MEMORY_CHECK_PROMPT, NIGHT_HEAD, NONE, PamClient, pamSettings, PREDICT_LOG, PREDICT_STATE, PREDICT_TIME, REFLECT_FEEDBACK, REFLECT_LOG, REFLECT_MEMORY, REFLECT_SUMMARY } from "../../src/brain/pam/index.js";
+import { adaptedTemplate, MARKING_PROMPT, MEMORY_CHECK_HEAD, MEMORY_CHECK_PROMPT, NIGHT_HEAD, NONE, PamClient, pamSettings, PREDICT_LOG, PREDICT_STATE, PREDICT_TIME, REFLECT_FEEDBACK, REFLECT_LOG, REFLECT_MEMORY, REFLECT_SUMMARY } from "../../src/brain/pam/index.js";
 import { ANY_STATE, AWAY_STATE, CUP_FSM_MEMORY, type FsmMemory } from "../../src/brain/decision.js";
 import { STATES } from "../../src/world/vocab.js";
 import { listenRetry } from "../../src/shared/net.js";
@@ -14,11 +14,9 @@ export type PredictView = { role: "predict"; final_time: string; observation_tex
 export type ReflectView = { role: "reflect"; memory_kind: "list" | "fsm_candidates"; memory: unknown; observation_text: string; action_summary: string; feedback: string | null };
 /** 기억 뜻 검사 요청 값(src/brain/pam/memoryCheck.ts): 검사할 후보 FSM. */
 export type CheckView = { role: "check"; memory: { initial_state: string; states: { id: string; [k: string]: unknown }[] }; observation_text?: undefined };
-/** 덩어리 기록 요청 값: 그날 기록 줄(`HH:MM:SS | 글`). */
-export type ChunkView = { role: "chunk"; lines: string[]; observation_text?: undefined; memory?: undefined };
-/** 시각 찾기 요청 값: 상태 줄, 물은 (상태, 후보 글), 행동, 덩어리 줄, 기록 줄. */
-export type MarkView = { role: "mark"; states: string[]; candidates: [string, string][]; actions: string[]; chunks: string[]; lines: string[]; observation_text?: undefined; memory?: undefined };
-export type PamView = PredictView | ReflectView | CheckView | ChunkView | MarkView;
+/** 시각 찾기 요청 값: 상태 줄, 물은 (상태, 후보 글), 행동, 기록 줄. */
+export type MarkView = { role: "mark"; states: string[]; candidates: [string, string][]; actions: string[]; lines: string[]; observation_text?: undefined; memory?: undefined };
+export type PamView = PredictView | ReflectView | CheckView | MarkView;
 export interface FakePamLlm {
   /** 서버의 PAM_LLM_BASE_URL(…/v1). */
   url: string;
@@ -37,8 +35,6 @@ export interface FakePamLlmOptions {
   reflect?: (v: ReflectView) => unknown;
   /** 기억 뜻 검사 답(기본 통과 { ok: true, items: [] }). 문자열이면 답 글 그대로. */
   check?: (v: CheckView) => unknown;
-  /** 덩어리 기록 답(기본 기록 줄마다 한 덩어리). */
-  chunk?: (v: ChunkView) => unknown;
   /** 시각 찾기 답(기본 물은 것마다 빈 시각, 안 보인 구간 없음). */
   mark?: (v: MarkView) => unknown;
   /** 갈래별 HTTP 상태(예: { predict: 500 }). */
@@ -79,11 +75,10 @@ export function pamView(body: { messages: { content: string | { text: string }[]
   const parts = (body.messages[1]!.content as { text: string }[]).map((p) => p.text);
   if (system === MEMORY_CHECK_PROMPT) return { role: "check", memory: JSON.parse(parts[0]!.substring(MEMORY_CHECK_HEAD.length)) };
   const list = (text: string, head: string) => { const rest = text.substring(head.length); return rest === NONE ? [] : rest.split("\n"); };
-  if (system === CHUNKING_PROMPT) return { role: "chunk", lines: list(parts[0]!, NIGHT_HEAD.record) };
   if (system === MARKING_PROMPT) {
     return {
       role: "mark", states: list(parts[0]!, NIGHT_HEAD.states), candidates: list(parts[1]!, NIGHT_HEAD.candidates).map((l) => { const i = l.indexOf(" | "); return [l.substring(0, i), l.substring(i + 3)] as [string, string]; }),
-      actions: list(parts[2]!, NIGHT_HEAD.actions), chunks: list(parts[3]!, NIGHT_HEAD.chunks), lines: list(parts[4]!, NIGHT_HEAD.record),
+      actions: list(parts[2]!, NIGHT_HEAD.actions), lines: list(parts[3]!, NIGHT_HEAD.record),
     };
   }
   for (const kind of ["fsm", "list"] as const) {
@@ -235,8 +230,6 @@ export function demoReflect(body: Record<string, unknown>): unknown {
 }
 
 const fsmAnswerOf = (v: PredictView, a: Pred | string): Pred | string => (typeof a === "string" ? a : fsmAnswer(v, a));
-/** 기본 덩어리: 기록 줄마다 한 덩어리(같은 시각 줄은 하나로). */
-const everyLine = (v: ChunkView) => ({ chunks: [...new Map(v.lines.map((l) => [l.substring(0, 8), l])).values()].map((l) => ({ start: l.substring(0, 8), end: l.substring(0, 8), text: l.substring(11) })) });
 /** 기본 시각 찾기: 물은 것마다 빈 시각, 안 보인 구간 없음. */
 const nothingFound = (v: MarkView) => ({ candidates: v.candidates.map(([state, candidate]) => ({ state, candidate, times: [] })), actions: v.actions.map((action) => ({ action, times: [] })), unseen: [] });
 
@@ -265,7 +258,7 @@ export async function startFakePamLlm(o: FakePamLlmOptions = {}): Promise<FakePa
     const status = o.status?.[v.role];
     if (status && status !== 200) return send(res, status, { error: { message: "시험 오류" } });
     const answer = v.role === "predict" ? fsmAnswerOf(v, o.predict?.(v) ?? WAIT) : v.role === "check" ? (o.check?.(v) ?? { ok: true, items: [] })
-      : v.role === "chunk" ? (o.chunk?.(v) ?? everyLine(v)) : v.role === "mark" ? (o.mark?.(v) ?? nothingFound(v)) : (o.reflect?.(v) ?? v.memory);
+      : v.role === "mark" ? (o.mark?.(v) ?? nothingFound(v)) : (o.reflect?.(v) ?? v.memory);
     const content = typeof answer === "string" ? answer : JSON.stringify(answer);
     send(res, 200, { id: "fake", object: "chat.completion", created: 0, model: body.model,
       choices: [{ index: 0, message: { role: "assistant", content }, finish_reason: "stop" }], usage: usageOf(o.usage?.[v.role]) });

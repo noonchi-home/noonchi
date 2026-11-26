@@ -2,7 +2,7 @@
 //   npx tsx scripts/beer-experiment.ts --fake                         가짜 AI가 정답처럼 답한다(돈 0). 호출 종류별 요청 크기(입력량)를 잰다.
 //   npx tsx scripts/beer-experiment.ts --real --out <폴더> [--openrouter] [--max-usd 5] [--nights 21] [--only 날짜,날짜,...]
 //        실제 AI로 돌린다(돈 든다). 기본은 OpenAI gpt-5.4-mini(환경변수 OPENAI_API_KEY). --openrouter면 OpenRouter의 qwen/qwen3.5-27b(환경변수 OPENROUTER_API_KEY, 가격 순 제공자).
-//        --only: 이 날짜의 밤만 돌린다(나머지 날의 기록은 그대로 있어서 뒤 밤이 덩어리·시각 찾기를 대신 처리한다). 건너뛴 밤은 반성·뜻 검사를 하지 않을 뿐이다.
+//        --only: 이 날짜의 밤만 돌린다(나머지 날의 기록은 그대로 있어서 뒤 밤이 시각 찾기를 대신 처리한다). 건너뛴 밤은 반성·뜻 검사를 하지 않을 뿐이다.
 //        열쇠는 환경변수에서만 읽고 출력하지 않는다.
 //        기록 DB를 <폴더>/noonchi.db에 두고 이미 끝난 밤은 건너뛴다(끊겨도 같은 호출을 되풀이하지 않는다). 밤마다 결과를 <폴더>/nights.jsonl에 한 줄씩 쓴다.
 //        누적 비용이 --max-usd(기본 5달러)를 넘으면 그 밤 뒤에 멈춘다.
@@ -17,7 +17,7 @@ import { runNight, type NightResult } from "../src/brain/history/night.js";
 import { PamClient } from "../src/brain/pam/index.js";
 import { pamSettings } from "../src/brain/pam/settings.js";
 import type { PamUsage } from "../src/contract/events.js";
-import { BEER_CANDIDATES, beerRecords, fakeChunk, fakeMark, groundMark } from "./beer-experiment-records.js";
+import { BEER_CANDIDATES, beerRecords, fakeMark, groundMark } from "./beer-experiment-records.js";
 import { pamClientFor, pamView, startFakePamLlm, type MarkView } from "../tests/helpers/pam.js";
 
 const text = (m: { content: string | { text?: string }[] }) => (typeof m.content === "string" ? m.content : m.content.map((c) => c.text ?? "").join(""));
@@ -84,8 +84,8 @@ function openRouterClient(key: string, stats: OrStats, dumpPath?: string, ground
     const body = JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>;
     const kw = body.chat_template_kwargs as { enable_thinking?: boolean } | undefined;
     delete body.chat_template_kwargs;
-    // 노닌치는 밤의 AI 호출 넷(덩어리·반성·뜻 검사·시각 찾기)을 모두 반성용 설정(생각 켬, 온도 0.3)으로 보낸다. 이 실험에서는 세 호출(반성·뜻 검사·시각 찾기)만 생각을 켜고
-    // 구조만 다루는 덩어리 만들기는 생각을 끄고 온도 0으로 보낸다. 시각 찾기도 처음에는 끄고 돌렸다가 맥주 꺼내기를 «캔 치우기»에 잘못 붙였다(2026-11-22, 10-17 하루치: 끄면 틀리고 켜면 둘 다 맞음).
+    // 노닌치는 밤의 AI 호출 셋(반성·뜻 검사·시각 찾기)을 모두 반성용 설정(생각 켬, 온도 0.3)으로 보낸다(덩어리 기록은 2026-11-25에 뺐다). 그 밖의 호출은 생각을 끄고 온도 0으로 보낸다.
+    // 시각 찾기도 처음에는 끄고 돌렸다가 맥주 꺼내기를 «캔 치우기»에 잘못 붙였다(2026-11-22, 10-17 하루치: 끄면 틀리고 켜면 둘 다 맞음).
     // 호출 종류는 시스템 프롬프트 첫 문장으로 가른다.
     const first = (body.messages as { content: unknown }[] | undefined)?.[0]?.content;
     const firstText = typeof first === "string" ? first : Array.isArray(first) ? first.map((c: { text?: string }) => c.text ?? "").join("") : "";
@@ -95,7 +95,7 @@ function openRouterClient(key: string, stats: OrStats, dumpPath?: string, ground
     if (check && dumpPath) appendFileSync(dumpPath, `${JSON.stringify({ at: new Date().toISOString(), request: (body.messages as { content: unknown }[]).slice(1) })}
 `);
     const mark = firstText.startsWith("You find when given events happened");
-    // --ground-marks: 시각 찾기는 AI를 부르지 않고 합성 기록이 아는 사건 시각으로 답한다(덩어리·반성·뜻 검사만 실제 AI)
+    // --ground-marks: 시각 찾기는 AI를 부르지 않고 합성 기록이 아는 사건 시각으로 답한다(반성·뜻 검사만 실제 AI)
     if (mark && groundMarks) {
       console.log("  [호출] 시각 찾기: 합성 정답(AI 안 부름)");
       const content = JSON.stringify(groundMark(pamView(body as never) as MarkView));
@@ -105,7 +105,7 @@ function openRouterClient(key: string, stats: OrStats, dumpPath?: string, ground
     const thinking = thinks && kw?.enable_thinking === true;
     const sent = { ...body, ...(thinks ? {} : { temperature: 0 }), reasoning: { enabled: thinking }, provider: { order: ["alibaba"], allow_fallbacks: false }, usage: { include: true } };
     const t0 = Date.now();
-    const think = `${reflect ? "반성" : check ? "뜻 검사" : mark ? "시각 찾기" : "덩어리"} 생각 ${thinking ? "켬" : "끔"}`;
+    const think = `${reflect ? "반성" : check ? "뜻 검사" : mark ? "시각 찾기" : "그 밖"} 생각 ${thinking ? "켬" : "끔"}`;
     const size = JSON.stringify(sent).length;
     let res: Response;
     try {
@@ -183,7 +183,7 @@ async function main(): Promise<void> {
     if (viaOpenRouter) console.log(`OpenRouter가 보고한 값: 호출 ${orStats.calls}번, 제공자별 ${JSON.stringify([...orStats.providers])}, 보고 비용 합계 ${orStats.reportedUsd.toFixed(4)}`);
     return;
   }
-  const pam = await startFakePamLlm({ chunk: fakeChunk, reflect: () => BEER_CANDIDATES, check: () => ({ ok: true, items: [] }), mark: fakeMark });
+  const pam = await startFakePamLlm({ reflect: () => BEER_CANDIDATES, check: () => ({ ok: true, items: [] }), mark: fakeMark });
   try {
     const db = HistoryDb.open(":memory:");
     const stats = beerRecords(db);

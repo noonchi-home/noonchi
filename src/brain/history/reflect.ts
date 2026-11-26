@@ -1,6 +1,6 @@
 // 기억 판본(그날 판단이 쓰는 판본 고르기·고정, 옛 모양 기억이면 새 seed로 다시 시작)과 하루 끝 반성의 입구.
 // 새 판본은 다음 날부터 쓴다. 그날 판단은 그날 처음 정한 판본만 쓴다(논문 memory_lifecycle: fixed_during_day, following_day).
-// 하루 끝 반성은 밤 흐름(src/brain/history/night.ts runNight)이다: 덩어리 기록 → 반성(후보 FSM) → 코드·뜻 검사 → 시각 찾기 → 채택 검사 → 로봇 FSM → 한 트랜잭션 저장.
+// 하루 끝 반성은 밤 흐름(src/brain/history/night.ts runNight)이다: 반성(후보 FSM) → 코드·뜻 검사 → 시각 찾기 → 채택 검사 → 로봇 FSM → 한 트랜잭션 저장.
 import { CUP_FSM_MEMORY, isOldFsm, validateMemory, type PamMemory } from "../decision.js";
 import type { PamClient } from "../pam/index.js";
 import type { HistoryDb } from "./db.js";
@@ -65,7 +65,7 @@ function dayMemory(db: HistoryDb, day: string, o: { log?: (line: string) => void
   return { memory: CUP_FSM_MEMORY, kind: "fsm", version };
 }
 
-/** 하루 끝 반성 = 밤 흐름(src/brain/history/night.ts runNight): 덩어리 기록 → 반성 → 검사 → 시각 찾기 → 채택 검사 → 로봇 FSM → 한 트랜잭션 저장.
+/** 하루 끝 반성 = 밤 흐름(src/brain/history/night.ts runNight): 반성 → 검사 → 시각 찾기 → 채택 검사 → 로봇 FSM → 한 트랜잭션 저장.
  *  filter: 습관 거르기(기본 keepAll, 기록 줄을 읽지 않는다). windowDays: 따로 넘긴 거르기에 주는 지난 기록 날 수(기본 30, 반성한 날 포함).
  *  dir: 시각 찾기·검사 결과 사본 폴더(runtime/homes/<집>/habit). signal로 끊으면(서버를 끌 때) PAM 요청을 끊고 기록 DB에 아무것도 쓰지 않는다. */
 export async function runReflection(db: HistoryDb, pam: PamClient, day: string, o: NightOptions = {}): Promise<ReflectResult> {
