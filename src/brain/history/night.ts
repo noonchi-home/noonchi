@@ -38,25 +38,6 @@ const HABIT_KINDS = ["world", "device", "decision", "execution", "feedback"] as 
 /** 덩어리 기록·시각 찾기가 읽는 그날 기록 줄 종류(사람·물건·가전·사람 말). */
 const LINE_KINDS = ["detection", "world", "device", "feedback"] as const;
 
-/** 후보 FSM에서 기본 기억(seed)과 똑같이 남은 부분의 뜻 검사 ref(상태 id, 상태.next[i], 상태.rules[i].candidates[j], 두 seed 상태의 합치기 id1+id2). */
-export function seedRefs(c: CandidateFsm): Set<string> {
-  const seed = new Map(candidateFsmOf(CUP_FSM_MEMORY).states.map((s) => [s.id, s]));
-  const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
-  const out = new Set<string>();
-  const kept: string[] = [];
-  for (const s of c.states) {
-    const z = seed.get(s.id);
-    if (!z) continue;
-    if (s.description === z.description && same(s.activity, z.activity)) { out.add(s.id); kept.push(s.id); }
-    s.next.forEach((e, i) => { if (z.next.some((x) => same({ to: x.to, on: x.on }, { to: e.to, on: e.on }))) out.add(`${s.id}.next[${i}]`); });
-    s.rules.forEach((r, i) => r.candidates.forEach((k, j) => {
-      if (z.rules.some((x) => x.to === r.to && x.action === r.action && x.candidates.some((y) => y.on === k.on && (y.when ?? null) === (k.when ?? null)))) out.add(`${s.id}.rules[${i}].candidates[${j}]`);
-    }));
-  }
-  for (const a of kept) for (const b of kept) if (a !== b) out.add(`${a}+${b}`);
-  return out;
-}
-
 /** PAM 사용량 더하기(밤 흐름은 여러 번 부른다): 토큰은 더하고, 비용은 모두 알 때만 더하며, 모델은 다르면 이어 적는다. */
 export function addUsage(a: PamUsage | undefined, b: PamUsage): PamUsage {
   if (!a) return { ...b };
@@ -289,12 +270,8 @@ export async function runNight(db: HistoryDb, pam: PamClient, day: string, o: Ni
       }
       const guarded = settingsGuard(raw);
       const verdict = await pam.checkMemory(guarded.candidates, call);
-      // 기본 기억(seed)에서 안 바뀐 부분은 팀이 정한 것이라 뜻 검사가 거절해도 무시한다(2026-11-25 사용자 결정). 뜻 검사는 반성이 새로 쓰거나 바꾼 부분만 막는다.
-      const fixed = seedRefs(guarded.candidates);
-      const bad = verdict.items.filter((x) => !x.ok && !fixed.has(x.ref.trim()));
-      const ok = verdict.ok || (bad.length === 0 && verdict.items.some((x) => !x.ok));
-      return ok ? { candidates: guarded.candidates, notes: guarded.notes, why: null }
-        : { candidates: null, notes: [], why: bad.map((x) => `${x.ref}: ${x.why}`).join(" / ") };
+      return verdict.ok ? { candidates: guarded.candidates, notes: guarded.notes, why: null }
+        : { candidates: null, notes: [], why: verdict.items.filter((x) => !x.ok).map((x) => `${x.ref}: ${x.why}`).join(" / ") };
     };
     let got = await attempt(feedback);
     if (o.signal?.aborted) return cancelled();

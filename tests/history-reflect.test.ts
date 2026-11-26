@@ -225,29 +225,6 @@ describe("반성", () => {
         await pam.close();
       }
     });
-    it("뜻 검사가 기본 기억(seed)에서 안 바뀐 상태·화살표만 거절하면 무시하고 통과한다(새로 쓴 부분 거절은 그대로 막는다)", async () => {
-      const seedOnly = { ok: false, items: [
-        { kind: "state", ref: "drinking", ok: false, why: "두 가지 활동" },
-        { kind: "condition", ref: "away.next[0]", ok: false, why: "두 가지 활동" },
-        { kind: "merge", ref: "drinking+watching_tv", ok: false, why: "같은 활동" },
-      ] };
-      const pam = await startFakePamLlm({ reflect: () => SEED_C(), check: () => seedOnly });
-      try {
-        const db = dayWithLog();
-        expect(await runReflection(db, pamClientFor(pam), DAY)).toMatchObject({ ok: true });
-        expect(pam.calls).toEqual(["chunk", "reflect", "check"]);
-      } finally {
-        await pam.close();
-      }
-      // seed 상태 설명을 바꾸면 그 상태는 새로 쓴 부분이라 거절이 살아 있다
-      const changed = () => { const c = SEED_C(); c.states.find((s) => s.id === "drinking")!.description = "바꾼 설명"; return c; };
-      const pam2 = await startFakePamLlm({ reflect: () => changed(), check: () => seedOnly });
-      try {
-        expect(await runReflection(dayWithLog(), pamClientFor(pam2), DAY)).toMatchObject({ ok: false, error: "drinking: 두 가지 활동 / drinking+watching_tv: 같은 활동" });
-      } finally {
-        await pam2.close();
-      }
-    });
     it("반성 답이 기억 모양부터 틀리면(옛 모양 rules) 그 까닭을 피드백에 붙여 한 번 다시 반성한다", async () => {
       const asked: (string | null)[] = [];
       const OLD = { initial_state: "away", states: [{ id: "away", description: "d", rules: [], next: [] }] };
