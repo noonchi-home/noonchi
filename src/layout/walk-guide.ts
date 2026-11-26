@@ -228,7 +228,9 @@ export function walkingMap(floor: FloorPlan, scene: SceneJson, footprint?: (type
       const gates = [lastGate,gate].filter((g):g is Portal=>!!g);
       const raw = end[i-1]!;
       const start = i===1 ? nearestStart(raw,current,gates) : raw;
-      let grid = start && indoor(start,p,current,gates);
+      // 폰이 문간에 서 있으면(그 문을 넣어야 설 수 있는 벽 여유 안) 격자 길은 문을 보지 않아 벽 여유를 지나는 문 앞 경유점을 낸다: 문을 넣고 곧게 갈 수 있으면 곧은 선이다
+      const doorway = i === 1 && start === raw && !clear(raw, raw, current) && clear(raw, p, current, gates);
+      let grid = doorway ? [p] : start && indoor(start,p,current,gates);
       // 가구 칸으로 길이 막히면 벽만 보는 길을, 그것도 없으면 문 앞 자리를 지난다: 곧은 선이 벽을 지나는 안내를 내지 않는다.
       // 이 점들은 가구를 지날 수 있어 모두 bearing이다(지나는 곧은 선을 걸을 수 있다고 하지 않는다).
       let loose = false;

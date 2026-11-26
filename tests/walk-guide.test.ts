@@ -206,6 +206,14 @@ describe("walking map", () => {
         expect(out, JSON.stringify(from)).toMatchObject({ arrived: true, lost: 0 });
       }
     });
+    it("guides a phone standing in the living-room side of the bedroom doorway (inside the wall margin) straight through that door", () => {
+      // (6.30, 7.65): door_bed_sw 문점에서 0.178m(문 반경 0.1997m 안), bed_sw_top 벽에서 0.169m(벽 여유 0.255m 안)
+      const nav = new Navigation();
+      for (const t of [100, 200]) nav.pose({ position: [6.3, 7.65], quality: "usable", pose_gen: 1, observed_ms: t });
+      const r = nav.read("go", map, [5.5, 11.7], 0.35, true, 200);
+      expect(r.distance).not.toBeNull();
+      expect(r.guide?.remaining[0]).toMatchObject({ kind: "portal", id: "door_bed_sw" });
+    });
     it("approaches every door from a point on the current room's side when the straight line would cross a wall", () => {
       // 식탁 관찰 자리에서 침실 1 문까지 곧은 선은 벽을 지난다(거실 대기 자리는 문 앞으로 옮겨 곧게 보인다)
       const guide = map.plan(station("meal_watch"), front("desk_small"), 0.35, true)!;
