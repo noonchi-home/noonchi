@@ -399,12 +399,29 @@ export function walkWay(scene: SceneJson & { stations?: StationMap }, footprintO
   return { grid: walkGrid(geometry, WALK_STEP, furnitureBodies(scene, footprintOf)), geometry, fronts, standby };
 }
 
-/** 이동 목적지: 가구 앞자리, 없으면 그 방 대기 자리, 없으면 near에서 가장 가까운 격자 점(격자 점은 모두 가구 상자 + 여유 밖이다). 격자 점이 없으면 null. */
+/** 이동 목적지: 가구 앞자리, 없으면 그 방 대기 자리, 없으면 near에서 가장 가까운 격자 점(격자 점은 모두 가구 상자 + 여유 밖이다).
+ *  격자 점이 없는 방(로봇이 갈 수 없는 방)의 물건이면 그 방으로 들어가는 문(near에서 가장 가까운 문)의 갈 수 있는 쪽 방에서 문 점에 가장 가까운 격자 점이다.
+ *  그런 문이 없거나 격자 점이 없으면 null(계획은 방 길로 잇는다). */
 export function moveStop(way: WalkWay, objectId: string | undefined, room: string | null | undefined, near: Vec2): Vec2 | null {
   const front = objectId ? way.fronts.get(objectId) : undefined;
   if (front) return front;
   const standby = room ? way.standby.get(room) : undefined;
   if (standby) return standby;
+  const { floor } = way.geometry;
+  const lattice = way.grid.points.slice(0, way.grid.lattice);
+  const dist = (a: Vec2, b: Vec2) => Math.hypot(a[0] - b[0], a[1] - b[1]);
+  if (room && !lattice.some((q) => roomAt(floor, q) === room)) {
+    const reachable = new Set(floor.robot.reachable);
+    let door: { point: Vec2; side: string } | null = null;
+    for (const p of floor.portals) {
+      const side = p.rooms.includes(room) ? p.rooms.find((r) => r !== room && reachable.has(r)) : undefined;
+      if (side && (!door || dist(p.point, near) < dist(door.point, near))) door = { point: p.point, side };
+    }
+    if (!door) return null;
+    let at: Vec2 | null = null;
+    for (const q of lattice) if (roomAt(floor, q) === door.side && (!at || dist(q, door.point) < dist(at, door.point))) at = q;
+    return at;
+  }
   let best: Vec2 | null = null;
   for (const q of way.grid.points)
     if (!best || Math.hypot(q[0] - near[0], q[1] - near[1]) < Math.hypot(best[0] - near[0], best[1] - near[1])) best = q;

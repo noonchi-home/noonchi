@@ -12,7 +12,8 @@ import { floorPlanFrom, roomAt } from "../src/layout/route.js";
 import { loadScene } from "../src/layout/scene.js";
 import { DEFAULT_TWIN_DIR } from "../src/layout/twin-files.js";
 import { WALK_THROUGH_TYPES } from "../src/layout/walk-guide.js";
-import { gridRoute, walkWay } from "../src/layout/walk-grid.js";
+import { gridRoute, moveStop, walkWay } from "../src/layout/walk-grid.js";
+import { assemblePlan } from "../src/agent/planShape.js";
 import { cupSteps, planContext } from "./helpers/planner.js";
 
 const home = resolveHome(DEFAULT_TWIN_DIR, "mokryeon_180b");
@@ -121,5 +122,45 @@ describe("처음·끝 연결선도 같은 길이면 덜 꺾이는 쪽(검토 R2)
     expect(path.slice(0, 3)).toEqual([[9.96, 5.15], [9.96, 5.1], [9.3, 5.1]]);
     expect(path.at(-1)).toEqual(front(sink.id));
     expect(path).toHaveLength(7);
+  });
+});
+
+describe("갈 수 없는 방(격자 점이 없는 방) 물건의 목적지는 그 방으로 들어가는 문의 갈 수 있는 쪽 격자 점(검토 R1·R4)", () => {
+  const way = walkWay(scene, footprint);
+  const at = (id: string) => objects.find((o) => o.id === id)!;
+
+  // 북쪽 발코니 문 door_balcony_north [8.465625, 1.4625](주방 벽 kitchen_balcony)의 주방 쪽 가장 가까운 격자 점은 [8.1, 1.5],
+  // 욕실 3 문 door_bath_east [14.34375, 7.81875](침실 bed_se 벽)의 침실 쪽 가장 가까운 격자 점은 [14.4, 8.1]이다
+  it.each([
+    ["kimchi_fridge_bce0bf96", "balcony_north", [8.1, 1.5], "kitchen"],
+    ["washer_d559f0ae", "balcony_north", [8.1, 1.5], "kitchen"],
+    ["dryer_7aa61816", "balcony_north", [8.1, 1.5], "kitchen"],
+    ["freezer_0c022ae2", "balcony_north", [8.1, 1.5], "kitchen"],
+    ["toilet_bath_east", "bath_east", [14.4, 8.1], "bed_se"],
+  ] as const)("%s(%s) → %j(%s)", (id, room, stop, side) => {
+    expect(at(id).room).toBe(room);
+    const got = moveStop(way, id, room, at(id).plan.position);
+    expect(got).toEqual(stop);
+    expect(roomAt(way.geometry.floor, got!)).toBe(side);
+  });
+
+  it("갈 수 있는 방으로 난 문이 없는 방(현관 앞 vestibule)은 목적지가 없다(계획은 방 길로 잇는다)", () => {
+    const cabinet = at("storage_cabinet_141e4df4");
+    expect(cabinet.room).toBe("vestibule");
+    expect(moveStop(way, cabinet.id, "vestibule", cabinet.plan.position)).toBeNull();
+  });
+
+  it("거실 대기 자리에서 세탁기 → 건조기 계획: 두 이동 모두 주방 쪽 발코니 문 앞 [8.1, 1.5]에서 끝나고, 길이 다른 방 벽 앞에서 끝나지 않는다", () => {
+    const base = floorPlanFrom(scene);
+    const floor = { ...base, robot: { ...base.robot, position: standby, room: roomAt(base, standby) } };
+    const [washer, dryer] = [at("washer_d559f0ae"), at("dryer_7aa61816")];
+    const view = assemblePlan(floor, { id: "laundry", goal: "세탁물 건조기로 옮기기", judgment: "", source: "agent", dryRun: true, nowIso: "2026-11-26T00:00:00.000Z" }, [
+      { kind: "move", label: "세탁기로 가기", target: { objectId: washer.id, room: "balcony_north" }, to: washer.plan.position },
+      { kind: "act", label: "세탁물 꺼내기", target: { objectId: washer.id } },
+      { kind: "move", label: "건조기로 가기", target: { objectId: dryer.id, room: "balcony_north" }, to: dryer.plan.position },
+    ], way);
+    expect(view.legs).toHaveLength(2);
+    for (const leg of view.legs) expect(view.path[leg.end]).toEqual([8.1, 1.5]);
+    for (const p of view.path) expect(["living", "kitchen"]).toContain(roomAt(floor, p));
   });
 });
