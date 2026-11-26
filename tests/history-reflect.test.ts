@@ -283,35 +283,7 @@ describe("반성", () => {
       expect(logs.at(-1)).toMatchObject({ type: "reflection", dropped: [{ reason: "coach" }, { reason: "settings" }] });
     });
 
-    it("filter는 지난 30일 world·device·decision·execution·feedback 줄을 시각 순으로 받고, 그 함수가 남긴 기록은 dropped에 있다. 그 함수는 정한 습관 화살표를 바꾸지 못한다", async () => {
-      const db = HistoryDb.open(":memory:");
-      const day = (d: number, h = 1) => Date.UTC(2026, 9, d, h); // 서울 시간대 10월 d일 10시
-      db.add("world", Date.UTC(2026, 9, 8, 1), "31일 전 world"); // 10-08: 30일 밖
-      db.add("world", day(9), "30일 안 world");
-      db.add("device", day(20), "거실 에어컨 켜짐");
-      db.add("detection", day(21), "사람 보임"); // 종류 밖
-      db.add("decision", Date.UTC(2026, 10, 7, 0), "컵 치우기");
-      db.add("execution", Date.UTC(2026, 10, 7, 0, 1), "완료");
-      db.add("feedback", Date.UTC(2026, 10, 7, 0, 2), "고마워");
-      db.add("world", Date.UTC(2026, 10, 7, 15, 1), "다음 날 world"); // 서울 11-08 00:01
-      const seen: { rows: string[]; windowDays: number; offsetMinutes: number; day: string }[] = [];
-      const r = await runReflection(db, await startPam(SEED_C()), "2026-11-07", {
-        filter: (i) => {
-          seen.push({ rows: i.rows.map((x) => `${x.kind}:${x.text}`), windowDays: i.windowDays, offsetMinutes: i.offsetMinutes, day: i.day });
-          const memory = structuredClone(i.proposed);
-          memory.states.find((s) => s.id === "watching_tv")!.next = [];
-          return { memory, notes: [{ from: "watching_tv", to: "watching_tv", on: "사용자가 덥다고 말하거나 더워서 부채질을 한다.", action: "에어컨 켜기", kept: false, reason: "too_few", seen: 1, fired: 1 }] };
-        },
-      });
-      expect(seen).toEqual([{
-        day: "2026-11-07", windowDays: 30, offsetMinutes: 540,
-        rows: ["world:30일 안 world", "device:거실 에어컨 켜짐", "decision:컵 치우기", "execution:완료", "feedback:고마워"],
-      }]);
-      expect(r).toMatchObject({ ok: true, learned: [], dropped: [{ from: "watching_tv", reason: "too_few" }] });
-      expect(db.memoryVersion(2)!.memory).toEqual(CUP_FSM_MEMORY);
-    });
-
-    it("기본 거르기(keepAll)로 반성하면 지난 30일 기록 줄을 읽지 않는다(기록 DB가 커도 서버를 멈추지 않게)", async () => {
+    it("반성은 지난 30일 기록 줄을 한꺼번에 읽지 않는다(기록 DB가 커도 서버를 멈추지 않게)", async () => {
       const db = HistoryDb.open(":memory:");
       db.add("detection", t, "사람 보임");
       const list = vi.spyOn(db, "list");
@@ -322,17 +294,6 @@ describe("반성", () => {
       expect(list.mock.calls.some((c) => c[0].since !== undefined)).toBe(false);
     });
 
-    it("거르기 결과가 기억 모양 검사에 걸리면 반성은 실패로 남고 판본은 늘지 않는다", async () => {
-      const db = HistoryDb.open(":memory:");
-      db.add("detection", t, "사람 보임");
-      const r = await runReflection(db, await startPam(SEED_C()), "2026-11-07", {
-        filter: (i) => ({ memory: { ...i.proposed, initial_state: "nowhere" }, notes: [] }),
-      });
-      expect(r.ok).toBe(false);
-      // 반성은 그날 기억을 읽기만 하므로 실패하면 seed 판본도 남기지 않는다
-      expect(db.latestMemoryVersion()).toBeNull();
-      expect(db.list({ kinds: ["reflection"] }).at(-1)!.text).toMatch(/^반성 실패: /);
-    });
   });
 
   it("다음 날 판단이 이미 판본을 정했으면 그날은 바꾸지 않고 그다음 날부터 쓴다", async () => {
@@ -465,19 +426,6 @@ describe("반성 API", () => {
     ac.abort();
     expect(await run).toEqual({ ok: false, error: REFLECT_TEXT.cancelled });
     expect(db.pinnedMemory("2026-11-07")).toBeNull();
-    expect(db.latestMemoryVersion()).toBeNull();
-    expect(db.list({ kinds: ["reflection"] })).toEqual([]);
-  });
-
-  it("습관 거르기 중 끊기면 새 판본·성공 기록을 남기지 않는다", async () => {
-    const db = HistoryDb.open(":memory:");
-    db.add("detection", Date.UTC(2026, 10, 6, 23), "사람 보임");
-    const ac = new AbortController();
-    const fetchImpl = (async (_u: unknown, init?: RequestInit) => Response.json({ model: "pam", choices: [{ message: { content: answerOf(init) }, finish_reason: "stop" }] })) as unknown as typeof fetch;
-    const r = await runReflection(db, pamClientFor({ url: "http://pam.invalid/v1" }, { fetchImpl }), "2026-11-07", {
-      signal: ac.signal, filter: async (x) => { ac.abort(); return { memory: x.proposed, notes: [] }; },
-    });
-    expect(r).toEqual({ ok: false, error: REFLECT_TEXT.cancelled });
     expect(db.latestMemoryVersion()).toBeNull();
     expect(db.list({ kinds: ["reflection"] })).toEqual([]);
   });

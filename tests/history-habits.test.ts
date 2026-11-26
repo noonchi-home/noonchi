@@ -2,7 +2,7 @@
 import { describe, expect, it } from "vitest";
 import { CUP_FSM_MEMORY, validateCandidateFsm } from "../src/brain/decision.js";
 import { candidateFsmOf } from "../src/brain/pam/adopt.js";
-import { keepAll, learnedEdges, settingsGuard } from "../src/brain/history/habits.js";
+import { learnedEdges, settingsGuard } from "../src/brain/history/habits.js";
 
 describe("반성 뒤 검사(후보 FSM)", () => {
   it("배운 화살표는 행동 있는 화살표 가운데 전에 없던 것이다", () => {
@@ -51,15 +51,5 @@ describe("반성 뒤 검사(후보 FSM)", () => {
     const old = { initial_state: "away", states: [{ id: "away", description: "d", rules: [{ trigger: "t", action: "컵 치우기" }], next: [] }] };
     expect(() => validateCandidateFsm(old, CUP_FSM_MEMORY)).toThrow(/incorrect fields/);
     expect(() => validateCandidateFsm(CUP_FSM_MEMORY, CUP_FSM_MEMORY)).toThrow(/incorrect fields/);
-  });
-});
-
-describe("습관 거르기 기본(keepAll)", () => {
-  it("proposed를 그대로 두고 새 화살표마다 kept true·reason habit이다", async () => {
-    const proposed = structuredClone(CUP_FSM_MEMORY);
-    proposed.states[0]!.next.push({ to: "away", on: "사용자가 외출하러 나간다.", action: "컵 치우기" });
-    const out = await keepAll({ day: "2026-11-07", windowDays: 30, offsetMinutes: 540, previous: CUP_FSM_MEMORY, proposed, rows: [] });
-    expect(out.memory).toBe(proposed);
-    expect(out.notes).toEqual([{ from: "drinking", to: "away", on: "사용자가 외출하러 나간다.", action: "컵 치우기", kept: true, reason: "habit" }]);
   });
 });

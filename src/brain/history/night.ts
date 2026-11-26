@@ -19,7 +19,7 @@ import type { Ctx } from "../../contract/pam.js";
 import { clock, type Marks } from "../pam/marks.js";
 import { headWithin } from "../../shared/cut.js";
 import type { HistoryDb } from "./db.js";
-import { edgeKey, learnedEdges, settingsGuard, type EdgeLine, type HabitFilter, type HabitRuleNote } from "./habits.js";
+import { learnedEdges, settingsGuard, type EdgeLine, type HabitRuleNote } from "./habits.js";
 import { NIGHT_TEXT, REFLECT_TEXT } from "./labels.js";
 import { memoryForDay, readDayMemory } from "./reflect.js";
 import { daySummary } from "./summary.js";
@@ -33,8 +33,6 @@ const RETRY_WHY_MAX = 1_000;
 const CHECKS_MAX = 4_000;
 /** 그날 기록이 있다고 보는 종류. */
 export const DAY_KINDS = ["detection", "world", "device", "vlm", "yolo", "decision", "execution", "feedback"] as const;
-/** 습관 거르기에 넘기는 기록 종류. */
-const HABIT_KINDS = ["world", "device", "decision", "execution", "feedback"] as const;
 /** 시각 찾기가 읽는 그날 기록 줄 종류(사람·물건·가전·사람 말). */
 const LINE_KINDS = ["detection", "world", "device", "feedback"] as const;
 
@@ -130,7 +128,7 @@ const PROMPT_MARK = createHash("sha256").update(MARKING_PROMPT).digest("hex").sl
 const recordMark = (lines: readonly { line: string }[]) => `${lines.length}:${createHash("sha256").update(lines.map((l) => l.line).join("\n")).digest("hex")}`;
 
 export interface NightOptions {
-  now?: () => number; emit?: (l: BrainLog) => void; filter?: HabitFilter; windowDays?: number; signal?: AbortSignal;
+  now?: () => number; emit?: (l: BrainLog) => void; signal?: AbortSignal;
   /** 시각 찾기·검사 결과 사본 폴더(runtime/homes/<집>/habit). 없으면 사본을 쓰지 않는다. */
   dir?: string;
   /** 파일 쓰기(기본 writeFileSync, 시험이 실패를 넣는다). */
@@ -314,25 +312,10 @@ export async function runNight(db: HistoryDb, pam: PamClient, day: string, o: Ni
       return { ...base, passed: base.passed || ctxRules.length > 0, state: r.state, action: r.action, on: r.cand.on, when: r.cand.when ?? null, ...(ctxRules.length ? { ctx_rules: ctxRules } : {}) };
     });
     const ctxOf = new Map<string, Ctx[]>(checks.flatMap((c) => (c.ctx_rules?.length ? [[adoptKey(c.state, c.action, { on: c.on, ...(c.when ? { when: c.when } : {}) }), c.ctx_rules.map((x) => x.ctx)] as const] : [])));
-    let passed = new Set(checks.filter((c) => c.passed).map((c) => adoptKey(c.state, c.action, { on: c.on, ...(c.when ? { when: c.when } : {}) })));
-    // 5) 로봇 FSM(seed 화살표 + 통과한 배우는 행동 후보, 맥락이 통과했으면 맥락 있는 화살표) → 습관 거르기(배운 화살표만 뺄 수 있음) → 코드 검사
-    let robot = adoptedFsm(candidates, passed, CUP_FSM_MEMORY, ctxOf);
-    let filtered: HabitRuleNote[] = [];
-    if (o.filter) {
-      const windowDays = o.windowDays ?? 30;
-      const dayStart = Date.parse(`${day}T00:00:00Z`) - db.offsetMinutes * 60_000;
-      // 기록 줄은 따로 넘긴 거르기만 읽는다(기본은 쓰지 않으니 30일 기록을 올리지 않는다: 기록 DB가 커도 서버를 멈추지 않게)
-      const rows = db.list({ since: dayStart - (windowDays - 1) * DAY_MS, until: dayStart + DAY_MS - 1, kinds: [...HABIT_KINDS], limit: Number.MAX_SAFE_INTEGER });
-      const out = await o.filter({ day, windowDays, offsetMinutes: db.offsetMinutes, previous: today, proposed: robot, rows });
-      if (o.signal?.aborted) return cancelled();
-      const kept = new Set(learnedEdges(CUP_FSM_MEMORY, validateMemory(out.memory, "fsm") as FsmMemory).map(edgeKey));
-      const removed = learnedEdges(CUP_FSM_MEMORY, robot).filter((e) => !kept.has(edgeKey(e))).map((e) => adoptKey(e.from, e.action, { on: e.on, ...(e.when ? { when: e.when } : {}) }));
-      passed = new Set([...passed].filter((k) => !removed.includes(k)));
-      robot = adoptedFsm(candidates, passed, CUP_FSM_MEMORY, ctxOf);
-      filtered = out.notes;
-    }
-    const memory = validateMemory(robot, "fsm") as FsmMemory;
-    const dropped = [...got.notes, ...filtered].filter((n) => !n.kept);
+    const passed = new Set(checks.filter((c) => c.passed).map((c) => adoptKey(c.state, c.action, { on: c.on, ...(c.when ? { when: c.when } : {}) })));
+    // 5) 로봇 FSM(seed 화살표 + 통과한 배우는 행동 후보, 맥락이 통과했으면 맥락 있는 화살표) → 코드 검사. 습관 거르기 자리는 2026-11-25에 뺐다(채택 검사가 그 일을 한다)
+    const memory = validateMemory(adoptedFsm(candidates, passed, CUP_FSM_MEMORY, ctxOf), "fsm") as FsmMemory;
+    const dropped = got.notes.filter((n) => !n.kept);
     const learned = learnedEdges(today, memory).filter((r) => !TASKS[r.action]?.coach);
     const active = learnedEdges(CUP_FSM_MEMORY, memory).filter((r) => !TASKS[r.action]?.coach);
     const passedList = checks.filter((c) => passed.has(adoptKey(c.state, c.action, { on: c.on, ...(c.when ? { when: c.when } : {}) })))
