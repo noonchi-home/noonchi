@@ -37,7 +37,21 @@ async function getJson<T>(url: string): Promise<T> {
 export const wholeCamera = (v: OrthoCamera, box: Box): MapCamera => ({ cx: v.width / 2, cy: v.height / 2, scale: Math.max(box.width / v.width, box.height / v.height) });
 
 /** data: 구운 장면(/api/scene/baked, 배치를 고치기 전). 구운 GLB 물건의 상태·정적 합치기·기본 보기를 잇는다. layout: 고친 배치(/api/scene). 원뿔 걷기 격자를 만든다. */
-interface Loaded { data: SceneData; layout: SceneData; manifest: Manifest; gltf: { scene: THREE.Group }; ground: THREE.Texture | null; maps: Lightmaps }
+interface Loaded { data: SceneData; layout: SceneData; manifest: Manifest; gltf: { scene: THREE.Group }; ground: THREE.Texture | null; maps: Lightmaps; json: EngineIo["json"] }
+
+/** 엔진이 밖에서 받는 것: 렌더러, 서버 JSON, 구운 GLB, 그림. 시험은 가짜로 바꿔 넣어 불러오기·생성자를 그대로 지난다. */
+export interface EngineIo {
+  renderer(canvas: HTMLCanvasElement): THREE.WebGLRenderer;
+  json<T>(url: string): Promise<T>;
+  gltf(url: string): Promise<{ scene: THREE.Group }>;
+  texture(url: string): Promise<THREE.Texture>;
+}
+const WEB_IO: EngineIo = {
+  renderer: (canvas) => new THREE.WebGLRenderer({ canvas, antialias: true, stencil: true, preserveDrawingBuffer: false }),
+  json: getJson,
+  gltf: (url) => new GLTFLoader().loadAsync(url),
+  texture: (url) => new THREE.TextureLoader().loadAsync(url),
+};
 
 /** 트윈이 읽는 두 장면: 구운 장면(baked)과 고친 배치(layout). 서버 배치 맞추기 메시지는 구운 장면과의 차이만 보낸다(뺀 물건은 remove로 떼고 숨긴다). */
 export async function twinScenes(get: <T>(url: string) => Promise<T>): Promise<{ baked: SceneData; layout: SceneData }> {
@@ -89,12 +103,13 @@ export class TwinEngine {
   private renders = 0;
   private disposed = false;
 
-  static async load(o: { canvas: HTMLCanvasElement; home: string; box: Box; dpr: number }): Promise<TwinEngine> {
+  static async load(o: { canvas: HTMLCanvasElement; home: string; box: Box; dpr: number; io?: EngineIo }): Promise<TwinEngine> {
+    const io = o.io ?? WEB_IO;
     const view = BAKE_VIEWS[o.home];
     const light = HOME_LIGHTS[o.home];
     if (!view || !light) throw new Error(`no baked view for ${o.home}`);
     installAgxHighContrast();
-    const renderer = new THREE.WebGLRenderer({ canvas: o.canvas, antialias: true, stencil: true, preserveDrawingBuffer: false });
+    const renderer = io.renderer(o.canvas);
     try {
       renderer.setPixelRatio(Math.min(o.dpr, 2));
       renderer.setSize(o.box.width, o.box.height, false);
@@ -104,15 +119,14 @@ export class TwinEngine {
       renderer.localClippingEnabled = true;
       // 한 그림에 두 번(집, 맞춘 눈) 그리니 그림마다 직접 센다
       renderer.info.autoReset = false;
-      const [{ baked: data, layout }, manifest] = await Promise.all([twinScenes(getJson), getJson<Manifest>(`${BAKE}manifest.json`)]);
-      const tex = new THREE.TextureLoader();
+      const [{ baked: data, layout }, manifest] = await Promise.all([twinScenes(io.json), io.json<Manifest>(`${BAKE}manifest.json`)]);
       const [gltf, ground, ...lms] = await Promise.all([
-        new GLTFLoader().loadAsync(BAKE + manifest.glb),
-        manifest.ground ? tex.loadAsync(BAKE + manifest.ground.file) : Promise.resolve(null),
-        ...manifest.lightmaps.map((lm) => tex.loadAsync(BAKE + lm.webp)),
+        io.gltf(BAKE + manifest.glb),
+        manifest.ground ? io.texture(BAKE + manifest.ground.file) : Promise.resolve(null),
+        ...manifest.lightmaps.map((lm) => io.texture(BAKE + lm.webp)),
       ]);
       const maps: Lightmaps = Object.fromEntries(manifest.lightmaps.map((lm, i) => [lm.name, { tex: asLightmap(lms[i]!, manifest.channel, lm.name), intensity: lm.intensity }]));
-      const engine = new TwinEngine(renderer, view, light, o.box, { data, layout, manifest, gltf, ground, maps });
+      const engine = new TwinEngine(renderer, view, light, o.box, { data, layout, manifest, gltf, ground, maps, json: io.json });
       await renderer.compileAsync(engine.scene, engine.camera);
       // 눈이 처음 올 때 셰이더를 만들며 끊기지 않게 숨은 원뿔 재질도 미리 만든다
       await renderer.compileAsync(engine.eyeLayer, engine.camera);
@@ -129,7 +143,7 @@ export class TwinEngine {
     readonly view: OrthoCamera,
     light: (typeof HOME_LIGHTS)[string],
     box: Box,
-    { data, layout, manifest, gltf, ground, maps }: Loaded,
+    { data, layout, manifest, gltf, ground, maps, json }: Loaded,
   ) {
     this.box = { width: box.width, height: box.height };
     this.cur = wholeCamera(view, this.box);
@@ -155,7 +169,7 @@ export class TwinEngine {
     this.merge = bakedMerge(this.scene, this.root, data.objects, { clip: manifest.view.clip, dynamic: Object.keys(manifest.dynamic ?? {}), keep: [...shown.uppers, ...shown.rails] }, find);
     const merged = this.merge.build();
     // 맞춘 눈: 합치기 뒤 따로 둔 층이라 합쳐지지 않는다. 벽에서는 꼭짓점 공 반지름만큼 띄운다
-    this.guide = liveWalkGuide(layout, CONE.apex, () => getJson<{ scene: SceneData }>("/api/scene").then((r) => r.scene));
+    this.guide = liveWalkGuide(layout, CONE.apex, () => json<{ scene: SceneData }>(SCENE_PATH).then((r) => r.scene));
     this.eye = createEyeCone({ guide: this.guide });
     this.eyeLayer.add(this.eye.group);
     this.info = { raised: shown.raised, actions: shown.actions, materials: { ...materials }, merged };
