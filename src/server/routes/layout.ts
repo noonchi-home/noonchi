@@ -10,6 +10,13 @@ export function layoutRoutes({ route, opts, sameHome }: RouteKit): void {
     return { ok: true, scene };
   });
 
+  // 배치 맞추기 메시지(syncMessages)는 뷰어가 이 장면을 읽었다고 보고 차이만 보낸다
+  route("GET", /^\/api\/scene\/baked$/, async () => {
+    const scene = opts.bakedScene?.();
+    if (!scene) throw new HttpError(404, "집 장면이 없어요.");
+    return { ok: true, scene };
+  });
+
   const requireLayout = () => {
     if (!opts.layout) throw new HttpError(404, "배치 보정을 쓸 수 없습니다(집 scene.json이 없음).");
     return opts.layout;
