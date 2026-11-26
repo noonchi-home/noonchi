@@ -80,22 +80,22 @@ async function learn(weeks: number, saturdayDaytimeTv = false): Promise<{ r: Ext
 }
 
 describe("시연 2번 합성 기록: 밤에 토요일 규칙 배우기", () => {
-  it("4주: 맥주 가져다주기와 맥주 캔 치우기가 맥락 없이는 4/28(14%)로 떨어지고 토요일 맥락(4번 중 4번)으로 통과한다", async () => {
+  it("4주: 맥주 가져다주기와 맥주 캔 치우기가 맥락 없이는 4/28(14%)로 떨어지고 토요일 저녁 맥락(4번 중 4번)으로 통과한다(요일만으로 통과했고 따라온 때가 다 19시라 18~21시 칸이 붙는다)", async () => {
     const { r, fsm } = await learn(4);
     expect(r.checks.map((c) => [c.action, c.n, c.k, c.passed]).sort()).toEqual([[BEER, 28, 4, true], [CAN, 28, 4, true]].sort());
     for (const c of r.checks) {
       expect(c.ctx_rules).toHaveLength(1);
-      expect(c.ctx_rules![0]).toMatchObject({ ctx: { dow: 5 }, n: 4, k: 4 });
+      expect(c.ctx_rules![0]).toMatchObject({ ctx: { dow: 5, slot: 6 }, n: 4, k: 4 });
       expect(Math.abs(c.ctx_rules![0]!.p_value - (4 / 28) ** 4)).toBeLessThan(1e-12);   // 0.14⁴ ≈ 0.0004
     }
-    expect(r.learned.map((e) => [e.from, e.action, e.ctx]).sort()).toEqual([["away", BEER, { dow: 5 }], ["watching_tv", CAN, { dow: 5 }]].sort());
-    // 저장된 로봇 FSM: 맥락 없는 화살표(상태 넘김·묻기)는 그대로, 토요일 화살표가 끝에 붙는다
+    expect(r.learned.map((e) => [e.from, e.action, e.ctx]).sort()).toEqual([["away", BEER, { dow: 5, slot: 6 }], ["watching_tv", CAN, { dow: 5, slot: 6 }]].sort());
+    // 저장된 로봇 FSM: 맥락 없는 화살표(상태 넘김·묻기)는 그대로, 토요일 저녁 화살표가 끝에 붙는다
     const away = fsm.states.find((s) => s.id === "away")!;
-    expect(away.next.filter((e) => e.on === TV_START)).toEqual([{ to: "watching_tv", on: TV_START }, { to: "watching_tv", on: TV_START, action: BEER, ctx: { dow: 5 } }]);
+    expect(away.next.filter((e) => e.on === TV_START)).toEqual([{ to: "watching_tv", on: TV_START }, { to: "watching_tv", on: TV_START, action: BEER, ctx: { dow: 5, slot: 6 } }]);
     const tv = fsm.states.find((s) => s.id === "watching_tv")!;
     expect(tv.next.filter((e) => e.on === TV_END)).toEqual([
       { to: "*", on: TV_END, when: TV_END_WHEN, action: "사용자에게 물어보기" },
-      { to: "*", on: TV_END, when: TV_END_WHEN, action: CAN, ctx: { dow: 5 } },
+      { to: "*", on: TV_END, when: TV_END_WHEN, action: CAN, ctx: { dow: 5, slot: 6 } },
     ]);
   });
   it("3주(토요일 3번, 0.0029)는 통과하고 2주(0.020)는 통과하지 못한다", async () => {
@@ -145,11 +145,11 @@ describe("시연 2번 합성 기록: 낮에 토요일에만 동작하기", () =>
       expect(tvEnd(sent), iso).toEqual(["사용자에게 물어보기"]);
     }
   });
-  it("학습 기록의 TV 시작이 모두 19시라 규칙은 «토요일» 하나뿐이다: 토요일 10시에도 맥주 화살표가 보인다(시각은 필요한 기록이 있을 때만 붙는다)", async () => {
+  it("학습 기록의 맥주가 모두 토요일 19시라 규칙은 «토요일 18~21시»다: 토요일 10시에는 맥주 화살표가 안 보인다(2026-11-25 사용자 결정)", async () => {
     const { fsm } = await learn(4);
     await pam!.close(); pam = undefined;
     const { record } = await callAt(fsm, "2026-11-21T10:00:00+09:00");
-    expect(record).toMatchObject({ action: BEER });
+    expect(record).toMatchObject({ action: null });
   });
   it("토요일 낮에도 TV를 보는데 맥주는 안 마셨다면 규칙에 시각이 붙는다: 토요일 19시에는 보이고 토요일 10시·14시 반에는 안 보인다", async () => {
     const { r, fsm } = await learn(4, true);

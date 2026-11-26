@@ -24,22 +24,22 @@ describe("맥락 탐색(findRules)", () => {
     expect(rules[0]).toMatchObject(checkCandidate(days));
   });
 
-  it("토요일에만 하는 습관: 4주(4번 중 4번, 평소 4/28)는 요일 토요일 하나로 통과, 3주는 겨우 통과, 2주는 탈락", () => {
+  it("토요일에만 하는 습관: 4주(4번 중 4번, 평소 4/28)는 요일 토요일 하나로 통과(따라온 때가 다 19시라 18~21시 칸도 붙음), 3주는 겨우 통과, 2주는 탈락", () => {
     const week = (weeks: number) => range(weeks * 7).map((i) => day(i, ["19:00"], dow(i) === 5 ? ["19:02"] : []));
     const four = findRules(week(4));
     expect(four[0]).toMatchObject({ ctx: null, passed: false, n: 28, k: 4 });
     expect(four).toHaveLength(2);
-    expect(four[1]).toMatchObject({ ctx: { dow: 5 }, n: 4, k: 4, passed: true });
+    expect(four[1]).toMatchObject({ ctx: { dow: 5, slot: 6 }, n: 4, k: 4, passed: true });
     close(four[1]!.base_rate, 4 / 28); close(four[1]!.p_value, (4 / 28) ** 4);          // 0.14⁴ ≈ 0.00042
     const three = findRules(week(3));
-    expect(three[1]).toMatchObject({ ctx: { dow: 5 }, n: 3, k: 3 });
+    expect(three[1]).toMatchObject({ ctx: { dow: 5, slot: 6 }, n: 3, k: 3 });
     close(three[1]!.p_value, (3 / 21) ** 3);                                                // ≈ 0.0029 < 0.01
     expect(ctxs(week(2))).toEqual([]);                                                       // 0.143² ≈ 0.020
   });
 
   it("토요일·일요일 둘 다: 규칙이 요일마다 하나씩 나뉜다(토요일을 고르고 그 기회를 빼고 다시 찾아 일요일)", () => {
     const days = range(28).map((i) => day(i, ["19:00"], dow(i) >= 5 ? ["19:02"] : []));
-    expect(ctxs(days)).toEqual([{ dow: 5 }, { dow: 6 }]);
+    expect(ctxs(days)).toEqual([{ dow: 5, slot: 6 }, { dow: 6, slot: 6 }]);
     const rules = findRules(days);
     close(rules[1]!.base_rate, 8 / 28); close(rules[1]!.p_value, (8 / 28) ** 4);            // 토요일 4/4, 평소 29%
     close(rules[2]!.base_rate, 4 / 24); close(rules[2]!.p_value, (4 / 24) ** 4);            // 일요일: 토요일 4번을 뺀 24번 중 4번
@@ -49,7 +49,7 @@ describe("맥락 탐색(findRules)", () => {
     const mwf = (weeks: number) => range(weeks * 7).map((i) => day(i, ["19:00"], [0, 2, 4].includes(dow(i)) ? ["19:02"] : []));
     expect(ctxs(mwf(4))).toEqual([]);
     const six = findRules(mwf(6));
-    expect(six.filter((r) => r.ctx).map((r) => r.ctx)).toEqual([{ dow: 0 }, { dow: 2 }, { dow: 4 }]);
+    expect(six.filter((r) => r.ctx).map((r) => r.ctx)).toEqual([{ dow: 0, slot: 6 }, { dow: 2, slot: 6 }, { dow: 4, slot: 6 }]);
     close(six[1]!.p_value, (18 / 42) ** 6);                                                  // 월요일 6/6, 평소 18/42 = 43% → 0.0062
   });
 
@@ -82,7 +82,22 @@ describe("맥락 탐색(findRules)", () => {
     const days = range(28).map((i) => ({ ...day(i, ["19:00"], dow(i) === 5 ? ["19:02"] : []), unseen: dow(i) === 2 ? [[t("19:00") + 1, t("22:00")] as [number, number]] : [] }));
     const rules = findRules(days);
     expect(rules[0]).toMatchObject({ n: 24, k: 4, unknown: 4 });                              // 수요일 4번은 못 봄
-    expect(rules[1]).toMatchObject({ ctx: { dow: 5 }, n: 4, k: 4 });
+    expect(rules[1]).toMatchObject({ ctx: { dow: 5, slot: 6 }, n: 4, k: 4 });
+  });
+
+  it("요일만으로 통과해도 따라온 때가 다 한 3시간 칸이면 그 칸을 붙이고 그 칸 안 기회로 다시 센다(2026-11-25 사용자 결정)", () => {
+    // 토요일 19:00 TV는 4주 다 맥주, 첫 토요일 10:00 TV 한 번은 맥주 없음 → 토요일 5번 중 4번(80%)으로 요일만 통과, 따라온 4번은 다 18~21시
+    const days = range(28).map((i) => day(i, i === 5 ? ["10:00", "19:00"] : ["19:00"], dow(i) === 5 ? ["19:02"] : []));
+    const rules = findRules(days);
+    expect(rules[0]).toMatchObject({ ctx: null, passed: false, n: 29, k: 4 });
+    expect(rules[1]).toMatchObject({ ctx: { dow: 5, slot: 6 }, n: 4, k: 4, rate: 1 });
+    close(rules[1]!.base_rate, 4 / 29); close(rules[1]!.p_value, (4 / 29) ** 4);
+  });
+
+  it("요일만으로 통과했고 따라온 때가 두 칸 이상에 흩어지면 요일만 둔다", () => {
+    // 토요일마다 10:00과 19:00 둘 다 맥주
+    const days = range(28).map((i) => day(i, dow(i) === 5 ? ["10:00", "19:00"] : ["19:00"], dow(i) === 5 ? ["10:02", "19:02"] : []));
+    expect(ctxs(days)).toEqual([{ dow: 5 }]);
   });
 
   it("같은 기록이면 같은 답이다(순서가 정해져 있다)", () => {

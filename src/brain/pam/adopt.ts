@@ -123,6 +123,16 @@ export function findRules(days: CtxDay[], window = FOLLOW_SECONDS): RuleCheck[] 
       if (best) break;   // 하나 단계에서 통과가 있으면 둘 단계는 시험하지 않는다
     }
     if (!best) break;
+    // 요일만으로 통과했는데 따라온 때가 모두 한 3시간 칸 안이면 그 칸도 붙인다(2026-11-25 사용자 결정): 토요일 내내가 아니라 토요일 저녁에만
+    if (best.ctx!.slot === undefined) {
+      const dow = best.ctx!.dow!;
+      const slots = new Set(remaining.filter((o) => o.outcome === "followed" && inside(o, best!.ctx!)).map((o) => slotOf(o.at)));
+      if (slots.size === 1) {
+        const ctx: Ctx = { dow, slot: [...slots][0]! };
+        const { n, k, unknown } = tally(remaining.filter((o) => inside(o, ctx)));
+        best = { ...best, n, k, unknown, rate: k / n, p_value: binomialTail(k, n, p0), ctx };
+      }
+    }
     out.push(best);
     remaining = remaining.filter((o) => !inside(o, best!.ctx!));
   }

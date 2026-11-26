@@ -49,11 +49,11 @@ describe("맥락이 있는 로봇 FSM 화살표 만들기", () => {
 describe("맥락 탐색 → 로봇 FSM", () => {
   const date = (i: number) => new Date(Date.UTC(2026, 9, 12 + i)).toISOString().slice(0, 10);
   const day = (i: number, hit: boolean): CtxDay => ({ date: date(i), start: 7 * 3600, end: 23 * 3600, candidate: [19 * 3600], action: hit ? [19 * 3600 + 120] : [], unseen: [] });
-  it("토요일에만 하는 습관 4주 → 토요일 맥락 화살표 하나", () => {
+  it("토요일 19시에만 하는 습관 4주 → 토요일 저녁(18~21시) 맥락 화살표 하나", () => {
     const days = Array.from({ length: 28 }, (_, i) => day(i, i % 7 === 5));
     const ctxs = findRules(days).flatMap((r) => (r.ctx ? [r.ctx] : []));
-    expect(ctxs).toEqual([{ dow: 5 }]);
+    expect(ctxs).toEqual([{ dow: 5, slot: 6 }]);
     const out = adoptedFsm(withClear(), new Set([KEY]), CUP_FSM_MEMORY, new Map([[KEY, ctxs]]));
-    expect(drink(out).next.at(-1)).toEqual({ to: "*", on: LEAVE_ON, action: "컵 치우기", ctx: { dow: 5 } });
+    expect(drink(out).next.at(-1)).toEqual({ to: "*", on: LEAVE_ON, action: "컵 치우기", ctx: { dow: 5, slot: 6 } });
   });
 });

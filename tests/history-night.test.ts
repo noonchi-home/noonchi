@@ -304,7 +304,7 @@ describe("밤 흐름: 맥락 규칙", () => {
     days.forEach((d, i) => leaveAndAnswer(db, d, "08:00:00", "08:01:30", i % 7 === 5 ? "clear" : "keep"));
     return { pam, db, days };
   }
-  it("맥락 없이는 4/28(14%)로 떨어지고 토요일 맥락(4번 중 4번)이 통과해, 묻기 화살표는 두고 토요일에만 컵 치우기 화살표가 생긴다", async () => {
+  it("맥락 없이는 4/28(14%)로 떨어지고 토요일 맥락(4번 중 4번, 다 8시라 6~9시 칸이 붙음)이 통과해, 묻기 화살표는 두고 토요일 아침에만 컵 치우기 화살표가 생긴다", async () => {
     const { pam, db, days } = await record(4);
     try {
       const res = await runNight(db, pamClientFor(pam), days.at(-1)!, { dir: tmp() });
@@ -313,15 +313,15 @@ describe("밤 흐름: 맥락 규칙", () => {
       expect(r.checks).toHaveLength(1);
       expect(r.checks[0]).toMatchObject({ n: 28, k: 4, passed: true });
       expect(r.checks[0]!.ctx_rules).toHaveLength(1);
-      expect(r.checks[0]!.ctx_rules![0]).toMatchObject({ ctx: { dow: 5 }, n: 4, k: 4 });
-      expect(r.passed).toEqual([{ state: "drinking", action: "컵 치우기", on: LEAVE_ON, ctx: [{ dow: 5 }] }]);
-      expect(r.learned).toEqual([{ from: "drinking", to: "*", on: LEAVE_ON, when: null, action: "컵 치우기", ctx: { dow: 5 } }]);
+      expect(r.checks[0]!.ctx_rules![0]).toMatchObject({ ctx: { dow: 5, slot: 2 }, n: 4, k: 4 });
+      expect(r.passed).toEqual([{ state: "drinking", action: "컵 치우기", on: LEAVE_ON, ctx: [{ dow: 5, slot: 2 }] }]);
+      expect(r.learned).toEqual([{ from: "drinking", to: "*", on: LEAVE_ON, when: null, action: "컵 치우기", ctx: { dow: 5, slot: 2 } }]);
       // 저장된 로봇 FSM: 묻기 화살표(맥락 없음)는 그대로이고 토요일 화살표가 끝에 있다
       const saved = memoryForDay(db, r.appliesDay) as { memory: FsmMemory } | FsmMemory;
       const memory = ("memory" in saved ? saved.memory : saved) as FsmMemory;
       const drink = memory.states.find((s) => s.id === "drinking")!;
       expect(drink.next[0]).toEqual({ to: "*", on: LEAVE_ON, action: "사용자에게 물어보기" });
-      expect(drink.next.at(-1)).toEqual({ to: "*", on: LEAVE_ON, action: "컵 치우기", ctx: { dow: 5 } });
+      expect(drink.next.at(-1)).toEqual({ to: "*", on: LEAVE_ON, action: "컵 치우기", ctx: { dow: 5, slot: 2 } });
     } finally {
       await pam.close();
     }
