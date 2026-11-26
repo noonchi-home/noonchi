@@ -79,6 +79,8 @@ export class Navigation {
     } else if (room !== first.room) {
       // 경유점으로 가다가 방이 바뀌었다(격자 안내는 문 앞에 경유점이 있다): 남은 길의 첫 문을 그 문 개구부로 건넜으면 그 문 뒤 길로 넘기고,
       // 문에서 먼 곳(벽)으로 건넜으면 길을 벗어난 것으로 본다. 그 밖(길에 없는 방으로 감)은 길을 버리고 다시 짠다.
+      // 벽으로 건너 길을 벗어난 채면 경유점 방으로 돌아올 때까지 길을 둔다(문이 첫 점일 때 from_room으로 돌아오면 푸는 것과 같다)
+      if (this.offPath) return;
       const at = this.path.remaining.findIndex((p) => p.kind === "portal");
       const portal = at >= 0 ? this.path.remaining[at] : undefined;
       const gate = portal?.kind === "portal" ? this.map.gate(portal.id) : undefined;
@@ -100,6 +102,7 @@ export class Navigation {
         this.crossed = false;
       }
     } else if (first.kind === "via") {
+      this.offPath = false;
       // 경유점 0.15m 안에 왔거나, 경유점보다 다음 점에 더 가까이 와 있으면(격자 꺾인 점을 조금 질러 감) 다음 점이 곧게 보일 때 넘긴다
       const next = this.path.remaining[1];
       const via: XZ = [first.position[0], first.position[2]];
