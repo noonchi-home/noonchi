@@ -5,7 +5,7 @@ import type { PendingGoal } from "../contract/goal.js";
 import type { HabitFsm } from "../contract/habit.js";
 import { existsSync } from "node:fs";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
-import { join, resolve } from "node:path";
+import { extname, join, resolve } from "node:path";
 import { WebSocket, WebSocketServer } from "ws";
 import type { Agent } from "../agent/index.js";
 import { Policy } from "../agent/index.js";
@@ -301,7 +301,9 @@ export function createApp(opts: AppOptions): TwinHomeApp {
       return;
     }
     if (serveFile(res, webDir, path === "/" ? "index.html" : path, head)) return;
-    if (!existsSync(join(webDir, "index.html"))) sendJson(res, 503, { ok: false, error: NOT_BUILT });
+    // 빌드 전 503은 화면 요청(확장자 없음·.html)만: 파일 요청(/.well-known/assetlinks.json 등)은 빌드와 상관없이 404다(Android 연결 확인은 5xx를 다시 시도할 일로 본다)
+    const page = extname(path) === "" || extname(path) === ".html";
+    if (page && !existsSync(join(webDir, "index.html"))) sendJson(res, 503, { ok: false, error: NOT_BUILT });
     else sendJson(res, 404, { ok: false, error: `파일이 없습니다: ${path}` });
   }
 

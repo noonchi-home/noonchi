@@ -342,6 +342,14 @@ describe("정적 파일·CORS", () => {
     expect((await api(url, "/api/health")).status).toBe(200);
   });
 
+  it("화면을 빌드하지 않았어도 화면이 아닌 파일 경로는 404", async () => {
+    const webDir = join(mkdtempSync(join(tmpdir(), "web-")), "missing");
+    cleanups.push(() => rmSync(join(webDir, ".."), { recursive: true, force: true }));
+    const { url } = await start({ webDir });
+    for (const path of ["/.well-known/assetlinks.json", "/assets/index.js"]) expect((await api(url, path)).status, path).toBe(404);
+    for (const path of ["/setup", "/index.html"]) expect((await api(url, path)).status, path).toBe(503);
+  });
+
   it("/twin/은 twinDir이 있을 때만 붙는다", async () => {
     const dir = mkdtempSync(join(tmpdir(), "twin-"));
     cleanups.push(() => rmSync(dir, { recursive: true, force: true }));
