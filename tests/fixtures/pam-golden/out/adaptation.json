@@ -238,9 +238,27 @@
         "new": "- next: the transitions without an action (the routine only).\n- rules: one rule per (state, action) with `to` (a state id or \"*\") and one to three `candidates`. Each candidate has `on` (the trigger above: one person moment) and optionally `when` (a person-side condition). The candidates of one rule must differ.\n\n# Output (JSON only, no markdown, no commentary)\n{\n  \"initial_state\": \"away\",\n  \"states\": [\n    {\n      \"id\": \"<snake_case>\",\n      \"description\": \"<one-sentence>\",\n      \"activity\": [\"<activity value>\", ...],\n      \"next\": [{\"to\": \"<state_id>\", \"on\": \"<NL event>\"}],\n      \"rules\": [\n        {\"to\": \"<state_id or *>\", \"action\": \"<task name>\", \"candidates\": [{\"on\": \"<NL event>\", \"when\": \"<NL condition, optional>\"}, ...1-3]},\n        ...\n      ]\n    }\n  ]\n}",
         "reason": "반성 답은 후보 FSM(fsm_candidates, 석준 님 후보 FSM을 화살표 모양으로)",
         "occurrences": 1
+      },
+      {
+        "old": "performed in this\nvideo and summary",
+        "new": "performed in these\nobservations and summary",
+        "reason": "남은 영상 말(줄바꿈 때문에 위 바꾸기가 못 잡음, 2026-11-25): 반성 입력은 관찰 텍스트다",
+        "occurrences": 1
+      },
+      {
+        "old": "when the video reveals",
+        "new": "when today's observations reveal",
+        "reason": "남은 영상 말(2026-11-25): 반성 입력은 관찰 텍스트다",
+        "occurrences": 1
+      },
+      {
+        "old": "today's\nvideo",
+        "new": "today's\nobservations",
+        "reason": "남은 영상 말(줄바꿈 때문에 위 바꾸기가 못 잡음, 2026-11-25): 반성 입력은 관찰 텍스트다",
+        "occurrences": 1
       }
     ],
-    "adapted_template_sha256": "7ad09d01f35a88ba5fe243674c9451e11410ce9caf0192b5765c9da65fc0d60b"
+    "adapted_template_sha256": "2a6341eec44d58d986a74b351ba0c064b6455105565cfd30bd3bb5604bfc1509"
   },
   "reflector_list_update": {
     "applied": [
@@ -291,8 +309,14 @@
         "new": "Use the observations, summary,",
         "reason": "입력 이름만 바꾼다.",
         "occurrences": 1
+      },
+      {
+        "old": "performed in this\nvideo and summary",
+        "new": "performed in these\nobservations and summary",
+        "reason": "남은 영상 말(줄바꿈 때문에 위 바꾸기가 못 잡음, 2026-11-25): 반성 입력은 관찰 텍스트다",
+        "occurrences": 1
       }
     ],
-    "adapted_template_sha256": "4c3d6d2b8b92cd228d3aca9d38512df58438303240d37e5d7a5e0afdc8d52cb4"
+    "adapted_template_sha256": "88efa68c4447418337c0e8f825501b54fe29d8a99b2e7d6de7d96d14b460d58a"
   }
 }
