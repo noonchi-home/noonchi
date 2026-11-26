@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { composedPhotos, composedStates, guideBetween, heldCupAt, map, personSight, phoneCamera, replayScenario, scene, walkProblem } from "./helpers/scenario1-replay.js";
+import { composedPhotos, composedStates, guideBetween, heldCupAt, map, personSight, phoneCamera, replayScenario, scene, variantLines, walkProblem } from "./helpers/scenario1-replay.js";
 import { edgeDistance, walkingGeometry } from "../src/layout/walk-guide.js";
 import { stationSeen } from "../src/act/robot/station-arrival.js";
 import type { TrackCore } from "../src/act/track/core.js";
@@ -368,8 +368,12 @@ describe("시나리오 1 합성(composed) 판단 재생", { timeout: 20_000 }, (
   // 이름표를 하는 일 값으로 읽게 된 뒤(src/brain/decision.ts tempFromLabel) 그 판단도 받아지므로, 사람이 식탁에 있는 동안 계획·명령이 나가지 않는지 본다
   it("식탁에 앉아 있는 동안 온 컵 치우기 판단은 떠난 뒤로 미루고, 떠나기 전에는 컵 명령을 내지 않는다", async () => {
     const trace = await replayScenario("pam_seated");
-    // 사람이 식탁을 떠난 것을 아는 때: 떠난 사진(24300ms)의 VLM 답 도착(지연 1600ms)
-    const leftTable = 24300 + 1600;
+    // 사람이 식탁을 떠난 것을 아는 때: 기록에서 식탁을 떠난 첫 사진(away/table)의 VLM 답 도착(촬영 시각 + 지연)
+    const lines = variantLines("pam_seated");
+    const leave = lines.filter((l) => l.kind === "away" && l.value === "table").sort((a, b) => a.at - b.at)[0]!;
+    const leftTable = leave.at + leave.lag!;
+    // 앉아 있는 동안 온 PAM 판단(이 변형의 「쉬는 중」 답)이 검사 범위 안에 든다
+    expect(lines.filter((l) => l.kind === "pam" && l.value === "~resting").map((l) => l.at < leftTable)).toEqual([true]);
     expect(trace.filter((e) => ["table_go", "pick", "find_cup", "unexpected"].includes(e.kind) && e.at < leftTable)).toEqual([]);
     // 떠난 뒤에는 정상 판과 같이 확인 → 식탁으로 → 치우기 끝
     const normal = await replayScenario("normal");

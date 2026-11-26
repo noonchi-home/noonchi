@@ -146,6 +146,16 @@ function phoneAt(stops: readonly Stop[], t: number): { position: Vec2; look: Vec
 const base = Date.UTC(2026, 10, 20, 12);
 /** 재생 길이(ms): 100초, 기록 마지막 줄이 그보다 늦으면 그 5초 뒤까지. */
 const replayMs = () => Math.max(100000, ...raw.filter((r) => Number.isFinite(r.at)).map((r) => r.at + 5000));
+/** 그 변형의 합성 기록 줄(시각이 있는 줄, 변형 줄로 바꾼 뒤). 차례는 파일 차례다. */
+export function variantLines(variant: Variant): Line[] {
+  const patch = raw.find((row) => row.kind === "variant" && row.name === variant);
+  const source: Line[] = raw.filter(
+    // 변형은 replace_from부터(replace_until이 있으면 그 전까지만) 원래 줄을 그 변형 줄로 바꾼다
+    (row) => Number.isFinite(row.at) && !(row.at >= (patch?.replace_from ?? Infinity) && row.at < (patch?.replace_until ?? Infinity)),
+  );
+  for (const r of patch?.rows ?? []) source.push({ ...r, source: patch.source });
+  return source;
+}
 function makeBag(bag: Bag, variant: Variant): {
   left: number | null;
   photos: Photo[];
@@ -200,12 +210,7 @@ function makeBag(bag: Bag, variant: Variant): {
     put("/world/state", "world", { rev, view: world }, at);
     states.push({ at, rev, serial: world.household_photo?.serial ?? null });
   };
-  const patch = raw.find((row) => row.kind === "variant" && row.name === variant);
-  const source: Line[] = raw.filter(
-    // 변형은 replace_from부터(replace_until이 있으면 그 전까지만) 원래 줄을 그 변형 줄로 바꾼다
-    (row) => Number.isFinite(row.at) && !(row.at >= (patch?.replace_from ?? Infinity) && row.at < (patch?.replace_until ?? Infinity)),
-  );
-  for (const r of patch?.rows ?? []) source.push({ ...r, source: patch.source });
+  const source = variantLines(variant);
   // 실제 폰은 자세를 100ms마다 보낸다(ui/src/phone/core/ar.js SEND_MS): 서 있으면 그 자리, 걷는 동안은 걷는 자리(phoneAt)
   const eyes = source.filter((r) => r.kind === "eye").sort((a, b) => a.at - b.at);
   const stops: Stop[] = eyes.map((e) => ({ at: e.at, value: e.value!, ...(e.depart !== undefined ? { depart: e.depart } : {}) }));

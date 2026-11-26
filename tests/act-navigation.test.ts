@@ -40,6 +40,33 @@ it("keeps guiding to a corner until the next segment is clear from the phone", (
   expect(at(1,400)).toBe("stand");
 });
 
+it("does not skip a wall-only (bearing) corner waypoint while the straight line to the next point crosses the inner wall corner", () => {
+  // ㄱ자 방: 안쪽 벽 모서리는 x<-0.18, z>0.18 쪽. 가구 때문에 격자 길이 없어 벽만 보는 길 [안쪽 모서리 경유점 (0,0), 설 자리 (0,3)]이고 두 점 모두 bearing이다
+  const wall = (x: number, z: number) => x < -0.18 && z > 0.18;
+  const map = {
+    room: () => "L",
+    plan: () => ({remaining: [
+      {kind:"via", room:"L", position:[0,0,0]},
+      {kind:"stand", room:"L", position:[0,0,3]},
+    ]}),
+    isBearing: () => true,
+    clear: (from:number[], to:number[]) => {
+      for (let k = 0; k <= 200; k++) if (wall(from[0]! + (to[0]! - from[0]!) * k / 200, from[1]! + (to[1]! - from[1]!) * k / 200)) return false;
+      return true;
+    },
+  } as unknown as WalkingMap;
+  const nav = new Navigation();
+  const at = (x:number, z:number, t:number) => {
+    nav.pose({quality:"usable", position:[x,z], pose_gen:1, observed_ms:t});
+    return nav.read("go", map, [0,3], 0.5, true, t).guide?.remaining[0].kind;
+  };
+  // +x로 다가온다. (-0.3, 0.02)에서 설 자리까지 2.995m로 경유점→설 자리 3m보다 가깝지만, 곧은 선이 안쪽 벽 모서리를 지난다
+  at(-0.6, 0.02, 100);
+  expect(at(-0.45, 0.02, 200)).toBe("via");
+  expect(at(-0.3, 0.02, 300)).toBe("via");
+  expect(at(-0.05, 0.02, 400)).toBe("stand");
+});
+
 it("holds on repeated or stale poses, confirms crossing and arrival with distinct fixes", () => {
   const scene = {
     plan: {

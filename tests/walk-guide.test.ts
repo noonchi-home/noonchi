@@ -206,6 +206,31 @@ describe("walking map", () => {
         expect(out, JSON.stringify(from)).toMatchObject({ arrived: true, lost: 0 });
       }
     });
+    it("guides a phone standing in the living-room side of the bedroom doorway (inside the wall margin) straight through that door", () => {
+      // (6.30, 7.65): door_bed_sw 문점에서 0.178m(문 반경 0.1997m 안), bed_sw_top 벽에서 0.169m(벽 여유 0.255m 안)
+      const nav = new Navigation();
+      for (const t of [100, 200]) nav.pose({ position: [6.3, 7.65], quality: "usable", pose_gen: 1, observed_ms: t });
+      const r = nav.read("go", map, [5.5, 11.7], 0.35, true, 200);
+      expect(r.distance).not.toBeNull();
+      expect(r.guide?.remaining[0]).toMatchObject({ kind: "portal", id: "door_bed_sw" });
+    });
+    it("brings the guide back once the phone returns to the waypoint's room after a pose jumped through the wall beside the door", () => {
+      const nav = new Navigation();
+      let t = 0;
+      const at = (p: [number, number]) => {
+        nav.pose({ position: p, quality: "usable", pose_gen: 1, observed_ms: (t += 200) });
+        return nav.read("go", map, [5.5, 11.7], 0.35, true, t);
+      };
+      at([6.6, 7.5]);
+      // 첫 점은 거실 격자 줄 z=7.5 위 door_bed_sw 문 앞 경유점
+      expect(at([6.6, 7.5]).guide?.remaining[0]).toMatchObject({ kind: "via", room: "living" });
+      // 벽을 건너 침실로 튄다(건넌 점은 문 점에서 0.27m, 문 반경 0.1997m 밖). 다음 자세도 침실
+      at([6.5, 7.85]);
+      at([6.45, 7.85]);
+      // 같은 pose_gen으로 거실로 돌아와 걷는다
+      at([6.3, 7.5]);
+      expect(at([6.27, 7.5]).distance).not.toBeNull();
+    });
     it("approaches every door from a point on the current room's side when the straight line would cross a wall", () => {
       // 식탁 관찰 자리에서 침실 1 문까지 곧은 선은 벽을 지난다(거실 대기 자리는 문 앞으로 옮겨 곧게 보인다)
       const guide = map.plan(station("meal_watch"), front("desk_small"), 0.35, true)!;

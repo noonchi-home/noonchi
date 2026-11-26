@@ -1,8 +1,9 @@
 import type { SceneJson, SceneObject, Vec2 } from "../contract/layout.js";
 import type { TwinWalkGuide } from "../contract/phone.js";
+import type { StationMap } from "../contract/stations.js";
 import { floorPlanFrom, insidePolygon, sharedOpening, type FloorPlan, type Portal } from "./floor.js";
 import { approach, roomAt, route } from "./route.js";
-import { WALK_STEP, gridRoute, walkGrid } from "./walk-grid.js";
+import { gridRoute, walkWay } from "./walk-grid.js";
 
 export function edgeDistance(p: Vec2, a: Vec2, b: Vec2) {
   const dx = b[0] - a[0], dz = b[1] - a[1];
@@ -71,10 +72,11 @@ const distance = (a: Vec2, b: Vec2) => Math.hypot(a[0] - b[0], a[1] - b[1]);
 const cell = 0.15;
 
 export function walkingMap(floor: FloorPlan, scene: SceneJson, footprint?: (type: string) => Vec2 | undefined) {
-  const geometry = walkingGeometry(scene, footprint);
+  // 걷기 길 자료(격자·가구 앞자리·방 대기 자리)는 계획 선과 같은 walkWay로 만든다: 방 안 길은 같은 이동 가능 점 격자를 따르고(경유점은 모두 격자 점),
+  // 폰 안내의 이동 목적지도 같은 moveStop으로 정한다(src/act/track/core.ts walk)
+  const way = walkWay(scene as SceneJson & { stations?: StationMap }, footprint);
+  const { geometry, grid } = way;
   const { walkable, furnitureClear, walls } = geometry;
-  // 방 안 길은 계획 선·트윈 원뿔과 같은 이동 가능 점 격자를 따른다(src/layout/walk-grid.ts): 경유점은 모두 격자 점이다
-  const grid = walkGrid(geometry, WALK_STEP);
   const doors = (scene.plan.doors ?? []) as { id: string; width?: number; wall?: string }[];
   const height = (room: string) => scene.plan.rooms?.find((r) => r.id === room)?.floor_z ?? 0;
   const widths = new Map(doors.map((d) => [d.id, d.width ?? 0]));
@@ -228,7 +230,9 @@ export function walkingMap(floor: FloorPlan, scene: SceneJson, footprint?: (type
       const gates = [lastGate,gate].filter((g):g is Portal=>!!g);
       const raw = end[i-1]!;
       const start = i===1 ? nearestStart(raw,current,gates) : raw;
-      let grid = start && indoor(start,p,current,gates);
+      // 폰이 문간에 서 있으면(그 문을 넣어야 설 수 있는 벽 여유 안) 격자 길은 문을 보지 않아 벽 여유를 지나는 문 앞 경유점을 낸다: 문을 넣고 곧게 갈 수 있으면 곧은 선이다
+      const doorway = i === 1 && start === raw && !clear(raw, raw, current) && clear(raw, p, current, gates);
+      let grid = doorway ? [p] : start && indoor(start,p,current,gates);
       // 가구 칸으로 길이 막히면 벽만 보는 길을, 그것도 없으면 문 앞 자리를 지난다: 곧은 선이 벽을 지나는 안내를 내지 않는다.
       // 이 점들은 가구를 지날 수 있어 모두 bearing이다(지나는 곧은 선을 걸을 수 있다고 하지 않는다).
       let loose = false;
@@ -259,6 +263,6 @@ export function walkingMap(floor: FloorPlan, scene: SceneJson, footprint?: (type
     }
     return remaining.length ? { revision: 0, near_m, remaining: remaining as TwinWalkGuide["remaining"] } : null;
   }
-  return { room, plan, clear, isBearing: (point:Point)=>bearings.has(point),
+  return { room, plan, clear, way, isBearing: (point:Point)=>bearings.has(point),
     gridReachable: (a:Vec2,b:Vec2,id:string,gates:Portal[]=[])=>indoor(a,b,id,gates)!==null, gate: (id: string) => floor.portals.find((g) => g.id === id), doorRadius };
 }
