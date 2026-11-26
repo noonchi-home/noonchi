@@ -64,8 +64,6 @@ The planned end-to-end evaluation separates **learning occasions from assistance
 
 ### A. Architecture
 
-![NOONCHI system architecture](docs/architecture/architecture.svg)
-
 The phone serves as CLOiD’s eyes. The server relates camera observations and appliance signals to the home’s digital twin. The decision agent compares this evidence with the resident’s FSM to select a task. In the prototype, a person follows instructions on the phone for movement and manipulation. Supported appliances receive device commands directly.
 
 | Process | Input | Output |
