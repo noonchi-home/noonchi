@@ -8,6 +8,7 @@ import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import type { EyeEvent, Plan2 } from "../../../../src/contract/events.ts";
 import { scene3d } from "../../../../src/design/tokens.ts";
+import { BAKED_SCENE_PATH, SCENE_PATH } from "../../../../src/shared/scene-paths.ts";
 import { applyDefaultView, viewHeading, type SceneData } from "./cutaway";
 import { CONE, createEyeCone, type EyeCone } from "./eye";
 import { bakedGround } from "./ground";
@@ -40,7 +41,7 @@ interface Loaded { data: SceneData; layout: SceneData; manifest: Manifest; gltf:
 
 /** 트윈이 읽는 두 장면: 구운 장면(baked)과 고친 배치(layout). 서버 배치 맞추기 메시지는 구운 장면과의 차이만 보낸다(뺀 물건은 remove로 떼고 숨긴다). */
 export async function twinScenes(get: <T>(url: string) => Promise<T>): Promise<{ baked: SceneData; layout: SceneData }> {
-  const [{ scene: baked }, { scene: layout }] = await Promise.all([get<{ scene: SceneData }>("/api/scene/baked"), get<{ scene: SceneData }>("/api/scene")]);
+  const [{ scene: baked }, { scene: layout }] = await Promise.all([get<{ scene: SceneData }>(BAKED_SCENE_PATH), get<{ scene: SceneData }>(SCENE_PATH)]);
   return { baked, layout };
 }
 
