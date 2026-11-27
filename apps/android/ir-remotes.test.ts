@@ -55,6 +55,32 @@ test("배우기가 끝날 때까지 500 ms마다 읽고, 멈추면 더 읽지 �
   assert.equal(again.calls.length, 1);
 });
 
+test("배우는 동안 읽기가 실패해도 알리고 다시 읽으며, 4xx 답과 멈춤은 그대로 던진다", async () => {
+  const done: IrView = { ...base, learning: { remote: tvRemote.id, label: "음량 올림", role: null, state: "saved", presses: 1, left_ms: 0, button: "b_00000002" } };
+  const failing = (answers: (IrView | Error)[]) => {
+    let i = 0;
+    const hub: ConnectedHub = {
+      origin: "https://hub.test", url: (p) => "https://hub.test" + p,
+      async get<T>() { const a = answers[Math.min(i++, answers.length - 1)]!; if (a instanceof Error) throw a; return a as T; },
+      async write<T>() { return base as T; },
+    };
+    return hub;
+  };
+  const offline = Object.assign(new Error("허브에서 정보를 받지 못했어요."), { status: 502 });
+  const errors: string[] = [];
+  const slept: number[] = [];
+  const end = await waitLearn(failing([waiting(0, 29_000), offline, new Error("network"), done]), "h",
+    { signal: new AbortController().signal, sleep: async (ms) => { slept.push(ms); }, onError: (e) => errors.push((e as Error).message) });
+  assert.equal(end.learning?.state, "saved");
+  assert.deepEqual(errors, ["허브에서 정보를 받지 못했어요.", "network"]);
+  assert.deepEqual(slept, [500, 500, 500]);
+  const moved = Object.assign(new Error("허브에서 열린 집을 다시 확인해 주세요."), { status: 409 });
+  await assert.rejects(waitLearn(failing([moved]), "h", { signal: new AbortController().signal, sleep: async () => { throw new Error("4xx 뒤에 다시 읽음"); } }), /열린 집/);
+  const stop = new AbortController();
+  stop.abort();
+  await assert.rejects(waitLearn(failing([offline]), "h", { signal: stop.signal, sleep: async () => {}, onError: () => assert.fail("멈춘 뒤에는 알리지 않는다") }));
+});
+
 test("배우기 상태 글", () => {
   assert.deepEqual(learnLines(waiting(1, 23_100).learning!), { copy: ["리모컨을 수신기에 대고 「음량 올림」 단추를 두 번 누르세요.", "남은 시간 24초 · 1번 받음"], failure: "" });
   const end = (state: "timeout" | "duplicate" | "overflow" | "lost" | "saved" | "cancelled") => learnLines({ ...waiting(0, 0).learning!, state, duplicate_of: "전원" });

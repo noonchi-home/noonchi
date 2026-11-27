@@ -76,15 +76,30 @@ export function addPreset(hub: ConnectedHub, home: string, remote: string): Prom
   return hub.write<IrView>(PATHS.preset, body);
 }
 
-/** 배우기가 끝날 때까지 POLL_MS마다 읽는다. signal이 멈추면 더 읽지 않고 reject. */
+/** 허브가 요청을 받고 거절한 답(4xx, 집 바뀜 등)인가: 다시 읽어도 같다. */
+const refused = (e: unknown) => {
+  const status = (e as { status?: unknown } | null)?.status;
+  return typeof status === "number" && status >= 400 && status < 500;
+};
+
+/** 배우기가 끝날 때까지 POLL_MS마다 읽는다. signal이 멈추면 더 읽지 않고 reject.
+ *  읽기가 실패하면(연결·5xx) onError로 알리고 POLL_MS 뒤 다시 읽는다. 4xx 답과 멈춘 뒤의 실패는 그대로 던진다. */
 export async function waitLearn(hub: ConnectedHub, home: string, o: {
-  signal: AbortSignal; sleep?: (ms: number) => Promise<void>; onView?: (view: IrView) => void;
+  signal: AbortSignal; sleep?: (ms: number) => Promise<void>; onView?: (view: IrView) => void; onError?: (error: unknown) => void;
 }): Promise<IrView> {
   const sleep = o.sleep ?? ((ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms)));
   for (;;) {
-    const view = await readIr(hub, home, o.signal);
-    o.onView?.(view);
-    if (view.learning?.state !== "waiting") return view;
+    let view: IrView | null = null;
+    try {
+      view = await readIr(hub, home, o.signal);
+    } catch (e) {
+      if (o.signal.aborted || refused(e)) throw e;
+      o.onError?.(e);
+    }
+    if (view) {
+      o.onView?.(view);
+      if (view.learning?.state !== "waiting") return view;
+    }
     await sleep(POLL_MS);
     if (o.signal.aborted) throw new Error("aborted");
   }

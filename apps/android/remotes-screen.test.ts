@@ -33,6 +33,13 @@ test("배우는 동안만 「버튼을 눌러 주세요」가 깜빡이고, 쪽�
   assert.match(screen, /useEffect\(\(\) => \(\) => \{\s*const stop = waiting\.current;\s*if \(stop && !stop\.signal\.aborted\) \{ stop\.abort\(\); void cancelLearn\(hub, home\)\.catch\(\(\) => \{\}\); \}/);
 });
 
+test("배우는 동안 읽기 실패는 글로 알리고 기다림을 이어 가며, 기다림이 실패해도 떠날 때 배우기를 취소하도록 waiting을 남긴다", () => {
+  const screen = read("./ConnectedRemotes.tsx");
+  assert.match(screen, /waitLearn\(hub, home, \{ signal: stop\.signal, onView: next => \{ setError\(""\); setView\(next\); \}, onError: failure => setError\(message\(failure\)\) \}\)/);
+  assert.match(screen, /failure => \{ if \(!stop\.signal\.aborted\) setError\(message\(failure\)\); \}/);
+  assert.equal(screen.match(/waiting\.current = null/g)?.length, 1);
+});
+
 test("시험 쏘기·리모컨 지우기·단추 지우기는 확인 창 뒤에만 부른다", () => {
   const screen = read("./ConnectedRemotes.tsx");
   assert.match(screen, /Alert\.alert\("실제 가전에 신호를 보낼까요\?", "연결한 실제 가전이 움직일 수 있어요\.", \[[^\]]*onPress: \(\) => void task\.run\(async \(\) => \{ await testButton\(/);

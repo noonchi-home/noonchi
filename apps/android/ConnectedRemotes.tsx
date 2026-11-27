@@ -181,9 +181,10 @@ function ButtonLearner({ hub, home, remote, view, setView, onBlock }: Shared & {
       setStarted(true);
       const stop = new AbortController();
       waiting.current = stop;
-      waitLearn(hub, home, { signal: stop.signal, onView: setView }).then(
+      // 읽기 실패는 글로 알리고 계속 기다린다. 기다림이 실패로 끝나도 waiting을 남겨 쪽을 떠날 때 허브 배우기를 취소한다
+      waitLearn(hub, home, { signal: stop.signal, onView: next => { setError(""); setView(next); }, onError: failure => setError(message(failure)) }).then(
         () => { waiting.current = null; },
-        failure => { if (stop.signal.aborted) return; waiting.current = null; setError(message(failure)); },
+        failure => { if (!stop.signal.aborted) setError(message(failure)); },
       );
     });
   }
