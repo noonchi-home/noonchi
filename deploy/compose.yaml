@@ -138,6 +138,8 @@ services:
       TV_RELAY_POLL_MS:
       TV_RELAY_TIMEOUT_MS:
       TV_RELAY_COMMAND_TIMEOUT_MS:
+      # 적외선 리모컨 등록: 1이면 포트 목록에 가짜 보드(FAKE)를 더한다. 실제 보드는 집의 Windows 노트북에서 연다
+      IR_FAKE:
       # 외부 연락(전화 에이전트)
       CALL_SERVICE_URL:
       # 노드 통로: 빈 값이면 프로세스 안 메모리 버스. 서버를 여러 프로세스로 나눌 때만 Redis 주소를 준다(src/bus/redis.ts)
