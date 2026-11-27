@@ -131,7 +131,10 @@ export const wholeOf = (shapes: RoomShape[]): Bounds | null => boundsOf(shapes.f
  *   트윈 칸이 그림보다 옆으로 넓어 그림 밖(3D 장면 바탕)이 보여도 된다: 얹은 것(미니맵·말풍선) 밑에 집이 깔리지 않는 것이 먼저다.
  * whole이 없으면 그림이 상자를 빈 곳 없이 덮는 배율(cover)부터이고, 그림 가장자리가 상자 안으로 들어오지 않게 가운데를 당긴다(clampCamera).
  */
-export function wideCamera(image: BoxSize, box: BoxSize, focus: Bounds | null, pad: Pad, whole: Bounds | null = null, maxZoom = MAX_ZOOM): Camera {
+/** 밤 반성 보기 확대 상한: 집 전체 보기 배율의 maxZoom배, 그림 maxScale배까지(트윈이 왼쪽 열 전체라 더 당긴다). */
+export const REFLECT_ZOOM = { maxZoom: 6, maxScale: 1.3 } as const;
+
+export function wideCamera(image: BoxSize, box: BoxSize, focus: Bounds | null, pad: Pad, whole: Bounds | null = null, maxZoom = MAX_ZOOM, maxScale = MAX_SCALE): Camera {
   const c0 = coverScale(image, box);
   const aw = Math.max(1, box.width - pad.left - pad.right);
   const ah = Math.max(1, box.height - pad.top - pad.bottom);
@@ -139,7 +142,7 @@ export function wideCamera(image: BoxSize, box: BoxSize, focus: Bounds | null, p
   const target = focus ?? whole;
   if (!target || c0 <= 0) return { cx: image.width / 2, cy: image.height / 2, scale: c0 };
   const base = whole ? fit(whole) : c0;
-  const scale = clamp(fit(target), base, Math.max(base, Math.min(base * maxZoom, MAX_SCALE)));
+  const scale = clamp(fit(target), base, Math.max(base, Math.min(base * maxZoom, maxScale)));
   // target 가운데를 pad 안쪽 가운데에 둔다
   const cx = (target.x0 + target.x1) / 2 + (box.width / 2 - (pad.left + aw / 2)) / scale;
   const cy = (target.y0 + target.y1) / 2 + (box.height / 2 - (pad.top + ah / 2)) / scale;

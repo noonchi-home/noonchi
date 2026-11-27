@@ -5,6 +5,8 @@ import { createContext, useEffect, useLayoutEffect, useRef, useState, type RefOb
 /** 지도 카메라가 옮겨 가는 움직임(빨리 시작해 부드럽게 멈춤)과 그 길이(300~450ms 사이). */
 export const EASE = "cubic-bezier(0.22, 1, 0.36, 1)";
 export const CAMERA_MS = 380;
+/** 밤 반성 단계마다 트윈을 옮기는 시간(ms): 단계가 1.5~3초 머물러 라이브 보기보다 천천히 옮긴다. */
+export const REFLECT_CAMERA_MS = 900;
 
 /** 움직임 줄이기 설정. 처음 그릴 때 바로 읽는다(가림판이 한 번 깜빡이지 않게). */
 export function useReducedMotionNow(): boolean {

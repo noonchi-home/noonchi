@@ -513,4 +513,34 @@ describe("대시보드 구운 트윈 위 표시", () => {
     await waitFor(() => expect(container.querySelector(`[data-row="${row}"][data-on-twin]`)).not.toBeNull());
     expect(container.querySelector(`[data-row="${row}"] [data-twin-dot]`)).toHaveAttribute("data-variant", "brand");
   });
+
+  it("밤 반성 다시 보기(?view=reflection&day=…)면 트윈에 그 순간의 표시와 밝힌 방만 그리고 클로이드 원뿔은 그리지 않는다. 오른쪽 칸은 「FSM 바뀜」이다", async () => {
+    history.replaceState(null, "", "/?view=reflection&day=2026-11-27");
+    const detail = {
+      ok: true, day: "2026-11-27", state: "done", rejected: false, at_ms: 1, before: { version: 1 }, after: { version: 2, applies_day: "2026-11-28" },
+      graph: { states: ["drinking", "away"], edges: [{ from: "drinking", to: "*", action: "사용자에게 물어보기" }] }, after_graph: null,
+      chunks: [{ start: "08:10:00", end: "08:24:30", state: "drinking", room: "kitchen" }, { start: "09:00:00", end: "09:10:00", state: null, room: "living" }],
+      did: [], candidates: [], dropped: [], checks: [], learned: [],
+      skipped_to: "2026-11-28", window_s: 300, rate_min: 0.75, alpha: 0.001,
+    };
+    const base = vi.mocked(fetch).getMockImplementation()!;
+    vi.mocked(fetch).mockImplementation(async (path: string | URL | Request, init?: RequestInit) =>
+      (path === "/api/reflection/2026-11-27" ? Response.json(detail) : base(path as string, init)));
+    const { container } = render(<Dashboard />);
+    await waitFor(() => expect(load).toHaveBeenCalled());
+    await waitFor(() => expect(container.querySelector('[aria-label="3D 트윈"] [data-trace-mark]')).toHaveTextContent("08:10~08:24 · 마시는 중"));
+    // 맞춘 눈이 와도 반성 동안은 원뿔을 그리지 않는다
+    await waitFor(() => expect(FakeSocket.last).not.toBeNull());
+    act(() => {
+      FakeSocket.last!.push({ type: "hello", devices: 0, provider: null, hub: "memory", home: "mokryeon_180b", trace_epoch: "r1" });
+      FakeSocket.last!.push({ type: "eye", eye: moment(0).eye });
+    });
+    expect(engine.setEye.mock.calls.at(-1)?.[0]).toBeNull();
+    // 반성 순간들의 밝힐 방 묶음은 처음부터 층이 있고, 지금 순간의 방만 보인다
+    const dims = () => [...container.querySelectorAll<HTMLElement>("[data-map-dim]")];
+    expect(dims().map((d) => d.dataset.mapDim).sort()).toEqual(["kitchen", "living"]);
+    expect(dims().filter((d) => d.style.opacity === "1").map((d) => d.dataset.mapDim)).toEqual(["kitchen"]);
+    expect([...container.querySelectorAll("fieldset > legend")].map((e) => e.textContent)).toEqual(["Vision", "Digital Twin", "FSM 바뀜"]);
+  });
 });
+

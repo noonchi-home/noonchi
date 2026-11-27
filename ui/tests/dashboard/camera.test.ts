@@ -2,7 +2,7 @@
 // 트윈 지도 카메라: 트윈이 화면 전체라 구운 보기 그림(1920×1536)보다 옆으로 넓다. 지켜보기는 집 전체(모든 방)를, 계획 단계는 그 단계에 중요한 것(목적지·클로이드·확인한 것·지금 길·말풍선·방 이름표)을
 // 지도 카메라 칸(focus) 안, 얹은 것(말풍선 카드·마스코트·미니맵·생각 말풍선) 밑이 아닌 곳에 맞춘다. 그림 밖은 3D 장면 바탕이라 비워 둬도 된다. 가장자리 표시 흐리기, 방 이름표 자리.
 import { describe, expect, it } from "vitest";
-import { activityFocus, coverScale, focusOf, legOf, livedOf, MAX_SCALE, still, toScreen, watchFocus, wholeOf, wideCamera } from "../../src/dashboard/camera";
+import { activityFocus, coverScale, focusOf, legOf, livedOf, MAX_SCALE, REFLECT_ZOOM, still, toScreen, watchFocus, wholeOf, wideCamera } from "../../src/dashboard/camera";
 import { BUBBLE_BOX, edgeFade } from "../../src/dashboard/checks";
 import { twinFrame } from "../../src/dashboard/frame";
 import { avoidBoxes, placeLabel } from "../../src/dashboard/labels";
@@ -231,5 +231,16 @@ describe("방 이름표와 말풍선", () => {
   it("말풍선 바로 위 방 가운데는 피해 옮긴다", () => {
     const avoid = avoidBoxes([{ x: 400, y: 300 }], []);
     expect(placeLabel({ x: 420, y: 270 }, avoid, { width: 1000, height: 800 })).not.toEqual({ x: 420, y: 270 });
+  });
+});
+
+describe("밤 반성 확대 상한", () => {
+  it("확대 상한(maxScale)을 넘겨 받으면 그만큼 더 당긴다. 기본은 MAX_SCALE", () => {
+    const image = { width: 1920, height: 1536 }, box = { width: 1030, height: 1048 }, pad = { left: 16, right: 16, top: 16, bottom: 36 };
+    const whole = { x0: 50, y0: 100, x1: 1870, y1: 1428 };
+    const small = { x0: 900, y0: 700, x1: 1100, y1: 860 };
+    expect(wideCamera(image, box, small, pad, whole).scale).toBeCloseTo(MAX_SCALE);
+    expect(wideCamera(image, box, small, pad, whole, 6, 2.3).scale).toBeGreaterThan(MAX_SCALE);
+    expect(REFLECT_ZOOM).toEqual({ maxZoom: 6, maxScale: 1.3 });
   });
 });

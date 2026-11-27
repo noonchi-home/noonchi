@@ -10,7 +10,7 @@ import { useEvents } from "../lib/use-events";
 import { useHealth } from "../lib/use-health";
 import { TwinStage, useAnchors, type TwinEngine, LiveQueue, attachLive, BAKE_VIEWS, Twin3D, useLayoutBox, planToPixel } from "../twin";
 import { useViewer } from "../lib/twin-viewer";
-import { activityFocus, still, wholeOf, wideCamera, type Camera } from "./camera";
+import { activityFocus, REFLECT_ZOOM, still, wholeOf, wideCamera, type Camera } from "./camera";
 import { currentStep, isOpen, stepIndex } from "./data";
 import { currentStatusRowsOf } from "./timeline";
 import { goalOf, type GoalNow } from "./goal";
@@ -22,14 +22,14 @@ import { hubOf, useMobileUrl } from "../lib/hub";
 import type { PageLayout } from "./layout";
 import { MapOverlay } from "./MapOverlay";
 import { markTone, type MarkTone } from "./trace-marks";
-import { CAMERA_MS, useReducedMotionNow } from "./motion";
+import { CAMERA_MS, REFLECT_CAMERA_MS, useReducedMotionNow } from "./motion";
 import type { PhoneSlot } from "./PhonePane";
 import { useDash } from "./use-dash";
 import { NarrationPane } from "./NarrationPane";
 import { narrationOf } from "./narration";
 import { usePhoneCommand } from "./use-phone-command";
 import { api } from "../lib/api";
-import { graphOf, type ReflectionPlace } from "./reflection";
+import { graphOf, type ReflectionMoment, type ReflectionPlace } from "./reflection";
 import { useReflectionView } from "./use-reflection";
 
 declare global {
@@ -102,7 +102,7 @@ function useHomeData(home: string | null): HomeData | null {
  * 바뀌면 CAMERA_MS 동안 옮긴다(움직임 줄이기면 바로). 종류를 정하기 전(home null)에는 캔버스 없이 틀만.
  * 엔진이 뜨고 버려질 때 onEngine, 첫 그림을 그리면 onReady.
  */
-function BakedStage({ home, homeData, layout, trace, plans, plan, eye, goal, checks, devices, onEngine: toLive, onReady: toReady, onTwin }: {
+function BakedStage({ home, homeData, layout, trace, plans, plan, eye, goal, checks, devices, onEngine: toLive, onReady: toReady, onTwin, moment = null, momentRooms = [] }: {
   home: string | null;
   homeData: HomeData | null;
   /** 받은 트레이스 줄: 트윈은 가장 최근 활동의 줄을 그 자리에 그린다(trace-marks.ts). */
@@ -119,6 +119,10 @@ function BakedStage({ home, homeData, layout, trace, plans, plan, eye, goal, che
   onEngine: (engine: TwinEngine | null) => void;
   onReady: () => void;
   onTwin: (marks: ReadonlyMap<string, MarkTone>) => void;
+  /** 밤 반성 단계 순간(use-reflection.ts): 있으면 그 순간의 맞출 곳·밝힐 방·표시만 그리고 계획·눈·목표는 그리지 않는다. */
+  moment?: ReflectionMoment | null;
+  /** 반성 순간들의 밝힐 방 묶음(어둡게 한 층을 미리 만든다). */
+  momentRooms?: string[][];
 }) {
   const box = useRef<HTMLElement>(null);
   const size = useLayoutBox(box);
@@ -128,30 +132,34 @@ function BakedStage({ home, homeData, layout, trace, plans, plan, eye, goal, che
   const list = useMemo(() => dashboardChecks(checks.turn), [checks.turn]);
   // 말풍선·이름표가 비킬 클로이드 자리는 원뿔을 그리는 자리(방 안·벽에서 떨어진 자리)다. 엔진에는 받은 눈을 그대로 넣는다
   const drawn = useMemo(() => (eye && engine && !eye.estimated ? { ...eye, position: engine.stand(eye.position) } : eye), [eye, engine]);
-  const frame = useMemo(
-    () => (v && homeData ? twinFrame({ plan, eye: drawn, checks: list, anchor: (id) => engine?.anchor(id) ?? null, home: homeData.index, cam: v, world: checks.world ?? null, goal, trace, plans }) : null),
-    [v, homeData, plan, drawn, list, engine, checks.world, goal, trace, plans],
-  );
-  const roomSets = useMemo(() => (frame?.plan && homeData ? roomSetsOf(frame.plan, homeData.index) : []), [frame?.plan, homeData]);
+  const frame = useMemo(() => {
+    if (!v || !homeData) return null;
+    const anchor = (id: string) => engine?.anchor(id) ?? null;
+    // 밤 반성 순간: 계획·눈·목표·트레이스 없이 그 순간의 밝힐 방과 표시만
+    if (moment) return { ...twinFrame({ plan: null, eye: null, checks: [], anchor, home: homeData.index, cam: v, world: null, goal: null, trace: [], plans: [] }), rooms: moment.rooms, trace: moment.marks };
+    return twinFrame({ plan, eye: drawn, checks: list, anchor, home: homeData.index, cam: v, world: checks.world ?? null, goal, trace, plans });
+  }, [v, homeData, plan, drawn, list, engine, checks.world, goal, trace, plans, moment]);
+  const roomSets = useMemo(() => (moment ? momentRooms : frame?.plan && homeData ? roomSetsOf(frame.plan, homeData.index) : []), [moment, momentRooms, frame?.plan, homeData]);
   // 집 전체(모든 방)는 가장 먼 보기다
   const whole = useMemo(() => (homeData ? wholeOf(homeData.index.shapes) : null), [homeData]);
-  const focus = frame && homeData ? activityFocus(frame, homeData.index.shapes) : null;
+  const focus = moment ? moment.focus : frame && homeData ? activityFocus(frame, homeData.index.shapes) : null;
   // 트윈에 그린 트레이스 줄과 그 색을 트레이스 칸에 알린다
   const drawnRows = useMemo(() => new Map((frame?.trace ?? []).map((m) => [m.rowId, markTone(m)] as const)), [frame?.trace]);
   useEffect(() => { onTwin(drawnRows); }, [drawnRows, onTwin]);
   // 맞출 곳(계획 단계는 그 단계에 중요한 것, 지켜보기는 클로이드가 있는 방)을 빈 곳 가운데에 두고 빈 곳을 채우게 당긴다
-  const want = !v || size.width <= 0 || size.height <= 0 ? null : wideCamera(v, size, focus, layout.camPad, whole);
+  const want = !v || size.width <= 0 || size.height <= 0 ? null
+    : moment ? wideCamera(v, size, focus, layout.camPad, whole, REFLECT_ZOOM.maxZoom, REFLECT_ZOOM.maxScale) : wideCamera(v, size, focus, layout.camPad, whole);
   const last = useRef<Camera | null>(null);
   const cam = want && last.current && still(last.current, want) ? last.current : want;
   useLayoutEffect(() => { last.current = cam; });
-  const moveMs = useReducedMotionNow() ? 0 : CAMERA_MS;
+  const moveMs = useReducedMotionNow() ? 0 : moment ? REFLECT_CAMERA_MS : CAMERA_MS;
   // 얹은 것(말풍선 카드·마스코트·미니맵·생각 말풍선) 자리(트윈 칸 px)
   const blocked = useMemo(() => layout.blocked.map((r) => ({
     x0: r.left - layout.twin.left, y0: r.top - layout.twin.top, x1: r.left + r.width - layout.twin.left, y1: r.top + r.height - layout.twin.top,
   })), [layout]);
   const debug = useMemo(() => new URLSearchParams(location.search).has("debug"), []);
-  // 맞춘 눈은 3D 원뿔로(엔진이 뜬 뒤에도 마지막 눈을 넣는다)
-  useEffect(() => { engine?.setEye(eye); }, [engine, eye]);
+  // 맞춘 눈은 3D 원뿔로(엔진이 뜬 뒤에도 마지막 눈을 넣는다). 밤 반성 동안은 원뿔을 그리지 않는다
+  useEffect(() => { engine?.setEye(moment ? null : eye); }, [engine, eye, moment]);
   const onEngine = useCallback((e: TwinEngine | null) => {
     setEngine(e);
     toLive(e);
@@ -278,7 +286,8 @@ export function Dashboard() {
       </TwinStage>
     )
     : (layout: PageLayout) => (
-      <BakedStage home={kind === "three" ? homeId : null} homeData={homeData} layout={layout} trace={dash.trace} plans={tracePlans} plan={dash.plan} eye={dash.eye} goal={goal} checks={checks} devices={devices} onEngine={onEngine} onReady={onBakedReady} onTwin={onTwinMarks} />
+      <BakedStage home={kind === "three" ? homeId : null} homeData={homeData} layout={layout} trace={dash.trace} plans={tracePlans} plan={dash.plan} eye={dash.eye} goal={goal} checks={checks} devices={devices} onEngine={onEngine} onReady={onBakedReady} onTwin={onTwinMarks}
+        moment={reflection.active ? reflection.moment : null} momentRooms={momentRooms} />
     );
   // 하루 마치기: 응답은 반성이 끝나야 온다. 진행은 day 메시지로 보인다. closing을 못 받고 실패하면(반성 전에 막힘) 설정 창을 다시 연다
   const [finish, setFinish] = useState({ failed: false, reopen: 0 });
@@ -295,14 +304,16 @@ export function Dashboard() {
   const graph = useMemo(() => graphOf(dash.habit), [dash.habit]);
   const place = useMemo((): ReflectionPlace | null => {
     const cam = homeId ? BAKE_VIEWS[homeId] : undefined;
-    if (!homeData || !cam || !engineNow || !bakedReady) return null;
+    if (!homeData || !cam) return null;
+    // 방 모양은 장면만으로, 식탁·싱크대 자리는 엔진이 뜬 뒤에 안다
     const spot = (id: string | null) => {
-      const at = id ? engineNow.anchor(id) : null;
+      const at = id && engineNow ? engineNow.anchor(id) : null;
       return at ? { at, px: planToPixel(cam, [at[0], at[2]], at[1]) } : null;
     };
     return { shapes: homeData.index.shapes, table: spot(homeData.tableId), sink: spot(homeData.sinkId) };
-  }, [homeData, homeId, engineNow, bakedReady]);
+  }, [homeData, homeId, engineNow]);
   const reflection = useReflectionView({ day: dash.day, replay, place, graph });
+  const momentRooms = useMemo(() => [...new Map(reflection.moments.filter((m) => m.rooms.length).map((m) => [m.rooms.join("+"), m.rooms])).values()], [reflection.moments]);
   const plan = isOpen(dash.plan) && (!scene || !awaitingHello) ? dash.plan : null;
   // 가짜 단계 화면 상태 표가 읽는 것: 사람 상태·습관 그림(이름)·목표·최근 계획
   const statusRows = useMemo(() => currentStatusRowsOf(dash), [dash.people, dash.robots, dash.habit, dash.goal, dash.plans, dash.plan]);
