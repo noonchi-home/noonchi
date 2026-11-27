@@ -92,6 +92,31 @@ describe("밤 반성 단계 순간", () => {
     expect(edge(out.find((m) => m.step === 6)!, "cur:drinking>*")).toMatchObject({ line: "solid", tone: "current" });
   });
 
+  it("후보 없이 배운 화살표(맥주 규칙)도 FSM 바뀜에 실선으로 나오고, 검사가 없는 밤에도 FSM 바뀜 단계가 있다. 끝 칸은 그 칸이다", () => {
+    const BEER = "맥주 가져다주기";
+    const out = reflectionMoments({ ...DETAIL, candidates: [], checks: [], dropped: [],
+      after_graph: { states: GRAPH.states, edges: [...GRAPH.edges, { from: "watching_tv", to: "watching_tv", action: BEER }] },
+      learned: [{ from: "watching_tv", to: "watching_tv", action: BEER, was: null, was_to: null }] }, PLACE);
+    expect(out.map((m) => m.step)).toEqual([1, 1, 2, 3, 6, 7]);
+    const six = out.find((m) => m.step === 6)!;
+    expect(edge(six, `learn:watching_tv>watching_tv:${BEER}`)).toMatchObject({ line: "solid", tone: "adopted", chips: [BEER, "11월 28일부터"] });
+    expect(edge(six, "cur:watching_tv>watching_tv")).toBeUndefined();
+    expect(out.at(-1)!.pane.edges).toEqual(six.pane.edges);
+  });
+
+  it("검사가 있는 밤에도 후보와 짝이 없는 배운 화살표(물 습관)를 더하고, 새 판본에만 있는 새 상태도 그린다", () => {
+    const WATER = "물 한 잔 가져다주기";
+    const out = reflectionMoments({ ...DETAIL,
+      after_graph: { states: [...GRAPH.states, "studying", "reading"], edges: [...DETAIL.after_graph!.edges, { from: "studying", to: "studying", action: WATER }, { from: "reading", to: "away", action: null }] },
+      learned: [...DETAIL.learned, { from: "studying", to: "studying", action: WATER, was: null, was_to: null }] }, PLACE);
+    const six = out.find((m) => m.step === 6)!;
+    expect(six.pane.states).toEqual(expect.arrayContaining(["studying", "reading"]));
+    expect(edge(six, "cur:reading>away")).toMatchObject({ line: "solid", tone: "current" });
+    expect(edge(six, `learn:studying>studying:${WATER}`)).toMatchObject({ line: "solid", tone: "adopted" });
+    expect(edge(six, DRINK)).toMatchObject({ line: "solid", tone: "adopted" });
+    expect(edge(six, `learn:drinking>*:${CUP}`)).toBeUndefined();
+  });
+
   it("비율은 넘었는데 우연일 확률로 못 지나면 그 숫자가 까닭이다", () => {
     const one = reflectionMoments({ ...DETAIL, learned: [], after_graph: GRAPH, candidates: [DETAIL.candidates[0]!],
       checks: [{ ...DETAIL.checks[0]!, n: 1, k: 1, p_value: 0.01, passed: false, moments: [DETAIL.checks[0]!.moments[1]!] }] }, PLACE);

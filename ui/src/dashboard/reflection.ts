@@ -86,7 +86,8 @@ const countChips = ({ n, k, u }: { n: number; k: number; u: number }) =>
 export function reflectionMoments(d: ReflectionDetail, place: ReflectionPlace): ReflectionMoment[] {
   if (d.state !== "done") return [failedMoment(d.graph, d.rejected)];
   const states = [...d.graph.states];
-  for (const id of [...d.candidates.flatMap((c) => [c.state, c.to ?? ANY]), ...d.dropped.flatMap((x) => [x.from, x.to]), ...d.learned.flatMap((x) => [x.from, x.to])]) {
+  // 새 판본에만 있는 상태(반성이 더한 상태)도 원을 그린다
+  for (const id of [...(d.after_graph?.states ?? []), ...d.candidates.flatMap((c) => [c.state, c.to ?? ANY]), ...d.dropped.flatMap((x) => [x.from, x.to]), ...d.learned.flatMap((x) => [x.from, x.to])]) {
     if (id !== ANY && !states.includes(id)) states.push(id);
   }
   const base = baseOf(d.graph);
@@ -169,7 +170,9 @@ export function reflectionMoments(d: ReflectionDetail, place: ReflectionPlace): 
         return [RW.maybe(c.action), ...(x ? [...countChips({ n: x.n, k: x.k, u: x.unknown }), RW.checkLine(x.rate, d.rate_min, x.p_value, d.alpha, x.passed)] : [])];
       }, (c) => (checkOf(c)?.passed ? "candidate" : "rejected")), ...drops]),
     });
+  }
 
+  if (d.checks.length || d.after_graph) {
     // 6) FSM 바뀜: 배운 화살표는 실선, 반성이 저장한 새 판본(after_graph)에 없는 지금 화살표는 지운다, 못 지난 후보는 숫자 까닭만
     const learnedOf = (c: { state: string; to: string | null; action: string }) => d.learned.find((l) => l.from === c.state && l.to === (c.to ?? ANY) && l.action === c.action);
     let after: Base[];
@@ -180,6 +183,9 @@ export function reflectionMoments(d: ReflectionDetail, place: ReflectionPlace): 
       after = base.map((e) => ({ ...e, actions: [...e.actions] }));
       for (const l of d.learned) if (l.was) after = dropAction(after, l.from, l.was_to ?? l.to, l.was);
     }
+    // 후보 없이 배운 화살표(맥주 규칙·도움 습관 등)는 그 화살표로 실선을 그린다
+    const loose: PaneEdge[] = d.after ? d.learned.filter((l) => !d.candidates.some((c) => l.from === c.state && l.to === (c.to ?? ANY) && l.action === c.action))
+      .map((l) => ({ key: `learn:${l.from}>${l.to}:${l.action}`, from: l.from, to: l.to, line: "solid", tone: "adopted", chips: [l.action, RW.from(md(d.after!.applies_day))] })) : [];
     const sixth: PaneEdge[] = d.candidates.flatMap((c): PaneEdge[] => {
       const x = checkOf(c);
       if (learnedOf(c) && d.after) return [{ key: candKey(c), from: c.state, to: c.to ?? ANY, line: "solid", tone: "adopted", chips: [c.action, RW.from(md(d.after.applies_day))] }];
@@ -187,7 +193,7 @@ export function reflectionMoments(d: ReflectionDetail, place: ReflectionPlace): 
       return [{ key: candKey(c), from: c.state, to: c.to ?? ANY, line: "dashed", tone: "rejected",
         chips: [c.action, ...(x ? [x.rate < d.rate_min ? RW.followCount(x.k, x.n) : RW.chance(x.p_value)] : [])] }];
     });
-    const fsm = pane(RW.step.fsm, [...plain(after), ...sixth, ...drops]);
+    const fsm = pane(RW.step.fsm, [...plain(after), ...sixth, ...loose, ...drops]);
     out.push({
       step: 6, holdMs: HOLD.fsm, focus: tableFocus, rooms: [],
       marks: pick && learnedOf(pick) && d.after ? mark("goal", place.table, RW.tagFrom(md(d.after.applies_day), pick.action), "success") : [],
