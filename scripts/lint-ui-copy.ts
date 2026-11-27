@@ -280,6 +280,8 @@ export const COPY_TARGETS = [
   fileURLToPath(new URL("../src/devices/kinds.ts", import.meta.url)),
   fileURLToPath(new URL("../src/brain/history/labels.ts", import.meta.url)),
   fileURLToPath(new URL("../src/act/prompts.ts", import.meta.url)),
+  // Android 앱 리모컨 등록 글
+  fileURLToPath(new URL("../apps/android/ir-remotes.ts", import.meta.url)),
 ];
 /** 보고에 쓸 경로: 저장소 안이면 저장소 기준(ui/src/phone/PhoneScreen.tsx, ui/src/…), 밖이면 검사한 폴더 이름부터. */
 const shown = (dir: string, file: string) => {
