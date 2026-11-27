@@ -4,7 +4,7 @@
 import { z } from "zod";
 import type { Policy } from "./policy.js";
 import type { DeviceView } from "../contract/events.js";
-import { isRemoteHub, type Command, type CommandResult, type DeviceHub, type DeviceSpec, type PressResult, type RoomSpec } from "../contract/devices.js";
+import type { Command, CommandResult, DeviceHub, DeviceSpec, PressResult, RemoteHub, RoomSpec } from "../contract/devices.js";
 import type { DeviceKind } from "../devices/kinds.js";
 import { KIND_LABELS } from "../devices/index.js";
 import { doneSentence } from "./phrases.js";
@@ -85,6 +85,10 @@ export function roomViews(devices: Pick<DeviceSpec, "room" | "roomLabel">[], roo
   }
   return out;
 }
+
+/** 등록한 적외선 리모컨이 있는 허브인가(SignalHub). */
+export const isRemoteHub = (hub: object): hub is RemoteHub =>
+  typeof (hub as Partial<RemoteHub>).press === "function" && typeof (hub as Partial<RemoteHub>).remoteOf === "function";
 
 export function deviceViews(hub: DeviceHub): DeviceView[] {
   const out: DeviceView[] = [];
