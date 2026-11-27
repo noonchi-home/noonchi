@@ -188,6 +188,29 @@ describe("서버 시작: TV 중계", () => {
     expect(json(await api("/api/setup/ir?home=oneroom")).remotes.map((r: { device: string; buttons: unknown[] }) => [r.device, r.buttons])).toEqual([["tv_1", []]]);
   });
 
+  it("전원 단추가 있는 리모컨은 중계 TV로 옮기지 못하고, 전원 단추를 지우면 옮기며, 다시 켜도 시작한다", async () => {
+    const dir = runtime();
+    const at = "2026-11-27T10:00:00.000Z";
+    mkdirSync(join(dir, "homes", "oneroom"), { recursive: true });
+    writeFileSync(join(dir, "homes", "oneroom", "remotes.json"), JSON.stringify({ version: 1, port: null, remotes: [{ id: "r_000000ac", label: "에어컨", device: "ac_1", buttons: [
+      { id: "b_000000a1", label: "켜기", role: "on", signal: { kind: "nec", address: 4, command: 1 }, learned_at: at },
+      { id: "b_000000a2", label: "바람 세기", role: null, signal: { kind: "nec", address: 4, command: 2 }, learned_at: at },
+    ] }] }));
+    const env = { TV_RELAY_URL: "http://127.0.0.1:9", TV_RELAY_TOKEN: TOKEN, TV_RELAY_DEVICE: "tv_1", TV_RELAY_POLL_MS: "0" };
+    srv = await startServer({ env: { HUB: "memory", PORT: "0", HOME_ID: "oneroom", RUNTIME_DIR: dir, ...env }, log: () => {}, ...fakeIr() });
+    const move = { home: "oneroom", id: "r_000000ac", label: "TV", device: "tv_1" };
+    const refused = await api("/api/setup/ir/remote", move);
+    expect([refused.status, json(refused).error]).toEqual([409, "이 TV는 TV 중계로 켜고 꺼요. 전원 단추는 넣을 수 없어요."]);
+    expect(json(await api("/api/setup/ir?home=oneroom")).remotes.map((r: { device: string }) => r.device)).toEqual(["ac_1"]);
+    expect((await api("/api/setup/ir/button/delete", { home: "oneroom", remote: "r_000000ac", button: "b_000000a1" })).status).toBe(200);
+    expect((await api("/api/setup/ir/remote", move)).status).toBe(200);
+    await srv.close();
+    srv = undefined;
+    srv = await startServer({ env: { HUB: "memory", PORT: "0", HOME_ID: "oneroom", RUNTIME_DIR: dir, ...env }, log: () => {}, ...fakeIr() });
+    expect(json(await api("/api/setup/ir?home=oneroom")).remotes.map((r: { device: string; buttons: { label: string }[] }) => [r.device, r.buttons.map((b) => b.label)]))
+      .toEqual([["tv_1", ["바람 세기"]]]);
+  });
+
   it("저장한 실제 모드는 중계 TV가 있는 집이면 그대로, 없는 집이면(리모컨·ThinQ도 없음) 시험 모드로 띄운다", async () => {
     const fake = await fakeRelay();
     await start({ TV_RELAY_URL: fake.url, TV_RELAY_TOKEN: TOKEN, TV_RELAY_DEVICE: "tv_1", TV_RELAY_POLL_MS: "0" }, [], savedRuntime({ home: "oneroom", mode: "live" }), true);

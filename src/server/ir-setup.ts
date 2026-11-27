@@ -243,7 +243,10 @@ export class IrSetup {
     if (this.file.remotes.some((r) => r.device === b.device && r.id !== b.id)) throw new HttpError(400, E.taken);
     let remotes: RemoteEntry[];
     if (b.id) {
-      if (!this.visible().some((r) => r.id === b.id)) throw new HttpError(404, E.noRemote);
+      const moved = this.visible().find((r) => r.id === b.id);
+      if (!moved) throw new HttpError(404, E.noRemote);
+      // 전원 단추가 있는 리모컨을 중계 TV로 옮기면 다음 시작이 TvSetupConflict로 막힌다
+      if (moved.buttons.some((x) => x.role)) this.requirePowerAllowed(b.device);
       remotes = this.file.remotes.map((r) => (r.id === b.id ? { ...r, label, device: b.device } : r));
     } else remotes = [...this.file.remotes, { id: newId("r"), label, device: b.device, buttons: [] }];
     this.file = { ...this.file, remotes };
