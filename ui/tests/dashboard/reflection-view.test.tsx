@@ -34,6 +34,23 @@ describe("반성 보기", () => {
     expect(result.current).toMatchObject({ active: false, dayAtStart: null });
   });
 
+  it("순간이 여럿인 자료는 머무는 시간마다 다음 순간으로 넘어가 끝 순간 뒤 나온다", async () => {
+    vi.useFakeTimers();
+    const done = { ...DETAIL, state: "done", after: { version: 2, applies_day: "2026-11-28" },
+      chunks: [{ start: "08:10:00", end: "08:20:00", state: "drinking", room: "kitchen" }, { start: "09:00:00", end: "09:10:00", state: null, room: "living" }] };
+    const { result, rerender } = view({ fetch: () => new Response(JSON.stringify(done)) });
+    rerender({ d: day(true, 0) });
+    rerender({ d: day(false, 1) });
+    await act(async () => { await vi.advanceTimersByTimeAsync(10); });
+    const seen: number[] = [];
+    for (let i = 0; i < 10 && result.current.active; i++) {
+      seen.push(result.current.moment!.step);
+      await act(async () => { await vi.advanceTimersByTimeAsync(result.current.moment!.holdMs + 10); });
+    }
+    expect(seen).toEqual([1, 1, 2, 3, 7]);
+    expect(result.current.active).toBe(false);
+  });
+
   it("자료 대신 오류 응답(500)이 오면 지금 FSM 그림에 「반성 실패」 순간이다", async () => {
     vi.useFakeTimers();
     const { result, rerender } = view({ fetch: () => new Response(JSON.stringify({ ok: false, error: "서버 오류" }), { status: 500 }) });

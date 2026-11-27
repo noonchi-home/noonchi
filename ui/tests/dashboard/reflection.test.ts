@@ -117,6 +117,23 @@ describe("밤 반성 단계 순간", () => {
     expect(edge(six, `learn:drinking>*:${CUP}`)).toBeUndefined();
   });
 
+  it("고른 검사는 통과한 것이 먼저다: 첫 검사가 못 지나고 둘째가 지나면 2~6단계 표시는 둘째(컵 치우기) 것이다", () => {
+    const air = { ...DETAIL.checks[1]!, state: "watching_tv", to: "watching_tv", action: "에어컨 켜기" };
+    const out = reflectionMoments({ ...DETAIL, checks: [air, DETAIL.checks[0]!], candidates: [{ state: "watching_tv", to: "watching_tv", action: "에어컨 켜기" }, DETAIL.candidates[0]!] }, PLACE);
+    expect(out.find((m) => m.step === 3)!.marks.map((m) => m.text)).toEqual(["후보 · 컵 치우기"]);
+    expect(out.find((m) => m.step === 5)!.marks.map((m) => m.text)).toEqual(["채택 · 컵 치우기"]);
+    expect(out.find((m) => m.step === 2)!.focus).not.toBeNull();
+  });
+
+  it("고른 검사가 컵 치우기가 아니면(에어컨 켜기) 2~6단계는 트윈을 식탁에 맞추지 않고 표시도 없다", () => {
+    const air = { ...DETAIL.checks[0]!, state: "watching_tv", to: "watching_tv", action: "에어컨 켜기" };
+    const out = reflectionMoments({ ...DETAIL, checks: [air], candidates: [{ state: "watching_tv", to: "watching_tv", action: "에어컨 켜기" }], did: [{ action: "에어컨 켜기", at: "14:41:10", via: "person" }], learned: [] }, PLACE);
+    for (const m of out.filter((x) => x.step >= 2 && x.step <= 6)) {
+      expect(m.focus, `${m.step}`).toBeNull();
+      expect(m.marks, `${m.step}`).toEqual([]);
+    }
+  });
+
   it("비율은 넘었는데 우연일 확률로 못 지나면 그 숫자가 까닭이다", () => {
     const one = reflectionMoments({ ...DETAIL, learned: [], after_graph: GRAPH, candidates: [DETAIL.candidates[0]!],
       checks: [{ ...DETAIL.checks[0]!, n: 1, k: 1, p_value: 0.01, passed: false, moments: [DETAIL.checks[0]!.moments[1]!] }] }, PLACE);
