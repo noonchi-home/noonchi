@@ -1,9 +1,9 @@
 // 적외선 리모컨 등록 계약. 허브(src/server/ir-setup.ts)와 Android 앱(apps/android/ir-remotes.ts)이 같이 쓴다.
 // 두 작업 가지가 이 파일을 똑같이 만든다. 바꿀 때는 control이 계획(plans/2026-11-27-ir-remote-registration.md)부터 고친다.
+// 상수(REMOTE_ROLES·IR_PRESETS·IR_LABEL_MAX·IR_LEARN_MS·IR_PATHS)는 src/shared/ir.ts에 있다.
 
 /** 단추 뜻. on·off·toggle은 전원 단추(turn_on·turn_off가 쓴다), null은 그 밖 단추(press_remote가 쓴다). */
 export type RemoteRole = "on" | "off" | "toggle" | null;
-export const REMOTE_ROLES = ["on", "off", "toggle"] as const;
 
 /** 수신기가 해석한 신호(IRremote 방식 이름·주소·명령). */
 export interface IrDecoded { protocol: string; address: number; command: number }
@@ -59,24 +59,8 @@ export interface IrPortsView { ok: true; ports: IrPortChoice[] }
 /** POST /api/setup/ir/test. */
 export interface IrTestView { ok: true; sent: true }
 
-export const IR_PRESETS = ["lg_tv_power"] as const;
-export type IrPreset = (typeof IR_PRESETS)[number];
-
-export const IR_LABEL_MAX = 20;
-export const IR_LEARN_MS = 30_000;
-
-export const IR_PATHS = {
-  view: "/api/setup/ir",
-  ports: "/api/setup/ir/ports",
-  port: "/api/setup/ir/port",
-  remote: "/api/setup/ir/remote",
-  remoteDelete: "/api/setup/ir/remote/delete",
-  learn: "/api/setup/ir/learn",
-  learnCancel: "/api/setup/ir/learn/cancel",
-  buttonDelete: "/api/setup/ir/button/delete",
-  test: "/api/setup/ir/test",
-  preset: "/api/setup/ir/preset",
-} as const;
+/** 미리 넣는 단추 묶음(값 목록은 src/shared/ir.ts IR_PRESETS). */
+export type IrPreset = "lg_tv_power";
 
 export interface IrPortBody { home: string; port: string }
 export interface IrRemoteBody { home: string; id?: string; label: string; device: string }

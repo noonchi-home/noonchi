@@ -5,10 +5,10 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { z } from "zod";
-import {
-  IR_LABEL_MAX, IR_PRESETS, REMOTE_ROLES,
-  type IrDeviceChoice, type IrFirmware, type IrLearnView, type IrPortChoice, type IrPortState, type IrPortsView,
-  type IrRemoteView, type IrSignal, type IrTestView, type IrView, type RemoteRole,
+import { IR_LABEL_MAX, IR_PRESETS, REMOTE_ROLES } from "../shared/ir.js";
+import type {
+  IrDeviceChoice, IrFirmware, IrLearnView, IrPortChoice, IrPortState, IrPortsView,
+  IrRemoteView, IrSignal, IrTestView, IrView, RemoteRole,
 } from "../contract/ir.js";
 import { isRiskyKind, kindEntry, HOUSEHOLD_KINDS } from "../devices/kinds.js";
 import {

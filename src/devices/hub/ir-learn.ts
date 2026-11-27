@@ -1,5 +1,6 @@
 // 리모컨 단추 하나 배우기: 같은 신호를 두 번 연달아 받으면 저장한다(30초).
-import { IR_LEARN_MS, type IrSignal } from "../../contract/ir.js";
+import type { IrSignal } from "../../contract/ir.js";
+import { IR_LEARN_MS } from "../../shared/ir.js";
 import type { BridgePress, BridgeState } from "./ir-bridge.js";
 import { equalSignal, sameTicks } from "./ir-remotes.js";
 

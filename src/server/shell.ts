@@ -9,7 +9,8 @@ import { DEFAULT_WEB_DIR, HttpError, isLocalOrigin, readJson, type TwinHomeApp }
 import { listenRetry } from "../shared/net.js";
 import { serveFile } from "../shared/static.js";
 import { CLIENT_ERROR_PATH, clientErrorReceiver } from "./client-error.js";
-import { IR_PATHS, type IrPortsView, type IrTestView, type IrView } from "../contract/ir.js";
+import type { IrPortsView, IrTestView, IrView } from "../contract/ir.js";
+import { IR_PATHS } from "../shared/ir.js";
 
 /** 설정 API(start.ts가 구현). 던지는 HttpError는 그 상태 코드로 나간다. */
 export interface SetupApi {
@@ -25,7 +26,7 @@ export interface SetupApi {
   thinqDevices(home?: string): Promise<object>;
   /** 에어컨·냉장고 ↔ ThinQ 기기 짝. */
   setPairs(body: Record<string, unknown>): object;
-  /** 적외선 리모컨 등록(계약 src/contract/ir.ts IR_PATHS). */
+  /** 적외선 리모컨 등록(계약 src/contract/ir.ts, 경로 src/shared/ir.ts IR_PATHS). */
   ir: {
     view(home?: string): IrView;
     ports(): Promise<IrPortsView>;

@@ -4,7 +4,7 @@ import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node
 import { join } from "node:path";
 import { z } from "zod";
 import type { IrSignal, RemoteRole } from "../../contract/ir.js";
-import { IR_LABEL_MAX } from "../../contract/ir.js";
+import { IR_LABEL_MAX } from "../../shared/ir.js";
 import { HOUSEHOLD_KINDS } from "../kinds.js";
 import type { BridgePress } from "./ir-bridge.js";
 import { IR_DEFAULTS, type IrConfig } from "./ir.js";
