@@ -82,8 +82,11 @@ test("a change heard before the first read finishes wins over the read", async (
 
 test("buttons and choices press through the shared motion that follows the system reduce motion setting", () => {
   const ui = source("ConnectedUi.tsx");
-  assert.match(ui, /export function Action\([\s\S]*?return <MotionPressable /);
-  assert.match(ui, /export function Choice\([\s\S]*?return <MotionPressable /);
+  const body = (name: string) => ui.slice(ui.indexOf(`export function ${name}(`), ui.indexOf("\n}\n", ui.indexOf(`export function ${name}(`)));
+  for (const name of ["Action", "Choice"]) {
+    assert.match(body(name), /return <MotionPressable /, name);
+    assert.doesNotMatch(body(name), /<Pressable\b/, name);
+  }
   assert.match(ui, /onPressIn=\{\(\) => move\(1\)\} onPressOut=\{\(\) => move\(0\)\}/);
   assert.match(ui, /const reduceMotion = reduceMotionStore\(AccessibilityInfo\);/);
   assert.match(ui, /useSyncExternalStore\(reduceMotion\.subscribe, reduceMotion\.get\)/);
