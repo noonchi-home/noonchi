@@ -26,6 +26,8 @@ export async function startDevices(core: HomeCore, homeId: string | undefined): 
     history.device(s, { label: spec?.label, kind: spec?.kind });
     core.trace?.device(s, spec?.kind);
   });
+  // 리모컨 사건(허브가 쏜 단추·사람이 누른 등록 단추)도 가전 변화처럼 관찰을 켜지 않아도 트레이스에 남긴다
+  signals.onRemote = (e) => core.trace?.remote(e, specOf.get(e.device)?.kind);
   core.twin = twin;
   core.started = started;
   core.signals = signals;

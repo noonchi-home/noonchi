@@ -9,6 +9,8 @@ import type { SerialPortInfo } from "../src/devices/hub/ir-ports.js";
 import { startServer, type RunningServer } from "../src/server/start.js";
 import { fetchRetry } from "../src/shared/net.js";
 import { HOME_SCRIPT, startFakeLlm, type FakeLlm } from "./helpers/llm.js";
+import { openWebSocket } from "./helpers/ws.js";
+import { kindEntry } from "../src/devices/kinds.js";
 
 let llm: FakeLlm;
 beforeAll(async () => { llm = await startFakeLlm(HOME_SCRIPT); });
@@ -147,4 +149,30 @@ it("IR_FAKE=1이면 포트 목록에 가상 적외선 장치가 있고, 고르�
   await post("/api/setup/ir/port", { home: HOME, port: "FAKE" });
   expect((await until(view, (v) => v.port.state === "connected")).port).toEqual({ name: "FAKE", state: "connected" });
   expect((await get("/api/setup/ir/ports")).json.ports).toEqual([{ name: "FAKE", label: "가상 적외선 장치", firmware: "ir_bridge" }]);
+}, 30_000);
+
+it("사람이 등록한 단추를 누르면 대시보드에 리모컨 누름 줄이, 실제 모드에서 허브가 쏘면 리모컨 신호 줄이 생긴다", async () => {
+  const dir = runtime(), board = fakeBoard();
+  await start(dir, board);
+  const rows = new Map<string, any>();
+  const ws = await openWebSocket(srv!.url.replace(/^http/, "ws") + "/events", {
+    setup: (w) => w.on("message", (d, bin) => { if (bin) return; const m = JSON.parse(String(d)); if (m.type === "trace") for (const r of m.rows) rows.set(r.id, r); }),
+  });
+  try {
+    await post("/api/setup/ir/port", { home: HOME, port: "COM7" });
+    await until(view, (v) => v.port.state === "connected");
+    const remote = ((await post("/api/setup/ir/remote", { home: HOME, label: "TV", device: "tv_1" })).json as IrView).remotes[0]!.id;
+    await post("/api/setup/ir/preset", { home: HOME, remote, preset: "lg_tv_power" });
+    const named = (name: string) => [...rows.values()].filter((r) => r.name === name);
+    board.press({ protocol: "NEC", address: 4, command: 0xc5 });
+    await until(async () => named("리모컨 누름"), (r) => r.length > 0);
+    expect(named("리모컨 누름")).toEqual([expect.objectContaining({ kind: "OBSERVATION", input: kindEntry("tv")!.label, output: "단추 누름 확인", refs: expect.objectContaining({ object_id: "tv_1" }) })]);
+    expect(named("리모컨 신호")).toEqual([]);
+    expect((await post("/api/setup/mode", { mode: "live", confirm: true })).status).toBe(200);
+    expect(await srv!.signals.press("tv_1", "켜기")).toEqual({ ok: true, sent: true });
+    await until(async () => named("리모컨 신호"), (r) => r.length > 0);
+    expect(named("리모컨 신호")).toEqual([expect.objectContaining({ kind: "TOOL", input: kindEntry("tv")!.label, output: "신호 보냄", refs: expect.objectContaining({ object_id: "tv_1" }) })]);
+  } finally {
+    ws.terminate();
+  }
 }, 30_000);

@@ -2,6 +2,7 @@ import { taskOf } from "../../act/tasks.js";
 import type { AttemptKey, EvidenceRef } from "../../contract/assistance.js";
 import type { AssistanceAttempt, AssistanceExecution } from "../../contract/assistance-outcome.js";
 import type { DeviceState } from "../../contract/devices.js";
+import type { RemoteEvent } from "../../contract/ir.js";
 import type { PendingGoal } from "../../contract/goal.js";
 import type { SafetyState } from "../../contract/machines.js";
 import type { PlannedCommand } from "../../contract/phone.js";
@@ -119,6 +120,13 @@ export class HomeTrace extends TraceJournal {
     }
   }
 
+  /** 리모컨 사건: 허브가 쏜 단추(TOOL 리모컨 신호)·사람이 누른 등록 단추(OBSERVATION 리모컨 누름). 단추 이름(사용자 글)은 싣지 않는다. */
+  remote(e: RemoteEvent, kind: string | undefined): void {
+    const target = kind ? { device: kind } : undefined;
+    if (e.kind === "sent") this.event("remote_sent", { object_id: e.device }, "remote_signal_sent", undefined, target);
+    else this.event("remote_pressed", { object_id: e.device }, "remote_key_pressed", undefined, target);
+  }
+
   safety(state: SafetyState): void {
     const mark = state.state !== "normal" ? JSON.stringify([state.state, state.fall, state.hot, state.notices]) : "";
     if (mark === this.safetyMark) return;
@@ -196,7 +204,7 @@ export class HomeTrace extends TraceJournal {
     if (event === "device" && target?.device && target.deviceState) {
       return { input: kindEntry(target.device)?.label, output: deviceText(target.device, target.deviceState).label };
     }
-    if (event === "device_tool") return { input: kindEntry(target?.device)?.label };
+    if (event === "device_tool" || event === "remote_sent" || event === "remote_pressed") return { input: kindEntry(target?.device)?.label };
     const objects = this.objects?.() ?? [];
     const object = objects.find(value => value.id === refs.object_id);
     const destination = target?.destination;
