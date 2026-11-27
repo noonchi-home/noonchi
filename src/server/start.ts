@@ -309,11 +309,18 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
     return { [id]: relay.config.target };
   };
 
-  // 적외선 리모컨(remotes.json)과 보드 연결 하나. 집을 열 때 붙이고 닫기 전에 뗀다. 저장·포트 고르기 뒤 changed()로 지금 집에 다시 적용한다
+  // 적외선 리모컨(remotes.json)과 보드 연결 하나. 집을 열 때 붙이고 닫기 전에 뗀다. 저장·포트 고르기 뒤 changed()로 지금 집에 리모컨 부분만 다시 붙인다
+  // (ThinQ·TV 중계·출처는 모드·짝·출처를 바꿀 때만 applyControl로 다시 만든다: 다시 만들면 짝지은 ThinQ 가전이 첫 읽기 전까지 모름이 된다)
   const irSetup = new IrSetup({
     runtimeDir, log, fake: env.IR_FAKE === "1", open: opts.irPort ?? openIrPort, listPorts: opts.irPorts ?? (() => listSerialPorts()),
-    mode: () => mode, relayTv: relay.ok ? relay.config.deviceId : null, changed: () => { if (current && !switching) applyControl(current); },
+    mode: () => mode, relayTv: relay.ok ? relay.config.deviceId : null, changed: () => { if (current && !switching) applyRemotes(current); },
   });
+
+  /** 지금 모드대로 TV 전원(IrTv, 실제 모드만)과 리모컨 단추를 집 묶음에 붙인다. */
+  const applyRemotes = (h: HomeRuntime) => {
+    h.signals.setInfrared(mode === "live" ? irSetup.tvConfig() : null, irSetup.tvPort());
+    h.signals.setRemotes(irSetup.runtime(), mode === "live");
+  };
 
   /** 지금 모드·짝·저장한 출처를 집 묶음에 적용한다. 실제 모드에서 짝이 있을 때만 ThinQ·TV 중계 연결을 만든다. */
   const applyControl = (h: HomeRuntime, quiet = true) => {
@@ -324,8 +331,7 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
     const relayNow = mode === "live" ? relayed : {};
     h.signals.setSources({ ...effectiveSources(store.sources(homeId, ids, { quiet: true }), pairs, mode),
       ...Object.fromEntries(Object.entries(relayNow).map(([id, target]) => [id, { kind: "relay" as const, deviceId: target }])) });
-    h.signals.setInfrared(mode === "live" ? irSetup.tvConfig() : null, irSetup.tvPort());
-    h.signals.setRemotes(irSetup.runtime(), mode === "live");
+    applyRemotes(h);
     h.setLink(mode === "live" && thinqConfig(env).ok && Object.keys(pairs).length > 0
       ? new ThinqLink({ client: thinqClient(), world: h.hub, pairs, log, pollMs, readbackMs })
       : null);

@@ -1,7 +1,7 @@
 // 적외선 리모컨 설정 API 본체(/api/setup/ir*, 계약 src/contract/ir.ts). 보드 연결(IrBridge)은 여기서 하나만 연다.
 // 배우기·시험 쏘기는 두 모드 모두 되고, TV 전원(IrTv)과 리모컨 단추 보내기는 start.ts가 실제 모드에서만 붙인다.
 // attach·detach는 changed()를 부르지 않는다(집을 여는 중이라 start.ts가 곧 applyControl을 부른다).
-// 저장·포트 고르기(setPort·saveRemote·deleteRemote·배우기 저장·deleteButton·preset) 뒤에는 changed()로 TV 설정과 연결을 다시 붙이게 한다.
+// 저장·포트 고르기(setPort·saveRemote·deleteRemote·배우기 저장·deleteButton·preset) 뒤에는 changed()로 TV 설정과 리모컨 단추를 다시 붙이게 한다.
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { z } from "zod";
