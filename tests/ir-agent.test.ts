@@ -15,7 +15,10 @@ import { describeDevice } from "../src/devices/mapping.js";
 import { deviceRunner } from "../src/act/devices.js";
 import { PlanHub } from "../src/act/hub.js";
 import { ApprovalStore } from "../src/agent/approval.js";
-import { AGENT_TOOLS, Policy, deviceViews, localBackend, runTool } from "../src/agent/index.js";
+import { AGENT_TOOLS, Agent, Policy, deviceViews, localBackend, runTool } from "../src/agent/index.js";
+import type { LlmProvider } from "../src/agent/agent.js";
+import { TASK_NAMES } from "../src/act/tasks.js";
+import { pamTasks } from "../src/manage/index.js";
 import { PLANNER_PROMPT, planInput } from "../src/agent/planInput.js";
 import { smallFloor } from "./helpers/floor.js";
 import { planCalls, planContext, startFakePlanner, testPlanner, type FakePlanner } from "./helpers/planner.js";
@@ -115,17 +118,56 @@ const worldOf = (hub: SignalHub): WorldView => {
   };
 };
 
-it("리모컨 단추 줄은 이 집 가전에 리모컨이 있을 때만 계획 입력에 붙고, 고정 시스템 프롬프트는 바뀌지 않는다", () => {
+const REMOTE_TASK = "리모컨 단추 누르기";
+const spoken: DecisionRecord = { ...decision, id: "say-1", seq: 0, textSent: "사람이 말함: 「TV 소리 키워 줘」", action: REMOTE_TASK, source: "speech", prediction: { observation: "o", reasoning: "r", task_index: -1 } };
+
+it("리모컨 단추 줄은 이 집 가전에 리모컨이 있을 때만, press_remote 줄과 들은 말은 리모컨 단추 누르기 계획에만 붙고, 고정 시스템 프롬프트는 바뀌지 않는다", () => {
   const world = worldOf(setup(false).hub);
-  const withRemote = planInput(planContext({ decision, world, floor: smallFloor(), hub: setup(true).hub }));
-  expect(withRemote).toContain("press_remote");
-  expect(withRemote).toContain("리모컨 단추 전원, 음량 올림");
+  const remoteInput = planInput(planContext({ decision: spoken, world, floor: smallFloor(), hub: setup(true).hub }));
+  expect(remoteInput).toContain("press_remote는 args");
+  expect(remoteInput).toContain("[들은 말] TV 소리 키워 줘");
+  expect(remoteInput).toContain("리모컨 단추 전원, 음량 올림");
+  const acInput = planInput(planContext({ decision, world, floor: smallFloor(), hub: setup(true).hub }));
+  expect(acInput).toContain("리모컨 단추 전원, 음량 올림");
+  expect(acInput).not.toContain("press_remote");
+  expect(acInput).not.toContain("[들은 말]");
   const plain = new SignalHub(new MemoryHub([tv, ac]));
   hubs.push(plain);
   const without = planInput(planContext({ decision, world, floor: smallFloor(), hub: plain }));
   expect(without).not.toContain("press_remote");
   expect(without).not.toContain("리모컨");
   expect(PLANNER_PROMPT).not.toContain("press_remote");
+});
+
+/** 정해 둔 도구 호출을 내는 말 요청 모델: 첫 차례에 request_task(리모컨 단추 누르기), 다음 차례에 짧은 답. 받은 도구 이름을 남긴다. */
+async function askAgent(hub: SignalHub) {
+  const tools: string[][] = [];
+  const requested: string[][] = [];
+  const provider: LlmProvider = {
+    name: "scripted", createState: () => ({ round: 0 }), addUserMessage: () => {}, addToolResults: () => {},
+    step: async (state, opts) => {
+      tools.push(opts.tools.map((t) => t.name));
+      const s = state as { round: number };
+      return s.round++ === 0 ? { text: "", calls: [{ id: "c1", name: "request_task", args: { task: REMOTE_TASK, reason: "TV 소리를 키워 달라고 해서" } }] } : { text: "네.", calls: [] };
+    },
+  };
+  const agent = new Agent({ hub, policy: new Policy(), provider, onRequest: (task, heard) => { requested.push([task, heard]); return { ok: true, message: "받았어요" }; } });
+  const r = await agent.chat("s1", "TV 소리 키워 줘");
+  return { tools: tools[0]!, requested, action: r.actions[0] };
+}
+
+it("리모컨 단추 누르기는 말 부탁으로만 받는다: PAM 목록에 없고, 말 요청 에이전트는 press_remote 없이 이 할 일로 넘기며, 리모컨이 없는 집은 받지 않는다", async () => {
+  expect(TASK_NAMES).not.toContain(REMOTE_TASK);
+  expect([...pamTasks("noonchi", true), ...pamTasks("coach", true)]).not.toContain(REMOTE_TASK);
+  const withRemote = await askAgent(setup(true).hub);
+  expect(withRemote.tools).toContain("request_task");
+  expect(withRemote.tools).not.toContain("press_remote");
+  expect(withRemote.requested).toEqual([[REMOTE_TASK, "TV 소리 키워 줘"]]);
+  const plain = new SignalHub(new MemoryHub([tv, ac]));
+  hubs.push(plain);
+  const without = await askAgent(plain);
+  expect(without.requested).toEqual([]);
+  expect(without.action).toMatchObject({ tool: "request_task", ok: false, error: "이 집에 등록한 리모컨이 없어요." });
 });
 
 /** 에어컨 켜기 계획을 실제 기기 단계로 돌린다. change로 첫 단계(가전)를 바꿀 수 있다. */
@@ -161,10 +203,62 @@ async function runPlan(hub: SignalHub, change?: (step: any) => any) {
   return plans.current();
 }
 
-it("실제 모드 계획의 에어컨 켜기 단계(until 켜짐)는 리모컨 켜기 단추를 쏘고 트윈이 켜져 끝난다", async () => {
+it("실제 모드 계획의 에어컨 켜기 단계(until 켜짐)는 리모컨 켜기 단추를 쏘고 트윈이 켜져 끝나며, 그 계획 요청의 도구 모양에는 press_remote가 없다", async () => {
   const live = setup(true);
+  const before = llm.bodies().length;
   expect(await runPlan(live.hub)).toMatchObject({ status: "done" });
+  const tools = llm.bodies().slice(before).map((b) => JSON.stringify(b.tools));
+  expect(tools.length).toBeGreaterThan(0);
+  expect(tools.join("")).toContain("turn_on");
+  expect(tools.join("")).not.toContain("press_remote");
   expect(live.sent).toEqual(["ac_1/b_000000a1"]);
+});
+
+/** 「TV 소리 키워 줘」 말 부탁을 실행 추적에 넣는다. 계획 모델은 먼저 없는 단추(채널 올림)를 내고, 검사 오류를 받으면 음량 올림으로 고친다. */
+async function runRemoteRequest(hub: SignalHub) {
+  const clock = { t: 10_000, now() { return this.t; } };
+  const plans = new PlanHub(smallFloor(), () => {}, () => "t");
+  const approvals = new ApprovalStore(join(mkdtempSync(join(tmpdir(), "ir-agent-")), "homes", "h", "approvals.json"), () => "t");
+  approvals.answer(`task:${REMOTE_TASK}`, "approve");
+  const press = (button: string) => [{ kind: "device", label: "TV 음량 올림", target: "tv_1", tool: "press_remote", args: { button }, timeout_s: 60 }];
+  llm.scripts[REMOTE_TASK] = () => [planCalls(press("채널 올림")), planCalls(press("음량 올림"))];
+  const before = llm.bodies().length;
+  const planner = testPlanner(llm);
+  const spokenDecisions: DecisionRecord[] = [];
+  const t = testTracker({
+    onSpeech: (d) => spokenDecisions.push(d),
+    plans, world: () => worldOf(hub), check: () => ({ ok: true }), floor: () => plans.floor(), planGapMs: 0, clock, approvals,
+    planner: (d, signal) => planner.plan(planContext({ decision: d, world: worldOf(hub), floor: plans.floor(), hub }), signal),
+    toPhone: () => {}, emit: () => {}, locate: () => undefined,
+    devices: deviceRunner(hub, new Policy()), handDevices: () => [{ id: "ac_1", kind: "aircon", label: "에어컨" }],
+  });
+  t.onRequest({ task: REMOTE_TASK, heard: "TV 소리 키워 줘", atMs: clock.t, afterSeq: 0 });
+  await t.idle();
+  for (let i = 0; i < 6 && plans.current()?.status !== "done"; i++) {
+    await new Promise((r) => setTimeout(r, 20));
+    clock.t += 5_000;
+    t.onWorld();
+    t.tick();
+  }
+  const sent = llm.bodies().slice(before);
+  return { plan: plans.current(), bodies: sent.map((b) => JSON.stringify(b)), tools: sent.map((b) => JSON.stringify(b.tools)), spoken: spokenDecisions };
+}
+
+it("「TV 소리 키워 줘」 말 부탁은 리모컨 단추 누르기 계획이 되고, 없는 단추는 계획 검사가 돌려보내며, 실제 모드에서만 음량 올림 신호를 보내고 끝난다", async () => {
+  const live = setup(true);
+  const r = await runRemoteRequest(live.hub);
+  expect(r.plan).toMatchObject({ status: "done", steps: [{ kind: "device", label: "TV 음량 올림" }] });
+  expect(live.sent).toEqual(["tv_1/b_00000002"]);
+  expect(r.bodies).toHaveLength(2);
+  expect(r.bodies[0]).toContain("[들은 말] TV 소리 키워 줘");
+  expect(r.bodies[1]).toContain("리모컨에 「채널 올림」 단추가 없습니다. 있는 단추: 전원, 음량 올림");
+  expect(r.tools[0]).toContain("press_remote");
+  // 판단 기록의 행동 번호는 그 판단의 목록(행동 목록 뒤에 붙인 말 부탁 할 일)을 가리킨다
+  const said = r.spoken[0]!;
+  expect([said.source, said.action, said.tasks?.[said.prediction!.task_index]]).toEqual(["speech", REMOTE_TASK, REMOTE_TASK]);
+  const test = setup(false);
+  expect((await runRemoteRequest(test.hub)).plan).toMatchObject({ status: "done" });
+  expect(test.sent).toEqual([]);
 });
 
 it("실제 모드 계획의 press_remote 단계(until 없음)는 신호를 보내면 끝난다", async () => {

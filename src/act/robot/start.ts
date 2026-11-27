@@ -51,7 +51,8 @@ export class Starter extends Part {
   request(r: SpeechRequest): void {
     const core = this.core;
     if (core.stopped) return;
-    const tasks = [...TASK_NAMES];
+    // 말로만 받는 할 일(SPEECH_TASKS)은 행동 목록 뒤에 붙여 그 번호를 준다
+    const tasks = TASK_NAMES.includes(r.task) ? [...TASK_NAMES] : [...TASK_NAMES, r.task];
     const d: DecisionRecord = {
       id: `say-${++this.speechN}`, seq: 0, atMs: r.atMs, textSent: CHANGE_TEXT.heard(r.heard), finalTime: isoWithOffset(r.atMs, this.o.offsetMinutes ?? 540),
       status: "valid", prediction: { observation: EXEC_TEXT.spoken, reasoning: EXEC_TEXT.spoken, task_index: tasks.indexOf(r.task) }, action: r.task,

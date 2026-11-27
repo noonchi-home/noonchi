@@ -15,7 +15,7 @@ import { compact } from "../shared/korean.js";
 import type { ServiceCall, ServiceKind } from "../contract/service.js";
 import { CALL_SERVICE, SERVICE_KINDS, SERVICE_KIND_IDS, SERVICE_RETRY_BROKEN, SERVICE_RISKY_PROBLEM, serviceCall, serviceText, type ServiceContacts } from "./service.js";
 import { riskyNames } from "./policy.js";
-import { TASK_NAMES } from "../act/tasks.js";
+import { REMOTE_ACTION, REQUEST_NAMES } from "../act/tasks.js";
 
 export type { DeviceView } from "../contract/events.js";
 
@@ -69,6 +69,8 @@ export interface ToolDef {
   mcpOnly?: boolean;
   /** 서버 안 에이전트에만 노출(MCP 목록에 내지 않는다). */
   agentOnly?: boolean;
+  /** 실행 추적의 계획 단계만 쓴다(말 요청 에이전트 도구 목록에 내지 않는다). */
+  planOnly?: boolean;
   /** 기기 명령 도구면 인자 → 가전 명령(승인 판정·폰이 필요한 계획 판정이 쓴다). */
   command?: (args: Record<string, unknown>) => Command;
   run(backend: ToolBackend, args: Record<string, unknown>): Promise<ToolResult>;
@@ -296,7 +298,8 @@ export const TOOLS: ToolDef[] = [
     },
   },
   {
-    name: PRESS_REMOTE, title: "리모컨 단추", agentOnly: true,
+    // 말로 한 단추 부탁은 request_task(리모컨 단추 누르기) 계획으로 가고, 계획의 기기 단계가 이 도구를 부른다
+    name: PRESS_REMOTE, title: "리모컨 단추", agentOnly: true, planOnly: true,
     description: "등록한 적외선 리모컨의 단추 하나를 누릅니다(음량·채널·입력·에어컨 설정 등). 기기 목록의 remote_buttons에 있는 이름 그대로 씁니다. 켜기·끄기는 turn_on·turn_off를 씁니다. 결과는 확인하지 못합니다.",
     schema: z.object({ device_id: deviceId, button: z.string().min(1).max(20).describe("단추 이름(remote_buttons 글자 그대로)") }),
     async run(backend, args) {
@@ -314,10 +317,11 @@ export const TOOLS: ToolDef[] = [
   },
   {
     name: REQUEST_TASK, title: "할 일 부탁", agentOnly: true,
-    description: "사람이 로봇 할 일 목록의 일을 부탁하면(예: 컵 치워 줘, 라면 끓이는 법 알려 줘) 그 일 이름 하나로 부릅니다. 가전 하나를 켜고 끄는 말은 가전 도구를 씁니다.",
-    schema: z.object({ task: z.enum(TASK_NAMES as [string, ...string[]]).describe("할 일 이름(목록 글자 그대로)") }),
+    description: "사람이 로봇 할 일 목록의 일을 부탁하면(예: 컵 치워 줘, 라면 끓이는 법 알려 줘) 그 일 이름 하나로 부릅니다. 가전 하나를 켜고 끄는 말은 가전 도구를 씁니다. 등록한 리모컨 단추를 누르라는 말(TV 소리 키워 줘, 채널 올려 줘)은 리모컨 단추 누르기로 부릅니다.",
+    schema: z.object({ task: z.enum(REQUEST_NAMES as [string, ...string[]]).describe("할 일 이름(목록 글자 그대로)") }),
     async run(backend, args) {
       if (!backend.request) return { ok: false, error: "할 일 부탁은 서버 안 에이전트만 받습니다." };
+      if (args.task === REMOTE_ACTION && !(await backend.devices()).some((d) => d.remote)) return { ok: false, error: "이 집에 등록한 리모컨이 없어요." };
       return backend.request(String(args.task));
     },
   },

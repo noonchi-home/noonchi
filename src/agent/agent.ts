@@ -238,7 +238,8 @@ export class Agent {
     this.maxSessions = opts.maxSessions ?? 200;
     this.keepHeard = opts.keepHeard === true;
     this.layout = opts.layout;
-    this.tools = opts.layout ? [...AGENT_TOOLS, ...LAYOUT_TOOLS] : AGENT_TOOLS;
+    const dialog = AGENT_TOOLS.filter((t) => !t.planOnly);
+    this.tools = opts.layout ? [...dialog, ...LAYOUT_TOOLS] : dialog;
     this.modelTools = this.tools.map(withReason);
     if (opts.onEvent) this.listeners.add(opts.onEvent);
   }

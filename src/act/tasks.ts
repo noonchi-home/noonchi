@@ -3,7 +3,7 @@
 // 여기에는 계획 모양이 없다: 무엇을 어떤 순서로 할지는 에이전트가 정한다. target은 계획 전 검사(LLM을 부르기 전)에만 쓴다.
 import type { PlanView } from "../contract/plan.js";
 import type { Facet, ObjClass, WorldFact, WorldObject, WorldView } from "../contract/world.js";
-import type { DeviceKind } from "../devices/kinds.js";
+import { REMOTE_KINDS, type DeviceKind } from "../devices/kinds.js";
 import type { ActionChoice } from "./prompts.js";
 import { sameDrinkware, UNKNOWN_STATES, type StateKey } from "../world/vocab.js";
 
@@ -115,6 +115,19 @@ export const TASKS: Record<string, TaskSpec> = {
 /** 모든 행동 이름(검사·tasks.json 견주기). PAM에 보내는 목록은 지금 모드를 따른다(src/act/mode.ts pamTasks). */
 export const TASK_NAMES: readonly string[] = Object.keys(TASKS);
 
+/** 등록한 리모컨 단추를 말로 부탁하면 누르는 할 일(사용자 결정 2026-11-27: 말로만 받는 새 할 일). */
+export const REMOTE_ACTION = "리모컨 단추 누르기";
+/** 말 부탁(request_task)으로만 시작하는 할 일. PAM에 보내는 행동 목록(TASKS·TASK_NAMES·tasks.json)에는 넣지 않아 PAM 입력과 task_index가 그대로다. */
+export const SPEECH_TASKS: Record<string, TaskSpec> = {
+  [REMOTE_ACTION]: {
+    name: REMOTE_ACTION,
+    description: "사람이 등록한 리모컨 단추를 누르라고 말하면(TV 소리 키워 줘, 채널 올려 줘) [들은 말]에 맞는 가전의 리모컨 단추를 device 단계 press_remote로 누른다. 단추는 그 가전 [가전] 줄의 「리모컨 단추」 안에서만 고르고, 여러 번 눌러야 하면 그만큼 단계를 둔다.",
+    allow: { kinds: ["device"], need: ["device"], devices: { kinds: REMOTE_KINDS, tools: ["press_remote"] } },
+  },
+};
+/** 말 부탁으로 받는 할 일 이름(request_task): 행동 목록 다음에 말로만 받는 할 일. */
+export const REQUEST_NAMES: readonly string[] = [...TASK_NAMES, ...Object.keys(SPEECH_TASKS)];
+
 /** 배우는 행동(TaskSpec.learn): 반성 후보는 이 행동만 받고, 채택 검사를 지난 후보만 로봇 FSM 화살표가 된다. */
 export const LEARNED_ACTIONS: readonly string[] = TASK_NAMES.filter((n) => TASKS[n]!.learn === true);
 /** 배우기 전 떠날 때 하는 행동(seed 묻기 화살표). */
@@ -148,6 +161,7 @@ export const TASK_SAY: Readonly<Record<string, { may: string; will: string }>> =
   "물 한 잔 가져다주기": { may: "물을 가져다드려도", will: "물 한 잔 가져다드릴게요" },
   "맥주 가져다주기": { may: "맥주를 가져다드려도", will: "맥주를 가져다드릴게요" },
   "맥주 캔 치우기": { may: "맥주 캔을 치워도", will: "맥주 캔을 치울게요" },
+  [REMOTE_ACTION]: { may: "리모컨 단추를 눌러도", will: "리모컨 단추를 누를게요" },
 };
 
 /** 손대는 행동(touch)의 대상 종류. 손대지 않는 행동·목록 밖이면 null. */
@@ -165,9 +179,10 @@ export function tasksFor(mode: "noonchi" | "coach"): string[] {
   return TASK_NAMES.filter((n) => (mode === "coach" ? TASKS[n]!.coach || COACH_ALSO.includes(n) : !TASKS[n]!.coach));
 }
 
-/** 행동 이름 → 행동. 목록 밖이면 null. */
+/** 행동 이름 → 행동(행동 목록과 말로만 받는 할 일). 둘 다 밖이면 null. */
 export function taskOf(action: string | null): TaskSpec | null {
-  return action && Object.hasOwn(TASKS, action) ? TASKS[action]! : null;
+  if (!action) return null;
+  return Object.hasOwn(TASKS, action) ? TASKS[action]! : Object.hasOwn(SPEECH_TASKS, action) ? SPEECH_TASKS[action]! : null;
 }
 
 /** 판단 전에 더 잘 볼 것: 대상 종류마다 하나, 그 종류를 대상으로 둔 행동들의 볼 면을 모은 것(관찰 모드 B, src/act/look.ts). */

@@ -24,7 +24,7 @@ import { OBJECT_NAME } from "../world/labels.js";
 import { CLASSES, DEVICE_STATES, type DeviceStateKey } from "../world/vocab.js";
 import { ConditionSchema, checkCondition, conditionProblems, type Condition, type ConditionHome } from "../world/index.js";
 import { RISKY_NAME_PROBLEM, riskyNames } from "./policy.js";
-import { TOOLS, type ToolDef, type ToolResult } from "./tools.js";
+import { PRESS_REMOTE, TOOLS, type ToolDef, type ToolResult } from "./tools.js";
 import { HUMAN_KINDS, riskyHand, selfStopWait } from "./plan-rules.js";
 
 
@@ -54,8 +54,10 @@ export const PLAN_LIMITS = {
   choices: [2, 3] as [number, number],
 };
 
-/** 기기 단계에 쓸 수 있는 도구: 기기를 바꾸는 도구(src/agent/tools.ts). */
-export const DEVICE_TOOLS = Object.keys(DEVICE_VERB) as [string, ...string[]];
+/** 기기 단계에 쓸 수 있는 도구: 기기를 바꾸는 도구(src/agent/tools.ts). 리모컨 단추(press_remote)는 그 도구를 쓰는 할 일의 계획 도구 모양(REMOTE_STEP_ARGS)에만 넣는다(다른 계획 요청은 그대로다). */
+export const DEVICE_TOOLS = Object.keys(DEVICE_VERB).filter((t) => t !== PRESS_REMOTE) as [string, ...string[]];
+/** 리모컨 단추(press_remote)를 쓰는 할 일인가(리모컨 단추 누르기). */
+export const usesRemote = (task: Pick<TaskInfo, "allow">): boolean => !!task.allow.devices?.tools.includes(PRESS_REMOTE);
 
 /** 기기 단계 until로 결과를 확인할 수 있는 도구와 그 상태(조건 낱말 가전 상태 키). 여기 없는 도구(밝기·냉난방 설정 등)는 상태 하나로 확인하지 못해 until을 받지 않는다. */
 export const TOOL_STATES: Record<string, readonly string[]> = {
@@ -135,6 +137,8 @@ export const STEP_ARGS = z.object({
   on_timeout: z.enum(["ask", "fail"]).optional().describe("시간이 지나면 ask 계속할지 묻기, fail 실패(기본)"),
 });
 export type StepArgs = z.infer<typeof STEP_ARGS>;
+/** 리모컨 단추 누르기 계획의 단계 칸: 기기 도구에 press_remote를 더한다. */
+export const REMOTE_STEP_ARGS = STEP_ARGS.extend({ tool: z.enum([...DEVICE_TOOLS, PRESS_REMOTE]).optional().describe("device: 기기를 바꾸는 도구 이름") });
 
 const isId = (name: string) => /_\d+$/.test(name);
 const worldObject = (w: WorldView, id: string): WorldObject | undefined => w.objects.find((o) => o.id === id);
@@ -209,8 +213,11 @@ export class PlanDraft {
   /** 틀린 단계가 있으면 그 번호: 고칠 때까지 끝내기를 받지 않는다. */
   private blocked: number | null = null;
   private readonly home: ConditionHome;
+  /** 이 계획의 단계 칸 모양(리모컨 단추 누르기면 press_remote를 받는다). */
+  readonly stepArgs: typeof STEP_ARGS;
 
   constructor(readonly ctx: PlanContext) {
+    this.stepArgs = usesRemote(ctx.task) ? REMOTE_STEP_ARGS : STEP_ARGS;
     this.home = {
       devices: ctx.devices.map((d) => ({ id: d.id, kind: d.kind, twinAttrs: d.twinAttrs })),
       rooms: ctx.floor.rooms.map((r) => r.id),
@@ -253,7 +260,7 @@ export class PlanDraft {
   /** 단계 칸 모양(STEP_ARGS). 틀리면 칸마다 까닭. item이 물건 이름 목록에 없으면 zod 값 목록(36개) 대신 그 값과 고칠 길을 말한다
    *  (2026-11-19 plan1: 값 목록만 받은 모델이 다음 차례에 person_holding 물건까지 「컵」으로 바꿨다). */
   private parse(raw: unknown): StepArgs | string {
-    const parsed = STEP_ARGS.safeParse(raw);
+    const parsed = this.stepArgs.safeParse(raw);
     if (parsed.success) return parsed.data;
     return parsed.error.issues.map((i) => {
       const where = i.path.join(".") || "(전체)";
@@ -267,9 +274,9 @@ export class PlanDraft {
   private inspect(raw: Record<string, unknown>): Added | string {
     const shape = this.parse(raw);
     if (typeof shape !== "string") return this.check(shape);
-    const fields = [...new Set((STEP_ARGS.safeParse(raw).error?.issues ?? []).map((i) => i.path[0]))];
+    const fields = [...new Set((this.stepArgs.safeParse(raw).error?.issues ?? []).map((i) => i.path[0]))];
     if (!fields.length || fields.some((f) => typeof f !== "string" || f === "step" || f === "kind" || f === "timeout_s")) return shape;
-    const rest = STEP_ARGS.safeParse(Object.fromEntries(Object.entries(raw).filter(([k]) => !fields.includes(k))));
+    const rest = this.stepArgs.safeParse(Object.fromEntries(Object.entries(raw).filter(([k]) => !fields.includes(k))));
     if (!rest.success) return shape;
     const r = this.check(rest.data);
     const more = typeof r === "string" ? r.split("; ").filter((e) => !fields.some((f) => e === `${rest.data.kind}에는 ${String(f)}가 있어야 합니다`)) : [];
@@ -581,6 +588,12 @@ export class PlanDraft {
         if (d && ok && !ok.kinds.includes(d.kind)) errors.push(`이 할 일에는 ${d.kind} 가전을 쓰지 않습니다. 쓸 수 있는 가전: ${ok.kinds.join(", ")}`);
         if (a.tool && ok && !ok.tools.includes(a.tool)) errors.push(`이 할 일에는 ${a.tool} 도구를 쓰지 않습니다. 쓸 수 있는 도구: ${ok.tools.join(", ")}`);
         if (!ok) errors.push("이 할 일에는 가전 단계를 쓰지 않습니다");
+        if (a.tool === PRESS_REMOTE && d) {
+          const buttons = d.remote?.buttons;
+          const button = a.args?.button;
+          if (!buttons) errors.push(`${d.id}에는 등록한 리모컨이 없습니다`);
+          else if (typeof button === "string" && !buttons.includes(button)) errors.push(`리모컨에 「${button}」 단추가 없습니다. 있는 단추: ${buttons.join(", ")}`);
+        }
         const tool = a.tool ? TOOLS.find((t) => t.name === a.tool) : undefined;
         if (tool && d) {
           const parsed = tool.schema.safeParse({ ...(a.args ?? {}), device_id: d.id });
@@ -685,7 +698,7 @@ export function planTools(draft: PlanDraft): ToolDef[] {
   return [{
     name: SUBMIT_PLAN, title: "계획 내기",
     description: "계획 전체(단계 배열)를 한 번에 냅니다. 검사를 통과하면 그대로 끝나고, 틀리면 틀린 단계마다 번호와 까닭을 한 번에 돌려주니 모두 고친 계획 전체를 다시 내세요.",
-    schema: SUBMIT_ARGS,
+    schema: draft.stepArgs === STEP_ARGS ? SUBMIT_ARGS : z.object({ steps: z.array(draft.stepArgs.omit({ step: true })).min(1).max(PLAN_LIMITS.hardMaxSteps).describe(SUBMIT_ARGS.shape.steps.description ?? "") }),
     run: async (_b, args) => {
       const r = draft.submit(args);
       return r.ok ? { ok: true, data: { steps: r.plan.steps.length } } : { ok: false, error: r.error };

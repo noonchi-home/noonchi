@@ -10,7 +10,7 @@ import type {
   IrDeviceChoice, IrFirmware, IrLearnView, IrPortChoice, IrPortState, IrPortsView,
   IrRemoteView, IrSignal, IrTestView, IrView, RemoteRole,
 } from "../contract/ir.js";
-import { isRiskyKind, kindEntry, HOUSEHOLD_KINDS } from "../devices/kinds.js";
+import { remoteKind, HOUSEHOLD_KINDS } from "../devices/kinds.js";
 import {
   IrBridge, LearnSession, codeOf, equalSignal, fakeBoard, findPort, loadRemotes, newId, pressMatches, probePort, saveRemotes, tvConfigOf, tvPort,
   type BridgePress, type BridgeState, type ButtonEntry, type FakeBoard, type IrConfig, type IrPort, type LearnOutcome,
@@ -374,7 +374,7 @@ export class IrSetup {
   }
 
   private allowed(kind: string): boolean {
-    return !isRiskyKind(kind) && !kindEntry(kind)?.confirm;
+    return remoteKind(kind);
   }
 
   /** 이 집 트윈에 있는 가전의 리모컨만(없는 가전의 리모컨은 파일에 두고 보이지 않는다). */
