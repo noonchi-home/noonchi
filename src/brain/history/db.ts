@@ -47,6 +47,7 @@ CREATE TABLE IF NOT EXISTS cup_answers (
   single_demo INTEGER NOT NULL DEFAULT 0 CHECK(single_demo IN (0,1)), PRIMARY KEY(home, resident)
 );
 CREATE UNIQUE INDEX IF NOT EXISTS single_demo_resident ON cup_answers(home) WHERE single_demo = 1;
+CREATE TABLE IF NOT EXISTS day_skips (at_ms INTEGER PRIMARY KEY, from_day TEXT NOT NULL UNIQUE, to_day TEXT NOT NULL UNIQUE);
 `;
 
 /** 기록 날짜의 시간대(분). HISTORY_TZ_MINUTES(기본 540 = 서울). -720~840 사이 정수가 아니면 시작을 막는다. */
@@ -57,6 +58,13 @@ export function historyTzMinutes(env: Record<string, string | undefined>): numbe
   if (!Number.isInteger(v) || v < -720 || v > 840) throw new Error(`HISTORY_TZ_MINUTES=${raw}: -720~840 사이 정수(분)여야 합니다`);
   return v;
 }
+
+/** 날짜 글 계산(YYYY-MM-DD에 n일). 넘긴 날도 하루씩 이어진 글이다. */
+export const addDays = (day: string, n: number): string => new Date(Date.parse(`${day}T00:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10);
+/** 넘김을 빼고 본 달력 날짜(기록 시간대). */
+export const calendarDay = (ms: number, offsetMinutes: number): string => new Date(ms + offsetMinutes * 60_000).toISOString().slice(0, 10);
+/** 하루 넘김 한 번(「하루 마치기」, src/server/finish-day.ts). */
+export interface DaySkip { atMs: number; from: string; to: string }
 
 /** latest면 조건에 맞는 마지막 limit줄(시각 순으로 돌려줌). 아니면 처음부터 limit줄. */
 export interface HistoryQuery { since?: number; until?: number; kinds?: HistoryKind[]; day?: string; limit?: number; latest?: boolean }
@@ -139,9 +147,48 @@ export class HistoryDb {
     try { return (this.db.prepare("SELECT 1 AS one").get() as { one: number }).one === 1; } catch { return false; }
   }
 
-  /** ms → 기록 시간대의 날짜 YYYY-MM-DD. */
+  #skipCount: ReturnType<DatabaseSync["prepare"]> | null = null;
+
+  /** ms → 시스템 날짜 YYYY-MM-DD: 기록 시간대의 달력 날짜 + 그 시각까지 한 넘김 수(day_skips). 옛 시각은 그때 날짜다.
+   *  읽기 전용 연결도 매번 표를 읽어 넘긴 뒤 다시 열 일이 없다. */
   dayOf(ms: number): string {
-    return new Date(ms + this.offsetMinutes * 60_000).toISOString().slice(0, 10);
+    const n = (this.#skipCount ??= this.db.prepare("SELECT COUNT(*) AS n FROM day_skips WHERE at_ms <= ?")).get(ms) as { n: number };
+    return addDays(calendarDay(ms, this.offsetMinutes), n.n);
+  }
+
+  /** 넘김 전부(시각 차례). */
+  skips(): DaySkip[] {
+    return this.db.prepare(`SELECT at_ms AS atMs, from_day AS "from", to_day AS "to" FROM day_skips ORDER BY at_ms`).all() as unknown as DaySkip[];
+  }
+
+  /** 그날의 [시작, 끝) ms. 넘긴 날은 넘긴 때 시작하고 그다음 달력 자정에 끝난다. */
+  rangeOf(day: string): { start: number; end: number } {
+    return { start: this.startOf(day), end: this.startOf(addDays(day, 1)) };
+  }
+
+  /** dayOf가 처음 day가 되는 ms. 넘김 사이 구간마다, 그 구간의 넘김 수를 뺀 날의 자정과 구간 시작 가운데 늦은 쪽을 본다. */
+  private startOf(day: string): number {
+    const skips = this.skips();
+    for (let i = 0; i <= skips.length; i++) {
+      const lo = i === 0 ? -Infinity : skips[i - 1]!.atMs;
+      const hi = i === skips.length ? Infinity : skips[i]!.atMs;
+      const first = Math.max(lo, Date.parse(`${addDays(day, -i)}T00:00:00Z`) - this.offsetMinutes * 60_000);
+      if (first < hi) return first;
+    }
+    return Infinity;
+  }
+
+  /** atMs에 from을 마치고 다음 날로 넘긴다(한 트랜잭션). atMs의 날이 from이 아니면 던진다(두 번 누름).
+   *  같은 묶음에서 먼저 들어간, atMs 뒤 from 줄도 새 날로 고친다(events.day = dayOf(at_ms)가 늘 맞게). */
+  skipDay(atMs: number, from: string): { from: string; to: string } {
+    return this.tx(() => {
+      const today = this.dayOf(atMs);
+      if (today !== from) throw new Error(`오늘은 ${today}이에요(받은 날 ${from})`);
+      const to = addDays(from, 1);
+      this.db.prepare("INSERT INTO day_skips (at_ms, from_day, to_day) VALUES (?, ?, ?)").run(atMs, from, to);
+      this.db.prepare("UPDATE events SET day = ? WHERE at_ms >= ? AND day = ?").run(to, atMs, from);
+      return { from, to };
+    });
   }
 
   /** 시간축 한 줄 넣기는 프레임마다 여러 번 불린다. 문장은 한 번만 준비하고, 그 한 줄만 디스크 동기화 없이(NORMAL) 넣은 뒤 FULL로 돌린다.
