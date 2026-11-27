@@ -130,4 +130,12 @@ describe("미리 세운 목표 기록: 준비한 계획을 버린 까닭", () =>
     expect(rows[5]!.data).toMatchObject({ status: "dropped", drop: "took" });
     expect(rows[5]!.data).not.toHaveProperty("reason");
   });
+
+  it("떠난 뒤 판단이 그 일을 고르지 않아 버린 목표는 우리 부품 이름으로 적는다(화면 글에 「PAM」을 쓰지 않는다)", () => {
+    const db = HistoryDb.open(":memory:");
+    const record = goalRecorder(db);
+    record(GOAL, 1);
+    record({ ...GOAL, status: "dropped", reason: "pam" }, 2);
+    expect(db.list({ kinds: ["goal"] }).at(-1)!.text).toBe("버림 · FSM 판단이 고르지 않음");
+  });
 });
