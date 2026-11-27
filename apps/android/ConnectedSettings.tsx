@@ -3,11 +3,12 @@ import { Alert, Animated, AppState } from "react-native";
 import type { SceneJson, Vec2 } from "../../src/contract/layout";
 import type { ControlMode, SetupView, ThinqDevicesView } from "../../src/contract/setup";
 import { ConnectedPlan } from "./ConnectedPlan";
+import { ConnectedRemotes } from "./ConnectedRemotes";
 import { ConnectedStations } from "./ConnectedStations";
 import { Action, Choice, Copy, Failure, Field, Heading, Loading, Panel, useResource, useSettingTask, useSlide } from "./ConnectedUi";
 import { connectedHouse, readForHome, type ConnectedHub, type StartPosition } from "./connected-hub";
 import { viewCone } from "./plan-lines";
-import { applianceSummary, demoSettings, listedPages, pageLabels, previousPage, remoteTitle, type SettingsPage } from "./settings-menu";
+import { applianceSummary, demoSettings, listedPages, pageLabels, previousPage, type SettingsPage } from "./settings-menu";
 
 type Page = SettingsPage;
 type Save = (setup?: SetupView, chosen?: string) => Promise<void>;
@@ -26,11 +27,14 @@ export function ConnectedSettings({ hub, setup, onSaved, onBlock, onDisconnect, 
     slide.enter();
     setPage(next);
   }
-  if (page) return <Animated.View style={slide.style}><Panel>
+  if (page) return <Animated.View style={slide.style}>
+    {page === "remotes" && <ConnectedRemotes hub={hub} home={context.home} onBlock={block}
+      onBack={() => slide.leave(() => setPage(previousPage(page)))} />}
+    {page !== "remotes" && <Panel>
     <Heading>{pageLabels[page]}</Heading>
     {page === "house" && <HouseSetting {...context} setup={setup} />}
     {page === "appliances" && <ApplianceSetting key={`${hub.origin}/${context.home}`} {...context} setup={setup} busy={busy}
-      onChooseDevices={() => open("devices")} />}
+      onChooseDevices={() => open("devices")} onChooseRemotes={() => open("remotes")} />}
     {page === "devices" && <DevicesSetting {...context} setup={setup} />}
     {page === "mode" && <ModeSetting {...context} setup={setup} />}
     {page === "position" && <PositionSetting {...context} />}
@@ -38,18 +42,19 @@ export function ConnectedSettings({ hub, setup, onSaved, onBlock, onDisconnect, 
     {page === "layout" && <LayoutSetting {...context} />}
     <Action title={backToHome ? "홈으로" : backToHouse ? "집 관리로" : "설정 목록으로"} disabled={busy} secondary
       onPress={() => slide.leave(backToHome ?? backToHouse ?? (() => setPage(previousPage(page))))} />
-  </Panel></Animated.View>;
+  </Panel>}</Animated.View>;
   const summaries: Record<Page, string> = {
     house: setup.home?.name.replace(/\s*[(（].*$/, "").trim() || "미선택",
     appliances: applianceSummary(setup),
     devices: setup.home ? `${setup.devices.length}개` : "집 선택 필요",
+    remotes: "",
     mode: setup.mode === "live" ? "운영 모드" : "테스트 모드",
     position: setup.position.start ? "설정 가능" : "사용 불가",
     stations: setup.home ? "설정 가능" : "집 선택 필요",
     layout: setup.position.layout ? "설정 가능" : "사용 불가",
   };
   const enabled: Record<Page, boolean> = {
-    house: !!setup.homes.length, appliances: !!setup.home, devices: !!setup.home, mode: !!setup.home,
+    house: !!setup.homes.length, appliances: !!setup.home, devices: !!setup.home, remotes: !!setup.home, mode: !!setup.home,
     position: setup.position.start, stations: !!setup.home, layout: setup.position.layout,
   };
   return <Panel><Heading>설정</Heading>
@@ -117,13 +122,13 @@ function ModeSetting({ setup, hub, onSaved, onBlock }: Context & { setup: SetupV
   </>;
 }
 
-function ApplianceSetting({ busy, onChooseDevices, ...context }: Context & { setup: SetupView; busy: boolean; onChooseDevices: () => void }) {
+function ApplianceSetting({ busy, onChooseDevices, onChooseRemotes, ...context }: Context & {
+  setup: SetupView; busy: boolean; onChooseDevices: () => void; onChooseRemotes: () => void;
+}) {
   return <>
     {demoSettings.appliances.includes("thinq") && <ThinqSection {...context} />}
-    {remoteTitle() ? <>
-      <Copy>{remoteTitle()}</Copy>
-      <Action title="읽을 가전 선택" disabled={busy} onPress={onChooseDevices} secondary />
-    </> : null}
+    {demoSettings.appliances.includes("ir") && <Action title="리모컨 등록" disabled={busy} onPress={onChooseRemotes} secondary />}
+    <Action title="읽을 가전 선택" disabled={busy} onPress={onChooseDevices} secondary />
   </>;
 }
 
