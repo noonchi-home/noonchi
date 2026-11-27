@@ -3,14 +3,15 @@
 // 계획 길(지나온 길·지금 구간·남은 길)과 단계 번호(①②③④, 지금 단계 brand·끝난 단계 흐림)·지금 단계 이름표·사람 이름표를 그린다(2026-11-18 사용자 결정).
 // 목적지 고리는 그리지 않는다(지금 단계 번호가 그 자리다). 확인한 것 점은 그린다. 목표 글은 트윈에 없다.
 import { act, render, waitFor } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi, type MockInstance } from "vitest";
 import type { DeviceView, EyeEvent, HealthView, ServerMessage } from "../../../src/contract/events.ts";
 import type { TraceEvent, TraceRefs, TraceRow } from "../../../src/contract/trace.ts";
 import type { WorldView } from "../../../src/contract/world.ts";
 import { TraceJournal } from "../../../src/record/trace.ts";
 import run from "../../src/dashboard/fake-run.json";
 import type { Check } from "../../src/dashboard/checks/checks";
-import { coverScale, focusOf, livedOf, toScreen, wideCamera } from "../../src/dashboard/camera";
+import { atLeast, boundsOf, coverScale, focusOf, livedOf, MIN_WATCH, REFLECT_ZOOM, toScreen, wholeOf, wideCamera } from "../../src/dashboard/camera";
+import { REFLECT_CAMERA_MS } from "../../src/dashboard/motion";
 import { Dashboard } from "../../src/dashboard/Dashboard";
 import { roomSetsOf, twinFrame } from "../../src/dashboard/frame";
 import { MapOverlay, PRE_FADE } from "../../src/dashboard/MapOverlay";
@@ -542,5 +543,61 @@ describe("대시보드 구운 트윈 위 표시", () => {
     expect(dims().filter((d) => d.style.opacity === "1").map((d) => d.dataset.mapDim)).toEqual(["kitchen"]);
     expect([...container.querySelectorAll("fieldset > legend")].map((e) => e.textContent)).toEqual(["Vision", "Digital Twin", "FSM 바뀜"]);
   });
+
+  it("반성 순간에는 그 순간의 방(주방)에 맞춰 반성 확대 상한으로 당기고 반성 카메라 시간으로 옮긴다", async () => {
+    history.replaceState(null, "", "/?view=reflection&day=2026-11-27");
+    const detail = {
+      ok: true, day: "2026-11-27", state: "done", rejected: false, at_ms: 1, before: { version: 1 }, after: { version: 2, applies_day: "2026-11-28" },
+      graph: { states: ["drinking", "away"], edges: [] }, after_graph: null,
+      chunks: [{ start: "08:10:00", end: "08:24:30", state: "drinking", room: "kitchen" }], did: [], candidates: [], dropped: [], checks: [], learned: [],
+      skipped_to: "2026-11-28", window_s: 300, rate_min: 0.75, alpha: 0.001,
+    };
+    const base = vi.mocked(fetch).getMockImplementation()!;
+    vi.mocked(fetch).mockImplementation(async (path: string | URL | Request, init?: RequestInit) =>
+      (path === "/api/reflection/2026-11-27" ? Response.json(detail) : base(path as string, init)));
+    // 시험 설정은 움직임 줄이기를 켠 화면이다(옮김 0ms): 이 시험만 끄고 옮김 시간을 본다
+    const media = window.matchMedia;
+    window.matchMedia = (q: string) => ({ ...media(q), matches: false });
+    onTestFinished(() => { window.matchMedia = media; });
+    render(<Dashboard />);
+    await waitFor(() => expect(load).toHaveBeenCalled());
+    const kitchen = HOME.shapes.find((s) => s.id === "kitchen")!;
+    const pad = { left: 16, right: 16, top: 16, bottom: 36 };
+    const whole = wholeOf(HOME.shapes);
+    const want = wideCamera(IMAGE, SIZE, atLeast(boundsOf([...kitchen.floor, ...kitchen.top]), MIN_WATCH), pad, whole, REFLECT_ZOOM.maxZoom, REFLECT_ZOOM.maxScale);
+    await waitFor(() => {
+      const [cam] = engine.setView.mock.calls.at(-1) as unknown as [MapCamera, number];
+      expect(cam.cx).toBeCloseTo(want.cx, 3); expect(cam.cy).toBeCloseTo(want.cy, 3); expect(cam.scale).toBeCloseTo(want.scale, 5);
+    });
+    expect(want.scale).toBeGreaterThan(wideCamera(IMAGE, SIZE, null, pad, whole).scale);
+    // 다음 순간(맞출 곳 없음, 집 전체)으로 옮길 때는 반성 카메라 시간이다
+    await waitFor(() => expect((engine.setView.mock.calls.at(-1) as unknown as [MapCamera, number])[1]).toBe(REFLECT_CAMERA_MS), { timeout: 4000 });
+  }, 15_000);
+
+  it("하루 마치기 반성 보기가 끝나면 라이브 보기 카메라로 돌아온다", async () => {
+    const failed = {
+      ok: true, day: "2026-11-27", state: "failed", rejected: false, at_ms: 1, before: null, after: null, graph: { states: ["drinking"], edges: [] }, after_graph: null,
+      chunks: [], did: [], candidates: [], dropped: [], checks: [], learned: [], skipped_to: null, window_s: 300, rate_min: 0.75, alpha: 0.001,
+    };
+    const base = vi.mocked(fetch).getMockImplementation()!;
+    vi.mocked(fetch).mockImplementation(async (path: string | URL | Request, init?: RequestInit) =>
+      (path === "/api/reflection/2026-11-27" ? Response.json(failed) : base(path as string, init)));
+    render(<Dashboard />);
+    await waitFor(() => expect(load).toHaveBeenCalled());
+    await waitFor(() => expect(FakeSocket.last).not.toBeNull());
+    const day = { today: "2026-11-27", real_today: "2026-11-27", shift: 0, finish: true, closing: false };
+    act(() => {
+      FakeSocket.last!.push({ type: "hello", devices: 0, provider: null, hub: "memory", home: "mokryeon_180b", trace_epoch: "d1" });
+      FakeSocket.last!.push({ type: "day", day });
+    });
+    await waitFor(() => expect(engine.setView).toHaveBeenCalled());
+    const live = () => engine.setView.mock.calls.at(-1)![0] as MapCamera;
+    await new Promise((ok) => setTimeout(ok, 50));
+    const before = live();
+    act(() => { FakeSocket.last!.push({ type: "day", day: { ...day, closing: true } }); });
+    await waitFor(() => expect(live()).not.toEqual(before));
+    act(() => { FakeSocket.last!.push({ type: "day", day: { ...day, today: "2026-11-28", shift: 1 } }); });
+    await waitFor(() => expect(live()).toEqual(before), { timeout: 8000 });
+  }, 15_000);
 });
 

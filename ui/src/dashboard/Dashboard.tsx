@@ -103,7 +103,7 @@ function useHomeData(home: string | null): HomeData | null {
  * 바뀌면 CAMERA_MS 동안 옮긴다(움직임 줄이기면 바로). 종류를 정하기 전(home null)에는 캔버스 없이 틀만.
  * 엔진이 뜨고 버려질 때 onEngine, 첫 그림을 그리면 onReady.
  */
-function BakedStage({ home, homeData, layout, trace, plans, plan, eye, goal, checks, devices, onEngine: toLive, onReady: toReady, onTwin, moment = null, momentRooms = [] }: {
+function BakedStage({ home, homeData, layout, trace, plans, plan, eye, goal, checks, devices, onEngine: toLive, onReady: toReady, onTwin, moment, momentRooms }: {
   home: string | null;
   homeData: HomeData | null;
   /** 받은 트레이스 줄: 트윈은 가장 최근 활동의 줄을 그 자리에 그린다(trace-marks.ts). */
@@ -121,9 +121,9 @@ function BakedStage({ home, homeData, layout, trace, plans, plan, eye, goal, che
   onReady: () => void;
   onTwin: (marks: ReadonlyMap<string, MarkTone>) => void;
   /** 밤 반성 단계 순간(use-reflection.ts): 있으면 그 순간의 맞출 곳·밝힐 방·표시만 그리고 계획·눈·목표는 그리지 않는다. */
-  moment?: ReflectionMoment | null;
+  moment: ReflectionMoment | null;
   /** 반성 순간들의 밝힐 방 묶음(어둡게 한 층을 미리 만든다). */
-  momentRooms?: string[][];
+  momentRooms: string[][];
 }) {
   const box = useRef<HTMLElement>(null);
   const size = useLayoutBox(box);

@@ -6,7 +6,7 @@ import tokens from "../../../src/design/tokens.json";
 import { DashboardScreen, type ScreenProps } from "../../src/dashboard/DashboardScreen";
 import { TAG_H, tagWidth } from "../../src/dashboard/detections";
 import { type Rect } from "../../src/dashboard/layout";
-import { sceneLayout } from "../../src/dashboard/bento-layout";
+import { reflectionLayout, sceneLayout } from "../../src/dashboard/bento-layout";
 import { MASCOT } from "../../src/lib/mascot-image";
 import { WORDS } from "../../src/dashboard/words";
 import { coachPlanAt } from "./fixtures";
@@ -379,5 +379,20 @@ describe("대시보드 밤 반성 보기", () => {
     rerender(<DashboardScreen {...screenAt(2)} />);
     expect(legends()).toEqual(["Vision", "Digital Twin", "Agent Trace"]);
     expect(document.querySelector("fieldset[hidden]")).toBeNull();
+  });
+
+  it("반성 보기 동안 트윈 칸은 안 B 자리(왼쪽 열 전체)이고, 끝나면 라이브 보기 자리로 돌아온다", () => {
+    const rect = atScreen(1920, 1080);
+    try {
+      const reflection = { pane: { step: "후보", states: ["drinking"], edges: [] } };
+      const box = () => {
+        const f = [...document.querySelectorAll<HTMLElement>("fieldset")].find((x) => x.querySelector("legend")?.textContent === "Digital Twin")!;
+        return { left: px(f.style.left), top: px(f.style.top), width: px(f.style.width), height: px(f.style.height) };
+      };
+      const { rerender } = draw(screenAt(2, { reflection }));
+      expect(box()).toEqual(reflectionLayout({ width: 1920, height: 1080 }, MASCOT).twin);
+      rerender(<DashboardScreen {...screenAt(2)} />);
+      expect(box()).toEqual(sceneLayout({ width: 1920, height: 1080 }, MASCOT).twin);
+    } finally { rect.mockRestore(); }
   });
 });
