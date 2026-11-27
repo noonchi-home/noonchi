@@ -1,7 +1,7 @@
 // API 경로: 기록·반성·기억 판본·판단(기록 DB, src/brain/history/).
 import type { HistoryKind } from "../../contract/history.js";
 import { HISTORY_KINDS } from "../../brain/index.js";
-import { DAY_TEXT, daySummary, isDay } from "../../brain/index.js";
+import { DAY_TEXT, daySummary, isDay, reflectionDetail } from "../../brain/index.js";
 import { HttpError, readJson, type RouteKit } from "./kit.js";
 
 export function brainRoutes({ route, opts }: RouteKit): void {
@@ -49,6 +49,12 @@ export function brainRoutes({ route, opts }: RouteKit): void {
     const r = await opts.reflect(day);
     if (!r.ok) throw new HttpError(r.empty ? 409 : 502, r.error);
     return { ok: true, day, version: r.version, appliesDay: r.appliesDay };
+  });
+  // 반성 하나(읽기만): 밤 반성 화면이 단계마다 쓴다. 모델이 쓴 글은 싣지 않는다
+  route("GET", /^\/api\/reflection\/(\d{4}-\d{2}-\d{2})$/, async (_req, _url, [day]) => {
+    const db = requireHistory();
+    if (!isDay(day!)) throw new HttpError(400, `없는 날짜입니다: ${day}`);
+    return reflectionDetail(db, day!);
   });
   // 시스템 날짜 상태(하루 마치기로 넘긴 날 수 포함)
   route("GET", /^\/api\/day$/, async () => {

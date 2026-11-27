@@ -10,6 +10,7 @@ export { policyFor, type HabitContext, type Intervention, type InterventionPrefe
 export { learnBeerRules, matchesBeerRule, type BeerEvent, type BeerRule } from "./history/beer-rules.js";
 export { DAY_TEXT, FEEDBACK_TEXT, MODE_TEXT, PHOTO_TEXT, REFLECT_TEXT } from "./history/labels.js";
 export { publicReflection } from "./history/reflection-wire.js";
+export { reflectionDetail } from "./history/reflection-detail.js";
 export { type DeviceNote, attachRecorder, deviceRecorder, recordBrainLog, recordPlan, recordFeedback, topic } from "./history/recorder.js";
 export { type ReflectResult, memoryForDay, previewDayMemory, loadReflectAt, runReflection, scheduleReflection } from "./history/reflect.js";
 export { nightSave, type NightSave, type NightStore } from "./history/night.js";

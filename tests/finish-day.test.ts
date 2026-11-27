@@ -178,7 +178,8 @@ describe("대시보드로 나가는 반성 사건", () => {
   });
 });
 
-describe("하루 마치기 API", () => {
+// 서버를 띄우고 반성 작업 스레드까지 돌아 몇 초 걸린다(무거운 일과 함께 돌면 5초를 넘는다)
+describe("하루 마치기 API", { timeout: 20_000 }, () => {
   it("FINISH_DAY가 없으면 POST는 404이고 GET /api/day는 넘김 없는 오늘이다", async () => {
     await start();
     const day = await call("/api/day");
