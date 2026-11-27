@@ -3,7 +3,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { HistoryDb, addDays, calendarDay } from "../src/brain/history/db.js";
+import { HistoryDb, addDays, calendarDay, dayWindow } from "../src/brain/history/db.js";
 
 const at = (day: string, time: string) => Date.parse(`${day}T${time}+09:00`);
 const PRESS = at("2026-11-27", "15:02:00");
@@ -58,5 +58,22 @@ describe("시스템 날짜", () => {
       read.close();
       write.close();
     }
+  });
+});
+
+describe("넘긴 날의 시각 범위", () => {
+  it("넘긴 날에 남긴 바람 기록은 넘긴 날 것이다", () => {
+    const db = HistoryDb.open(":memory:");
+    db.skipDay(PRESS, "2026-11-27");
+    db.db.prepare("INSERT INTO intervention_preferences (home, user, action, context, at_ms, origin_id) VALUES ('h', 'u', '컵 치우기', 'c', ?, 'o1')").run(at("2026-11-27", "15:10:00"));
+    expect(db.hasInterventionPreference("2026-11-28")).toBe(true);
+    expect(db.hasInterventionPreference("2026-11-27")).toBe(false);
+  });
+
+  it("지난 n일 창은 첫날 시작부터 그날 끝 바로 전까지다", () => {
+    const db = HistoryDb.open(":memory:");
+    db.skipDay(PRESS, "2026-11-27");
+    expect(dayWindow(db, "2026-11-28", 2)).toEqual({ since: at("2026-11-27", "00:00:00"), until: at("2026-11-28", "00:00:00") - 1 });
+    expect(dayWindow(db, "2026-11-27", 1)).toEqual({ since: at("2026-11-27", "00:00:00"), until: PRESS - 1 });
   });
 });

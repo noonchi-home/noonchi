@@ -18,7 +18,7 @@ import { adoptKey, adoptedFsm, candidateFsmOf, checkCandidate, type CheckDay, ty
 import { learnBeerRules, withBeerRules } from "./beer-rules.js";
 import { clock, type Chunk, type Marks } from "../pam/marks.js";
 import { headWithin } from "../../shared/cut.js";
-import type { HistoryDb, HistoryKind } from "./db.js";
+import { dayWindow, type HistoryDb, type HistoryKind } from "./db.js";
 import type { BeerRule } from "../../contract/beer.js";
 import { edgeKey, learnedEdges, settingsGuard, type EdgeLine, type HabitFilter, type HabitRuleNote } from "./habits.js";
 import { NIGHT_TEXT, REFLECT_TEXT } from "./labels.js";
@@ -371,9 +371,9 @@ export async function runNight(db: HistoryDb, pam: PamClient, day: string, o: Ni
     let filtered: HabitRuleNote[] = [];
     if (o.filter) {
       const windowDays = o.windowDays ?? 30;
-      const dayStart = Date.parse(`${day}T00:00:00Z`) - db.offsetMinutes * 60_000;
+      const win = dayWindow(db, day, windowDays);
       // 기록 줄은 따로 넘긴 거르기만 읽는다(기본은 쓰지 않으니 30일 기록을 올리지 않는다: 기록 DB가 커도 서버를 멈추지 않게)
-      const rows = db.list({ since: dayStart - (windowDays - 1) * DAY_MS, until: dayStart + DAY_MS - 1, kinds: [...HABIT_KINDS], limit: Number.MAX_SAFE_INTEGER });
+      const rows = db.list({ since: win.since, until: win.until, kinds: [...HABIT_KINDS], limit: Number.MAX_SAFE_INTEGER });
       const out = await o.filter({ day, windowDays, offsetMinutes: db.offsetMinutes, previous: today, proposed: robot, rows });
       if (o.signal?.aborted) return cancelled();
       const kept = new Set(learnedEdges(CUP_FSM_MEMORY, validateMemory(out.memory, "fsm") as FsmMemory).map(edgeKey));
@@ -384,8 +384,8 @@ export async function runNight(db: HistoryDb, pam: PamClient, day: string, o: Ni
     }
     // 도움 습관(src/brain/history/routines.ts): 지난 기록 창의 help 줄에서 매일 비슷한 시각의 같은 부탁을 찾아 공부하는 중 화살표로 더한다
     {
-      const dayStart = Date.parse(`${day}T00:00:00Z`) - db.offsetMinutes * 60_000;
-      const helps = db.list({ since: dayStart - ((o.windowDays ?? 30) - 1) * DAY_MS, until: dayStart + DAY_MS - 1, kinds: ["help"], limit: Number.MAX_SAFE_INTEGER });
+      const win = dayWindow(db, day, o.windowDays ?? 30);
+      const helps = db.list({ since: win.since, until: win.until, kinds: ["help"], limit: Number.MAX_SAFE_INTEGER });
       robot = withRoutines(robot, findRoutines(helps, db.offsetMinutes));
     }
     const firstBeerDay = new Date(Date.parse(`${day}T00:00:00Z`) - 29 * DAY_MS).toISOString().slice(0, 10);

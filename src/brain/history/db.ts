@@ -63,6 +63,10 @@ export function historyTzMinutes(env: Record<string, string | undefined>): numbe
 export const addDays = (day: string, n: number): string => new Date(Date.parse(`${day}T00:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10);
 /** 넘김을 빼고 본 달력 날짜(기록 시간대). */
 export const calendarDay = (ms: number, offsetMinutes: number): string => new Date(ms + offsetMinutes * 60_000).toISOString().slice(0, 10);
+/** 그날까지 days일(그날 포함) 창: 첫날 시작 ~ 그날 끝 바로 전(ms). 넘긴 날도 맞다. */
+export function dayWindow(db: Pick<HistoryDb, "rangeOf">, day: string, days: number): { since: number; until: number } {
+  return { since: db.rangeOf(addDays(day, -(days - 1))).start, until: db.rangeOf(day).end - 1 };
+}
 /** 하루 넘김 한 번(「하루 마치기」, src/server/finish-day.ts). */
 export interface DaySkip { atMs: number; from: string; to: string }
 
@@ -280,12 +284,11 @@ export class HistoryDb {
       const robot = this.saveMemory({ kind: o.kind ?? "fsm", memory: o.robot, day: o.day, appliesDay: o.appliesDay, source: "reflection" });
       const candidates = o.kind === "list" ? 0
         : this.saveMemory({ kind: "fsm_candidates", memory: o.candidates, day: o.day, appliesDay: o.appliesDay, source: "reflection" });
-      const midnight = Date.parse(`${o.day}T00:00:00Z`) - this.offsetMinutes * 60_000;
-      const firstDay = this.dayOf(midnight - 29 * 86_400_000);
+      const firstDay = addDays(o.day, -29);
       const rows = (this.db.prepare(`SELECT id, at_ms, day, kind, subject, text, data FROM events
         WHERE kind = 'assistance_outcome' AND day BETWEEN ? AND ? ORDER BY at_ms, id`).all(firstDay, o.day) as unknown as RawRow[]).map(parseRow);
       const preferences = this.db.prepare(`SELECT home, user, action, context, at_ms AS atMs, origin_id AS originId
-        FROM intervention_preferences WHERE at_ms < ? ORDER BY at_ms, origin_id`).all(midnight + 86_400_000) as unknown as InterventionPreference[];
+        FROM intervention_preferences WHERE at_ms < ? ORDER BY at_ms, origin_id`).all(this.rangeOf(o.day).end) as unknown as InterventionPreference[];
       const changes = interventionChanges(rows, preferences, scope => this.interventionAt(scope.home, scope.user, scope, o.day), ms => this.dayOf(ms));
       const insert = this.db.prepare("INSERT INTO intervention_policy (home, user, action, context, applies_day, version, policy) VALUES (?, ?, ?, ?, ?, ?, ?)");
       for (const change of changes) insert.run(change.home, change.user, change.action, change.context, o.appliesDay, robot, change.policy);
@@ -331,8 +334,8 @@ export class HistoryDb {
   }
 
   hasInterventionPreference(day: string): boolean {
-    const start = Date.parse(`${day}T00:00:00Z`) - this.offsetMinutes * 60_000;
-    return !!this.db.prepare("SELECT 1 FROM intervention_preferences WHERE at_ms >= ? AND at_ms < ? LIMIT 1").get(start, start + 86_400_000);
+    const { start, end } = this.rangeOf(day);
+    return !!this.db.prepare("SELECT 1 FROM intervention_preferences WHERE at_ms >= ? AND at_ms < ? LIMIT 1").get(start, end);
   }
 
   recordInterventionPreference(p: InterventionPreference): boolean {
