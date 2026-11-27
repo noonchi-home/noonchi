@@ -14,7 +14,8 @@ import type { HistoryRow } from "../src/contract/history.js";
 import type { TraceRow } from "../src/contract/trace.js";
 import { traceActivities } from "../ui/src/dashboard/trace-tree.js";
 import type { WorldView } from "../src/contract/world.js";
-import { CHECK_TEXT, PEEK_TEXT } from "../src/act/labels.js";
+import { CHECK_TEXT, EXEC_TEXT, PEEK_TEXT } from "../src/act/labels.js";
+import { TRACK_DEFAULTS } from "../src/act/track/tracker.js";
 import { fetchRetry } from "../src/shared/net.js";
 import { startServer, type RunningServer } from "../src/server/start.js";
 import { cylinderBox, viewLooking } from "./helpers/camera.js";
@@ -313,7 +314,11 @@ describe("NOONCHI 처음부터 끝까지", () => {
       ws.send(JSON.stringify({ type: "answer", id: planId, step: `${planId}:${k}`, choice: "done" }));
     }
     await pump(async () => (await history("execution")).rows.some((r) => r.subject === planId && r.text === "완료"));
-    // 다음 계획(사람이 다시 마시다 떠남, 같은 행동 다시 계획 간격 15초 뒤): 이미 치운 cup_1이 아니라 cup_2로 첫 명령까지 간다
+    // 다음 계획(사람이 다시 마시다 떠남): 이미 치운 cup_1이 아니라 cup_2로 첫 명령까지 간다.
+    // 같은 행동 다시 계획 간격(planGapMs 15초)은 첫 계획의 판단부터 센다. 떠남을 0.5초 만에 보면(FAST_GONE_MS) 두 번째 떠남 판단이 그 판단 뒤 14.5초쯤에 와서
+    // 간격 끝과 0.5초 차이로 「방금 계획한 일이라 잠시 뒤 다시 봄」이 생기거나 안 생긴다. 간격이 지난 뒤 사람이 다시 온다
+    const decidedAt = srv.history.list({ kinds: ["execution"], limit: Number.MAX_SAFE_INTEGER }).find((r) => r.subject === planId && r.text === EXEC_TEXT.decided)!.at_ms;
+    await pump(() => Date.now() >= decidedAt + TRACK_DEFAULTS.planGapMs);
     await drinkThenLeave(people, dash, pump, fake!);
     // 앞 계획의 완료 문장(done:)은 다음 계획 명령이 아니다
     const nextPlan = (m: Msg) => m.type === "command" && m.speak && m.id !== planId && !String(m.id).startsWith("done:");
