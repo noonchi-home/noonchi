@@ -8,6 +8,7 @@ import { join } from "node:path";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import type WebSocket from "ws";
 import { MemoryHub } from "../src/devices/hub/memory.js";
+import { fakeBoard } from "../src/devices/hub/ir-fake.js";
 import { fetchRetry } from "../src/shared/net.js";
 import { startServer, type RunningServer } from "../src/server/start.js";
 import { HOME_SCRIPT, startFakeLlm, type FakeLlm } from "./helpers/llm.js";
@@ -163,28 +164,30 @@ describe("설정 흐름 서버", () => {
     expect(keep).toHaveBeenCalledWith(home, "table_C", photo, "phone");
   }, 15000);
 
-  it("opens the home TV port only after live confirmation, without ThinQ, and closes it on mode or home change", async () => {
+  it("opens the saved IR board in test mode, sends the TV off key only after live confirmation, without ThinQ, and is not ready in another home", async () => {
     const dir = runtime(), home = "mokryeon_180b";
     const folder = join(dir, "homes", home);
+    const pnp = "USB\\VID_1A86&PID_7523\\6&34F2BBB7&0&2";
     mkdirSync(folder, { recursive: true });
-    writeFileSync(join(folder, "ir.json"), JSON.stringify({ device:"tv_62442cb3", port:"COM7", codes:{toggle:"NEC:0004:08"}, onAbove:420, offBelow:150 }));
-    let opens = 0, closes = 0;
-    srv = await startServer({ env:env(dir, { HOME_ID:home }), log:()=>{}, irPort: (port) => {
-      expect(port).toBe("COM7");
-      opens++;
-      return { send:()=>{}, close:()=>{closes++;} };
-    } });
+    writeFileSync(join(folder, "remotes.json"), JSON.stringify({ version: 1, port: { name: "COM7", pnp }, remotes: [{ id: "r_0000000a", label: "거실 TV 리모컨", device: "tv_62442cb3", buttons: [
+      { id: "b_000000c5", label: "끄기", role: "off", signal: { kind: "nec", address: 4, command: 0xc5 }, learned_at: "2026-11-27T10:00:00.000Z" },
+    ] }] }));
+    const board = fakeBoard();
+    srv = await startServer({ env:env(dir, { HOME_ID:home }), log:()=>{}, irPort: board.port,
+      irPorts: async () => [{ name: "COM7", label: "USB-SERIAL CH340", pnp, usb: true }] });
+    expect(board.opens).toBe(1);
+    const sent = () => board.written.filter((l) => l === "NEC 0x4 0xC5 0").length;
+    for (let i = 0; i < 100 && !(await get("/api/setup")).json.ir?.ready; i++) await new Promise((r) => setTimeout(r, 20));
     expect((await get("/api/setup")).json).toMatchObject({ mode:"test", ir:{ready:true}, thinq:{ready:false} });
+    await srv.signals.command("tv_62442cb3", { type: "off" });
+    expect(sent()).toBe(0);
     expect((await post("/api/setup/mode",{mode:"live"})).status).toBe(400);
-    expect(opens).toBe(0);
     expect((await post("/api/setup/mode",{mode:"live",confirm:true})).status).toBe(200);
-    expect(opens).toBe(1);
-    await post("/api/setup/mode",{mode:"test"});
-    expect(closes).toBe(1);
-    await post("/api/setup/mode",{mode:"live",confirm:true});
+    void srv.signals.command("tv_62442cb3", { type: "off" });
+    for (let i = 0; i < 100 && sent() === 0; i++) await new Promise((r) => setTimeout(r, 20));
+    expect(sent()).toBe(1);
     const next = await post("/api/setup/home",{home:"oneroom"});
     expect(next.json).toMatchObject({ mode:"test", ir:{ready:false} });
-    expect(closes).toBe(2);
   });
   it("자리 지도는 현재 집에서 검증한 뒤 저장하고 실패하면 앞 지도를 보존한다", async () => {
     const home = "mokryeon_180b";

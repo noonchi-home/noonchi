@@ -1,5 +1,5 @@
 // 집 실행 묶음의 가전 잇기(src/devices): twin 데이터 → 허브(신호 출처로 감쌈) → 가전 변화 기록, ThinQ 연결 바꾸기.
-import { openIrPort, SignalHub, type RelayLink, type ThinqLink } from "../../devices/index.js";
+import { SignalHub, type RelayLink, type ThinqLink } from "../../devices/index.js";
 import { loadTwin } from "../../layout/index.js";
 import { startHub } from "../hubFactory.js";
 import type { HomeCore } from "./core.js";
@@ -12,14 +12,9 @@ export async function startDevices(core: HomeCore, homeId: string | undefined): 
   log(`twin 데이터: 집 ${twin.home.id}(${twin.home.name}) · ${twin.source} (${twin.dir}) · 기기 ${twin.devices.length}개 · 방 ${twin.rooms.length}개`);
   for (const w of twin.warnings) log(`[경고] ${w}`);
 
-  const ir = ctx.homeInfrared?.(twin.home.id, twin.devices);
   const started = await startHub(twin, { env, log, importer: ctx.importer, matter: { log, ...ctx.matter },
     memoryNow: ctx.clock ? () => new Date(core.nowMs()) : undefined });
   const signals = new SignalHub(started.hub, ctx.sources(twin.home.id, twin.devices.map((d) => d.id)));
-  if (ir) {
-    try { signals.setInfrared(ir, ctx.irPort ?? openIrPort); }
-    catch (e) { await signals.stop(); throw e; }
-  }
   const none = Object.keys(signals.sources()).length;
   if (none > 0) log(`신호 출처: 신호 없음 ${none}개(상태를 모름으로 보임)`);
   // 가전 변화 기록: 시작 상태는 기억만 하고, 그 뒤 바뀐 값을 적는다

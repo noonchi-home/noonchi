@@ -68,7 +68,7 @@ Create the checkout directory with suitable ownership if needed. Supply credenti
 | `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` | The voice and planning agent needs a supported provider key in either mode. OpenAI mode also uses an OpenAI key for vision and PAM. |
 | `HF_TOKEN` | Required only for restricted Hugging Face model downloads. |
 | `THINQ_TOKEN` | Used when connecting to real ThinQ appliances. |
-| `TV_RELAY_URL`, `TV_RELAY_TOKEN`, `TV_RELAY_DEVICE` | Optional TV relay for an IR kit without a light sensor ([TV relay](../hardware/ir-tv/README.md#without-a-light-sensor-use-the-tv-relay)). Use an `https` URL, or `http` only with a Tailscale IP. |
+| `TV_RELAY_URL`, `TV_RELAY_TOKEN`, `TV_RELAY_DEVICE` | Optional TV relay for an IR kit without a light sensor ([TV relay](../hardware/ir-bridge/README.md#without-a-light-sensor-use-the-tv-relay)). Use an `https` URL, or `http` only with a Tailscale IP. |
 
 Each container receives only the variables listed for its service in `deploy/compose.yaml`. The ownership rules are in `scripts/compose-keys.ts`.
 
