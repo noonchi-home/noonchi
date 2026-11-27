@@ -131,7 +131,7 @@ At the end of the day, PAM groups observations into activity episodes and identi
 | Android app | Hub pairing, reference photos, appliance registration, and observation positions |
 | Phone camera and instructions | WebXR video and pose, step-by-step voice or screen instructions, and resident responses |
 | Vision | The person, objects, and interactions visible to the robot |
-| Digital Twin | Where the resident, objects, and appliances are located in the home |
+| Digital Twin | Appliance states, the planned route, and the object the current task targets |
 | Agent Trace | The sequence of observations, decisions, and execution steps |
 
 The cup demonstration is designed to expose the point where the two runs diverge. In the first, confirmation that the empty cup remains on the table supports execution. In the second, seeing the resident refill the cup explains why the plan should be cancelled. [Dashboard reference](docs/reference.md#dashboard-and-agent-trace)

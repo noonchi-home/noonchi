@@ -1,4 +1,5 @@
 import type { AttemptKey, EvidenceRef } from "./assistance.js";
+import type { GoalDrop } from "./goal.js";
 import type { DeviceStateKey } from "./world.js";
 
 export type TraceKind = "AGENT" | "OBSERVATION" | "LLM" | "TOOL" | "EXECUTION" | "GUARDRAIL";
@@ -22,7 +23,21 @@ export interface TraceTarget {
   destination?: string;
   device?: string;
   deviceState?: DeviceStateKey;
+  /** FSM 판단·행동 선택: 사람 상태 FSM 상태 id(지금 상태와 일어난 화살표의 출발 상태). 화살표가 없으면 personFrom이 없다. */
+  personState?: string;
+  personFrom?: string;
+  /** 행동 선택: 그 화살표를 반성으로 배웠다. */
+  learned?: boolean;
+  /** 목표 준비: 버린 까닭. */
+  goalDrop?: GoalDrop;
+  /** 실행 전 검사: 통과한 항목. */
+  checks?: TraceCheck[];
+  /** 활동 종료: 사람이 떠난 때부터 첫 명령까지(ms). */
+  firstCommandMs?: number;
 }
+
+/** 실행 전 검사 통과 항목: same 판단 뒤에 같은 대상을 다시 봄 · empty 대상 안이 비었음 · free 아무도 들거나 쓰지 않음. */
+export type TraceCheck = "same" | "empty" | "free";
 
 export interface TraceRow {
   id: string;
@@ -44,12 +59,12 @@ export interface TraceRow {
 export interface TraceMessage { type: "trace"; epoch: string; rows: TraceRow[] }
 
 export type TraceEvent =
-  | "goal" | "action" | "wait" | "replan" | "pam" | "vlm" | "closer_vlm" | "observer" | "planner" | "dialog"
+  | "goal" | "action" | "wait" | "replan" | "pam" | "vlm" | "closer_vlm" | "observer" | "planner" | "dialog" | "check"
   | "closer" | "top" | "device_tool" | "move" | "pick" | "place" | "work" | "activity_result"
   | "person_left" | "person_changed" | "object_changed" | "device" | "safety" | "guard"
   | "remote_sent" | "remote_pressed";
 export type TraceOutput =
-  | "goal_armed" | "goal_planning" | "goal_ready" | "goal_checking" | "goal_fired" | "goal_used" | "goal_dropped"
+  | "goal_armed" | "goal_planning" | "goal_ready" | "goal_checking" | "goal_fired" | "goal_used" | "goal_dropped" | "check_passed"
   | "model_answer" | "scene_people" | "scene_objects" | "scene_people_objects" | "scene_no_target"
   | "selected" | "select_cup" | "waiting" | "late" | "replanned"
   | "failed" | "stopped" | "found" | "unconfirmed" | "cup_empty" | "cup_contents"
@@ -62,7 +77,8 @@ export type TraceOutput =
 /** Production producers choose fixed public vocabulary and retain the real correlation keys. */
 export interface TracePort {
   start(event: TraceEvent, refs?: TraceRefs, atMs?: number, target?: TraceTarget): string;
-  finish(id: string, state: Exclude<TraceState, "pending">, output: TraceOutput, atMs?: number, causeId?: string, evidence?: EvidenceRef): void;
+  /** target: 닫을 때 안 사실(FSM 판단은 답을 읽은 뒤 상태를 싣는다). */
+  finish(id: string, state: Exclude<TraceState, "pending">, output: TraceOutput, atMs?: number, causeId?: string, evidence?: EvidenceRef, target?: TraceTarget): void;
   event(event: TraceEvent, refs: TraceRefs, output: TraceOutput, causeId?: string, target?: TraceTarget): TraceRow | undefined;
   link(from: TraceRefs, to: TraceRefs): void;
 }

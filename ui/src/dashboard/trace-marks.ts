@@ -50,6 +50,7 @@ const MARK_OF: Record<string, TraceMarkKind> = {
   "AGENT 목표 준비": "goal",
   "OBSERVATION 사용자 자리 이탈": "goal",
   "GUARDRAIL 실행 보류": "guard",
+  "GUARDRAIL 실행 전 검사": "spot",
 };
 
 /** 줄 차례(id 끝 번호). 번호가 없으면 받은 차례. */

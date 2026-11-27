@@ -108,6 +108,12 @@ describe("트레이스 줄 → 트윈 표시(traceMarks)", () => {
     expect(marks(t.rows()).map((m) => m.kind)).toEqual(["leg"]);
   });
 
+  it("실행 전 검사 통과 줄은 대상 컵 자리에 점과 이름표다", () => {
+    const t = journal();
+    t.event("check", { plan_id: PLAN.id, object_id: "cup_1" }, "check_passed");
+    expect(marks(t.rows())).toEqual([expect.objectContaining({ kind: "spot", state: "done", at: [4.4, 0.78, 0.3], target: "cup_1", text: "실행 전 검사 · 통과" })]);
+  });
+
   it("가전 도구·가전 상태 변화는 그 가전 자리에 OUTPUT 글이다", () => {
     const t = journal();
     t.finish(t.start("device_tool", { object_id: "tv_1" }), "device_ack");

@@ -7,7 +7,7 @@ const LABELS = {
   action: ["AGENT", "행동 선택", "집 상태 · 행동 목록"],
   wait: ["AGENT", "대기 판단", "집 상태 · 행동 목록"],
   replan: ["AGENT", "계획 변경", "실행 중 달라진 조건"],
-  pam: ["LLM", "PAM 판단", "집 상태 · 습관"],
+  pam: ["LLM", "FSM 판단", "집 상태 · 습관"],
   vlm: ["LLM", "VLM 장면 해석", "카메라 프레임"],
   closer_vlm: ["LLM", "VLM 근접 해석", "근접 프레임"],
   observer: ["LLM", "관찰 방법 선택", "미확인 조건"],
@@ -15,6 +15,7 @@ const LABELS = {
   dialog: ["LLM", "요청 해석", "사용자 요청"],
   closer: ["TOOL", "근접 관찰", "대상 물건"],
   top: ["TOOL", "컵 안 확인", "대상 컵"],
+  check: ["GUARDRAIL", "실행 전 검사", "대상 물건"],
   device_tool: ["TOOL", "가전 도구", "가전 명령"],
   move: ["EXECUTION", "이동 안내", "목적지"],
   pick: ["EXECUTION", "집기 안내", "대상 물건"],
@@ -37,7 +38,7 @@ const OUTPUT = {
   model_answer: "응답 받음", scene_people: "사람 관찰", scene_objects: "물건 관찰", scene_people_objects: "사람과 물건 관찰",
   scene_no_target: "사람·물건 미확인", selected: "행동 선택", select_cup: "컵 치우기 선택", waiting: "지켜보기",
   late: "이전 판단 답 보류", replanned: "새 계획으로 이어감", failed: "실패", stopped: "중단",
-  found: "대상 확인", unconfirmed: "확인하지 못함", cup_empty: "빈 컵 확인", cup_contents: "컵 내용물 확인",
+  found: "대상 확인", unconfirmed: "확인하지 못함", cup_empty: "빈 컵 확인", cup_contents: "컵 내용물 확인", check_passed: "통과",
   step_done: "수행 확인", place_done: "배치 확인", move_done: "도착 확인",
   activity_done: "활동 완료", activity_cancelled: "활동 취소", activity_failed: "활동 실패", safety_fall: "쓰러짐 의심",
   safety_monitor: "가전 꺼짐 확인 중", safety_device: "가전 안전 조치 필요", safety_cleared: "안전 알림 해제",
@@ -85,6 +86,8 @@ export class TraceJournal implements TracePort {
   private readonly rows = new Map<string, TraceRow>();
   private readonly keys = new Map<string, string>();
   private readonly outputDetails = new Map<string, string>();
+  /** 진행 중 줄의 사건: 닫을 때 받은 target으로 글을 다시 만든다(FSM 판단). */
+  private readonly pendingEvents = new Map<string, TraceEvent>();
 
   constructor(readonly epoch: string, private readonly now: () => number, private readonly publish: (msg: TraceMessage) => void) {}
 
@@ -100,14 +103,18 @@ export class TraceJournal implements TracePort {
     return this.add(event, refs, "done", null, output, causeId, target);
   }
 
-  finish(id: string, state: Exclude<TraceState, "pending">, output: TraceOutput, atMs = this.now(), causeId?: string, evidence?: EvidenceRef): void {
+  finish(id: string, state: Exclude<TraceState, "pending">, output: TraceOutput, atMs = this.now(), causeId?: string, evidence?: EvidenceRef, target?: TraceTarget): void {
     const row = this.rows.get(id);
     if (this.closed || row?.state !== "pending") return;
     const ended_ms = stamp(atMs);
-    const detail = this.outputDetails.get(id);
+    const event = this.pendingEvents.get(id);
+    this.pendingEvents.delete(id);
+    const late = target && event ? this.describe(event, row.refs, target, OUTPUT[output]) : {};
+    const detail = late.output ?? this.outputDetails.get(id);
     this.outputDetails.delete(id);
     const ref = publicEvidence(evidence);
     this.save({ ...row, ...(causeId ? { cause_id: causeId } : {}), ...(ref ? { refs: { ...row.refs, evidence: ref } } : {}),
+      ...(state === "done" && late.input ? { input: late.input } : {}),
       state, output: state === "done" && detail ? detail : OUTPUT[output], rev: row.rev + 1,
       ended_ms: ended_ms === null || row.started_ms === null ? ended_ms : Math.max(row.started_ms, ended_ms) });
   }
@@ -155,7 +162,8 @@ export class TraceJournal implements TracePort {
     this.save({ ...rest, rev: row.rev + 1 });
   }
 
-  protected describe(_event: TraceEvent, _refs: TraceRefs, _target?: TraceTarget): { input?: string; output?: string } {
+  /** said: 그 줄의 고정 출력 글(아직 모르면 없음). 집마다 대상·자리·FSM 상태 글로 바꾼다(src/server/home/trace.ts). */
+  protected describe(_event: TraceEvent, _refs: TraceRefs, _target?: TraceTarget, _said?: string): { input?: string; output?: string } {
     return {};
   }
 
@@ -167,7 +175,7 @@ export class TraceJournal implements TracePort {
     const watch = refKeys.length === 0 && WATCH.has(event);
     const activity_id = this.activity(watch ? [WATCH_KEY] : refKeys);
     const [kind, name, fallback] = LABELS[event];
-    const description = this.describe(event, refs, target);
+    const description = this.describe(event, refs, target, output ? OUTPUT[output] : undefined);
     // 지켜보기 줄끼리는 원인이 아니다: 앞 관찰 줄에 잇지 않는다.
     const parent = cause_id ?? (refs.evidence?.source === "world_change" ? refs.evidence.originId : undefined)
       ?? (watch ? undefined : this.first(activity_id, refs.request_id)?.id);
@@ -176,6 +184,7 @@ export class TraceJournal implements TracePort {
       output: output ? description.output ?? OUTPUT[output] : kind === "EXECUTION" ? "시연자 수행 대기" : "결과 대기 중",
       started_ms, ended_ms, state };
     if (description.output && state === "pending") this.outputDetails.set(row.id, description.output);
+    if (state === "pending") this.pendingEvents.set(row.id, event);
     this.save(row);
     return row;
   }
@@ -214,6 +223,7 @@ export class TraceJournal implements TracePort {
       const evicted = ended?.id ?? this.rows.keys().next().value!;
       this.rows.delete(evicted);
       this.outputDetails.delete(evicted);
+      this.pendingEvents.delete(evicted);
     }
     this.publish({ type: "trace", epoch: this.epoch, rows: [row] });
   }

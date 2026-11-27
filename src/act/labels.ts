@@ -1,6 +1,8 @@
 // 서버가 만들어 화면에 그대로 나가는 글. npm run lint가 이 파일도 검사한다(60자 아래, 화살표·괄호 없음).
 import { josa } from "../shared/korean.js";
 import type { CloserMiss, TopDrop } from "../contract/events.js";
+import type { GoalDrop } from "../contract/goal.js";
+import type { TraceCheck } from "../contract/trace.js";
 import { KINDS, KIND_ORDER } from "../devices/kinds.js";
 import { OBJECT_NAME } from "../world/labels.js";
 import { TASK_SAY } from "./tasks.js";
@@ -329,4 +331,32 @@ export const LOOK_TEXT = {
   /** 찾기의 다시 가까이 보기 까닭(src/act/robot/find.ts). */
   find: (place: string) => `${place} 쪽에서 대상을 찾으려고 가까이 봄`,
   failed: (why: string) => `관찰 모드 호출 실패: ${why}`,
+};
+
+/** Agent Trace 줄 글(src/server/home/trace.ts). item은 대상 물건 이름(컵). */
+export const TRACE_TEXT = {
+  /** 목표 준비 줄: 미리 세운 목표를 버린 까닭(src/contract/goal.ts GoalDrop). */
+  drop: {
+    took: (item: string) => `${josa(item, "을/를")} 들고 감`,
+    back: () => "사람이 돌아옴",
+    moved: (item: string) => `${josa(item, "이/가")} 옮겨짐`,
+    replaced: () => "다른 판단이 맡음",
+    safety: () => "안전 알림 먼저",
+    mode: () => "지금 행동 목록에 없음",
+    dock: () => "충전 자리로 가는 중",
+    expired: () => "준비 시간 지남",
+    pam: () => "떠난 뒤 판단이 고르지 않음",
+    stale: () => "준비한 계획을 쓸 수 없음",
+    stop: () => "그만하라고 함",
+  } satisfies Record<GoalDrop, (item: string) => string>,
+  /** 실행 전 검사 줄: 통과한 항목. */
+  check: {
+    same: (item: string) => `같은 ${item}`,
+    empty: (item: string) => `빈 ${item}`,
+    free: () => "아무도 안 듦",
+  } satisfies Record<TraceCheck, (item: string) => string>,
+  /** 행동 선택 줄: 반성으로 배운 화살표가 고른 일. */
+  learned: "배운 전이",
+  /** 활동 종료 줄: 사람이 떠난 뒤 첫 명령까지. */
+  firstCommand: (seconds: string) => `첫 명령 ${seconds}초`,
 };

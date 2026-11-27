@@ -81,6 +81,8 @@ export interface Run {
   /** 사람이 계획 대상을 쓰는 중이라 첫 명령을 미루기 시작한 시각(src/manage/use.ts waits). 아니면 null.
    *  useHeld: 쓰는 중이라 미룬 적이 있다(풀린 첫 명령을 폰 대화·승인 대기 동안 미룬다). */
   usedAt: number | null; useHeld: boolean;
+  /** 실행 전 검사 통과 줄을 이미 냈다(Agent Trace, 첫 명령 전 한 번). */
+  checkShown?: true;
   /** 미리 세운 목표(src/goal/watch.ts)로 미리 만든 계획이면 그 목표 id와 사람이 떠난 때(실행 전 검사 seenSince). 아니면 null.
    *  목표 실행은 첫 단계 전 승인을 묻지 않는다(사용자 결정 2026-11-18, approval.ts need). 위험 목록 가전 단계는 그 단계에서 늘 묻는다. */
   goal: string | null; seenSince: number | null;

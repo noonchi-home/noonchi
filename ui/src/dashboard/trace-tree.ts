@@ -4,6 +4,11 @@ import type { TraceRow, TraceState } from "../../../src/contract/trace.ts";
 const isGoal = (row: TraceRow) => row.kind === "AGENT" && row.name === "목표 준비";
 const isChoice = (row: TraceRow) => row.kind === "AGENT" && row.name === "행동 선택";
 const isWait = (row: TraceRow) => row.kind === "AGENT" && row.name === "대기 판단";
+const isJudge = (row: TraceRow) => row.kind === "LLM" && row.name === "FSM 판단";
+/** 행동 없이 끝난 판단 활동(판단 줄·대기 줄만). */
+const waitOnly = (rows: readonly TraceRow[]) => rows.some(isWait) && rows.every(row => isWait(row) || row.kind === "LLM" && row.state !== "pending");
+/** 아직 답을 기다리는 판단 활동(판단 줄 하나만): 앞 대기 묶음에 붙여 매초 새 활동이 생기지 않게 한다. */
+const judging = (rows: readonly TraceRow[]) => rows.every(row => isJudge(row) && row.state === "pending");
 const isResult = (row: TraceRow) =>
   row.kind === "EXECUTION" && row.name === "활동 종료" && row.state !== "pending" && !row.refs.step_id;
 
@@ -73,7 +78,8 @@ function activityTitle(rows: readonly TraceRow[], result?: TraceRow): string {
   const choice = rows.find(row => isChoice(row) && row.state === "done" && row.output !== row.name);
   if (result && result.input !== "도움 시도") return actionIn(result.input);
   if (goal && goal.input !== "확인된 습관 · 대상") return actionIn(goal.input);
-  return choice?.output ?? rows.find(row => row.kind !== "LLM")?.name ?? rows[0]!.name;
+  // 행동 선택 줄 출력은 「일 · 배운 전이」일 수 있다: 제목은 일 이름만
+  return (choice && actionIn(choice.output)) ?? rows.find(row => row.kind !== "LLM")?.name ?? rows[0]!.name;
 }
 
 function completionOf(row: TraceRow, title: string, byId: ReadonlyMap<string, TraceRow>): TraceCompletion {
@@ -125,16 +131,28 @@ export function traceActivities(rows: readonly TraceRow[]): TraceActivity[] {
     const old = byId.get(row.id);
     if (!old || row.rev > old.rev && !(old.state !== "pending" && row.state === "pending")) byId.set(row.id, row);
   }
-  const grouped = new Map<string, TraceRow[]>();
+  const byActivity = new Map<string, TraceRow[]>();
   for (const row of [...byId.values()].sort(oldestFirst)) {
-    const group = grouped.get(row.activity_id);
+    const group = byActivity.get(row.activity_id);
     if (group) group.push(row);
-    else grouped.set(row.activity_id, [row]);
+    else byActivity.set(row.activity_id, [row]);
   }
-  return [...grouped].map(([id, records]): TraceActivity => {
+  // 행동 없는 판단이 이어지면 첫 활동 하나(대기 판단)로 묶는다. 행동을 고른 판단·다른 활동에서 끊는다
+  const grouped: [string, TraceRow[]][] = [];
+  let run: TraceRow[] | null = null;
+  for (const [id, records] of byActivity) {
+    if (waitOnly(records) || run && judging(records)) {
+      if (run) run.push(...records);
+      else grouped.push([id, run = [...records]]);
+    } else {
+      run = null;
+      grouped.push([id, records]);
+    }
+  }
+  return grouped.map(([id, records]): TraceActivity => {
     const result = records.find(isResult);
-    const wait = records.find(row => isWait(row) && row.state === "done");
-    const watchOnly = wait && records.every(row => row === wait || row.kind === "LLM" && row.state !== "pending");
+    const wait = [...records].reverse().find(row => isWait(row) && row.state === "done");
+    const watchOnly = wait && records.every(row => isWait(row) || row.kind === "LLM" && (row.state !== "pending" || isJudge(row)));
     const watch = !result && records.every(isWatch);
     const title = watch ? WATCH_TITLE : watchOnly ? wait.name : activityTitle(records, result);
     return {
