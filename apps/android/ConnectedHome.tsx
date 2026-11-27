@@ -4,7 +4,7 @@ import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context"
 import type { SetupView } from "../../src/contract/setup";
 import { activeHome, createConnectedHub, readHomeCard, startPositionLabel, type ConnectedHub } from "./connected-hub";
 import { connectedStore } from "./connected-storage";
-import { Action, Copy, Failure, Heading, Loading, Panel, colors, useResource } from "./ConnectedUi";
+import { Action, Copy, Failure, Heading, Loading, Panel, SavedMark, colors, useResource } from "./ConnectedUi";
 import { ConnectedHouse } from "./ConnectedHouse";
 import { ConnectedSettings } from "./ConnectedSettings";
 import { BrandWordmark, wordmarkBackground } from "./BrandWordmark";
@@ -38,6 +38,7 @@ function HubTabs({ hubUrl, onStart, onDisconnect }: ConnectedHomeProps) {
   const [building, setBuilding] = useState(false);
   const [editingHubHouse, setEditingHubHouse] = useState(false);
   const [tabError, setTabError] = useState("");
+  const [saved, setSaved] = useState(0);
   const started = useRef(0);
   const load = useCallback(async (signal: AbortSignal) => {
     const [setup, registered] = await Promise.all([hub.get<SetupView>("/api/setup", signal), store.registered()]);
@@ -102,7 +103,7 @@ function HubTabs({ hubUrl, onStart, onDisconnect }: ConnectedHomeProps) {
     {!building && <View style={styles.header}>
       <BrandWordmark />
     </View>}
-    <ScrollView style={styles.scroll} contentContainerStyle={building ? { flexGrow: 1 } : styles.content} keyboardShouldPersistTaps="handled">
+    <View style={styles.body}><ScrollView style={styles.scroll} contentContainerStyle={building ? { flexGrow: 1 } : styles.content} keyboardShouldPersistTaps="handled">
       <Failure>{tabError}</Failure>
       {!data ? <Panel>{server.error ? <>
         <Failure>{server.error}</Failure><Action title="다시 불러오기" onPress={refresh} />
@@ -137,8 +138,10 @@ function HubTabs({ hubUrl, onStart, onDisconnect }: ConnectedHomeProps) {
             if (setup) updated(setup, chosen ?? data.registered);
             setStartHome(undefined);
             setTabError(""); setTab(editingHubHouse ? "house" : "home"); setEditingHubHouse(false);
+            setSaved(count => count + 1);
           }} />}
     </ScrollView>
+    <SavedMark count={saved} /></View>
     {tab === "home" && <View accessibilityElementsHidden importantForAccessibility="no-hide-descendants" pointerEvents="none" style={styles.peek}>
       {house ? <View style={[styles.mascotCrop, { width: mascotWidth, height: mascotWidth * 124 / 152 }]}>
         <Image source={mascot} accessible={false} resizeMode="contain" style={[styles.mascot, {
@@ -201,7 +204,7 @@ function RegisteredHomeRows({ hub, home, enabled, openStartPosition, acceptSetup
 }
 
 const styles = StyleSheet.create({
-  page: { flex: 1, backgroundColor: colors.canvas }, scroll: { flex: 1 },
+  page: { flex: 1, backgroundColor: colors.canvas }, body: { flex: 1 }, scroll: { flex: 1 },
   header: { minHeight: 56, alignItems: "center", justifyContent: "center", backgroundColor: wordmarkBackground,
     borderBottomColor: colors.edge, borderBottomWidth: 1 },
   content: { padding: 14, gap: 12, alignSelf: "center", width: "100%", maxWidth: 640 },

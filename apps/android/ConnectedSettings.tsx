@@ -1,20 +1,17 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Alert, AppState } from "react-native";
+import { Alert, Animated, AppState } from "react-native";
 import type { SceneJson, Vec2 } from "../../src/contract/layout";
 import type { ControlMode, SetupView, ThinqDevicesView } from "../../src/contract/setup";
 import { ConnectedPlan } from "./ConnectedPlan";
 import { ConnectedStations } from "./ConnectedStations";
-import { Action, Choice, Copy, Failure, Field, Heading, Loading, Panel, useResource, useSettingTask, useTask } from "./ConnectedUi";
+import { Action, Choice, Copy, Failure, Field, Heading, Loading, Panel, useResource, useSettingTask, useSlide } from "./ConnectedUi";
 import { connectedHouse, readForHome, type ConnectedHub, type StartPosition } from "./connected-hub";
 import { viewCone } from "./plan-lines";
+import { applianceSummary, demoSettings, listedPages, pageLabels, previousPage, remoteTitle, type SettingsPage } from "./settings-menu";
 
-type Page = "house" | "appliances" | "devices" | "mode" | "position" | "stations" | "layout";
+type Page = SettingsPage;
 type Save = (setup?: SetupView, chosen?: string) => Promise<void>;
 type Context = { hub: ConnectedHub; home: string; onSaved: Save; onBlock: (value: boolean) => void };
-const labels: Record<Page, string> = {
-  house: "집 고르기", appliances: "가전 연결", devices: "읽을 가전 선택", mode: "모드",
-  position: "시작 위치", stations: "자리·구역", layout: "배치 보정",
-};
 
 export function ConnectedSettings({ hub, setup, onSaved, onBlock, onDisconnect, initialPage, backToHome, backToHouse }: {
   hub: ConnectedHub; setup: SetupView; onSaved: Save; onBlock: (value: boolean) => void; onDisconnect: () => void;
@@ -24,22 +21,27 @@ export function ConnectedSettings({ hub, setup, onSaved, onBlock, onDisconnect, 
   const [busy, setBusy] = useState(false);
   const block = useCallback((value: boolean) => { setBusy(value); onBlock(value); }, [onBlock]);
   const context = { hub, home: setup.home?.id ?? "", onSaved, onBlock: block };
-  if (page) return <Panel>
-    <Heading>{labels[page]}</Heading>
+  const slide = useSlide(page);
+  function open(next: Page) {
+    slide.enter();
+    setPage(next);
+  }
+  if (page) return <Animated.View style={slide.style}><Panel>
+    <Heading>{pageLabels[page]}</Heading>
     {page === "house" && <HouseSetting {...context} setup={setup} />}
-    {page === "appliances" && <ApplianceSetting key={`${hub.origin}/${context.home}`} {...context} setup={setup}
-      onChooseDevices={() => setPage("devices")} />}
+    {page === "appliances" && <ApplianceSetting key={`${hub.origin}/${context.home}`} {...context} setup={setup} busy={busy}
+      onChooseDevices={() => open("devices")} />}
     {page === "devices" && <DevicesSetting {...context} setup={setup} />}
     {page === "mode" && <ModeSetting {...context} setup={setup} />}
     {page === "position" && <PositionSetting {...context} />}
     {page === "stations" && <ConnectedStations {...context} />}
     {page === "layout" && <LayoutSetting {...context} />}
     <Action title={backToHome ? "홈으로" : backToHouse ? "집 관리로" : "설정 목록으로"} disabled={busy} secondary
-      onPress={backToHome ?? backToHouse ?? (() => setPage(page === "devices" ? "appliances" : undefined))} />
-  </Panel>;
+      onPress={() => slide.leave(backToHome ?? backToHouse ?? (() => setPage(previousPage(page))))} />
+  </Panel></Animated.View>;
   const summaries: Record<Page, string> = {
     house: setup.home?.name.replace(/\s*[(（].*$/, "").trim() || "미선택",
-    appliances: Object.keys(setup.pairs).length ? `${Object.keys(setup.pairs).length}개 연결` : "미연결",
+    appliances: applianceSummary(setup),
     devices: setup.home ? `${setup.devices.length}개` : "집 선택 필요",
     mode: setup.mode === "live" ? "운영 모드" : "테스트 모드",
     position: setup.position.start ? "설정 가능" : "사용 불가",
@@ -52,9 +54,9 @@ export function ConnectedSettings({ hub, setup, onSaved, onBlock, onDisconnect, 
   };
   return <Panel><Heading>설정</Heading>
     {setup.home && <Copy>{summaries.house}</Copy>}
-    {(Object.keys(labels) as Page[]).filter(key => key !== "devices" && (key !== "house" || !setup.home)).map(key => <Choice key={key} title={labels[key]} value={summaries[key]}
-      disabled={setup.switching || !enabled[key]} onPress={() => setPage(key)} />)}
-    <Copy>{hub.origin}</Copy>
+    {listedPages(!!setup.home).map(key => <Choice key={key} title={pageLabels[key]} value={summaries[key]}
+      disabled={setup.switching || !enabled[key]} onPress={() => open(key)} />)}
+    {demoSettings.serverOrigin && <Copy>{hub.origin}</Copy>}
     <Action title="서버 연결 끊기" secondary onPress={() => Alert.alert("서버 연결 끊기", "다시 연결하려면 대시보드의 QR이 필요해요.", [
       { text: "취소", style: "cancel" }, { text: "연결 끊기", style: "destructive", onPress: onDisconnect },
     ])} />
@@ -115,7 +117,17 @@ function ModeSetting({ setup, hub, onSaved, onBlock }: Context & { setup: SetupV
   </>;
 }
 
-function ApplianceSetting({ home, setup, hub, onSaved, onBlock, onChooseDevices }: Context & { setup: SetupView; onChooseDevices: () => void }) {
+function ApplianceSetting({ busy, onChooseDevices, ...context }: Context & { setup: SetupView; busy: boolean; onChooseDevices: () => void }) {
+  return <>
+    {demoSettings.appliances.includes("thinq") && <ThinqSection {...context} />}
+    {remoteTitle() ? <>
+      <Copy>{remoteTitle()}</Copy>
+      <Action title="읽을 가전 선택" disabled={busy} onPress={onChooseDevices} secondary />
+    </> : null}
+  </>;
+}
+
+function ThinqSection({ home, setup, hub, onSaved, onBlock }: Context & { setup: SetupView }) {
   const task = useSettingTask(onBlock);
   const [requested, request] = useState(false);
   const available = !!home && !setup.switching && setup.thinq.ready && (setup.mode === "live" || home === connectedHouse.id);
@@ -164,8 +176,6 @@ function ApplianceSetting({ home, setup, hub, onSaved, onBlock, onChooseDevices 
       })} />
     </>}
     <Failure>{task.error}</Failure>
-    <Copy>리모컨(IR) · Matter</Copy>
-    <Action title="읽을 가전 선택" disabled={task.busy} onPress={onChooseDevices} secondary />
   </>;
 }
 
