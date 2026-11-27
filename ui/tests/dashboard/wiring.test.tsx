@@ -270,6 +270,21 @@ describe("대시보드 자료 연결", () => {
       await waitFor(() => expect(within(dialog).getByText("11월 28일 (토) · 하루를 마치지 못했어요")).toBeInTheDocument());
     });
 
+    it("반성 보기가 도는 동안(넘긴 뒤 재생 중) 설정 창의 날짜 줄은 누른 날 · 밤 반성 중이고 단추가 꺼진다", async () => {
+      await mount(false);
+      const failed = { ok: true, day: "2026-11-27", state: "failed", rejected: false, at_ms: 1, before: null, after: null, graph: { states: ["drinking"], edges: [] }, after_graph: null,
+        chunks: [], did: [], candidates: [], dropped: [], checks: [], learned: [], skipped_to: null, window_s: 300, rate_min: 0.75, alpha: 0.001 };
+      const base = vi.mocked(fetch).getMockImplementation()!;
+      vi.mocked(fetch).mockImplementation(async (path: string | URL | Request, init?: RequestInit) => (path === "/api/reflection/2026-11-27" ? Response.json(failed) : base(path as string, init)));
+      send([{ type: "day", day: DAY }, { type: "day", day: { ...DAY, closing: true } }]);
+      send([{ type: "day", day: { ...DAY, today: "2026-11-28", shift: 1 } }]);
+      await waitFor(() => expect([...document.querySelectorAll("fieldset > legend")].map((e) => e.textContent)).toContain("FSM 바뀜"));
+      fireEvent.keyDown(window, { key: "1", code: "Digit1", ctrlKey: true });
+      const dialog = await screen.findByRole("dialog", { name: "설정" });
+      expect(within(dialog).getByText("11월 27일 (금) · 밤 반성 중")).toBeInTheDocument();
+      expect(within(dialog).getByRole("button", { name: "하루 마치기" })).toBeDisabled();
+    });
+
     it("반성이 시작된 뒤(closing을 받은 뒤) 실패하면 설정 창을 다시 열지 않는다", async () => {
       await mount(false);
       send([{ type: "day", day: DAY }]);

@@ -61,12 +61,12 @@ function FinishDayRow({ day, reflecting, failed, onFinish }: { day: DayView; ref
  * 연결·운영 상태와 폰 홈 QR을 보여 준다.
  * 상태를 보이고, 하루 마치기(FINISH_DAY=1인 서버)만 누를 수 있다. 입력칸이 없고, 모드를 바꾸는 일은 설정 화면에서 한다. Esc·바깥 누르기·닫기 단추로 닫힌다.
  */
-export function SettingsDialog({ hub, day = null, reflecting = null, failed = false, onFinish }: {
+export function SettingsDialog({ hub, day = null, reflecting, failed = false, onFinish }: {
   hub: HubState;
   /** 시스템 날짜 상태(day 메시지). 하루 마치기를 켠 서버면 날짜 줄이 보인다. */
   day?: DayView | null;
-  /** 반성 화면이 도는 동안 누른 날의 날짜 상태(넘긴 뒤에도 재생이 끝날 때까지). */
-  reflecting?: DayView | null;
+  /** 반성 화면이 도는 동안 누른 날의 날짜 상태(넘긴 뒤에도 재생이 끝날 때까지). 돌지 않으면 null. */
+  reflecting: DayView | null;
   /** 마지막 하루 마치기 요청이 실패했다. */
   failed?: boolean;
   onFinish?: (day: string) => void;

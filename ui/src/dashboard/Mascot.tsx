@@ -66,7 +66,7 @@ export function Mascot({ image, hub, box, imageBox, logoBox, open, onOpenChange 
             </span>
           </Button>
         </DialogTrigger>
-        <SettingsDialog hub={hub} />
+        <SettingsDialog hub={hub} reflecting={null} />
       </Dialog>
     </section>
   );

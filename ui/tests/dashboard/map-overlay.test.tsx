@@ -20,9 +20,13 @@ import type { GoalMarkInput } from "../../src/dashboard/plan-marks";
 import { PreDrawing } from "../../src/dashboard/motion";
 import { TwinEngine } from "../../src/twin/3d/engine";
 import { plateTransform, type MapCamera } from "../../src/twin/3d/view";
-import { anchorOf, CAM, HOME, IMAGE, moment, PLAN, PLAN_CHECKS, SCENE, SINK } from "./cup-run";
+import { anchorOf, CAM, HOME, IMAGE, moment, PLAN, PLAN_CHECKS, SCENE, SINK, TABLE } from "./cup-run";
+import { planToPixel } from "../../src/twin";
+import { MIN_FOCUS } from "../../src/dashboard/camera";
 
 const SIZE = { width: 1320, height: 1020 };
+// 반성 확대 상한: 지금 값(1.3)은 라이브 상한과 같아 이 집에서는 차이가 보이지 않는다. 이 파일만 더 당기는 값으로 바꿔 대시보드가 그 값을 쓰는지 본다
+vi.mock("../../src/dashboard/camera", async (orig) => ({ ...(await orig<typeof import("../../src/dashboard/camera")>()), REFLECT_ZOOM: { maxZoom: 6, maxScale: 2.3 } }));
 const PAD = { top: 80, right: 40, bottom: 140, left: 40 };
 const FRIDGE = "fridge_bbc363a3";
 const fridge: DeviceView = {
@@ -573,6 +577,34 @@ describe("대시보드 구운 트윈 위 표시", () => {
     // 다음 순간(맞출 곳 없음, 집 전체)으로 옮길 때는 반성 카메라 시간이다
     await waitFor(() => expect((engine.setView.mock.calls.at(-1) as unknown as [MapCamera, number])[1]).toBe(REFLECT_CAMERA_MS), { timeout: 4000 });
   }, 15_000);
+
+  it("컵 치우기 검사가 든 반성은 식탁·싱크대 자리에 표시를 그리고 그 둘에 반성 확대 상한으로 당긴다", async () => {
+    history.replaceState(null, "", "/?view=reflection&day=2026-11-27");
+    const cup = { state: "drinking", to: "*", action: "컵 치우기", n: 2, k: 2, unknown: 0, rate: 1, p_value: 0.0001, passed: true,
+      moments: [{ day: "2026-11-27", at: "14:40:20", verdict: "followed", action_at: "14:41:10", via: "person" }] };
+    const detail = {
+      ok: true, day: "2026-11-27", state: "done", rejected: false, at_ms: 1, before: { version: 1 }, after: { version: 2, applies_day: "2026-11-28" },
+      graph: { states: ["drinking", "away"], edges: [{ from: "drinking", to: "*", action: "사용자에게 물어보기" }] }, after_graph: null,
+      chunks: [], did: [{ action: "컵 치우기", at: "14:41:10", via: "person" }], candidates: [{ state: "drinking", to: "*", action: "컵 치우기" }], dropped: [], checks: [cup],
+      learned: [], skipped_to: "2026-11-28", window_s: 300, rate_min: 0.75, alpha: 0.001,
+    };
+    const base = vi.mocked(fetch).getMockImplementation()!;
+    vi.mocked(fetch).mockImplementation(async (path: string | URL | Request, init?: RequestInit) =>
+      (path === "/api/reflection/2026-11-27" ? Response.json(detail) : base(path as string, init)));
+    const { container } = render(<Dashboard />);
+    await waitFor(() => expect(load).toHaveBeenCalled());
+    await waitFor(() => expect(container.querySelector('[aria-label="3D 트윈"] [data-trace-mark]')).toHaveTextContent("14:41 · 컵 치우기 · 직접 함"));
+    const px = (id: string) => { const at = anchorOf(id)!; return planToPixel(CAM, [at[0], at[2]], at[1]); };
+    const focus = atLeast(boundsOf([px(TABLE), px(SINK)]), MIN_FOCUS);
+    const pad = { left: 16, right: 16, top: 16, bottom: 36 };
+    const whole = wholeOf(HOME.shapes);
+    const want = wideCamera(IMAGE, SIZE, focus, pad, whole, REFLECT_ZOOM.maxZoom, REFLECT_ZOOM.maxScale);
+    expect(want.scale).toBeGreaterThan(wideCamera(IMAGE, SIZE, focus, pad, whole).scale);
+    await waitFor(() => {
+      const [cam] = engine.setView.mock.calls.at(-1) as unknown as [MapCamera, number];
+      expect(cam.scale).toBeCloseTo(want.scale, 5); expect(cam.cx).toBeCloseTo(want.cx, 3); expect(cam.cy).toBeCloseTo(want.cy, 3);
+    });
+  });
 
   it("하루 마치기 반성 보기가 끝나면 라이브 보기 카메라로 돌아온다", async () => {
     const failed = {

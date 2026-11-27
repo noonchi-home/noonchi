@@ -58,8 +58,8 @@ export interface ScreenProps {
   onReady?: () => void;
   /** 시스템 날짜 상태(day 메시지). 설정 창 날짜 줄이 쓴다. */
   day?: DayView | null;
-  /** 반성 화면이 도는 동안 누른 날의 날짜 상태. */
-  reflecting?: DayView | null;
+  /** 반성 화면이 도는 동안 누른 날의 날짜 상태(돌지 않으면 null). 설정 창이 그동안 하루 마치기를 막는다. */
+  reflecting: DayView | null;
   /** 하루 마치기(설정 창 확인 뒤). 없으면 날짜 줄 단추가 없다. */
   onFinishDay?: (day: string) => void;
   /** 마지막 하루 마치기 요청이 실패했다. */
@@ -104,7 +104,7 @@ function useSettings(initial: boolean): [boolean, (open: boolean) => void] {
  * 설정 창은 Ctrl+1로만 연다(기본 라이브 보기에는 설정 단추가 없다).
  */
 export function DashboardScreen({ index, plan, step, robotKnown, connected, map, mapReady, narration, trace, onTwin, command, onPhoneDelay, phone, seen, statusRows, hub, settingsOpen, onReady, tzMinutes = null,
-  day = null, reflecting = null, onFinishDay, finishFailed = false, finishReopen = 0, reflection = null }: ScreenProps) {
+  day = null, reflecting, onFinishDay, finishFailed = false, finishReopen = 0, reflection = null }: ScreenProps) {
   const main = useRef<HTMLElement>(null);
   const tiled = narration !== undefined;
   const view = useBoxSize(main, !tiled);
