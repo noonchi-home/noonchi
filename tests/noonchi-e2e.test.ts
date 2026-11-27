@@ -133,11 +133,10 @@ describe("NOONCHI 처음부터 끝까지", () => {
         refs: expect.objectContaining({ plan_id: planId, attempt: firstTrace.refs.attempt }) }),
     ]);
     expect(JSON.stringify(traced)).not.toMatch(/자리를 비워 컵을 치운다|다 했어|image_url/);
-    // 대시보드에서: 행동 없는 판단이 이어지면 「대기 판단」 묶음 하나이고(매초 새 활동이 아니다), 목표를 버린 줄은 까닭 글이다
+    // 대시보드에서: 행동 없는 판단이 이어지면 「대기 판단」 묶음 하나다(매초 새 활동이 아니다)
     const groups = traceActivities(traceRows() as TraceRow[]);
     expect(groups.filter(a => a.title === "대기 판단").length).toBeGreaterThan(0);
     expect(groups.some((a, i) => a.title === "대기 판단" && groups[i - 1]?.title === "대기 판단")).toBe(false);
-    expect(traceRows().filter(r => r.name === "목표 준비").map(r => r.output)).not.toContain("목표 종료");
     // 다음 판단(사람이 다시 와서 먹다 떠남 → 컵 치우기)은 싱크대 안 컵을 대상으로 삼지 않고 실행 전 검사에서 멈춘다
     scene.personAct = "eating";
     await drinkThenLeave(people, dash, pump, fake!);

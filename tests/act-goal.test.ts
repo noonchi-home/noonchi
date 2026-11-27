@@ -562,6 +562,25 @@ describe("미리 세운 목표: 맞지 않게 되면 버리고 지금 길로", (
     expect(h.nudged()).toBe(0);
   });
 
+  it("버린 목표는 Agent Trace 목표 준비 줄에 까닭 글로 남는다: 컵을 들고 감, 사람이 돌아옴", async () => {
+    const took = new HomeTrace("b:h#1", () => 10_000, () => {});
+    took.objects = () => [cupOn({ seen: 0 })];
+    const s = await ready({ trace: took });
+    s.setObjects(() => [cupOn({ seen: s.clock.t, status: "gone" })]);
+    s.gone();
+    expect(took.snapshot().rows.filter(row => row.name === "목표 준비").at(-1)).toMatchObject({ output: "컵을 들고 감" });
+    const back = new HomeTrace("b:h#2", () => 10_000, () => {});
+    back.objects = () => [cupOn({ seen: 0 })];
+    const b = await ready({ trace: back });
+    b.tick();
+    b.gone();
+    b.tick();
+    b.person({});
+    b.tick();
+    expect(back.snapshot().rows.filter(row => row.name === "목표 준비").at(-1)).toMatchObject({ output: "사람이 돌아옴" });
+    expect(JSON.stringify([...took.snapshot().rows, ...back.snapshot().rows])).not.toContain("목표 종료");
+  });
+
   it("금방 돌아옴: fired 뒤 PAM 판단 전에 사람이 다시 보이면 back으로 버리고, 그 뒤 컵 치우기 판단은 계획 모드로 만든다(지금 길)", async () => {
     const s = await ready();
     s.tick();
