@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
 import { test } from "node:test";
-import { pressMotion, reduceMotionStore, savedMotion, slideMotion } from "./motion.ts";
+import { pressMotion, pulseMotion, reduceMotionStore, savedMotion, slideMotion } from "./motion.ts";
 
 const source = (name: string) => readFileSync(new URL(name, import.meta.url), "utf8").split("\r\n").join("\n");
 
@@ -28,6 +28,13 @@ test("a settings page enters from the right edge and leaves to it, and with redu
   assert.deepEqual(slideMotion("out", 412, false), { from: 0, to: 412, ms: enter.ms });
   assert.deepEqual(slideMotion("in", 412, true), { from: 0, to: 0, ms: 0 });
   assert.deepEqual(slideMotion("out", 412, true), { from: 0, to: 0, ms: 0 });
+});
+
+test("the waiting prompt dims and brightens again and again, and with reduce motion it stays fully shown", () => {
+  const pulse = pulseMotion(false);
+  assert(pulse.low >= 0.2 && pulse.low <= 0.5, `low ${pulse.low}`);
+  assert(pulse.halfMs >= 400 && pulse.halfMs <= 900, `half ${pulse.halfMs}`);
+  assert.deepEqual(pulseMotion(true), { low: 1, halfMs: 0 });
 });
 
 function fakeAccessibility() {
@@ -109,6 +116,18 @@ test("settings pages slide in when opened and slide out before going back", () =
   const ui = source("ConnectedUi.tsx");
   assert.match(ui, /slideMotion\("in", width, reduce\)/);
   assert.match(ui, /slideMotion\("out", width, reduce\)/);
+});
+
+test("the pulse part loops only without reduce motion and pages of the remote screen slide through the shared part", () => {
+  const ui = source("ConnectedUi.tsx");
+  const pulse = ui.slice(ui.indexOf("export function Pulse("), ui.indexOf("\n}\n", ui.indexOf("export function Pulse(")));
+  assert.match(pulse, /const motion = pulseMotion\(reduce\);/);
+  assert.match(pulse, /if \(!motion\.halfMs\) return;/);
+  assert.match(pulse, /Animated\.loop\(/);
+  assert.match(ui, /export function SlidePage\(\{ slide, children \}[^)]*\) \{\s*return <Animated\.View style=\{slide\.style\}>\{children\}<\/Animated\.View>;/);
+  const screen = source("ConnectedRemotes.tsx");
+  assert.match(screen, /const slide = useSlide\(inner\?\.kind\);/);
+  assert.match(screen, /<SlidePage slide=\{slide\}>/);
 });
 
 test("no app code vibrates", () => {
