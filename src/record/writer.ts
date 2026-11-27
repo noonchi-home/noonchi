@@ -89,6 +89,11 @@ export const WRITE_OPS = {
   saveNight(ctx: WriteCtx, a: NightSave): { robot: number; candidates: number } {
     return nightSave(ctx.db, a);
   },
+  /** 하루 마치기(src/server/finish-day.ts): from을 마치고 다음 날로 넘긴 뒤, 넘긴 날을 그날 쓸 판본에 바로 고정한다(다음 판단을 기다리지 않는다). */
+  finishDay(ctx: WriteCtx, a: { atMs: number; from: string }): { from: string; to: string; atMs: number; version: number } {
+    const moved = ctx.db.skipDay(a.atMs, a.from);
+    return { ...moved, atMs: a.atMs, version: memoryForDay(ctx.db, moved.to).version };
+  },
   /** 보관 기간이 지난 사진·시험 자료(파일과 표 줄)를 지운다. */
   sweep(ctx: WriteCtx, o: { photoDays: number; datasetDays: number; nowMs: number }): { photos: number; dataset: number } {
     return sweep(ctx.db, o);

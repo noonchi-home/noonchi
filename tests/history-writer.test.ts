@@ -12,7 +12,7 @@ import { HistoryDb } from "../src/brain/history/db.js";
 import { BusNode, MemoryBus, VirtualClock, type Deliver, type NodeName, type ReadMode, type TopicName } from "../src/bus/index.js";
 import { settle } from "../src/record/replay.js";
 import { CUP_FSM_MEMORY } from "../src/brain/decision.js";
-import { historyRoutesVia, ThreadWriter, writeBatch, type HistoryWriter } from "../src/record/index.js";
+import { directWriter, historyRoutesVia, ThreadWriter, writeBatch, type HistoryWriter } from "../src/record/index.js";
 import { startServer, type RunningServer } from "../src/server/start.js";
 
 const cleanup: (() => unknown)[] = [];
@@ -273,5 +273,17 @@ describe("서버 기록 DB 연결", () => {
     expect(() => srv!.history.cupAnswers.remember("oneroom", "r", true)).toThrow(/readonly/i);
     await srv.historyWriter.add("feedback", 1, "작업 스레드에서 씀");
     expect(srv.history.list({ kinds: ["feedback"] }).map((r) => r.text)).toEqual(["작업 스레드에서 씀"]);
+  });
+});
+
+describe("쓰기 일 finishDay", () => {
+  it("넘김 줄을 쓰고 넘긴 날을 그날 쓸 판본(반성이 다음 날부터로 저장한 판본)에 바로 고정한다", async () => {
+    const db = HistoryDb.open(":memory:");
+    const w = directWriter(db);
+    const press = Date.parse("2026-11-27T15:02:00+09:00");
+    const v = db.saveMemory({ kind: "fsm", memory: CUP_FSM_MEMORY, day: "2026-11-27", appliesDay: "2026-11-28", source: "reflection" });
+    expect(await w.finishDay({ atMs: press, from: "2026-11-27" })).toEqual({ from: "2026-11-27", to: "2026-11-28", atMs: press, version: v });
+    expect(db.pinnedMemory("2026-11-28")).toBe(v);
+    expect(db.dayOf(press)).toBe("2026-11-28");
   });
 });
