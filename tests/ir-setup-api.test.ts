@@ -6,6 +6,7 @@ import { afterAll, afterEach, beforeAll, expect, it } from "vitest";
 import type { IrView } from "../src/contract/ir.js";
 import { fakeBoard, type FakeBoard } from "../src/devices/hub/ir-fake.js";
 import type { SerialPortInfo } from "../src/devices/hub/ir-ports.js";
+import type { IrPort } from "../src/devices/hub/ir.js";
 import { startServer, type RunningServer } from "../src/server/start.js";
 import { fetchRetry } from "../src/shared/net.js";
 import { HOME_SCRIPT, startFakeLlm, type FakeLlm } from "./helpers/llm.js";
@@ -178,6 +179,28 @@ it("리모컨 파일을 저장하지 못하면 화면의 리모컨과 포트·�
   expect(after.remotes.map((r) => [r.id, r.label, r.device])).toEqual([[remote, "TV", "tv_1"]]);
   expect(after.port).toEqual({ name: "COM7", state: "connected" });
   expect((await post("/api/setup/ir/test", { home: HOME, remote, button, confirm: true })).json).toEqual({ ok: true, sent: true });
+}, 30_000);
+
+it("포트 목록 요청이 겹쳐도 같은 COM을 두 번 열지 않고, 확인 중에 고른 포트는 확인이 끝난 뒤 연다", async () => {
+  // Windows처럼 이미 연 포트를 또 열면 다른 프로그램이 쓰는 중(busy)이다
+  const board = fakeBoard({ bootMs: 300 });
+  let held = false;
+  const exclusive: IrPort = (name, received, lost) => {
+    if (held) { setTimeout(() => lost("busy"), 5); return { send() { throw new Error("busy"); }, close() {} }; }
+    held = true;
+    const c = board.port(name, received, lost);
+    return { send: (l) => c.send(l), close: () => { held = false; c.close(); } };
+  };
+  srv = await startServer({ env: { HUB: "memory", PORT: "0", ...llm.env, HOME_ID: HOME, RUNTIME_DIR: runtime() }, log: () => {},
+    irPort: exclusive, irPorts: async () => usb("COM7"), persistSetup: false });
+  const bridge = [{ name: "COM7", label: "USB-SERIAL CH340", firmware: "ir_bridge" }];
+  const both = await Promise.all([get("/api/setup/ir/ports"), get("/api/setup/ir/ports")]);
+  expect(both.map((r) => r.json.ports)).toEqual([bridge, bridge]);
+  const listing = get("/api/setup/ir/ports");
+  await new Promise((r) => setTimeout(r, 50));
+  expect((await post("/api/setup/ir/port", { home: HOME, port: "COM7" })).status).toBe(200);
+  expect((await listing).json.ports).toEqual(bridge);
+  expect((await until(view, (v) => v.port.state !== "connecting")).port).toEqual({ name: "COM7", state: "connected" });
 }, 30_000);
 
 it("IR_FAKE=1이면 포트 목록에 가상 적외선 장치가 있고, 고르면 연결된다", async () => {

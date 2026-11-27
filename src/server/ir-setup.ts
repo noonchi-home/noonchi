@@ -106,6 +106,8 @@ export class IrSetup {
   /** 보드를 새로 열 때마다 +1(연결 번호). */
   private link = 0;
   private tvCache: { version: number; link: number; config: IrConfig | null } | null = null;
+  /** 진행 중인 포트 목록 확인(ports). */
+  private probing: Promise<IrPortsView> | null = null;
   private readonly pressed = new Set<(e: { device: string; remote: string; button: string; role: RemoteRole }) => void>();
   private readonly tvOpen: IrPort;
   private readonly rt: RemoteRuntime;
@@ -195,7 +197,12 @@ export class IrSetup {
       remotes, learning: this.learnView(), devices };
   }
 
-  async ports(): Promise<IrPortsView> {
+  /** 포트 목록과 펌웨어 확인. 진행 중인 확인이 있으면 그것을 함께 쓴다: 겹쳐 열면 같은 COM을 두 번 열어 우리 보드가 「다른 프로그램이 사용 중」으로 나온다. */
+  ports(): Promise<IrPortsView> {
+    return this.probing ??= this.scan().finally(() => { this.probing = null; });
+  }
+
+  private async scan(): Promise<IrPortsView> {
     let listed: SerialPortInfo[];
     try {
       listed = await this.o.listPorts();
@@ -221,6 +228,8 @@ export class IrSetup {
       info = listed.find((p) => p.name === b.port) ?? null;
       if (!info) throw new HttpError(400, E.noPort);
     }
+    // 펌웨어 확인이 그 포트를 열고 있을 수 있다: 끝난 뒤에 연다
+    if (this.probing) await this.probing;
     this.requireHome(b.home);
     // 저장이 된 뒤에만 보드를 바꾼다: 저장이 실패하면 옛 연결과 포트를 그대로 둔다
     this.commit({ ...this.file, port: { name: b.port, pnp: info?.pnp ?? null } });
