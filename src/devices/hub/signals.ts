@@ -17,7 +17,10 @@ import { HOUSEHOLD_KINDS } from "../kinds.js";
 import type { PowerStamp } from "../../contract/devices.js";
 import { matterFromTwin } from "../mapping.js";
 import type { ThinqLink } from "../thinq/link.js";
-import type { Command, CommandResult, DeviceHub, DeviceSpec, DeviceState, Readback, SightEvidence, VisionResult } from "../../contract/devices.js";
+import type { Command, CommandResult, DeviceHub, DeviceSpec, DeviceState, PressResult, Readback, SightEvidence, VisionResult } from "../../contract/devices.js";
+import type { RemoteEvent } from "../../contract/ir.js";
+import { compact } from "../../shared/korean.js";
+import type { RemoteBrief, RemoteRuntime } from "./ir-remotes.js";
 
 /** virtual: 트윈 시뮬레이터, none: 신호 없음, thinq: 실제 가전(ThinQ 기기 id), relay: TV 중계로 잇는 실제 TV(중계 쪽 기기 이름). */
 export type SignalSource = { kind: "virtual" } | { kind: "none" } | { kind: "thinq"; deviceId: string } | { kind: "relay"; deviceId: string };
@@ -37,6 +40,8 @@ const isReal = (s: SignalSource): s is Extract<SignalSource, { kind: RealKind }>
 const VIRTUAL: SignalSource = { kind: "virtual" };
 const STOPPED: CommandResult = { ok: false, error: "집을 바꾸는 중이라 이 명령은 실행하지 않았어요." };
 const NO_LINK: Record<RealKind, string> = { thinq: "ThinQ 연결이 없어 보내지 않았어요.", relay: "TV 중계 연결이 없어 보내지 않았어요." };
+const NO_REMOTE = "이 가전에 등록한 리모컨이 없어요.";
+const REMOTE_FAILED = "리모컨 신호를 보내지 못했어요.";
 
 const sourceKey = (s: SignalSource | undefined) => (!s ? "virtual" : isReal(s) ? `${s.kind}:${s.deviceId}` : s.kind);
 const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
@@ -62,6 +67,62 @@ export class SignalHub implements DeviceHub {
   private readonly sending = new AsyncLocalStorage<{id:string; generation:number; power:"on"|"off"}>();
   onPowerIntent?: (id:string, power:"on"|"off", commandId:string|null) => void;
   onPowerStamp?: (state:DeviceState) => void;
+  /** 리모컨 사건: 허브가 단추 신호를 보냄(sent)·사람이 등록한 단추를 누름(pressed). 트레이스가 받는다. */
+  onRemote?: (e: RemoteEvent) => void;
+  /** 등록한 리모컨(IrSetup.runtime()). live면 단추 신호를 실제로 쏜다(실제 모드). */
+  private remotes: { rt: RemoteRuntime; live: boolean; off: () => void } | null = null;
+
+  /** 리모컨을 붙이거나(실제·시험 모드) 뗀다. 사람이 누른 등록 단추는 onRemote(pressed)로 알린다. */
+  setRemotes(rt: RemoteRuntime | null, live: boolean): void {
+    this.remotes?.off();
+    this.remotes = rt && !this.stopped
+      ? { rt, live, off: rt.onPressed((e) => this.onRemote?.({ kind: "pressed", ...e, at_ms: Date.now(), command_id: null })) }
+      : null;
+  }
+
+  private remoteBrief(id: string): RemoteBrief | undefined {
+    return this.remotes?.rt.list().find((r) => r.device === id);
+  }
+
+  /** 그 가전의 리모컨 이름과 단추 이름들. 없으면 undefined. */
+  remoteOf(id: string): { label: string; buttons: string[] } | undefined {
+    const r = this.remoteBrief(id);
+    return r && { label: r.label, buttons: r.buttons.map((b) => b.label) };
+  }
+
+  /** 리모컨 단추 하나를 누른다(단추는 id → 이름 → 띄어쓰기 없는 이름 차례로 찾음). 시험 모드면 쏘지 않고 sent: false. */
+  async press(id: string, button: string, commandId?: string): Promise<PressResult> {
+    if (this.stopped) return { ok: false, error: STOPPED.error! };
+    const r = this.remoteBrief(id);
+    if (!r) return { ok: false, error: NO_REMOTE };
+    const b = r.buttons.find((x) => x.id === button) ?? r.buttons.find((x) => x.label === button) ?? r.buttons.find((x) => compact(x.label) === compact(button));
+    if (!b) return { ok: false, error: `리모컨에 「${button}」 단추가 없어요. 있는 단추: ${r.buttons.map((x) => x.label).join(", ")}` };
+    if (!this.remotes!.live) return { ok: true, sent: false };
+    return (await this.sendRemote(r, b, commandId)) ? { ok: true, sent: true } : { ok: false, error: REMOTE_FAILED };
+  }
+
+  private async sendRemote(r: RemoteBrief, b: RemoteBrief["buttons"][number], commandId: string | undefined): Promise<boolean> {
+    try {
+      await this.remotes!.rt.send(r.device, b.id);
+    } catch {
+      return false;
+    }
+    this.onRemote?.({ kind: "sent", device: r.device, remote: r.remote, button: b.id, role: b.role, at_ms: Date.now(), command_id: commandId ?? null });
+    return true;
+  }
+
+  /** 실제 모드에서 짝 없는(가상) TV 아닌 가전의 켜기·끄기: 그 뜻 단추를 쏘고 같은 명령을 트윈에도 넣는다(트윈이 따라온다). 결과는 읽지 못해 unverified.
+   *  리모컨·그 뜻 단추가 없거나 ThinQ·중계와 짝지은 가전이면 null(원래 길로 보낸다). */
+  private async remoteCommand(id: string, cmd: Command, commandId: string | undefined): Promise<CommandResult | null> {
+    if (!this.remotes?.live || (cmd.type !== "on" && cmd.type !== "off") || this.source(id).kind !== "virtual") return null;
+    if (this.world.list().find((d) => d.id === id)?.kind === HOUSEHOLD_KINDS.viewerPower) return null;
+    const r = this.remoteBrief(id);
+    const b = r?.buttons.find((x) => x.role === cmd.type);
+    if (!r || !b) return null;
+    if (!(await this.sendRemote(r, b, commandId))) return { ok: false, outcome: "failed", error: REMOTE_FAILED, state: this.get(id) };
+    const twin = await this.sendCommand(id, cmd);
+    return twin.ok ? { ...twin, outcome: "unverified" } : { ok: true, outcome: "unverified", state: this.get(id) };
+  }
 
   powerStamp(id:string):PowerStamp | undefined {
     if (!this.power.has(id)) {
@@ -239,6 +300,8 @@ export class SignalHub implements DeviceHub {
   async stop(): Promise<void> {
     this.stopped = true;
     this.infrared?.stop();
+    this.remotes?.off();
+    this.remotes = null;
     this.unsub?.();
     this.unsub = null;
     await this.world.stop();
@@ -264,6 +327,8 @@ export class SignalHub implements DeviceHub {
       const result = await this.infrared.command(cmd.type, commandId ?? null);
       return { ...result, state: this.get(id) };
     }
+    const remote = await this.remoteCommand(id, cmd, commandId);
+    if (remote) return remote;
     const stamp = this.powerStamp(id);
     if (!stamp || (cmd.type!=="on" && cmd.type!=="off") || this.stopped) return this.sendCommand(id,cmd);
     if (!commandId) {

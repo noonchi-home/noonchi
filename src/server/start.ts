@@ -325,6 +325,7 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
     h.signals.setSources({ ...effectiveSources(store.sources(homeId, ids, { quiet: true }), pairs, mode),
       ...Object.fromEntries(Object.entries(relayNow).map(([id, target]) => [id, { kind: "relay" as const, deviceId: target }])) });
     h.signals.setInfrared(mode === "live" ? irSetup.tvConfig() : null, irSetup.tvPort());
+    h.signals.setRemotes(irSetup.runtime(), mode === "live");
     h.setLink(mode === "live" && thinqConfig(env).ok && Object.keys(pairs).length > 0
       ? new ThinqLink({ client: thinqClient(), world: h.hub, pairs, log, pollMs, readbackMs })
       : null);

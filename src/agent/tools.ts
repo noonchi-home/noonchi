@@ -4,7 +4,7 @@
 import { z } from "zod";
 import type { Policy } from "./policy.js";
 import type { DeviceView } from "../contract/events.js";
-import type { Command, CommandResult, DeviceHub, DeviceSpec, RoomSpec } from "../contract/devices.js";
+import { isRemoteHub, type Command, type CommandResult, type DeviceHub, type DeviceSpec, type PressResult, type RoomSpec } from "../contract/devices.js";
 import type { DeviceKind } from "../devices/kinds.js";
 import { KIND_LABELS } from "../devices/index.js";
 import { doneSentence } from "./phrases.js";
@@ -37,6 +37,8 @@ export interface ToolBackend {
   service?: { contacts: ServiceContacts; blocked(): string | null; ask(call: ServiceCall): { token: string; reason: string } };
   /** 할 일 부탁(서버 안 에이전트만): 행동 목록의 일 하나를 실행 추적의 말 부탁 길로 넘긴다(src/act/robot/start.ts request). */
   request?: (task: string) => ToolResult;
+  /** 등록한 적외선 리모컨 단추 누르기(서버 안 에이전트만). */
+  remote?: { press(id: string, button: string): Promise<PressResult> };
 }
 
 export interface ToolResult {
@@ -52,6 +54,8 @@ export interface ToolResult {
   pendingApproval?: { reason: string };
   /** ThinQ가 받았지만 다시 읽은 값이 달라 적용을 확인하지 못했다(완료라고 말하지 않는다). */
   unverified?: true;
+  /** press_remote: 리모컨 신호를 실제로 보냈다. 결과는 읽지 못하니 계획 단계는 끝 조건 없이 보낸 것으로 끝낸다. */
+  sent?: true;
   data?: unknown;
 }
 
@@ -84,9 +88,11 @@ export function roomViews(devices: Pick<DeviceSpec, "room" | "roomLabel">[], roo
 
 export function deviceViews(hub: DeviceHub): DeviceView[] {
   const out: DeviceView[] = [];
+  const remotes = isRemoteHub(hub) ? hub : null;
   for (const spec of hub.list()) {
     const state = hub.get(spec.id);
-    if (state) out.push({ ...spec, state });
+    const remote = remotes?.remoteOf(spec.id);
+    if (state) out.push({ ...spec, state, ...(remote ? { remote } : {}) });
   }
   return out;
 }
@@ -102,6 +108,7 @@ export function localBackend(hub: DeviceHub, policy: Policy, rooms?: RoomSpec[],
       const r = await policy.confirm(hub, token);
       return { ...r, deviceId: p?.deviceId };
     },
+    ...(isRemoteHub(hub) ? { remote: { press: (id: string, b: string) => hub.press(id, b) } } : {}),
   };
 }
 
@@ -112,6 +119,7 @@ function brief(d: DeviceView) {
     capabilities: d.capabilities, sensors: d.sensors,
     // 신호 없는 기기는 상태를 모른다(사진·질문으로만 확인)
     ...(d.state.signal === "none" ? { signal: "none" as const, state: "모름" } : { online: d.state.online, state: d.state.twin }),
+    ...(d.remote ? { remote_buttons: d.remote.buttons } : {}),
   };
 }
 
@@ -171,6 +179,8 @@ function commandTool(
 export const LEAVE_IT = "leave_it";
 /** 할 일 부탁: 로봇 할 일 목록의 일을 부탁하는 말을 계획 모드로 넘기는 도구. */
 export const REQUEST_TASK = "request_task";
+/** 리모컨 단추: 등록한 적외선 리모컨의 단추 하나를 누르는 도구. */
+export const PRESS_REMOTE = "press_remote";
 
 export const TOOLS: ToolDef[] = [
   {
@@ -279,6 +289,23 @@ export const TOOLS: ToolDef[] = [
       if (riskyNames(serviceText(call)).length) return { ok: false, error: SERVICE_RISKY_PROBLEM };
       const p = backend.service.ask(call);
       return { ok: false, needsConfirmation: { token: p.token, reason: p.reason }, message: `${p.reason} 사용자가 승인하면 연락합니다.` };
+    },
+  },
+  {
+    name: PRESS_REMOTE, title: "리모컨 단추", agentOnly: true,
+    description: "등록한 적외선 리모컨의 단추 하나를 누릅니다(음량·채널·입력·에어컨 설정 등). 기기 목록의 remote_buttons에 있는 이름 그대로 씁니다. 켜기·끄기는 turn_on·turn_off를 씁니다. 결과는 확인하지 못합니다.",
+    schema: z.object({ device_id: deviceId, button: z.string().min(1).max(20).describe("단추 이름(remote_buttons 글자 그대로)") }),
+    async run(backend, args) {
+      if (!backend.remote) return { ok: false, error: "리모컨은 서버 안 에이전트만 쓸 수 있습니다." };
+      const d = await resolveDevice(backend, String(args.device_id));
+      if (!d) return notFound(String(args.device_id));
+      const button = String(args.button);
+      const r = await backend.remote.press(d.id, button);
+      const device = { id: d.id, label: d.label };
+      if (!r.ok) return { ok: false, device, error: r.error };
+      return r.sent
+        ? { ok: true, device, sent: true, unverified: true, message: `${d.label} 리모컨 「${button}」 신호를 보냈어요. 실제로 바뀌었는지는 확인하지 못했어요.` }
+        : { ok: true, device, message: `시험 모드라 ${d.label} 리모컨 「${button}」 신호는 보내지 않았어요.` };
     },
   },
   {

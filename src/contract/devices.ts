@@ -101,6 +101,16 @@ export interface DeviceHub {
   subscribe(cb: (s: DeviceState) => void): () => void;
 }
 
+/** 리모컨 단추 누르기 결과. sent: 실제로 쏨(시험 모드면 false). */
+export type PressResult = { ok: true; sent: boolean } | { ok: false; error: string };
+/** 등록한 적외선 리모컨이 있는 허브(SignalHub). */
+export interface RemoteHub {
+  remoteOf(id: string): { label: string; buttons: string[] } | undefined;
+  press(id: string, button: string, commandId?: string): Promise<PressResult>;
+}
+export const isRemoteHub = (hub: object): hub is RemoteHub =>
+  typeof (hub as Partial<RemoteHub>).press === "function" && typeof (hub as Partial<RemoteHub>).remoteOf === "function";
+
 /** 방 목록(GET /api/rooms). floorplan rooms의 id·label. */
 export interface RoomSpec {
   id: string;

@@ -137,7 +137,9 @@ export function planInput(ctx: PlanContext): string {
     `[평면도] 방: ${floor.rooms.map((r) => `${r.id} ${roomName(r.id)}`).join(", ")}`,
     ...places.map((p) => `- ${p.id} ${p.name} [${p.type}] · 방 ${p.room ?? "모름"} · 자리 ${xz(p.position)}${p.basin ? ` · 싱크볼 ${xz(p.basin)}` : ""}`),
     "[가전]",
-    ...devices.map((x) => `- ${x.id} ${x.label} [${x.kind} ${KIND_LABELS[x.kind]}] · 방 ${x.room} · 지금 ${state.get(x.id) ?? "모름"}`),
+    ...devices.map((x) => `- ${x.id} ${x.label} [${x.kind} ${KIND_LABELS[x.kind]}] · 방 ${x.room} · 지금 ${state.get(x.id) ?? "모름"}${x.remote ? ` · 리모컨 단추 ${x.remote.buttons.join(", ")}` : ""}`),
+    // 리모컨이 있는 집에서만 붙인다: 고정 시스템 프롬프트(PLANNER_PROMPT)와 리모컨 없는 집의 계획 입력은 그대로다
+    ...(devices.some((x) => x.remote) ? ["- device 단계 tool에 press_remote도 쓸 수 있다. press_remote는 args {\"button\": 단추 이름}이고 단추 이름은 위 「리모컨 단추」 글자 그대로다. until 없이 둔다."] : []),
     ...(ctx.lesson ? [`[지난 수업] ${ctx.lesson.runs}번 함`, ...ctx.lesson.steps.map((s) => `- ${s.label} · 혼자 ${s.alone}번`)] : []),
     `[손] 폰 자리 ${xz(floor.robot.position)} · 방 ${roomName(floor.robot.room)}`,
     `[승인] 처음 하는 할 일은 첫 단계 전에 폰으로 묻는다. 위험 목록(${RISKY_LIST.keys()})은 그 단계에서 늘 묻는다. 너는 승인하지 못한다.`,
