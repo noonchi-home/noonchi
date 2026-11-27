@@ -480,6 +480,11 @@ export class Starter extends Part {
     }
     this.core.contents.release(r);
     this.core.finder.release(r);
+    // 실행 전 검사를 처음 통과하면 본 항목을 Agent Trace에 한 번 낸다(첫 명령 전)
+    if (!r.checkShown && c.passed?.length) {
+      r.checkShown = true;
+      this.o.trace?.event("check", { plan_id: r.plan.view.id, attempt: r.attempt.key, ...(c.object ? { object_id: c.object } : {}) }, "check_passed", undefined, { checks: c.passed });
+    }
     // 보류·찾기·쓰는 중 기다림에서 풀린 계획은 폰 대화·승인 대기가 없을 때만 첫 명령을 보낸다(다른 대화를 덮지 않는다). 미룬 지 holdMs가 지나면 닫는다
     if ((r.heldIds.size > 0 || r.findHeld || r.useHeld) && ((this.o.phone.talking?.() ?? false) || (this.o.phone.approvalsWaiting?.() ?? false))) {
       const now = this.clock.now();

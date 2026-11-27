@@ -10,6 +10,7 @@
 // 낡음·들고 있음 뒤에 본다(보류 중 낡음은 실행 추적이 보류를 이어 간다, src/act/robot/start.ts).
 import type { PlanView } from "../contract/plan.js";
 import type { ControlMode } from "../contract/setup.js";
+import type { TraceCheck } from "../contract/trace.js";
 import { sameDrinkware } from "../world/vocab.js";
 import type { WorldObject, WorldView } from "../contract/world.js";
 import { CHECK_TEXT } from "./labels.js";
@@ -20,7 +21,8 @@ export type CheckFail = keyof typeof CHECK_TEXT;
 /** carried: in_hand가 대상 물건의 들고 감 보호(World State 물건 carried)에서만 왔다. 실행 추적은 이때 보호가 풀릴 때까지 다시 보기 기한을 세지 않는다. */
 /** object: unknown_contents면 안을 모르는 대상 물건 id(실행 추적 보류, src/act/robot/contents.ts), no_target·stale이면 막은 대상 물건 id(실행 추적이 그 자리로 찾으러 간다,
  *  src/act/robot/find.ts). 계획에 그 종류 대상이 없으면 싣지 않는다. */
-export type CheckResult = { ok: true } | { ok: false; reason: CheckFail; text: string; carried?: true; object?: string };
+/** 통과면 passed·object로 본 항목과 대상 물건 id를 실을 수 있다(Agent Trace 실행 전 검사 줄, passedChecks). */
+export type CheckResult = { ok: true; passed?: TraceCheck[]; object?: string } | { ok: false; reason: CheckFail; text: string; carried?: true; object?: string };
 export interface CheckInput {
   decision: DecisionRecord;
   /** 이번 판단에 보낸 행동 목록. */
@@ -105,6 +107,15 @@ export function checkPlan(i: CheckInput): CheckResult {
   if (i.plan.robot.position && i.plan.steps.some((s) => s.kind === "move") && i.plan.path.length === 0) return fail("unreachable");
   if (i.mode === "test" && (i.deviceSteps ?? []).some((d) => d.paired)) return fail("device_mode");
   return { ok: true };
+}
+
+/** checkPlan이 통과한 계획에서 실제로 본 항목과 대상 물건(계획의 그 종류 첫 물건): 같은 대상을 다시 봄, 행동 조건이 빈 컵이면 비었음, 아무도 들거나 쓰지 않음.
+ *  대상 종류가 없는 행동(가전 등)은 본 항목이 없다. */
+export function passedChecks(i: CheckInput): { passed: TraceCheck[]; object?: string } {
+  const spec = taskOf(i.decision.action);
+  if (!spec?.target || !i.plan) return { passed: [] };
+  const object = planObjectsOf(i.plan, i.world, spec.target, carriesTarget(spec))[0];
+  return { passed: ["same", ...(spec.want?.contents === "empty" ? ["empty" as const] : []), "free"], ...(object ? { object } : {}) };
 }
 
 /** 실행 설정. 틀린 값이면 시작을 막는다. */

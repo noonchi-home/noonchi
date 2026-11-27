@@ -390,6 +390,25 @@ describe("미리 세운 목표: 사람이 떠나면 PAM 확인 뒤 바로 시작
     expect(trace.snapshot().rows.find(row => row.id === prepared.id)?.retained).toBeUndefined();
   });
 
+  it("실행 전 검사를 통과하면 첫 명령 전에 본 항목을 Agent Trace에 한 줄 낸다", async () => {
+    const trace = new HomeTrace("b:h#1", () => 10_000, () => {});
+    trace.objects = () => [cupOn({ seen: 0 })];
+    const s = await ready({ trace, over: { check: () => ({ ok: true, passed: ["same", "free"], object: "cup_1" }) } });
+    s.tick();
+    s.gone();
+    s.tick();
+    await s.decide(pam("pam-2", 2, s.clock.t));
+    for (let n = 0; n < 4; n++) s.tick();
+    const rows = trace.snapshot().rows;
+    const checks = rows.filter(row => row.name === "실행 전 검사");
+    expect(checks).toEqual([expect.objectContaining({ kind: "GUARDRAIL", output: "같은 컵 · 아무도 안 듦 · 통과",
+      refs: expect.objectContaining({ plan_id: "plan:pam-2", object_id: "cup_1" }) })]);
+    const order = (id: string) => Number(id.split(":").at(-1));
+    const firstStep = rows.find(row => row.kind === "EXECUTION" && row.refs.plan_id === "plan:pam-2")!;
+    expect(order(checks[0]!.id)).toBeLessThan(order(firstStep.id));
+    s.t.stop();
+  });
+
   it("시작한 계획의 첫 단계는 첫 명령을 보낸 시각(started_ms)을 싣는다(대시보드 시간 줄 반응 간격)", async () => {
     const s = await ready();
     s.tick();

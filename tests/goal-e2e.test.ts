@@ -170,7 +170,7 @@ describe("미리 세운 목표(가짜 서버 처음부터 끝까지)", () => {
     const cupGoal = trace.find(r => r.name === "목표 준비" && r.refs.object_id === cup.id)!;
     expect(cupGoal).toMatchObject({ kind: "AGENT", input: expect.stringContaining("컵 치우기") });
     expect(trace).toEqual(expect.arrayContaining([
-      expect.objectContaining({ activity_id: cupGoal.activity_id, name: "PAM 판단" }),
+      expect.objectContaining({ activity_id: cupGoal.activity_id, name: "FSM 판단" }),
       expect.objectContaining({ activity_id: cupGoal.activity_id, name: "실행 계획 작성" }),
       expect.objectContaining({ activity_id: cupGoal.activity_id, name: "이동 안내", state: "pending" }),
     ]));

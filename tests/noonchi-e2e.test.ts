@@ -116,16 +116,18 @@ describe("NOONCHI 처음부터 끝까지", () => {
     await pump(async () => (await history("execution")).rows.some((r) => r.subject === planId && r.text === "완료"));
     await pump(() => traceRows().some(r => r.name === "활동 종료" && r.refs.plan_id === planId));
     const traced = traceRows().filter(row => row.activity_id === firstTrace.activity_id);
+    // 사람 상태 FSM이 한 일: 마시는 중 → 자리에 없음, 배운 화살표의 조건 → 컵 치우기, 첫 명령 전 실행 전 검사 통과(고정 낱말만)
     expect(traced).toEqual(expect.arrayContaining([
-      expect.objectContaining({ kind: "AGENT", output: "컵 치우기" }),
-      expect.objectContaining({ kind: "LLM", name: "PAM 판단", state: "done" }),
+      expect.objectContaining({ kind: "AGENT", name: "행동 선택", input: "컵을 두고 자리를 뜨면", output: "컵 치우기 · 배운 전이" }),
+      expect.objectContaining({ kind: "LLM", name: "FSM 판단", input: "먹거나 마시는 중", output: "자리에 없음", state: "done" }),
+      expect.objectContaining({ kind: "GUARDRAIL", name: "실행 전 검사", input: expect.stringContaining("컵 1"), output: "같은 컵 · 아무도 안 듦 · 통과" }),
       expect.objectContaining({ kind: "TOOL", input: expect.stringContaining("컵 1"), output: "빈 컵 확인" }),
       expect.objectContaining({ name: "배치 안내", input: expect.stringContaining("싱크대"), output: "배치 확인", state: "done" }),
     ]));
     expect(traced.find(row => row.id === firstTrace.id)).toMatchObject({ state: "done", rev: 2, ended_ms: expect.any(Number) });
     const placement = traced.find(row => row.name === "배치 안내")!;
     expect(traced.filter(row => row.name === "활동 종료")).toEqual([
-      expect.objectContaining({ state: "done", output: "활동 완료", cause_id: placement.id,
+      expect.objectContaining({ state: "done", output: expect.stringMatching(/^활동 완료 · 첫 명령 \d+\.\d초$/), cause_id: placement.id,
         refs: expect.objectContaining({ plan_id: planId, attempt: firstTrace.refs.attempt }) }),
     ]);
     expect(JSON.stringify(traced)).not.toMatch(/자리를 비워 컵을 치운다|다 했어|image_url/);

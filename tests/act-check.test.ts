@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { checkDecision, checkPlan, loadActConfig, type CheckInput } from "../src/act/check.js";
+import { checkDecision, checkPlan, loadActConfig, passedChecks, type CheckInput } from "../src/act/check.js";
 import { CHECK_TEXT } from "../src/act/labels.js";
 import type { WorldObject, WorldView } from "../src/contract/world.js";
 import { lostTarget, planObjectsOf, TASKS } from "../src/act/tasks.js";
@@ -38,6 +38,15 @@ describe("실행 전 검사: 미리 만든 계획의 기준(seenSince)", () => {
     const late = { ...base().decision, atMs: 9_500 };
     expect(checkPlan(base({ decision: late, seenSince: 9_000, nowMs: 12_500 }))).toEqual({ ok: true });
     expect(checkPlan(base({ nowMs: 12_500 }))).toMatchObject({ ok: false, reason: "stale" });
+  });
+});
+
+describe("실행 전 검사 통과 항목(passedChecks)", () => {
+  it("컵 치우기는 같은 컵·아무도 안 듦, 빈 컵이 조건인 채워 주기는 빈 컵도 본 항목이고 대상은 계획의 첫 컵이다. 대상 종류가 없는 행동은 항목이 없다", () => {
+    expect(passedChecks(base())).toEqual({ passed: ["same", "free"], object: "cup_1" });
+    const fill = base({ decision: { ...base().decision, action: "컵에 물 채워 주기" }, tasks: ["컵에 물 채워 주기"] });
+    expect(passedChecks(fill)).toEqual({ passed: ["same", "empty", "free"], object: "cup_1" });
+    expect(passedChecks(base({ decision: { ...base().decision, action: "에어컨 켜기" }, tasks: ["에어컨 켜기"] }))).toEqual({ passed: [] });
   });
 });
 

@@ -1,7 +1,7 @@
 // 집 실행 묶음의 판단·검사·실행 잇기(src/act·src/brain 판단 호출): 클로이드 계획(PlanHub), 실행 설정·수업 기록, 생각 메시지·판단 호출(PAM)·실행 추적, 보기 담당(관찰 모드).
 // 판단 → 계획(에이전트 계획 모드) → 실행 전 검사 → 실행 추적이 실제 폰에 명령을 낸다. 생각 메시지는 판단 기록 뒤에 따로 만들어 대시보드로 보내고 기록 DB(thought)에 남긴다.
 import { viewerAt } from "../../goal/index.js";
-import { ExecutionTracker, LessonStore, Looker, PlanHub, publishAssistanceOutcome, emitRobotCommand, checkDecision, checkPlan, deviceRunner, lessonsPath, loadActConfig, pamTasks } from "../../act/index.js";
+import { ExecutionTracker, LessonStore, Looker, PlanHub, publishAssistanceOutcome, emitRobotCommand, checkDecision, checkPlan, passedChecks, deviceRunner, lessonsPath, loadActConfig, pamTasks } from "../../act/index.js";
 import { assistanceResident, proactiveIntent } from "./assistance.js";
 import { assistanceContext, assistanceOutcome } from "../../shared/assistance-outcome.js";
 import type { Intervention } from "../../brain/index.js";
@@ -431,10 +431,13 @@ export function startAct(core: HomeCore): (event: BrainLog) => void {
       const world = view();
       if (d.source !== "speech" && isBeerAction(d.action) && !core.beer?.valid(d, world, p))
         return { ok: false, reason: "unknown_task", text: "현재 맥주를 도울 근거가 없어요." };
-      return checkPlan({
+      const input = {
         decision: d, tasks: d.tasks ?? pamTasks(core.mode(), false), plan: p, world, nowMs: now(), staleMs: core.act.staleMs, mode: ctx.mode?.() ?? "test", deviceSteps: deviceSteps(p),
         placed: core.tracker?.placed(), ...(seenSince !== undefined ? { seenSince } : {}),
-      });
+      };
+      const c = checkPlan(input);
+      // 통과면 본 항목을 실어 실행 추적이 Agent Trace에 실행 전 검사 통과 줄을 낸다
+      return c.ok ? { ...c, ...passedChecks(input) } : c;
     },
     lessons,
     staleMs: core.act.staleMs,

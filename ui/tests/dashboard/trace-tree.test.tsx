@@ -219,6 +219,29 @@ describe("공개 Trace의 자동 활동 트리", () => {
     expect(cupSteps()).toEqual([goal.id, departure.id, chosen.id, pick.id]);
   });
 
+  it("행동 없는 판단이 이어지면 접힌 「대기 판단」 활동 하나로 묶고, 행동을 고른 판단에서 끊는다", () => {
+    const at = (k: number) => `boot:home#1:activity-${k}`;
+    const judge = (n: number, k: number, state: TraceRow["state"] = "done") => trace(n, {
+      activity_id: at(k), kind: "LLM", name: "FSM 판단", input: "집 상태 · 습관", output: state === "done" ? "먹거나 마시는 중" : "결과 대기 중",
+      refs: { decision_id: `pam-${k}` }, state, started_ms: n, ended_ms: state === "done" ? n + 1 : null,
+    });
+    const wait = (n: number, k: number) => trace(n, {
+      activity_id: at(k), kind: "AGENT", name: "대기 판단", input: "집 상태 · 행동 목록", output: "지켜보기", refs: { decision_id: `pam-${k}` },
+    });
+    const choice = trace(8, { activity_id: at(4), kind: "AGENT", name: "행동 선택", input: "컵을 두고 자리를 뜨면", output: "컵 치우기 · 배운 전이", refs: { decision_id: "pam-4" } });
+    render(<TraceTable rows={[judge(1, 1), wait(2, 1), judge(3, 2), wait(4, 2), judge(5, 3), wait(6, 3), judge(7, 4), choice, judge(9, 5), wait(10, 5), judge(11, 6, "pending")]} />);
+    expect(order()).toEqual([at(1), at(4), at(5)]);
+    // 배운 화살표 표시는 행동 선택 줄에만 두고 활동 제목은 일 이름이다
+    expect(document.querySelector(`[data-activity="${at(4)}"] button`)).toHaveAccessibleName(/^컵 치우기(?! · 배운 전이)/);
+    const waits = feed().getAllByRole("button", { name: /대기 판단/ });
+    expect(waits[0]).toHaveAccessibleName(/대기 판단.*지켜보기/);
+    expect(waits).toHaveLength(2);
+    expect(waits.map(button => button.getAttribute("aria-expanded"))).toEqual(["false", "false"]);
+    fireEvent.click(waits[0]!);
+    const inFirst = steps().filter(row => row.closest("[data-activity]")?.getAttribute("data-activity") === at(1));
+    expect(inFirst.map(row => row.getAttribute("data-row"))).toEqual([1, 2, 3, 4, 5, 6].map(id));
+  });
+
   it("refs가 빈 장면 해석·사용자 상태 변화·안전 상태 줄은 접힌 「지켜보기」 활동 하나로 보인다", () => {
     const scene = trace(70, { activity_id: watch, kind: "LLM", name: "VLM 장면 해석", input: "카메라 프레임", output: "사람 관찰", started_ms: 10, ended_ms: 40 });
     const person = trace(71, { activity_id: watch, kind: "OBSERVATION", name: "사용자 상태 변화", input: "사용자 관찰", output: "사용자 관찰" });

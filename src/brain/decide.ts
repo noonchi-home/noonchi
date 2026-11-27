@@ -211,15 +211,17 @@ export class Decider {
     const last = this.pending?.from ?? this.lastState;
     let usage: PamUsage | undefined;
     const node = this.o.node?.();
+    const trace = this.o.trace;
+    // FSM 판단 줄은 답을 읽은 뒤(사람 상태·화살표를 안 뒤) 닫는다. 답을 쓰지 못하고 끝나면 아래 finally가 취소로 닫는다
+    let row: string | undefined;
     const query = async (life: AbortSignal) => {
         checkInput({ text: textSent, finalTime, memory: mem.memory, memoryKind: mem.kind, tasks });
         const signal = AbortSignal.any([life, this.cancel.signal]);
-        const trace = this.o.trace;
-        const row = signal.aborted ? "" : trace?.start("pam", { decision_id: base.id, evidence });
+        row = signal.aborted ? "" : trace?.start("pam", { decision_id: base.id, evidence });
         try {
           const result = await this.o.pam.predict({ final_time: finalTime, observation_text: textSent, memory_kind: mem.kind, memory: mem.memory, tasks, last_state: last },
             { signal, onUsage: (u) => { usage = u; } });
-          if (row) trace?.finish(row, signal.aborted ? "cancelled" : "done", signal.aborted ? "stopped" : "model_answer");
+          if (row && signal.aborted) trace?.finish(row, "cancelled", "stopped");
           return result;
         } catch (error) {
           if (row) trace?.finish(row, signal.aborted ? "cancelled" : "failed", signal.aborted ? "stopped" : "failed");
@@ -238,6 +240,8 @@ export class Decider {
           const prediction = said.length ? { ...p, observation: redactSaid(p.observation, said), reasoning: redactSaid(p.reasoning, said) } : p;
           // PAM 답의 상태·화살표를 그대로 싣는다(거꾸로 찾지 않는다)
           const step = mem.kind === "fsm" && "states" in mem.memory ? fsmStep(mem.memory, p) : null;
+          if (row) trace?.finish(row, "done", "model_answer", undefined, undefined, undefined,
+            step ? { personState: step.state, ...(step.from ? { personFrom: step.from } : {}) } : undefined);
           let action = picked !== null && step && this.o.edgeAllowed && !this.o.edgeAllowed(step, now) ? null : picked;
           if (action && this.deferred({ ...base, status: "valid", prediction, action, fsm: step })) action = null;
           if (step) {
@@ -264,7 +268,10 @@ export class Decider {
           this.finish({ ...base, status: "failed", prediction: null, action: null, fsm: null, error: (e as Error).message, ...(usage ? { usage } : {}) });
         }),
       )
-      .finally(() => { this.running.delete(job); });
+      .finally(() => {
+        if (row) trace?.finish(row, "cancelled", "stopped");
+        this.running.delete(job);
+      });
     this.running.add(job);
   }
 
@@ -298,7 +305,9 @@ export class Decider {
     if (trace) {
       const kind = r.action && !r.late && r.status === "valid" ? "action" : "wait";
       const output = r.late ? "late" : r.status !== "valid" ? "failed" : r.action === "컵 치우기" ? "select_cup" : r.action ? "selected" : "waiting";
-      const target = r.action && kind === "action" ? { action: r.action } : undefined;
+      // 화살표가 고른 일이면 그 화살표(출발 상태·배운 것인지)를 싣는다
+      const edge = r.fsm && r.fsm.from && r.fsm.action === r.action ? { personFrom: r.fsm.from, learned: r.fsm.learned } : {};
+      const target = r.action && kind === "action" ? { action: r.action, ...edge } : undefined;
       if (r.source === "speech") trace.event(kind, { decision_id: r.id }, output, undefined, target);
       else {
         const row = trace.start(kind, { decision_id: r.id }, r.atMs, target);
