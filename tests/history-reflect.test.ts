@@ -9,7 +9,7 @@ import { candidateFsmOf } from "../src/brain/pam/adopt.js";
 import { MEMORY_CHECK_PROMPT } from "../src/brain/pam/index.js";
 import type { PamClient } from "../src/brain/pam/index.js";
 import type { BrainLog } from "../src/contract/events.js";
-import { HistoryDb } from "../src/brain/history/db.js";
+import { HistoryDb, calendarDay } from "../src/brain/history/db.js";
 import { REFLECT_TEXT } from "../src/brain/history/labels.js";
 import { loadReflectAt, memoryForDay, runReflection, scheduleReflection } from "../src/brain/history/reflect.js";
 import { fetchRetry, listenRetry } from "../src/shared/net.js";
@@ -400,7 +400,7 @@ describe("반성 시각", () => {
     vi.useFakeTimers();
     vi.setSystemTime(Date.UTC(2026, 10, 7, 14, 0)); // 서울 23:00
     const days: string[] = [];
-    const s = scheduleReflection({ at: "23:30", offsetMinutes: 540, run: async (day) => { days.push(day); } });
+    const s = scheduleReflection({ at: "23:30", offsetMinutes: 540, dayOf: (ms) => calendarDay(ms, 540), run: async (day) => { days.push(day); } });
     await vi.advanceTimersByTimeAsync(29 * 60_000);
     expect(days).toEqual([]);
     await vi.advanceTimersByTimeAsync(60_000);
@@ -410,6 +410,16 @@ describe("반성 시각", () => {
     s.stop();
     await vi.advanceTimersByTimeAsync(24 * 3_600_000);
     expect(days).toHaveLength(2);
+  });
+
+  it("타이머가 울릴 때의 시스템 날짜를 반성한다(넘긴 날)", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(Date.UTC(2026, 10, 7, 14, 0)); // 서울 23:00
+    const days: string[] = [];
+    const s = scheduleReflection({ at: "23:30", offsetMinutes: 540, dayOf: () => "2026-11-08", run: async (day) => { days.push(day); } });
+    await vi.advanceTimersByTimeAsync(30 * 60_000);
+    expect(days).toEqual(["2026-11-08"]);
+    s.stop();
   });
 });
 

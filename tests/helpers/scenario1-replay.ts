@@ -34,7 +34,7 @@ import {
 export { guideBetween, heldCupAt, map, personSight, scene, walkProblem } from "./home-realism.js";
 import { planContext } from "./planner.js";
 import { earlyTvEvidence, LiveScenario } from "../../scripts/scenario1-live.js";
-import { HistoryDb } from "../../src/brain/history/db.js";
+import { HistoryDb, calendarDay } from "../../src/brain/history/db.js";
 import { historyRoutes } from "../../src/record/history.js";
 import type { PlannedCommand } from "../../src/contract/phone.js";
 import type { ScenarioEvent } from "../../scripts/scenario1-judge.js";
@@ -556,6 +556,7 @@ export async function replayScenario(
           },
           triggers,
           portals: floor.portals,
+          dayOf: (ms) => calendarDay(ms, 540),
           map: () => map,
           viewers: () => [tvId],
           // src/server/home/act.ts goals.publish의 checkingVisit와 같은 값

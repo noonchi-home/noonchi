@@ -101,6 +101,8 @@ export class NightReflection {
   private timer?: ReturnType<typeof scheduleReflection>;
 
   constructor(private readonly o: { bus: Bus; boot: string; at: string; offsetMinutes: number; clock?: Clock;
+    /** ms → 시스템 날짜(HistoryDb.dayOf). 하루 마치기로 넘긴 날이면 그 밤에 넘긴 날을 반성한다. */
+    dayOf: (ms: number) => string;
     run(day: string, signal: AbortSignal): Promise<unknown> }) {
     this.node = new BusNode({ name: "brain", bus: o.bus, epoch: { boot: o.boot, home: "history" }, clock: o.clock });
   }
@@ -108,8 +110,8 @@ export class NightReflection {
     await this.node.prepare();
     if (this.timer || this.node.closed) return;
     this.node.start();
-    const { at, offsetMinutes, clock = realClock, run } = this.o;
-    this.timer = scheduleReflection({ at, offsetMinutes, now: () => clock.now(), after: (ms, fn) => clock.after(ms, fn),
+    const { at, offsetMinutes, dayOf, clock = realClock, run } = this.o;
+    this.timer = scheduleReflection({ at, offsetMinutes, dayOf, now: () => clock.now(), after: (ms, fn) => clock.after(ms, fn),
       run: (day) => this.node.spawn((signal) => run(day, signal)) });
   }
   async close(): Promise<void> {

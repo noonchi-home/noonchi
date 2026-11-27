@@ -1,6 +1,7 @@
 import { expect, it } from "vitest";
 import { BusNode, MemoryBus, Outbox, realClock } from "../src/bus/index.js";
 import { BrainPlans, dailyMemory, planningRoutes } from "../src/brain/node.js";
+import { calendarDay } from "../src/brain/history/db.js";
 import type { DecisionRecord } from "../src/contract/events.js";
 
 const decision: DecisionRecord = { id: "pam-1", seq: 1, atMs: 10, finalTime: new Date(10).toISOString(), textSent: "관찰", status: "valid", prediction: null,
@@ -71,7 +72,7 @@ it("밤 반성은 서울 시각에 한 번 시작하고 노드가 끝나면 모�
   const clock = new VirtualClock(Date.UTC(2026, 10, 7, 14, 29, 59));
   const bus = new MemoryBus({ clock });
   const calls: string[] = [];
-  const night = new NightReflection({ bus, boot: "test", clock, at: "23:30", offsetMinutes: 540, run: async (day, signal) => {
+  const night = new NightReflection({ bus, boot: "test", clock, at: "23:30", offsetMinutes: 540, dayOf: (ms) => calendarDay(ms, 540), run: async (day, signal) => {
     calls.push(day);
     await new Promise<void>((resolve) => signal.addEventListener("abort", () => { calls.push("중단"); resolve(); }, { once: true }));
   } });
@@ -82,5 +83,19 @@ it("밤 반성은 서울 시각에 한 번 시작하고 노드가 끝나면 모�
     await night.close();
     await clock.advanceTo(clock.now() + 86_400_000);
     expect(calls).toEqual(["2026-11-07", "중단"]);
+  } finally { await night.close(); await bus.close(); }
+});
+
+it("밤 반성은 울릴 때의 시스템 날짜(dayOf)를 반성한다", async () => {
+  const { NightReflection } = await import("../src/brain/node.js");
+  const { VirtualClock } = await import("../src/bus/index.js");
+  const clock = new VirtualClock(Date.UTC(2026, 10, 7, 14, 29, 59));
+  const bus = new MemoryBus({ clock });
+  const calls: string[] = [];
+  const night = new NightReflection({ bus, boot: "test", clock, at: "23:30", offsetMinutes: 540, dayOf: () => "2026-11-08", run: async (day) => { calls.push(day); } });
+  try {
+    await night.start();
+    await clock.advanceTo(clock.now() + 1000);
+    expect(calls).toEqual(["2026-11-08"]);
   } finally { await night.close(); await bus.close(); }
 });

@@ -148,6 +148,7 @@ export async function startNodes(core: HomeCore, emit: (event: BrainLog) => void
   core.routinesChanged = reader.changed;
   const goal = await startGoalNode({
     bus, epoch, clock, log, triggers, portals: core.floorPlan.portals, routines, offsetMinutes: ctx.history.db.offsetMinutes,
+    dayOf: (ms) => ctx.history.db.dayOf(ms),
     map: () => core.scene?.stations ?? null,
     viewers: () => core.twin.devices.filter((d) => d.kind === HOUSEHOLD_KINDS.viewerPower).map((d) => d.id),
     checking: () => core.checkingVisit,

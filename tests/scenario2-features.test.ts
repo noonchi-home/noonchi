@@ -28,7 +28,7 @@ import { testTracker } from "./helpers/tracker-ports.js";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { HistoryDb } from "../src/brain/history/db.js";
+import { HistoryDb, calendarDay } from "../src/brain/history/db.js";
 import { runNight } from "../src/brain/history/night.js";
 import { memoryForDay } from "../src/brain/history/reflect.js";
 import { candidateFsmOf } from "../src/brain/pam/adopt.js";
@@ -347,7 +347,7 @@ describe("시나리오 2 판단 기능", () => {
     const r: HelpRoutine = { action: WATER_ACTION, place: DESK, place_label: "책상", room: "bed_sw", center_min: 20 * 60, window_min: 15, days: ["a", "b", "c"] };
     const sent: GoalIntent[] = [];
     const w = new HabitWatch((i) => sent.push(i));
-    const tick = (day: string, hm: string, busy = false) => w.tick({ now: kst(day, hm), rev: 1, map, routines: [r], offsetMinutes: 540, busy });
+    const tick = (day: string, hm: string, busy = false) => w.tick({ now: kst(day, hm), rev: 1, map, routines: [r], offsetMinutes: 540, busy, dayOf: (ms) => calendarDay(ms, 540) });
     tick("2026-11-25", "19:50");
     expect(sent).toEqual([]);
     tick("2026-11-25", "19:56", true);
@@ -363,11 +363,28 @@ describe("시나리오 2 판단 기능", () => {
     expect(sent).toHaveLength(2);
   });
 
+  it("시스템 날짜가 바뀌면 같은 벽시계 시각에도 습관 방문을 한 번 더 열고, 시각 창 밖에서는 날짜를 묻지 않는다", () => {
+    const r: HelpRoutine = { action: WATER_ACTION, place: DESK, place_label: "책상", room: "bed_sw", center_min: 20 * 60, window_min: 15, days: ["a", "b", "c"] };
+    const sent: GoalIntent[] = [];
+    const w = new HabitWatch((i) => sent.push(i));
+    let asked = 0;
+    const tick = (hm: string, day: string) => w.tick({ now: kst("2026-11-25", hm), rev: 1, map, routines: [r], offsetMinutes: 540, busy: false, dayOf: () => { asked++; return day; } });
+    tick("19:50", "2026-11-25");
+    expect(asked).toBe(0);
+    tick("19:56", "2026-11-25");
+    const first = sent[0] as Extract<GoalIntent, { op: "offer" }>;
+    w.result({ id: first.id, target_id: "desk_watch", at_ms: kst("2026-11-25", "19:57"), evidence_rev: 1, outcome: "arrived" });
+    tick("20:05", "2026-11-25");
+    expect(sent).toHaveLength(1);
+    tick("20:06", "2026-11-26");
+    expect(sent).toHaveLength(2);
+  });
+
   it("습관 방문이 취소·실패·기한 넘김이면 그날 습관 창 안에서 잠시 뒤 다시 가고, 도착한 날에만 그날을 마친다", () => {
     const r: HelpRoutine = { action: WATER_ACTION, place: DESK, place_label: "책상", room: "bed_sw", center_min: 20 * 60, window_min: 15, days: ["a", "b", "c"] };
     const sent: GoalIntent[] = [];
     const w = new HabitWatch((i) => sent.push(i));
-    const tick = (hm: string, s = 0) => w.tick({ now: kst("2026-11-25", hm) + s * 1000, rev: 1, map, routines: [r], offsetMinutes: 540, busy: false });
+    const tick = (hm: string, s = 0) => w.tick({ now: kst("2026-11-25", hm) + s * 1000, rev: 1, map, routines: [r], offsetMinutes: 540, busy: false, dayOf: (ms) => calendarDay(ms, 540) });
     const offer = (i: number) => sent[i] as Extract<GoalIntent, { op: "offer" }>;
     tick("19:56");
     expect(sent).toHaveLength(1);
@@ -391,11 +408,11 @@ describe("시나리오 2 판단 기능", () => {
     expect(sent).toHaveLength(4);
     // 창이 끝나면 다시 가지 않는다
     const w2 = new HabitWatch((i) => sent.push(i));
-    w2.tick({ now: kst("2026-11-25", "20:14"), rev: 1, map, routines: [r], offsetMinutes: 540, busy: false });
+    w2.tick({ now: kst("2026-11-25", "20:14"), rev: 1, map, routines: [r], offsetMinutes: 540, busy: false, dayOf: (ms) => calendarDay(ms, 540) });
     const last = sent.at(-1) as Extract<GoalIntent, { op: "offer" }>;
     w2.result({ id: last.id, target_id: "desk_watch", at_ms: kst("2026-11-25", "20:14") + 1000, evidence_rev: 1, outcome: "failed" });
     const n = sent.length;
-    w2.tick({ now: kst("2026-11-25", "20:16"), rev: 1, map, routines: [r], offsetMinutes: 540, busy: false });
+    w2.tick({ now: kst("2026-11-25", "20:16"), rev: 1, map, routines: [r], offsetMinutes: 540, busy: false, dayOf: (ms) => calendarDay(ms, 540) });
     expect(sent).toHaveLength(n);
   });
 
@@ -414,7 +431,7 @@ describe("시나리오 2 판단 기능", () => {
       await act.publish("/act/work", { active: false, activeAction: null, docking: false, emergency: false, goal: null, handling: null, requested: false, at_ms: Date.now(), mode: "noonchi", tasks: [], plan: null });
       await settle(bus, nodes);
       const r: HelpRoutine = { action: WATER_ACTION, place: DESK, place_label: "책상", room: "bed_sw", center_min: minuteNow(), window_min: 15, days: ["a", "b", "c"] };
-      habits.tick({ now: Date.now(), rev: 3, map, routines: [r], offsetMinutes: 540, busy: false });
+      habits.tick({ now: Date.now(), rev: 3, map, routines: [r], offsetMinutes: 540, busy: false, dayOf: (ms) => calendarDay(ms, 540) });
       await settle(bus, nodes);
       expect(got).toEqual([expect.objectContaining({ op: "grant", kind: "visit", target_id: "desk_watch", note: "평소 물을 찾는 시간이에요. 책상을 확인할게요." })]);
     } finally { for (const n of nodes) await n.stop(); await bus.close(); }

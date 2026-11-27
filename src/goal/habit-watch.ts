@@ -50,14 +50,16 @@ export class HabitWatch {
     if (this.pending?.id === id) this.missed(now);
   }
 
-  tick(i: { now: number; rev: number; map: StationMap | null; routines: readonly HelpRoutine[]; offsetMinutes: number; busy: boolean }) {
+  /** dayOf: ms → 시스템 날짜(하루 한 번의 「하루」, 하루 마치기로 넘긴 날도 센다). 250ms마다 기록 DB를 읽지 않게 시각 창 안 습관이 있을 때만 묻는다. */
+  tick(i: { now: number; rev: number; map: StationMap | null; routines: readonly HelpRoutine[]; offsetMinutes: number; busy: boolean; dayOf: (ms: number) => string }) {
     if (this.pending && i.now >= this.pending.until) this.missed(this.pending.until);
     if (!i.map || i.busy || this.pending) return;
-    const day = new Date(i.now + i.offsetMinutes * 60_000).toISOString().slice(0, 10);
     const minute = minuteOfDay(i.now, i.offsetMinutes);
+    let day: string | null = null;
     for (const r of i.routines) {
-      const key = JSON.stringify([day, r.action, r.place]);
-      if (this.done.has(key) || minute < r.center_min - HABIT_LEAD_MIN || minute > r.center_min + r.window_min) continue;
+      if (minute < r.center_min - HABIT_LEAD_MIN || minute > r.center_min + r.window_min) continue;
+      const key = JSON.stringify([(day ??= i.dayOf(i.now)), r.action, r.place]);
+      if (this.done.has(key)) continue;
       if (i.now < (this.retryAt.get(key) ?? -Infinity)) continue;
       const station = i.map.stations.find((s) => s.roles.includes("observe") && s.surfaces.includes(r.place));
       if (!station) continue;

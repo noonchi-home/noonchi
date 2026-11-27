@@ -615,7 +615,7 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
   await clean();
   const cleaner = setInterval(() => void clean(), 3_600_000);
   cleaner.unref?.();
-  const night = reflectAt ? new NightReflection({ bus, boot, at: reflectAt, offsetMinutes: db.offsetMinutes, clock: opts.clock, run: reflect }) : null;
+  const night = reflectAt ? new NightReflection({ bus, boot, at: reflectAt, offsetMinutes: db.offsetMinutes, dayOf: (ms) => db.dayOf(ms), clock: opts.clock, run: reflect }) : null;
   await night?.start();
   if (reflectAt) log(`반성: 매일 ${reflectAt}`);
   const live = () => current ?? last;

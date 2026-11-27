@@ -22,7 +22,7 @@ import { WORLD_TICK_MS } from "../../src/world/index.js";
 import { inView } from "../../src/world/place.js";
 import { fsmStep, type FsmMemory } from "../../src/brain/decision.js";
 import { findRoutines, routineEdge, type HelpRoutine } from "../../src/brain/history/routines.js";
-import type { HistoryDb } from "../../src/brain/history/db.js";
+import { calendarDay, type HistoryDb } from "../../src/brain/history/db.js";
 import type { DecisionRecord } from "../../src/contract/events.js";
 import type { HelpRecord } from "../../src/contract/history.js";
 import type { PlannedCommand, PlannedCommandMessage } from "../../src/contract/phone.js";
@@ -257,6 +257,7 @@ export async function replayDay(o: {
   const goalNode = await startGoalNode({
     bus, epoch, clock, log: fail, triggers, portals: floor.portals, map: () => map, viewers: () => [], checking: () => null,
     routines: () => o.mode === "habit" ? adoptedRoutines(o.db, o.memory, clock.now()) : [], offsetMinutes: 540,
+    dayOf: (ms) => calendarDay(ms, 540),
     afterTick: () => { if (world.eye) tracker.updateGoal(); },
   });
   let worldSeen: WorldView = world, worldRev = 0;

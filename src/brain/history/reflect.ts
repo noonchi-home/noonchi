@@ -103,8 +103,9 @@ export function loadReflectAt(env: Record<string, string | undefined>): string |
   return raw;
 }
 
-/** 매일 at(HH:MM, offsetMinutes 시간대)에 그날을 반성한다. 끝나면 다음 날 같은 시각을 잡는다. */
-export function scheduleReflection(o: { at: string; offsetMinutes: number; run: (day: string) => Promise<unknown>; now?: () => number; after?: (ms: number, fn: () => void) => () => void }): { stop(): void } {
+/** 매일 at(HH:MM, offsetMinutes 시간대)에 그날을 반성한다. 끝나면 다음 날 같은 시각을 잡는다.
+ *  반성할 날은 울릴 때의 시스템 날짜(dayOf, 하루 마치기로 넘긴 날이면 넘긴 날)다. */
+export function scheduleReflection(o: { at: string; offsetMinutes: number; dayOf: (ms: number) => string; run: (day: string) => Promise<unknown>; now?: () => number; after?: (ms: number, fn: () => void) => () => void }): { stop(): void } {
   const [h, m] = o.at.split(":").map(Number) as [number, number];
   const now = o.now ?? (() => Date.now());
   const offset = o.offsetMinutes * 60_000;
@@ -121,7 +122,7 @@ export function scheduleReflection(o: { at: string; offsetMinutes: number; run: 
     let target = Date.UTC(local.getUTCFullYear(), local.getUTCMonth(), local.getUTCDate(), h, m) - offset;
     if (target <= now()) target += 86_400_000;
     cancel = after(target - now(), () => {
-      void o.run(new Date(target + offset).toISOString().slice(0, 10)).catch(() => {}).finally(next);
+      void o.run(o.dayOf(target)).catch(() => {}).finally(next);
     });
   };
   next();
