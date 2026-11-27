@@ -165,6 +165,29 @@ describe("서버 시작: TV 중계", () => {
     expect(message).toMatch(/tv_1.*remotes\.json.*TV_RELAY/);
   });
 
+  it("중계 TV에는 설정 API가 리모컨 전원 단추(켜기·끄기·전원·LG 전원 묶음)를 받지 않고, 그 밖 단추는 배우며, 다시 켜도 시작한다", async () => {
+    const dir = runtime();
+    const env = { TV_RELAY_URL: "http://127.0.0.1:9", TV_RELAY_TOKEN: TOKEN, TV_RELAY_DEVICE: "tv_1", TV_RELAY_POLL_MS: "0" };
+    srv = await startServer({ env: { HUB: "memory", PORT: "0", HOME_ID: "oneroom", RUNTIME_DIR: dir, ...env }, log: () => {}, ...fakeIr() });
+    const remote = json(await api("/api/setup/ir/remote", { home: "oneroom", label: "TV", device: "tv_1" })).remotes[0].id as string;
+    expect((await api("/api/setup/ir/port", { home: "oneroom", port: "COM7" })).status).toBe(200);
+    await expect.poll(async () => json(await api("/api/setup/ir?home=oneroom")).port.state).toBe("connected");
+    const refused = "이 TV는 TV 중계로 켜고 꺼요. 전원 단추는 넣을 수 없어요.";
+    for (const role of ["on", "off", "toggle"]) {
+      const r = await api("/api/setup/ir/learn", { home: "oneroom", remote, label: "전원", role });
+      expect([role, r.status, json(r).error]).toEqual([role, 409, refused]);
+    }
+    const preset = await api("/api/setup/ir/preset", { home: "oneroom", remote, preset: "lg_tv_power" });
+    expect([preset.status, json(preset).error]).toEqual([409, refused]);
+    const other = await api("/api/setup/ir/learn", { home: "oneroom", remote, label: "음량 올림", role: null });
+    expect([other.status, json(other).learning?.state]).toEqual([200, "waiting"]);
+    await api("/api/setup/ir/learn/cancel", { home: "oneroom" });
+    await srv.close();
+    srv = undefined;
+    srv = await startServer({ env: { HUB: "memory", PORT: "0", HOME_ID: "oneroom", RUNTIME_DIR: dir, ...env }, log: () => {}, ...fakeIr() });
+    expect(json(await api("/api/setup/ir?home=oneroom")).remotes.map((r: { device: string; buttons: unknown[] }) => [r.device, r.buttons])).toEqual([["tv_1", []]]);
+  });
+
   it("저장한 실제 모드는 중계 TV가 있는 집이면 그대로, 없는 집이면(리모컨·ThinQ도 없음) 시험 모드로 띄운다", async () => {
     const fake = await fakeRelay();
     await start({ TV_RELAY_URL: fake.url, TV_RELAY_TOKEN: TOKEN, TV_RELAY_DEVICE: "tv_1", TV_RELAY_POLL_MS: "0" }, [], savedRuntime({ home: "oneroom", mode: "live" }), true);

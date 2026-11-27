@@ -312,7 +312,7 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
   // 적외선 리모컨(remotes.json)과 보드 연결 하나. 집을 열 때 붙이고 닫기 전에 뗀다. 저장·포트 고르기 뒤 changed()로 지금 집에 다시 적용한다
   const irSetup = new IrSetup({
     runtimeDir, log, fake: env.IR_FAKE === "1", open: opts.irPort ?? openIrPort, listPorts: opts.irPorts ?? (() => listSerialPorts()),
-    mode: () => mode, changed: () => { if (current && !switching) applyControl(current); },
+    mode: () => mode, relayTv: relay.ok ? relay.config.deviceId : null, changed: () => { if (current && !switching) applyControl(current); },
   });
 
   /** 지금 모드·짝·저장한 출처를 집 묶음에 적용한다. 실제 모드에서 짝이 있을 때만 ThinQ·TV 중계 연결을 만든다. */

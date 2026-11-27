@@ -26,6 +26,8 @@ export interface IrSetupOptions {
   /** IR_FAKE=1: 포트 목록에 FAKE(가짜 보드)를 더한다. */
   fake: boolean;
   mode: () => "test" | "live";
+  /** TV 중계로 켜고 끄는 TV(TV_RELAY_DEVICE). 이 TV 리모컨에는 전원 단추를 넣지 않는다(시작할 때 TvSetupConflict가 된다). */
+  relayTv: string | null;
   changed: () => void;
   log: (line: string) => void;
   now?: () => number;
@@ -59,6 +61,7 @@ const E = {
   learning: "이미 단추를 배우는 중이에요.",
   notConnected: "적외선 장치가 연결되지 않았어요.",
   sendFailed: "신호를 보내지 못했어요.",
+  relayTv: "이 TV는 TV 중계로 켜고 꺼요. 전원 단추는 넣을 수 없어요.",
 } as const;
 const roleTaken = (button: string, role: NonNullable<RemoteRole>) => `「${button}」 단추가 이미 ${ROLE_LABEL[role]} 단추예요.`;
 
@@ -266,6 +269,7 @@ export class IrSetup {
     const label = labelOf(b.label);
     const remote = this.visible().find((r) => r.id === b.remote);
     if (!remote) throw new HttpError(404, E.noRemote);
+    if (b.role) this.requirePowerAllowed(remote.device);
     const clash = b.role && remote.buttons.find((x) => x.role === b.role && x.label !== label);
     if (clash) throw new HttpError(400, roleTaken(clash.label, b.role!));
     if (this.learning?.session) throw new HttpError(409, E.learning);
@@ -333,6 +337,7 @@ export class IrSetup {
     const remote = this.visible().find((r) => r.id === b.remote);
     if (!remote) throw new HttpError(404, E.noRemote);
     if (this.home!.devices.find((d) => d.id === remote.device)?.kind !== HOUSEHOLD_KINDS.viewerPower) throw new HttpError(400, E.tvOnly);
+    this.requirePowerAllowed(remote.device);
     const added: ButtonEntry[] = [];
     for (const p of LG_TV_POWER) {
       const role = remote.buttons.find((x) => x.role === p.role);
@@ -385,6 +390,11 @@ export class IrSetup {
 
   private requireHome(id: string) {
     if (!this.home || this.home.id !== id) throw new HttpError(409, E.otherHome);
+  }
+
+  /** 중계 TV(relayTv)의 리모컨이면 전원 단추를 받지 않는다. */
+  private requirePowerAllowed(device: string) {
+    if (device === this.o.relayTv) throw new HttpError(409, E.relayTv);
   }
 
   private held(name: string): IrFirmware | undefined {
