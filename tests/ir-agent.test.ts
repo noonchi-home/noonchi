@@ -276,6 +276,41 @@ it("「TV 소리 키워 줘」 말 부탁은 리모컨 단추 누르기 계획�
   expect(test.sent).toEqual([]);
 });
 
+it("리모컨 말 부탁을 15초 안에 다시 하면(첫 계획을 만드는 중, 앞 계획이 끝나고 10초 뒤) 버리지 않고 앞 계획 뒤에 이어서 누른다", async () => {
+  const live = setup(true);
+  const clock = { t: 10_000, now() { return this.t; } };
+  const plans = new PlanHub(smallFloor(), () => {}, () => "t");
+  const approvals = new ApprovalStore(join(mkdtempSync(join(tmpdir(), "ir-agent-")), "homes", "h", "approvals.json"), () => "t");
+  approvals.answer(`task:${REMOTE_TASK}`, "approve");
+  llm.scripts[REMOTE_TASK] = () => [planCalls([{ kind: "device", label: "TV 음량 올림", target: "tv_1", tool: "press_remote", args: { button: "음량 올림" }, timeout_s: 60 }])];
+  const planner = testPlanner(llm);
+  // planGapMs를 주지 않는다: 기본 같은 행동 다시 계획 간격(15초)
+  const t = testTracker({
+    plans, world: () => worldOf(live.hub), check: () => ({ ok: true }), floor: () => plans.floor(), clock, approvals,
+    planner: (d, signal) => planner.plan(planContext({ decision: d, world: worldOf(live.hub), floor: plans.floor(), hub: live.hub }), signal),
+    toPhone: () => {}, emit: () => {}, locate: () => undefined,
+    devices: deviceRunner(live.hub, new Policy()), handDevices: () => [],
+  });
+  const ask = (heard: string) => t.onRequest({ task: REMOTE_TASK, heard, atMs: clock.t, afterSeq: 0 });
+  const sentTimes = async (n: number) => {
+    for (let i = 0; i < 100 && live.sent.length < n; i++) {
+      await new Promise((r) => setTimeout(r, 20));
+      clock.t += 50;
+      t.onWorld();
+      t.tick();
+    }
+    await t.idle();
+    return live.sent.length;
+  };
+  ask("TV 소리 키워 줘");
+  ask("한 번 더");
+  expect(await sentTimes(2)).toBe(2);
+  clock.t += 10_000;
+  ask("소리 더 키워 줘");
+  expect(await sentTimes(3)).toBe(3);
+  expect(live.sent).toEqual(["tv_1/b_00000002", "tv_1/b_00000002", "tv_1/b_00000002"]);
+});
+
 it("실제 모드 계획의 press_remote 단계(until 없음)는 신호를 보내면 끝난다", async () => {
   const live = setup(true);
   const plan = await runPlan(live.hub, (step) => ({ ...step, label: "TV 음량 올림", until: null, device: { tool: "press_remote", deviceId: "tv_1", args: { button: "음량 올림" } } }));

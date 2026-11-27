@@ -7,7 +7,7 @@ import type { DecisionRecord } from "../../contract/events.js";
 import { needsPhone, objectNames, type AgentStep, type PlanResult } from "../../agent/index.js";
 import { APPROVAL_TEXT, CHECK_TEXT, EXEC_TEXT } from "../labels.js";
 import { quietLabels } from "../lessons.js";
-import { TASK_NAMES, carriesTarget, followedId, planIdOf, planObjectsOf, putAway, taskOf, clearsAway, touchTarget } from "../tasks.js";
+import { REMOTE_ACTION, TASK_NAMES, carriesTarget, followedId, planIdOf, planObjectsOf, putAway, taskOf, clearsAway, touchTarget } from "../tasks.js";
 import { CHANGE_TEXT, saidIn } from "../../world/labels.js";
 import { decisionWorld } from "../../world/index.js";
 import { isoWithOffset } from "../../shared/time.js";
@@ -25,6 +25,8 @@ export class Starter extends Part {
   private readonly jobs = new Set<Promise<void>>();
   private readonly deferredDrafts = new WeakSet<DecisionRecord>();
   private readonly planAt = new Map<string, number>();
+  /** 앞 리모컨 계획이 끝나기를 기다리는 리모컨 말 부탁(받은 차례). */
+  private readonly remoteQueue: DecisionRecord[] = [];
   private gen = 0;
   private lastSeq = 0;
   /** 마지막 말 부탁을 받은 때까지 보낸 PAM 요청 번호(afterSeq). 말 부탁의 대상을 찾는 중이거나 계획을 만드는 중이거나 열려 있는 동안 이 번호 이하 PAM 판단은 쓰지 않는다. */
@@ -78,7 +80,21 @@ export class Starter extends Part {
     };
   }
 
+  /** 리모컨 말 부탁이 계획 중이거나 진행 중인가. */
+  private remoteBusy(): boolean {
+    const c = this.core;
+    return c.planning?.decision.action === REMOTE_ACTION || c.open()?.decision.action === REMOTE_ACTION;
+  }
+
+  /** 줄에 둔 리모컨 말 부탁: 앞 리모컨 계획이 끝나면(계획 중·진행 중 아님) 하나 꺼내 판단 받기 길로 다시 넣는다. 꺼냈으면 true. */
+  private resumeRemote(): boolean {
+    if (!this.remoteQueue.length || this.remoteBusy()) return false;
+    this.onDecision(this.remoteQueue.shift()!);
+    return true;
+  }
+
   resumeRequest(): boolean {
+    if (this.resumeRemote()) return true;
     if (!this.core.manager.hasPending()) return false;
     const order = this.core.manager.take(this.context());
     if (!order) return false;
@@ -122,6 +138,13 @@ export class Starter extends Part {
     if (gate === "dock") return this.note(d, EXEC_TEXT.docking);
     if (gate === "hands") return this.note(d, EXEC_TEXT.handling);
     if (core.docking) core.dock.drop();
+    // 리모컨 말 부탁은 부탁마다 단추를 누른다(「한 번 더」): 앞 리모컨 계획이 계획 중·진행 중이면 같은 행동으로 버리지 않고 줄에 두었다가 끝나면 잇는다(resumeRemote).
+    // 같은 행동 다시 계획 간격(planGapMs)도 세지 않는다
+    const remote = d.source === "speech" && d.action === REMOTE_ACTION;
+    if (remote && this.remoteBusy()) {
+      this.remoteQueue.push(d);
+      return;
+    }
     const open = core.open();
     if (open?.decision.action === d.action || core.planning?.decision.action === d.action) return this.note(d, EXEC_TEXT.same);
     // 손대는 단계(집기·내려놓기·들고 가기) 중에는 다른 행동 판단으로 계획을 바꾸지 않는다(계획이 끝난 뒤 다시 판단). 비상과 사람이 말로 한 부탁만 바꾼다
@@ -154,8 +177,8 @@ export class Starter extends Part {
     }
     const now = this.clock.now();
     const last = this.planAt.get(d.action);
-    if (last !== undefined && now - last < this.cfg.planGapMs) return this.note(d, EXEC_TEXT.held);
-    this.planAt.set(d.action, now);
+    if (!remote && last !== undefined && now - last < this.cfg.planGapMs) return this.note(d, EXEC_TEXT.held);
+    if (!remote) this.planAt.set(d.action, now);
     // 미리 세운 목표는 여기서 버리지 않는다: 다른 행동의 계획이 실제로 시작할 때(begin) 버린다. 골라졌다가 막히면(계획 실패·쓰는 중·실행 전 검사) 목표가 그대로 맡는다
     // 계획을 만드는 중이던 다른 행동은 끊고 버린다(답이 와도 쓰지 않는다)
     this.dropPlanning(EXEC_TEXT.superseded);
