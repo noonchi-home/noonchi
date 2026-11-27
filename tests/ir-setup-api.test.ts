@@ -158,6 +158,28 @@ it("실제 모드에서 TV 켜기 확인을 기다리는 동안 다른 가전 �
   expect(srv!.signals.powerStamp("tv_1")).toEqual(stamp);
 }, 30_000);
 
+it("리모컨 파일을 저장하지 못하면 화면의 리모컨과 포트·보드 연결을 그대로 둔다", async () => {
+  const dir = runtime(), board = fakeBoard();
+  const other = { name: "COM8", label: "USB-SERIAL CH340", pnp: "USB\\VID_1A86&PID_7523\\6&11111111&0&1", usb: true };
+  await start(dir, board, async () => [...usb("COM7"), other]);
+  await post("/api/setup/ir/port", { home: HOME, port: "COM7" });
+  await until(view, (v) => v.port.state === "connected");
+  const remote = ((await post("/api/setup/ir/remote", { home: HOME, label: "TV", device: "tv_1" })).json as IrView).remotes[0]!.id;
+  const button = ((await post("/api/setup/ir/preset", { home: HOME, remote, preset: "lg_tv_power" })).json as IrView).remotes[0]!.buttons[0]!.id;
+  // 파일 자리를 폴더로 바꿔 저장(임시 파일 → 이름 바꾸기)이 실패하게 한다
+  const file = join(dir, "homes", HOME, "remotes.json");
+  rmSync(file);
+  mkdirSync(file);
+  expect((await post("/api/setup/ir/remote/delete", { home: HOME, id: remote })).status).toBe(500);
+  expect((await post("/api/setup/ir/remote", { home: HOME, label: "에어컨", device: "ac_1" })).status).toBe(500);
+  expect((await post("/api/setup/ir/remote", { home: HOME, id: remote, label: "거실 TV", device: "tv_1" })).status).toBe(500);
+  expect((await post("/api/setup/ir/port", { home: HOME, port: "COM8" })).status).toBe(500);
+  const after = await view();
+  expect(after.remotes.map((r) => [r.id, r.label, r.device])).toEqual([[remote, "TV", "tv_1"]]);
+  expect(after.port).toEqual({ name: "COM7", state: "connected" });
+  expect((await post("/api/setup/ir/test", { home: HOME, remote, button, confirm: true })).json).toEqual({ ok: true, sent: true });
+}, 30_000);
+
 it("IR_FAKE=1이면 포트 목록에 가상 적외선 장치가 있고, 고르면 연결된다", async () => {
   const dir = runtime();
   await start(dir, fakeBoard(), async () => [], { env: { IR_FAKE: "1" } });

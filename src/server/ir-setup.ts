@@ -164,8 +164,7 @@ export class IrSetup {
     const found = findPort(ports, saved);
     if (!found) { this.portState = "missing"; return; }
     if (found.name !== saved.name) {
-      this.file = { ...this.file, port: { name: found.name, pnp: saved.pnp } };
-      this.write();
+      this.commit({ ...this.file, port: { name: found.name, pnp: saved.pnp } });
     }
     this.portName = found.name;
     this.openBridge(found.name);
@@ -223,10 +222,10 @@ export class IrSetup {
       if (!info) throw new HttpError(400, E.noPort);
     }
     this.requireHome(b.home);
+    // 저장이 된 뒤에만 보드를 바꾼다: 저장이 실패하면 옛 연결과 포트를 그대로 둔다
+    this.commit({ ...this.file, port: { name: b.port, pnp: info?.pnp ?? null } });
     this.stopLearning();
     this.closeBridge();
-    this.file = { ...this.file, port: { name: b.port, pnp: info?.pnp ?? null } };
-    this.write();
     this.portName = b.port;
     this.openBridge(b.port);
     this.o.changed();
@@ -249,8 +248,7 @@ export class IrSetup {
       if (moved.buttons.some((x) => x.role)) this.requirePowerAllowed(b.device);
       remotes = this.file.remotes.map((r) => (r.id === b.id ? { ...r, label, device: b.device } : r));
     } else remotes = [...this.file.remotes, { id: newId("r"), label, device: b.device, buttons: [] }];
-    this.file = { ...this.file, remotes };
-    this.write();
+    this.commit({ ...this.file, remotes });
     this.o.changed();
     return this.view();
   }
@@ -259,9 +257,8 @@ export class IrSetup {
     const b = parse(bodies.remoteDelete, body);
     this.requireHome(b.home);
     if (!this.visible().some((r) => r.id === b.id)) throw new HttpError(404, E.noRemote);
+    this.commit({ ...this.file, remotes: this.file.remotes.filter((r) => r.id !== b.id) });
     if (this.learning?.remote === b.id) { this.stopLearning(); this.learning = null; }
-    this.file = { ...this.file, remotes: this.file.remotes.filter((r) => r.id !== b.id) };
-    this.write();
     this.o.changed();
     return this.view();
   }
@@ -407,19 +404,15 @@ export class IrSetup {
     return this.bridge && this.portName === name ? FIRMWARE_OF[this.portState] : undefined;
   }
 
-  private write() {
-    saveRemotes(this.o.runtimeDir, this.home!.id, this.file);
+  /** 새 파일 값을 저장하고, 저장이 된 뒤에만 메모리 값으로 둔다(저장이 실패하면 던지고 옛 값 그대로). */
+  private commit(next: RemotesFile) {
+    saveRemotes(this.o.runtimeDir, this.home!.id, next);
+    this.file = next;
     this.version++;
   }
 
   private replace(remote: string, buttons: ButtonEntry[]) {
-    this.file = { ...this.file, remotes: this.file.remotes.map((r) => (r.id === remote ? { ...r, buttons } : r)) };
-    try {
-      this.write();
-    } catch (e) {
-      this.file = loadRemotes(this.o.runtimeDir, this.home!.id);
-      throw e;
-    }
+    this.commit({ ...this.file, remotes: this.file.remotes.map((r) => (r.id === remote ? { ...r, buttons } : r)) });
   }
 
   private openBridge(name: string) {
