@@ -164,7 +164,12 @@ export type BrainLog =
     /** 반성이 낸 기억을 쓰지 않은 까닭(코드 검사·뜻 검사를 두 번 다 지나지 못함). fsm 반성에서 통과했으면 null. 예전 기록에는 없다. */
     rejected?: string | null;
     /** 채택 검사 결과(후보마다 n·k·못 봄·비율·p0·p·통과, src/brain/pam/adopt.ts). 검사한 후보가 있을 때만. */
-    checks?: { state: string; action: string; on?: string; when?: string | null; n: number; k: number; unknown: number; rate: number; base_rate: number; p0: number; p_value: number; passed: boolean }[];
+    checks?: { state: string; action: string; on?: string; when?: string | null; n: number; k: number; unknown: number; rate: number; base_rate: number; p0: number; p_value: number; passed: boolean;
+      /** 후보 화살표의 도착("*"는 어느 상태로든)과 후보 발생마다 판정(src/brain/pam/adopt-moments.ts). 예전 기록에는 없다. */
+      to?: string; moments?: import("./reflection.js").CheckMoment[] }[];
+    /** 덩어리(시각·상태·방, 모델 글 없음)와 그날 사람이 한 일(배우는 행동, 시각, 사람이 함·묻기 답). 성공한 fsm 반성에만 있다. 예전 기록에는 없다. */
+    chunks?: { start: string; end: string; state: string | null; room: string | null }[];
+    did?: { action: string; at: string; via: "person" | "answer" }[];
   }
   /** 관찰 모드가 고른 것 하나(src/act/look.ts): 까닭(A 멈춘 단계·B 판단 전 보기), 대상 id, 고른 도구와 모델이 댄 까닭, 기록 글, 결과(가까이 보기 결과·부탁을 보냈는가, 기다리기는 null).
    *  A면 그 계획·단계 id가 있다. */

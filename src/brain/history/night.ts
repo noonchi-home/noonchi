@@ -11,10 +11,12 @@ import { dirname, join } from "node:path";
 import { ASK_CHOICES, ASK_FOLLOW } from "../../act/prompts.js";
 import { LEARNED_ACTIONS, TASKS } from "../../act/tasks.js";
 import type { BrainLog, PamUsage } from "../../contract/events.js";
+import type { CheckMoment } from "../../contract/reflection.js";
 import type { CandidateFsm } from "../../contract/pam.js";
 import { CUP_FSM_MEMORY, ContractError, MAX_REFLECT_TEXT, validateMemory, type FsmMemory } from "../decision.js";
 import { candidateText, type PamClient } from "../pam/index.js";
 import { adoptKey, adoptedFsm, candidateFsmOf, checkCandidate, type CheckDay, type CheckResult } from "../pam/adopt.js";
+import { candidateMoments } from "../pam/adopt-moments.js";
 import { learnBeerRules, withBeerRules } from "./beer-rules.js";
 import { clock, type Chunk, type Marks } from "../pam/marks.js";
 import { headWithin } from "../../shared/cut.js";
@@ -64,6 +66,8 @@ export function latestWithin(lines: string[], max: number): string[] {
 /** 기록 시간대의 HH:MM:SS. */
 const hms = (ms: number, offset: number) => new Date(ms + offset * 60_000).toISOString().slice(11, 19);
 const secOf = (ms: number, offset: number) => clock(hms(ms, offset), "time");
+/** 자정부터 초 → HH:MM:SS. */
+const hmsOfSec = (s: number) => new Date(s * 1000).toISOString().slice(11, 19);
 
 /** 그날 기록 줄(`HH:MM:SS | 글`, 시각 차례, 같은 시각·같은 글은 한 줄). */
 export function dayLines(db: HistoryDb, day: string): { time: string; line: string }[] {
@@ -122,8 +126,8 @@ export function unseenEnd(times: readonly number[], last: number): number {
   return times.find((x) => x > last) ?? DAY_MS / 1000;
 }
 
-/** 덩어리에 그 동안의 사람 상태(판단 기록 fsm.state, 가장 많이 나온 것, 없으면 그 앞 마지막 판단 상태)를 붙인 줄 `HH:MM:SS~HH:MM:SS [상태] 글`. */
-export function chunkLines(db: HistoryDb, day: string, chunks: readonly Chunk[]): string[] {
+/** 덩어리마다 그 동안의 사람 상태(판단 기록 fsm.state, 가장 많이 나온 것, 없으면 그 앞 마지막 판단 상태). */
+function chunkStates(db: HistoryDb, day: string, chunks: readonly Chunk[]): (string | null)[] {
   const states = db.list({ day, kinds: ["decision"], limit: 10_000_000 }).flatMap((r) => {
     const s = (r.data as { fsm?: { state?: unknown } | null } | null)?.fsm?.state;
     return typeof s === "string" ? [{ at: secOf(r.at_ms, db.offsetMinutes), state: s }] : [];
@@ -133,9 +137,41 @@ export function chunkLines(db: HistoryDb, day: string, chunks: readonly Chunk[])
     const inside = states.filter((s) => s.at >= from && s.at <= to);
     const count = new Map<string, number>();
     for (const s of inside) count.set(s.state, (count.get(s.state) ?? 0) + 1);
-    const most = [...count].sort((a, b) => b[1] - a[1])[0]?.[0] ?? states.filter((s) => s.at <= to).at(-1)?.state ?? null;
-    return `${c.start}~${c.end} ${most ? `[${most}] ` : ""}${c.text}`;
+    return [...count].sort((a, b) => b[1] - a[1])[0]?.[0] ?? states.filter((s) => s.at <= to).at(-1)?.state ?? null;
   });
+}
+
+/** 덩어리마다 사람이 가장 오래 있던 방 id(사람 방 기록 data.room). 덩어리 안에 바뀜이 없으면 그 앞 마지막 방, 모르면 null. */
+function chunkRooms(db: HistoryDb, day: string, chunks: readonly Chunk[]): (string | null)[] {
+  const moves = db.list({ day, kinds: ["world"], limit: 10_000_000 }).flatMap((r) => {
+    const d = r.data as { kind?: string; room?: unknown } | null;
+    return d?.kind === "person_room" && typeof d.room === "string" ? [{ at: secOf(r.at_ms, db.offsetMinutes), room: d.room }] : [];
+  });
+  return chunks.map((c) => {
+    const from = clock(c.start, "start"), to = clock(c.end, "end");
+    let room = moves.filter((m) => m.at <= from).at(-1)?.room ?? null;
+    let since = from;
+    const stay = new Map<string, number>();
+    for (const m of moves.filter((x) => x.at > from && x.at <= to)) {
+      if (room) stay.set(room, (stay.get(room) ?? 0) + m.at - since);
+      room = m.room;
+      since = m.at;
+    }
+    if (room) stay.set(room, (stay.get(room) ?? 0) + to - since);
+    return [...stay].sort((a, b) => b[1] - a[1])[0]?.[0] ?? room;
+  });
+}
+
+/** 덩어리에 그 동안의 사람 상태를 붙인 줄 `HH:MM:SS~HH:MM:SS [상태] 글`. */
+export function chunkLines(db: HistoryDb, day: string, chunks: readonly Chunk[]): string[] {
+  const states = chunkStates(db, day, chunks);
+  return chunks.map((c, i) => `${c.start}~${c.end} ${states[i] ? `[${states[i]}] ` : ""}${c.text}`);
+}
+
+/** 반성 기록에 남기는 덩어리: 시각·상태·방(모델이 쓴 글 text는 뺀다). */
+export function chunkFacts(db: HistoryDb, day: string, chunks: readonly Chunk[]): { start: string; end: string; state: string | null; room: string | null }[] {
+  const states = chunkStates(db, day, chunks), rooms = chunkRooms(db, day, chunks);
+  return chunks.map((c, i) => ({ start: c.start, end: c.end, state: states[i] ?? null, room: rooms[i] ?? null }));
 }
 
 /** 그날 시각 찾기 사본: 읽은 기록 줄의 표시(record), 덩어리, (상태, 후보 글)마다 시각, 행동마다 시각, 안 보인 구간(아직 안 물었으면 null). */
@@ -179,7 +215,8 @@ export interface NightOptions {
   writeFile?: (path: string, text: string) => void;
   log?: (line: string) => void;
 }
-export type NightCheck = CheckResult & { state: string; action: string; on: string; when: string | null };
+/** to: 후보 화살표의 도착("*"는 어느 상태로든). moments: 후보 발생마다 판정(화면용, src/brain/pam/adopt-moments.ts). */
+export type NightCheck = CheckResult & { state: string; action: string; to: string; on: string; when: string | null; moments: CheckMoment[] };
 /** 밤 흐름 결과. ok면 새 로봇 판본(version)·적용일·배운·쓰는 화살표·뺀 후보도 있다. */
 export type NightResult =
   | { ok: true; version: number; appliesDay: string; learned: EdgeLine[]; active: EdgeLine[]; dropped: HabitRuleNote[]; passed: { state: string; action: string; on: string; when?: string }[]; checks: NightCheck[] }
@@ -344,7 +381,7 @@ export async function runNight(db: HistoryDb, pam: PamClient, day: string, o: Ni
     }
     // 4) 채택 검사(지난 날을 모두 모아 다시 센다)
     const checks: NightCheck[] = rules.map((r) => {
-      const perDay: CheckDay[] = days.flatMap((d) => {
+      const perDay: { day: string; asked: number[]; check: CheckDay }[] = days.flatMap((d) => {
         const dl = linesOf(d);
         const m = marksOf(d);
         // 시각 찾기가 실패한 날(그 후보·행동 시각이 없음)은 셈에 넣지 않는다
@@ -355,15 +392,18 @@ export async function runNight(db: HistoryDb, pam: PamClient, day: string, o: Ni
         const robot = robotSpans(db, d, r.action);
         const byRobot = (a: number) => robot.some(([s, e]) => s <= a && a <= e);
         const times = dl.map((l) => sec(l.time));
-        return [{
+        return [{ day: d, asked, check: {
           start: times[0]!, end: times.at(-1)! + 1,
           candidate: (m.candidates[markKey(r.state, candidateText(r.cand))] ?? []).map(sec),
           action: [...(m.actions[r.action] ?? []).map(sec).filter((a) => !byRobot(a)), ...asked],
           unseen: [...(m.unseen ?? []).map((u) => [sec(u.start), unseenEnd(times, sec(u.end))] as [number, number]), ...robot],
           answered: answerTimes(db, d, r.action),
-        }];
+        } }];
       });
-      return { ...checkCandidate(perDay), state: r.state, action: r.action, on: r.cand.on, when: r.cand.when ?? null };
+      const moments = perDay.flatMap((x) => candidateMoments({ ...x.check, asked: x.asked }).map((m) => ({
+        day: x.day, at: hmsOfSec(m.at), verdict: m.verdict, action_at: m.action_at === null ? null : hmsOfSec(m.action_at), via: m.via,
+      })));
+      return { ...checkCandidate(perDay.map((x) => x.check)), state: r.state, action: r.action, to: r.to, on: r.cand.on, when: r.cand.when ?? null, moments };
     });
     let passed = new Set(checks.filter((c) => c.passed).map((c) => adoptKey(c.state, c.action, { on: c.on, ...(c.when ? { when: c.when } : {}) })));
     // 5) 로봇 FSM(seed 화살표 + 통과한 배우는 행동 후보) → 습관 거르기(배운 화살표만 뺄 수 있음) → 코드 검사
@@ -402,7 +442,16 @@ export async function runNight(db: HistoryDb, pam: PamClient, day: string, o: Ni
     let appliesDay = nextDay(day);
     while (db.pinnedMemory(appliesDay) !== null) appliesDay = nextDay(appliesDay);
     const at = await now();
-    const found = { learned, active, dropped, rejected: null, ...(checks.length ? { checks } : {}), ...(beer.tvOn ? { beer } : {}) };
+    // 그날 사람이 한 일(화면용): 시각 찾기 행동 시각(로봇이 한 구간 안은 뺀다) + 묻기 답 부탁. 배우는 행동 후보의 행동만
+    const dayMarks = marksOf(day);
+    const did = [
+      ...actions.flatMap((a) => {
+        const robot = robotSpans(db, day, a);
+        return (dayMarks.actions[a] ?? []).filter((t) => !robot.some(([s, e]) => s <= clock(t, "time") && clock(t, "time") <= e)).map((t) => ({ action: a, at: t, via: "person" as const }));
+      }),
+      ...answerActions(db, day).filter((x) => actions.includes(x.action)).flatMap((x) => x.times.map((s) => ({ action: x.action, at: hmsOfSec(s), via: "answer" as const }))),
+    ].sort((a, b) => a.at.localeCompare(b.at));
+    const found = { learned, active, dropped, rejected: null, chunks: chunks ? chunkFacts(db, day, chunks) : [], did, ...(checks.length ? { checks } : {}), ...(beer.tvOn ? { beer } : {}) };
     const used = usage ? { usage } : {};
     const saved = await store.saveNight({ day, appliesDay, robot: memory, candidates, beerRules: beer.rules, atMs: at, learnedCount: learned.length, found, used });
     const text = doneText(saved.robot, appliesDay, learned.length);

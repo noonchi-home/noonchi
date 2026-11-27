@@ -155,10 +155,12 @@ describe("반성", () => {
     expect(after.version).toBe(2);
     expect((after.memory as typeof CUP_FSM_MEMORY).states[0]).toMatchObject({ id: "drinking", description: "사용자가 아침마다 식탁에서 커피를 마신다." });
     expect(db.candidatesFor("2026-11-08")).toMatchObject({ kind: "fsm_candidates", memory: next });
+    // 덩어리는 시각·상태·방만 남는다(모델이 쓴 덩어리 글은 빠진다)
+    const CHUNKS = [{ start: "08:00:00", end: "08:00:00", state: null, room: null }, { start: "08:02:00", end: "08:02:00", state: null, room: null }];
     expect(db.list({ kinds: ["reflection"] })).toEqual([expect.objectContaining({
-      at_ms: t + 3_600_000, text: "반성 완료: 기억 2판, 2026-11-08부터", data: { day: "2026-11-07", ok: true, version: 2, applies_day: "2026-11-08", learned: [], active: [], dropped: [], rejected: null, usage: FAKE_USAGE },
+      at_ms: t + 3_600_000, text: "반성 완료: 기억 2판, 2026-11-08부터", data: { day: "2026-11-07", ok: true, version: 2, applies_day: "2026-11-08", learned: [], active: [], dropped: [], rejected: null, chunks: CHUNKS, did: [], usage: FAKE_USAGE },
     })]);
-    expect(logs).toEqual([{ type: "reflection", at_ms: t + 3_600_000, day: "2026-11-07", ok: true, version: 2, applies_day: "2026-11-08", text: "반성 완료: 기억 2판, 2026-11-08부터", learned: [], active: [], dropped: [], rejected: null, usage: FAKE_USAGE }]);
+    expect(logs).toEqual([{ type: "reflection", at_ms: t + 3_600_000, day: "2026-11-07", ok: true, version: 2, applies_day: "2026-11-08", text: "반성 완료: 기억 2판, 2026-11-08부터", learned: [], active: [], dropped: [], rejected: null, chunks: CHUNKS, did: [], usage: FAKE_USAGE }]);
   });
 
   it("정상 후보 FSM 반성 답(rules에 컵 치우기 후보)은 답 오류 없이 받아져 후보 판본과 로봇 판본이 저장된다. 요청은 후보 FSM 종류다", async () => {

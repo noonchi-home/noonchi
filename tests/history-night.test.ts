@@ -57,6 +57,34 @@ function leaveAndRobotClears(db: HistoryDb, day: string, leave: string, running:
 const fake = () => startFakePamLlm({ chunk: oneChunkPerLine, reflect: () => CANDIDATES_ASK_THEN_CLEAR, check: () => ({ ok: true, items: [] }), mark: markLeaveAt("08:00:00") });
 
 describe("밤 흐름: 채택 검사", () => {
+  it("반성 기록에 덩어리(시각·상태·방)·그날 사람이 한 일·발생마다 판정을 남기고 모델 글은 남기지 않는다", async () => {
+    const pam = await startFakePamLlm({
+      chunk: oneChunkPerLine, reflect: () => CANDIDATES_ASK_THEN_CLEAR, check: () => ({ ok: true, items: [] }),
+      mark: (v: MarkView) => ({
+        candidates: v.candidates.map(([state, candidate]) => ({ state, candidate, times: ["08:00:00"] })),
+        actions: v.actions.map((action) => ({ action, times: ["08:01:10"] })), unseen: [],
+      }),
+    });
+    try {
+      const db = HistoryDb.open(":memory:");
+      const day = "2026-11-10";
+      db.add("world", at(day, "07:49:00"), "사람 주방에 있음", { data: { kind: "person_room", room: "kitchen" } });
+      drinkAndLeave(db, day, "08:00:00");
+      db.add("world", at(day, "08:01:10"), "컵 사라짐");
+      expect((await runNight(db, pamClientFor(pam), day, { dir: tmp() })).ok).toBe(true);
+      const data = db.list({ kinds: ["reflection"] })[0]!.data as Record<string, any>;
+      expect(data.chunks.map((c: Record<string, unknown>) => [c.start, c.state, c.room])).toEqual([
+        ["07:49:00", null, "kitchen"], ["07:50:00", null, "kitchen"], ["07:50:04", "drinking", "kitchen"], ["08:00:00", "drinking", "kitchen"], ["08:01:10", "drinking", "kitchen"],
+      ]);
+      expect(data.chunks.some((c: Record<string, unknown>) => "text" in c)).toBe(false);
+      expect(data.did).toEqual([{ action: "컵 치우기", at: "08:01:10", via: "person" }]);
+      expect(data.checks[0]).toMatchObject({ state: "drinking", action: "컵 치우기", to: "*",
+        moments: [{ day, at: "08:00:00", verdict: "followed", action_at: "08:01:10", via: "person" }] });
+    } finally {
+      await pam.close();
+    }
+  });
+
   it("「치워 주세요」 답은 따라온 것으로 센다: 하루 한 번 떠남 + 답이면 둘째 밤에 통과해 로봇 FSM에 그 화살표가 생긴다", async () => {
     const pam = await fake();
     try {
