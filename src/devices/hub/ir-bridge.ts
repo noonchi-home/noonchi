@@ -10,6 +10,8 @@ export const PING_MS = 1500;
 export const REPLY_MS = 2000;
 export const RAW_REPLY_MS = 5000;
 export const GROUP_MS = 300;
+/** serial.ps1이 포트를 연 바로 뒤 내는 줄(보드 줄이 아니다). IrBridge는 이 줄부터 READY_MS를 센다: PowerShell이 늦게 뜨면 시작부터 세어 답 없음이 됐다. */
+export const PORT_OPENED = "#opened";
 const READY = /^ready ir_bridge(?:\s|$)/;
 const RX = /^RX\s+(\S+)\s+0x([0-9a-fA-F]+)\s+0x([0-9a-fA-F]+)$/;
 const NOT_CONNECTED = "적외선 장치가 연결되지 않았어요.";
@@ -112,6 +114,10 @@ export class IrBridge {
   private receive(raw: string) {
     const text = raw.trim();
     if (!text || this.closed) return;
+    if (text === PORT_OPENED) {
+      if (this.state === "connecting") { clearTimeout(this.readyTimer); this.readyTimer = setTimeout(() => this.ping(), READY_MS); }
+      return;
+    }
     if (READY.test(text)) {
       clearTimeout(this.readyTimer);
       if (this.state === "connected") { this.rejectAll("적외선 장치가 다시 시작했어요."); this.setState("connecting"); }

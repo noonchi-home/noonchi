@@ -17,6 +17,8 @@ public static class NoonchiIrSerial {
             // Another program holds the port. The exception text follows the Windows display language, so the hub reads exit code 3 instead.
             try { port.Open(); }
             catch (UnauthorizedAccessException e) { Console.Error.WriteLine(e.Message); return Busy; }
+            // The hub counts the board's ready wait from this line (src/devices/hub/ir-bridge.ts PORT_OPENED), not from starting PowerShell.
+            Console.WriteLine("#opened");
             var writer = new Thread(() => {
                 try {
                     string line;

@@ -1,6 +1,6 @@
 // tests/ir-bridge.test.ts
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ECHO_MS, IrBridge, PING_MS, READY_MS, parseRaw, parseRx, sendLine, type BridgePress } from "../src/devices/hub/ir-bridge.js";
+import { ECHO_MS, IrBridge, PING_MS, PORT_OPENED, READY_MS, parseRaw, parseRx, sendLine, type BridgePress } from "../src/devices/hub/ir-bridge.js";
 import type { IrPort } from "../src/devices/hub/ir.js";
 
 function wire() {
@@ -38,6 +38,30 @@ describe("ir_bridge 줄", () => {
 });
 
 describe("IrBridge", () => {
+  it("포트를 연 표시 줄부터 준비 시간을 세서 늦게 연 포트의 ready도 답 없음 없이 받고, 그 줄은 다른 펌웨어로 세지 않는다", async () => {
+    vi.useFakeTimers();
+    const w = wire();
+    const b = new IrBridge(w.open, "COM7");
+    const states: string[] = [];
+    b.onState((s) => states.push(s));
+    b.start();
+    await vi.advanceTimersByTimeAsync(3500);
+    w.rx(PORT_OPENED);
+    await vi.advanceTimersByTimeAsync(2200);
+    expect(b.state).toBe("connecting");
+    w.rx("ready ir_bridge raw=750");
+    expect(states).toEqual(["connected"]);
+    const q = wire();
+    const quiet = new IrBridge(q.open, "COM8");
+    quiet.start();
+    await vi.advanceTimersByTimeAsync(1000);
+    q.rx(PORT_OPENED);
+    await vi.advanceTimersByTimeAsync(READY_MS + PING_MS - 100);
+    expect(quiet.state).toBe("connecting");
+    await vi.advanceTimersByTimeAsync(200);
+    expect(quiet.state).toBe("silent");
+  });
+
   it("ready ir_bridge 전에는 보내지 않고, 뒤에는 ok 답을 받아야 끝난다", async () => {
     const w = wire();
     const b = new IrBridge(w.open, "COM7");

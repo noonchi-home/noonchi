@@ -41,7 +41,8 @@ export function probePort(open: IrPort, name: string): Promise<IrFirmware> {
     let done = false;
     const finish = (f: IrFirmware) => { if (done) return; done = true; clearTimeout(limit); off(); bridge.close(); resolve(f); };
     const off = bridge.onState((s) => { if (s !== "connecting") finish(FIRMWARE[s]!); });
-    const limit = setTimeout(() => finish("silent"), READY_MS + PING_MS + 100);
+    // 브리지가 늘 답을 낸다(ready·pong·답 없음). 이 기한은 막힘 대비다: 포트를 연 표시 줄이 첫 답 직전에 오면 브리지는 그때부터 다시 READY_MS + PING_MS를 센다
+    const limit = setTimeout(() => finish("silent"), 2 * (READY_MS + PING_MS) + 100);
     bridge.start();
   });
 }

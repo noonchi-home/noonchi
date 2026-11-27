@@ -1,6 +1,6 @@
 // tests/ir-ports.test.ts
 import { afterEach, expect, it, vi } from "vitest";
-import { PING_MS, READY_MS } from "../src/devices/hub/ir-bridge.js";
+import { PING_MS, PORT_OPENED, READY_MS } from "../src/devices/hub/ir-bridge.js";
 import { fakeBoard } from "../src/devices/hub/ir-fake.js";
 import { PORTS_SCRIPT, findPort, listSerialPorts, parsePorts, probePort } from "../src/devices/hub/ir-ports.js";
 import type { IrPort } from "../src/devices/hub/ir.js";
@@ -45,4 +45,16 @@ it("열어서 펌웨어를 본다: ir_bridge · 다른 펌웨어 · 답 없음 �
   expect(await run(fakeBoard({ firmware: "silent" }).port)).toBe("silent");
   const busy: IrPort = (_n, _r, lost) => { setTimeout(() => lost("busy"), 10); return { send() {}, close() {} }; };
   expect(await run(busy)).toBe("in_use");
+});
+
+it("PowerShell이 늦게 포트를 열어(표시 줄 3.5초) ready가 시작 뒤 5.7초에 와도 ir_bridge로 본다", async () => {
+  vi.useFakeTimers();
+  const late: IrPort = (_n, received) => {
+    setTimeout(() => received(PORT_OPENED), 3500);
+    setTimeout(() => received("ready ir_bridge raw=750"), 5700);
+    return { send() {}, close() {} };
+  };
+  const p = probePort(late, "COM7");
+  await vi.advanceTimersByTimeAsync(6000);
+  expect(await p).toBe("ir_bridge");
 });

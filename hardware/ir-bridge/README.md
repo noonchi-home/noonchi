@@ -38,7 +38,7 @@ The relay's reading every 2 seconds is the TV's state, including a change made w
 
 ## USB lines
 
-The hub talks to the board through `serial.ps1` and the built-in .NET serial driver at **115200, 8N1**. Each ASCII line ends in LF. Opening the port restarts the board through DTR, and `ready ir_bridge raw=750` follows about 2 seconds later. If no ready line arrives within 4 seconds, the hub sends `PING`. A port held by another program ends `serial.ps1` with exit code 3. [Microsoft SerialPort documentation](https://learn.microsoft.com/en-us/dotnet/api/system.io.ports.serialport?view=netframework-4.8.1)
+The hub talks to the board through `serial.ps1` and the built-in .NET serial driver at **115200, 8N1**. Each ASCII line ends in LF. Opening the port restarts the board through DTR, and `ready ir_bridge raw=750` follows about 2 seconds later. `serial.ps1` prints `#opened` once the port is open. If no ready line arrives within 4 seconds of that line, the hub sends `PING`. A port held by another program ends `serial.ps1` with exit code 3. [Microsoft SerialPort documentation](https://learn.microsoft.com/en-us/dotnet/api/system.io.ports.serialport?view=netframework-4.8.1)
 
 | Direction | Line | Meaning |
 |---|---|---|
