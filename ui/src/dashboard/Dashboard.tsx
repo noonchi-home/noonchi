@@ -28,6 +28,7 @@ import { useDash } from "./use-dash";
 import { NarrationPane } from "./NarrationPane";
 import { narrationOf } from "./narration";
 import { usePhoneCommand } from "./use-phone-command";
+import { api } from "../lib/api";
 
 declare global {
   interface Window { __twin3d?: { engine: TwinEngine | null; ready: boolean } }
@@ -275,6 +276,16 @@ export function Dashboard() {
     : (layout: PageLayout) => (
       <BakedStage home={kind === "three" ? homeId : null} homeData={homeData} layout={layout} trace={dash.trace} plans={tracePlans} plan={dash.plan} eye={dash.eye} goal={goal} checks={checks} devices={devices} onEngine={onEngine} onReady={onBakedReady} onTwin={onTwinMarks} />
     );
+  // 하루 마치기: 응답은 반성이 끝나야 온다. 진행은 day 메시지로 보인다. closing을 못 받고 실패하면(반성 전에 막힘) 설정 창을 다시 연다
+  const [finish, setFinish] = useState({ failed: false, reopen: 0 });
+  const sawClosing = useRef(false);
+  useEffect(() => { if (dash.day?.closing) sawClosing.current = true; }, [dash.day?.closing]);
+  const onFinishDay = useCallback((d: string) => {
+    sawClosing.current = false;
+    setFinish((f) => ({ ...f, failed: false }));
+    const done = (ok: boolean) => setFinish((f) => ({ failed: !ok, reopen: !ok && !sawClosing.current ? f.reopen + 1 : f.reopen }));
+    api("/api/day/finish", { day: d }).then((r) => done(r.ok), () => done(false));
+  }, []);
   const plan = isOpen(dash.plan) && (!scene || !awaitingHello) ? dash.plan : null;
   // 가짜 단계 화면 상태 표가 읽는 것: 사람 상태·습관 그림(이름)·목표·최근 계획
   const statusRows = useMemo(() => currentStatusRowsOf(dash), [dash.people, dash.robots, dash.habit, dash.goal, dash.plans, dash.plan]);
@@ -287,6 +298,7 @@ export function Dashboard() {
       phone={phone} command={command} onPhoneDelay={onPhoneDelay} narration={debug ? <NarrationPane lines={narrationOf(dash, command, online)} /> : undefined}
       trace={dash.trace} onTwin={onTwin} seen={seen} statusRows={statusRows}
       hub={hub} settingsOpen={debug?.settings} onReady={onScreenReady} tzMinutes={health?.tz_minutes ?? null}
+      day={dash.day} onFinishDay={onFinishDay} finishFailed={finish.failed} finishReopen={finish.reopen}
     />
   );
 }

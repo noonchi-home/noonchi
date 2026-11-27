@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { PlanStep, PlanView } from "../../../src/contract/plan.ts";
+import type { DayView } from "../../../src/contract/reflection.ts";
 import type { TraceRow } from "../../../src/contract/trace.ts";
 import { Dialog } from "../components/ui/dialog";
 import { Separator } from "../components/ui/separator";
@@ -52,6 +53,16 @@ export interface ScreenProps {
   tzMinutes?: number | null;
   /** 화면이 다 뜬 때(data-ready를 단 때) 한 번 부른다. */
   onReady?: () => void;
+  /** 시스템 날짜 상태(day 메시지). 설정 창 날짜 줄이 쓴다. */
+  day?: DayView | null;
+  /** 반성 화면이 도는 동안 누른 날의 날짜 상태. */
+  reflecting?: DayView | null;
+  /** 하루 마치기(설정 창 확인 뒤). 없으면 날짜 줄 단추가 없다. */
+  onFinishDay?: (day: string) => void;
+  /** 마지막 하루 마치기 요청이 실패했다. */
+  finishFailed?: boolean;
+  /** 늘면 설정 창을 다시 연다(하루 마치기가 반성 전에 막혔을 때). */
+  finishReopen?: number;
 }
 
 const NO_TRACE: readonly TraceRow[] = [];
@@ -87,7 +98,8 @@ function useSettings(initial: boolean): [boolean, (open: boolean) => void] {
  * 가짜 단계 화면(narration)은 폰·트윈·상태 표·해설·트레이스 배치(bentoLayout)이고 마스코트를 둔다.
  * 설정 창은 Ctrl+1로만 연다(기본 라이브 보기에는 설정 단추가 없다).
  */
-export function DashboardScreen({ index, plan, step, robotKnown, connected, map, mapReady, narration, trace, onTwin, command, onPhoneDelay, phone, seen, statusRows, hub, settingsOpen, onReady, tzMinutes = null }: ScreenProps) {
+export function DashboardScreen({ index, plan, step, robotKnown, connected, map, mapReady, narration, trace, onTwin, command, onPhoneDelay, phone, seen, statusRows, hub, settingsOpen, onReady, tzMinutes = null,
+  day = null, reflecting = null, onFinishDay, finishFailed = false, finishReopen = 0 }: ScreenProps) {
   const main = useRef<HTMLElement>(null);
   const tiled = narration !== undefined;
   const view = useBoxSize(main, !tiled);
@@ -98,6 +110,9 @@ export function DashboardScreen({ index, plan, step, robotKnown, connected, map,
   const scene = useMemo(() => (tiled ? null : sceneLayout(view, MASCOT)), [view, tiled]);
   const L = useMemo(() => scene ?? bentoLayout(view, MASCOT, feedAspect, traceHeight), [scene, view, feedAspect, traceHeight]);
   const [settings, setSettings] = useSettings(!!settingsOpen);
+  // 하루 마치기가 반성 전에 막히면(409) 설정 창을 다시 열어 까닭 줄을 보인다
+  useEffect(() => { if (finishReopen) setSettings(true); }, [finishReopen, setSettings]);
+  const finish = onFinishDay && ((d: string) => { setSettings(false); onFinishDay(d); });
   const decoded = usePredecode([MASCOT.src]);
   // 지금 화면 글이 쓰는 글꼴 조각을 받는다(처음 나오는 글자가 새 조각을 받으면 글을 다시 그린다)
   const text = JSON.stringify([plan?.goal, plan?.steps.map((s) => s.label), WORDS, "0123456789"]);
@@ -127,7 +142,7 @@ export function DashboardScreen({ index, plan, step, robotKnown, connected, map,
           <TraceTable rows={trace ?? NO_TRACE} onTwin={onTwin} />
         </ScenePanel>
         <Dialog open={settings} onOpenChange={setSettings}>
-          <SettingsDialog hub={hub} />
+          <SettingsDialog hub={hub} day={day} reflecting={reflecting} failed={finishFailed} onFinish={finish} />
         </Dialog>
       </main>
     );

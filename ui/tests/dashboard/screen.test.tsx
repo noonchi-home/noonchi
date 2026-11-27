@@ -353,3 +353,15 @@ describe("대시보드 글 크기", () => {
     expect(sizesIn(dialog).has("text-[18px]/7")).toBe(true);
   });
 });
+
+describe("대시보드 하루 마치기", () => {
+  it("finishReopen이 늘면 설정 창을 다시 열고 실패 줄을 보인다", async () => {
+    const day = { today: "2026-11-27", real_today: "2026-11-27", shift: 0, finish: true, closing: false };
+    const p = screenAt(2, { day, onFinishDay: () => {}, finishFailed: true, finishReopen: 0 });
+    const { rerender } = draw(p);
+    expect(screen.queryByRole("dialog")).toBeNull();
+    rerender(<DashboardScreen {...p} finishReopen={1} />);
+    const dialog = await screen.findByRole("dialog", { name: "설정" });
+    expect(within(dialog).getByText("11월 27일 (금) · 하루를 마치지 못했어요")).toBeInTheDocument();
+  });
+});

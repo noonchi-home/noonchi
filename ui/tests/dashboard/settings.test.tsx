@@ -9,6 +9,8 @@ import { hubOf, mobileHubUrl } from "../../src/lib/hub";
 import { pageLayout } from "../../src/dashboard/layout";
 import { Mascot } from "../../src/dashboard/Mascot";
 import { MASCOT } from "../../src/lib/mascot-image";
+import { Dialog } from "../../src/components/ui/dialog";
+import { SettingsDialog } from "../../src/dashboard/SettingsDialog";
 
 const HEALTH: HealthView = {
   ok: true, devices: 12, hub: "matter", transport: "network", provider: "openai", model: "gpt-5.5", twin: true, eye: true,
@@ -239,5 +241,52 @@ describe("대시보드 설정 창", () => {
       await new Promise((r) => setTimeout(r, 10));
     });
     await waitFor(() => expect(dialog()).toBeNull());
+  });
+});
+
+describe("설정 창 날짜 줄(하루 마치기)", () => {
+  const day = { today: "2026-11-27", real_today: "2026-11-27", shift: 0, finish: true, closing: false };
+  type Day = typeof day;
+  const showDay = (d: Day | null, o: { onFinish?: (d: string) => void; failed?: boolean; reflecting?: Day | null } = {}) =>
+    render(<Dialog open><SettingsDialog hub={HUB} day={d} reflecting={o.reflecting ?? null} failed={o.failed ?? false} onFinish={o.onFinish ?? (() => {})} /></Dialog>);
+  const button = () => screen.getByRole("button", { name: "하루 마치기" }) as HTMLButtonElement;
+
+  it("하루 마치기를 켠 서버에서만 줄이 보이고, 줄 이름 없이 왼쪽은 지금 시스템 날짜다", () => {
+    const { unmount } = showDay({ ...day, finish: false });
+    expect(screen.queryByRole("button", { name: "하루 마치기" })).toBeNull();
+    unmount();
+    showDay(day);
+    expect(screen.getByText("11월 27일 (금)")).toBeTruthy();
+    expect(screen.queryByText("하루")).toBeNull();
+  });
+
+  it("누르면 확인 창이 뜨고, 확인하면 오늘 날짜로 부른다. 취소하면 부르지 않는다", async () => {
+    const calls: string[] = [];
+    showDay(day, { onFinish: (d) => { calls.push(d); } });
+    await userEvent.click(button());
+    expect(screen.getByRole("dialog", { name: "하루를 마칠까요?" })).toBeTruthy();
+    expect(screen.getByText("오늘 기록으로 반성하고 다음 날로 넘겨요.")).toBeTruthy();
+    await userEvent.click(screen.getByRole("button", { name: "취소" }));
+    expect(calls).toEqual([]);
+    await userEvent.click(button());
+    await userEvent.click(within(screen.getByRole("dialog", { name: "하루를 마칠까요?" })).getByRole("button", { name: "하루 마치기" }));
+    expect(calls).toEqual(["2026-11-27"]);
+  });
+
+  it("네 상태: 반성 중(재생 중 포함)이면 단추가 꺼지고, 넘긴 뒤는 새 날짜, 실패면 날짜 그대로", () => {
+    let v = showDay({ ...day, closing: true });
+    expect(button().disabled).toBe(true);
+    expect(screen.getByText("11월 27일 (금) · 밤 반성 중")).toBeTruthy();
+    v.unmount();
+    v = showDay({ ...day, today: "2026-11-28", shift: 1 }, { reflecting: { ...day, closing: true } });
+    expect(button().disabled).toBe(true);
+    expect(screen.getByText("11월 27일 (금) · 밤 반성 중")).toBeTruthy();
+    v.unmount();
+    v = showDay({ ...day, today: "2026-11-28", shift: 1 });
+    expect(screen.getByText("11월 28일 (토) · 다음 날로 넘김")).toBeTruthy();
+    v.unmount();
+    showDay(day, { failed: true });
+    expect(screen.getByText("11월 27일 (금) · 하루를 마치지 못했어요")).toBeTruthy();
+    expect(button().disabled).toBe(false);
   });
 });

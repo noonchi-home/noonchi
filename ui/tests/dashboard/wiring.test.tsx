@@ -225,6 +225,52 @@ describe("대시보드 자료 연결", () => {
     expect(document.body.textContent).not.toContain("승인");
     expect(document.querySelector('[aria-label*="승인"]')).toBeNull();
   });
+
+  describe("하루 마치기", () => {
+    const DAY = { today: "2026-11-27", real_today: "2026-11-27", shift: 0, finish: true, closing: false };
+    /** /api/day/finish 응답을 시험이 정할 때까지 붙잡는다. */
+    function holdFinish() {
+      const base = vi.mocked(fetch).getMockImplementation()!;
+      let answer: (r: Response) => void = () => {};
+      const bodies: unknown[] = [];
+      vi.mocked(fetch).mockImplementation(async (path: string | URL | Request, init?: RequestInit) => {
+        if (path !== "/api/day/finish") return base(path, init);
+        bodies.push(JSON.parse(String(init?.body)));
+        return new Promise<Response>((ok) => { answer = ok; });
+      });
+      return { bodies, answer: (status: number) => act(async () => { answer(new Response(JSON.stringify({ ok: false, error: "막힘" }), { status })); await Promise.resolve(); }) };
+    }
+    async function finishFromSettings() {
+      fireEvent.keyDown(window, { key: "1", code: "Digit1", ctrlKey: true });
+      const dialog = await screen.findByRole("dialog", { name: "설정" });
+      fireEvent.click(within(dialog).getByRole("button", { name: "하루 마치기" }));
+      fireEvent.click(within(await screen.findByRole("dialog", { name: "하루를 마칠까요?" })).getByRole("button", { name: "하루 마치기" }));
+      await waitFor(() => expect(screen.queryByRole("dialog", { name: "설정" })).toBeNull());
+    }
+
+    it("확인하면 설정 창을 닫고 오늘 날짜로 부른다. 반성 전에 막히면(closing을 못 받은 409) 설정 창을 다시 열어 실패 줄을 보인다", async () => {
+      await mount(false);
+      send([{ type: "day", day: DAY }]);
+      const finish = holdFinish();
+      await finishFromSettings();
+      expect(finish.bodies).toEqual([{ day: "2026-11-27" }]);
+      await finish.answer(409);
+      const dialog = await screen.findByRole("dialog", { name: "설정" });
+      expect(within(dialog).getByText("11월 27일 (금) · 하루를 마치지 못했어요")).toBeInTheDocument();
+    });
+
+    it("반성이 시작된 뒤(closing을 받은 뒤) 실패하면 설정 창을 다시 열지 않는다", async () => {
+      await mount(false);
+      send([{ type: "day", day: DAY }]);
+      const finish = holdFinish();
+      await finishFromSettings();
+      send([{ type: "day", day: { ...DAY, closing: true } }]);
+      send([{ type: "day", day: DAY }]);
+      await finish.answer(502);
+      await act(async () => { await new Promise((ok) => setTimeout(ok, 20)); });
+      expect(screen.queryByRole("dialog", { name: "설정" })).toBeNull();
+    });
+  });
 });
 
 describe("가짜 단계(?debug=steps)", () => {
