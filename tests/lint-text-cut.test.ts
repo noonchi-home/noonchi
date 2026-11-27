@@ -12,7 +12,7 @@ const lone = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uD
 describe("글 자르기 검사", () => {
   it("지금 src·ui/src에는 글을 .slice(0, n)으로 자르는 곳이 없다(자르기는 shared/cut.ts headWithin 하나)", () => {
     expect(lintTextCut(ROOT)).toEqual([]);
-  });
+  }, 30_000); // src·ui/src 전체를 구문 분석해 이 PC에서는 main에서도 10초쯤 걸린다
 
   it("실제로 들어갔던 글 자르기 세 줄을 잡고 headWithin을 알려 준다", () => {
     const heard = `function heard(text: string) {\n  const said = text.replace(/[「」]/g, "").replace(/\\s+/g, " ").trim().slice(0, HEARD_MAX);\n}`;
