@@ -120,12 +120,13 @@ describe("넘긴 뒤", () => {
 
 const wait = () => new Promise((r) => setTimeout(r, 5));
 const OK: ReflectResult = { ok: true, version: 3, appliesDay: "2026-11-28", learned: [], active: [], dropped: [] };
-function runner(o: { busyAfter?: boolean; result?: ReflectResult } = {}) {
+function runner(o: { busyAfter?: boolean; result?: ReflectResult; midnight?: "reflect" | "skip" } = {}) {
   const calls: string[] = [];
   const logs: string[] = [];
   let busy = false;
+  let today = "2026-11-27";
   const r = finishDayRunner({
-    enabled: true, mode: () => "test", today: () => "2026-11-27", reflecting: () => false, busy: () => busy,
+    enabled: true, mode: () => "test", today: () => today, reflecting: () => false, busy: () => busy,
     hold: (on) => { calls.push(`hold ${on}`); },
     flush: async () => { await wait(); calls.push("flush"); },
     reflect: async (day) => {
@@ -133,9 +134,15 @@ function runner(o: { busyAfter?: boolean; result?: ReflectResult } = {}) {
       calls.push(`reflect ${day}`);
       r.onReflection({ type: "reflection", day, ok: true } as Ev);
       if (o.busyAfter) busy = true;
+      if (o.midnight === "reflect") today = addDays(day, 1);
       return o.result ?? OK;
     },
-    skip: async (day) => { await wait(); calls.push(`skip ${day}`); return { from: day, to: addDays(day, 1), version: 3 }; },
+    skip: async (day) => {
+      await wait();
+      if (o.midnight === "skip") { today = addDays(day, 1); throw new Error(`오늘은 ${today}이에요(받은 날 ${day})`); }
+      calls.push(`skip ${day}`);
+      return { from: day, to: addDays(day, 1), version: 3 };
+    },
     moved: (e) => { calls.push(`moved ${e?.day ?? "없음"}`); },
     speak: (e) => { calls.push(`speak ${e.day}`); },
     sendDay: () => { calls.push(`day ${r.closing() ?? "-"}`); },
@@ -165,6 +172,16 @@ describe("하루 마치기 차례", () => {
     const empty = runner({ result: { ok: false, error: REFLECT_TEXT.empty, empty: true } });
     await expect(empty.r.run("2026-11-27")).rejects.toMatchObject({ status: 409, message: DAY_TEXT.empty });
     expect([...failed.calls, ...empty.calls].some((c) => c.startsWith("skip"))).toBe(false);
+  });
+
+  it("반성하는 동안 달력 자정이 지나 날이 이미 바뀌었으면 넘기지 않고 뒷정리(새로 읽기·말풍선)를 한 뒤 바뀐 날로 끝낸다", async () => {
+    for (const midnight of ["reflect", "skip"] as const) {
+      const { r, calls } = runner({ midnight });
+      expect(await r.run("2026-11-27"), midnight).toEqual({ ok: true, from: "2026-11-27", to: "2026-11-28", version: 3, applies_day: "2026-11-28" });
+      expect(calls.filter((c) => c.startsWith("skip")), midnight).toEqual([]);
+      expect(calls, midnight).toContain("moved 2026-11-27");
+      expect(calls.slice(-2), midnight).toEqual(["hold false", "day -"]);
+    }
   });
 
   it("하루 마치기 밖의 반성 사건은 바로 말한다", () => {

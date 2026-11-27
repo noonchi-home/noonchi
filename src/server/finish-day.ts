@@ -107,9 +107,23 @@ export function finishDayRunner(d: FinishDeps): FinishRunner {
           d.log(DAY_TEXT.failedLog(day, r.error));
           throw new HttpError(r.empty ? 409 : 502, r.empty ? DAY_TEXT.empty : DAY_TEXT.failed);
         }
+        // 반성하는 동안 달력 자정이 지나 날이 이미 바뀌었으면 넘기지 않는다: 반성이 저장한 판본은 새 날부터 쓰이니 뒷정리만 하고 바뀐 날로 끝낸다
+        const rolled = () => {
+          d.moved(last?.day === day ? last : null);
+          d.log(DAY_TEXT.moved(day, d.today()));
+          return { ok: true as const, from: day, to: d.today(), version: r.version, applies_day: r.appliesDay };
+        };
+        if (d.today() !== day) return rolled();
         // 반성하는 동안 생긴 일(멈추기 전에 나간 판단의 계획 등)이 있으면 넘기지 않는다. 반성은 저장돼 다시 누르면 그 결과로 넘긴다
         if (d.busy()) throw new HttpError(409, DAY_TEXT.busy);
-        const moved = await d.skip(day);
+        let moved: { from: string; to: string; version: number };
+        try {
+          moved = await d.skip(day);
+        } catch (e) {
+          // 확인과 넘김 사이에 자정이 지나면 넘김이 「오늘이 아님」으로 던진다: 같은 길로 보낸다
+          if (d.today() !== day) return rolled();
+          throw e;
+        }
         d.moved(last?.day === day ? last : null);
         d.log(DAY_TEXT.moved(moved.from, moved.to));
         return { ok: true, from: moved.from, to: moved.to, version: moved.version, applies_day: r.appliesDay };
