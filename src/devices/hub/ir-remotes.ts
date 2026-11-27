@@ -1,5 +1,5 @@
 // 집마다 등록한 리모컨(<RUNTIME_DIR>/homes/<집>/remotes.json)과 신호 같음 판정.
-import { randomUUID } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { z } from "zod";
@@ -82,7 +82,7 @@ export function pressMatches(signal: IrSignal, p: BridgePress): boolean {
 }
 
 export const codeOf = (buttonId: string) => "BTN:" + buttonId;
-export const newId = (prefix: "r" | "b") => `${prefix}_${randomUUID().replace(/-/g, "").slice(0, 8)}`;
+export const newId = (prefix: "r" | "b") => `${prefix}_${randomBytes(4).toString("hex")}`;
 
 /** 트윈 TV에 달린 첫 리모컨의 전원 뜻 단추 → IrTv 설정. 확인 시간은 IR_DEFAULTS(켜기 8초·끄기 4초). */
 export function tvConfigOf(file: RemotesFile, devices: readonly { id: string; kind: string }[]): IrConfig | null {
