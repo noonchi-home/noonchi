@@ -11,6 +11,12 @@ import { publicReflection } from "../src/brain/history/reflection-wire.js";
 import type { BrainLog } from "../src/contract/events.js";
 import { busyNow, dayBroadcast, DAY_CHECK_MS, finishBlock, finishDayRunner, homeBusy, homeDayMoved, reflectBlocked } from "../src/server/finish-day.js";
 import { VirtualClock } from "../src/bus/index.js";
+import { readFileSync } from "node:fs";
+import { helpRecord } from "../src/act/help-record.js";
+import { WATER_ACTION } from "../src/act/tasks.js";
+import type { PlanView } from "../src/contract/plan.js";
+import type { WorldView } from "../src/contract/world.js";
+import { keepGoalWatchers } from "../src/server/home/observe.js";
 import { fetchRetry } from "../src/shared/net.js";
 import { startServer, type RunningServer } from "../src/server/start.js";
 import { pamLlmEnv, startFakePamLlm, type FakePamLlm, type FakePamLlmOptions } from "./helpers/pam.js";
@@ -104,6 +110,19 @@ describe("날짜 바뀜 알림", () => {
     expect(sent).toEqual(["2026-11-28"]);
     days.send();
     expect(sent).toEqual(["2026-11-28", "2026-11-28"]);
+  });
+});
+
+describe("목표 노드 감시를 집 묶음에 잇기", () => {
+  it("습관 방문·사용자 찾기 감시를 집 묶음에 두어 진행 중인 일로 본다", () => {
+    const core = { plans: { current: () => null }, goal: null, checkingVisit: null, decider: null } as Parameters<typeof keepGoalWatchers>[0] & Parameters<typeof homeBusy>[0];
+    let waiting = false, busy = false;
+    keepGoalWatchers(core, { mirror: {}, tv: {}, rooms: { isBusy: () => busy }, habits: { waiting: () => waiting } } as never);
+    expect(homeBusy(core)).toBe(false);
+    waiting = true;
+    expect(homeBusy(core)).toBe(true);
+    waiting = false; busy = true;
+    expect(homeBusy(core)).toBe(true);
   });
 });
 
@@ -272,6 +291,45 @@ describe("하루 마치기 API", { timeout: 20_000 }, () => {
       await until(() => box.filter((m) => m.type === "day").length >= 2);
       expect(box.filter((m) => m.type === "day").map((m) => m.day.today)).toEqual(["2026-11-27", "2026-11-28"]);
       expect((await call("/api/day")).json.today).toBe("2026-11-28");
+    } finally {
+      dash.close();
+    }
+  });
+
+  it("실행 중인 계획이 있으면 넘기지 않고 409(진행 중인 일)이다", async () => {
+    const s = await start({ FINISH_DAY: "1" });
+    await s.historyWriter.add("detection", Date.now(), "사람 보임");
+    await s.historyWriter.flush();
+    const md = readFileSync(new URL("../docs/plan-contract.md", import.meta.url), "utf8");
+    const plan = { ...(JSON.parse(/```json\r?\n([\s\S]*?)```/.exec(md)![1]!).plan as PlanView), status: "running" as const };
+    expect((await call("/api/plan", { plan })).status).toBe(200);
+    const today = (await call("/api/day")).json.today;
+    const r = await call("/api/day/finish", { day: today });
+    expect(r).toMatchObject({ status: 409, json: { error: DAY_TEXT.busy } });
+    expect((await call("/api/day")).json.shift).toBe(0);
+  });
+
+  it("넘긴 뒤 넘기기 전 반성이 쓰게 된 습관을 말풍선 글로 말한다(하루 마치기 중에는 말하지 않는다)", async () => {
+    const s = await start({ FINISH_DAY: "1" });
+    // 지난 사흘 저녁 책상 물 한 잔 도움 기록: 반성이 도움 습관 화살표를 든 판본을 만든다
+    const now = Date.now();
+    const kst = (ms: number) => new Date(ms + 540 * 60_000).toISOString().slice(0, 10);
+    for (const [i, hm] of (["20:00", "19:58", "20:04"] as const).entries()) {
+      const day = kst(now - (3 - i) * 86_400_000);
+      const asked = Date.parse(`${day}T${hm}:00+09:00`), at = asked + 120_000;
+      const world = { person: { room: "bed_sw", facts: { activity: { value: "using_laptop", at_ms: at, since_ms: at, certainty: "confirmed" } } } } as unknown as WorldView;
+      const record = helpRecord({ atMs: at, askedMs: asked, offsetMinutes: 540, action: WATER_ACTION, via: "call", place: "desk_small_ce7e768b", placeLabel: "책상", world });
+      await s.historyWriter.add("help", at, record.text, { subject: WATER_ACTION, data: record });
+    }
+    await s.historyWriter.add("detection", now, "사람 보임");
+    await s.historyWriter.flush();
+    const box: Msg[] = [];
+    const dash = await listen(s, box);
+    try {
+      const r = await call("/api/day/finish", { day: (await call("/api/day")).json.today });
+      expect(r.status).toBe(200);
+      await until(() => box.some((m) => m.type === "say" && /습관/.test(m.text ?? "")));
+      expect(box.find((m) => m.type === "say" && /습관/.test(m.text ?? ""))?.text).toMatch(/^배운 습관 \d+개를 쓰고 있어요\.$|^어제 기록으로 새 습관 \d+개를 배웠어요\.$/);
     } finally {
       dash.close();
     }

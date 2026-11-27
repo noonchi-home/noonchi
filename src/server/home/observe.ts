@@ -7,7 +7,7 @@ import { applyPhoneProgress, showPhoneCommand, syncPhoneClaims } from "./phone.j
 // 주기 타이머(관찰·판단·실행 추적·보기 담당·말풍선 카드). 관찰 흐름은 BRAIN=1이고 PHONE_PORT가 있을 때만 켠다(폰 카메라가 입력).
 import { join } from "node:path";
 import type { HelpRoutine } from "../../brain/index.js";
-import { GoalTriggers, startGoalNode } from "../../goal/index.js";
+import { GoalTriggers, startGoalNode, type GoalNode } from "../../goal/index.js";
 import { managerRoutes } from "../../manage/index.js";
 import { BrainPlans, planningRoutes } from "../../brain/index.js";
 import { BusNode, Outbox } from "../../bus/index.js";
@@ -163,10 +163,7 @@ export async function startNodes(core: HomeCore, emit: (event: BrainLog) => void
       node.on("/goal/update", (b, ctx) => afterRev(b.rev, ctx, () => { if (!core.closed) core.tracker?.updateGoal(); }));
     },
   });
-  core.goalMirror = goal.mirror;
-  core.tvWatch = goal.tv;
-  core.roomWatch = goal.rooms;
-  core.habitWatch = goal.habits;
+  keepGoalWatchers(core, goal);
   core.mirror = await startWorldMirror({
     bus, epoch, name: "act", clock, log,
     routes: (node, afterRev) => {
@@ -246,7 +243,7 @@ export async function startNodes(core: HomeCore, emit: (event: BrainLog) => void
   const deviceOut = core.out.devices!;
   await phone.prepare();
   await devices.prepare();
-  for (const n of [core.worldNode.node, core.perception.node, core.mirror.node, core.brainMirror.node, core.goalMirror.node, manager, phone, devices, recorder]) n.start();
+  for (const n of [core.worldNode.node, core.perception.node, core.mirror.node, core.brainMirror.node, goal.mirror.node, manager, phone, devices, recorder]) n.start();
   const send = (s: Parameters<Parameters<typeof signals.subscribe>[0]>[0], initial: boolean) => {
     const spec = specOf.get(s.id);
     const power=signals.powerStamp(s.id);
@@ -300,6 +297,14 @@ export async function stopNodes(core: HomeCore): Promise<void> {
   await core.localizer?.close();
   await drainNodes(core, 3 * DRAIN_MS);
   for (const n of [core.perception?.node, core.worldNode?.node, core.brainMirror?.node, core.goalMirror?.node, core.managerNode, core.mirror?.node, core.phoneNode, core.devicesNode, core.machineRecorder]) await n?.stop();
+}
+
+/** 목표 노드의 거울·감시(TV 규칙·사용자 찾기·습관 방문)를 집 묶음에 둔다: 집 사진 요청과 하루 마치기의 진행 중인 일(src/server/finish-day.ts homeBusy)이 읽는다. */
+export function keepGoalWatchers(core: Pick<HomeCore, "goalMirror" | "tvWatch" | "roomWatch" | "habitWatch">, goal: Pick<GoalNode, "mirror" | "tv" | "rooms" | "habits">): void {
+  core.goalMirror = goal.mirror;
+  core.tvWatch = goal.tv;
+  core.roomWatch = goal.rooms;
+  core.habitWatch = goal.habits;
 }
 
 /** 관찰 흐름(src/observe/pipeline.ts)을 연다: 판단·실행 기록은 emit으로, 물체 모양·World State는 대시보드로, 변화는 실행 추적·판단 호출로. 실행 추적을 만든 뒤 부른다. */
