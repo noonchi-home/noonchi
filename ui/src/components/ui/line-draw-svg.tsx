@@ -5,6 +5,7 @@
 // 데이터 연결: viewBox 0 0 100 100 → 0 0 width height(path가 구운 보기 그림 픽셀이다).
 // 토큰 색: stroke currentColor·text-violet-500 → tone 토큰 색(트윈 표시 토큰 twin.*, 메시지 상자 꼬리 viz.talkTail)과 그 진하기, fill none → 방 어둡게(dimRoom)·상자 꼬리(talkTail)만 토큰 색 칠함(토큰 색 고침으로 사용자 허용 2026-11-09).
 // 모서리: 선 끝·꺾임을 둥글게(strokeLinecap·strokeLinejoin round).
+// 점선: dashed 칸을 더했다(밤 반성 「FSM 바뀜」 칸 후보 화살표, 움직임 없음).
 // 원래 글 크기: 없음. 받은 코드에 글 크기가 없다. 글 크기를 넣으면 npm run lint(scripts/lint-ui-type.ts)가 막는다.
 import { paint, TALK_TAIL, TWIN, type Paint } from "@/lib/tokens";
 import { cn } from "@/lib/utils";
@@ -38,6 +39,8 @@ interface LineDrawSvgProps {
   width?: number;
   height?: number;
   strokeWidth?: number;
+  /** 점선. 칠하는 tone(dimRoom·talkTail)이면 무시한다. */
+  dashed?: boolean;
 }
 
 export function LineDrawSvg({
@@ -47,6 +50,7 @@ export function LineDrawSvg({
   width = 120,
   height = 120,
   strokeWidth = 2,
+  dashed = false,
 }: LineDrawSvgProps) {
   const p = TONES[tone];
   const fill = tone === "dimRoom" || tone === "talkTail";
@@ -65,6 +69,7 @@ export function LineDrawSvg({
         stroke={fill ? "none" : p.color}
         strokeOpacity={fill ? undefined : p.opacity}
         strokeWidth={strokeWidth}
+        strokeDasharray={dashed && !fill ? `${strokeWidth * 3} ${strokeWidth * 2.5}` : undefined}
         strokeLinecap="round"
         strokeLinejoin="round"
       />
