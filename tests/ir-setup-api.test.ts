@@ -142,6 +142,22 @@ it("실제 모드로 띄운 집에서 포트를 나중에 고르면 TV 명령이
   expect(board.written).toContain("NEC 0x4 0xC5 0");
 }, 30_000);
 
+it("실제 모드에서 TV 켜기 확인을 기다리는 동안 다른 가전 리모컨을 저장해도 그 TV 명령과 전원 기록이 그대로다", async () => {
+  const dir = runtime(), board = fakeBoard();
+  saveTvRemote(dir, { name: "COM7", pnp: PNP });
+  writeFileSync(join(dir, "setup.json"), JSON.stringify({ version: 1, done: true, home: HOME, mode: "live" }));
+  await start(dir, board, async () => usb("COM7"), { persist: true });
+  await until(async () => srv!.signals.get("tv_1")?.online, (online) => online === true);
+  let result: unknown;
+  void srv!.signals.command("tv_1", { type: "on" }, "cmd-tv").then((r) => { result = r; });
+  await until(async () => board.written, (w) => w.includes("NEC 0x4 0xC4 0"));
+  const stamp = srv!.signals.powerStamp("tv_1");
+  expect((await post("/api/setup/ir/remote", { home: HOME, label: "에어컨 리모컨", device: "ac_1" })).status).toBe(200);
+  await new Promise((r) => setTimeout(r, 200));
+  expect(result).toBeUndefined();
+  expect(srv!.signals.powerStamp("tv_1")).toEqual(stamp);
+}, 30_000);
+
 it("IR_FAKE=1이면 포트 목록에 가상 적외선 장치가 있고, 고르면 연결된다", async () => {
   const dir = runtime();
   await start(dir, fakeBoard(), async () => [], { env: { IR_FAKE: "1" } });

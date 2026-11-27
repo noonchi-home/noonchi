@@ -351,11 +351,14 @@ export class IrSetup {
     return this.view();
   }
 
-  /** 트윈 TV 리모컨의 전원 뜻 단추 → IrTv 설정. 연결과 상관없이 파일로 만들고, 같은 판·같은 연결이면 같은 객체(SignalHub.setInfrared가 IrTv를 다시 만들지 않는다). */
+  /** 트윈 TV 리모컨의 전원 뜻 단추 → IrTv 설정. 연결과 상관없이 파일로 만든다.
+   *  같은 연결에서 내용이 같으면 앞 객체를 그대로 준다(SignalHub.setInfrared가 IrTv를 다시 만들지 않는다): TV와 상관없는 저장이
+   *  확인을 기다리던 TV 명령을 끊지 않게. 보드를 다시 열면(link) 새 객체라 IrTv도 새로 연다. */
   tvConfig(): IrConfig | null {
     const c = this.tvCache;
     if (c && c.version === this.version && c.link === this.link) return c.config;
-    const config = this.home ? tvConfigOf({ ...this.file, remotes: this.visible() }, this.home.devices) : null;
+    const made = this.home ? tvConfigOf({ ...this.file, remotes: this.visible() }, this.home.devices) : null;
+    const config = c && c.link === this.link && JSON.stringify(c.config) === JSON.stringify(made) ? c.config : made;
     this.tvCache = { version: this.version, link: this.link, config };
     return config;
   }
