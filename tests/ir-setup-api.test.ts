@@ -168,8 +168,11 @@ it("사람이 등록한 단추를 누르면 대시보드에 리모컨 누름 줄
     await until(async () => named("리모컨 누름"), (r) => r.length > 0);
     expect(named("리모컨 누름")).toEqual([expect.objectContaining({ kind: "OBSERVATION", input: kindEntry("tv")!.label, output: "단추 누름 확인", refs: expect.objectContaining({ object_id: "tv_1" }) })]);
     expect(named("리모컨 신호")).toEqual([]);
+    await post("/api/setup/ir/learn", { home: HOME, remote, label: "음량 올림", role: null });
+    await pressTwice(board, 2);
+    await until(view, (v) => v.learning?.state === "saved");
     expect((await post("/api/setup/mode", { mode: "live", confirm: true })).status).toBe(200);
-    expect(await srv!.signals.press("tv_1", "켜기")).toEqual({ ok: true, sent: true });
+    expect(await srv!.signals.press("tv_1", "음량 올림")).toEqual({ ok: true, sent: true });
     await until(async () => named("리모컨 신호"), (r) => r.length > 0);
     expect(named("리모컨 신호")).toEqual([expect.objectContaining({ kind: "TOOL", input: kindEntry("tv")!.label, output: "신호 보냄", refs: expect.objectContaining({ object_id: "tv_1" }) })]);
   } finally {

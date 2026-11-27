@@ -42,6 +42,7 @@ const STOPPED: CommandResult = { ok: false, error: "집을 바꾸는 중이라 �
 const NO_LINK: Record<RealKind, string> = { thinq: "ThinQ 연결이 없어 보내지 않았어요.", relay: "TV 중계 연결이 없어 보내지 않았어요." };
 const NO_REMOTE = "이 가전에 등록한 리모컨이 없어요.";
 const REMOTE_FAILED = "리모컨 신호를 보내지 못했어요.";
+const POWER_BUTTON = "켜기·끄기는 turn_on·turn_off로 해요.";
 
 const sourceKey = (s: SignalSource | undefined) => (!s ? "virtual" : isReal(s) ? `${s.kind}:${s.deviceId}` : s.kind);
 const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
@@ -84,19 +85,22 @@ export class SignalHub implements DeviceHub {
     return this.remotes?.rt.list().find((r) => r.device === id);
   }
 
-  /** 그 가전의 리모컨 이름과 단추 이름들. 없으면 undefined. */
+  /** 그 가전의 리모컨 이름과 press_remote로 누를 수 있는 단추(전원 뜻 role이 없는 것) 이름들. 그런 단추가 없으면 undefined. */
   remoteOf(id: string): { label: string; buttons: string[] } | undefined {
     const r = this.remoteBrief(id);
-    return r && { label: r.label, buttons: r.buttons.map((b) => b.label) };
+    const buttons = r?.buttons.filter((b) => b.role === null).map((b) => b.label) ?? [];
+    return r && buttons.length ? { label: r.label, buttons } : undefined;
   }
 
-  /** 리모컨 단추 하나를 누른다(단추는 id → 이름 → 띄어쓰기 없는 이름 차례로 찾음). 시험 모드면 쏘지 않고 sent: false. */
+  /** 리모컨 단추 하나를 누른다(단추는 id → 이름 → 띄어쓰기 없는 이름 차례로 찾음). 시험 모드면 쏘지 않고 sent: false.
+   *  전원 뜻 단추(켜기·끄기·전원)는 쏘지 않는다: turn_on·turn_off로만 보내야 IrTv·트윈 전원이 실제와 맞는다(contract/ir.ts RemoteRole). */
   async press(id: string, button: string, commandId?: string): Promise<PressResult> {
     if (this.stopped) return { ok: false, error: STOPPED.error! };
     const r = this.remoteBrief(id);
     if (!r) return { ok: false, error: NO_REMOTE };
     const b = r.buttons.find((x) => x.id === button) ?? r.buttons.find((x) => x.label === button) ?? r.buttons.find((x) => compact(x.label) === compact(button));
-    if (!b) return { ok: false, error: `리모컨에 「${button}」 단추가 없어요. 있는 단추: ${r.buttons.map((x) => x.label).join(", ")}` };
+    if (b?.role) return { ok: false, error: POWER_BUTTON };
+    if (!b) return { ok: false, error: `리모컨에 「${button}」 단추가 없어요. 있는 단추: ${this.remoteOf(id)?.buttons.join(", ") ?? "없음"}` };
     if (!this.remotes!.live) return { ok: true, sent: false };
     return (await this.sendRemote(r, b, commandId)) ? { ok: true, sent: true } : { ok: false, error: REMOTE_FAILED };
   }

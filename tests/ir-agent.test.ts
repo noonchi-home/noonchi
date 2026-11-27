@@ -57,8 +57,23 @@ it("실제 모드에서만 단추 신호를 쏘고, 시험 모드는 쏘지 않�
   expect(await live.hub.press("tv_1", "음량 올림", "cmd-1")).toEqual({ ok: true, sent: true });
   expect(live.sent).toEqual(["tv_1/b_00000002"]);
   expect(live.events).toEqual([expect.objectContaining({ kind: "sent", device: "tv_1", button: "b_00000002", command_id: "cmd-1" })]);
-  expect(await live.hub.press("tv_1", "채널 올림")).toEqual({ ok: false, error: "리모컨에 「채널 올림」 단추가 없어요. 있는 단추: 전원, 음량 올림" });
+  expect(await live.hub.press("tv_1", "채널 올림")).toEqual({ ok: false, error: "리모컨에 「채널 올림」 단추가 없어요. 있는 단추: 음량 올림" });
   expect(await live.hub.press("ac_9", "x")).toEqual({ ok: false, error: "이 가전에 등록한 리모컨이 없어요." });
+});
+
+it("전원 뜻 단추(켜기·끄기·전원)는 press_remote로 쏘지 않고 turn_on·turn_off를 쓰라고 답하며, 단추 목록에서 빠지고 그 단추만 있는 가전은 리모컨이 없다", async () => {
+  const live = setup(true);
+  const power = { ok: false, error: "켜기·끄기는 turn_on·turn_off로 해요." };
+  expect(await live.hub.press("tv_1", "전원")).toEqual(power);
+  expect(await live.hub.press("tv_1", "b_00000008")).toEqual(power);
+  expect(await live.hub.press("ac_1", "냉방 켜기")).toEqual(power);
+  expect(await runTool("press_remote", { device_id: "tv_1", button: "전원" }, localBackend(live.hub, new Policy()), AGENT_TOOLS))
+    .toMatchObject({ ok: false, error: "켜기·끄기는 turn_on·turn_off로 해요." });
+  expect(live.sent).toEqual([]);
+  expect(live.events).toEqual([]);
+  expect(live.hub.remoteOf("tv_1")).toEqual({ label: "거실 TV 리모컨", buttons: ["음량 올림"] });
+  expect(live.hub.remoteOf("ac_1")).toBeUndefined();
+  expect(deviceViews(live.hub).find((d) => d.id === "ac_1")?.remote).toBeUndefined();
 });
 
 it("TV가 아닌 가전은 실제 모드에서 켜기 뜻 단추로 켜고, 트윈도 따라 켜지고, 확인 못 함으로 답한다", async () => {
@@ -86,9 +101,9 @@ it("사람이 누른 등록 단추를 알린다", () => {
 it("에이전트 도구와 기기 목록에 단추가 보이고, 계획 단계는 끝난 계획이면 쏘지 않는다", async () => {
   const live = setup(true);
   const policy = new Policy();
-  expect(deviceViews(live.hub).find((d) => d.id === "tv_1")?.remote).toEqual({ label: "거실 TV 리모컨", buttons: ["전원", "음량 올림"] });
+  expect(deviceViews(live.hub).find((d) => d.id === "tv_1")?.remote).toEqual({ label: "거실 TV 리모컨", buttons: ["음량 올림"] });
   const listed = await runTool("list_devices", {}, localBackend(live.hub, policy), AGENT_TOOLS);
-  expect((listed.data as { id: string; remote_buttons?: string[] }[]).find((d) => d.id === "tv_1")?.remote_buttons).toEqual(["전원", "음량 올림"]);
+  expect((listed.data as { id: string; remote_buttons?: string[] }[]).find((d) => d.id === "tv_1")?.remote_buttons).toEqual(["음량 올림"]);
   const r = await runTool("press_remote", { device_id: "tv_1", button: "음량 올림" }, localBackend(live.hub, policy), AGENT_TOOLS);
   expect(r).toMatchObject({ ok: true, unverified: true });
   const runner = deviceRunner(live.hub, policy);
@@ -126,9 +141,9 @@ it("리모컨 단추 줄은 이 집 가전에 리모컨이 있을 때만, press_
   const remoteInput = planInput(planContext({ decision: spoken, world, floor: smallFloor(), hub: setup(true).hub }));
   expect(remoteInput).toContain("press_remote는 args");
   expect(remoteInput).toContain("[들은 말] TV 소리 키워 줘");
-  expect(remoteInput).toContain("리모컨 단추 전원, 음량 올림");
+  expect(remoteInput).toContain("리모컨 단추 음량 올림");
   const acInput = planInput(planContext({ decision, world, floor: smallFloor(), hub: setup(true).hub }));
-  expect(acInput).toContain("리모컨 단추 전원, 음량 올림");
+  expect(acInput).toContain("리모컨 단추 음량 올림");
   expect(acInput).not.toContain("press_remote");
   expect(acInput).not.toContain("[들은 말]");
   const plain = new SignalHub(new MemoryHub([tv, ac]));
@@ -251,7 +266,7 @@ it("「TV 소리 키워 줘」 말 부탁은 리모컨 단추 누르기 계획�
   expect(live.sent).toEqual(["tv_1/b_00000002"]);
   expect(r.bodies).toHaveLength(2);
   expect(r.bodies[0]).toContain("[들은 말] TV 소리 키워 줘");
-  expect(r.bodies[1]).toContain("리모컨에 「채널 올림」 단추가 없습니다. 있는 단추: 전원, 음량 올림");
+  expect(r.bodies[1]).toContain("리모컨에 「채널 올림」 단추가 없습니다. 있는 단추: 음량 올림");
   expect(r.tools[0]).toContain("press_remote");
   // 판단 기록의 행동 번호는 그 판단의 목록(행동 목록 뒤에 붙인 말 부탁 할 일)을 가리킨다
   const said = r.spoken[0]!;
