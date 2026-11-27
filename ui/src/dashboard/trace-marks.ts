@@ -22,13 +22,16 @@ export interface TraceMark {
   /** 「줄 이름 · 결과」, 가전 말풍선이면 결과만. */
   text: string;
   state: TraceState;
+  /** 정한 색(밤 반성 표시, reflection.ts). 있으면 markTone이 먼저 쓴다. */
+  tone?: MarkTone;
 }
 
 /** 트레이스 표시 색(21st.dev Status variant). 트윈 이름표·가전 말풍선 칩과 트레이스 칸의 「트윈에 그림」 점이 같은 색을 쓴다. */
 export type MarkTone = "brand" | "default" | "success" | "error" | "warning";
 
 /** 실행 보류는 warning, 진행 중 brand, 실패 error, 가전 줄이 끝나면 success, 그 밖에 끝·취소는 기본. */
-export function markTone(m: Pick<TraceMark, "kind" | "state">): MarkTone {
+export function markTone(m: Pick<TraceMark, "kind" | "state" | "tone">): MarkTone {
+  if (m.tone) return m.tone;
   if (m.kind === "guard") return "warning";
   if (m.state === "pending") return "brand";
   if (m.state === "failed") return "error";

@@ -6,7 +6,7 @@ import type { TraceEvent, TraceOutput, TraceRefs, TraceRow } from "../../../src/
 import type { WorldObject, WorldView } from "../../../src/contract/world.ts";
 import { TraceJournal } from "../../../src/record/trace.ts";
 import type { Vec3 } from "../../src/dashboard/plan-marks";
-import { traceMarks } from "../../src/dashboard/trace-marks";
+import { markTone, traceMarks } from "../../src/dashboard/trace-marks";
 
 const STEPS: PlanStep[] = [
   { id: "s1", kind: "move", label: "식탁으로 가기", target: { objectId: "table" }, status: "done" },
@@ -139,5 +139,12 @@ describe("트레이스 줄 → 트윈 표시(traceMarks)", () => {
     const t = journal();
     t.event("goal", { goal_id: "g1", object_id: "cup_1" }, "goal_ready");
     expect(marks(t.rows())).toEqual([expect.objectContaining({ kind: "goal", at: [4.4, 0.78, 0.3], text: "목표 준비 · 미리 만든 계획 준비됨" })]);
+  });
+});
+
+describe("표시 색(markTone)", () => {
+  it("정한 색(밤 반성 표시)이 있으면 그 색을 먼저 쓴다", () => {
+    expect(markTone({ kind: "spot", state: "done", tone: "success" })).toBe("success");
+    expect(markTone({ kind: "spot", state: "done" })).toBe("default");
   });
 });
