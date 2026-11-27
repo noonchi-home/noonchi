@@ -19,7 +19,10 @@ import { TraceTable } from "./TraceTable";
 import type { MarkTone } from "./trace-marks";
 import { TwinPane } from "./TwinPane";
 import { WORDS } from "./words";
-import { bentoLayout, sceneLayout } from "./bento-layout";
+import { bentoLayout, reflectionLayout, sceneLayout } from "./bento-layout";
+import { FsmPane } from "./FsmPane";
+import type { FsmPaneState } from "./reflection";
+import { RW } from "./reflection-words";
 
 /** 대시보드 화면이 받는 것. 화면은 이것만 보고 배치·모양을 정한다. 입력창은 없다. */
 export interface ScreenProps {
@@ -63,12 +66,14 @@ export interface ScreenProps {
   finishFailed?: boolean;
   /** 늘면 설정 창을 다시 연다(하루 마치기가 반성 전에 막혔을 때). */
   finishReopen?: number;
+  /** 밤 반성 보기: 있으면 트윈이 왼쪽 열 전체(Vision 숨김)이고 오른쪽 칸은 「FSM 바뀜」이다. */
+  reflection?: { pane: FsmPaneState } | null;
 }
 
 const NO_TRACE: readonly TraceRow[] = [];
 
-function ScenePanel({ name, box, children }: { name: string; box: Rect; children: ReactNode }) {
-  return <fieldset data-scene-panel style={{ left: box.left, top: box.top, width: box.width, height: box.height }}>
+function ScenePanel({ name, box, children, hidden = false }: { name: string; box: Rect; children: ReactNode; hidden?: boolean }) {
+  return <fieldset data-scene-panel hidden={hidden} style={{ left: box.left, top: box.top, width: box.width, height: box.height }}>
     <legend data-scene-legend>{name}</legend>
     {children}
   </fieldset>;
@@ -99,7 +104,7 @@ function useSettings(initial: boolean): [boolean, (open: boolean) => void] {
  * 설정 창은 Ctrl+1로만 연다(기본 라이브 보기에는 설정 단추가 없다).
  */
 export function DashboardScreen({ index, plan, step, robotKnown, connected, map, mapReady, narration, trace, onTwin, command, onPhoneDelay, phone, seen, statusRows, hub, settingsOpen, onReady, tzMinutes = null,
-  day = null, reflecting = null, onFinishDay, finishFailed = false, finishReopen = 0 }: ScreenProps) {
+  day = null, reflecting = null, onFinishDay, finishFailed = false, finishReopen = 0, reflection = null }: ScreenProps) {
   const main = useRef<HTMLElement>(null);
   const tiled = narration !== undefined;
   const view = useBoxSize(main, !tiled);
@@ -107,7 +112,9 @@ export function DashboardScreen({ index, plan, step, robotKnown, connected, map,
   const [feedAspect, setFeedAspect] = useState(() => nextAspect(0, phone.kind === "image" ? phone : null));
   const onVideoSize = useCallback((size: BoxSize | null) => setFeedAspect(nextAspect(0, size)), []);
   const traceHeight = trace === undefined ? 0 : 192;
-  const scene = useMemo(() => (tiled ? null : sceneLayout(view, MASCOT)), [view, tiled]);
+  // 밤 반성 보기는 들어갈 때·나올 때만 배치가 바뀐다(단계마다 바뀌지 않는다)
+  const inReflection = !!reflection;
+  const scene = useMemo(() => (tiled ? null : inReflection ? reflectionLayout(view, MASCOT) : sceneLayout(view, MASCOT)), [view, tiled, inReflection]);
   const L = useMemo(() => scene ?? bentoLayout(view, MASCOT, feedAspect, traceHeight), [scene, view, feedAspect, traceHeight]);
   const [settings, setSettings] = useSettings(!!settingsOpen);
   // 하루 마치기가 반성 전에 막히면(409) 설정 창을 다시 열어 까닭 줄을 보인다
@@ -132,14 +139,14 @@ export function DashboardScreen({ index, plan, step, robotKnown, connected, map,
     const phoneBox = { left: 0, top: 0, width: Math.max(0, scene.video.width - 2), height: Math.max(0, scene.video.height - 2) };
     return (
       <main ref={main} data-bento data-step={index} data-ready={ready || undefined} className="relative h-full w-full overflow-x-hidden overflow-y-auto">
-        <ScenePanel name="Vision" box={scene.video}>
+        <ScenePanel name="Vision" box={scene.video} hidden={inReflection}>
           <PhonePane slot={phone} seen={seen} box={phoneBox} connected={connected} command={command ?? null} onDelay={onPhoneDelay} onVideoSize={onVideoSize} />
         </ScenePanel>
         <ScenePanel name="Digital Twin" box={scene.twin}>
           {twin}
         </ScenePanel>
-        <ScenePanel name="Agent Trace" box={scene.trace}>
-          <TraceTable rows={trace ?? NO_TRACE} onTwin={onTwin} />
+        <ScenePanel name={reflection ? RW.pane : "Agent Trace"} box={scene.trace}>
+          {reflection ? <FsmPane pane={reflection.pane} /> : <TraceTable rows={trace ?? NO_TRACE} onTwin={onTwin} />}
         </ScenePanel>
         <Dialog open={settings} onOpenChange={setSettings}>
           <SettingsDialog hub={hub} day={day} reflecting={reflecting} failed={finishFailed} onFinish={finish} />

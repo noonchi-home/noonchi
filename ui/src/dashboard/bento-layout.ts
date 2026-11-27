@@ -32,6 +32,17 @@ export function sceneLayout(view: BoxSize, mascot: MascotImage): PageLayout & { 
   return { ...base, pad, gap, video, twin, trace, focus, camPad, blocked: [], chipsRight: 12 };
 }
 
+/** 밤 반성 보기(2026-11-27 시안 안 B): 트윈이 왼쪽 열 전체(Vision 칸은 숨김), 오른쪽 칸 자리는 라이브 보기 그대로. 들어갈 때·나올 때만 바뀐다.
+ *  좁은 화면(세로로 쌓는 배치)은 라이브 배치 그대로다. */
+export function reflectionLayout(view: BoxSize, mascot: MascotImage): PageLayout & { trace: Rect } {
+  const live = sceneLayout(view, mascot);
+  if (view.width - 2 * SCENE.pad < SCENE.stackBelow) return live;
+  const twin: Rect = { left: live.video.left, top: live.video.top, width: live.video.width, height: Math.max(0, view.height - 2 * live.pad) };
+  const { camPad } = live;
+  const focus = { left: twin.left + camPad.left, top: twin.top + camPad.top,
+    width: Math.max(0, twin.width - camPad.left - camPad.right), height: Math.max(0, twin.height - camPad.top - camPad.bottom) };
+  return { ...live, twin, focus };
+}
 
 /** 나란히 놓을 때는 원본 폰 영상의 보이는 높이를 두 화면이 공유한다. */
 export function bentoLayout(view: BoxSize, mascot: MascotImage, aspect: number, traceHeight = 0): PageLayout & { trace: Rect | null } {

@@ -365,3 +365,19 @@ describe("대시보드 하루 마치기", () => {
     expect(within(dialog).getByText("11월 27일 (금) · 하루를 마치지 못했어요")).toBeInTheDocument();
   });
 });
+
+describe("대시보드 밤 반성 보기", () => {
+  it("반성 자료가 있으면 오른쪽 칸은 「FSM 바뀜」이고 Agent Trace는 없으며 Vision 칸은 숨긴다(폰 칸은 떼지 않는다). 없으면 Agent Trace로 돌아온다", () => {
+    const reflection = { pane: { step: "후보", states: ["drinking"], edges: [] } };
+    const { rerender } = draw(screenAt(2, { reflection }));
+    const legends = () => [...document.querySelectorAll("fieldset > legend")].map((e) => e.textContent);
+    expect(legends()).toEqual(["Vision", "Digital Twin", "FSM 바뀜"]);
+    const vision = [...document.querySelectorAll("fieldset")].find((f) => f.querySelector("legend")?.textContent === "Vision")!;
+    expect(vision).toHaveAttribute("hidden");
+    expect(within(vision).getByRole("region", { name: "폰 카메라", hidden: true })).toBeTruthy();
+    expect(screen.getByText("마시는 중")).toBeTruthy();
+    rerender(<DashboardScreen {...screenAt(2)} />);
+    expect(legends()).toEqual(["Vision", "Digital Twin", "Agent Trace"]);
+    expect(document.querySelector("fieldset[hidden]")).toBeNull();
+  });
+});

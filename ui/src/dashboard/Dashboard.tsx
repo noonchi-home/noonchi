@@ -8,7 +8,7 @@ import { useChecks } from "./checks/use-checks";
 import { useDevices } from "../lib/use-devices";
 import { useEvents } from "../lib/use-events";
 import { useHealth } from "../lib/use-health";
-import { TwinStage, useAnchors, type TwinEngine, LiveQueue, attachLive, BAKE_VIEWS, Twin3D, useLayoutBox } from "../twin";
+import { TwinStage, useAnchors, type TwinEngine, LiveQueue, attachLive, BAKE_VIEWS, Twin3D, useLayoutBox, planToPixel } from "../twin";
 import { useViewer } from "../lib/twin-viewer";
 import { activityFocus, still, wholeOf, wideCamera, type Camera } from "./camera";
 import { currentStep, isOpen, stepIndex } from "./data";
@@ -29,6 +29,8 @@ import { NarrationPane } from "./NarrationPane";
 import { narrationOf } from "./narration";
 import { usePhoneCommand } from "./use-phone-command";
 import { api } from "../lib/api";
+import { graphOf, type ReflectionPlace } from "./reflection";
+import { useReflectionView } from "./use-reflection";
 
 declare global {
   interface Window { __twin3d?: { engine: TwinEngine | null; ready: boolean } }
@@ -68,10 +70,10 @@ function useTwinKind(homeId: string | null, known: boolean): "three" | "iframe" 
   return kind;
 }
 
-interface HomeData { index: HomeIndex; tableId: string | null; names: Map<string, string> }
+interface HomeData { index: HomeIndex; tableId: string | null; sinkId: string | null; names: Map<string, string> }
 type SceneJson = Parameters<typeof homeIndexOf>[0];
 
-/** 구운 트윈 집의 평면 색인(/api/scene), 식탁 id, 물건 이름. 집을 모르거나 장면을 받지 못하면 null. */
+/** 구운 트윈 집의 평면 색인(/api/scene), 식탁·싱크대 id, 물건 이름. 집을 모르거나 장면을 받지 못하면 null. */
 function useHomeData(home: string | null): HomeData | null {
   const [data, setData] = useState<HomeData | null>(null);
   useEffect(() => {
@@ -84,8 +86,8 @@ function useHomeData(home: string | null): HomeData | null {
       .then((scene) => {
         if (!live || !scene?.plan || !Array.isArray(scene.objects)) return;
         const index = homeIndexOf(scene, cam);
-        const table = (scene.objects as { id?: unknown; type?: unknown }[]).find((o) => o.type === "dining_table");
-        setData({ index, tableId: typeof table?.id === "string" ? table.id : null, names: new Map([...index.objects].map(([id, o]) => [id, o.name])) });
+        const idOf = (type: string) => { const o = (scene.objects as { id?: unknown; type?: unknown }[]).find((x) => x.type === type); return typeof o?.id === "string" ? o.id : null; };
+        setData({ index, tableId: idOf("dining_table"), sinkId: idOf("sink_counter"), names: new Map([...index.objects].map(([id, o]) => [id, o.name])) });
       }, () => {});
     return () => { live = false; };
   }, [home]);
@@ -251,9 +253,11 @@ export function Dashboard() {
   // 가짜 단계 재생은 화면이 다 뜬 뒤(미리 그려 보기 뒤 data-ready)부터 센다
   const moment = useDebugSteps(debug, onMoment, screenReady);
   useEffect(() => { if (kind === "iframe") queue.current.drain(); }, [kind]);
+  const [engineNow, setEngineNow] = useState<TwinEngine | null>(null);
   const onEngine = useCallback((engine: TwinEngine | null) => {
     live.current?.dispose();
     live.current = null;
+    setEngineNow(engine);
     if (!engine) { setBakedReady(false); return; }
     const l = attachLive(engine);
     live.current = l;
@@ -286,6 +290,19 @@ export function Dashboard() {
     const done = (ok: boolean) => setFinish((f) => ({ failed: !ok, reopen: !ok && !sawClosing.current ? f.reopen + 1 : f.reopen }));
     api("/api/day/finish", { day: d }).then((r) => done(r.ok), () => done(false));
   }, []);
+  // 밤 반성 보기(use-reflection.ts): 하루 마치기 동안·뒤 반성 단계를 재생한다. ?view=reflection&day=YYYY-MM-DD면 그 날을 재생하고 끝에 머문다
+  const replay = useMemo(() => { const q = new URLSearchParams(location.search); return q.get("view") === "reflection" ? q.get("day") : null; }, []);
+  const graph = useMemo(() => graphOf(dash.habit), [dash.habit]);
+  const place = useMemo((): ReflectionPlace | null => {
+    const cam = homeId ? BAKE_VIEWS[homeId] : undefined;
+    if (!homeData || !cam || !engineNow || !bakedReady) return null;
+    const spot = (id: string | null) => {
+      const at = id ? engineNow.anchor(id) : null;
+      return at ? { at, px: planToPixel(cam, [at[0], at[2]], at[1]) } : null;
+    };
+    return { shapes: homeData.index.shapes, table: spot(homeData.tableId), sink: spot(homeData.sinkId) };
+  }, [homeData, homeId, engineNow, bakedReady]);
+  const reflection = useReflectionView({ day: dash.day, replay, place, graph });
   const plan = isOpen(dash.plan) && (!scene || !awaitingHello) ? dash.plan : null;
   // 가짜 단계 화면 상태 표가 읽는 것: 사람 상태·습관 그림(이름)·목표·최근 계획
   const statusRows = useMemo(() => currentStatusRowsOf(dash), [dash.people, dash.robots, dash.habit, dash.goal, dash.plans, dash.plan]);
@@ -299,6 +316,7 @@ export function Dashboard() {
       trace={dash.trace} onTwin={onTwin} seen={seen} statusRows={statusRows}
       hub={hub} settingsOpen={debug?.settings} onReady={onScreenReady} tzMinutes={health?.tz_minutes ?? null}
       day={dash.day} onFinishDay={onFinishDay} finishFailed={finish.failed} finishReopen={finish.reopen}
+      reflection={reflection.active && reflection.moment ? { pane: reflection.moment.pane } : null} reflecting={reflection.active ? reflection.dayAtStart : null}
     />
   );
 }

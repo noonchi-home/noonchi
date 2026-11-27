@@ -7,6 +7,7 @@ import tokens from "../../../src/design/tokens.json";
 import { mascotLogoBox } from "../../src/dashboard/bust";
 import { ASPECT_STEP, LIFT, MASCOT_SHARE, mascotPoint, MINIMAP_ASPECT, MINIMAP_SHARE, nextAspect, pageLayout, RING, TALK_H, TALK_MIN_W, TALK_SHARE, type Rect } from "../../src/dashboard/layout";
 import { MASCOT } from "../../src/lib/mascot-image";
+import { reflectionLayout, sceneLayout } from "../../src/dashboard/bento-layout";
 
 const M = MASCOT;
 /** 브랜드 mascot.png에서 잰 자리(그림 픽셀): 머리 꼭대기 줄, 귀 뒤 [x, y], 주둥이 끝 [x, y]. */
@@ -209,5 +210,15 @@ describe("크기를 모를 때", () => {
   it("크기를 모르면(0) 모두 0 크기다", () => {
     const L = pageLayout({ width: 0, height: 0 }, M);
     for (const r of [L.twin, L.focus, L.video, L.mascot, L.bubble]) expect(Math.max(0, r.width) * Math.max(0, r.height)).toBe(0);
+  });
+});
+
+describe("밤 반성 보기 배치", () => {
+  it("안 B: 트윈이 왼쪽 열 전체, 오른쪽 칸은 라이브 보기의 Agent Trace 자리", () => {
+    const live = sceneLayout({ width: 1920, height: 1080 }, MASCOT);
+    const r = reflectionLayout({ width: 1920, height: 1080 }, MASCOT);
+    expect(r.twin).toEqual({ left: 16, top: 16, width: 1030, height: 1048 });
+    expect(r.trace).toEqual(live.trace);
+    expect(r.focus).toEqual({ left: 32, top: 32, width: 998, height: 996 });
   });
 });
