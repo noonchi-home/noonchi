@@ -6,6 +6,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { DayView, FsmGraphData, ReflectionDetail } from "../../../src/contract/reflection.ts";
 import { api } from "../lib/api";
 import { failedMoment, reflectionMoments, startMoment, type ReflectionMoment, type ReflectionPlace } from "./reflection";
+import { RW } from "./reflection-words";
 
 /** base: 자료 전 순간(0단계·실패). detail이 있으면 그것으로 순간을 만든다. */
 interface ViewState { day: string; dayAtStart: DayView | null; base: ReflectionMoment[]; detail: ReflectionDetail | null; index: number; stay: boolean; fetch: boolean }
@@ -30,15 +31,13 @@ export function useReflectionView(o: { day: DayView | null; replay: string | nul
     const d = dayNow.current;
     if (closing && !wasClosing.current && d) {
       setS({ day: d.today, dayAtStart: d, base: [startMoment(graph.current)], detail: null, index: 0, stay: false, fetch: false });
-      // 그날 판단이 없으면 대시보드가 받은 FSM 그림(habit)이 없다: 서버의 그날 FSM 그림을 0단계에 쓴다
-      if (!graph.current) {
-        const day = d.today;
-        api<ReflectionDetail>(`/api/reflection/${day}`).then((r) => {
-          if (!r.ok || !r.json) return;
-          const start = startMoment(r.json.graph);
-          setS((x) => (x && x.day === day && !x.fetch && !x.detail && x.base[0]?.step === 0 ? { ...x, base: [start] } : x));
-        }, () => {});
-      }
+      // 대시보드가 받은 FSM 그림(habit)은 그날 판단이 나가기 전이면 없거나 전날 판본이다: 늘 서버의 그날 FSM 그림으로 0단계를 바꾼다
+      const day = d.today;
+      api<ReflectionDetail>(`/api/reflection/${day}`).then((r) => {
+        if (!r.ok || !r.json) return;
+        const start = startMoment(r.json.graph);
+        setS((x) => (x && x.day === day && !x.fetch && !x.detail && x.base[0]?.step === 0 ? { ...x, base: [start] } : x));
+      }, () => {});
     }
     if (!closing && wasClosing.current) setS((x) => x && { ...x, fetch: true });
     wasClosing.current = closing;
@@ -48,10 +47,16 @@ export function useReflectionView(o: { day: DayView | null; replay: string | nul
   useEffect(() => {
     if (!fetching) return;
     let live = true;
-    const fail = () => ({ base: [failedMoment(graph.current, false)], detail: null });
+    // 자료를 못 받으면 실패 칸은 지금 0단계 그림(서버의 그날 FSM)을 쓴다. 0단계가 없으면(다시 보기) 대시보드가 받은 그림
+    const failOf = (x: ViewState): ReflectionMoment[] => {
+      const start = x.base[0];
+      return [start?.step === 0 ? { ...failedMoment(null, false), pane: { ...start.pane, step: RW.step.failed } } : failedMoment(graph.current, false)];
+    };
     api<ReflectionDetail>(`/api/reflection/${fetching}`)
-      .then((r) => (r.ok && r.json ? { base: [], detail: r.json } : fail()), fail)
-      .then((got) => { if (live) setS((x) => (x && x.day === fetching ? { ...x, ...got, fetch: false, index: 0 } : x)); });
+      .then((r) => (r.ok && r.json ? r.json : null), () => null)
+      .then((detail) => {
+        if (live) setS((x) => (x && x.day === fetching ? { ...x, base: detail ? [] : failOf(x), detail, fetch: false, index: 0 } : x));
+      });
     return () => { live = false; };
   }, [fetching]);
 

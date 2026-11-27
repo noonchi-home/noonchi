@@ -12,9 +12,9 @@ const place = { shapes: [], table: null, sink: null };
 afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); });
 
 type P = { d: ReturnType<typeof day>; graph?: typeof GRAPH | null };
-const view = (o: { fetch: (url: string) => Response; graph?: typeof GRAPH | null }) => {
+const view = (o: { fetch: (url: string, n: number) => Response; graph?: typeof GRAPH | null }) => {
   const fetched: string[] = [];
-  vi.stubGlobal("fetch", async (url: string) => { fetched.push(url); return o.fetch(url); });
+  vi.stubGlobal("fetch", async (url: string) => { fetched.push(url); return o.fetch(url, fetched.length); });
   const hook = renderHook((p: P) => useReflectionView({ day: p.d, replay: null, place, graph: p.graph === undefined ? GRAPH : p.graph }), { initialProps: { d: day(false, 0), graph: o.graph } as P });
   return { ...hook, fetched };
 };
@@ -28,7 +28,7 @@ describe("반성 보기", () => {
     expect(result.current).toMatchObject({ active: true, moment: { step: 0, pane: { states: ["drinking"] } }, dayAtStart: { shift: 0, closing: true } });
     rerender({ d: day(false, 1) });
     await act(async () => { await vi.advanceTimersByTimeAsync(10); });
-    expect(fetched).toEqual(["/api/reflection/2026-11-27"]);
+    expect(fetched).toEqual(["/api/reflection/2026-11-27", "/api/reflection/2026-11-27"]);
     expect(result.current).toMatchObject({ moment: { step: 7 }, dayAtStart: { today: "2026-11-27" } });
     await act(async () => { await vi.advanceTimersByTimeAsync(HOLD.failed + 10); });
     expect(result.current).toMatchObject({ active: false, dayAtStart: null });
@@ -41,6 +41,19 @@ describe("반성 보기", () => {
     rerender({ d: day(false, 0) });
     await act(async () => { await vi.advanceTimersByTimeAsync(10); });
     expect(result.current.moment).toMatchObject({ step: 7, pane: { step: "반성 실패", states: ["drinking"] } });
+  });
+
+  it("대시보드가 받은 FSM 그림이 전날 판본이어도 0단계는 서버의 그날 FSM 그림이고, 자료를 못 받으면 실패 칸도 그 그림이다", async () => {
+    vi.useFakeTimers();
+    const today = { ...DETAIL, state: "none", graph: { states: ["cooking", "away"], edges: [{ from: "away", to: "cooking", action: null }] } };
+    const { result, rerender } = view({ fetch: (_url, n) => (n === 1 ? new Response(JSON.stringify(today)) : new Response(JSON.stringify({ ok: false, error: "서버 오류" }), { status: 500 })) });
+    rerender({ d: day(true, 0) });
+    expect(result.current.moment).toMatchObject({ step: 0, pane: { states: ["drinking"] } });
+    await act(async () => { await vi.advanceTimersByTimeAsync(10); });
+    expect(result.current.moment).toMatchObject({ step: 0, pane: { states: ["cooking", "away"] } });
+    rerender({ d: day(false, 1) });
+    await act(async () => { await vi.advanceTimersByTimeAsync(10); });
+    expect(result.current.moment).toMatchObject({ step: 7, pane: { step: "반성 실패", states: ["cooking", "away"] } });
   });
 
   it("대시보드가 받은 FSM 그림이 없으면 하루 마치기를 시작할 때 서버의 그날 FSM 그림을 0단계에 쓴다", async () => {
