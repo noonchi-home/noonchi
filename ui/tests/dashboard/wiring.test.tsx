@@ -229,11 +229,12 @@ describe("대시보드 자료 연결", () => {
   describe("하루 마치기", () => {
     const DAY = { today: "2026-11-27", real_today: "2026-11-27", shift: 0, finish: true, closing: false };
     /** /api/day/finish 응답을 시험이 정할 때까지 붙잡는다. */
-    function holdFinish() {
+    function holdFinish(served: typeof DAY | null = null) {
       const base = vi.mocked(fetch).getMockImplementation()!;
       let answer: (r: Response) => void = () => {};
       const bodies: unknown[] = [];
       vi.mocked(fetch).mockImplementation(async (path: string | URL | Request, init?: RequestInit) => {
+        if (path === "/api/day" && served) return Response.json({ ok: true, ...served });
         if (path !== "/api/day/finish") return base(path, init);
         bodies.push(JSON.parse(String(init?.body)));
         return new Promise<Response>((ok) => { answer = ok; });
@@ -257,6 +258,16 @@ describe("대시보드 자료 연결", () => {
       await finish.answer(409);
       const dialog = await screen.findByRole("dialog", { name: "설정" });
       expect(within(dialog).getByText("11월 27일 (금) · 하루를 마치지 못했어요")).toBeInTheDocument();
+    });
+
+    it("오늘이 아니라고 막히면(409) 서버의 날짜(GET /api/day)를 다시 받아 날짜 줄을 고친다(켜 둔 채 자정이 지난 때)", async () => {
+      await mount(false);
+      send([{ type: "day", day: DAY }]);
+      const finish = holdFinish({ ...DAY, today: "2026-11-28", real_today: "2026-11-28" });
+      await finishFromSettings();
+      await finish.answer(409);
+      const dialog = await screen.findByRole("dialog", { name: "설정" });
+      await waitFor(() => expect(within(dialog).getByText("11월 28일 (토) · 하루를 마치지 못했어요")).toBeInTheDocument());
     });
 
     it("반성이 시작된 뒤(closing을 받은 뒤) 실패하면 설정 창을 다시 열지 않는다", async () => {

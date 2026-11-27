@@ -9,7 +9,8 @@ import { DAY_TEXT, REFLECT_TEXT } from "../src/brain/history/labels.js";
 import type { ReflectResult } from "../src/brain/history/reflect.js";
 import { publicReflection } from "../src/brain/history/reflection-wire.js";
 import type { BrainLog } from "../src/contract/events.js";
-import { busyNow, finishBlock, finishDayRunner, homeBusy, homeDayMoved, reflectBlocked } from "../src/server/finish-day.js";
+import { busyNow, dayBroadcast, DAY_CHECK_MS, finishBlock, finishDayRunner, homeBusy, homeDayMoved, reflectBlocked } from "../src/server/finish-day.js";
+import { VirtualClock } from "../src/bus/index.js";
 import { fetchRetry } from "../src/shared/net.js";
 import { startServer, type RunningServer } from "../src/server/start.js";
 import { pamLlmEnv, startFakePamLlm, type FakePamLlm, type FakePamLlmOptions } from "./helpers/pam.js";
@@ -23,9 +24,9 @@ afterEach(async () => {
 });
 type Msg = Record<string, any>;
 type Ev = Extract<BrainLog, { type: "reflection" }>;
-async function start(extra: Record<string, string> = {}, fake: FakePamLlmOptions = {}) {
+async function start(extra: Record<string, string> = {}, fake: FakePamLlmOptions = {}, clock?: VirtualClock) {
   pam = await startFakePamLlm(fake);
-  srv = await startServer({ env: { HUB: "memory", PORT: "0", REFLECT_AT: "off", RUNTIME_DIR: mkdtempSync(join(tmpdir(), "rt-")), ...pamLlmEnv(pam), ...extra }, log: () => {} });
+  srv = await startServer({ env: { HUB: "memory", PORT: "0", REFLECT_AT: "off", RUNTIME_DIR: mkdtempSync(join(tmpdir(), "rt-")), ...pamLlmEnv(pam), ...extra }, log: () => {}, ...(clock ? { clock } : {}) });
   return srv;
 }
 const call = async (path: string, body?: unknown) => {
@@ -87,6 +88,22 @@ describe("진행 중인 일", () => {
     expect(homeBusy({ ...core(), decider: { inflight: () => 1 } })).toBe(true);
     expect(homeBusy({ ...core(), habitWatch: { waiting: () => true } })).toBe(true);
     expect(homeBusy({ ...core(), roomWatch: { isBusy: () => true } })).toBe(true);
+  });
+});
+
+describe("날짜 바뀜 알림", () => {
+  it("보낸 오늘을 기억하고, 시스템 날짜가 바뀌었을 때만 다시 보낸다", () => {
+    let today = "2026-11-27";
+    const sent: string[] = [];
+    const days = dayBroadcast({ view: () => ({ today, real_today: today, shift: 0, finish: true, closing: false }), send: (d) => sent.push(d.today) });
+    days.check();
+    expect(sent).toEqual([]);
+    today = "2026-11-28";
+    days.check();
+    days.check();
+    expect(sent).toEqual(["2026-11-28"]);
+    days.send();
+    expect(sent).toEqual(["2026-11-28", "2026-11-28"]);
   });
 });
 
@@ -221,6 +238,23 @@ describe("하루 마치기 API", { timeout: 20_000 }, () => {
     try {
       await until(() => box.some(isReflection));
       expect(box.find(isReflection)?.event.day).toBe(before.today);
+    } finally {
+      dash.close();
+    }
+  });
+
+  it("켜 둔 채 달력 자정이 지나면 1분 안에 새 오늘로 day 메시지를 보낸다", async () => {
+    const clock = new VirtualClock(Date.parse("2026-11-27T23:59:30+09:00"));
+    const s = await start({ FINISH_DAY: "1" }, {}, clock);
+    const box: Msg[] = [];
+    const dash = await listen(s, box);
+    try {
+      await until(() => box.some((m) => m.type === "day"));
+      expect(box.filter((m) => m.type === "day").map((m) => m.day.today)).toEqual(["2026-11-27"]);
+      await clock.advanceTo(clock.now() + DAY_CHECK_MS + 1000);
+      await until(() => box.filter((m) => m.type === "day").length >= 2);
+      expect(box.filter((m) => m.type === "day").map((m) => m.day.today)).toEqual(["2026-11-27", "2026-11-28"]);
+      expect((await call("/api/day")).json.today).toBe("2026-11-28");
     } finally {
       dash.close();
     }

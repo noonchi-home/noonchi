@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { DeviceView, EyeEvent, ServerMessage } from "../../../src/contract/events.ts";
 import type { PlanView } from "../../../src/contract/plan.ts";
+import type { DayView } from "../../../src/contract/reflection.ts";
 import type { TraceRow } from "../../../src/contract/trace.ts";
 import { BubbleLayer } from "./bubbles/BubbleLayer";
 import { checkList, dashboardChecks, type ChecksState } from "./checks/checks";
@@ -297,8 +298,14 @@ export function Dashboard() {
     sawClosing.current = false;
     setFinish((f) => ({ ...f, failed: false }));
     const done = (ok: boolean) => setFinish((f) => ({ failed: !ok, reopen: !ok && !sawClosing.current ? f.reopen + 1 : f.reopen }));
-    api("/api/day/finish", { day: d }).then((r) => done(r.ok), () => done(false));
-  }, []);
+    // 막힘(409)은 화면의 오늘이 서버와 다를 수 있다(켜 둔 채 자정이 지남): 서버의 날짜를 다시 받는다
+    const refresh = () => api<DayView & { ok: boolean }>("/api/day").then((r) => {
+      if (!r.ok || !r.json) return;
+      const { today, real_today, shift, finish, closing } = r.json;
+      toDash({ type: "day", day: { today, real_today, shift, finish, closing } });
+    }, () => {});
+    api("/api/day/finish", { day: d }).then((r) => { done(r.ok); if (r.status === 409) void refresh(); }, () => done(false));
+  }, [toDash]);
   // 밤 반성 보기(use-reflection.ts): 하루 마치기 동안·뒤 반성 단계를 재생한다. ?view=reflection&day=YYYY-MM-DD면 그 날을 재생하고 끝에 머문다
   const replay = useMemo(() => { const q = new URLSearchParams(location.search); return q.get("view") === "reflection" ? q.get("day") : null; }, []);
   const graph = useMemo(() => graphOf(dash.habit), [dash.habit]);

@@ -22,6 +22,16 @@ export function dayViewOf(db: Pick<HistoryDb, "dayOf" | "skips" | "offsetMinutes
   return { today: db.dayOf(now), real_today: calendarDay(now, db.offsetMinutes), shift: db.skips().filter((s) => s.atMs <= now).length, finish, closing };
 }
 
+/** 시스템 날짜를 다시 보는 간격(ms): 달력 자정이 지나면 이 안에 대시보드에 새 오늘을 보낸다. */
+export const DAY_CHECK_MS = 60_000;
+
+/** day 메시지 보내기: 보낸 오늘을 기억하고, check()는 시스템 날짜가 바뀌었을 때만 보낸다(DAY_CHECK_MS마다 부른다). */
+export function dayBroadcast(o: { view: () => DayView; send: (day: DayView) => void }): { send(): void; check(): void } {
+  let sent = o.view().today;
+  const send = () => { const day = o.view(); sent = day.today; o.send(day); };
+  return { send, check: () => { if (o.view().today !== sent) send(); } };
+}
+
 /** 진행 중인 일: 열린 계획, 세운·확인 중·떠남 목표, 확인 방문, 답을 기다리는 판단, 습관 방문, 사용자 찾기. */
 export interface BusyState { plan: { status: string } | null; goal: { status: string } | null; checking: boolean; deciding: number; habitVisit: boolean; roomVisit: boolean }
 export function busyNow(s: BusyState): boolean {

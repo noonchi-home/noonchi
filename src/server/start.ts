@@ -6,7 +6,7 @@ import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import type { Worker } from "node:worker_threads";
 import type { Agent, Policy } from "../agent/index.js";
-import { openBus, type Bus, type Clock } from "../bus/index.js";
+import { openBus, realClock, type Bus, type Clock } from "../bus/index.js";
 import { agentEndpoint } from "../agent/index.js";
 import type { BrainLog } from "../contract/events.js";
 import { MOKRYEON_HOME } from "../shared/mobile-home.js";
@@ -40,7 +40,7 @@ import { HttpError, originChecker, type TwinHomeApp } from "./app.js";
 import type { HubKind, MatterTransport, StartHubOptions } from "./hubFactory.js";
 import { startHome, type HomeContext, type HomeRuntime } from "./home/index.js";
 import { makeReady } from "./ready.js";
-import { dayViewOf, finishDayRunner, reflectBlocked, type FinishRunner } from "./finish-day.js";
+import { DAY_CHECK_MS, dayBroadcast, dayViewOf, finishDayRunner, reflectBlocked, type FinishRunner } from "./finish-day.js";
 import { createShell, mobileHubUrls } from "./shell.js";
 import { preflight } from "./preflight.js";
 
@@ -271,8 +271,11 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
     flush: async () => { await write.flush(); }, reflect: (day) => reflect(day, undefined, { finish: true }),
     skip: (day) => write.finishDay({ atMs: nowMs(), from: day }),
     moved: (event) => current?.dayMoved(event), speak: (event) => current?.onReflection(event),
-    sendDay: () => current?.app.broadcast({ type: "day", day: dayView() }), log,
+    sendDay: () => days.send(), log,
   });
+  // 켜 둔 채 달력 자정이 지나면(넘긴 날도) 시스템 날짜가 바뀐다: 1분마다 보고 바뀌었으면 대시보드에 새 오늘을 보낸다
+  const days = dayBroadcast({ view: dayView, send: (day) => current?.app.broadcast({ type: "day", day }) });
+  const stopDays = (opts.clock ?? realClock).every(DAY_CHECK_MS, () => days.check());
   const cameraServeOrigins = new Set<string>();
   const discoverPhoneUrls = opts.servedPhoneUrls;
   const ctx: HomeContext = {
@@ -662,6 +665,7 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
       if (closed) return;
       closed = true;
       clearInterval(cleaner);
+      stopDays();
       await job;
       // 집의 새 일(판단·실행 추적·가전 정책)을 먼저 막는다: 집 닫기의 첫 단계(새 일 막기)는 부르는 순간 돈다.
       // 그다음 진행 중인 반성 요청을 끊고, 집 닫기와 반성이 끝나기를 기다린다. 앱이 /events 소켓을 먼저 끊어야 껍데기 서버 close가 기다리지 않는다
