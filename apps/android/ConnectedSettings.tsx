@@ -6,6 +6,7 @@ import { ConnectedPlan } from "./ConnectedPlan";
 import { ConnectedStations } from "./ConnectedStations";
 import { Action, Choice, Copy, Failure, Field, Heading, Loading, Panel, useResource, useSettingTask, useTask } from "./ConnectedUi";
 import { connectedHouse, readForHome, type ConnectedHub, type StartPosition } from "./connected-hub";
+import { viewCone } from "./plan-lines";
 
 type Page = "house" | "appliances" | "devices" | "mode" | "position" | "stations" | "layout";
 type Save = (setup?: SetupView, chosen?: string) => Promise<void>;
@@ -190,7 +191,6 @@ function PositionEditor({ start, scene, hub, home, onSaved, onBlock }: Context &
   const edited = useRef({ label: false, facing: false });
   const task = useSettingTask(onBlock);
   const yaw = direction.trim() ? Number(direction) : Number.NaN;
-  const radians = yaw * Math.PI / 180;
   const ready = !!at && Number.isFinite(yaw);
   function aim(value: string) {
     setDirection(value);
@@ -199,7 +199,7 @@ function PositionEditor({ start, scene, hub, home, onSaved, onBlock }: Context &
   return <>
     <Copy>{pickDirection ? "서 있는 자리에서 바라볼 곳을 도면에서 눌러 주세요." : "폰을 켤 자리를 도면에서 눌러 주세요."}</Copy>
     <ConnectedPlan scene={scene} label="시작 위치와 방향 선택"
-      guides={at ? [{ points: Number.isFinite(yaw) ? [at, [at[0] + Math.cos(radians), at[1] + Math.sin(radians)]] : [at] }] : []}
+      guides={at ? [Number.isFinite(yaw) ? { points: viewCone(at, yaw), closed: true, fan: true, dots: "first" } : { points: [at] }] : []}
       onPoint={task.busy ? undefined : point => {
         if (at && pickDirection) {
           if (Math.hypot(point[0] - at[0], point[1] - at[1]) < 0.3) return;

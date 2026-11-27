@@ -5,7 +5,8 @@ import { Text } from "./AppText";
 import { colors } from "./ConnectedUi";
 import { planFrame, planLines, segments, type Segment } from "./plan-lines";
 
-type Guide = { points: Vec2[]; color?: string; closed?: boolean };
+/** fan: 첫 점에서 나머지 점으로 옅은 선을 촘촘히 그어 부채꼴을 채운다(시야각). dots: 점을 찍을 꼭짓점. */
+type Guide = { points: Vec2[]; color?: string; closed?: boolean; fan?: boolean; dots?: "all" | "first" };
 
 const inset = 16;
 
@@ -25,22 +26,28 @@ export function ConnectedPlan({ scene, label = "도면", onPoint, guides = [] }:
   const insetX = (width - spanX * scale) / 2;
   const insetY = (height - spanY * scale) / 2;
   const project = ([x, y]: Vec2): Vec2 => [(x - left) * scale + insetX, (y - top) * scale + insetY];
-  const draw = ([a, b]: Segment, key: string, backgroundColor: string) => {
+  const draw = ([a, b]: Segment, key: string, backgroundColor: string, opacity = 1) => {
     const [ax, ay] = project(a);
     const [bx, by] = project(b);
     const distance = Math.hypot(bx - ax, by - ay);
     return <View key={key} style={[styles.line, {
-      backgroundColor, width: distance, left: (ax + bx - distance) / 2, top: (ay + by) / 2 - 1,
+      backgroundColor, opacity, width: distance, left: (ax + bx - distance) / 2, top: (ay + by) / 2 - 1,
       transform: [{ rotate: `${Math.atan2(by - ay, bx - ax)}rad` }],
     }]} />;
   };
+  const fan = ([origin, ...arc]: Vec2[], key: string, color: string) => arc.slice(1).flatMap((end, index) => {
+    const start = arc[index];
+    return [0.25, 0.5, 0.75].map(t => draw([origin, [start[0] + (end[0] - start[0]) * t, start[1] + (end[1] - start[1]) * t]],
+      `${key}-fan-${index}-${t}`, color, 0.18)).concat(draw([origin, end], `${key}-fan-${index}`, color, 0.18));
+  });
   const drawing = <View pointerEvents="none" style={StyleSheet.absoluteFill}>
     {lines.map((line, index) => draw(line, `wall-${index}`, colors.edge))}
     {guides.flatMap((guide, index) => {
       const color = guide.color ?? colors.brand;
       return [
+        ...(guide.fan && guide.points.length > 2 ? fan(guide.points, `${index}`, color) : []),
         ...segments(guide.points, guide.closed).map((line, lineIndex) => draw(line, `${index}-${lineIndex}`, color)),
-        ...guide.points.map((point, pointIndex) => {
+        ...(guide.dots === "first" ? guide.points.slice(0, 1) : guide.points).map((point, pointIndex) => {
           const [x, y] = project(point);
           return <View key={`${index}-point-${pointIndex}`} style={[styles.dot, { left: x - 5, top: y - 5, backgroundColor: color }]} />;
         }),
