@@ -35,14 +35,14 @@ export function ConnectedRemotes({ hub, home, onBlock, onBack }: {
     });
     return () => state.remove();
   }, [hub, home, loaded, refresh]);
-  // 포트를 여는 동안 다시 읽어 연결 결과를 보인다
+  // 포트를 여는 동안 POLL_MS마다 다시 읽어 연결 결과를 보인다. 한 번 읽기가 실패해도 이어 읽고, 연결 상태가 바뀌면 멈춘다
   const portState = view?.port.state;
   useEffect(() => {
     if (portState !== "connecting") return;
     const request = new AbortController();
-    const timer = setTimeout(() => void readIr(hub, home, request.signal).then(setView, () => {}), POLL_MS);
-    return () => { clearTimeout(timer); request.abort(); };
-  }, [hub, home, portState, view]);
+    const timer = setInterval(() => void readIr(hub, home, request.signal).then(setView, () => {}), POLL_MS);
+    return () => { clearInterval(timer); request.abort(); };
+  }, [hub, home, portState]);
 
   function go(next: Inner) {
     slide.enter();

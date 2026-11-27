@@ -33,6 +33,11 @@ test("배우는 동안만 「버튼을 눌러 주세요」가 깜빡이고, 쪽�
   assert.match(screen, /useEffect\(\(\) => \(\) => \{\s*const stop = waiting\.current;\s*if \(stop && !stop\.signal\.aborted\) \{ stop\.abort\(\); void cancelLearn\(hub, home\)\.catch\(\(\) => \{\}\); \}/);
 });
 
+test("포트를 여는 동안에는 읽기가 실패해도 POLL_MS마다 다시 읽고, 연결 상태가 바뀌면 멈춘다", () => {
+  const screen = read("./ConnectedRemotes.tsx");
+  assert.match(screen, /if \(portState !== "connecting"\) return;\s*const request = new AbortController\(\);[\s\S]*?const timer = setInterval\(\(\) => void readIr\(hub, home, request\.signal\)\.then\(setView, \(\) => \{\}\), POLL_MS\);\s*return \(\) => \{ clearInterval\(timer\); request\.abort\(\); \};\s*\}, \[hub, home, portState\]\);/);
+});
+
 test("배우는 동안 읽기 실패는 글로 알리고 기다림을 이어 가며, 기다림이 실패해도 떠날 때 배우기를 취소하도록 waiting을 남긴다", () => {
   const screen = read("./ConnectedRemotes.tsx");
   assert.match(screen, /waitLearn\(hub, home, \{ signal: stop\.signal, onView: next => \{ setError\(""\); setView\(next\); \}, onError: failure => setError\(message\(failure\)\) \}\)/);
