@@ -1,4 +1,5 @@
 // 하루 마치기·밤 반성 화면 글. 사용자 할 일과 지금 상태만 쓴다. 「PAM」을 쓰지 않는다(우리 부품 이름은 FSM 판단 · 밤 반성 · 채택 검사).
+import { FSM_STATE_SHORT } from "../../../src/world/labels.ts";
 
 /** 우연일 확률 글: 유효숫자 둘, 0.0001 아래는 「0.0001 미만」. */
 export const pText = (p: number): string => (p < 0.0001 ? "0.0001 미만" : String(Number(p.toPrecision(2))));
@@ -14,7 +15,7 @@ export const RW = {
   pane: "FSM 바뀜",
   step: { start: "밤 반성 중", chunk: "하루 묶기", did: "사람이 한 일", candidate: "후보", count: "날마다 셈", adopt: "채택 검사", fsm: "FSM 바뀜", end: "밤 반성 끝", failed: "반성 실패", rejected: "반성 기억 안 씀" },
   /** 사람 상태 짧은 이름(사용자 확정 2026-11-27). 표에 없는 상태는 newState. */
-  stateName: { drinking: "마시는 중", watching_tv: "TV 보는 중", cooking: "요리 중", away: "자리에 없음", studying: "공부 중" } as Record<string, string>,
+  stateName: FSM_STATE_SHORT,
   newState: "새 상태",
   maybe: (action: string) => `${action}?`,
   followCount: (k: number, n: number) => `뒤따름 ${k} / ${n}`,
