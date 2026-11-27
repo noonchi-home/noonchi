@@ -228,6 +228,8 @@ export type LookResult = CloserResult | { sent: boolean };
 /** GET /api/devices 한 항목: spec + 현재 상태. */
 export interface DeviceView extends DeviceSpec {
   state: DeviceState;
+  /** 등록한 적외선 리모컨: 리모컨 이름과 단추 이름들(press_remote가 쓴다). */
+  remote?: { label: string; buttons: string[] };
 }
 
 // 서버 상태

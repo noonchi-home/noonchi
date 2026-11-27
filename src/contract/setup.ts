@@ -63,7 +63,7 @@ export interface SetupView {
   mode: ControlMode;
   /** ready: ThinQ 토큰이 있어 실제 모드로 바꿀 수 있다. */
   thinq: { ready: boolean };
-  /** 이 집에 실제 모드로 다룰 적외선 TV가 있다: 직접 적외선(ir.json) 또는 TV 중계(TV_RELAY_*). 연결과 전원은 허브가 알린다. */
+  /** 적외선: 연결된 보드와 단추가 있는 리모컨(remotes.json) 또는 TV 중계(TV_RELAY_*). 연결과 전원은 허브가 알린다. */
   ir?: { ready: boolean };
   /** 트윈 기기 id → ThinQ 기기 id(실제 모드에서만 쓴다). */
   pairs: Record<string, string>;

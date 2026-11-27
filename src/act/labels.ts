@@ -78,7 +78,7 @@ const DONE: Record<string, string> = { [GOAL.clearCup]: "컵을 다 치웠어요
 /** 기기를 바꾸는 에이전트 도구 → 단계 글 끝말. 여기 없는 도구(읽기·배치)는 계획을 만들지 않는다. */
 export const DEVICE_VERB: Record<string, string> = {
   turn_on: "켜기", turn_off: "끄기", set_level: "맞추기", set_climate: "맞추기", set_covering: "맞추기",
-  lock: "잠그기", unlock: "잠금 풀기", start: "시작", stop: "멈추기", set_valve: "맞추기",
+  lock: "잠그기", unlock: "잠금 풀기", start: "시작", stop: "멈추기", set_valve: "맞추기", press_remote: "리모컨 누르기",
 };
 
 /** 실행 전 검사를 통과하지 못한 이유(src/act/check.ts). */

@@ -61,7 +61,8 @@ export interface TraceMessage { type: "trace"; epoch: string; rows: TraceRow[] }
 export type TraceEvent =
   | "goal" | "action" | "wait" | "replan" | "pam" | "vlm" | "closer_vlm" | "observer" | "planner" | "dialog" | "check"
   | "closer" | "top" | "device_tool" | "move" | "pick" | "place" | "work" | "activity_result"
-  | "person_left" | "person_changed" | "object_changed" | "device" | "safety" | "guard";
+  | "person_left" | "person_changed" | "object_changed" | "device" | "safety" | "guard"
+  | "remote_sent" | "remote_pressed";
 export type TraceOutput =
   | "goal_armed" | "goal_planning" | "goal_ready" | "goal_checking" | "goal_fired" | "goal_used" | "goal_dropped" | "check_passed"
   | "model_answer" | "scene_people" | "scene_objects" | "scene_people_objects" | "scene_no_target"
@@ -70,7 +71,8 @@ export type TraceOutput =
   | "step_done" | "place_done" | "move_done" | "activity_done" | "activity_cancelled" | "activity_failed"
   | "safety_fall" | "safety_monitor" | "safety_device" | "safety_cleared"
   | "guard_busy" | "guard_safety" | "guard_changed" | "guard_target" | "guard_placed" | "guard_plan"
-  | "device_ack" | "approval_needed" | "person_seen" | "person_not_seen" | "person_room_changed" | "changed";
+  | "device_ack" | "approval_needed" | "person_seen" | "person_not_seen" | "person_room_changed" | "changed"
+  | "remote_signal_sent" | "remote_key_pressed";
 
 /** Production producers choose fixed public vocabulary and retain the real correlation keys. */
 export interface TracePort {

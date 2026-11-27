@@ -10,5 +10,5 @@ export { Planner, planRoundLine, planRoundText, type PlanRound } from "./planner
 export { Policy } from "./policy.js";
 export { ServiceRetryStore, contactsPath, loadContacts, serviceRecord, serviceRetryPath, serviceSay } from "./service.js";
 export { createProvider, type AgentEndpoint, agentEndpoint } from "./providers/index.js";
-export { AGENT_TOOLS, REQUEST_TASK, localBackend, runTool, type ToolBackend, type ToolResult, deviceViews, roomViews } from "./tools.js";
+export { AGENT_TOOLS, PRESS_REMOTE, REQUEST_TASK, isRemoteHub, localBackend, runTool, type ToolBackend, type ToolResult, deviceViews, roomViews } from "./tools.js";
 export { callDestination, callPlaces, withChosenStation, type CallDestination } from "./call-target.js";

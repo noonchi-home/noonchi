@@ -9,6 +9,8 @@ import { DEFAULT_WEB_DIR, HttpError, isLocalOrigin, readJson, type TwinHomeApp }
 import { listenRetry } from "../shared/net.js";
 import { serveFile } from "../shared/static.js";
 import { CLIENT_ERROR_PATH, clientErrorReceiver } from "./client-error.js";
+import type { IrPortsView, IrTestView, IrView } from "../contract/ir.js";
+import { IR_PATHS } from "../shared/ir.js";
 
 /** 설정 API(start.ts가 구현). 던지는 HttpError는 그 상태 코드로 나간다. */
 export interface SetupApi {
@@ -24,6 +26,19 @@ export interface SetupApi {
   thinqDevices(home?: string): Promise<object>;
   /** 에어컨·냉장고 ↔ ThinQ 기기 짝. */
   setPairs(body: Record<string, unknown>): object;
+  /** 적외선 리모컨 등록(계약 src/contract/ir.ts, 경로 src/shared/ir.ts IR_PATHS). */
+  ir: {
+    view(home?: string): IrView;
+    ports(): Promise<IrPortsView>;
+    setPort(body: Record<string, unknown>): Promise<IrView>;
+    saveRemote(body: Record<string, unknown>): IrView;
+    deleteRemote(body: Record<string, unknown>): IrView;
+    learn(body: Record<string, unknown>): Promise<IrView>;
+    cancelLearn(body: Record<string, unknown>): IrView;
+    deleteButton(body: Record<string, unknown>): IrView;
+    test(body: Record<string, unknown>): Promise<IrTestView>;
+    preset(body: Record<string, unknown>): IrView;
+  };
 }
 
 export interface ShellOptions {
@@ -87,6 +102,16 @@ export function createShell(opts: ShellOptions): Shell {
       else if (req.method === "POST" && path === "/api/setup/mode") body = opts.setup.setMode(await readJson(req));
       else if (req.method === "GET" && path === "/api/setup/thinq") body = await opts.setup.thinqDevices(new URLSearchParams(search).get("home") ?? undefined);
       else if (req.method === "POST" && path === "/api/setup/pairs") body = opts.setup.setPairs(await readJson(req));
+      else if (req.method === "GET" && path === IR_PATHS.view) body = opts.setup.ir.view(new URLSearchParams(search).get("home") ?? undefined);
+      else if (req.method === "GET" && path === IR_PATHS.ports) body = await opts.setup.ir.ports();
+      else if (req.method === "POST" && path === IR_PATHS.port) body = await opts.setup.ir.setPort(await readJson(req));
+      else if (req.method === "POST" && path === IR_PATHS.remote) body = opts.setup.ir.saveRemote(await readJson(req));
+      else if (req.method === "POST" && path === IR_PATHS.remoteDelete) body = opts.setup.ir.deleteRemote(await readJson(req));
+      else if (req.method === "POST" && path === IR_PATHS.learn) body = await opts.setup.ir.learn(await readJson(req));
+      else if (req.method === "POST" && path === IR_PATHS.learnCancel) body = opts.setup.ir.cancelLearn(await readJson(req));
+      else if (req.method === "POST" && path === IR_PATHS.buttonDelete) body = opts.setup.ir.deleteButton(await readJson(req));
+      else if (req.method === "POST" && path === IR_PATHS.test) body = await opts.setup.ir.test(await readJson(req));
+      else if (req.method === "POST" && path === IR_PATHS.preset) body = opts.setup.ir.preset(await readJson(req));
       else if (path === CLIENT_ERROR_PATH) {
         if (req.method !== "POST") throw new HttpError(405, "허용되지 않은 메서드입니다.");
         body = await receiveClientError(req);

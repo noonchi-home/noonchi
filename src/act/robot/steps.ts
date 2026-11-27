@@ -273,11 +273,12 @@ export class Steps extends Part {
     );
   }
 
-  /** 기기 결과: 실패면 실패로 닫는다. 적용을 확인하지 못했으면(신호 없음·미확인) 끝나는 조건이 참이 될 때까지만 기다리고, 조건이 없으면 실패로 닫는다. */
-  deviceResult(r: Run, gen: number, res: Pick<ToolResult, "ok" | "error" | "unverified" | "state">): void {
+  /** 기기 결과: 실패면 실패로 닫는다. 적용을 확인하지 못했으면(신호 없음·미확인) 끝나는 조건이 참이 될 때까지만 기다리고, 조건이 없으면 실패로 닫는다.
+   *  리모컨 단추(press_remote)는 결과를 읽을 길이 없어 끝나는 조건 없이 두므로, 신호를 보냈으면(sent) 끝난 것으로 본다. */
+  deviceResult(r: Run, gen: number, res: Pick<ToolResult, "ok" | "error" | "unverified" | "state" | "sent">): void {
     if (!this.core.live(r, gen)) return;
     if (!res.ok) return this.finish(r, "failed", EXEC_TEXT.deviceFailed);
-    const verified = !res.unverified && res.state !== "모름";
+    const verified = (!res.unverified && res.state !== "모름") || (res.sent === true && !r.watch);
     if (!verified && !r.watch) return this.finish(r, "failed", EXEC_TEXT.deviceUnverified);
     r.device = verified ? "done" : "sent";
     this.look(r);

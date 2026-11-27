@@ -2,7 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExter
 import { AccessibilityInfo, ActivityIndicator, Animated, Pressable, StyleSheet, View, useWindowDimensions, type KeyboardTypeOptions, type PressableProps, type StyleProp, type ViewStyle } from "react-native";
 import { Text, TextInput } from "./AppText";
 import { font } from "./fonts";
-import { pressMotion, reduceMotionStore, savedMotion, slideMotion } from "./motion";
+import { pressMotion, pulseMotion, reduceMotionStore, savedMotion, slideMotion } from "./motion";
 
 export const colors = { brand: "#a1143e", white: "#ffffff", canvas: "#f8f2ea", surface: "#fffcf8", edge: "#e7dbce",
   ink: "#2a2627", muted: "#645b5b", cream: "#f2e4d3", green: "#1b7041", warn: "#835700", error: "#b5350e" };
@@ -92,6 +92,33 @@ export function SavedMark({ count }: { count: number }) {
   return <Animated.View pointerEvents="none" importantForAccessibility="no-hide-descendants" style={[styles.savedLayer, { opacity }]}>
     <View style={styles.saved}><Text style={styles.savedCheck}>✓</Text><Text style={styles.savedText}>저장됨</Text></View>
   </Animated.View>;
+}
+
+/** 기다리는 동안 깜빡이는 안내 글. 동작 줄이기가 켜지면 깜빡이지 않는다. 진동은 쓰지 않는다. */
+export function Pulse({ children }: { children: string }) {
+  const reduce = useReduceMotion();
+  const [opacity] = useState(() => new Animated.Value(1));
+  useEffect(() => {
+    const motion = pulseMotion(reduce);
+    opacity.setValue(1);
+    if (!motion.halfMs) return;
+    const loop = Animated.loop(Animated.sequence([
+      Animated.timing(opacity, { toValue: motion.low, duration: motion.halfMs, useNativeDriver: true }),
+      Animated.timing(opacity, { toValue: 1, duration: motion.halfMs, useNativeDriver: true }),
+    ]));
+    loop.start();
+    return () => loop.stop();
+  }, [opacity, reduce]);
+  return <Animated.View accessibilityLiveRegion="polite" style={[styles.pulse, { opacity }]}>
+    <Text style={styles.pulseText}>{children}</Text>
+  </Animated.View>;
+}
+
+export type Slide = ReturnType<typeof useSlide>;
+
+/** useSlide가 움직이는 쪽 하나. */
+export function SlidePage({ slide, children }: { slide: Slide; children: ReactNode }) {
+  return <Animated.View style={slide.style}>{children}</Animated.View>;
 }
 
 /** 설정 쪽 넘김: enter() 뒤 바뀐 쪽은 오른쪽에서 들어오고, leave()는 오른쪽으로 내보낸 뒤 돌아간다. */
@@ -200,5 +227,7 @@ const styles = StyleSheet.create({
     borderRadius: 18, paddingVertical: 7, paddingHorizontal: 14, elevation: 3 },
   savedCheck: { color: colors.green, fontSize: 16, ...font(700) },
   savedText: { color: colors.ink, fontSize: 15 },
+  pulse: { minHeight: 44, borderWidth: 1, borderStyle: "dashed", borderColor: colors.brand, borderRadius: 8, alignItems: "center", justifyContent: "center", paddingHorizontal: 12 },
+  pulseText: { color: colors.brand, fontSize: 16, ...font(700) },
   input: { minHeight: 48, borderWidth: 1, borderColor: colors.edge, paddingHorizontal: 12, borderRadius: 8, color: colors.ink, backgroundColor: colors.white, fontSize: 16 },
 });

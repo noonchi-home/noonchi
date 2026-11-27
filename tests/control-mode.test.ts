@@ -229,6 +229,19 @@ describe("실제 모드 명령", () => {
     expect(fake!.requests.length).toBe(before);
   });
 
+  it("리모컨을 저장해도 ThinQ 연결을 다시 만들지 않는다: 짝지은 기기를 다시 읽지 않고 읽은 값도 그대로다", async () => {
+    await start();
+    await livePaired();
+    await waitFor(async () => (await get("/api/devices/fridge_1")).json.state.readback !== undefined);
+    await new Promise((res) => setTimeout(res, 100));
+    const before = fake!.requests.length;
+    const readback = (await get("/api/devices/ac_1")).json.state.readback;
+    expect((await post("/api/setup/ir/remote", { home: home(), label: "TV 리모컨", device: "tv_1" })).status).toBe(200);
+    expect((await get("/api/devices/ac_1")).json.state.readback).toEqual(readback);
+    await new Promise((res) => setTimeout(res, 100));
+    expect(fake!.requests.length).toBe(before);
+  });
+
   it("시험 모드로 돌아가면 그 뒤 명령은 트윈에서, ThinQ 요청은 늘지 않는다", async () => {
     await start();
     await livePaired();

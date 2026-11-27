@@ -28,6 +28,8 @@ const LABELS = {
   device: ["OBSERVATION", "가전 상태 변화", "가전 확인"],
   safety: ["GUARDRAIL", "안전 상태", "안전 검사"],
   guard: ["GUARDRAIL", "실행 보류", "실행 전 검사"],
+  remote_sent: ["TOOL", "리모컨 신호", "리모컨 단추"],
+  remote_pressed: ["OBSERVATION", "리모컨 누름", "리모컨 수신"],
 } satisfies Record<TraceEvent, readonly [TraceKind, string, string]>;
 
 const OUTPUT = {
@@ -44,6 +46,7 @@ const OUTPUT = {
   guard_target: "대상 미확인", guard_placed: "대상을 이미 치운 것으로 확인", guard_plan: "계획 조건을 충족하지 못함",
   device_ack: "가전 응답 확인", approval_needed: "확인 대기",
   person_seen: "사용자 관찰", person_not_seen: "시야에서 사용자 미확인", person_room_changed: "사용자 방 변화 확인", changed: "상태 변화 확인",
+  remote_signal_sent: "신호 보냄", remote_key_pressed: "단추 누름 확인",
 } satisfies Record<TraceOutput, string>;
 
 /** refs가 빈 관찰 줄. 부를 때마다 새 활동이 되지 않게 한 지켜보기 활동에 모은다. */

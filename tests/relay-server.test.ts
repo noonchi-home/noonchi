@@ -7,7 +7,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { fetchRetry, listenRetry } from "../src/shared/net.js";
-import { startServer, type RunningServer } from "../src/server/start.js";
+import { startServer, type RunningServer, type StartServerOptions } from "../src/server/start.js";
+import { fakeBoard } from "../src/devices/hub/ir-fake.js";
 import { openWebSocket } from "./helpers/ws.js";
 
 const TOKEN = "relay_token_for_tests_only_5c1e";
@@ -74,14 +75,25 @@ const json = (r: { text: string }) => JSON.parse(r.text) as Record<string, any>;
 const live = () => api("/api/setup/mode", { mode: "live", confirm: true });
 
 /** 시작하면 안 되는 설정의 오류 글. 그래도 떴으면 닫고 실패로 본다. */
-async function refusal(extra: Record<string, string>, dir = runtime(), persistSetup = false): Promise<string> {
-  const message = await startServer({ env: { HUB: "memory", PORT: "0", HOME_ID: "oneroom", RUNTIME_DIR: dir, ...extra }, log: () => {}, persistSetup }).then(
+async function refusal(extra: Record<string, string>, dir = runtime(), persistSetup = false, ir: Pick<StartServerOptions, "irPort" | "irPorts"> = {}): Promise<string> {
+  const message = await startServer({ env: { HUB: "memory", PORT: "0", HOME_ID: "oneroom", RUNTIME_DIR: dir, ...extra }, log: () => {}, persistSetup, ...ir }).then(
     async (s) => { await s.close(); return null; },
     (e: Error) => e.message,
   );
   if (message === null) throw new Error(`서버가 ${JSON.stringify(extra)}로 시작했다`);
   return message;
 }
+
+const PNP = "USB\\VID_1A86&PID_7523\\6&34F2BBB7&0&2";
+/** oneroom tv_1에 전원(toggle) 단추가 있는 remotes.json. */
+const tvRemote = (dir: string) => {
+  mkdirSync(join(dir, "homes", "oneroom"), { recursive: true });
+  writeFileSync(join(dir, "homes", "oneroom", "remotes.json"), JSON.stringify({ version: 1, port: { name: "COM7", pnp: PNP }, remotes: [{ id: "r_0000000a", label: "TV", device: "tv_1", buttons: [
+    { id: "b_00000008", label: "전원", role: "toggle", signal: { kind: "nec", address: 4, command: 8 }, learned_at: "2026-11-27T10:00:00.000Z" },
+  ] }] }));
+};
+/** 실제 포트를 열지 않게 가짜 보드와 고정 포트 목록. */
+const fakeIr = (): Pick<StartServerOptions, "irPort" | "irPorts"> => ({ irPort: fakeBoard().port, irPorts: async () => [{ name: "COM7", label: "USB-SERIAL CH340", pnp: PNP, usb: true }] });
 
 describe("서버 시작: TV 중계", () => {
   it("실제 모드에서 TV를 relay로 짝지어 상태를 읽고, 명령은 중계로 보내고, 리모컨으로 켠 것도 비춘다", async () => {
@@ -138,24 +150,68 @@ describe("서버 시작: TV 중계", () => {
     expect(lan).not.toContain(TOKEN);
   });
 
-  it("같은 TV에 직접 적외선(ir.json)과 중계가 둘 다 있으면 시작하지 않고 하나를 고르라고 한다", async () => {
+  it("같은 TV에 리모컨 전원 단추(remotes.json)와 중계가 둘 다 있으면 시작하지 않고 하나를 고르라고 한다", async () => {
     const dir = runtime();
-    mkdirSync(join(dir, "homes", "oneroom"), { recursive: true });
-    writeFileSync(join(dir, "homes", "oneroom", "ir.json"), JSON.stringify({ device: "tv_1", port: "COM7", codes: { toggle: "NEC:0004:08" } }));
-    const message = await refusal({ TV_RELAY_URL: "http://127.0.0.1:9", TV_RELAY_TOKEN: TOKEN, TV_RELAY_DEVICE: "tv_1" }, dir);
-    expect(message).toMatch(/tv_1.*ir\.json.*TV_RELAY/);
+    tvRemote(dir);
+    const message = await refusal({ TV_RELAY_URL: "http://127.0.0.1:9", TV_RELAY_TOKEN: TOKEN, TV_RELAY_DEVICE: "tv_1" }, dir, false, fakeIr());
+    expect(message).toMatch(/tv_1.*remotes\.json.*TV_RELAY/);
     expect(message).not.toContain(TOKEN);
   });
 
-  it("저장한 집에서도 같은 TV의 ir.json과 중계가 겹치면 다른 집으로 넘어가지 않고 시작하지 않는다", async () => {
+  it("저장한 집에서도 같은 TV의 리모컨 전원 단추와 중계가 겹치면 다른 집으로 넘어가지 않고 시작하지 않는다", async () => {
     const dir = savedRuntime({ home: "oneroom", mode: "test" });
-    mkdirSync(join(dir, "homes", "oneroom"), { recursive: true });
-    writeFileSync(join(dir, "homes", "oneroom", "ir.json"), JSON.stringify({ device: "tv_1", port: "COM7", codes: { toggle: "NEC:0004:08" } }));
-    const message = await refusal({ TV_RELAY_URL: "http://127.0.0.1:9", TV_RELAY_TOKEN: TOKEN, TV_RELAY_DEVICE: "tv_1", HOME_ID: "mokryeon_180b" }, dir, true);
-    expect(message).toMatch(/tv_1.*ir\.json.*TV_RELAY/);
+    tvRemote(dir);
+    const message = await refusal({ TV_RELAY_URL: "http://127.0.0.1:9", TV_RELAY_TOKEN: TOKEN, TV_RELAY_DEVICE: "tv_1", HOME_ID: "mokryeon_180b" }, dir, true, fakeIr());
+    expect(message).toMatch(/tv_1.*remotes\.json.*TV_RELAY/);
   });
 
-  it("저장한 실제 모드는 중계 TV가 있는 집이면 그대로, 없는 집이면(ir.json·ThinQ도 없음) 시험 모드로 띄운다", async () => {
+  it("중계 TV에는 설정 API가 리모컨 전원 단추(켜기·끄기·전원·LG 전원 묶음)를 받지 않고, 그 밖 단추는 배우며, 다시 켜도 시작한다", async () => {
+    const dir = runtime();
+    const env = { TV_RELAY_URL: "http://127.0.0.1:9", TV_RELAY_TOKEN: TOKEN, TV_RELAY_DEVICE: "tv_1", TV_RELAY_POLL_MS: "0" };
+    srv = await startServer({ env: { HUB: "memory", PORT: "0", HOME_ID: "oneroom", RUNTIME_DIR: dir, ...env }, log: () => {}, ...fakeIr() });
+    const remote = json(await api("/api/setup/ir/remote", { home: "oneroom", label: "TV", device: "tv_1" })).remotes[0].id as string;
+    expect((await api("/api/setup/ir/port", { home: "oneroom", port: "COM7" })).status).toBe(200);
+    await expect.poll(async () => json(await api("/api/setup/ir?home=oneroom")).port.state).toBe("connected");
+    const refused = "이 TV는 TV 중계로 켜고 꺼요. 전원 단추는 넣을 수 없어요.";
+    for (const role of ["on", "off", "toggle"]) {
+      const r = await api("/api/setup/ir/learn", { home: "oneroom", remote, label: "전원", role });
+      expect([role, r.status, json(r).error]).toEqual([role, 409, refused]);
+    }
+    const preset = await api("/api/setup/ir/preset", { home: "oneroom", remote, preset: "lg_tv_power" });
+    expect([preset.status, json(preset).error]).toEqual([409, refused]);
+    const other = await api("/api/setup/ir/learn", { home: "oneroom", remote, label: "음량 올림", role: null });
+    expect([other.status, json(other).learning?.state]).toEqual([200, "waiting"]);
+    await api("/api/setup/ir/learn/cancel", { home: "oneroom" });
+    await srv.close();
+    srv = undefined;
+    srv = await startServer({ env: { HUB: "memory", PORT: "0", HOME_ID: "oneroom", RUNTIME_DIR: dir, ...env }, log: () => {}, ...fakeIr() });
+    expect(json(await api("/api/setup/ir?home=oneroom")).remotes.map((r: { device: string; buttons: unknown[] }) => [r.device, r.buttons])).toEqual([["tv_1", []]]);
+  });
+
+  it("전원 단추가 있는 리모컨은 중계 TV로 옮기지 못하고, 전원 단추를 지우면 옮기며, 다시 켜도 시작한다", async () => {
+    const dir = runtime();
+    const at = "2026-11-27T10:00:00.000Z";
+    mkdirSync(join(dir, "homes", "oneroom"), { recursive: true });
+    writeFileSync(join(dir, "homes", "oneroom", "remotes.json"), JSON.stringify({ version: 1, port: null, remotes: [{ id: "r_000000ac", label: "에어컨", device: "ac_1", buttons: [
+      { id: "b_000000a1", label: "켜기", role: "on", signal: { kind: "nec", address: 4, command: 1 }, learned_at: at },
+      { id: "b_000000a2", label: "바람 세기", role: null, signal: { kind: "nec", address: 4, command: 2 }, learned_at: at },
+    ] }] }));
+    const env = { TV_RELAY_URL: "http://127.0.0.1:9", TV_RELAY_TOKEN: TOKEN, TV_RELAY_DEVICE: "tv_1", TV_RELAY_POLL_MS: "0" };
+    srv = await startServer({ env: { HUB: "memory", PORT: "0", HOME_ID: "oneroom", RUNTIME_DIR: dir, ...env }, log: () => {}, ...fakeIr() });
+    const move = { home: "oneroom", id: "r_000000ac", label: "TV", device: "tv_1" };
+    const refused = await api("/api/setup/ir/remote", move);
+    expect([refused.status, json(refused).error]).toEqual([409, "이 TV는 TV 중계로 켜고 꺼요. 전원 단추는 넣을 수 없어요."]);
+    expect(json(await api("/api/setup/ir?home=oneroom")).remotes.map((r: { device: string }) => r.device)).toEqual(["ac_1"]);
+    expect((await api("/api/setup/ir/button/delete", { home: "oneroom", remote: "r_000000ac", button: "b_000000a1" })).status).toBe(200);
+    expect((await api("/api/setup/ir/remote", move)).status).toBe(200);
+    await srv.close();
+    srv = undefined;
+    srv = await startServer({ env: { HUB: "memory", PORT: "0", HOME_ID: "oneroom", RUNTIME_DIR: dir, ...env }, log: () => {}, ...fakeIr() });
+    expect(json(await api("/api/setup/ir?home=oneroom")).remotes.map((r: { device: string; buttons: { label: string }[] }) => [r.device, r.buttons.map((b) => b.label)]))
+      .toEqual([["tv_1", ["바람 세기"]]]);
+  });
+
+  it("저장한 실제 모드는 중계 TV가 있는 집이면 그대로, 없는 집이면(리모컨·ThinQ도 없음) 시험 모드로 띄운다", async () => {
     const fake = await fakeRelay();
     await start({ TV_RELAY_URL: fake.url, TV_RELAY_TOKEN: TOKEN, TV_RELAY_DEVICE: "tv_1", TV_RELAY_POLL_MS: "0" }, [], savedRuntime({ home: "oneroom", mode: "live" }), true);
     expect(json(await api("/api/setup"))).toMatchObject({ mode: "live", ir: { ready: true } });

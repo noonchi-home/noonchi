@@ -257,6 +257,11 @@ export const kindLabel = (kind: DeviceKind): string => KINDS[kind].label;
 /** 위험 가전 종류인가(riskyOn이 있는 종류). */
 export const isRiskyKind = (kind: string | null | undefined): kind is DeviceKind => !!kindEntry(kind)?.riskyOn;
 
+/** 적외선 리모컨을 달 수 있는 종류인가: 위험 켜기 종류·승인 종류(도어록 등)는 뺀다(src/server/ir-setup.ts 등록, src/act/tasks.ts 리모컨 단추 누르기). */
+export const remoteKind = (kind: string | null | undefined): boolean => !!kindEntry(kind) && !isRiskyKind(kind) && !kindEntry(kind)?.confirm;
+/** 리모컨을 달 수 있는 종류 전부(등록부 차례). */
+export const REMOTE_KINDS: readonly DeviceKind[] = KIND_ORDER.filter(remoteKind);
+
 /** 다 되면 스스로 멈추는 가전 종류인가(등록부 selfStop). 켠 뒤 그 가전이 꺼짐을 기다리는 wait를 끄는 단계로 인정한다(src/agent/plan-rules.ts selfStopWait). */
 export const isSelfStop = (kind: string | null | undefined): boolean => kindEntry(kind)?.selfStop === true;
 

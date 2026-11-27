@@ -4,7 +4,8 @@ import type { Placed } from "../act/tasks.js";
 import type { WorldView } from "../contract/world.js";
 import { CONDITION_KINDS } from "../world/index.js";
 import { CLASSES, DEVICE_STATES, STATES, type ClassKey, type Facet, type Target } from "../world/vocab.js";
-import { PLAN_LIMITS, type PlanContext } from "./planTools.js";
+import { PLAN_LIMITS, usesRemote, type PlanContext } from "./planTools.js";
+import { saidIn } from "../world/labels.js";
 import { RISKY_LIST } from "./policy.js";
 import { KIND_LABELS } from "../devices/index.js";
 
@@ -118,11 +119,14 @@ export function planInput(ctx: PlanContext): string {
   const state = new Map(world.devices.map((x) => [x.id, x.state.join(" ") || "모름"]));
   const objectClasses = (Object.keys(CLASSES) as ClassKey[]).filter((k) => CLASSES[k].role === "object");
   const fixtureClasses = (Object.keys(CLASSES) as ClassKey[]).filter((k) => CLASSES[k].role === "fixture");
+  // 리모컨 단추 누르기 계획에만 들은 말과 press_remote 줄을 넣는다: 다른 할 일과 리모컨 없는 집의 계획 입력은 그대로다
+  const remote = usesRemote(task) && devices.some((x) => x.remote);
   return [
     `[할 일] ${task.name}: ${task.description}`,
     `- 쓸 수 있는 단계: ${allow}`,
     `- 단계 한도: ${Math.min(task.maxSteps ?? PLAN_LIMITS.maxSteps, PLAN_LIMITS.hardMaxSteps)}개`,
     `[PAM 판단] 관찰: ${d.prediction?.observation ?? "없음"} / 이유: ${d.prediction?.reasoning ?? "없음"}`,
+    ...(remote ? [`[들은 말] ${saidIn(d.textSent).join(" / ") || "없음"}`] : []),
     ...(d.assistanceRevision ? [`[같은 전달 목표의 새 목적지] 확인된 사용자 방은 ${d.assistanceRevision.room}입니다. 마지막 놓기와 그 이동은 이 방의 면을 고르세요. 지정된 물건은 ${d.assistanceRevision.objectId ?? "아직 없음"}입니다. 전체 형태로 제출하되 끝낸 앞 ${d.assistanceRevision.completed}단계는 바꾸지 마세요. 실행기는 그 단계들을 다시 보내지 않습니다.`] : []),
     ...(ctx.ahead
       ? [`[미리 세운 목표] 목표 물건 ${ctx.ahead.object}${ctx.ahead.stand ? `(사람이 지금 쓰는 것을 다 쓰고 ${ctx.ahead.stand.surface_label ?? "곁 면"} 위에 둘 것으로 본 자리)` : ""}. 사람이 아직 쓰는 중이다. 「${ctx.ahead.on ?? ctx.ahead.trigger}」가 되면 서버가 이 계획을 시작한다. 그때를 기다리거나 할지 묻는 단계 없이 그 뒤에 할 단계만 계획하고, 물건은 ${ctx.ahead.object}만 쓴다.`]
@@ -137,7 +141,8 @@ export function planInput(ctx: PlanContext): string {
     `[평면도] 방: ${floor.rooms.map((r) => `${r.id} ${roomName(r.id)}`).join(", ")}`,
     ...places.map((p) => `- ${p.id} ${p.name} [${p.type}] · 방 ${p.room ?? "모름"} · 자리 ${xz(p.position)}${p.basin ? ` · 싱크볼 ${xz(p.basin)}` : ""}`),
     "[가전]",
-    ...devices.map((x) => `- ${x.id} ${x.label} [${x.kind} ${KIND_LABELS[x.kind]}] · 방 ${x.room} · 지금 ${state.get(x.id) ?? "모름"}`),
+    ...devices.map((x) => `- ${x.id} ${x.label} [${x.kind} ${KIND_LABELS[x.kind]}] · 방 ${x.room} · 지금 ${state.get(x.id) ?? "모름"}${x.remote ? ` · 리모컨 단추 ${x.remote.buttons.join(", ")}` : ""}`),
+    ...(remote ? ["- press_remote는 args {\"button\": 단추 이름}이고 target은 그 리모컨이 달린 가전 id, 단추 이름은 위 「리모컨 단추」 글자 그대로다. until 없이 둔다."] : []),
     ...(ctx.lesson ? [`[지난 수업] ${ctx.lesson.runs}번 함`, ...ctx.lesson.steps.map((s) => `- ${s.label} · 혼자 ${s.alone}번`)] : []),
     `[손] 폰 자리 ${xz(floor.robot.position)} · 방 ${roomName(floor.robot.room)}`,
     `[승인] 처음 하는 할 일은 첫 단계 전에 폰으로 묻는다. 위험 목록(${RISKY_LIST.keys()})은 그 단계에서 늘 묻는다. 너는 승인하지 못한다.`,

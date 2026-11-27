@@ -4,7 +4,7 @@
 import { z } from "zod";
 import type { Policy } from "./policy.js";
 import type { DeviceView } from "../contract/events.js";
-import type { Command, CommandResult, DeviceHub, DeviceSpec, RoomSpec } from "../contract/devices.js";
+import type { Command, CommandResult, DeviceHub, DeviceSpec, PressResult, RemoteHub, RoomSpec } from "../contract/devices.js";
 import type { DeviceKind } from "../devices/kinds.js";
 import { KIND_LABELS } from "../devices/index.js";
 import { doneSentence } from "./phrases.js";
@@ -15,7 +15,7 @@ import { compact } from "../shared/korean.js";
 import type { ServiceCall, ServiceKind } from "../contract/service.js";
 import { CALL_SERVICE, SERVICE_KINDS, SERVICE_KIND_IDS, SERVICE_RETRY_BROKEN, SERVICE_RISKY_PROBLEM, serviceCall, serviceText, type ServiceContacts } from "./service.js";
 import { riskyNames } from "./policy.js";
-import { TASK_NAMES } from "../act/tasks.js";
+import { REMOTE_ACTION, REQUEST_NAMES } from "../act/tasks.js";
 
 export type { DeviceView } from "../contract/events.js";
 
@@ -37,6 +37,8 @@ export interface ToolBackend {
   service?: { contacts: ServiceContacts; blocked(): string | null; ask(call: ServiceCall): { token: string; reason: string } };
   /** 할 일 부탁(서버 안 에이전트만): 행동 목록의 일 하나를 실행 추적의 말 부탁 길로 넘긴다(src/act/robot/start.ts request). */
   request?: (task: string) => ToolResult;
+  /** 등록한 적외선 리모컨 단추 누르기(서버 안 에이전트만). */
+  remote?: { press(id: string, button: string): Promise<PressResult> };
 }
 
 export interface ToolResult {
@@ -52,6 +54,8 @@ export interface ToolResult {
   pendingApproval?: { reason: string };
   /** ThinQ가 받았지만 다시 읽은 값이 달라 적용을 확인하지 못했다(완료라고 말하지 않는다). */
   unverified?: true;
+  /** press_remote: 리모컨 신호를 실제로 보냈다. 결과는 읽지 못하니 계획 단계는 끝 조건 없이 보낸 것으로 끝낸다. */
+  sent?: true;
   data?: unknown;
 }
 
@@ -65,6 +69,8 @@ export interface ToolDef {
   mcpOnly?: boolean;
   /** 서버 안 에이전트에만 노출(MCP 목록에 내지 않는다). */
   agentOnly?: boolean;
+  /** 실행 추적의 계획 단계만 쓴다(말 요청 에이전트 도구 목록에 내지 않는다). */
+  planOnly?: boolean;
   /** 기기 명령 도구면 인자 → 가전 명령(승인 판정·폰이 필요한 계획 판정이 쓴다). */
   command?: (args: Record<string, unknown>) => Command;
   run(backend: ToolBackend, args: Record<string, unknown>): Promise<ToolResult>;
@@ -82,11 +88,17 @@ export function roomViews(devices: Pick<DeviceSpec, "room" | "roomLabel">[], roo
   return out;
 }
 
+/** 등록한 적외선 리모컨이 있는 허브인가(SignalHub). */
+export const isRemoteHub = (hub: object): hub is RemoteHub =>
+  typeof (hub as Partial<RemoteHub>).press === "function" && typeof (hub as Partial<RemoteHub>).remoteOf === "function";
+
 export function deviceViews(hub: DeviceHub): DeviceView[] {
   const out: DeviceView[] = [];
+  const remotes = isRemoteHub(hub) ? hub : null;
   for (const spec of hub.list()) {
     const state = hub.get(spec.id);
-    if (state) out.push({ ...spec, state });
+    const remote = remotes?.remoteOf(spec.id);
+    if (state) out.push({ ...spec, state, ...(remote ? { remote } : {}) });
   }
   return out;
 }
@@ -102,6 +114,7 @@ export function localBackend(hub: DeviceHub, policy: Policy, rooms?: RoomSpec[],
       const r = await policy.confirm(hub, token);
       return { ...r, deviceId: p?.deviceId };
     },
+    ...(isRemoteHub(hub) ? { remote: { press: (id: string, b: string) => hub.press(id, b) } } : {}),
   };
 }
 
@@ -112,6 +125,7 @@ function brief(d: DeviceView) {
     capabilities: d.capabilities, sensors: d.sensors,
     // 신호 없는 기기는 상태를 모른다(사진·질문으로만 확인)
     ...(d.state.signal === "none" ? { signal: "none" as const, state: "모름" } : { online: d.state.online, state: d.state.twin }),
+    ...(d.remote ? { remote_buttons: d.remote.buttons } : {}),
   };
 }
 
@@ -171,6 +185,8 @@ function commandTool(
 export const LEAVE_IT = "leave_it";
 /** 할 일 부탁: 로봇 할 일 목록의 일을 부탁하는 말을 계획 모드로 넘기는 도구. */
 export const REQUEST_TASK = "request_task";
+/** 리모컨 단추: 등록한 적외선 리모컨의 단추 하나를 누르는 도구. */
+export const PRESS_REMOTE = "press_remote";
 
 export const TOOLS: ToolDef[] = [
   {
@@ -282,11 +298,30 @@ export const TOOLS: ToolDef[] = [
     },
   },
   {
+    // 말로 한 단추 부탁은 request_task(리모컨 단추 누르기) 계획으로 가고, 계획의 기기 단계가 이 도구를 부른다
+    name: PRESS_REMOTE, title: "리모컨 단추", agentOnly: true, planOnly: true,
+    description: "등록한 적외선 리모컨의 단추 하나를 누릅니다(음량·채널·입력·에어컨 설정 등). 기기 목록의 remote_buttons에 있는 이름 그대로 씁니다. 켜기·끄기는 turn_on·turn_off를 씁니다. 결과는 확인하지 못합니다.",
+    schema: z.object({ device_id: deviceId, button: z.string().min(1).max(20).describe("단추 이름(remote_buttons 글자 그대로)") }),
+    async run(backend, args) {
+      if (!backend.remote) return { ok: false, error: "리모컨은 서버 안 에이전트만 쓸 수 있습니다." };
+      const d = await resolveDevice(backend, String(args.device_id));
+      if (!d) return notFound(String(args.device_id));
+      const button = String(args.button);
+      const r = await backend.remote.press(d.id, button);
+      const device = { id: d.id, label: d.label };
+      if (!r.ok) return { ok: false, device, error: r.error };
+      return r.sent
+        ? { ok: true, device, sent: true, unverified: true, message: `${d.label} 리모컨 「${button}」 신호를 보냈어요. 실제로 바뀌었는지는 확인하지 못했어요.` }
+        : { ok: true, device, message: `시험 모드라 ${d.label} 리모컨 「${button}」 신호는 보내지 않았어요.` };
+    },
+  },
+  {
     name: REQUEST_TASK, title: "할 일 부탁", agentOnly: true,
-    description: "사람이 로봇 할 일 목록의 일을 부탁하면(예: 컵 치워 줘, 라면 끓이는 법 알려 줘) 그 일 이름 하나로 부릅니다. 가전 하나를 켜고 끄는 말은 가전 도구를 씁니다.",
-    schema: z.object({ task: z.enum(TASK_NAMES as [string, ...string[]]).describe("할 일 이름(목록 글자 그대로)") }),
+    description: "사람이 로봇 할 일 목록의 일을 부탁하면(예: 컵 치워 줘, 라면 끓이는 법 알려 줘) 그 일 이름 하나로 부릅니다. 가전 하나를 켜고 끄는 말은 가전 도구를 씁니다. 등록한 리모컨 단추를 누르라는 말(TV 소리 키워 줘, 채널 올려 줘)은 리모컨 단추 누르기로 부릅니다.",
+    schema: z.object({ task: z.enum(REQUEST_NAMES as [string, ...string[]]).describe("할 일 이름(목록 글자 그대로)") }),
     async run(backend, args) {
       if (!backend.request) return { ok: false, error: "할 일 부탁은 서버 안 에이전트만 받습니다." };
+      if (args.task === REMOTE_ACTION && !(await backend.devices()).some((d) => d.remote)) return { ok: false, error: "이 집에 등록한 리모컨이 없어요." };
       return backend.request(String(args.task));
     },
   },

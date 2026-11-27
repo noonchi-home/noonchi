@@ -128,8 +128,10 @@ describe("서버가 화면에 그대로 내보내는 계획 글(src/act/labels.t
   const kinds = fileURLToPath(new URL("../src/devices/kinds.ts", import.meta.url));
   const historyLabels = fileURLToPath(new URL("../src/brain/history/labels.ts", import.meta.url));
   const prompts = fileURLToPath(new URL("../src/act/prompts.ts", import.meta.url));
+  const irRemotes = fileURLToPath(new URL("../apps/android/ir-remotes.ts", import.meta.url));
+  const remotesScreen = fileURLToPath(new URL("../apps/android/ConnectedRemotes.tsx", import.meta.url));
   it("npm run lint가 web/·ui/src와 함께 본다", () => {
-    expect(COPY_TARGETS).toEqual([webDir, uiDir, uiPhoneDir, labels, worldLabels, worldVocab, kinds, historyLabels, prompts]);
+    expect(COPY_TARGETS).toEqual([webDir, uiDir, uiPhoneDir, labels, worldLabels, worldVocab, kinds, historyLabels, prompts, irRemotes, remotesScreen]);
     expect(copyFiles([labels])).toEqual([labels]);
   });
   it("World State 글(src/world/labels.ts, 낱말 표 src/world/vocab.ts, 가전 종류 등록부 src/devices/kinds.ts의 종류별 상태 글)도 꺼내 검사한다. 괄호·화살표는 템플릿 글에도 없다", () => {

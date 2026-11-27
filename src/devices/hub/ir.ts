@@ -23,7 +23,7 @@ export const IR_DEFAULTS = {
 } as const satisfies Pick<IrConfig, "offBelow" | "onAbove" | "holdMs" | "confirmOnMs" | "confirmOffMs">;
 
 interface Connection { send(line: string): void; close(): void }
-export type IrPort = (port: string, received: (line: string) => void, lost: () => void) => Connection;
+export type IrPort = (port: string, received: (line: string) => void, lost: (reason?: "busy") => void) => Connection;
 
 interface Pending {
   target: Power;

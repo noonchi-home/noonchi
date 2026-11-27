@@ -6,7 +6,7 @@ import { assistanceResident, proactiveIntent } from "./assistance.js";
 import { assistanceContext, assistanceOutcome } from "../../shared/assistance-outcome.js";
 import type { Intervention } from "../../brain/index.js";
 import { CALL_ACTION, lookTargets, taskOf, type TaskSpec } from "../../act/tasks.js";
-import { callDestination, callPlaces, withChosenStation, deviceViews, placesOf, resubmit, type PlaceInfo, type PlanAhead, type PlanContext } from "../../agent/index.js";
+import { PRESS_REMOTE, callDestination, callPlaces, withChosenStation, deviceViews, placesOf, resubmit, type PlaceInfo, type PlanAhead, type PlanContext } from "../../agent/index.js";
 import { Decider, PamClient, PersonLane, dailyMemory, routineAllows, habitView, lastStoredThoughts, previewDayMemory, pamSettings, thoughtFeed, type FsmMemory } from "../../brain/index.js";
 import type { BrainLog, DecisionRecord } from "../../contract/events.js";
 import type { PendingGoal } from "../../contract/goal.js";
@@ -557,8 +557,10 @@ export function startAct(core: HomeCore): (event: BrainLog) => void {
           const plan = plans.current();
           const step = plan?.steps.find(candidate => candidate.status === "active");
           const refs = { plan_id: plan?.id, step_id: step?.id, object_id: deviceId };
+          // 시험 모드 리모컨 단추(sent 없음)는 신호를 보내지 않았으니 확인 못 함으로 닫는다. 계획 단계는 결과(ok) 그대로 끝난다
           return measuredTrace(core.trace, "device_tool", refs, undefined, () => devices.run(tool, deviceId, args, live, commandId),
-            result => result.needsConfirmation ? "approval_needed" : result.ok ? result.unverified ? "unconfirmed" : "device_ack" : null,
+            result => result.needsConfirmation ? "approval_needed" : !result.ok ? null
+              : result.unverified || (tool === PRESS_REMOTE && result.sent !== true) ? "unconfirmed" : "device_ack",
             { device: core.specOf.get(deviceId)?.kind });
         },
       },

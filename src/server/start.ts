@@ -32,7 +32,8 @@ import { acquireServerLock, restoreNeeded } from "./lock.js";
 import { HOUSEHOLD_KINDS } from "../devices/kinds.js";
 import { SetupError, SetupStore, effectiveSources, parsePairs, parseSources } from "./setup/store.js";
 import { repoPath } from "../shared/paths.js";
-import { PAIRABLE_KINDS, fitsKind, loadIrConfig, openIrPort, type IrConfig, type IrPort } from "../devices/index.js";
+import { PAIRABLE_KINDS, fitsKind, listSerialPorts, openIrPort, type IrPort, type SerialPortInfo } from "../devices/index.js";
+import { IrSetup } from "./ir-setup.js";
 import { ThinqClient, ThinqError, thinqConfig } from "../devices/index.js";
 import { DEFAULT_POLL_MS, DEFAULT_READBACK_MS, ThinqLink } from "../devices/index.js";
 import { DEFAULT_RELAY_POLL_MS, RelayClient, RelayLink, relayConfig } from "../devices/index.js";
@@ -49,7 +50,7 @@ type Env = Record<string, string | undefined>;
 /** 실행 중 만든 파일(사진·배치 수정본·설정) 폴더(커밋하지 않음). RUNTIME_DIR로 바꾼다. */
 const DEFAULT_RUNTIME_DIR = repoPath("runtime/");
 
-/** 같은 TV에 직접 적외선(ir.json)과 TV 중계가 함께 설정됨. 저장한 집에서 나도 다른 집으로 넘어가지 않고 시작을 막는다. */
+/** 같은 TV에 리모컨 전원 단추(remotes.json)와 TV 중계가 함께 설정됨. 저장한 집에서 나도 다른 집으로 넘어가지 않고 시작을 막는다. */
 class TvSetupConflict extends Error {}
 
 const msOf = (raw: string | undefined, fallback: number) => {
@@ -64,7 +65,10 @@ const msListOf = (raw: string | undefined, fallback: number[]) => {
 export interface StartServerOptions {
   /** Optional scheduler shared by household nodes and the in-memory replay bus. */
   clock?: Clock;
+  /** 적외선 보드 직렬 열기(기본 hardware/ir-bridge/serial.ps1). 시험은 가짜 보드(fakeBoard)를 넣는다. */
   irPort?: IrPort;
+  /** USB 직렬 포트 목록(기본 Windows PowerShell로 읽음). 시험은 고정 목록을 넣는다. */
+  irPorts?: () => Promise<SerialPortInfo[]>;
   /** 기본 process.env. HUB, MATTER_*, AGENT_PROVIDER, TWIN_STUDIO_DIR, HOME_ID(저장한 집이 없을 때 띄울 집, 기본 집), PORT(0이면 빈 포트), HOST(기본 127.0.0.1, 컨테이너 밖에서는 루프백만),
    *  HUB_URL(허브의 공개 주소를 자동으로 찾을 수 없는 곳에서 쓰는 QR 주소),
    *  ALLOWED_ORIGINS(이 PC 말고 대시보드를 여는 출처, 쉼표로 여러 개), PLAN_TOKEN(다른 주소에서 POST /api/plan을 받을 토큰),
@@ -80,7 +84,8 @@ export interface StartServerOptions {
    *  THINQ_TOKEN(실제 모드), THINQ_REGION·THINQ_COUNTRY·THINQ_CLIENT_ID·THINQ_API_KEY·THINQ_BASE_URL·THINQ_TIMEOUT_MS(src/devices/thinq/client.ts),
    *  THINQ_POLL_MS(짝지은 기기 읽기 간격, 기본 15000, 0이면 처음 한 번), THINQ_READBACK_MS(명령 뒤 다시 읽기 전 기다림, 기본 1000,2000,4000),
    *  TV_RELAY_URL·TV_RELAY_TOKEN·TV_RELAY_DEVICE(실제 모드에서 그 TV를 TV 중계로 잇는다)·TV_RELAY_TARGET(중계 쪽 이름, 기본 tv)·
-   *  TV_RELAY_POLL_MS(기본 2000, 0이면 처음 한 번)·TV_RELAY_TIMEOUT_MS·TV_RELAY_COMMAND_TIMEOUT_MS(src/devices/relay/client.ts)를 읽는다. */
+   *  TV_RELAY_POLL_MS(기본 2000, 0이면 처음 한 번)·TV_RELAY_TIMEOUT_MS·TV_RELAY_COMMAND_TIMEOUT_MS(src/devices/relay/client.ts),
+   *  IR_FAKE(1이면 적외선 포트 목록에 가짜 보드 FAKE를 더한다)를 읽는다. */
   env?: Env;
   log?: (line: string) => void;
   /** true면 설정(고른 집·끝냄·신호 출처)을 RUNTIME_DIR에 저장하고 다음 시작 때 읽는다(npm start). 기본은 메모리에만 두고 「끝냄」으로 시작. */
@@ -152,7 +157,9 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
   const runtimeDir = env.RUNTIME_DIR?.trim() || DEFAULT_RUNTIME_DIR;
   const store = new SetupStore({ runtimeDir, persist: opts.persistSetup ?? false, log });
   let mode: ControlMode = store.mode();
-  let ir: IrConfig | null = null;
+  // 지금 집과 집 바꾸는 중 표시. 집을 열기 전에 선언한다: 적외선 설정(irSetup.changed)과 반성이 집을 열기 전에 불려도 읽을 수 있게
+  let current: HomeRuntime | null = null;
+  let switching = false;
   // TV 중계(TV_RELAY_*): 실제 모드에서 그 TV를 중계로 잇는다. 틀리면 잠금·DB를 열기 전에 시작을 막는다(오류 글에 주소·토큰을 넣지 않는다)
   const relay = relayConfig(env);
   if (!relay.ok && !relay.off) throw new Error(`TV 중계 설정이 틀렸어요: ${relay.error}`);
@@ -289,18 +296,6 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
       }
       return addresses;
     } : undefined,
-    irPort: opts.irPort,
-    homeInfrared(homeId, devices) {
-      ir = loadIrConfig(runtimeDir, homeId);
-      if (ir && relay.ok && ir.device === relay.config.deviceId) {
-        throw new TvSetupConflict(`같은 TV(${ir.device})에 직접 적외선(ir.json)과 TV 중계(TV_RELAY_*)가 둘 다 설정돼 있어요. 빛 센서가 있는 장비면 ir.json, 없으면 TV_RELAY_* 하나만 남기세요.`);
-      }
-      if (mode === "live" && !ir && !relayTvIn(devices) && !thinqConfig(env).ok) {
-        log("[경고] 이 집에 적외선 TV(ir.json·TV 중계)와 ThinQ 토큰이 없어 시험 모드로 띄웁니다.");
-        mode = "test";
-      }
-      return mode === "live" ? ir : null;
-    },
     savedStations: (homeId, defaults) => store.stations(homeId, defaults),
     sources: (homeId, ids) => store.sources(homeId, ids), mode: () => mode, allowOrigin, planToken: env.PLAN_TOKEN?.trim() || undefined, ready: makeReady({ endpoints, agent: agentEndpoint(env), db, writable: () => write.writable() }),
     history: { db, write, device: feed.device.emit, brain: feed.brain.emit, plan: feed.plan.emit, reflect, day: dayView,
@@ -333,6 +328,19 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
     return { [id]: relay.config.target };
   };
 
+  // 적외선 리모컨(remotes.json)과 보드 연결 하나. 집을 열 때 붙이고 닫기 전에 뗀다. 저장·포트 고르기 뒤 changed()로 지금 집에 리모컨 부분만 다시 붙인다
+  // (ThinQ·TV 중계·출처는 모드·짝·출처를 바꿀 때만 applyControl로 다시 만든다: 다시 만들면 짝지은 ThinQ 가전이 첫 읽기 전까지 모름이 된다)
+  const irSetup = new IrSetup({
+    runtimeDir, log, fake: env.IR_FAKE === "1", open: opts.irPort ?? openIrPort, listPorts: opts.irPorts ?? (() => listSerialPorts()),
+    mode: () => mode, relayTv: relay.ok ? relay.config.deviceId : null, changed: () => { if (current && !switching) applyRemotes(current); },
+  });
+
+  /** 지금 모드대로 TV 전원(IrTv, 실제 모드만)과 리모컨 단추를 집 묶음에 붙인다. */
+  const applyRemotes = (h: HomeRuntime) => {
+    h.signals.setInfrared(mode === "live" ? irSetup.tvConfig() : null, irSetup.tvPort());
+    h.signals.setRemotes(irSetup.runtime(), mode === "live");
+  };
+
   /** 지금 모드·짝·저장한 출처를 집 묶음에 적용한다. 실제 모드에서 짝이 있을 때만 ThinQ·TV 중계 연결을 만든다. */
   const applyControl = (h: HomeRuntime, quiet = true) => {
     const homeId = h.twin.home.id;
@@ -342,7 +350,7 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
     const relayNow = mode === "live" ? relayed : {};
     h.signals.setSources({ ...effectiveSources(store.sources(homeId, ids, { quiet: true }), pairs, mode),
       ...Object.fromEntries(Object.entries(relayNow).map(([id, target]) => [id, { kind: "relay" as const, deviceId: target }])) });
-    h.signals.setInfrared(mode === "live" ? ir : null, opts.irPort ?? openIrPort);
+    applyRemotes(h);
     h.setLink(mode === "live" && thinqConfig(env).ok && Object.keys(pairs).length > 0
       ? new ThinqLink({ client: thinqClient(), world: h.hub, pairs, log, pollMs, readbackMs })
       : null);
@@ -353,8 +361,17 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
   const openHome = async (id: string | undefined): Promise<HomeRuntime> => {
     const h = await startHome(id, ctx);
     try {
+      await irSetup.attach({ id: h.twin.home.id, devices: h.twin.devices });
+      const tv = irSetup.tvConfig();
+      if (tv && relay.ok && tv.device === relay.config.deviceId)
+        throw new TvSetupConflict(`같은 TV(${tv.device})에 리모컨 전원 단추(remotes.json)와 TV 중계(TV_RELAY_*)가 둘 다 설정돼 있어요. 하나만 남기세요.`);
+      if (mode === "live" && !irSetup.hasRemotes() && !relayTvIn(h.twin.devices) && !thinqConfig(env).ok) {
+        log("[경고] 이 집에 리모컨·TV 중계·ThinQ 토큰이 없어 시험 모드로 띄웁니다.");
+        mode = "test";
+      }
       applyControl(h, false);
     } catch (e) {
+      irSetup.detach();
       await h.close();
       throw e;
     }
@@ -382,6 +399,7 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
   try {
     await writer.ready();
   } catch (e) {
+    irSetup.detach();
     await rt.close().catch(() => {});
     await bus.close().catch(() => {});
     await closeDb();
@@ -390,9 +408,8 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
   }
   if (mode === "live") log("운영 모드: 실제");
   ctx.phonePort = rt.phonePort;
-  let current: HomeRuntime | null = rt;
+  current = rt;
   let last: HomeRuntime = rt;
-  let switching = false;
   let switchError: string | null = null;
   let job: Promise<void> | null = null; // 진행 중인 집 바꾸기(close가 끝나길 기다린다)
   let closed = false;
@@ -403,6 +420,12 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
     if (!current) throw new HttpError(503, switching ? "집을 바꾸는 중이에요. 잠시 뒤 다시 해 주세요." : `집을 띄우지 못했어요: ${switchError ?? "알 수 없음"}`);
     if (typeof body.home !== "string" || !body.home) throw new HttpError(400, "home(지금 설정 중인 집 id)이 필요합니다.");
     if (body.home !== current.twin.home.id) throw new HttpError(409, `집이 바뀌었어요(지금 ${current.twin.home.name}). 설정 화면을 새로 고치세요.`);
+    return current;
+  };
+
+  /** 적외선 설정 API는 집을 바꾸는 동안 받지 않는다. */
+  const irHome = (): HomeRuntime => {
+    if (!current || switching) throw new HttpError(409, "집을 바꾸는 중이에요.");
     return current;
   };
 
@@ -423,6 +446,7 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
     try {
       const old = current;
       current = null;
+      irSetup.detach();
       await old?.close();
       try {
         const next = await openHome(id);
@@ -468,7 +492,7 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
       rooms: h?.twin.rooms ?? [], devices: h ? deviceViews(h) : [], devices_saved: h ? store.hasSources(h.twin.home.id) : false,
       position: { start: !!h?.start, layout: !!h?.layout, phone_urls: h?.phoneUrls ?? [] },
       android_twa: switching ? null : androidTwaTarget(h?.phoneUrls ?? [], androidTwaConfigured),
-      mode, ir: { ready: !!ir || (!!h && Object.keys(relayPairs(h)).length > 0) }, thinq: { ready: thinqConfig(env).ok }, pairs: h ? store.pairs(h.twin.home.id, deviceIds(h), { quiet: true }) : {},
+      mode, ir: { ready: (!!h && irSetup.ready()) || (!!h && Object.keys(relayPairs(h)).length > 0) }, thinq: { ready: thinqConfig(env).ok }, pairs: h ? store.pairs(h.twin.home.id, deviceIds(h), { quiet: true }) : {},
     };
   };
 
@@ -525,7 +549,7 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
         if (want !== "test" && want !== "live") throw new HttpError(400, "mode는 test(시험) 또는 live(실제)여야 합니다.");
         if (want === "live") {
           if (body.confirm !== true) throw new HttpError(400, "실제 모드는 화면에서 한 번 더 확인한 뒤에 바꿀 수 있어요.");
-          if (!ir && !Object.keys(relayPairs(current)).length) thinqClient();
+          if (!irSetup.ready() && !Object.keys(relayPairs(current)).length) thinqClient();
         } else {
           client = null;
           thinqList = null;
@@ -592,6 +616,22 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
         store.markDone();
         return view();
       },
+      ir: {
+        view(home) {
+          const h = irHome();
+          if (home !== undefined && home !== h.twin.home.id) throw new HttpError(409, "허브에서 열린 집을 다시 확인해 주세요.");
+          return irSetup.view();
+        },
+        ports: () => { irHome(); return irSetup.ports(); },
+        setPort: (b) => { irHome(); return irSetup.setPort(b); },
+        saveRemote: (b) => { irHome(); return irSetup.saveRemote(b); },
+        deleteRemote: (b) => { irHome(); return irSetup.deleteRemote(b); },
+        learn: (b) => { irHome(); return irSetup.learn(b); },
+        cancelLearn: (b) => { irHome(); return irSetup.cancelLearn(b); },
+        deleteButton: (b) => { irHome(); return irSetup.deleteButton(b); },
+        test: (b) => { irHome(); return irSetup.test(b); },
+        preset: (b) => { irHome(); return irSetup.preset(b); },
+      },
     },
   });
 
@@ -601,6 +641,7 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
   try {
     listened = await shell.listen(Number.isInteger(wanted) && wanted >= 0 ? wanted : 8200, host);
   } catch (e) {
+    irSetup.detach();
     await rt.close().catch(() => {});
     await bus.close().catch(() => {});
     await closeDb();
@@ -669,6 +710,7 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
       await job;
       // 집의 새 일(판단·실행 추적·가전 정책)을 먼저 막는다: 집 닫기의 첫 단계(새 일 막기)는 부르는 순간 돈다.
       // 그다음 진행 중인 반성 요청을 끊고, 집 닫기와 반성이 끝나기를 기다린다. 앱이 /events 소켓을 먼저 끊어야 껍데기 서버 close가 기다리지 않는다
+      irSetup.detach();
       const homeClosing = current?.close();
       closing.abort(new Error("서버를 끔"));
       await Promise.all([homeClosing, night?.close()]);

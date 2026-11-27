@@ -101,6 +101,15 @@ export interface DeviceHub {
   subscribe(cb: (s: DeviceState) => void): () => void;
 }
 
+/** 리모컨 단추 누르기 결과. sent: 실제로 쏨(시험 모드면 false). */
+export type PressResult = { ok: true; sent: boolean } | { ok: false; error: string };
+/** 등록한 적외선 리모컨이 있는 허브(SignalHub). 알아보기는 src/agent/tools.ts isRemoteHub.
+ *  remoteOf·press는 전원 뜻 단추(켜기·끄기·전원)를 다루지 않는다: 그 단추는 turn_on·turn_off로만 보낸다. */
+export interface RemoteHub {
+  remoteOf(id: string): { label: string; buttons: string[] } | undefined;
+  press(id: string, button: string, commandId?: string): Promise<PressResult>;
+}
+
 /** 방 목록(GET /api/rooms). floorplan rooms의 id·label. */
 export interface RoomSpec {
   id: string;

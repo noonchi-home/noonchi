@@ -13,7 +13,7 @@ import type { DayView, FinishResult } from "../../contract/reflection.js";
 import type { ControlMode } from "../../contract/setup.js";
 import type { StationMap } from "../../contract/stations.js";
 import type { DeviceHub, DeviceState } from "../../contract/devices.js";
-import type { IrConfig, IrPort, RelayLink, SignalHub, SignalSource, ThinqLink } from "../../devices/index.js";
+import type { RelayLink, SignalHub, SignalSource, ThinqLink } from "../../devices/index.js";
 import type { LayoutEditor, TwinData } from "../../layout/index.js";
 import type { PipelineInject } from "../../observe/index.js";
 import type { StartStore } from "../../phone/index.js";
@@ -56,9 +56,6 @@ export interface HomeHistory {
 }
 
 export interface HomeContext {
-  /** 이 집의 직접 적외선 TV 설정(실제 모드일 때). devices로 TV 중계 TV가 이 집에 있는지 본다. */
-  homeInfrared?: (home: string, devices: readonly { id: string; kind: string }[]) => IrConfig | null;
-  irPort?: IrPort;
   savedStations?: (home: string, defaults: StationMap) => StationMap;
   env: Env;
   log: (line: string) => void;

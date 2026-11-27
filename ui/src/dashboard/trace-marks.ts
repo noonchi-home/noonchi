@@ -50,6 +50,8 @@ const MARK_OF: Record<string, TraceMarkKind> = {
   "LLM VLM 근접 해석": "look",
   "TOOL 가전 도구": "device",
   "OBSERVATION 가전 상태 변화": "device",
+  "TOOL 리모컨 신호": "device",
+  "OBSERVATION 리모컨 누름": "device",
   "AGENT 목표 준비": "goal",
   "OBSERVATION 사용자 자리 이탈": "goal",
   "GUARDRAIL 실행 보류": "guard",

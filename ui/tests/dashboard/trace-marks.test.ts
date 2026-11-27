@@ -120,6 +120,15 @@ describe("트레이스 줄 → 트윈 표시(traceMarks)", () => {
     expect(marks(t.rows())).toEqual([expect.objectContaining({ kind: "device", at: ANCHORS.tv_1, target: "tv_1", text: "가전 응답 확인" })]);
   });
 
+  it("리모컨 신호·리모컨 누름 줄은 그 가전 자리에 OUTPUT 글이다", () => {
+    const row = (kind: TraceRow["kind"], name: string, output: string): TraceRow => ({
+      id: `e1:${name}:1`, activity_id: `e1:${name}`, rev: 1, refs: { object_id: "tv_1" }, kind, name, input: "TV", output,
+      started_ms: 1000, ended_ms: 1000, state: "done",
+    });
+    expect(marks([row("TOOL", "리모컨 신호", "신호 보냄")])).toEqual([expect.objectContaining({ kind: "device", at: ANCHORS.tv_1, target: "tv_1", text: "신호 보냄" })]);
+    expect(marks([row("OBSERVATION", "리모컨 누름", "단추 누름 확인")])).toEqual([expect.objectContaining({ kind: "device", at: ANCHORS.tv_1, target: "tv_1", text: "단추 누름 확인" })]);
+  });
+
   it("VLM 근접 해석은 같은 요청의 근접 관찰 대상 자리이고, 같은 대상 표시는 마지막 줄 하나다", () => {
     const t = journal();
     t.start("closer", { plan_id: PLAN.id, request_id: "r2", object_id: "cup_1" });
