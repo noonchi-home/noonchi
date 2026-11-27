@@ -26,6 +26,7 @@ import type { PlanView, XZ } from "../src/contract/plan.js";
 import type { ControlMode } from "../src/contract/setup.js";
 import type { Facet, ObjClass, WorldChange, WorldChangeKind, WorldEye, WorldFact, WorldObject, WorldPerson, WorldView } from "../src/contract/world.js";
 import { HistoryDb, historyTzMinutes, type HistoryKind } from "../src/brain/history/db.js";
+import { SKIPPED_FOLDER } from "./water-habit.js";
 import { FEEDBACK_TEXT, REFLECT_TEXT } from "../src/brain/history/labels.js";
 import { attachRecorder, topic, type DeviceNote } from "../src/brain/history/recorder.js";
 import { memoryForDay } from "../src/brain/history/reflect.js";
@@ -689,6 +690,7 @@ export function main(argv: string[], env: Record<string, string | undefined>, lo
       log(`합성 기록을 지웠어요: 줄 ${r.events}개, 기억 판본 ${r.memories}개, 날 고정 ${r.pins}개 (${path})`);
       return r;
     }
+    if (db.skips().length) throw new Error(SKIPPED_FOLDER);
     const end = arg("--end") ?? addDays(db.dayOf(Date.now()), -1);
     const r = seedHistory(db, { home: arg("--home") ?? (env.HOME_ID?.trim() || "mokryeon_180b"), end, days: Number(arg("--days") ?? 7), twinDir: env.TWIN_STUDIO_DIR });
     if (r.cleared.events) log(`앞서 넣은 합성 기록 ${r.cleared.events}줄을 지웠어요`);

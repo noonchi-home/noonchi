@@ -31,6 +31,7 @@ The Agent Trace lists activities oldest first, so the newest activity is at the 
 | `BRAIN_YOLO_PATH`, `BRAIN_POSE_PATH` | Segmentation and pose ONNX files under `models/` | Local perception models. `BRAIN_POSE_EVERY` controls pose sampling. |
 | `PAM_TRIGGER` | `periodic` | Select periodic or event-driven decisions. `PAM_PERIOD_MS` overrides the periodic interval. |
 | `HISTORY_TZ_MINUTES`, `REFLECT_AT` | `540`, `23:30` | Local day boundary and scheduled reflection time. |
+| `FINISH_DAY` | Off | `1` adds a finish-day button to the dashboard settings dialog. It reflects on today and moves the system day forward by one; the clock time stays (`day_skips`). Blocked in live mode. No undo: start a new demo folder. |
 | `KEEP_HEARD_TEXT` | Off | Controls retention of speech text. |
 | `PHONE_VIDEO_DIR` | Repository `runtime/videos` | Source directory for phone video mode. Compose sets it to `/data/videos`. |
 | `HUB`, `MATTER_TRANSPORT` | `matter`, `network` | Device hub and Matter transport. Compose uses local transport. |

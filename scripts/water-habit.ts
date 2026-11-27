@@ -19,7 +19,11 @@ const DAY_MS = 86_400_000;
 
 const addDays = (day: string, n: number) => new Date(Date.parse(`${day}T00:00:00Z`) + n * DAY_MS).toISOString().slice(0, 10);
 
+/** 하루 마치기(FINISH_DAY=1)로 날을 넘긴 기록 DB에는 합성·시연 기록을 넣지 않는다(넣는 날짜가 서버의 날짜와 어긋난다). */
+export const SKIPPED_FOLDER = "하루를 넘긴 폴더예요. week --fresh로 다시 시작하세요";
+
 export function seedWaterHabit(db: HistoryDb, today: string, atMs: number): { version: number; routines: HelpRoutine[] } {
+  if (db.skips().length) throw new Error(SKIPPED_FOLDER);
   const off = db.offsetMinutes;
   WATER_CALLS.forEach((hm, i) => {
     const day = addDays(today, i - WATER_CALLS.length);

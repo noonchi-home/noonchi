@@ -61,6 +61,8 @@ interface Fake {
   appliesFor?: (day: string) => string;
   /** 반성 뒤 오늘을 다른 판본으로 고정한다. */
   pinAfterRun?: () => void;
+  /** 서버의 시스템 날짜(GET /api/day). 없으면 그 경로가 없는 옛 서버처럼 404. */
+  today?: string;
   started: unknown[];
 }
 let servers: Server[] = [];
@@ -84,6 +86,7 @@ async function fakeServer(home = "mokryeon_180b"): Promise<Fake> {
     f.calls.push(`${req.method} ${path}`);
     if (path === "/api/health") return send(200, { ok: true });
     if (path === "/api/homes") return send(200, { current: f.home, homes: [] });
+    if (path === "/api/day") return f.today ? send(200, { ok: true, today: f.today }) : send(404, { ok: false, error: "없음" });
     if (req.method === "POST" && path === "/api/phone/start-pose") { f.started.push(JSON.parse(raw)); return send(200, { ok: true, start: { label: "식탁 앞" } }); }
     const day = /^\/api\/memory\/day\/(\d{4}-\d{2}-\d{2})$/.exec(path)?.[1];
     if (day) return send(200, { ok: true, day, pinned: f.pins.get(day) ?? null, uses: usesFor(day), latest: f.versions.at(-1)!.version });
@@ -411,6 +414,15 @@ describe("오늘부터 쓰는 반성(reflect)", () => {
     expect(logs.join("\n")).toContain("reflect --scripted");
   });
 
+  it("서버가 하루를 넘겼으면 서버의 오늘(GET /api/day) 전날을 반성한다", async () => {
+    const f = await fakeServer();
+    f.today = next(TODAY);
+    await run(["reflect", "--api", f.url]);
+    expect(f.calls).toContain("GET /api/day");
+    expect(f.versions.at(-1)).toMatchObject({ day: TODAY, appliesDay: next(TODAY) });
+    expect(f.calls).toContain(`GET /api/memory/day/${next(TODAY)}`);
+  });
+
   it("--scripted는 서버 없이 오늘부터 쓰는 판본에 말없는 에어컨 습관을 넣고 반성 줄에 합성 표시를 단다", async () => {
     const dir = join(tmp(), "week");
     await run(["week", "--dir", dir, "--api", CLOSED]);
@@ -423,6 +435,24 @@ describe("오늘부터 쓰는 반성(reflect)", () => {
     expect(row.data).toMatchObject({ synthetic: true, ok: true, version: v.version, applies_day: TODAY });
     expect((row.data as { active: EdgeLine[] }).active.some(silentAircon)).toBe(true);
     db.close();
+  }, 60_000);
+});
+
+describe("하루를 넘긴 폴더(하루 마치기)", () => {
+  it("learned·water·reflect --scripted는 하루를 넘긴 폴더면 넣지 않고 멈춘다", async () => {
+    const dir = join(tmp(), "week");
+    await run(["week", "--dir", dir, "--api", CLOSED]);
+    const db = HistoryDb.open(join(dir, "noonchi.db"), 540);
+    db.skipDay(NOW - 60_000, db.dayOf(NOW - 60_000));
+    const versions = db.latestMemoryVersion();
+    db.close();
+    for (const args of [["learned"], ["water"], ["reflect", "--scripted"]]) {
+      await expect(run([...args, "--dir", dir, "--api", CLOSED]), args.join(" ")).rejects.toThrow(/하루를 넘긴 폴더예요/);
+    }
+    const after = HistoryDb.open(join(dir, "noonchi.db"), 540);
+    expect(after.latestMemoryVersion()).toBe(versions);
+    expect(after.list({ kinds: ["help"] })).toEqual([]);
+    after.close();
   }, 60_000);
 });
 

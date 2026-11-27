@@ -83,6 +83,7 @@ Each label sits next to the arrowhead it arrives at. On the Brain ↔ EXAONE lin
 | Brain ↔ EXAONE 1 | Chosen Task | Step Plan |
 | Brain ↔ EXAONE 2 | Observation + FSM, every 5 s | Next Task |
 | Brain ↔ EXAONE 3 (purple dotted, nightly) | Day's History at 23:30 | Next-day FSM |
+| Brain ↔ EXAONE 3 (finish the day, `FINISH_DAY=1`) | Today's History when the dashboard finishes the day | Next-day FSM, system day +1 |
 | Perception ↔ YOLO26 | Frame | Objects |
 | Perception ↔ Qwen3-VL-4B | 5 Frames + Objects, every 2 s | Scene Text |
 
@@ -95,7 +96,7 @@ Each label sits next to the arrowhead it arrives at. On the Brain ↔ EXAONE lin
 5. **Act** sends the steps to the phone, such as “Please go to the table” and “Please pick up the cup.”
 6. **Devices** reads and controls appliances. The Matter link goes to Home Appliances and the ThinQ link goes to LG appliances.
 7. **Recorder** subscribes to all changes on the bus and writes them to SQLite.
-8. **Nightly reflection at 23:30 (purple dotted line)** sends the day's history to EXAONE and receives the habit rules for the next day.
+8. **Nightly reflection at 23:30 (purple dotted line)** sends the day's history to EXAONE and receives the habit rules for the next day. With `FINISH_DAY=1`, the dashboard settings dialog can finish the day early: the same reflection runs now and the system day moves forward by one.
 
 The `__ ms` fields mark timings that are still unmeasured.
 
@@ -132,6 +133,7 @@ The diagrams show the target. At `d5aeab53`, the code differs in these places.
 | Qwen3-VL every 2 seconds with up to five frames | [Observation](../../README.md#b-observation-yolo26-and-the-vlm) |
 | PAM every 5 seconds (1 second for nano models) | [Behavior Prediction](../../README.md#d-behavior-prediction-person-state-fsm-and-pam) |
 | Nightly reflection at 23:30 | [`REFLECT_AT` default](../reference.md#runtime-settings) |
+| Finish the day early from the dashboard | [`FINISH_DAY`](../reference.md#runtime-settings) |
 | EC2 g6e.2xlarge | [Deployment guide](../deploy.md) |
 
 ## November 24 Guides

@@ -183,6 +183,18 @@ describe("합성 기록 넣기", () => {
     expect(r.latest).toBeNull();
   });
 
+  it("하루 마치기로 날을 넘긴 기록 DB에는 합성 기록을 넣지 않고 멈춘다", () => {
+    const dir = mkdtempSync(join(tmpdir(), "seed-"));
+    const real = HistoryDb.open(join(dir, "noonchi.db"), 540);
+    const t = Date.parse("2026-11-09T12:00:00Z");
+    real.skipDay(t, real.dayOf(t));
+    real.close();
+    expect(() => main(["--end", END, "--home", "mokryeon_180b"], { RUNTIME_DIR: dir, HISTORY_TZ_MINUTES: "540" }, () => {})).toThrow(/하루를 넘긴 폴더예요/);
+    const db = HistoryDb.open(join(dir, "noonchi.db"), 540);
+    expect(db.list({ limit: 10 })).toEqual([]);
+    db.close();
+  });
+
   it("--clear는 합성 줄·판본·그 판본 고정만 지우고 실제 기록·판본·고정은 그대로 둔다. 다시 넣으면 앞 합성 기록을 바꾼다", () => {
     const dir = mkdtempSync(join(tmpdir(), "seed-"));
     const path = join(dir, "noonchi.db");

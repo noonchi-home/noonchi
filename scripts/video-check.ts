@@ -1019,7 +1019,8 @@ async function main(): Promise<number> {
       const used = usedServer(before.plan, await getJson<BrainNow>(`${api}/api/brain`));
       if (used) throw new Error(used);
       // 오늘 기억: 배운 컵 치우기 화살표가 없으면 영상을 틀지 않는다(seed 기억이면 떠날 때 묻는다)
-      const today = new Date(Date.now() + historyTzMinutes(process.env) * 60_000).toISOString().slice(0, 10);
+      // 오늘: 서버의 시스템 날짜(하루 마치기로 넘긴 날), 옛 서버면 달력 날짜
+      const today = (await getJson<{ today?: string }>(`${api}/api/day`))?.today ?? new Date(Date.now() + historyTzMinutes(process.env) * 60_000).toISOString().slice(0, 10);
       const gate = memoryGate(await getJson(`${api}/api/memory/day/${today}`), fake?.runtimeDir ?? "<서버 RUNTIME_DIR>");
       if (!gate.ok) {
         console.log(`[video-check] ${gate.why}`);

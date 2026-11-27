@@ -16,7 +16,7 @@ import { LessonStore, lessonsPath } from "../src/act/lessons.js";
 import { ApprovalStore, approvalsPath } from "../src/agent/approval.js";
 import { CUP_FSM_MEMORY, type FsmMemory } from "../src/brain/decision.js";
 import { learnedEdges, type EdgeLine } from "../src/brain/history/habits.js";
-import { HistoryDb, historyTzMinutes } from "../src/brain/history/db.js";
+import { HistoryDb, calendarDay, historyTzMinutes } from "../src/brain/history/db.js";
 import { REFLECT_TEXT } from "../src/brain/history/labels.js";
 import { isDay } from "../src/brain/history/summary.js";
 import { DEFAULT_TWIN_DIR, resolveTwinStudioDir } from "../src/layout/twin-files.js";
@@ -27,7 +27,7 @@ import { TASKS } from "../src/act/tasks.js";
 import { describeStart, parseStartPose, startPosePath, type DescribeObject } from "../src/phone/sync/start.js";
 import { DEMO_STARTS, startFor, type DemoScene } from "./demo-start.js";
 import { saveLearned } from "./learned-memory.js";
-import { seedWaterHabit } from "./water-habit.js";
+import { SKIPPED_FOLDER, seedWaterHabit } from "./water-habit.js";
 import { seedHistory } from "./seed-history.js";
 
 export const DEMO_HOME = "mokryeon_180b";
@@ -68,7 +68,12 @@ export async function demoSetup(argv: string[], deps: DemoDeps): Promise<void> {
   const arg = (k: string) => { const i = argv.indexOf(k); return i >= 0 ? argv[i + 1] : undefined; };
   const has = (k: string) => argv.includes(k);
   const tz = historyTzMinutes(deps.env);
-  const today = new Date(now() + tz * 60_000).toISOString().slice(0, 10);
+  // 오늘: 달력 날짜. 서버를 켠 채 부르는 반성 명령은 서버의 시스템 날짜(GET /api/day, 하루 마치기로 넘긴 날)를 쓴다
+  let today = calendarDay(now(), tz);
+  const serverToday = async () => {
+    const served = await call<{ today?: string }>("GET", "/api/day").catch(() => null);
+    if (served?.today) today = served.today;
+  };
   const api = (arg("--api") ?? "http://127.0.0.1:8200").replace(/\/$/, "");
   const twinDir = resolveTwinStudioDir(deps.env.TWIN_STUDIO_DIR) || DEFAULT_TWIN_DIR;
   const day = (k: string, fallback: string) => {
@@ -266,6 +271,7 @@ export async function demoSetup(argv: string[], deps: DemoDeps): Promise<void> {
     }
     const db = HistoryDb.open(dbPath, tz);
     try {
+      if (db.skips().length) throw new DemoStop(SKIPPED_FOLDER);
       if (db.pinnedMemory(today) !== null) throw new DemoStop(`오늘(${today}) 기억이 이미 고정됐어요. 폰을 켜기 전에 넣어야 해요. week --fresh로 다시 시작하세요`);
       // 합성 대본 판본(scripted)의 마지막 판본(memoryAfter(6): 배운 컵 치우기·말없이 에어컨): 서버와 같은 기록 DB 함수로 만든다
       const yesterday = addDays(today, -1);
@@ -302,6 +308,7 @@ export async function demoSetup(argv: string[], deps: DemoDeps): Promise<void> {
       await requireServerOff();
       const db = HistoryDb.open(dbPath, tz);
       try {
+        if (db.skips().length) throw new DemoStop(SKIPPED_FOLDER);
         const before = (db.memoryFor(today)?.memory as FsmMemory | undefined) ?? CUP_FSM_MEMORY;
         const version = saveLearned(db, today);
         db.cupAnswers.seedDemo(DEMO_HOME);
@@ -342,6 +349,7 @@ export async function demoSetup(argv: string[], deps: DemoDeps): Promise<void> {
   }
 
   if (cmd === "reflect" && has("--chain")) {
+    await serverToday();
     const from = day("--from", addDays(today, -7));
     const to = day("--to", addDays(today, -2));
     for (let d = from; d <= to; d = addDays(d, 1)) {
@@ -363,6 +371,7 @@ export async function demoSetup(argv: string[], deps: DemoDeps): Promise<void> {
   }
 
   if (cmd === "reflect") {
+    await serverToday();
     const d = day("--day", addDays(today, -1));
     const before = await call<MemoryDay>("GET", `/api/memory/day/${today}`);
     if (before.pinned !== null) throw new DemoStop(`오늘(${today}) 기억이 이미 ${before.pinned}판으로 고정됐어요. 폰을 켜기 전에 반성하세요`);
