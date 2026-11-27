@@ -287,16 +287,27 @@ const shown = (dir: string, file: string) => {
   return (r.startsWith("..") ? relative(dirname(dir.replace(/[\\/]+$/, "")), file) : r).replace(/\\/g, "/");
 };
 
-export function lintUiCopy(dirs: string[]): Problem[] {
+/** 화면 글 검사 예외: 사용자가 승인한 글만. file은 저장소 기준 경로, text는 꺼낸 글 그대로(템플릿 ${…}는 「…」). until이 지나면 「예외 기한 지남」 문제다. */
+export const COPY_EXCEPTIONS: readonly { file: string; text: string; why: string; until: string }[] = [
+  { file: "ui/src/dashboard/reflection-words.ts", text: "…% (…% 이상) · 우연일 확률 … (… 미만) · …", why: "밤 반성 채택 검사 글: 따라온 비율·우연일 확률의 기준을 괄호로 보인다(사용자 결정 2026-11-27)", until: "2027-02-28" },
+];
+
+export function lintUiCopy(dirs: string[], today = new Date().toISOString().slice(0, 10)): Problem[] {
   const problems: Problem[] = [];
+  const live = COPY_EXCEPTIONS.filter((x) => x.until >= today);
+  const excused = (file: string, text: string) => live.some((x) => x.file === file && x.text === text);
   for (const dir of dirs) {
     for (const file of walk(dir)) {
       const src = readFileSync(file, "utf8");
       const name = shown(dir, file);
-      for (const c of fileCopy(file, src)) for (const rule of copyRules(c.text)) problems.push({ file: name, line: c.line, text: c.text, rule });
+      for (const c of fileCopy(file, src)) {
+        if (excused(name, c.text)) continue;
+        for (const rule of copyRules(c.text)) problems.push({ file: name, line: c.line, text: c.text, rule });
+      }
       for (const s of blurbSlots(src)) problems.push({ file: name, line: s.line, text: `.${s.text}`, rule: "설명 칸" });
     }
   }
+  for (const x of COPY_EXCEPTIONS) if (x.until < today) problems.push({ file: x.file, line: 0, text: x.text, rule: "예외 기한 지남" });
   return problems.sort((a, b) => a.file.localeCompare(b.file) || a.line - b.line);
 }
 

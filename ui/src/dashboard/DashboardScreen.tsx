@@ -48,7 +48,7 @@ export interface ScreenProps {
   hub: HubState;
   /** 설정 창을 연 채 그린다(가짜 단계 화면 찍기). */
   settingsOpen?: boolean;
-  /** 서버 기록 시간대(분, /api/health tz_minutes). 날짜·시간 칩이 쓴다. 모르면 브라우저 시간대. */
+  /** 서버 기록 시간대(분, /api/health tz_minutes). 상태 표의 바뀐 시각이 쓴다. 모르면 브라우저 시간대. */
   tzMinutes?: number | null;
   /** 화면이 다 뜬 때(data-ready를 단 때) 한 번 부른다. */
   onReady?: () => void;
@@ -110,7 +110,7 @@ export function DashboardScreen({ index, plan, step, robotKnown, connected, map,
 
   const twin = (
     <PreDrawing.Provider value={phase === "drawing"}>
-      <TwinPane robotKnown={robotKnown} connected={connected} map={typeof map === "function" ? map(L) : map} chipsRight={L.chipsRight} tzMinutes={tzMinutes} tiled />
+      <TwinPane robotKnown={robotKnown} connected={connected} map={typeof map === "function" ? map(L) : map} chipsRight={L.chipsRight} tiled />
     </PreDrawing.Provider>
   );
   if (scene) {

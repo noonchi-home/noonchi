@@ -5,6 +5,7 @@ import type { RobotMessage } from "../../../src/contract/machines.ts";
 import type { PendingGoal } from "../../../src/contract/goal.ts";
 import type { HabitFsm } from "../../../src/contract/habit.ts";
 import type { PlanStep, PlanView } from "../../../src/contract/plan.ts";
+import type { DayView } from "../../../src/contract/reflection.ts";
 import type { TraceRow } from "../../../src/contract/trace.ts";
 import { TRACE_KEPT } from "../../../src/shared/trace.ts";
 import { WORDS } from "./words";
@@ -45,6 +46,8 @@ export interface DashData {
   personFed: boolean;
   /** 최근 계획(id마다 마지막 판본, 받은 차례로 최근 PLANS_KEPT개). 시간 줄 로봇 줄이 단계 시각(started_ms·ended_ms)을 쓴다. */
   plans: PlanView[];
+  /** 시스템 날짜 상태(day 메시지: 오늘·넘긴 날 수·하루 마치기 켬·하루 마치기 중). 받기 전이면 null. */
+  day: DayView | null;
 }
 
 /** 사람 상태 하나: 상태 id와 그 상태가 된 때(서버 시각), 서버가 붙인 이름(person 메시지만, 판단에서 온 것은 습관 그림 이름을 쓴다). */
@@ -55,7 +58,7 @@ const PLANS_KEPT = 4;
 
 export const EMPTY_DASH: DashData = {
   traceEpoch: null, trace: [],
-  plan: null, eye: null, decision: null, thoughts: [], reflection: null, say: null, mode: null, says: 0, safety: null, talk: [], goal: null, habit: null, people: [], robots: [], personFed: false, plans: [],
+  plan: null, eye: null, decision: null, thoughts: [], reflection: null, say: null, mode: null, says: 0, safety: null, talk: [], goal: null, habit: null, people: [], robots: [], personFed: false, plans: [], day: null,
 };
 
 /** 서버 시각순으로 최근 전이를 보존한다. 같은 시각의 다른 전이는 첫 수신 순서를 유지한다. */
@@ -177,6 +180,8 @@ export function reduceDash(s: DashData, m: ServerMessage, now: number): DashData
       const fresh = thoughts.filter((t) => !s.thoughts.some((x) => x.id === t.id));
       return { ...s, thoughts, talk: addTalk(s.talk, fresh.map((t) => ({ id: t.id, text: t.text }))) };
     }
+    case "day":
+      return { ...s, day: m.day };
     case "brain": {
       const e = m.event;
       if (e.type === "decision") {

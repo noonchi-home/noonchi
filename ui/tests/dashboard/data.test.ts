@@ -19,6 +19,13 @@ const said = (decision: string, atMs: number, ...texts: string[]): ServerMessage
 const textsOf = (s: ReturnType<typeof feed>) => talkOf(s)?.lines.map((m: { text: string }) => m.text);
 
 describe("대시보드 자료", () => {
+  it("day 메시지를 받아 두고 hello에서 지운다", () => {
+    const day = { today: "2026-11-28", real_today: "2026-11-27", shift: 1, finish: true, closing: false };
+    const s = reduceDash(EMPTY_DASH, { type: "day", day }, 0);
+    expect(s.day).toEqual(day);
+    expect(reduceDash(s, { type: "hello", devices: 0, provider: null, hub: "memory", home: null }, 0).day).toBeNull();
+  });
+
   it("Trace 재접속과 300회 실시간 갱신 뒤에도 진행 행을 보존하고 이전 판본과 집의 갱신을 걸러낸다", () => {
     const hello: ServerMessage = { type: "hello", devices: 0, provider: null, hub: "memory", home: "home", trace_epoch: "e1" };
     const pending: TraceRow = { id: "e1:1", activity_id: "e1:a", rev: 1, kind: "EXECUTION", name: "이동 안내", input: "식탁",
@@ -136,7 +143,7 @@ describe("대시보드 자료", () => {
     const seen = (run.moments[1]!.messages as ServerMessage[]).find((m) => m.type === "seen")!;
     expect(seen).toMatchObject({ type: "seen", frame: { width: 405, height: 228 }, shapes: [{ label: "cup" }] });
     expect(reduceDash(s, seen, 5)).toBe(s);
-    expect(Object.keys(s).sort()).toEqual(["decision", "eye", "goal", "habit", "mode", "people", "personFed", "plan", "plans", "reflection", "robots", "safety", "say", "says", "talk", "thoughts", "trace", "traceEpoch"]);
+    expect(Object.keys(s).sort()).toEqual(["day", "decision", "eye", "goal", "habit", "mode", "people", "personFed", "plan", "plans", "reflection", "robots", "safety", "say", "says", "talk", "thoughts", "trace", "traceEpoch"]);
   });
   describe("반성 뒤 메시지 상자", () => {
     const NIGHT = { from: "drinking", to: "*", on: "밤에 사용자가 식탁을 떠난다.", when: null as string | null, action: "컵 치우기" };

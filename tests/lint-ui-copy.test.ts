@@ -105,6 +105,16 @@ describe("web/·ui/src·폰 입구 전체", () => {
     expect(files.some((f) => /\.d\.ts$|[\\/]tests[\\/]/.test(f))).toBe(false);
   });
 
+  it("예외 표의 글은 그 파일에서만 지나고, 기한이 지나면 문제다", () => {
+    expect(lintUiCopy([uiDir]).filter((p) => p.text.includes("우연일 확률"))).toEqual([]);
+    expect(lintUiCopy([uiDir], "2027-03-01").some((p) => p.rule === "예외 기한 지남")).toBe(true);
+    const dir = mkdtempSync(join(tmpdir(), "copy-ex-"));
+    try {
+      writeFileSync(join(dir, "other.ts"), "export const x = (a: number) => `${a}% (${a}% 이상) · 우연일 확률 ${a} (${a} 미만) · ${a}`;\n");
+      expect(lintUiCopy([dir]).some((p) => p.rule === "괄호 설명")).toBe(true);
+    } finally { rmSync(dir, { recursive: true }); }
+  });
+
   it("화면 글 검사에 걸리는 곳이 없다(npm run lint)", () => {
     const problems = lintUiCopy(COPY_TARGETS);
     expect(problems.map((p) => `${p.file}:${p.line} [${p.rule}] ${p.text}`)).toEqual([]);

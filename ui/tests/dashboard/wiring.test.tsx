@@ -4,7 +4,6 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from "vitest";
 import type { DeviceView, HealthView, ServerMessage } from "../../../src/contract/events.ts";
 import { Dashboard } from "../../src/dashboard/Dashboard";
-import { clockText } from "../../src/dashboard/clock";
 import run from "../../src/dashboard/fake-run.json";
 import { EMPTY_DASH, reduceDash } from "../../src/dashboard/data";
 import { timelineLast } from "../../src/dashboard/timeline";
@@ -158,21 +157,17 @@ describe("대시보드 자료 연결", () => {
     expect(within(dialog).getByRole("list", { name: "허브 상태" })).toBeInTheDocument();
   });
 
-  it("다시 연결되면(hello) health를 다시 받아 날짜·시간 칩이 새 서버 기록 시간대를 쓴다(서버를 다른 시간대로 다시 띄운 때)", async () => {
-    vi.useFakeTimers({ toFake: ["Date"] });
-    try {
-      const at = Date.UTC(2026, 10, 16, 16, 30, 0);
-      vi.setSystemTime(at);
-      const health = stubServer(false);
-      health.tz_minutes = 540;
-      render(<Dashboard />);
-      await waitFor(() => expect(FakeSocket.last).not.toBeNull());
-      await waitFor(() => expect(document.querySelector("[data-clock]")).toHaveTextContent(clockText(at, 540)));
-      act(() => FakeSocket.last!.onopen?.());
-      health.tz_minutes = 0;
-      send([{ type: "hello", devices: 2, provider: null, hub: "memory", home: "h" }]);
-      await waitFor(() => expect(document.querySelector("[data-clock]")).toHaveTextContent(clockText(at, 0)));
-    } finally { vi.useRealTimers(); }
+  it("다시 연결되면(hello) health를 다시 받는다(서버를 다른 설정으로 다시 띄운 때). 트윈 칸에는 날짜·시간 칩이 없다", async () => {
+    stubServer(false);
+    render(<Dashboard />);
+    await waitFor(() => expect(FakeSocket.last).not.toBeNull());
+    const healths = () => vi.mocked(fetch).mock.calls.filter((c) => c[0] === "/api/health").length;
+    await waitFor(() => expect(healths()).toBeGreaterThan(0));
+    const before = healths();
+    act(() => FakeSocket.last!.onopen?.());
+    send([{ type: "hello", devices: 2, provider: null, hub: "memory", home: "h" }]);
+    await waitFor(() => expect(healths()).toBe(before + 1));
+    expect(document.querySelector("[data-clock]")).toBeNull();
   });
 
   it("폰 서버가 꺼져 있으면(health.eye false) 대시보드 폰 칸은 연결 QR이다", async () => {
