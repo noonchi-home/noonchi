@@ -557,6 +557,7 @@ export async function replayScenario(
           triggers,
           portals: floor.portals,
           dayOf: (ms) => calendarDay(ms, 540),
+          hold: () => false,
           map: () => map,
           viewers: () => [tvId],
           // src/server/home/act.ts goals.publish의 checkingVisit와 같은 값

@@ -258,6 +258,7 @@ export async function replayDay(o: {
     bus, epoch, clock, log: fail, triggers, portals: floor.portals, map: () => map, viewers: () => [], checking: () => null,
     routines: () => o.mode === "habit" ? adoptedRoutines(o.db, o.memory, clock.now()) : [], offsetMinutes: 540,
     dayOf: (ms) => calendarDay(ms, 540),
+    hold: () => false,
     afterTick: () => { if (world.eye) tracker.updateGoal(); },
   });
   let worldSeen: WorldView = world, worldRev = 0;

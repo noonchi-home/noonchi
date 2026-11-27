@@ -5,10 +5,11 @@ export { type FsmMemory, type PamMemory, edgeLearned, isoWithOffset, seedTrigger
 export { PersonLane, stateOfWorld } from "./person.js";
 export { type GoalPick, goalAhead } from "./goal.js";
 export { habitView } from "./habit.js";
-export { HISTORY_KINDS, HistoryDb, historyTzMinutes, type HistoryKind, type StoredPhoto } from "./history/db.js";
+export { HISTORY_KINDS, HistoryDb, addDays, calendarDay, dayWindow, historyTzMinutes, type DaySkip, type HistoryKind, type StoredPhoto } from "./history/db.js";
 export { policyFor, type HabitContext, type Intervention, type InterventionPreference } from "./history/intervention.js";
 export { learnBeerRules, matchesBeerRule, type BeerEvent, type BeerRule } from "./history/beer-rules.js";
-export { FEEDBACK_TEXT, MODE_TEXT, PHOTO_TEXT, REFLECT_TEXT } from "./history/labels.js";
+export { DAY_TEXT, FEEDBACK_TEXT, MODE_TEXT, PHOTO_TEXT, REFLECT_TEXT } from "./history/labels.js";
+export { publicReflection } from "./history/reflection-wire.js";
 export { type DeviceNote, attachRecorder, deviceRecorder, recordBrainLog, recordPlan, recordFeedback, topic } from "./history/recorder.js";
 export { type ReflectResult, memoryForDay, previewDayMemory, loadReflectAt, runReflection, scheduleReflection } from "./history/reflect.js";
 export { nightSave, type NightSave, type NightStore } from "./history/night.js";

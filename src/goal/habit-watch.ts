@@ -30,6 +30,9 @@ export class HabitWatch {
   private retryAt = new Map<string, number>();
   constructor(private readonly send: (i: GoalIntent) => void) {}
 
+  /** 보낸 습관 방문의 결과를 기다리는가(하루 마치기가 본다). */
+  waiting(): boolean { return this.pending !== null; }
+
   private missed(at: number) {
     const job = this.pending;
     if (!job) return;

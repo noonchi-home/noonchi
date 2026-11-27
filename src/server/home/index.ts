@@ -4,11 +4,12 @@
 // 파일 나눔(src/server/home/): index.ts 조립(도메인별 잇기를 차례대로 부름)·앱·닫기 차례, core.ts 안쪽 공유 객체 HomeCore, devices.ts 가전·허브·ThinQ,
 // agent.ts 정책·에이전트·외부 연락·계획 모드·관찰 모드·초점, phone.ts 실제 폰, act.ts 계획·판단·실행 추적·보기 담당, observe.ts World State·관찰 흐름·주기 타이머, say.ts 말풍선 카드.
 
-import type { DeviceNote, HistoryDb, ReflectResult } from "../../brain/index.js";
+import { publicReflection, type DeviceNote, type HistoryDb, type ReflectResult } from "../../brain/index.js";
 import type { HistoryWriter } from "../../record/index.js";
 import type { Bus, Clock } from "../../bus/index.js";
 import type { BrainLog, ReadyView } from "../../contract/events.js";
 import type { PlanView } from "../../contract/plan.js";
+import type { DayView, FinishResult } from "../../contract/reflection.js";
 import type { ControlMode } from "../../contract/setup.js";
 import type { StationMap } from "../../contract/stations.js";
 import type { DeviceHub, DeviceState } from "../../contract/devices.js";
@@ -30,6 +31,7 @@ import { HomeCore } from "./core.js";
 import { listHomes, validateStations, withFootprints } from "../../layout/index.js";
 import { createApp, type TwinHomeApp } from "../app.js";
 import { HomeTrace } from "./trace.js";
+import { homeBusy, homeDayMoved } from "../finish-day.js";
 
 export { phoneVideoDir } from "./phone.js";
 export { restSource } from "./observe.js";
@@ -47,6 +49,10 @@ export interface HomeHistory {
   plan(p: PlanView): void;
   /** 그날을 반성한다(POST /api/reflection/run). 이미 반성 중이면 409. */
   reflect(day: string): Promise<ReflectResult>;
+  /** 시스템 날짜 상태(GET /api/day, 접속 때 day 메시지). */
+  day(): DayView;
+  /** 하루 마치기(POST /api/day/finish, FINISH_DAY=1일 때만). */
+  finishDay?(day: string): Promise<FinishResult>;
 }
 
 export interface HomeContext {
@@ -115,6 +121,12 @@ export interface HomeRuntime {
   setRelay(link: RelayLink | null): void;
   /** 반성 사건(src/server/start.ts가 넘긴다): 말풍선 카드가 20초 동안 배운 습관을 말한다. */
   onReflection(event: Extract<BrainLog, { type: "reflection" }>): void;
+  /** 끝나지 않은 일이 있는가(src/server/finish-day.ts busyNow): 하루 마치기를 막는다. */
+  busy(): boolean;
+  /** 하루 마치기 동안 판단·습관 방문을 멈춘다. */
+  hold(on: boolean): void;
+  /** 하루를 넘긴 뒤: 판단 기억·도움 습관을 새로 읽고, 넘기기 전 반성이 배운 것을 말풍선이 말한다. */
+  dayMoved(event: Extract<BrainLog, { type: "reflection" }> | null): void;
   /** 닫지 않고 비운다(닫기와 같은 차례: 발행 줄 → 집 상태 → 거울). 기한(ms) 안에 다 비우면 true. */
   settle(ms: number): Promise<boolean>;
   close(): Promise<void>;
@@ -172,15 +184,20 @@ export async function startHome(homeId: string | undefined, ctx: HomeContext): P
   }
 }
 
-/** 새로 붙은 대시보드에 다시 보낼 오늘(기록 시간대) 마지막 반성 사건: 기록 DB reflection 줄에서 읽는다(합성 판본도 같다). */
+/** 새로 붙은 대시보드에 다시 보낼 오늘(시스템 날짜) 마지막 반성 사건: 기록 DB reflection 줄에서 읽는다(합성 판본도 같다).
+ *  오늘 줄이 없고 오늘이 하루 마치기로 넘어온 날이면 넘기기 전 날의 반성 줄을 보낸다. 모델이 쓴 글은 뺀다(publicReflection). */
 function todayReflection(db: HistoryDb): BrainLog[] {
-  const row = db.list({ day: db.dayOf(Date.now()), kinds: ["reflection"], latest: true, limit: 1 })[0];
+  const today = db.dayOf(Date.now());
+  const skip = db.skips().find((s) => s.to === today);
+  const row = db.list({ day: today, kinds: ["reflection"], latest: true, limit: 1 })[0]
+    ?? (skip ? db.list({ kinds: ["reflection"], latest: true, limit: 50 }).reverse().find((r) => (r.data as { day?: string } | null)?.day === skip.from) : undefined);
   if (!row) return [];
   const data = (row.data ?? {}) as Partial<Extract<BrainLog, { type: "reflection" }>>;
-  return [{
+  return [publicReflection({
     type: "reflection", at_ms: row.at_ms, day: data.day ?? row.day, ok: data.ok === true, version: data.version ?? null, applies_day: data.applies_day ?? null, text: row.text,
     ...(data.learned ? { learned: data.learned } : {}), ...(data.active ? { active: data.active } : {}), ...(data.dropped ? { dropped: data.dropped } : {}),
-  }];
+    ...(data.rejected ? { rejected: data.rejected } : {}),
+  })];
 }
 
 /** 앱(HTTP·WebSocket 경로)을 만든다. 실제 폰에 낸 지금 명령, 마지막 판단, 마지막 물체 모양(seen)은 새로 붙은 대시보드에도 보낸다. */
@@ -199,7 +216,7 @@ function startApp(core: HomeCore): void {
     sceneRuntimeDir:ctx.runtimeDir, signShot:shotSigner(ctx.runtimeDir,ctx.env),
     localizeStatus: () => core.localizer?.status() ?? null,
     phoneSync: () => core.phone?.syncState() ?? null,
-    plan: plans, offTrack: () => core.tracker?.offTrack() ?? null, history: history.db, reflect: history.reflect, scene: () => core.scene && withFootprints(layout?.editor ? { ...core.scene, objects: layout.editor.objects() } : core.scene, (type) => layout?.catalog.get(type)?.footprint),
+    plan: plans, offTrack: () => core.tracker?.offTrack() ?? null, history: history.db, reflect: history.reflect, day: history.day, finishDay: history.finishDay, scene: () => core.scene && withFootprints(layout?.editor ? { ...core.scene, objects: layout.editor.objects() } : core.scene, (type) => layout?.catalog.get(type)?.footprint),
     bakedScene: () => core.scene && withFootprints(core.scene, (type) => layout?.catalog.get(type)?.footprint),
     brainLast: () => [...todayReflection(history.db), ...(core.lastDecision ? [core.lastDecision] : [])], thoughtLast: () => core.thoughts?.last() ?? null, seenLast: () => core.lastSeen, say: () => ({ text: core.said, ...(core.saidSafety ? { safety: true as const } : {}) }),
     actMode: () => core.mode(),
@@ -237,6 +254,11 @@ function runtime(core: HomeCore): HomeRuntime {
     setStations(map) { core.setStations(map); },
     onReflection(event) {
       onReflection(core, event);
+    },
+    busy: () => homeBusy(core),
+    hold(on) { core.finishing = on; },
+    dayMoved(event) {
+      homeDayMoved(core, event, (e) => onReflection(core, e));
     },
     setLink(next) {
       setLink(core, next);

@@ -37,6 +37,21 @@ export const REFLECT_TEXT = {
   rejected: (why: string) => `반성 기억을 쓰지 않아요 · ${why}`,
   /** 다시 반성할 때 피드백 끝에 붙이는 까닭. */
   retry: (why: string) => `기억 검사 까닭: ${why}`,
+  /** 대시보드로 보내는 반성 사건의 글(src/brain/history/reflection-wire.ts): 까닭이 모델 글이라 빼고 보낸다. */
+  notUsed: "반성 기억을 쓰지 않아요",
+  failedPlain: "반성 실패",
+};
+
+/** 하루 마치기 글(API 오류·서버 로그, src/server/finish-day.ts). 응답 글에는 모델이 쓴 까닭을 넣지 않는다. */
+export const DAY_TEXT = {
+  off: "하루 마치기를 쓸 수 없어요",
+  live: "실제 모드에서는 하루를 마칠 수 없어요",
+  busy: "진행 중인 일이 끝난 뒤 하루를 마쳐요",
+  notToday: (today: string) => `오늘은 ${today}이에요`,
+  empty: "오늘 기록이 없어 하루를 마칠 수 없어요",
+  failed: "반성하지 못해 하루를 마치지 않았어요",
+  failedLog: (day: string, error: string) => `하루 마치기: ${day} 반성 실패 · ${error}`,
+  moved: (from: string, to: string) => `하루 마치기: ${from} 반성 뒤 ${to}로 넘김`,
 };
 
 /** 기억 판본 글(서버 로그). */

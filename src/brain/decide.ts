@@ -81,6 +81,8 @@ export class Decider {
   /** 말 부탁으로 처리한 말(열쇠)과 부탁 시각: 그보다 앞서 들은 같은 말이 늦게 도착해도(/phone/heard 전달 지연) 관찰 텍스트에 넣지 않는다(Codex 81d209ef P2). */
   private handled: { said: string; atMs: number }[] = [];
   private readonly running = new Set<Promise<void>>();
+  /** 답을 기다리는 판단 수(하루 마치기가 본다). */
+  inflight(): number { return this.running.size; }
   /** 멈추면 나가 있는 PAM 요청도 끊는다. */
   private readonly cancel = new AbortController();
   private seq = 0;

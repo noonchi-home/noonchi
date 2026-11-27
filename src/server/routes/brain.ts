@@ -1,7 +1,7 @@
 // API 경로: 기록·반성·기억 판본·판단(기록 DB, src/brain/history/).
 import type { HistoryKind } from "../../contract/history.js";
 import { HISTORY_KINDS } from "../../brain/index.js";
-import { daySummary, isDay } from "../../brain/index.js";
+import { DAY_TEXT, daySummary, isDay } from "../../brain/index.js";
 import { HttpError, readJson, type RouteKit } from "./kit.js";
 
 export function brainRoutes({ route, opts }: RouteKit): void {
@@ -49,6 +49,18 @@ export function brainRoutes({ route, opts }: RouteKit): void {
     const r = await opts.reflect(day);
     if (!r.ok) throw new HttpError(r.empty ? 409 : 502, r.error);
     return { ok: true, day, version: r.version, appliesDay: r.appliesDay };
+  });
+  // 시스템 날짜 상태(하루 마치기로 넘긴 날 수 포함)
+  route("GET", /^\/api\/day$/, async () => {
+    if (!opts.day) throw new HttpError(404, "기록 DB가 없습니다.");
+    return { ok: true, ...opts.day() };
+  });
+  // 하루 마치기: day는 화면이 본 오늘. 막히면 404·409, 반성 실패는 502(넘기지 않는다)
+  route("POST", /^\/api\/day\/finish$/, async (req) => {
+    if (!opts.finishDay) throw new HttpError(404, DAY_TEXT.off);
+    const body = await readJson(req);
+    if (typeof body.day !== "string" || !isDay(body.day)) throw new HttpError(400, "day는 YYYY-MM-DD 날짜여야 합니다.");
+    return await opts.finishDay(body.day);
   });
   // 그날 기억 고정 상태(읽기만, 고정하지 않는다): 그날 판단이 고정한 판본, 지금 판단이 부르면 쓸 판본(고정 판본, 없으면 그날 쓸 수 있는 가장 새 판본)과 그 기억 JSON, 가장 새 판본
   route("GET", /^\/api\/memory\/day\/(\d{4}-\d{2}-\d{2})$/, async (_req, _url, [day]) => {

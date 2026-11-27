@@ -156,14 +156,15 @@ export type BrainLog =
     type: "reflection"; at_ms: number; day: string; ok: boolean; version: number | null; applies_day: string | null; text: string;
     /** 이번 반성의 PAM LLM 사용량(답을 받았을 때만). 예전 기록에는 없다. */
     usage?: PamUsage;
-    /** 이번 반성이 새로 더한 화살표, 새 로봇 판본에서 seed에 없는 화살표(둘 다 코치 행동 빼고), 반성 뒤 검사가 뺀 후보(src/brain/history/habits.ts). 성공한 fsm 반성에만 있다. */
-    learned?: { from: string; to: string; on: string; when: string | null; action: string }[];
-    active?: { from: string; to: string; on: string; when: string | null; action: string }[];
-    dropped?: { from: string; to: string; on: string; action: string; kept: boolean; reason: "habit" | "chance" | "too_few" | "coach" | "unchanged" | "settings"; seen?: number; fired?: number; p?: number; conditions?: string[] }[];
+    /** 이번 반성이 새로 더한 화살표, 새 로봇 판본에서 seed에 없는 화살표(둘 다 코치 행동 빼고), 반성 뒤 검사가 뺀 후보(src/brain/history/habits.ts). 성공한 fsm 반성에만 있다.
+     *  모델이 쓴 글(on·when·conditions·rejected)은 서버 안(기록 DB)에만 있고, 대시보드로 보낸 사건에는 없다(src/brain/history/reflection-wire.ts). */
+    learned?: { from: string; to: string; on?: string; when?: string | null; action: string }[];
+    active?: { from: string; to: string; on?: string; when?: string | null; action: string }[];
+    dropped?: { from: string; to: string; on?: string; action: string; kept: boolean; reason: "habit" | "chance" | "too_few" | "coach" | "unchanged" | "settings"; seen?: number; fired?: number; p?: number; conditions?: string[] }[];
     /** 반성이 낸 기억을 쓰지 않은 까닭(코드 검사·뜻 검사를 두 번 다 지나지 못함). fsm 반성에서 통과했으면 null. 예전 기록에는 없다. */
     rejected?: string | null;
     /** 채택 검사 결과(후보마다 n·k·못 봄·비율·p0·p·통과, src/brain/pam/adopt.ts). 검사한 후보가 있을 때만. */
-    checks?: { state: string; action: string; on: string; when: string | null; n: number; k: number; unknown: number; rate: number; base_rate: number; p0: number; p_value: number; passed: boolean }[];
+    checks?: { state: string; action: string; on?: string; when?: string | null; n: number; k: number; unknown: number; rate: number; base_rate: number; p0: number; p_value: number; passed: boolean }[];
   }
   /** 관찰 모드가 고른 것 하나(src/act/look.ts): 까닭(A 멈춘 단계·B 판단 전 보기), 대상 id, 고른 도구와 모델이 댄 까닭, 기록 글, 결과(가까이 보기 결과·부탁을 보냈는가, 기다리기는 null).
    *  A면 그 계획·단계 id가 있다. */
@@ -347,6 +348,8 @@ export type ServerMessage =
   | import("./machines.js").RobotMessage
   /** 지금 실제 폰에 낸 명령 한 줄(명령 text, src/contract/phone.ts). 명령을 지우면(command_clear) null, 승인 흐름 질문(승인·거절, 계속·그만)은 싣지 않고 null. 글이 바뀔 때마다, 그리고 접속 때 명령이 있으면 한 번.
    *  대시보드 비전 미니맵만 보기(?view=minimap)가 아래쪽 자막으로 보인다. */
+  /** 시스템 날짜 상태(src/server/finish-day.ts): 접속 때 한 번, 하루 마치기 시작·끝마다. */
+  | { type: "day"; day: import("./reflection.js").DayView }
   | { type: "phone_command"; text: string | null };
 
 export interface DecisionRecord {

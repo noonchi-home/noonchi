@@ -112,6 +112,10 @@ export class HomeCore {
   goalPlans: BrainPlans | null = null;
   goalPulse: number | null = null;
   roomWatch?: import("../../goal/index.js").RoomWatch;
+  /** 도움 습관 방문(목표 노드). 하루 마치기가 결과를 기다리는 방문이 있는지 본다. */
+  habitWatch?: import("../../goal/index.js").HabitWatch;
+  /** 하루 마치기 중(판단·습관 방문을 멈춘다). */
+  finishing = false;
   tvWatch?: import("../../goal/index.js").TvWatch;
   goalFacts: import("../../goal/index.js").TriggerFacts | null = null;
   checkingVisit: (import("../../goal/index.js").CheckingVisit & {cup:string;surface:string}) | null = null;

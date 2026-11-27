@@ -116,6 +116,10 @@ export interface AppOptions {
   history?: HistoryDb;
   /** 그날 반성(src/brain/history/reflect.ts). 있으면 POST /api/reflection/run. */
   reflect?: (day: string) => Promise<ReflectResult>;
+  /** 시스템 날짜 상태(GET /api/day, 접속 때 {type:"day"}). */
+  day?: () => import("../contract/reflection.js").DayView;
+  /** 하루 마치기(POST /api/day/finish). 없으면 404. */
+  finishDay?: (day: string) => Promise<import("../contract/reflection.js").FinishResult>;
 }
 
 export interface TwinHomeApp {
@@ -352,6 +356,7 @@ export function createApp(opts: AppOptions): TwinHomeApp {
     for (const state of hub.states()) send(ws, { type: "state", state });
     for (const m of opts.layout?.syncMessages() ?? []) send(ws, m);
     send(ws, { type: "plan", plan: opts.plan?.current() ?? null });
+    if (opts.day) send(ws, { type: "day", day: opts.day() });
     if (opts.world) send(ws, { type: "world", world: opts.world() });
     for (const event of opts.brainLast?.() ?? []) send(ws, { type: "brain", event, replay: true });
     const thought = opts.thoughtLast?.();

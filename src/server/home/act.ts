@@ -194,7 +194,7 @@ export function startAct(core: HomeCore): (event: BrainLog) => void {
     world: { view: brainView, rev: () => core.brainMirror?.rev() ?? null }, trigger: new Trigger(triggerConfigOf(env), now()), tasks: (heard) => { core.pamHeard = heard; return pamTasks(core.mode(), heard); }, mode: (action) => core.mode(action),
     memory: () => memory.get(history.db.dayOf(now())), emit, offsetMinutes: history.db.offsetMinutes, clock: ctx.brain?.clock,
     // 행동 중 기다리기·기기 단계 동안은 PAM을 부르지 않는다(실행 추적이 조건을 본다)
-    hold: () => core.brainStatus?.hold ?? false,
+    hold: () => core.finishing || (core.brainStatus?.hold ?? false),
     keepHeard: () => core.keepHeard,
     interventionFor: (d, w) => interventionFor(d, w),
     edgeAllowed: (edge, atMs) => routineAllows(core.routines(), edge, atMs, history.db.offsetMinutes)

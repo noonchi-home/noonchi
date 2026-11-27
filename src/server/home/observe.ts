@@ -149,6 +149,7 @@ export async function startNodes(core: HomeCore, emit: (event: BrainLog) => void
   const goal = await startGoalNode({
     bus, epoch, clock, log, triggers, portals: core.floorPlan.portals, routines, offsetMinutes: ctx.history.db.offsetMinutes,
     dayOf: (ms) => ctx.history.db.dayOf(ms),
+    hold: () => core.finishing,
     map: () => core.scene?.stations ?? null,
     viewers: () => core.twin.devices.filter((d) => d.kind === HOUSEHOLD_KINDS.viewerPower).map((d) => d.id),
     checking: () => core.checkingVisit,
@@ -165,6 +166,7 @@ export async function startNodes(core: HomeCore, emit: (event: BrainLog) => void
   core.goalMirror = goal.mirror;
   core.tvWatch = goal.tv;
   core.roomWatch = goal.rooms;
+  core.habitWatch = goal.habits;
   core.mirror = await startWorldMirror({
     bus, epoch, name: "act", clock, log,
     routes: (node, afterRev) => {

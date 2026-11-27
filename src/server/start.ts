@@ -14,7 +14,7 @@ import type { PlanView } from "../contract/plan.js";
 import type { ControlMode, SetupView, ThinqDeviceView } from "../contract/setup.js";
 import type { SignalHub } from "../devices/index.js";
 import { HistoryDb, historyTzMinutes } from "../brain/index.js";
-import { REFLECT_TEXT } from "../brain/index.js";
+import { REFLECT_TEXT, publicReflection } from "../brain/index.js";
 import { topic, type DeviceNote } from "../brain/index.js";
 import { loadReflectAt, reflectInThread, NightReflection, type ReflectResult } from "../brain/index.js";
 import { loadRetention } from "../brain/index.js";
@@ -40,6 +40,7 @@ import { HttpError, originChecker, type TwinHomeApp } from "./app.js";
 import type { HubKind, MatterTransport, StartHubOptions } from "./hubFactory.js";
 import { startHome, type HomeContext, type HomeRuntime } from "./home/index.js";
 import { makeReady } from "./ready.js";
+import { dayViewOf, finishDayRunner, reflectBlocked, type FinishRunner } from "./finish-day.js";
 import { createShell, mobileHubUrls } from "./shell.js";
 import { preflight } from "./preflight.js";
 
@@ -235,8 +236,13 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
   // 서버를 끌 때는 진행 중인 반성의 PAM 요청을 끊고 끝날 때까지 기다린 뒤 DB를 닫는다
   const closing = new AbortController();
   let reflecting: Promise<ReflectResult> | null = null;
-  const reflect = async (day: string, life?: AbortSignal): Promise<ReflectResult> => {
-    if (reflecting) throw new HttpError(409, REFLECT_TEXT.running);
+  // 하루 마치기(FINISH_DAY=1, src/server/finish-day.ts): 오늘을 반성하고 시스템 날짜를 하루 넘긴다
+  const finishOn = env.FINISH_DAY?.trim() === "1";
+  const nowMs = () => (opts.clock ? opts.clock.now() : Date.now());
+  let finish: FinishRunner | null = null;
+  const dayView = () => dayViewOf(db, nowMs(), finishOn, (finish?.closing() ?? null) !== null);
+  const reflect = async (day: string, life?: AbortSignal, o?: { finish?: true }): Promise<ReflectResult> => {
+    if (reflectBlocked({ reflecting: reflecting !== null, closing: finish?.closing() ?? null, finish: !!o?.finish })) throw new HttpError(409, REFLECT_TEXT.running);
     // 반성 사건은 지금 집의 대시보드로 보내고 집 묶음에도 넘긴다(말풍선 카드가 배운 습관을 말한다)
     const job = reflectInThread({
       path: dbPath, offsetMinutes: tz, day, env: { ...env },
@@ -246,9 +252,10 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
       signal: life ? AbortSignal.any([life, closing.signal]) : closing.signal, log,
       store: { add: (kind, atMs, text, o) => write.add(kind, atMs, text, o), saveNight: (a) => write.saveNight(a) },
       now: opts.clock ? () => opts.clock!.now() : () => Date.now(),
+      // 대시보드로는 모델이 쓴 글을 뺀 반성 사건을 보낸다(publicReflection). 집 묶음(말풍선)에는 그대로 넘긴다
       emit: (event) => {
-        current?.app.broadcast({ type: "brain", event });
-        if (event.type === "reflection") current?.onReflection(event);
+        current?.app.broadcast({ type: "brain", event: event.type === "reflection" ? publicReflection(event) : event });
+        if (event.type === "reflection") finish?.onReflection(event);
       },
     });
     reflecting = job;
@@ -258,6 +265,14 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
       reflecting = null;
     }
   };
+  finish = finishDayRunner({
+    enabled: finishOn, mode: () => mode, today: () => db.dayOf(nowMs()), reflecting: () => reflecting !== null,
+    busy: () => current?.busy() ?? false, hold: (on) => current?.hold(on),
+    flush: async () => { await write.flush(); }, reflect: (day) => reflect(day, undefined, { finish: true }),
+    skip: (day) => write.finishDay({ atMs: nowMs(), from: day }),
+    moved: (event) => current?.dayMoved(event), speak: (event) => current?.onReflection(event),
+    sendDay: () => current?.app.broadcast({ type: "day", day: dayView() }), log,
+  });
   const cameraServeOrigins = new Set<string>();
   const discoverPhoneUrls = opts.servedPhoneUrls;
   const ctx: HomeContext = {
@@ -285,7 +300,8 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
     },
     savedStations: (homeId, defaults) => store.stations(homeId, defaults),
     sources: (homeId, ids) => store.sources(homeId, ids), mode: () => mode, allowOrigin, planToken: env.PLAN_TOKEN?.trim() || undefined, ready: makeReady({ endpoints, agent: agentEndpoint(env), db, writable: () => write.writable() }),
-    history: { db, write, device: feed.device.emit, brain: feed.brain.emit, plan: feed.plan.emit, reflect },
+    history: { db, write, device: feed.device.emit, brain: feed.brain.emit, plan: feed.plan.emit, reflect, day: dayView,
+      ...(finishOn ? { finishDay: (day: string) => finish!.run(day) } : {}) },
     bus, epochOf: (homeId) => ({ boot, home: `${homeId}#${++opened}` }),
   };
   const studioDir = resolveTwinStudioDir(env.TWIN_STUDIO_DIR);

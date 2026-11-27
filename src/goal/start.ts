@@ -41,6 +41,8 @@ export async function startGoalNode(o: {
   offsetMinutes?: number;
   /** ms → 시스템 날짜(HistoryDb.dayOf): 습관 방문 「하루 한 번」의 하루. */
   dayOf: (ms: number) => string;
+  /** 하루 마치기 중: 습관 방문을 미룬다. */
+  hold: () => boolean;
 }): Promise<GoalNode> {
   let out: Outbox | null = null, mirror: WorldMirror | null = null;
   let evaluateGoals: (() => void) | null = null, evaluateTv: (() => void) | null = null;
@@ -77,7 +79,7 @@ export async function startGoalNode(o: {
           cupSeen: !!(checking && cup?.status === "present" && cup.surface === checking.surface &&
             cup.last_seen_ms >= checking.since && !cup.carried && cup.facts.place?.certainty === "confirmed" && cup.facts.place.value !== "in_hand") });
         // 배운 도움 습관의 시각이면 확인하러 간다(확인 중인 목표·실행 중이면 미룬다)
-        habits.tick({ now, rev, map, routines: o.routines?.() ?? [], offsetMinutes: o.offsetMinutes ?? 540, busy: rooms.isBusy() || !!checking, dayOf: o.dayOf });
+        habits.tick({ now, rev, map, routines: o.routines?.() ?? [], offsetMinutes: o.offsetMinutes ?? 540, busy: rooms.isBusy() || !!checking || o.hold(), dayOf: o.dayOf });
         o.afterTick?.();
       });
     },
