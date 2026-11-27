@@ -21,7 +21,7 @@ const PER_FRAME = new Set(["vlm_missing", "yolo_missing"]);
 const heardText = (text: string, keep: boolean) => (keep ? text : HEARD_MARK);
 /** World State 변화 하나의 기록 줄: 기록 시각은 처리 시각(지금처럼 그날 기록에 들어간다), 근거(촬영) 시각은 observed_ms로 따로. */
 const changeLog = (c: WorldChange, at: number, keep: boolean): BrainLog =>
-  ({ type: "world_change", at_ms: at, kind: c.kind, text: c.kind === "heard" ? heardText(c.text, keep) : c.text, observed_ms: c.at_ms });
+  ({ type: "world_change", at_ms: at, kind: c.kind, text: c.kind === "heard" ? heardText(c.text, keep) : c.text, observed_ms: c.at_ms, ...(c.room ? { room: c.room } : {}) });
 /** 녹화에 남길 봉투: 들은 말(/phone/heard 글, /world/changes의 heard 변화 글)은 기록 DB와 같은 정책으로 가린다. */
 function forBag(e: Envelope<TopicName>, keep: boolean): Envelope<TopicName> {
   if (keep) return e;

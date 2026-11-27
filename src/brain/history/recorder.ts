@@ -66,7 +66,7 @@ export function recordBrainLog(db: HistoryDb, l: BrainLog): void {
       }
       return;
     case "world_change":
-      db.add(DETECTION.has(l.kind) ? "detection" : "world", l.at_ms, l.text, { data: { kind: l.kind, ...(l.observed_ms !== undefined ? { observed_ms: l.observed_ms } : {}) } });
+      db.add(DETECTION.has(l.kind) ? "detection" : "world", l.at_ms, l.text, { data: { kind: l.kind, ...(l.observed_ms !== undefined ? { observed_ms: l.observed_ms } : {}), ...(l.room ? { room: l.room } : {}) } });
       return;
     case "decision":
       db.add("pam_text", l.at_ms, l.text_sent, { subject: l.id });

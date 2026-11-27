@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import type { PlanView } from "../src/contract/plan.js";
 import { HistoryDb } from "../src/brain/history/db.js";
+import { recordWrites } from "../src/record/history.js";
 import { fetchRetry } from "../src/shared/net.js";
 import { startServer, type RunningServer } from "../src/server/start.js";
 
@@ -47,5 +48,14 @@ describe("서버 기록 연결", () => {
     } finally {
       db.close();
     }
+  });
+});
+
+describe("사람 방 기록", () => {
+  it("사람 방 변화 줄 data에 방 id를 남긴다", () => {
+    const db = HistoryDb.open(":memory:");
+    const T = Date.parse("2026-11-27T08:10:00+09:00");
+    recordWrites(db, { now: () => T })["/world/changes"]!({ changes: [{ kind: "person_room", at_ms: T, subject: "person", text: "사람 주방에 있음", meaningful: true, room: "kitchen" }] }, T, {} as never);
+    expect(db.list({ kinds: ["world"] })[0]!.data).toMatchObject({ kind: "person_room", room: "kitchen" });
   });
 });

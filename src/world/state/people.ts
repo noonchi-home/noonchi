@@ -107,7 +107,7 @@ export class People extends Part {
   }
 
   roomChange(at: number): WorldChange {
-    return { kind: "person_room", at_ms: at, subject: PERSON, meaningful: true, text: CHANGE_TEXT.personRoom(this.core.person.room!.label) };
+    return { kind: "person_room", at_ms: at, subject: PERSON, meaningful: true, room: this.core.person.room!.id, text: CHANGE_TEXT.personRoom(this.core.person.room!.label) };
   }
 
   /** 관절로 본 사람 자세(규칙: src/world/pose.ts): 가장 확실한 한 사람의 서 있음·앉아 있음·누워 있음. 쓰러짐 의심(src/world/fall.ts)이 되면 자세를 쓰러짐 의심으로 두고

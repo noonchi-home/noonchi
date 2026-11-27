@@ -194,7 +194,7 @@ export type WorldChangeKind =
   | "fixture" | "device" | "vlm" | "vlm_missing" | "yolo_missing" | "heard";
 
 /** World State 변화 하나. meaningful이면 PAM 판단 계기가 된다(등장·사라짐, 물건·가전 설비 상태, 사람 방, 가전 사건). */
-export interface WorldChange { kind: WorldChangeKind; at_ms: number; subject: string; text: string; meaningful: boolean }
+export interface WorldChange { kind: WorldChangeKind; at_ms: number; subject: string; text: string; meaningful: boolean; /** person_room: 들어간 방 id. */ room?: string }
 
 /** /perception/scene 몸: VLM 답 갈래(집 상태 입력의 주인). 사진은 싣지 않는다.
  *  원본 프레임 id·가까이 보기 look id로 집 상태 노드가 자기 감지 번호 표를 찾는다. observed_ms는 원본 사진의 촬영 시각이다.

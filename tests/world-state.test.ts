@@ -4,6 +4,7 @@ import { CHANGE_TEXT, redactHeard, redactSaid, saidIn } from "../src/world/label
 import { placeBox, placePoint } from "../src/world/place.js";
 import { sha256 } from "../src/observe/ring.js";
 import type { EngineFrame, Detection, CameraView } from "../src/contract/observe.js";
+import type { WorldChange } from "../src/contract/world.js";
 import { checkPlan } from "../src/act/check.js";
 import { poseOf, standing } from "./helpers/poses.js";
 import { det } from "./helpers/detectors.js";
@@ -255,6 +256,13 @@ describe("World State: 프레임 간격과 상관없는 시간 규칙(YOLO 사�
       const v = run(step, 6000, scene).w.view(6000);
       expect(v.person.facts.posture, String(step) + "ms").toMatchObject({ value: "sitting", certainty: "confirmed", since_ms: 4000 });
     }
+  });
+
+  it("사람 방 변화에 방 id를 싣는다(반성 덩어리의 방)", () => {
+    const w = real();
+    const changes: WorldChange[] = [];
+    for (let t = 0; t <= 8000; t += 2000) changes.push(...see(w, at(t, look), t >= 2000 && t <= 6000 ? [person] : [], { fast: false }).changes);
+    expect(changes.find((c) => c.kind === "person_room")).toMatchObject({ subject: "person", room: "kitchen" });
   });
 });
 

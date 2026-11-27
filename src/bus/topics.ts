@@ -129,7 +129,7 @@ const worldState = z.strictObject({ rev, view });
 const CHANGE_KINDS = [
   "appeared", "gone", "out_of_view", "back_in_view", "state", "person_appeared", "person_gone", "person_state", "person_room", "fixture", "device", "vlm", "vlm_missing", "yolo_missing", "heard",
 ] as const satisfies readonly WorldChangeKind[];
-const worldChanges = z.strictObject({ rev, changes: z.array(z.strictObject({ kind: z.enum(CHANGE_KINDS), at_ms: at, subject: z.string(), text: z.string(), meaningful: z.boolean() })) });
+const worldChanges = z.strictObject({ rev, changes: z.array(z.strictObject({ kind: z.enum(CHANGE_KINDS), at_ms: at, subject: z.string(), text: z.string(), meaningful: z.boolean(), room: z.string().optional() })) });
 const worldInput = z.union([
   z.strictObject({ kind: z.enum(["guard", "contents"]), id, on: z.boolean(), at_ms: at }),
   z.strictObject({ kind: z.literal("focus"), id: id.nullable(), focus: z.strictObject({ step: z.enum(["pick", "place", "carry"]), spot: z.tuple([at, at]).nullable() }).nullable(), at_ms: at }),
